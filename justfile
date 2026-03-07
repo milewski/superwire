@@ -1,2 +1,2 @@
 try:
-    cargo run -p example
+    cargo run -p engine-ai-example

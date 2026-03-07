@@ -4,7 +4,10 @@
       "Bash(*)",
       "Bash(cargo new:*)",
       "Bash(cargo search:*)",
-      "Bash(cargo tree:*)"
+      "Bash(cargo tree:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:docs.ollama.com)"
     ]
   }
 }
