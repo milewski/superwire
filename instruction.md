@@ -1,0 +1,542 @@
+# AI Engine DSL Specification
+
+## Overview
+
+This document defines a domain-specific language (DSL) for describing agent workflows. A workflow consists of:
+
+- `agent` nodes, which execute prompts against language models
+- `schema` definitions, which define structured outputs
+- `provider` definitions, which configure model backends
+- dependency references, which determine execution order
+
+The parser must validate the document before execution. Invalid graphs, invalid references, and invalid template usage
+must produce parse-time errors.
+
+---
+
+## Core Concepts
+
+### Agent
+
+An `agent` defines a unit of execution.
+
+Example:
+
+```txt
+agent summary {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "Summarize the following text"
+}
+```
+
+Each agent name must be unique within the graph. Duplicate agent names must raise a parse-time error.
+
+### Supported Agent Properties
+
+An agent may contain the following properties:
+
+```txt
+model <- string
+tools <- [string, string, ...]
+context <- string
+output <- schema reference | inline schema
+prompt <- string | multiline string | function call
+for_each <- expression as identifier
+```
+
+### Agent Execution Loop
+
+Each agent executes inside an agent loop.
+
+Every agent includes a built-in `done` tool by default. The `done` tool is a system-level tool and does not need to be
+declared explicitly in the agent's `tools` list.
+
+The only way for an agent to exit the agent loop is by calling the `done` tool and providing its final output.
+
+If an agent defines an `output` schema, the value provided to `done` must validate against that schema.
+
+If schema validation fails, the validation error must be returned to the agent, and the agent must continue running
+inside the loop until it produces a valid output.
+
+If an agent does not define an `output` schema, its final output is a plain string.
+
+### Context Isolation and Sharing
+
+Each agent starts with its own clean context. Agents do not share message history or execution context by default.
+
+If a workflow needs one agent to reuse the exact context of another agent, it must reference that agent's context
+explicitly.
+
+Example:
+
+```txt
+agent one {
+    prompt <- "..."
+}
+
+agent two {
+    context <- agent.one.context
+}
+```
+
+In this example, `agent two` receives the exact same message history and context as `agent one`.
+
+If the workflow only needs a summary of another agent's context, it may reference `.summary` instead.
+
+Example:
+
+```txt
+agent one {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "..."
+}
+
+agent two {
+    model <- "ollama2/qwen3.5:35b"
+    context <- agent.one.context.summary
+}
+```
+
+In this example, the summary is generated only when `.summary` is referenced. It is not generated automatically for
+every agent.
+
+A context summary must be generated lazily and only on demand. The summary must be produced using the model configured
+on the referenced agent. In the example above, `agent.one.context.summary` is generated using the model assigned to
+`agent one`.
+
+---
+
+## Agent References and Dependencies
+
+Agents may reference outputs from other agents.
+
+Example:
+
+```txt
+agent one {
+    output <- schema {
+        name: string
+    }
+}
+
+agent two {
+    prompt <- "Hello {{ one.name }}"
+}
+```
+
+A reference from one agent to another creates a dependency edge in the execution graph.
+
+The engine must:
+
+- build a dependency graph using `petgraph`
+- reject cyclic dependencies at parse time
+- execute agents in dependency order
+- execute independent agents in parallel using `rayon`
+
+If two agents do not depend on each other, they may be executed in parallel.
+
+---
+
+## Schemas
+
+A `schema` defines the expected structure of an agent output.
+
+Example:
+
+```txt
+schema person {
+    name: string
+    age: number
+    gender: "male" | "female"
+    hobbies: [string]
+    is_gamer: boolean
+    nickname: string | null
+}
+```
+
+Schemas are compiled into JSON Schema and used to validate agent outputs.
+
+Example usage:
+
+```txt
+agent one {
+    output <- schema.person
+}
+```
+
+### Inline Schemas
+
+Schemas may also be defined inline:
+
+```txt
+agent one {
+    output <- schema {
+        name: string
+        age: number
+        gender: "male" | "female"
+        hobbies: [string]
+        is_gamer: boolean
+        nickname: string | null
+    }
+}
+```
+
+Inline schemas do not require a name.
+
+### Supported Schema Types
+
+The following schema types are supported:
+
+- `string`
+- `number`
+- `boolean`
+- `null`
+- arrays: `[T]`
+- enums: `A | B`
+
+The output of a schema-validated agent is expected to be JSON compatible with the generated JSON Schema.
+
+---
+
+## Prompt Values
+
+A `prompt` may be defined in one of three ways:
+
+1. inline string
+2. multiline string
+3. function call that returns a string
+
+Examples:
+
+```txt
+agent one {
+    prompt <- "A single line prompt"
+}
+
+agent two {
+    prompt <- """
+        A multiline prompt
+    """
+}
+
+agent three {
+    prompt <- file "./prompts/one.md" {
+        system <- "System instructions"
+        field_a <- "Value for field a"
+        field_b <- "Value for field b"
+    }
+}
+```
+
+---
+
+## Template Functions
+
+The built-in `file` function reads a file and performs variable substitution.
+
+Example:
+
+```txt
+agent three {
+    prompt <- file "./prompts/one.md" {
+        system <- "System instructions"
+        field_a <- "Value for field a"
+    }
+}
+```
+
+Template variables inside the file must use the form:
+
+```txt
+{{ variable_name }}
+```
+
+### Template Validation Rules
+
+The parser must raise a parse-time error if:
+
+- the template contains a variable that is not provided in the replacement block
+- the replacement block contains a variable that does not appear in the template
+
+This ensures templates and replacement bindings remain consistent.
+
+### Nested Functions
+
+Functions may be nested:
+
+```txt
+agent three {
+    prompt <- file "./prompts/one.md" {
+        system <- "System instructions"
+        field_a <- file "./prompts/two.md" {
+            subfield <- "Value for subfield"
+        }
+    }
+}
+```
+
+Nested function calls should be resolved during parsing. Independent function calls may be evaluated in parallel. If any
+function evaluation fails, parsing must abort and return an error.
+
+---
+
+## String Interpolation
+
+Strings may reference variables using:
+
+```txt
+{{ variable_name }}
+```
+
+Variable interpolation occurs at runtime unless the value is statically known during parsing.
+
+Example:
+
+```txt
+agent one {
+    prompt <- """
+        Hello {{ user_name }}
+    """
+}
+```
+
+---
+
+## for_each
+
+The `for_each` property executes an agent once for each element in a collection.
+
+Example:
+
+```txt
+agent one {
+    for_each <- [1, 2, 3] as index
+
+    output <- schema {
+        output: number
+    }
+
+    prompt <- """
+        How much is {{ index }} * 5?
+    """
+}
+```
+
+Each iteration runs independently and may be executed in parallel.
+
+### Result Shape
+
+If an agent uses `for_each`, its final output is an array containing the output from each iteration, in iteration order.
+
+Example:
+
+```txt
+agent hobbies {
+    output <- schema {
+        hobbies: [string]
+    }
+
+    prompt <- "List common hobbies"
+}
+
+<- agent activities {
+    for_each <- hobbies.hobbies as hobby
+
+    output <- schema {
+        activities: [string]
+    }
+
+    prompt <- """
+        Create a list of activities related to the hobby: {{ hobby }}
+    """
+}
+```
+
+In this example, `activities` returns an array of objects, one per hobby.
+
+### Terminal Agent
+
+An agent prefixed with `<-` is a terminal agent. The output of terminal agents becomes the final program output.
+
+A workflow must declare at least one terminal agent. If no terminal agent is declared, the parser must raise a
+parse-time error.
+
+If exactly one terminal agent is declared, the final program output is that agent's output directly.
+
+If multiple terminal agents are declared, the final program output is a JSON object whose keys are the terminal agent
+names and whose values are their respective outputs.
+
+Example:
+
+```txt
+<- agent one {
+    prompt <- "..."
+}
+
+<- agent two {
+    prompt <- "..."
+}
+```
+
+Produces:
+
+```json
+{
+  "one": output_of_one,
+  "two": output_of_two
+}
+```
+
+---
+
+## Providers
+
+A `provider` configures access to an LLM backend.
+
+Example:
+
+```txt
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3.5:27b"]
+}
+
+provider ollama2 {
+    driver <- "ollama"
+    api_endpoint <- "http://123.1.1.1:11434"
+    models <- ["qwen3.5:35b"]
+}
+```
+
+Agents select models using the format:
+
+```txt
+provider_name/model_name
+```
+
+Example:
+
+```txt
+agent one {
+    model <- "ollama1/qwen3.5:27b"
+}
+
+agent two {
+    model <- "ollama2/qwen3.5:35b"
+}
+```
+
+### Provider Validation Rules
+
+The parser must raise a parse-time error if:
+
+- an agent references a provider that does not exist
+- an agent references a model that is not declared by the provider
+
+---
+
+## Parse-Time Errors
+
+The parser must reject the document if any of the following occur:
+
+- duplicate agent names
+- duplicate schema names
+- cyclic agent dependencies
+- undefined agent references
+- undefined schema references
+- undefined provider references
+- provider/model mismatches
+- missing template variables
+- unused template bindings
+- invalid property names
+- invalid property value types
+
+---
+
+## Execution Rules
+
+1. Parse and validate the document
+2. Build the dependency graph
+3. Reject cyclic graphs
+4. Resolve parse-time functions
+5. Execute agents in topological order
+6. Execute independent agents in parallel
+7. Validate agent outputs against their schemas
+8. Return the output of the terminal agent
+
+---
+
+## Implementation Notes
+
+The implementation should follow these guidelines:
+
+- Use `petgraph` for dependency graph construction and topological ordering.
+- Use `rayon` for parallel execution of independent agents and `for_each` iterations.
+- Compile schemas to JSON Schema before execution.
+- Fail fast on validation and parsing errors.
+- Use the `schemars` crate for schema generation and validation support.
+- Use `serde_json` for handling JSON data.
+- Use the `pest` crate to parse the DSL.
+- Use the `tokio` crate for asynchronous execution of agents and function calls.
+- Design the system to be extensible for future features such as conditionals, loops, and more complex data types.
+- Implement `providers` using traits so new provider backends can be added later.
+- Start with an Ollama provider implementation using the `ollama-rs` crate.
+
+The core library should be organized into the following submodules:
+
+- `parser`: parses the DSL and builds the internal representation.
+- `validation`: validates the parsed graph, references, and schemas.
+- `execution`: executes agents according to the execution rules.
+- `providers`: implements model providers and their APIs.
+- `schemas`: handles schema definitions, compilation, and validation.
+- `utils`: contains shared utilities and helper functions.
+- `tools`: handles tool definitions and tool execution.
+
+### Workspace Structure
+
+The project should be organized as a Cargo workspace with three main crates:
+
+- `crates/core`: the core implementation and reusable library. This crate should expose the parser, validator, execution engine, provider abstractions, and other public APIs that downstream projects can use.
+- `crates/macros`: procedural macros used by the core crate and by consumers of the library. This crate should contain macros such as `#[tool]` and `#[provider]`.
+- `crates/example`: an example application used to test, evaluate, and demonstrate the project in a realistic setup.
+
+The workspace root should define these crates as members so they can be built, tested, and versioned together.
+
+Example layout:
+
+```txt
+Cargo.toml
+crates/
+├── core/
+├── macros/
+└── example/
+```
+
+Example workspace configuration:
+
+```toml
+[workspace]
+members = [
+    "crates/core",
+    "crates/macros",
+    "crates/example",
+]
+```
+
+To simplify extensibility and reduce boilerplate, define procedural macros such as `#[tool]` and `#[provider]` to declare these entities in Rust and register them automatically.
+
+It should also be possible to create testing macros that make parser and execution tests concise and readable.
+
+Example:
+
+```rust
+let result = parser! {
+    agent one {
+        model <- "ollama/model"
+    }
+};
+
+// Assertions go here
+```
+
