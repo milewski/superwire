@@ -165,6 +165,11 @@ schema person {
 
 Schemas are compiled into JSON Schema and used to validate agent outputs.
 
+All JSON Schema definitions in the Rust implementation must be declared explicitly using the `schemars` type system and
+schema-generation APIs. Do not manually construct schema representations using `serde_json::json!()` or other ad hoc
+JSON value builders. Field types, nullability, enums, arrays, object structure, and descriptions must all be expressed
+through `schemars` so the generated schemas remain strongly typed, consistent, and maintainable.
+
 ### Schema Field Descriptions
 
 Schema fields may include optional string descriptions that document the field's purpose or constraints:
