@@ -1,0 +1,83 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+document = { SOI ~ (provider | schema | agent)* ~ EOI }
+
+// Provider definition
+provider = { "provider" ~ identifier ~ "{" ~ provider_property* ~ "}" }
+provider_property = {
+    ("driver" ~ "<-" ~ string) |
+    ("api_endpoint" ~ "<-" ~ string) |
+    ("models" ~ "<-" ~ string_array)
+}
+
+// Schema definition
+schema = { "schema" ~ identifier ~ "{" ~ schema_field* ~ "}" }
+schema_field = { identifier ~ ":" ~ schema_type }
+schema_type = {
+    schema_array |
+    schema_union_type |
+    schema_primitive
+}
+schema_primitive = { "string" | "number" | "boolean" | "null" }
+schema_array = { "[" ~ schema_type ~ "]" }
+schema_union_type = { schema_primitive ~ ("|" ~ schema_primitive)+ }
+
+// Agent definition
+agent = { terminal_marker? ~ "agent" ~ identifier ~ "{" ~ agent_property* ~ "}" }
+terminal_marker = { "<-" }
+
+agent_property = {
+    ("model" ~ "<-" ~ string) |
+    ("tools" ~ "<-" ~ string_array) |
+    ("context" ~ "<-" ~ context_ref) |
+    ("output" ~ "<-" ~ schema_ref) |
+    ("prompt" ~ "<-" ~ prompt_value) |
+    ("for_each" ~ "<-" ~ for_each_expr)
+}
+
+// Context reference
+context_ref = {
+    (identifier ~ "." ~ identifier ~ "." ~ "context" ~ "." ~ "summary") |
+    (identifier ~ "." ~ identifier ~ "." ~ "context")
+}
+
+// Schema reference
+schema_ref = {
+    ("schema" ~ "." ~ identifier) |
+    inline_schema
+}
+
+inline_schema = { "schema" ~ "{" ~ schema_field* ~ "}" }
+
+// Prompt value
+prompt_value = {
+    multiline_string |
+    function_call |
+    string
+}
+
+function_call = { identifier ~ string ~ "{" ~ function_arg* ~ "}" }
+function_arg = {
+    identifier ~ "<-" ~ (function_call | string)
+}
+
+// For each expression
+for_each_expr = { expression ~ "as" ~ identifier }
+
+expression = {
+    reference |
+    literal_array
+}
+
+reference = { identifier ~ ("." ~ identifier)* }
+literal_array = { "[" ~ (literal ~ ("," ~ literal)*)? ~ "]" }
+literal = { string | number | boolean | "null" }
+
+// Basic types
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+multiline_string = @{ "\"\"\"" ~ (!"\"\"\"" ~ ANY)* ~ "\"\"\"" }
+string_array = { "[" ~ (string ~ ("," ~ string)*)? ~ "]" }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+boolean = { "true" | "false" }
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }

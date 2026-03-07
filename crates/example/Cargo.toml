@@ -1,0 +1,15 @@
+[package]
+name = "engine-ai-example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+engine-ai-core = { path = "../core" }
+engine-ai-macros = { path = "../macros" }
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+serde_json = "1.0"
+ollama-rs = "0.2"
+url = "2.5"
+log = "0.4"
+colog = "1.3"
