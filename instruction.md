@@ -504,6 +504,10 @@ The implementation should follow these guidelines:
     - Agent responses and outputs
     - Tool calls and their results
     - Schema validation attempts and results
+- Handle errors using explicit error enums. Do NOT use `anyhow`. Each module should define its own error type that
+  represents all possible errors from that module (e.g., `parser/error.rs`, `validation/error.rs`,
+  `execution/error.rs`). This groups related errors together and makes error handling explicit and type-safe. Use the
+  `thiserror` crate to reduce boilerplate when implementing error types.
 
 The core library should be organized into the following submodules:
 
@@ -514,6 +518,12 @@ The core library should be organized into the following submodules:
 - `schemas`: handles schema definitions, compilation, and validation.
 - `utils`: contains shared utilities and helper functions.
 - `tools`: handles tool definitions and tool execution.
+
+Tool calling must use the native tool calling capabilities provided by the LLM provider. Do NOT instruct the model to
+respond with special syntax (like XML tags or JSON blocks) and do NOT implement pattern matching or regex-based parsing
+to extract tool calls from agent responses. Instead, use the provider's built-in tool calling API (e.g., Ollama's native
+tool support) to define tools and parse tool invocations. This ensures reliability and compatibility with the provider's
+expected behavior.
 
 All Rust modules should use the `module/mod.rs` style for organization (e.g., `parser/mod.rs`, `validation/mod.rs`)
 rather than single-file modules.
