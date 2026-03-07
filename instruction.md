@@ -53,12 +53,21 @@ declared explicitly in the agent's `tools` list.
 
 The only way for an agent to exit the agent loop is by calling the `done` tool and providing its final output.
 
-If an agent defines an `output` schema, the value provided to `done` must validate against that schema.
+The `done` tool must accept two parameters:
+
+- `status`: either "success" or "fail"
+- `output`: the final output value (required for success) or error reason (required for fail)
+
+If an agent defines an `output` schema, the value provided to `done` with status "success" must validate against that
+schema.
 
 If schema validation fails, the validation error must be returned to the agent, and the agent must continue running
 inside the loop until it produces a valid output.
 
 If an agent does not define an `output` schema, its final output is a plain string.
+
+When an agent calls `done` with status "fail", the workflow execution should handle the failure appropriately (e.g.,
+propagate the error, log it, or allow dependent agents to handle it based on the execution strategy).
 
 ### Context Isolation and Sharing
 
@@ -372,34 +381,55 @@ In this example, `activities` returns an array of objects, one per hobby.
 
 An agent prefixed with `<-` is a terminal agent. The output of terminal agents becomes the final program output.
 
-A workflow must declare at least one terminal agent. If no terminal agent is declared, the parser must raise a
-parse-time error.
-
 If exactly one terminal agent is declared, the final program output is that agent's output directly.
 
 If multiple terminal agents are declared, the final program output is a JSON object whose keys are the terminal agent
 names and whose values are their respective outputs.
 
-Example:
+If no terminal agents are declared, the workflow executes all agents but produces no final output.
+
+Example with multiple terminal agents:
 
 ```txt
-<- agent one {
-    prompt <- "..."
+<- agent list {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "create a list from 0 to 10"
 }
 
-<- agent two {
-    prompt <- "..."
+<- agent atoz {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "spell out all letters from alphabet from a to z"
 }
 ```
 
-Produces:
+Since neither agent defines an `output` schema, their outputs are plain strings. The final program output is:
 
 ```json
 {
-  "one": output_of_one,
-  "two": output_of_two
+  "list": "0,1,2,3,4,5,6,7,8,9,10",
+  "atoz": "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z"
 }
 ```
+
+Example with a single terminal agent:
+
+```txt
+<- agent list {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "create a list from 0 to 10"
+}
+```
+
+The final program output is:
+
+```json
+{
+  "list": "0,1,2,3,4,5,6,7,8,9,10"
+}
+```
+
+The output is always a JSON object with the agent name as the key, regardless of whether there is one or multiple
+terminal agents.
 
 ---
 
@@ -499,6 +529,9 @@ The implementation should follow these guidelines:
 - A test Ollama server is available at `http://100.76.5.36:11434` with the model `qwen3.5:27b`. The implementation
   should be tested and debugged against this server to validate that the provider integration, agent execution, and tool
   calling work correctly in practice.
+- The Ollama implementation must use `ollama_rs::coordinator::Coordinator` to add tools and maintain the agentic loop.
+  Use the `coordinator.chat()` API for tool calling support. The `.generate()` API does not support tool calling and
+  should not be used for agents that require tools.
 - Use the `colog` and `log` crates for logging and debugging. Log important execution events including:
     - When an agent starts execution (log agent name, configured model, available tools)
     - Agent responses and outputs
