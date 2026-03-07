@@ -145,7 +145,7 @@ Example:
 
 ```txt
 schema person {
-    name: string
+    name: string "The user name, must be in this format first_name last_name"
     age: number
     gender: "male" | "female"
     hobbies: [string]
@@ -155,6 +155,20 @@ schema person {
 ```
 
 Schemas are compiled into JSON Schema and used to validate agent outputs.
+
+### Schema Field Descriptions
+
+Schema fields may include optional string descriptions that document the field's purpose or constraints:
+
+```txt
+schema person {
+    name: string "The user name, must be in this format first_name last_name"
+    age: number "Age in years"
+}
+```
+
+These descriptions should be included in the generated JSON Schema as `description` properties for the corresponding
+fields. This allows the LLM to understand field requirements and constraints when generating structured outputs.
 
 Example usage:
 
@@ -482,6 +496,14 @@ The implementation should follow these guidelines:
 - Design the system to be extensible for future features such as conditionals, loops, and more complex data types.
 - Implement `providers` using traits so new provider backends can be added later.
 - Start with an Ollama provider implementation using the `ollama-rs` crate.
+- A test Ollama server is available at `http://100.76.5.36:11434` with the model `qwen3.5:27b`. The implementation
+  should be tested and debugged against this server to validate that the provider integration, agent execution, and tool
+  calling work correctly in practice.
+- Use the `colog` and `log` crates for logging and debugging. Log important execution events including:
+    - When an agent starts execution (log agent name, configured model, available tools)
+    - Agent responses and outputs
+    - Tool calls and their results
+    - Schema validation attempts and results
 
 The core library should be organized into the following submodules:
 
@@ -493,12 +515,17 @@ The core library should be organized into the following submodules:
 - `utils`: contains shared utilities and helper functions.
 - `tools`: handles tool definitions and tool execution.
 
+All Rust modules should use the `module/mod.rs` style for organization (e.g., `parser/mod.rs`, `validation/mod.rs`)
+rather than single-file modules.
+
 ### Workspace Structure
 
 The project should be organized as a Cargo workspace with three main crates:
 
-- `crates/core`: the core implementation and reusable library. This crate should expose the parser, validator, execution engine, provider abstractions, and other public APIs that downstream projects can use.
-- `crates/macros`: procedural macros used by the core crate and by consumers of the library. This crate should contain macros such as `#[tool]` and `#[provider]`.
+- `crates/core`: the core implementation and reusable library. This crate should expose the parser, validator, execution
+  engine, provider abstractions, and other public APIs that downstream projects can use.
+- `crates/macros`: procedural macros used by the core crate and by consumers of the library. This crate should contain
+  macros such as `#[tool]` and `#[provider]`.
 - `crates/example`: an example application used to test, evaluate, and demonstrate the project in a realistic setup.
 
 The workspace root should define these crates as members so they can be built, tested, and versioned together.
@@ -524,7 +551,8 @@ members = [
 ]
 ```
 
-To simplify extensibility and reduce boilerplate, define procedural macros such as `#[tool]` and `#[provider]` to declare these entities in Rust and register them automatically.
+To simplify extensibility and reduce boilerplate, define procedural macros such as `#[tool]` and `#[provider]` to
+declare these entities in Rust and register them automatically.
 
 It should also be possible to create testing macros that make parser and execution tests concise and readable.
 
