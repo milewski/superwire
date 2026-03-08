@@ -165,3 +165,99 @@ output {
     let error = parse_workflow(source).expect_err("workflow should fail to parse");
     assert!(error.to_string().contains("duplicate workflow output block"));
 }
+
+#[test]
+fn parses_compact_function_in_workflow_output() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent collect {
+    model <- "local/demo"
+    prompt <- "Generate data"
+}
+
+output {
+    summary <- compact { model <- "local/demo", context <- [agent.collect.context] }
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    validate_workflow(&document).expect("workflow should validate");
+}
+
+#[test]
+fn rejects_compact_function_without_model() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent collect {
+    model <- "local/demo"
+    prompt <- "Generate data"
+}
+
+output {
+    summary <- compact { context <- [agent.collect.context] }
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    let error = validate_workflow(&document).expect_err("validation should fail");
+    assert!(error.to_string().contains("compact function requires 'model' argument"));
+}
+
+#[test]
+fn rejects_compact_function_without_context() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent collect {
+    model <- "local/demo"
+    prompt <- "Generate data"
+}
+
+output {
+    summary <- compact { model <- "local/demo" }
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    let error = validate_workflow(&document).expect_err("validation should fail");
+    assert!(error
+        .to_string()
+        .contains("compact function requires 'context' argument"));
+}
+
+#[test]
+fn rejects_agent_context_summary_in_workflow_output() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent collect {
+    model <- "local/demo"
+    prompt <- "Generate data"
+}
+
+output {
+    summary <- agent.collect.context.summary
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    let error = validate_workflow(&document).expect_err("validation should fail");
+    assert!(error
+        .to_string()
+        .contains("agent.<name>.context.summary is not supported"));
+    assert!(error.to_string().contains("Use compact function instead"));
+}

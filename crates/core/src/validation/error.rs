@@ -26,6 +26,18 @@ pub enum ValidationError {
     UndefinedSchema { agent: String, schema: String },
     #[error("{scope} references undefined agent path `{reference}`")]
     UndefinedAgent { scope: String, reference: String },
+    #[error("{scope} has invalid reference `{reference}`: {message}")]
+    InvalidReference {
+        scope: String,
+        reference: String,
+        message: String,
+    },
+    #[error("{scope} has invalid function call `{function}`: {message}")]
+    InvalidFunctionCall {
+        scope: String,
+        function: String,
+        message: String,
+    },
     #[error("cyclic dependency detected in workflow")]
     CyclicDependency,
     #[error("dependency graph error: {message}")]

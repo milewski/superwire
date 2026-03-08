@@ -26,10 +26,11 @@ impl Provider for MockProvider {
         *self.last_prompt.lock().unwrap() = request.prompt.clone();
         self.prompts.lock().unwrap().push(request.prompt.clone());
 
-        let output = if request
+        let is_summary_request = request
             .prompt
-            .contains("Summarize the following agent conversation history")
-        {
+            .contains("Summarize the following agent conversation history");
+
+        let output = if is_summary_request {
             json!("summary")
         } else if request.prompt.contains("Return only the result") {
             json!(request.prompt.clone())
@@ -39,8 +40,14 @@ impl Provider for MockProvider {
             json!({ "name": "Ada Lovelace", "hobbies": ["math"] })
         };
 
+        let message = if is_summary_request {
+            "summary".to_string()
+        } else {
+            "assistant message".to_string()
+        };
+
         Ok(ProviderResponse {
-            message: "assistant message".into(),
+            message,
             tool_calls: vec![ToolCall {
                 name: "done".into(),
                 arguments: json!({
@@ -133,7 +140,7 @@ provider local {
 }
 
 #[tokio::test]
-async fn injects_schema_into_agent_prompt() {
+async fn injects_schema_as_system_message() {
     let source = r#"
 provider local {
     driver <- "mock"
@@ -167,7 +174,7 @@ schema task {
         .expect("workflow should execute");
 
     let prompt = last_prompt.lock().unwrap();
-    assert!(prompt.contains("You must return your response as JSON following this exact schema"));
+    assert!(prompt.contains("System: You must return your response as JSON following this exact schema"));
     assert!(prompt.contains("\"type\": \"object\""));
     assert!(prompt.contains("\"title\""));
     assert!(prompt.contains("\"priority\""));
@@ -291,7 +298,7 @@ provider local {
 
 output {
     context <- agent.collect.context
-    summary <- agent.collect.context.summary
+    summary <- compact { model <- "local/demo", context <- [agent.collect.context] }
 }
 
 agent collect {
@@ -301,7 +308,6 @@ agent collect {
 
 agent consume_context {
     model <- "local/demo"
-    context <- agent.collect.context.summary
     prompt <- "Return only the result"
 }
 "#;
@@ -336,7 +342,9 @@ agent consume_context {
         .unwrap()
         .iter()
         .any(|message| message["type"] == "tool_call" && message["name"] == "done"));
-    assert_eq!(output["summary"], "assistant message");
+    assert!(output["summary"].is_array());
+    assert_eq!(output["summary"][0]["type"], "assistant");
+    assert_eq!(output["summary"][0]["value"], "summary");
 
     let all_prompts = prompts.lock().unwrap();
     let summary_prompt = all_prompts
@@ -346,6 +354,96 @@ agent consume_context {
     assert!(summary_prompt.contains("User: Generate a person"));
     assert!(summary_prompt.contains("Assistant: assistant message"));
     assert!(summary_prompt.contains("Tool Call: done"));
+}
+
+#[tokio::test]
+async fn compact_function_summarizes_multiple_contexts() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+output {
+    combined_summary <- compact { model <- "local/demo", context <- [agent.first.context, agent.second.context] }
+}
+
+agent first {
+    model <- "local/demo"
+    prompt <- "Generate first data"
+}
+
+agent second {
+    model <- "local/demo"
+    prompt <- "Generate second data"
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    validate_workflow(&document).expect("workflow should validate");
+
+    let provider = Arc::new(MockProvider::default());
+    let prompts = provider.prompts.clone();
+
+    let mut registry = ProviderRegistry::default();
+    registry.register("mock", provider);
+
+    let output = execute_workflow(&document, &registry, Some(&json!({})))
+        .await
+        .expect("workflow should execute");
+
+    assert!(output["combined_summary"].is_array());
+    assert_eq!(output["combined_summary"][0]["type"], "assistant");
+    assert_eq!(output["combined_summary"][0]["value"], "summary");
+
+    let all_prompts = prompts.lock().unwrap();
+    let summary_prompt = all_prompts
+        .iter()
+        .find(|prompt| prompt.contains("Summarize the following agent conversation history"))
+        .expect("summary prompt should be issued");
+    assert!(summary_prompt.contains("User: Generate first data"));
+    assert!(summary_prompt.contains("User: Generate second data"));
+}
+
+#[tokio::test]
+async fn compact_can_be_used_as_agent_context() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent first {
+    model <- "local/demo"
+    prompt <- "Generate first data"
+}
+
+agent second {
+    model <- "local/demo"
+    context <- compact { model <- "local/demo", context <- agent.first.context }
+    prompt <- "Process the data"
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    validate_workflow(&document).expect("workflow should validate");
+
+    let provider = Arc::new(MockProvider::default());
+    let prompts = provider.prompts.clone();
+
+    let mut registry = ProviderRegistry::default();
+    registry.register("mock", provider);
+
+    let _output = execute_workflow(&document, &registry, Some(&json!({})))
+        .await
+        .expect("workflow should execute");
+
+    let all_prompts = prompts.lock().unwrap();
+    let second_agent_prompt = all_prompts
+        .iter()
+        .find(|prompt| prompt.contains("Process the data"))
+        .expect("second agent prompt should be issued");
+    assert!(second_agent_prompt.contains("Assistant: summary"));
 }
 
 #[tokio::test]

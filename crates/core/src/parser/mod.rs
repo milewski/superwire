@@ -110,8 +110,7 @@ fn parse_agent(pair: Pair<'_, Rule>) -> Result<AgentDefinition, ParserError> {
                 agent.properties.insert(property_name, expression);
             }
             "context" => {
-                let reference = expect_reference(expression.clone(), "context")?;
-                agent.context = Some(parse_context_source(reference)?);
+                agent.context = Some(parse_context_source_from_expression(expression.clone())?);
                 agent.properties.insert(property_name, expression);
             }
             "output" => {
@@ -264,6 +263,7 @@ fn parse_expression(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
         Rule::array => parse_array(pair),
         Rule::object => parse_object(pair),
         Rule::function_call => parse_function_call(pair),
+        Rule::compact_function => parse_compact_function(pair),
         Rule::inline_schema => Ok(Expression::InlineSchema(parse_inline_schema(pair)?)),
         Rule::for_each_expr => parse_for_each(pair),
         other => Err(ParserError::UnexpectedRule {
@@ -349,6 +349,24 @@ fn parse_function_call(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> 
     Ok(Expression::FunctionCall(FunctionCall {
         name,
         target: Box::new(target),
+        arguments,
+    }))
+}
+
+fn parse_compact_function(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
+    let span = pair.as_span();
+    let mut inner = pair.into_inner();
+    let arguments = match parse_object(inner.next().ok_or_else(|| ParserError::MissingField {
+        field: "argument block for compact function".into(),
+        span: span.start()..span.end(),
+    })?)? {
+        Expression::Object(arguments) => arguments,
+        _ => unreachable!(),
+    };
+
+    Ok(Expression::FunctionCall(FunctionCall {
+        name: "compact".to_string(),
+        target: Box::new(Expression::Null),
         arguments,
     }))
 }
@@ -490,7 +508,7 @@ fn parse_output_definition(expression: Expression) -> Result<OutputDefinition, P
     }
 }
 
-fn parse_model_reference(raw: &str) -> Result<ModelReference, ParserError> {
+pub fn parse_model_reference(raw: &str) -> Result<ModelReference, ParserError> {
     let (provider, model) = raw
         .split_once('/')
         .ok_or_else(|| ParserError::InvalidModelReference { value: raw.to_owned() })?;
@@ -513,6 +531,13 @@ fn parse_context_source(reference: Reference) -> Result<ContextSource, ParserErr
             reference: reference.as_string(),
             expected: "agent.<name>.context or agent.<name>.context.summary".into(),
         })
+    }
+}
+
+fn parse_context_source_from_expression(expression: Expression) -> Result<ContextSource, ParserError> {
+    match expression {
+        Expression::Reference(reference) => parse_context_source(reference),
+        other => Ok(ContextSource::Expression(Box::new(other))),
     }
 }
 
@@ -541,17 +566,6 @@ fn expect_string_array(expression: Expression, property: &str) -> Result<Vec<Str
         other => Err(ParserError::InvalidPropertyType {
             property: property.into(),
             expected: "array of strings".into(),
-            actual: expression_kind(&other).into(),
-        }),
-    }
-}
-
-fn expect_reference(expression: Expression, property: &str) -> Result<Reference, ParserError> {
-    match expression {
-        Expression::Reference(reference) => Ok(reference),
-        other => Err(ParserError::InvalidPropertyType {
-            property: property.into(),
-            expected: "reference".into(),
             actual: expression_kind(&other).into(),
         }),
     }

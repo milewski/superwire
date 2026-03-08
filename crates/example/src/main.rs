@@ -1,19 +1,16 @@
-use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use engine_ai_core::parse_workflow;
 use engine_ai_core::providers::ollama::OllamaProvider;
 use engine_ai_core::providers::registry::ProviderRegistry;
 use engine_ai_core::validation::validate_workflow;
-use log::info;
-use serde_json::{json, Value};
+use serde_json::json;
 
 #[tokio::main]
 async fn main() {
     colog::init();
 
-    let document = parse_workflow(&include_str!("../workflows/11_workflow_input_output.engine.ai"))
+    let document = parse_workflow(include_str!("../workflows/11_workflow_input_output.engine.ai"))
         .expect("failed to parse workflow");
 
     validate_workflow(&document).expect("failed to validate workflow");

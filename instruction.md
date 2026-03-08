@@ -558,11 +558,42 @@ output {
 }
 ```
 
+The `compact` function returns the same message structure as `agent.context`, making it fully compatible with any place
+that accepts context. This means you can use `compact` output directly as the context for another agent:
+
+```txt
+agent summarize_person {
+    model <- "ollama1/qwen3.5:27b"
+    context <- compact {
+        model <- "ollama1/qwen3.5:27b"
+        context <- [agent.collect_person.context]
+    }
+    prompt <- "Summarize the generated person for a {{ input.audience }} audience in one short paragraph."
+}
+```
+
+When providing a single context, you can omit the array syntax and pass the context directly:
+
+```txt
+agent summarize_person {
+    model <- "ollama1/qwen3.5:27b"
+    context <- compact {
+        model <- "ollama1/qwen3.5:27b"
+        context <- agent.collect_person.context
+    }
+    prompt <- "Summarize the generated person for a {{ input.audience }} audience in one short paragraph."
+}
+```
+
 In these examples:
+
 - `agent.collect_person.context` returns the complete message history as a `serde_json::Value` object containing all
   messages, tool calls, and responses in their structured form
 - `compact` generates a summary by processing the provided contexts using the specified model
-- Multiple contexts can be passed to `compact` to create a unified summary across multiple agents
+- `compact` returns the same message array structure as `agent.context`, making it compatible for use as agent context
+- Multiple contexts can be passed as an array `[context1, context2]` or a single context can be passed directly
+- The output of `compact` can be used anywhere that accepts context, including as the `context` property of another
+  agent
 
 The context object preserves the full fidelity of the agent's execution history and can be used for debugging, auditing,
 or passing to other systems that need to understand the complete interaction.
@@ -736,6 +767,122 @@ The parser must reject the document if any of the following occur:
 - unused template bindings
 - invalid property names
 - invalid property value types
+
+---
+
+## Error Reporting
+
+Error messages must be user-friendly and provide precise information to help users quickly identify and fix issues.
+
+### Requirements for Error Messages
+
+All syntax and validation errors must include:
+
+1. **File path**: The path to the `.ai` file containing the error
+2. **Line number**: The exact line where the error occurred (1-indexed)
+3. **Column number**: The exact column where the error occurred (1-indexed)
+4. **Visual pointer**: A caret (`^`) or similar indicator pointing to the exact location of the error
+5. **Error description**: A clear explanation of what went wrong
+6. **Suggestion**: Actionable guidance on how to fix the error, including correct syntax examples when applicable
+
+### Error Message Format
+
+Error messages should follow this format:
+
+```
+Error: <error description>
+  --> <file_path>:<line>:<column>
+   |
+<line_number> | <source code line>
+   | <spaces><caret pointing to error location>
+   |
+   = help: <suggestion with correct syntax or fix>
+```
+
+### Example Error Messages
+
+**Example 1: Syntax Error**
+
+```
+Error: expected '{' after agent name
+  --> workflows/example.ai:5:15
+   |
+ 5 | agent summary
+   |               ^
+   |
+   = help: agent blocks must be followed by '{'. Did you mean: agent summary { ... }
+```
+
+**Example 2: Undefined Reference**
+
+```
+Error: undefined agent reference 'summarizer'
+  --> workflows/example.ai:12:18
+   |
+12 |     prompt <- "{{ summarizer.output }}"
+   |                   ^^^^^^^^^^
+   |
+   = help: agent 'summarizer' is not defined. Available agents: summary, research, personalize
+```
+
+**Example 3: Type Mismatch**
+
+```
+Error: expected string value, found array
+  --> workflows/example.ai:8:15
+   |
+ 8 |     model <- ["ollama1/qwen3.5:27b"]
+   |              ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: the 'model' property expects a string value. Did you mean: model <- "ollama1/qwen3.5:27b"
+```
+
+**Example 4: Missing Required Property**
+
+```
+Error: missing required property 'model'
+  --> workflows/example.ai:3:1
+   |
+ 3 | agent summary {
+   | ^^^^^
+   |
+   = help: agents must specify a 'model' property. Add: model <- "provider/model_name"
+```
+
+**Example 5: Invalid Property Name**
+
+```
+Error: unknown property 'modell'
+  --> workflows/example.ai:4:5
+   |
+ 4 |     modell <- "ollama1/qwen3.5:27b"
+   |     ^^^^^^
+   |
+   = help: unknown property 'modell'. Did you mean 'model'?
+```
+
+**Example 6: Cyclic Dependency**
+
+```
+Error: cyclic dependency detected
+  --> workflows/example.ai:15:18
+   |
+15 |     prompt <- "{{ agent_a.output }}"
+   |                   ^^^^^^^
+   |
+   = help: agent 'agent_b' depends on 'agent_a', but 'agent_a' also depends on 'agent_b' (directly or indirectly). Break the cycle by removing one of the dependencies.
+```
+
+### Implementation Guidelines
+
+- Use the `pest` crate's built-in error reporting capabilities where possible
+- For validation errors that occur after parsing, maintain span information from the parse tree to provide accurate
+  location data
+- When suggesting fixes, prioritize the most likely intended syntax based on context
+- For typos in identifiers (agent names, property names), use string similarity algorithms (e.g., Levenshtein distance)
+  to suggest corrections
+- Group related errors when multiple issues exist, but report them individually with their specific locations
+- Use color coding in terminal output (if supported) to highlight error locations and suggestions
 
 ---
 
