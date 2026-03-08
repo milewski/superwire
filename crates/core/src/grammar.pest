@@ -41,6 +41,7 @@ object = { "{" ~ (object_property ~ ("," ~ object_property)*)? ~ "}" }
 object_property = { identifier ~ left_arrow ~ value }
 
 function_call = { identifier ~ value ~ object }
+compact_function = { "compact" ~ object }
 reference = @{ identifier ~ ("." ~ identifier)+ }
 for_each_expr = { value ~ "as" ~ identifier }
-value = _{ function_call | inline_schema | array | object | multiline_string | string | number | boolean | null | reference | identifier }
+value = _{ compact_function | function_call | inline_schema | array | object | multiline_string | string | number | boolean | null | reference | identifier }

@@ -150,10 +150,19 @@ fn validate_references(document: &WorkflowDocument) -> Result<(), ValidationErro
         }
 
         if let Some(context) = &agent.context {
-            let reference = match context {
-                ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
-            };
-            validate_agent_reference(&format!("agent `{}`", agent.name), reference, &agent_names)?;
+            match context {
+                ContextSource::Full(reference) | ContextSource::Summary(reference) => {
+                    validate_agent_reference(&format!("agent `{}`", agent.name), reference, &agent_names)?;
+                }
+                ContextSource::Expression(expression) => {
+                    validate_expression_references(
+                        &format!("agent `{}`", agent.name),
+                        expression,
+                        &agent_names,
+                        &schema_names,
+                    )?;
+                }
+            }
         }
 
         if let Some(prompt) = &agent.prompt {
@@ -266,9 +275,39 @@ fn validate_expression_references(
                 }
             }
             Some("input") => {}
+            Some("agent") => {
+                if reference.segments.len() == 4
+                    && reference.segments.get(2).map(String::as_str) == Some("context")
+                    && reference.segments.get(3).map(String::as_str) == Some("summary")
+                {
+                    return Err(ValidationError::InvalidReference {
+                        scope: scope.to_string(),
+                        reference: reference.as_string(),
+                        message: "agent.<name>.context.summary is not supported in workflow output. Use compact function instead.".into(),
+                    });
+                }
+                validate_agent_reference(scope, reference, agent_names)?
+            }
             _ => validate_agent_reference(scope, reference, agent_names)?,
         },
         Expression::FunctionCall(function_call) => {
+            if function_call.name == "compact" {
+                if !function_call.arguments.contains_key("model") {
+                    return Err(ValidationError::InvalidFunctionCall {
+                        scope: scope.to_string(),
+                        function: "compact".into(),
+                        message: "compact function requires 'model' argument".into(),
+                    });
+                }
+                if !function_call.arguments.contains_key("context") {
+                    return Err(ValidationError::InvalidFunctionCall {
+                        scope: scope.to_string(),
+                        function: "compact".into(),
+                        message: "compact function requires 'context' argument".into(),
+                    });
+                }
+            }
+
             validate_expression_references(scope, &function_call.target, agent_names, schema_names)?;
             for value in function_call.arguments.values() {
                 validate_expression_references(scope, value, agent_names, schema_names)?;
@@ -292,17 +331,21 @@ fn collect_agent_dependencies(agent: &AgentDefinition) -> HashSet<String> {
     let mut dependencies = HashSet::new();
 
     if let Some(context) = &agent.context {
-        let reference = match context {
-            ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
-        };
-        if !reference.segments.is_empty() {
-            let agent_name = if reference.segments[0] == "agent" {
-                reference.segments.get(1)
-            } else {
-                Some(&reference.segments[0])
-            };
-            if let Some(name) = agent_name {
-                dependencies.insert(name.clone());
+        match context {
+            ContextSource::Full(reference) | ContextSource::Summary(reference) => {
+                if !reference.segments.is_empty() {
+                    let agent_name = if reference.segments[0] == "agent" {
+                        reference.segments.get(1)
+                    } else {
+                        Some(&reference.segments[0])
+                    };
+                    if let Some(name) = agent_name {
+                        dependencies.insert(name.clone());
+                    }
+                }
+            }
+            ContextSource::Expression(expression) => {
+                collect_expression_dependencies(expression, &mut dependencies);
             }
         }
     }

@@ -5,7 +5,7 @@ use log::info;
 use petgraph::algo::toposort;
 use petgraph::graph::DiGraph;
 use rayon::prelude::*;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 use crate::ast::{AgentDefinition, ContextSource, Expression, WorkflowDocument};
 use crate::execution::engine::{execute_agent, summarize_context, AgentExecutionResult};
@@ -76,7 +76,7 @@ pub async fn execute_workflow(
         results.insert(agent.name.clone(), result);
     }
 
-    build_final_output(document, &results, &runtime_input)
+    build_final_output(document, &results, &runtime_input, registry).await
 }
 
 fn topologically_sorted_agents(document: &WorkflowDocument) -> Result<Vec<&AgentDefinition>, ExecutionError> {
@@ -255,6 +255,220 @@ fn evaluate_file_function(
     Ok(Expression::String(content))
 }
 
+async fn materialize_expression_async(
+    expr: &Expression,
+    results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
+    document: &WorkflowDocument,
+    registry: &ProviderRegistry,
+) -> Result<Expression, ExecutionError> {
+    match expr {
+        Expression::String(s) | Expression::MultilineString(s) | Expression::InterpolatedString(s) => {
+            let variables = build_variable_map(results, workflow_input);
+            let interpolated =
+                interpolate_template(s, &variables).map_err(|error| ExecutionError::UnsupportedExpression {
+                    expression: format!("template interpolation failed: {}", error),
+                })?;
+            Ok(Expression::String(interpolated))
+        }
+        Expression::Array(items) => {
+            let mut materialized_items = Vec::new();
+            for item in items {
+                materialized_items.push(
+                    Box::pin(materialize_expression_async(
+                        item,
+                        results,
+                        workflow_input,
+                        document,
+                        registry,
+                    ))
+                    .await?,
+                );
+            }
+            Ok(Expression::Array(materialized_items))
+        }
+        Expression::Object(values) => {
+            let mut materialized_values = indexmap::IndexMap::new();
+            for (key, value) in values {
+                materialized_values.insert(
+                    key.clone(),
+                    Box::pin(materialize_expression_async(
+                        value,
+                        results,
+                        workflow_input,
+                        document,
+                        registry,
+                    ))
+                    .await?,
+                );
+            }
+            Ok(Expression::Object(materialized_values))
+        }
+        Expression::Reference(reference) => {
+            let value = resolve_reference(reference, results, workflow_input)?;
+            json_value_to_expression(&value)
+        }
+        Expression::FunctionCall(function_call) => {
+            if function_call.name == "file" {
+                evaluate_file_function(function_call, results, workflow_input)
+            } else if function_call.name == "compact" {
+                evaluate_compact_function(function_call, results, workflow_input, document, registry).await
+            } else {
+                Err(ExecutionError::UnsupportedExpression {
+                    expression: format!("unknown function: {}", function_call.name),
+                })
+            }
+        }
+        other => Ok(other.clone()),
+    }
+}
+
+async fn evaluate_compact_function(
+    function_call: &crate::ast::FunctionCall,
+    results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
+    document: &WorkflowDocument,
+    registry: &ProviderRegistry,
+) -> Result<Expression, ExecutionError> {
+    let model_expr = function_call
+        .arguments
+        .get("model")
+        .ok_or_else(|| ExecutionError::UnsupportedExpression {
+            expression: "compact function requires 'model' argument".into(),
+        })?;
+
+    let model_string = match materialize_expression(model_expr, results, workflow_input)? {
+        Expression::String(s) => s,
+        _ => {
+            return Err(ExecutionError::UnsupportedExpression {
+                expression: "compact 'model' argument must be a string".into(),
+            })
+        }
+    };
+
+    let model_ref =
+        crate::parser::parse_model_reference(&model_string).map_err(|error| ExecutionError::UnsupportedExpression {
+            expression: format!("invalid model reference in compact: {}", error),
+        })?;
+
+    let provider_definition = document
+        .providers
+        .iter()
+        .find(|provider| provider.name == model_ref.provider)
+        .ok_or_else(|| ExecutionError::MissingProviderDefinition {
+            provider: model_ref.provider.clone(),
+        })?;
+
+    let model = resolve_model_config(provider_definition, &model_ref.model);
+    let provider = registry.get(&provider_definition.driver)?;
+
+    let context_expr = function_call
+        .arguments
+        .get("context")
+        .ok_or_else(|| ExecutionError::UnsupportedExpression {
+            expression: "compact function requires 'context' argument".into(),
+        })?;
+
+    let materialized_context = Box::pin(materialize_expression_async(
+        context_expr,
+        results,
+        workflow_input,
+        document,
+        registry,
+    ))
+    .await?;
+
+    let contexts = match materialized_context {
+        Expression::Array(items) => {
+            if items.is_empty() {
+                Vec::new()
+            } else {
+                let first_item_json = expression_to_json(&items[0])?;
+                if first_item_json.is_object()
+                    && first_item_json.get("type").is_some()
+                    && first_item_json.get("value").is_some()
+                {
+                    vec![expression_to_json(&Expression::Array(items))?]
+                } else {
+                    let mut context_values = Vec::new();
+                    for item in items {
+                        let json_value = expression_to_json(&item)?;
+                        if !json_value.is_array() {
+                            return Err(ExecutionError::UnsupportedExpression {
+                                expression: "compact 'context' must contain structured message arrays".into(),
+                            });
+                        }
+                        context_values.push(json_value);
+                    }
+                    context_values
+                }
+            }
+        }
+        other => {
+            let json_value = expression_to_json(&other)?;
+            if !json_value.is_array() {
+                return Err(ExecutionError::UnsupportedExpression {
+                    expression: "compact 'context' must be a structured message array or array of arrays".into(),
+                });
+            }
+            vec![json_value]
+        }
+    };
+
+    let mut combined_messages = Vec::new();
+    for context_value in contexts {
+        if let Value::Array(messages) = context_value {
+            combined_messages.extend(messages);
+        }
+    }
+
+    let context_text = combined_messages
+        .iter()
+        .map(|message| {
+            let message_type = message.get("type").and_then(Value::as_str).unwrap_or("unknown");
+            let value = message.get("value").and_then(Value::as_str).unwrap_or("");
+
+            match message_type {
+                "user" => format!("User: {}", value),
+                "assistant" => format!("Assistant: {}", value),
+                "system" => format!("System: {}", value),
+                "tool_call" => {
+                    let name = message.get("name").and_then(Value::as_str).unwrap_or("unknown");
+                    let arguments = message.get("arguments").unwrap_or(&Value::Null);
+                    let result = message.get("result").unwrap_or(&Value::Null);
+                    format!(
+                        "Tool Call: {}\nArguments: {}\nResult: {}",
+                        name,
+                        serde_json::to_string_pretty(arguments).unwrap_or_else(|_| arguments.to_string()),
+                        serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string())
+                    )
+                }
+                _ => format!("{}: {}", message_type, value),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let request = crate::providers::provider::ProviderRequest {
+        prompt: format!(
+            "Summarize the following agent conversation history. Return only the summary text as plain text, with no JSON, no markdown code fences, and no tool call formatting:\n\n{}",
+            context_text
+        ),
+        tools: Vec::new(),
+        response_schema: None,
+    };
+
+    let response = provider.chat(&model, &request).await?;
+    let summary = response.message.trim().trim_matches('`').trim().to_string();
+
+    let summary_message = json!({
+        "type": "assistant",
+        "value": summary
+    });
+
+    Ok(Expression::Array(vec![json_value_to_expression(&summary_message)?]))
+}
+
 fn build_variable_map(
     results: &HashMap<String, AgentExecutionResult>,
     workflow_input: &Value,
@@ -331,14 +545,6 @@ fn resolve_reference(
             return Ok(result.context.as_json());
         }
 
-        if reference.segments.len() == 4 && reference.segments[3] == "summary" {
-            return result.context.summary.clone().map(Value::String).ok_or_else(|| {
-                ExecutionError::InvalidContextReference {
-                    reference: reference.as_string(),
-                }
-            });
-        }
-
         return Err(ExecutionError::InvalidContextReference {
             reference: reference.as_string(),
         });
@@ -406,24 +612,36 @@ async fn materialize_context(
         None => return Ok(()),
     };
 
-    let reference = match &context {
-        ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
-    };
-    let source_agent_name = reference
-        .segments
-        .get(1)
-        .ok_or_else(|| ExecutionError::InvalidContextReference {
-            reference: reference.as_string(),
-        })?;
-    let source_result = results
-        .get(source_agent_name)
-        .ok_or_else(|| ExecutionError::MissingAgentResult {
-            agent: source_agent_name.clone(),
-        })?;
-
     let context_text = match &context {
-        ContextSource::Full(_) => source_result.context.render_for_prompt(),
-        ContextSource::Summary(_) => {
+        ContextSource::Full(reference) => {
+            let source_agent_name =
+                reference
+                    .segments
+                    .get(1)
+                    .ok_or_else(|| ExecutionError::InvalidContextReference {
+                        reference: reference.as_string(),
+                    })?;
+            let source_result = results
+                .get(source_agent_name)
+                .ok_or_else(|| ExecutionError::MissingAgentResult {
+                    agent: source_agent_name.clone(),
+                })?;
+            source_result.context.render_for_prompt()
+        }
+        ContextSource::Summary(reference) => {
+            let source_agent_name =
+                reference
+                    .segments
+                    .get(1)
+                    .ok_or_else(|| ExecutionError::InvalidContextReference {
+                        reference: reference.as_string(),
+                    })?;
+            let source_result = results
+                .get(source_agent_name)
+                .ok_or_else(|| ExecutionError::MissingAgentResult {
+                    agent: source_agent_name.clone(),
+                })?;
+
             if let Some(summary) = &source_result.context.summary {
                 summary.clone()
             } else {
@@ -457,6 +675,50 @@ async fn materialize_context(
 
                 summary
             }
+        }
+        ContextSource::Expression(expression) => {
+            let materialized =
+                materialize_expression_async(expression, results, &Value::Null, document, registry).await?;
+            let context_value = expression_to_json(&materialized)?;
+
+            if !context_value.is_array() {
+                return Err(ExecutionError::UnsupportedExpression {
+                    expression: "context expression must evaluate to a message array".into(),
+                });
+            }
+
+            let messages = context_value
+                .as_array()
+                .ok_or_else(|| ExecutionError::UnsupportedExpression {
+                    expression: "context must be an array of messages".into(),
+                })?;
+
+            messages
+                .iter()
+                .map(|message| {
+                    let message_type = message.get("type").and_then(Value::as_str).unwrap_or("unknown");
+                    let value = message.get("value").and_then(Value::as_str).unwrap_or("");
+
+                    match message_type {
+                        "user" => format!("User: {}", value),
+                        "assistant" => format!("Assistant: {}", value),
+                        "system" => format!("System: {}", value),
+                        "tool_call" => {
+                            let name = message.get("name").and_then(Value::as_str).unwrap_or("unknown");
+                            let arguments = message.get("arguments").unwrap_or(&Value::Null);
+                            let result = message.get("result").unwrap_or(&Value::Null);
+                            format!(
+                                "Tool Call: {}\nArguments: {}\nResult: {}",
+                                name,
+                                serde_json::to_string_pretty(arguments).unwrap_or_else(|_| arguments.to_string()),
+                                serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string())
+                            )
+                        }
+                        _ => format!("{}: {}", message_type, value),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n")
         }
     };
 
@@ -593,17 +855,21 @@ fn collect_dependencies(agent: &AgentDefinition) -> HashSet<String> {
     let mut dependencies = HashSet::new();
 
     if let Some(context) = &agent.context {
-        let reference = match context {
-            ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
-        };
-        if !reference.segments.is_empty() {
-            let agent_name = if reference.segments[0] == "agent" {
-                reference.segments.get(1)
-            } else {
-                Some(&reference.segments[0])
-            };
-            if let Some(name) = agent_name {
-                dependencies.insert(name.clone());
+        match context {
+            ContextSource::Full(reference) | ContextSource::Summary(reference) => {
+                if !reference.segments.is_empty() {
+                    let agent_name = if reference.segments[0] == "agent" {
+                        reference.segments.get(1)
+                    } else {
+                        Some(&reference.segments[0])
+                    };
+                    if let Some(name) = agent_name {
+                        dependencies.insert(name.clone());
+                    }
+                }
+            }
+            ContextSource::Expression(expression) => {
+                collect_expression_dependencies(expression, &mut dependencies);
             }
         }
     }
@@ -696,10 +962,11 @@ fn validate_workflow_input(
     }
 }
 
-fn build_final_output(
+async fn build_final_output(
     document: &WorkflowDocument,
     results: &HashMap<String, AgentExecutionResult>,
     workflow_input: &Value,
+    registry: &ProviderRegistry,
 ) -> Result<Value, ExecutionError> {
     let terminals = document
         .agents
@@ -709,7 +976,8 @@ fn build_final_output(
 
     let workflow_output = match &document.output {
         Some(output_expression) => {
-            let materialized_output = materialize_expression(output_expression, results, workflow_input)?;
+            let materialized_output =
+                materialize_expression_async(output_expression, results, workflow_input, document, registry).await?;
             Some(expression_to_json(&materialized_output)?)
         }
         None => None,

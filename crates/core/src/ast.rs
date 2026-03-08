@@ -40,6 +40,7 @@ pub struct ModelReference {
 pub enum ContextSource {
     Full(Reference),
     Summary(Reference),
+    Expression(Box<Expression>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

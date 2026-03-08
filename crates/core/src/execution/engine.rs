@@ -116,7 +116,9 @@ pub async fn execute_agent(
 ) -> Result<AgentExecutionResult, ExecutionError> {
     let done = Arc::new(DoneTool);
     let tools = [done.spec()];
-    let mut prompt = agent.prompt.as_ref().map(render_expression).unwrap_or_default();
+    let prompt = agent.prompt.as_ref().map(render_expression).unwrap_or_default();
+
+    let mut messages = Vec::new();
 
     if let Some(output_definition) = &agent.output {
         let schema = match output_definition {
@@ -139,17 +141,22 @@ pub async fn execute_agent(
             })?;
 
         let schema_instruction = format!(
-            "\n\nYou must return your response as JSON following this exact schema:\n\n{}\n\nEnsure your output is valid JSON that matches this structure.",
+            "You must return your response as JSON following this exact schema:\n\n{}\n\nEnsure your output is valid JSON that matches this structure.",
             serde_json::to_string_pretty(&schema_json).unwrap_or_else(|_| schema_json.to_string())
         );
 
         debug!(
-            "injecting schema into agent prompt: agent={}, schema_size={}",
+            "injecting schema as system message: agent={}, schema_size={}",
             agent.name,
             schema_instruction.len()
         );
-        prompt.push_str(&schema_instruction);
+
+        messages.push(RuntimeMessage::System {
+            value: schema_instruction,
+        });
     }
+
+    messages.push(RuntimeMessage::User { value: prompt.clone() });
 
     info!(
         "starting agent execution: agent={}, provider={}, model={}, tools={}",
@@ -159,21 +166,16 @@ pub async fn execute_agent(
         tools.len()
     );
 
-    let mut messages = vec![RuntimeMessage::User { value: prompt.clone() }];
     let mut transcript = Vec::new();
     let max_iterations = 10;
 
     for iteration in 0..max_iterations {
         let request = ProviderRequest {
-            prompt: if iteration == 0 {
-                prompt.clone()
-            } else {
-                messages
-                    .iter()
-                    .map(RuntimeMessage::render)
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-            },
+            prompt: messages
+                .iter()
+                .map(RuntimeMessage::render)
+                .collect::<Vec<_>>()
+                .join("\n\n"),
             tools: tools
                 .iter()
                 .map(|tool| crate::providers::provider::ToolDefinition {
