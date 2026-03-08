@@ -15,7 +15,7 @@ impl AstBuilder {
 
     pub fn parse(&self, input_str: &str) -> Result<Workflow, ParserError> {
         let pairs = WorkflowParser::parse(Rule::workflow, input_str)
-            .map_err(|error| ParserError::PestError(Box::new(error)))?;
+            .map_err(|error| self.enhance_pest_error(error, input_str))?;
 
         let mut providers = Vec::new();
         let mut schemas = Vec::new();
@@ -713,5 +713,454 @@ impl AstBuilder {
         let (line, column) = span.start_pos().line_col();
 
         Span::new(span.start(), span.end(), line, column)
+    }
+
+    fn enhance_pest_error(&self, error: pest::error::Error<Rule>, input_str: &str) -> ParserError {
+        let (line, column) = match error.line_col {
+            pest::error::LineColLocation::Pos((line, column)) => (line, column),
+            pest::error::LineColLocation::Span((line, column), _) => (line, column),
+        };
+
+        let message = self.analyze_parsing_context(input_str, line, column, &error);
+        let (corrected_line, corrected_column) = self.get_error_line_and_column(input_str, line);
+        let source_line = self.get_source_line(input_str, corrected_line);
+
+        ParserError::syntax_error_with_source(
+            self.file_path.clone(),
+            corrected_line,
+            corrected_column,
+            message.0,
+            message.1,
+            source_line,
+        )
+    }
+
+    fn analyze_parsing_context(
+        &self,
+        input_str: &str,
+        error_line: usize,
+        _error_column: usize,
+        error: &pest::error::Error<Rule>,
+    ) -> (String, Option<String>) {
+        let lines: Vec<&str> = input_str.lines().collect();
+
+        if error_line == 0 || error_line > lines.len() {
+            return (format!("{}", error), None);
+        }
+
+        let current_line_index = error_line - 1;
+        let current_line = lines[current_line_index].trim();
+
+        if current_line.contains(':') && !current_line.contains("<-") && !current_line.ends_with('{') {
+            let in_braces = current_line.contains('{') || current_line.contains('}');
+
+            if !in_braces {
+                let parts: Vec<&str> = current_line.split(':').collect();
+                if parts.len() >= 2 {
+                    let before_colon = parts[0].trim();
+                    let after_colon = parts[1].trim();
+
+                    if !before_colon.is_empty()
+                        && !after_colon.is_empty()
+                        && !after_colon.starts_with('[')
+                        && !after_colon.starts_with('{')
+                    {
+                        return (
+                            "Invalid assignment operator ':'".to_string(),
+                            Some("Use '<-' for assignment in output blocks, not ':'. Example: field <- value. Note: ':' is only used for type definitions in schemas".to_string()),
+                        );
+                    }
+                }
+            }
+        }
+
+        if current_line.contains('=')
+            && !current_line.contains("==")
+            && !current_line.contains("!=")
+            && !current_line.contains("<=")
+            && !current_line.contains(">=")
+            && (current_line.contains(" = ") || (current_line.contains('=') && !current_line.contains("<-")))
+        {
+            return (
+                "Invalid assignment operator '='".to_string(),
+                Some("Use '<-' for assignment, not '='. Example: field <- value".to_string()),
+            );
+        }
+
+        if current_line.contains('<')
+            && !current_line.contains("<-")
+            && (current_line.contains(" < ") || current_line.ends_with('<'))
+        {
+            return (
+                "Invalid assignment operator '<'".to_string(),
+                Some("Use '<-' for assignment, not '<'. Example: field <- value".to_string()),
+            );
+        }
+
+        if current_line.contains("<-") && !current_line.ends_with('{') {
+            let parts: Vec<&str> = current_line.split("<-").collect();
+            if let Some(property_name) = parts.first() {
+                let property_name = property_name.trim();
+                let valid_properties = [
+                    "model",
+                    "tools",
+                    "context",
+                    "output",
+                    "prompt",
+                    "for_each",
+                    "driver",
+                    "api_endpoint",
+                    "models",
+                ];
+
+                if !valid_properties.contains(&property_name) && !property_name.is_empty() {
+                    let suggestion = self.find_closest_match(property_name, &valid_properties);
+                    return (
+                        format!("Unknown property '{}'", property_name),
+                        Some(if let Some(closest) = suggestion {
+                            format!("Did you mean '{}'?", closest)
+                        } else {
+                            format!("Valid properties are: {}", valid_properties.join(", "))
+                        }),
+                    );
+                }
+            }
+        }
+
+        if current_line == "}" {
+            let agent_context = self.find_agent_context(&lines, error_line);
+
+            if let Some((agent_name, agent_start_line)) = agent_context {
+                let agent_properties = self.extract_agent_properties(&lines, agent_start_line, error_line);
+
+                let has_model = agent_properties.iter().any(|p| p.starts_with("model"));
+                let has_prompt = agent_properties.iter().any(|p| p.starts_with("prompt"));
+                let has_output = agent_properties.iter().any(|p| p.starts_with("output"));
+
+                if !has_prompt {
+                    return (
+                        format!("Agent '{}' is missing required property 'prompt'", agent_name),
+                        Some(format!("Add a 'prompt <- \"...\"' property to agent '{}'", agent_name)),
+                    );
+                }
+
+                if !has_model {
+                    return (
+                        format!("Agent '{}' is missing required property 'model'", agent_name),
+                        Some(format!(
+                            "Add a 'model <- \"provider/model\"' property to agent '{}'",
+                            agent_name
+                        )),
+                    );
+                }
+
+                if !has_output {
+                    return (
+                        format!("Agent '{}' is missing required property 'output'", agent_name),
+                        Some(format!(
+                            "Add an 'output <- {{ ... }}' property to agent '{}'",
+                            agent_name
+                        )),
+                    );
+                }
+            }
+
+            let output_context = self.find_output_context(&lines, error_line);
+            if output_context {
+                return (
+                    "Invalid value in output block".to_string(),
+                    Some("Output values must be references like 'agent.name' or literals like \"string\", not bare identifiers".to_string()),
+                );
+            }
+        }
+
+        if error_line > 1 {
+            let previous_line = lines[error_line - 2].trim();
+            if previous_line.contains("<-") && !previous_line.ends_with('{') {
+                let parts: Vec<&str> = previous_line.split("<-").collect();
+                if parts.len() == 2 {
+                    let value_part = parts[1].trim();
+                    if !value_part.is_empty()
+                        && !value_part.starts_with('"')
+                        && !value_part.starts_with('[')
+                        && !value_part.starts_with('{')
+                    {
+                        let identifier_pattern = regex::Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
+                        if identifier_pattern.is_match(value_part) {
+                            return (
+                                format!("Invalid reference: '{}'", value_part),
+                                Some(format!("Did you mean 'agent.{}'? Bare identifiers are not valid values. Use 'agent.name' to reference an agent, or '\"{}\"' for a string literal", value_part, value_part)),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        let expected_description = self.format_expected_rules(error);
+
+        (
+            format!("Unexpected syntax: {}", expected_description),
+            Some("Check the syntax of your workflow definition".to_string()),
+        )
+    }
+
+    fn find_closest_match(&self, input: &str, candidates: &[&str]) -> Option<String> {
+        let input_lower = input.to_lowercase();
+        let mut best_match = None;
+        let mut best_distance = usize::MAX;
+
+        for candidate in candidates {
+            let distance = self.levenshtein_distance(&input_lower, &candidate.to_lowercase());
+            if distance < best_distance && distance <= 2 {
+                best_distance = distance;
+                best_match = Some(candidate.to_string());
+            }
+        }
+
+        best_match
+    }
+
+    fn levenshtein_distance(&self, source: &str, target: &str) -> usize {
+        let source_len = source.len();
+        let target_len = target.len();
+
+        if source_len == 0 {
+            return target_len;
+        }
+        if target_len == 0 {
+            return source_len;
+        }
+
+        let mut matrix = vec![vec![0; target_len + 1]; source_len + 1];
+
+        for index in 0..=source_len {
+            matrix[index][0] = index;
+        }
+        for index in 0..=target_len {
+            matrix[0][index] = index;
+        }
+
+        for (source_index, source_char) in source.chars().enumerate() {
+            for (target_index, target_char) in target.chars().enumerate() {
+                let cost = if source_char == target_char { 0 } else { 1 };
+                matrix[source_index + 1][target_index + 1] = std::cmp::min(
+                    std::cmp::min(
+                        matrix[source_index][target_index + 1] + 1,
+                        matrix[source_index + 1][target_index] + 1,
+                    ),
+                    matrix[source_index][target_index] + cost,
+                );
+            }
+        }
+
+        matrix[source_len][target_len]
+    }
+
+    fn get_error_line_and_column(&self, input_str: &str, error_line: usize) -> (usize, usize) {
+        let lines: Vec<&str> = input_str.lines().collect();
+
+        if error_line > 0 && error_line <= lines.len() {
+            let current_line = lines[error_line - 1];
+
+            if current_line.contains(':') && !current_line.contains("<-") && !current_line.trim().ends_with('{') {
+                let in_braces = current_line.contains('{') || current_line.contains('}');
+
+                if !in_braces {
+                    let parts: Vec<&str> = current_line.split(':').collect();
+                    if parts.len() >= 2 {
+                        let before_colon = parts[0].trim();
+                        let after_colon = parts[1].trim();
+
+                        if !before_colon.is_empty()
+                            && !after_colon.is_empty()
+                            && !after_colon.starts_with('[')
+                            && !after_colon.starts_with('{')
+                        {
+                            if let Some(position) = current_line.find(':') {
+                                return (error_line, position + 1);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if current_line.contains('=')
+                && !current_line.contains("==")
+                && !current_line.contains("!=")
+                && !current_line.contains("<=")
+                && !current_line.contains(">=")
+                && !current_line.contains("<-")
+            {
+                if let Some(position) = current_line.find('=') {
+                    return (error_line, position + 1);
+                }
+            }
+
+            if current_line.contains('<') && !current_line.contains("<-") {
+                if let Some(position) = current_line.find('<') {
+                    return (error_line, position + 1);
+                }
+            }
+
+            if current_line.trim().contains("<-") && !current_line.trim().ends_with('{') {
+                let trimmed = current_line.trim();
+                let parts: Vec<&str> = trimmed.split("<-").collect();
+                if let Some(property_name) = parts.first() {
+                    let property_name = property_name.trim();
+                    let valid_properties = [
+                        "model",
+                        "tools",
+                        "context",
+                        "output",
+                        "prompt",
+                        "for_each",
+                        "driver",
+                        "api_endpoint",
+                        "models",
+                    ];
+
+                    if !valid_properties.contains(&property_name) && !property_name.is_empty() {
+                        if let Some(position) = current_line.find(property_name) {
+                            return (error_line, position + 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        if error_line > 1 {
+            let previous_line = lines[error_line - 2].trim();
+            if previous_line.contains("<-") && !previous_line.ends_with('{') {
+                let parts: Vec<&str> = previous_line.split("<-").collect();
+                if parts.len() == 2 {
+                    let value_part = parts[1].trim();
+                    if !value_part.is_empty()
+                        && !value_part.starts_with('"')
+                        && !value_part.starts_with('[')
+                        && !value_part.starts_with('{')
+                    {
+                        let identifier_pattern = regex::Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
+                        if identifier_pattern.is_match(value_part) {
+                            let full_line = lines[error_line - 2];
+                            if let Some(arrow_position) = full_line.find("<-") {
+                                if let Some(value_position) = full_line[arrow_position..].find(value_part) {
+                                    return (error_line - 1, arrow_position + value_position + 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        (error_line, 1)
+    }
+
+    fn find_agent_context(&self, lines: &[&str], error_line: usize) -> Option<(String, usize)> {
+        let mut brace_count = 0;
+
+        for index in (0..error_line).rev() {
+            let line = lines[index].trim();
+
+            if line.ends_with('}') {
+                brace_count += 1;
+            }
+
+            if line.ends_with('{') {
+                if brace_count == 0 {
+                    if line.starts_with("agent ") || line.starts_with("<- agent ") {
+                        let agent_line = line.trim_start_matches("<-").trim();
+                        if let Some(name_part) = agent_line.strip_prefix("agent ") {
+                            let agent_name = name_part.trim_end_matches('{').trim().to_string();
+                            return Some((agent_name, index + 1));
+                        }
+                    }
+                    return None;
+                } else {
+                    brace_count -= 1;
+                }
+            }
+        }
+
+        None
+    }
+
+    fn find_output_context(&self, lines: &[&str], error_line: usize) -> bool {
+        let mut brace_count = 0;
+
+        for index in (0..error_line).rev() {
+            let line = lines[index].trim();
+
+            if line.ends_with('}') {
+                brace_count += 1;
+            }
+
+            if line.ends_with('{') {
+                if brace_count == 0 {
+                    return line.starts_with("output ");
+                } else {
+                    brace_count -= 1;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn extract_agent_properties(&self, lines: &[&str], start_line: usize, end_line: usize) -> Vec<String> {
+        let mut properties = Vec::new();
+
+        for index in start_line..end_line {
+            if index >= lines.len() {
+                break;
+            }
+
+            let line = lines[index].trim();
+
+            if line.contains("<-") {
+                if let Some(property_name) = line.split("<-").next() {
+                    properties.push(property_name.trim().to_string());
+                }
+            }
+        }
+
+        properties
+    }
+
+    fn format_expected_rules(&self, error: &pest::error::Error<Rule>) -> String {
+        match &error.variant {
+            pest::error::ErrorVariant::ParsingError { positives, .. } => {
+                if positives.is_empty() {
+                    "unexpected token".to_string()
+                } else if positives.len() == 1 {
+                    format!("expected {}", self.rule_to_friendly_name(&positives[0]))
+                } else {
+                    let names: Vec<String> = positives.iter().map(|r| self.rule_to_friendly_name(r)).collect();
+                    format!("expected one of: {}", names.join(", "))
+                }
+            }
+            _ => "parsing error".to_string(),
+        }
+    }
+
+    fn rule_to_friendly_name(&self, rule: &Rule) -> String {
+        match rule {
+            Rule::string_value => "a string value (e.g., \"text\")".to_string(),
+            Rule::agent_property => "an agent property (model, prompt, output, etc.)".to_string(),
+            Rule::value => "a value".to_string(),
+            Rule::identifier => "an identifier".to_string(),
+            Rule::property_prompt => "a prompt property".to_string(),
+            Rule::property_model => "a model property".to_string(),
+            Rule::property_output => "an output property".to_string(),
+            _ => format!("{:?}", rule),
+        }
+    }
+
+    fn get_source_line(&self, input_str: &str, line_number: usize) -> Option<String> {
+        input_str
+            .lines()
+            .nth(line_number.saturating_sub(1))
+            .map(|s| s.to_string())
     }
 }

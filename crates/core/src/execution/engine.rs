@@ -74,30 +74,7 @@ impl ExecutionEngine {
         log::info!("Validating workflow");
 
         WorkflowValidator::validate(workflow).map_err(|errors| {
-            let error_messages: Vec<String> = errors
-                .iter()
-                .map(|error| {
-                    let base_message = error.to_string();
-                    let suggestion = match error {
-                        crate::validation::error::ValidationError::UndefinedReference { suggestion, .. }
-                        | crate::validation::error::ValidationError::DuplicateName { suggestion, .. }
-                        | crate::validation::error::ValidationError::ProviderModelMismatch { suggestion, .. }
-                        | crate::validation::error::ValidationError::MissingTemplateVariable { suggestion, .. }
-                        | crate::validation::error::ValidationError::UnusedTemplateBinding { suggestion, .. }
-                        | crate::validation::error::ValidationError::InvalidProperty { suggestion, .. }
-                        | crate::validation::error::ValidationError::CyclicDependency { suggestion, .. }
-                        | crate::validation::error::ValidationError::InvalidInputOutput { suggestion, .. } => {
-                            suggestion.as_ref()
-                        }
-                    };
-
-                    if let Some(suggestion_text) = suggestion {
-                        format!("{}\n  Suggestion: {}", base_message, suggestion_text)
-                    } else {
-                        base_message
-                    }
-                })
-                .collect();
+            let error_messages: Vec<String> = errors.iter().map(|error| error.to_string()).collect();
 
             ExecutionError::RuntimeError {
                 agent: "workflow".to_string(),

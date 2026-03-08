@@ -11,6 +11,7 @@ impl WorkflowValidator {
         Self::check_duplicate_agent_names(workflow, &mut errors);
         Self::check_duplicate_schema_names(workflow, &mut errors);
         Self::check_duplicate_provider_names(workflow, &mut errors);
+        Self::check_required_agent_properties(workflow, &mut errors);
         Self::check_undefined_references(workflow, &mut errors);
         Self::check_provider_model_references(workflow, &mut errors);
         Self::check_agent_field_references(workflow, &mut errors);
@@ -76,6 +77,56 @@ impl WorkflowValidator {
                 });
             } else {
                 seen.insert(provider.name.clone(), provider.span.line);
+            }
+        }
+    }
+
+    fn check_required_agent_properties(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
+        for agent in &workflow.agents {
+            let has_model = agent
+                .properties
+                .iter()
+                .any(|p| matches!(p, AgentProperty::Model { .. }));
+            let has_prompt = agent
+                .properties
+                .iter()
+                .any(|p| matches!(p, AgentProperty::Prompt { .. }));
+            let has_output = agent
+                .properties
+                .iter()
+                .any(|p| matches!(p, AgentProperty::Output { .. }));
+
+            if !has_model {
+                errors.push(ValidationError::MissingRequiredProperty {
+                    file_path: "workflow".to_string(),
+                    line: agent.span.line,
+                    column: agent.span.column,
+                    agent_name: agent.name.clone(),
+                    property_name: "model".to_string(),
+                    suggestion: Some(format!("Add 'model <- \"provider/model\"' to agent '{}'", agent.name)),
+                });
+            }
+
+            if !has_prompt {
+                errors.push(ValidationError::MissingRequiredProperty {
+                    file_path: "workflow".to_string(),
+                    line: agent.span.line,
+                    column: agent.span.column,
+                    agent_name: agent.name.clone(),
+                    property_name: "prompt".to_string(),
+                    suggestion: Some(format!("Add 'prompt <- \"...\"' to agent '{}'", agent.name)),
+                });
+            }
+
+            if !has_output {
+                errors.push(ValidationError::MissingRequiredProperty {
+                    file_path: "workflow".to_string(),
+                    line: agent.span.line,
+                    column: agent.span.column,
+                    agent_name: agent.name.clone(),
+                    property_name: "output".to_string(),
+                    suggestion: Some(format!("Add 'output <- {{ ... }}' to agent '{}'", agent.name)),
+                });
             }
         }
     }
