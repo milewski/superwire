@@ -159,6 +159,16 @@ impl RuntimeContext {
             Reference::AgentOutput { agent } => {
                 if let Some(output) = self.agent_outputs.get(agent) {
                     log::trace!("Resolved agent '{}' output", agent);
+
+                    if let JsonValue::Object(map) = output {
+                        if map.len() == 1 {
+                            if let Some((_key, value)) = map.iter().next() {
+                                log::trace!("Auto-unwrapping single-field object for agent '{}'", agent);
+                                return Ok(value.clone());
+                            }
+                        }
+                    }
+
                     return Ok(output.clone());
                 }
 

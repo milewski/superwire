@@ -58,6 +58,41 @@ impl DependencyGraph {
         order
     }
 
+    pub fn get_execution_levels(&self) -> Vec<Vec<String>> {
+        let mut levels: Vec<Vec<String>> = Vec::new();
+        let mut level_map: HashMap<String, usize> = HashMap::new();
+
+        let mut topo = Topo::new(&self.graph);
+
+        while let Some(node_index) = topo.next(&self.graph) {
+            if let Some(agent_name) = self.graph.node_weight(node_index) {
+                let dependencies: Vec<_> = self
+                    .graph
+                    .neighbors_directed(node_index, petgraph::Direction::Incoming)
+                    .filter_map(|dep_index| self.graph.node_weight(dep_index))
+                    .collect();
+
+                let max_dep_level = dependencies
+                    .iter()
+                    .filter_map(|dep| level_map.get(*dep))
+                    .max()
+                    .unwrap_or(&0);
+
+                let agent_level = if dependencies.is_empty() { 0 } else { max_dep_level + 1 };
+
+                level_map.insert(agent_name.clone(), agent_level);
+
+                while levels.len() <= agent_level {
+                    levels.push(Vec::new());
+                }
+
+                levels[agent_level].push(agent_name.clone());
+            }
+        }
+
+        levels
+    }
+
     fn extract_dependencies(agent: &Agent) -> Vec<String> {
         let mut dependencies = Vec::new();
 

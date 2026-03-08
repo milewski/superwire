@@ -41,8 +41,6 @@ impl AgentOrchestrator {
 
         let mut context = Vec::new();
 
-        let has_schema = schema.is_some();
-
         if let Some(ref schema_value) = schema {
             log::debug!("Agent '{}' has output schema defined", agent.name);
 
@@ -57,6 +55,10 @@ impl AgentOrchestrator {
             });
         } else {
             log::debug!("Agent '{}' has no output schema", agent.name);
+
+            context.push(Message::System {
+                content: "You must call the 'done' tool to complete your task. Call it with status='success' and your final output as a string in the 'output' parameter. Example: done(status='success', output='Your response here')".to_string(),
+            });
         }
 
         context.extend(initial_context);
@@ -65,11 +67,7 @@ impl AgentOrchestrator {
             content: prompt.clone(),
         });
 
-        let tools = if has_schema {
-            self.build_tool_definitions()
-        } else {
-            Vec::new()
-        };
+        let tools = self.build_tool_definitions();
 
         log::info!("Agent '{}' has {} tools available", agent.name, tools.len());
         if !tools.is_empty() {
@@ -118,28 +116,6 @@ impl AgentOrchestrator {
             log::debug!("Agent '{}' received response from provider", agent.name);
 
             context = output.context.clone();
-
-            if !has_schema {
-                log::debug!("Agent '{}' has no schema, returning text response", agent.name);
-
-                let last_message = context.last().ok_or_else(|| ExecutionError::RuntimeError {
-                    agent: agent.name.clone(),
-                    message: "No response from agent".to_string(),
-                    suggestion: None,
-                })?;
-
-                if let Message::Assistant { content, .. } = last_message {
-                    log::info!("Agent '{}' completed successfully (no schema)", agent.name);
-                    log::debug!("Agent '{}' response: {}", agent.name, content);
-                    return Ok((JsonValue::String(content.clone()), context));
-                } else {
-                    return Err(ExecutionError::RuntimeError {
-                        agent: agent.name.clone(),
-                        message: "Expected assistant message".to_string(),
-                        suggestion: None,
-                    });
-                }
-            }
 
             if let Some(tool_calls) = context
                 .last()

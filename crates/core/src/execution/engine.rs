@@ -133,8 +133,8 @@ impl ExecutionEngine {
             suggestion: Some("Check for circular dependencies".to_string()),
         })?;
 
-        let execution_order = dependency_graph.topological_order();
-        log::info!("Execution order determined: {:?}", execution_order);
+        let execution_levels = dependency_graph.get_execution_levels();
+        log::info!("Execution levels determined: {:?}", execution_levels);
 
         let mut runtime_context = RuntimeContext::new();
 
@@ -142,111 +142,144 @@ impl ExecutionEngine {
             runtime_context.set_input_value(field_name, value);
         }
 
-        for agent_name in execution_order {
-            log::info!("Executing agent: {}", agent_name);
+        for level in execution_levels {
+            log::info!("Executing level with {} agent(s): {:?}", level.len(), level);
 
-            let agent = workflow
-                .agents
-                .iter()
-                .find(|agent| agent.name == agent_name)
-                .ok_or_else(|| ExecutionError::RuntimeError {
-                    agent: agent_name.clone(),
-                    message: "Agent not found in workflow".to_string(),
-                    suggestion: None,
-                })?;
+            let mut tasks = Vec::new();
 
-            let provider = Self::get_provider_for_agent(agent, &provider_registry)?;
-            log::debug!("Agent '{}' using provider: {}", agent_name, provider.name());
-
-            let orchestrator = AgentOrchestrator::new(provider);
-
-            let context_property = agent.properties.iter().find_map(|prop| {
-                if let crate::ast::AgentProperty::Context { value, .. } = prop {
-                    Some(value)
-                } else {
-                    None
-                }
-            });
-
-            let initial_context = if let Some(context_value) = context_property {
-                let resolved = runtime_context.resolve_value(context_value)?;
-
-                if let Value::Array(messages) = resolved {
-                    messages
-                        .into_iter()
-                        .filter_map(|msg| serde_json::from_value(msg).ok())
-                        .collect()
-                } else {
-                    Vec::new()
-                }
-            } else {
-                Vec::new()
-            };
-
-            let for_each_property = agent.properties.iter().find_map(|prop| {
-                if let crate::ast::AgentProperty::ForEach {
-                    collection, identifier, ..
-                } = prop
-                {
-                    Some((collection, identifier))
-                } else {
-                    None
-                }
-            });
-
-            if let Some((collection_value, iteration_var)) = for_each_property {
-                let collection = runtime_context.resolve_value(collection_value)?;
-
-                let items = if let Value::Array(array) = collection {
-                    array
-                } else {
-                    return Err(ExecutionError::RuntimeError {
+            for agent_name in &level {
+                let agent = workflow
+                    .agents
+                    .iter()
+                    .find(|agent| &agent.name == agent_name)
+                    .ok_or_else(|| ExecutionError::RuntimeError {
                         agent: agent_name.clone(),
-                        message: "for_each collection must be an array".to_string(),
-                        suggestion: Some("Ensure the collection resolves to an array".to_string()),
+                        message: "Agent not found in workflow".to_string(),
+                        suggestion: None,
+                    })?;
+
+                let agent_clone = agent.clone();
+                let provider_registry_clone = provider_registry.clone();
+                let runtime_context_clone = runtime_context.clone();
+
+                let task = tokio::task::spawn(async move {
+                    let provider = Self::get_provider_for_agent(&agent_clone, &provider_registry_clone)?;
+                    let provider_clone = provider.clone();
+                    let orchestrator = AgentOrchestrator::new(provider);
+
+                    let context_property = agent_clone.properties.iter().find_map(|prop| {
+                        if let crate::ast::AgentProperty::Context { value, .. } = prop {
+                            Some(value)
+                        } else {
+                            None
+                        }
                     });
-                };
 
-                log::info!("Agent '{}' executing for_each with {} items", agent_name, items.len());
+                    let initial_context = if let Some(context_value) = context_property {
+                        let resolved = runtime_context_clone.resolve_value(context_value)?;
 
-                let mut results = Vec::new();
-                let total_items = items.len();
+                        if let Value::Array(messages) = resolved {
+                            messages
+                                .into_iter()
+                                .filter_map(|msg| serde_json::from_value(msg).ok())
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
 
-                for (iteration_index, item) in items.into_iter().enumerate() {
-                    log::debug!(
-                        "Agent '{}' iteration {} of {}",
-                        agent_name,
-                        iteration_index + 1,
-                        total_items
-                    );
-                    let mut iteration_context = runtime_context.clone();
-                    iteration_context.set_input_value(iteration_var.clone(), item);
+                    let for_each_property = agent_clone.properties.iter().find_map(|prop| {
+                        if let crate::ast::AgentProperty::ForEach {
+                            collection, identifier, ..
+                        } = prop
+                        {
+                            Some((collection, identifier))
+                        } else {
+                            None
+                        }
+                    });
 
-                    let (output, _context) = orchestrator
-                        .execute_agent(agent, initial_context.clone(), &iteration_context)
-                        .await?;
+                    if let Some((collection_value, iteration_var)) = for_each_property {
+                        let collection = runtime_context_clone.resolve_value(collection_value)?;
 
-                    log::debug!("Agent '{}' iteration {} completed", agent_name, iteration_index + 1);
-                    results.push(output);
-                }
+                        let items = if let Value::Array(array) = collection {
+                            array
+                        } else {
+                            return Err(ExecutionError::RuntimeError {
+                                agent: agent_clone.name.clone(),
+                                message: "for_each collection must be an array".to_string(),
+                                suggestion: Some("Ensure the collection resolves to an array".to_string()),
+                            });
+                        };
 
-                log::info!(
-                    "Agent '{}' for_each completed with {} results",
-                    agent_name,
-                    results.len()
-                );
-                runtime_context.set_agent_output(agent_name.clone(), Value::Array(results));
-                runtime_context.set_agent_context(agent_name.clone(), Vec::new());
-            } else {
-                let (output, context) = orchestrator
-                    .execute_agent(agent, initial_context, &runtime_context)
-                    .await?;
+                        let _total_items = items.len();
+                        let mut iteration_tasks = Vec::new();
 
-                log::info!("Agent '{}' completed successfully", agent_name);
-                log::debug!("Agent '{}' output: {:?}", agent_name, output);
+                        for (iteration_index, item) in items.into_iter().enumerate() {
+                            let agent_clone_inner = agent_clone.clone();
+                            let initial_context_clone = initial_context.clone();
+                            let mut iteration_context = runtime_context_clone.clone();
+                            iteration_context.set_input_value(iteration_var.clone(), item);
+                            let provider_for_iteration = provider_clone.clone();
+
+                            let iteration_task = tokio::task::spawn(async move {
+                                let orchestrator_inner = AgentOrchestrator::new(provider_for_iteration);
+                                let result = orchestrator_inner
+                                    .execute_agent(&agent_clone_inner, initial_context_clone, &iteration_context)
+                                    .await;
+
+                                (iteration_index, result)
+                            });
+
+                            iteration_tasks.push(iteration_task);
+                        }
+
+                        let mut iteration_results = Vec::new();
+                        for iteration_task in iteration_tasks {
+                            let (iteration_index, result) =
+                                iteration_task.await.map_err(|error| ExecutionError::RuntimeError {
+                                    agent: agent_clone.name.clone(),
+                                    message: format!("Failed to execute for_each iteration: {}", error),
+                                    suggestion: None,
+                                })?;
+
+                            let (output, context) = result?;
+                            iteration_results.push((iteration_index, output, context));
+                        }
+
+                        iteration_results.sort_by_key(|(index, _, _)| *index);
+
+                        let mut results = Vec::new();
+                        let mut all_contexts = Vec::new();
+                        for (_, output, context) in iteration_results {
+                            results.push(output);
+                            all_contexts.extend(context);
+                        }
+
+                        Ok((agent_clone.name.clone(), Value::Array(results), all_contexts))
+                    } else {
+                        let (output, context) = orchestrator
+                            .execute_agent(&agent_clone, initial_context, &runtime_context_clone)
+                            .await?;
+
+                        Ok((agent_clone.name.clone(), output, context))
+                    }
+                });
+
+                tasks.push(task);
+            }
+
+            for task in tasks {
+                let (agent_name, output, context) = task.await.map_err(|error| ExecutionError::RuntimeError {
+                    agent: "parallel_execution".to_string(),
+                    message: format!("Failed to execute agent in parallel: {}", error),
+                    suggestion: None,
+                })??;
 
                 runtime_context.set_agent_output(agent_name.clone(), output);
-                runtime_context.set_agent_context(agent_name.clone(), context);
+                runtime_context.set_agent_context(agent_name, context);
             }
         }
 
@@ -377,10 +410,30 @@ impl ExecutionEngine {
 
         let mut combined_messages = Vec::new();
 
-        if let Value::Array(messages) = resolved_context {
-            for msg in messages {
-                if let Ok(message) = serde_json::from_value(msg) {
-                    combined_messages.push(message);
+        if let Value::Array(items) = &resolved_context {
+            if items.is_empty() {
+                return Err(ExecutionError::RuntimeError {
+                    agent: "compact".to_string(),
+                    message: "No messages found in context to compact".to_string(),
+                    suggestion: Some("Ensure the context reference points to a valid agent context".to_string()),
+                });
+            }
+
+            if items[0].is_array() {
+                for context_array in items {
+                    if let Value::Array(messages) = context_array {
+                        for msg in messages {
+                            if let Ok(message) = serde_json::from_value(msg.clone()) {
+                                combined_messages.push(message);
+                            }
+                        }
+                    }
+                }
+            } else {
+                for msg in items {
+                    if let Ok(message) = serde_json::from_value(msg.clone()) {
+                        combined_messages.push(message);
+                    }
                 }
             }
         }

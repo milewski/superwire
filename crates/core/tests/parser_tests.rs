@@ -205,3 +205,131 @@ agent test {
         Some("http://100.76.5.36:11434".to_string())
     );
 }
+
+#[test]
+fn test_parse_auto_unwrap_workflow() {
+    let workflow = r#"
+provider ollama1 {
+    driver <- "ollama"
+    models <- ["qwen3:8b"]
+}
+
+agent single_field {
+    model <- "ollama1/qwen3:8b"
+
+    output <- {
+        value: string
+    }
+
+    prompt <- "Test"
+}
+
+output {
+    unwrapped <- agent.single_field
+    explicit <- agent.single_field.value
+}
+"#;
+
+    let builder = AstBuilder::new("test.ai".to_string());
+    let result = builder.parse(workflow);
+
+    assert!(result.is_ok());
+    let workflow = result.unwrap();
+
+    assert!(workflow.output.is_some());
+    let output_block = workflow.output.unwrap();
+    assert_eq!(output_block.fields.len(), 2);
+    assert_eq!(output_block.fields[0].name, "unwrapped");
+    assert_eq!(output_block.fields[1].name, "explicit");
+}
+
+#[test]
+fn test_template_validation_missing_variable() {
+    use std::fs;
+    use std::io::Write;
+
+    let temp_dir = std::env::temp_dir();
+    let template_path = temp_dir.join("test_template_missing.txt");
+    let mut file = fs::File::create(&template_path).unwrap();
+    file.write_all(b"Hello {{ name }}, your age is {{ age }}").unwrap();
+
+    let workflow = format!(
+        r#"
+provider ollama1 {{
+    driver <- "ollama"
+    models <- ["qwen3:8b"]
+}}
+
+agent test {{
+    model <- "ollama1/qwen3:8b"
+
+    prompt <- file "{}" {{
+        name <- "Alice"
+    }}
+}}
+"#,
+        template_path.display()
+    );
+
+    let builder = engine_ai_core::parser::AstBuilder::new("test.ai".to_string());
+    let parsed = builder.parse(&workflow);
+    assert!(parsed.is_ok());
+
+    let workflow_ast = parsed.unwrap();
+    let validation_result = engine_ai_core::validation::WorkflowValidator::validate(&workflow_ast);
+
+    assert!(validation_result.is_err());
+    let errors = validation_result.unwrap_err();
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        engine_ai_core::validation::error::ValidationError::MissingTemplateVariable { .. }
+    )));
+
+    fs::remove_file(template_path).ok();
+}
+
+#[test]
+fn test_template_validation_unused_binding() {
+    use std::fs;
+    use std::io::Write;
+
+    let temp_dir = std::env::temp_dir();
+    let template_path = temp_dir.join("test_template_unused.txt");
+    let mut file = fs::File::create(&template_path).unwrap();
+    file.write_all(b"Hello {{ name }}").unwrap();
+
+    let workflow = format!(
+        r#"
+provider ollama1 {{
+    driver <- "ollama"
+    models <- ["qwen3:8b"]
+}}
+
+agent test {{
+    model <- "ollama1/qwen3:8b"
+
+    prompt <- file "{}" {{
+        name <- "Alice"
+        extra <- "unused"
+    }}
+}}
+"#,
+        template_path.display()
+    );
+
+    let builder = engine_ai_core::parser::AstBuilder::new("test.ai".to_string());
+    let parsed = builder.parse(&workflow);
+    assert!(parsed.is_ok());
+
+    let workflow_ast = parsed.unwrap();
+    let validation_result = engine_ai_core::validation::WorkflowValidator::validate(&workflow_ast);
+
+    assert!(validation_result.is_err());
+    let errors = validation_result.unwrap_err();
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        engine_ai_core::validation::error::ValidationError::UnusedTemplateBinding { .. }
+    )));
+
+    fs::remove_file(template_path).ok();
+}

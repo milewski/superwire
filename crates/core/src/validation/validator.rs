@@ -14,6 +14,7 @@ impl WorkflowValidator {
         Self::check_undefined_references(workflow, &mut errors);
         Self::check_provider_model_references(workflow, &mut errors);
         Self::check_agent_field_references(workflow, &mut errors);
+        Self::check_template_variables(workflow, &mut errors);
 
         if errors.is_empty() {
             Ok(())
@@ -411,6 +412,94 @@ impl WorkflowValidator {
             Value::FunctionCall(func_call) => {
                 for val in func_call.arguments.values() {
                     Self::check_field_references_in_value(val, agent_schemas, line, column, errors);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn check_template_variables(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
+        for agent in &workflow.agents {
+            for property in &agent.properties {
+                if let AgentProperty::Prompt { value, .. } = property {
+                    Self::check_template_in_value(value, errors);
+                }
+            }
+        }
+
+        if let Some(output_block) = &workflow.output {
+            for field in &output_block.fields {
+                Self::check_template_in_value(&field.value, errors);
+            }
+        }
+    }
+
+    fn check_template_in_value(value: &Value, errors: &mut Vec<ValidationError>) {
+        match value {
+            Value::FunctionCall(func_call) => {
+                if func_call.name == "file" {
+                    if let Some(Value::String(path)) = func_call.arguments.get("path") {
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            let template_pattern =
+                                regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}").unwrap();
+
+                            let mut template_vars = HashSet::new();
+                            for capture in template_pattern.captures_iter(&content) {
+                                template_vars.insert(capture[1].to_string());
+                            }
+
+                            let mut provided_bindings = HashSet::new();
+                            for key in func_call.arguments.keys() {
+                                if key != "path" {
+                                    provided_bindings.insert(key.clone());
+                                }
+                            }
+
+                            for template_var in &template_vars {
+                                if !provided_bindings.contains(template_var) {
+                                    errors.push(ValidationError::MissingTemplateVariable {
+                                        file_path: "workflow".to_string(),
+                                        line: func_call.span.line,
+                                        column: func_call.span.column,
+                                        variable: template_var.clone(),
+                                        suggestion: Some(format!(
+                                            "Add binding for '{}' in the file function call",
+                                            template_var
+                                        )),
+                                    });
+                                }
+                            }
+
+                            for binding in &provided_bindings {
+                                if !template_vars.contains(binding) {
+                                    errors.push(ValidationError::UnusedTemplateBinding {
+                                        file_path: "workflow".to_string(),
+                                        line: func_call.span.line,
+                                        column: func_call.span.column,
+                                        binding: binding.clone(),
+                                        suggestion: Some(format!(
+                                            "Remove unused binding '{}' or add '{{{{ {} }}}}' to the template file",
+                                            binding, binding
+                                        )),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for val in func_call.arguments.values() {
+                    Self::check_template_in_value(val, errors);
+                }
+            }
+            Value::Array(values) => {
+                for val in values {
+                    Self::check_template_in_value(val, errors);
+                }
+            }
+            Value::Object(map) => {
+                for val in map.values() {
+                    Self::check_template_in_value(val, errors);
                 }
             }
             _ => {}

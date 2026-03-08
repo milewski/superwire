@@ -1,0 +1,32 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+agent items {
+    model <- "ollama1/qwen3:8b"
+
+    output <- {
+        list: [string]
+    }
+
+    prompt <- "Generate a list of 2 fruits"
+}
+
+<- agent descriptions {
+    model <- "ollama1/qwen3:8b"
+
+    for_each <- agent.items.list as item
+
+    output <- {
+        description: string
+    }
+
+    prompt <- "Describe {{ input.item }} in one sentence"
+}
+
+output {
+    items <- agent.items.list
+    descriptions_context <- agent.descriptions.context
+}

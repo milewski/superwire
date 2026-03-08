@@ -193,6 +193,40 @@ agent one {
 
 Inline schemas do not require a name.
 
+### Single-Type Inline Output
+
+For simple outputs that consist of a single primitive type, you can use a compact inline syntax:
+
+```txt
+agent add_numbers {
+    model <- "ollama1/qwen3.5:27b"
+    output <- number "sum of 42 and 58"
+    prompt <- "What is 42 + 58? Return only the number."
+}
+
+agent create_greeting {
+    model <- "ollama1/qwen3.5:27b"
+    output <- string "a short greeting"
+    prompt <- "Say hello in one short sentence."
+}
+
+agent check_value {
+    model <- "ollama1/qwen3.5:27b"
+    output <- boolean "true if sum is 100, false otherwise"
+    prompt <- "Is the value equal to 100? Return true or false."
+}
+```
+
+This syntax is equivalent to defining a schema with a single field, but provides a more concise way to express simple
+outputs. The description string serves as documentation for what the output represents and helps guide the LLM in
+generating the correct value.
+
+Supported types for single-type inline outputs:
+
+- `number "description"`
+- `string "description"`
+- `boolean "description"`
+
 ### Supported Schema Types
 
 The following schema types are supported:
