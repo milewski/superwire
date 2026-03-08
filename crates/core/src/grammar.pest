@@ -11,20 +11,24 @@ multiline_string = ${ "\"\"\"" ~ multiline_inner* ~ "\"\"\"" }
 multiline_inner = _{ !("\"\"\"") ~ ANY }
 
 workflow = { SOI ~ statement* ~ EOI }
-statement = _{ provider_def | schema_def | agent_def }
+statement = _{ provider_def | schema_def | input_def | output_def | agent_def }
 
 agent_def = { terminal_marker? ~ "agent" ~ identifier ~ block }
 terminal_marker = { "<-" }
 provider_def = { "provider" ~ identifier ~ block }
 schema_def = { "schema" ~ identifier ~ schema_block }
+input_def = { "input" ~ schema_block }
+output_def = { "output" ~ output_block }
 
 block = { "{" ~ property* ~ "}" }
 schema_block = { "{" ~ schema_field* ~ "}" }
+output_block = { "{" ~ output_field* ~ "}" }
 property = { identifier ~ left_arrow ~ property_value }
 left_arrow = _{ "<-" }
 property_value = _{ for_each_expr | value }
 
 schema_field = { identifier ~ ":" ~ schema_type ~ string? }
+output_field = { identifier ~ left_arrow ~ value }
 schema_type = { schema_array | schema_union }
 schema_array = { "[" ~ schema_type ~ "]" }
 schema_union = { schema_primary ~ ("|" ~ schema_primary)* }

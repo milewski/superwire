@@ -17,6 +17,10 @@ pub enum ParserError {
         expected: String,
         actual: String,
     },
+    #[error("duplicate workflow input block")]
+    DuplicateWorkflowInput,
+    #[error("duplicate workflow output block")]
+    DuplicateWorkflowOutput,
     #[error("invalid model reference `{value}`, expected provider/model")]
     InvalidModelReference { value: String },
     #[error("invalid reference `{reference}`, expected {expected}")]

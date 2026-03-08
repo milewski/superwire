@@ -8,6 +8,10 @@ pub enum ValidationError {
     DuplicateSchema { name: String },
     #[error("duplicate provider name `{name}`")]
     DuplicateProvider { name: String },
+    #[error("duplicate workflow input block")]
+    DuplicateWorkflowInput,
+    #[error("duplicate workflow output block")]
+    DuplicateWorkflowOutput,
     #[error("agent `{agent}` references undefined provider `{provider}`")]
     UndefinedProvider { agent: String, provider: String },
     #[error("agent `{agent}` references model `{model}` not declared by provider `{provider}`")]
@@ -20,8 +24,8 @@ pub enum ValidationError {
     InvalidProperty { scope: String, property: String },
     #[error("agent `{agent}` references undefined schema `{schema}`")]
     UndefinedSchema { agent: String, schema: String },
-    #[error("agent `{agent}` references undefined agent path `{reference}`")]
-    UndefinedAgent { agent: String, reference: String },
+    #[error("{scope} references undefined agent path `{reference}`")]
+    UndefinedAgent { scope: String, reference: String },
     #[error("cyclic dependency detected in workflow")]
     CyclicDependency,
     #[error("dependency graph error: {message}")]

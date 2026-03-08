@@ -92,28 +92,8 @@ agent two {
 
 In this example, `agent two` receives the exact same message history and context as `agent one`.
 
-If the workflow only needs a summary of another agent's context, it may reference `.summary` instead.
-
-Example:
-
-```txt
-agent one {
-    model <- "ollama1/qwen3.5:27b"
-    prompt <- "..."
-}
-
-agent two {
-    model <- "ollama2/qwen3.5:35b"
-    context <- agent.one.context.summary
-}
-```
-
-In this example, the summary is generated only when `.summary` is referenced. It is not generated automatically for
-every agent.
-
-A context summary must be generated lazily and only on demand. The summary must be produced using the model configured
-on the referenced agent. In the example above, `agent.one.context.summary` is generated using the model assigned to
-`agent one`.
+If the workflow needs a summary of another agent's context, it can use the `compact` function to generate one. The
+`compact` function is covered in detail in the "Input and Output Blocks" section.
 
 ---
 
@@ -484,7 +464,108 @@ output {
 }
 ```
 
-Each field in the `output` block can reference agent outputs, context summaries, input values, or hardcoded values.
+Each field in the `output` block can reference:
+
+- Agent outputs (e.g., `agent_name.field`)
+- Agent context summaries (e.g., `agent_name.context.summary`)
+- Full agent context (e.g., `agent_name.context`)
+- Input values (e.g., `input.field_name`)
+- Hardcoded values (e.g., `"static string"`)
+
+### Referencing Agent Context in Output Block
+
+The `output` block supports referencing both full agent context and generating summaries using the `compact` function:
+
+```txt
+output {
+    requested_topic <- input.topic
+    requested_audience <- input.audience
+    person_name <- agent.collect_person.name
+    context <- agent.collect_person.context
+}
+```
+
+When referencing the full context using `agent_name.context`, the entire conversation history is returned as a
+structured `serde_json::Value` object. This is NOT a string representation - it is the complete, structured message
+history exactly as it was passed to the AI provider, including:
+
+- All user messages
+- All assistant responses
+- All tool calls made by the agent
+- All tool call results returned to the agent
+- The complete message sequence in the exact format used by the provider
+
+The context is returned as an array of message objects. Example structure:
+
+```json
+[
+  {
+    "type": "user",
+    "content": "Research the topic of artificial intelligence"
+  },
+  {
+    "type": "assistant",
+    "content": "I'll research that topic for you.",
+    "tool_calls": [
+      {
+        "id": "call_123",
+        "name": "search",
+        "arguments": "{\"query\": \"artificial intelligence\"}"
+      }
+    ]
+  },
+  {
+    "type": "tool",
+    "tool_call_id": "call_123",
+    "content": "Search results: AI is the simulation of human intelligence..."
+  },
+  {
+    "type": "assistant",
+    "content": "Based on my research, artificial intelligence refers to..."
+  }
+]
+```
+
+Each message object contains a `type` field indicating the message role (user, assistant, or tool) and the relevant
+content and metadata for that message type.
+
+### Compact Function for Context Summarization
+
+To generate a summary of one or more agent contexts, use the `compact` function. This function takes a model and a list
+of contexts to summarize:
+
+```txt
+output {
+    requested_topic <- input.topic
+    requested_audience <- input.audience
+    person_name <- agent.collect_person.name
+    context <- agent.collect_person.context
+    summary <- compact {
+        model <- "ollama1/qwen3.5:27b"
+        context <- [agent.collect_person.context]
+    }
+}
+```
+
+The `compact` function can also combine and summarize multiple agent contexts:
+
+```txt
+output {
+    combined_summary <- compact {
+        model <- "ollama1/qwen3.5:27b"
+        context <- [agent.one.context, agent.two.context, agent.three.context]
+    }
+}
+```
+
+In these examples:
+- `agent.collect_person.context` returns the complete message history as a `serde_json::Value` object containing all
+  messages, tool calls, and responses in their structured form
+- `compact` generates a summary by processing the provided contexts using the specified model
+- Multiple contexts can be passed to `compact` to create a unified summary across multiple agents
+
+The context object preserves the full fidelity of the agent's execution history and can be used for debugging, auditing,
+or passing to other systems that need to understand the complete interaction.
 
 ### Merging Terminal Agents with Output Block
 
@@ -533,12 +614,18 @@ Expected output:
     "text": "AI is the simulation of human intelligence..."
   },
   "keywords": {
-    "words": ["artificial", "intelligence", "machine", "learning"]
+    "words": [
+      "artificial",
+      "intelligence",
+      "machine",
+      "learning"
+    ]
   }
 }
 ```
 
 In this example:
+
 - The terminal agent `summary` contributes its output under the key `"summary"`
 - The terminal agent `keywords` contributes its output under the key `"keywords"`
 - The `output` block contributes `"topic"` and `"timestamp"` fields
