@@ -873,6 +873,42 @@ Error: cyclic dependency detected
    = help: agent 'agent_b' depends on 'agent_a', but 'agent_a' also depends on 'agent_b' (directly or indirectly). Break the cycle by removing one of the dependencies.
 ```
 
+**Example 7: Missing Input Value**
+
+```
+Error: missing required input 'topic'
+  --> workflows/example.ai:1:1
+   |
+ 1 | input {
+   | ^^^^^
+   |
+   = help: the workflow requires input 'topic' of type string, but no value was provided. Provide the input when executing the workflow.
+```
+
+**Example 8: Input Type Mismatch**
+
+```
+Error: input type mismatch for 'age'
+  --> workflows/example.ai:3:5
+   |
+ 3 |     age: number
+   |     ^^^
+   |
+   = help: expected a number for input 'age', but received a string "25". Provide a numeric value instead.
+```
+
+**Example 9: Undefined Input Reference**
+
+```
+Error: undefined input reference 'username'
+  --> workflows/example.ai:12:18
+   |
+12 |     prompt <- "Hello {{ input.username }}"
+   |                         ^^^^^^^^^^^^^^
+   |
+   = help: input 'username' is not defined in the input block. Available inputs: user_name, topic. Did you mean 'user_name'?
+```
+
 ### Implementation Guidelines
 
 - Use the `pest` crate's built-in error reporting capabilities where possible

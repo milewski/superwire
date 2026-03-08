@@ -261,3 +261,51 @@ output {
         .contains("agent.<name>.context.summary is not supported"));
     assert!(error.to_string().contains("Use compact function instead"));
 }
+
+#[test]
+fn rejects_compact_with_invalid_model() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent collect {
+    model <- "local/demo"
+    prompt <- "Generate data"
+}
+
+agent summarize {
+    model <- "local/demo"
+    context <- compact { model <- "local/invalid", context <- agent.collect.context }
+    prompt <- "Summarize"
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    let error = validate_workflow(&document).expect_err("validation should fail");
+    assert!(error.to_string().contains("not declared by provider"));
+}
+
+#[test]
+fn rejects_compact_with_undefined_provider() {
+    let source = r#"
+provider local {
+    driver <- "mock"
+    models <- ["demo"]
+}
+
+agent collect {
+    model <- "local/demo"
+    prompt <- "Generate data"
+}
+
+output {
+    summary <- compact { model <- "undefined/demo", context <- agent.collect.context }
+}
+"#;
+
+    let document = parse_workflow(source).expect("workflow should parse");
+    let error = validate_workflow(&document).expect_err("validation should fail");
+    assert!(error.to_string().contains("undefined provider"));
+}

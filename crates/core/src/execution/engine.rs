@@ -120,6 +120,10 @@ pub async fn execute_agent(
 
     let mut messages = Vec::new();
 
+    messages.push(RuntimeMessage::System {
+        value: "You must call the 'done' tool when you have completed your task. Call done with status='success' and your final output, or status='fail' with an error message.".to_string(),
+    });
+
     if let Some(output_definition) = &agent.output {
         let schema = match output_definition {
             crate::ast::OutputDefinition::Inline(schema) => schema.clone(),
