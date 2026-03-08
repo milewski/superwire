@@ -1,0 +1,16 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+agent conversation_start {
+    model <- "ollama1/qwen3:8b"
+    prompt <- "Start a conversation about space exploration. Ask an interesting question."
+}
+
+<- agent conversation_continue {
+    model <- "ollama1/qwen3:8b"
+    context <- agent.conversation_start.context
+    prompt <- "Continue the conversation by answering the previous question and asking a follow-up question."
+}

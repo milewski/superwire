@@ -1,0 +1,350 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "AI DSL",
+  "scopeName": "source.ai",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#provider"
+    },
+    {
+      "include": "#schema"
+    },
+    {
+      "include": "#input-block"
+    },
+    {
+      "include": "#output-block"
+    },
+    {
+      "include": "#agent"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.ai",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "provider": {
+      "begin": "\\b(provider)\\s+(\\w+)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.ai"
+        },
+        "2": {
+          "name": "entity.name.type.provider.ai"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#provider-properties"
+        }
+      ]
+    },
+    "provider-properties": {
+      "patterns": [
+        {
+          "match": "\\b(driver|api_endpoint|models)\\s*(<-)\\s*",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.ai"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.ai"
+            }
+          }
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#arrays"
+        }
+      ]
+    },
+    "schema": {
+      "begin": "\\b(schema)\\s+(\\w+)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.ai"
+        },
+        "2": {
+          "name": "entity.name.type.schema.ai"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#schema-fields"
+        }
+      ]
+    },
+    "schema-fields": {
+      "patterns": [
+        {
+          "match": "(\\w+)\\s*(:)\\s*([\\w\\[\\]|\"]+)",
+          "captures": {
+            "1": {
+              "name": "variable.other.property.ai"
+            },
+            "2": {
+              "name": "punctuation.separator.ai"
+            },
+            "3": {
+              "name": "entity.name.type.ai"
+            }
+          }
+        },
+        {
+          "include": "#strings"
+        }
+      ]
+    },
+    "input-block": {
+      "begin": "\\b(input)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.ai"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#schema-fields"
+        }
+      ]
+    },
+    "output-block": {
+      "begin": "\\b(output)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.ai"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "match": "(\\w+)\\s*(<-)\\s*",
+          "captures": {
+            "1": {
+              "name": "variable.other.property.ai"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.ai"
+            }
+          }
+        },
+        {
+          "include": "#references"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#function-calls"
+        }
+      ]
+    },
+    "agent": {
+      "begin": "(<-)?\\s*\\b(agent)\\s+(\\w+)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.operator.terminal.ai"
+        },
+        "2": {
+          "name": "keyword.control.ai"
+        },
+        "3": {
+          "name": "entity.name.function.agent.ai"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#agent-properties"
+        }
+      ]
+    },
+    "agent-properties": {
+      "patterns": [
+        {
+          "match": "\\b(model|tools|context|output|prompt|for_each)\\s*(<-)\\s*",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.ai"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.ai"
+            }
+          }
+        },
+        {
+          "match": "\\b(as)\\s+(\\w+)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.ai"
+            },
+            "2": {
+              "name": "variable.other.ai"
+            }
+          }
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#multiline-strings"
+        },
+        {
+          "include": "#references"
+        },
+        {
+          "include": "#function-calls"
+        },
+        {
+          "include": "#inline-schema"
+        }
+      ]
+    },
+    "inline-schema": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#schema-fields"
+        }
+      ]
+    },
+    "function-calls": {
+      "begin": "\\b(file|compact)\\s+",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.function.ai"
+        }
+      },
+      "end": "(?=\\s*[,}\\]])",
+      "patterns": [
+        {
+          "include": "#strings"
+        },
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "match": "(\\w+)\\s*(<-)\\s*",
+              "captures": {
+                "1": {
+                  "name": "variable.parameter.ai"
+                },
+                "2": {
+                  "name": "keyword.operator.assignment.ai"
+                }
+              }
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#references"
+            }
+          ]
+        }
+      ]
+    },
+    "references": {
+      "patterns": [
+        {
+          "match": "\\b(agent|input|schema)\\.(\\w+)(?:\\.(\\w+))?",
+          "captures": {
+            "1": {
+              "name": "keyword.other.ai"
+            },
+            "2": {
+              "name": "variable.other.ai"
+            },
+            "3": {
+              "name": "variable.other.property.ai"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ai",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "include": "#string-interpolation"
+            },
+            {
+              "name": "constant.character.escape.ai",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "multiline-strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.ai",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "include": "#string-interpolation"
+            }
+          ]
+        }
+      ]
+    },
+    "string-interpolation": {
+      "patterns": [
+        {
+          "name": "meta.embedded.line.ai",
+          "begin": "\\{\\{",
+          "end": "\\}\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.begin.ai"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.end.ai"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#references"
+            }
+          ]
+        }
+      ]
+    },
+    "arrays": {
+      "begin": "\\[",
+      "end": "\\]",
+      "patterns": [
+        {
+          "include": "#strings"
+        },
+        {
+          "name": "punctuation.separator.ai",
+          "match": ","
+        }
+      ]
+    }
+  }
+}

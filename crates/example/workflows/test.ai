@@ -1,0 +1,20 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+agent person_generator {
+    model <- "ollama1/qwen3:8b"
+    output <- schema {
+        name: string
+        age: number
+        hobby: string
+    }
+
+    prompt <- "You generate fake profiles"
+}
+
+output {
+    person <- agent.person_generator
+}

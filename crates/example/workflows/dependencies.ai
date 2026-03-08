@@ -1,0 +1,20 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b", "qwen3.5:27b"]
+}
+
+agent topic {
+    model <- "ollama1/qwen3:8b"
+    
+    output <- {
+        topic: string
+    }
+    
+    prompt <- "Suggest an interesting topic for a blog post. Reply in JSON format."
+}
+
+<- agent article {
+    model <- "ollama1/qwen3:8b"
+    prompt <- "Write a short article about: {{ agent.topic.topic }}"
+}
