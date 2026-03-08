@@ -1065,4 +1065,4 @@ scope names to ensure proper highlighting with JetBrains IDE themes.
 Users should be able to install the bundle by adding the `editors/textmate` directory in their IDE's TextMate Bundles
 settings.
 
-Create a task list with ~20 tasks and start working on this project systematically, do not use git worktrees
+Create a task list with ~20 tasks and start working on this project systematically
