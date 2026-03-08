@@ -6,10 +6,14 @@ workflow = { SOI ~ (provider | schema | input_block | output_block | agent)* ~ E
 // Provider definition
 provider = { "provider" ~ identifier ~ "{" ~ provider_property* ~ "}" }
 provider_property = {
-    ("driver" ~ "<-" ~ string_value) |
-    ("api_endpoint" ~ "<-" ~ string_value) |
-    ("models" ~ "<-" ~ array_value)
+    (property_driver ~ "<-" ~ string_value) |
+    (property_api_endpoint ~ "<-" ~ string_value) |
+    (property_models ~ "<-" ~ array_value)
 }
+
+property_driver = { "driver" }
+property_api_endpoint = { "api_endpoint" }
+property_models = { "models" }
 
 // Schema definition
 schema = { "schema" ~ identifier ~ "{" ~ schema_field* ~ "}" }
@@ -63,7 +67,7 @@ inline_schema = { "schema"? ~ "{" ~ schema_field* ~ "}" }
 
 inline_type = { schema_type ~ string_value? }
 
-// Values
+// Values - NOTE: identifier is NOT a valid value, only references are
 value = {
     function_call |
     reference |
@@ -81,7 +85,7 @@ value = {
 function_call = { identifier ~ (string_value)? ~ "{" ~ function_binding* ~ "}" }
 function_binding = { identifier ~ "<-" ~ value }
 
-// References
+// References - these are the ONLY way to reference agents/inputs
 reference = {
     agent_context_reference |
     agent_field_reference |
@@ -122,5 +126,6 @@ array_value = { "[" ~ (value ~ ("," ~ value)*)? ~ "]" }
 object_value = { "{" ~ (object_pair ~ ("," ~ object_pair)*)? ~ "}" }
 object_pair = { identifier ~ ":" ~ value }
 
-// Identifiers
+// Identifiers - used for names, not as values
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+

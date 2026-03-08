@@ -3,7 +3,7 @@ use crate::execution::context::RuntimeContext;
 use crate::execution::error::ExecutionError;
 use crate::providers::provider::{Message, ProviderRef, ToolDefinition};
 use crate::schemas::{SchemaCompiler, SchemaValidator};
-use crate::tools::{DoneTool, ToolRegistry};
+use crate::tools::{DoneTool, Tool, ToolRegistry};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
@@ -16,13 +16,9 @@ pub struct AgentOrchestrator {
 
 impl AgentOrchestrator {
     pub fn new(provider: ProviderRef) -> Self {
-        let mut tool_registry = ToolRegistry::new();
-
-        tool_registry.register(Arc::new(DoneTool::new()));
-
         Self {
             provider,
-            tool_registry,
+            tool_registry: ToolRegistry::new(),
         }
     }
 
@@ -39,27 +35,9 @@ impl AgentOrchestrator {
 
         let schema = self.extract_schema(agent)?;
 
+        let done_tool = Arc::new(DoneTool::new(schema.clone()));
+
         let mut context = Vec::new();
-
-        if let Some(ref schema_value) = schema {
-            log::debug!("Agent '{}' has output schema defined", agent.name);
-
-            let schema_instruction = SchemaValidator::inject_schema_into_prompt(schema_value);
-
-            context.push(Message::System {
-                content: schema_instruction,
-            });
-
-            context.push(Message::System {
-                content: "You must call the 'done' tool to complete your task. Call it with status='success' and your final output as a JSON object in the 'output' parameter. IMPORTANT: Pass the JSON object directly to the output parameter, NOT as a string. Example: done(status='success', output={\"key\": \"value\"})".to_string(),
-            });
-        } else {
-            log::debug!("Agent '{}' has no output schema", agent.name);
-
-            context.push(Message::System {
-                content: "You must call the 'done' tool to complete your task. Call it with status='success' and your final output as a string in the 'output' parameter. Example: done(status='success', output='Your response here')".to_string(),
-            });
-        }
 
         context.extend(initial_context);
 
@@ -67,7 +45,7 @@ impl AgentOrchestrator {
             content: prompt.clone(),
         });
 
-        let tools = self.build_tool_definitions();
+        let tools = self.build_tool_definitions_with_done(done_tool.clone());
 
         log::info!("Agent '{}' has {} tools available", agent.name, tools.len());
         if !tools.is_empty() {
@@ -142,7 +120,10 @@ impl AgentOrchestrator {
                     );
                     log::debug!("Tool '{}' arguments: {}", tool_call.name, tool_call.arguments);
 
-                    let tool_result = match self.execute_tool(&tool_call.name, &tool_call.arguments).await {
+                    let tool_result = match self
+                        .execute_tool(&tool_call.name, &tool_call.arguments, Some(done_tool.clone()))
+                        .await
+                    {
                         Ok(result) => {
                             log::debug!("Tool '{}' executed successfully", tool_call.name);
                             log::trace!("Tool '{}' result: {}", tool_call.name, result);
@@ -257,15 +238,27 @@ impl AgentOrchestrator {
         }
     }
 
-    async fn execute_tool(&self, tool_name: &str, arguments_json: &str) -> Result<String, ExecutionError> {
-        let tool = self
-            .tool_registry
-            .get(tool_name)
-            .ok_or_else(|| ExecutionError::RuntimeError {
+    async fn execute_tool(
+        &self,
+        tool_name: &str,
+        arguments_json: &str,
+        done_tool: Option<Arc<dyn Tool>>,
+    ) -> Result<String, ExecutionError> {
+        let tool = if tool_name == "done" {
+            done_tool.ok_or_else(|| ExecutionError::RuntimeError {
                 agent: "tool_execution".to_string(),
-                message: format!("Unknown tool: {}", tool_name),
-                suggestion: Some("Check that the tool is registered".to_string()),
-            })?;
+                message: "Done tool not provided".to_string(),
+                suggestion: Some("This is an internal error".to_string()),
+            })?
+        } else {
+            self.tool_registry
+                .get(tool_name)
+                .ok_or_else(|| ExecutionError::RuntimeError {
+                    agent: "tool_execution".to_string(),
+                    message: format!("Unknown tool: {}", tool_name),
+                    suggestion: Some("Check that the tool is registered".to_string()),
+                })?
+        };
 
         let arguments: JsonValue =
             serde_json::from_str(arguments_json).map_err(|error| ExecutionError::RuntimeError {
@@ -359,5 +352,17 @@ impl AgentOrchestrator {
                 parameters_schema: tool.parameters_schema(),
             })
             .collect()
+    }
+
+    fn build_tool_definitions_with_done(&self, done_tool: Arc<dyn Tool>) -> Vec<ToolDefinition> {
+        let mut tools = self.build_tool_definitions();
+
+        tools.push(ToolDefinition {
+            name: done_tool.name().to_string(),
+            description: done_tool.description().to_string(),
+            parameters_schema: done_tool.parameters_schema(),
+        });
+
+        tools
     }
 }

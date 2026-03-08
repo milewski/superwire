@@ -55,18 +55,45 @@ declared explicitly in the agent's `tools` list.
 
 The only way for an agent to exit the agent loop is by calling the `done` tool and providing its final output.
 
-The `done` tool must accept two parameters:
+The `done` tool accepts two parameters:
 
 - `status`: either "success" or "fail"
 - `output`: the final output value (required for success) or error reason (required for fail)
 
-If an agent defines an `output` schema, the value provided to `done` with status "success" must validate against that
-schema.
+The `done` tool is schema-specific for each agent. When an agent defines an `output` schema, the `done` tool's `output`
+parameter is automatically configured with that exact schema. This ensures the language model receives precise type
+information about what output format is expected, eliminating ambiguity and reducing the need for trial-and-error
+attempts.
+
+For example, if an agent defines:
+
+```txt
+agent person {
+    output <- {
+        name: string
+        age: number
+    }
+}
+```
+
+The `done` tool for this agent will have an `output` parameter with the schema:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "number" }
+  },
+  "required": ["name", "age"]
+}
+```
+
+If an agent does not define an `output` schema, the `done` tool's `output` parameter is configured as `type: "string"`,
+and the agent's final output is a plain string.
 
 If schema validation fails, the validation error must be returned to the agent, and the agent must continue running
 inside the loop until it produces a valid output.
-
-If an agent does not define an `output` schema, its final output is a plain string.
 
 When an agent calls `done` with status "fail", the workflow execution should handle the failure appropriately (e.g.,
 propagate the error, log it, or allow dependent agents to handle it based on the execution strategy).
@@ -240,31 +267,80 @@ The following schema types are supported:
 
 The output of a schema-validated agent is expected to be JSON compatible with the generated JSON Schema.
 
-### Schema Injection into Agent Context
+### Schema Integration with the Done Tool
 
-When an agent defines an `output` schema, the schema must be automatically injected into the agent's prompt context.
-This ensures the agent understands the expected output format from the start, reducing token waste from trial-and-error
-attempts.
+When an agent defines an `output` schema, the schema is automatically integrated into the `done` tool definition that is
+provided to the language model. This approach embeds the schema directly into the tool's parameter specification,
+ensuring the model receives precise type information through the native tool calling interface.
 
-The schema should be injected as part of the system instructions with clear formatting guidance. The injection should
-include:
+The schema integration works as follows:
 
-- The complete JSON Schema representation
-- Clear instruction to return JSON following the schema
-- Field descriptions and constraints from the schema definition
+1. The engine compiles the agent's output schema into JSON Schema format
+2. A schema-specific `done` tool is created for that agent execution
+3. The `done` tool's `output` parameter is configured with the agent's output schema
+4. The tool definition (including the schema) is passed to the language model provider
 
-Example injection format:
+This approach has several advantages:
 
+- **Type Safety**: The language model receives the exact schema through its native tool calling interface
+- **Reduced Ambiguity**: No separate system instructions are needed to describe the output format
+- **Better Performance**: The model can call the `done` tool correctly on the first attempt, reducing iterations
+- **Provider Compatibility**: Works with any provider that supports native tool calling (function calling)
+
+For example, if an agent defines:
+
+```txt
+agent person {
+    output <- {
+        name: string
+        age: number
+        hobbies: [string]
+    }
+}
 ```
-You must return your response as JSON following this exact schema:
 
-{schema_json_here}
+The `done` tool provided to the language model will have this parameter schema:
 
-Ensure your output is valid JSON that matches this structure.
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["success", "fail"]
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "age": { "type": "number" },
+        "hobbies": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["name", "age", "hobbies"]
+    }
+  },
+  "required": ["status", "output"]
+}
 ```
 
-This injection happens automatically during agent execution and is not visible in the DSL. The agent receives both its
-configured prompt and the schema requirements in its context.
+The language model can then call the tool with properly typed arguments:
+
+```json
+{
+  "status": "success",
+  "output": {
+    "name": "Alice Johnson",
+    "age": 34,
+    "hobbies": ["Reading", "Hiking", "Photography"]
+  }
+}
+```
+
+This integration happens automatically during agent execution and is not visible in the DSL. The agent receives its
+configured prompt, and the schema is embedded in the tool definition.
 
 ---
 
@@ -1022,6 +1098,11 @@ to extract tool calls from agent responses. Instead, use the provider's built-in
 tool support) to define tools and parse tool invocations. This ensures reliability and compatibility with the provider's
 expected behavior.
 
+The `done` tool implementation must be schema-specific for each agent execution. When an agent is executed, create a new
+`DoneTool` instance with the agent's output schema (if defined). The tool's `parameters_schema()` method should inject
+the agent's output schema into the `output` parameter of the done tool's schema. This ensures the language model receives
+the exact schema through the tool definition, eliminating the need for separate system instructions about output format.
+
 All Rust modules should use the `module/mod.rs` style for organization (e.g., `parser/mod.rs`, `validation/mod.rs`)
 rather than single-file modules.
 
@@ -1065,7 +1146,7 @@ It should also be possible to create testing macros that make parser and executi
 
 Example:
 
-```rust
+```
 let result = parser! {
     agent one {
         model <- "ollama/model"

@@ -16,6 +16,45 @@ loops, and other control flow structures from each other and from surrounding co
 
 This improves readability by creating visual separation between logical sections of code.
 
+## Variable Assignment Spacing
+
+**Consecutive single-line variable assignments should not have blank lines between them.** Only add a blank line when
+the assignment chain is broken by a multi-line expression or when transitioning to a different logical section.
+
+Good:
+
+```rust
+let schema = self.extract_schema(agent)?;
+let done_tool = Arc::new(DoneTool::new(schema.clone()));
+let mut context = Vec::new();
+```
+
+Bad:
+
+```rust
+let schema = self.extract_schema(agent)?;
+
+let done_tool = Arc::new(DoneTool::new(schema.clone()));
+
+let mut context = Vec::new();
+```
+
+Exception: When an assignment contains a long chain of elements that spans multiple lines, add a blank line before the
+next assignment:
+
+```rust
+let schema = self.extract_schema(agent)?;
+let done_tool = Arc::new(DoneTool::new(schema.clone()));
+
+let complex_value = some_function()
+    .with_option_one()
+    .with_option_two()
+    .with_option_three()
+    .build()?;
+
+let next_value = another_assignment();
+```
+
 ## Documentation Files
 
 **Do not create documentation, explanation, or implementation detail files unless explicitly requested.** This includes

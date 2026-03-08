@@ -91,7 +91,7 @@ impl WorkflowValidator {
                 .properties
                 .iter()
                 .any(|p| matches!(p, AgentProperty::Prompt { .. }));
-            let has_output = agent
+            let _has_output = agent
                 .properties
                 .iter()
                 .any(|p| matches!(p, AgentProperty::Output { .. }));
@@ -115,17 +115,6 @@ impl WorkflowValidator {
                     agent_name: agent.name.clone(),
                     property_name: "prompt".to_string(),
                     suggestion: Some(format!("Add 'prompt <- \"...\"' to agent '{}'", agent.name)),
-                });
-            }
-
-            if !has_output {
-                errors.push(ValidationError::MissingRequiredProperty {
-                    file_path: "workflow".to_string(),
-                    line: agent.span.line,
-                    column: agent.span.column,
-                    agent_name: agent.name.clone(),
-                    property_name: "output".to_string(),
-                    suggestion: Some(format!("Add 'output <- {{ ... }}' to agent '{}'", agent.name)),
                 });
             }
         }
