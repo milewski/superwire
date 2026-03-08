@@ -12,12 +12,15 @@ use crate::execution::engine::{execute_agent, summarize_context, AgentExecutionR
 use crate::execution::error::ExecutionError;
 use crate::providers::provider::ProviderModelConfig;
 use crate::providers::registry::{resolve_model_config, ProviderRegistry};
+use crate::schemas::compiler::validate_value;
 use crate::utils::template::interpolate_template;
 
 pub async fn execute_workflow(
     document: &WorkflowDocument,
     registry: &ProviderRegistry,
+    workflow_input: Option<&Value>,
 ) -> Result<Value, ExecutionError> {
+    let runtime_input = validate_workflow_input(document, workflow_input)?;
     let ordered_agents = topologically_sorted_agents(document)?;
     let mut results = HashMap::<String, AgentExecutionResult>::new();
 
@@ -62,8 +65,8 @@ pub async fn execute_workflow(
             .expect("validated provider exists");
         let provider = registry.get(&provider_definition.driver)?;
         let mut materialized_agent = agent.clone();
-        materialize_prompts(&mut materialized_agent, &results)?;
-        materialize_context(document, &results, &mut materialized_agent, registry).await?;
+        materialize_prompts(&mut materialized_agent, &results, &runtime_input)?;
+        materialize_context(document, &mut results, &mut materialized_agent, registry).await?;
         info!("executing workflow agent: {}", agent.name);
         let result = if materialized_agent.for_each.is_some() {
             execute_for_each(&materialized_agent, document, provider, model).await?
@@ -73,7 +76,7 @@ pub async fn execute_workflow(
         results.insert(agent.name.clone(), result);
     }
 
-    collect_terminal_outputs(document, &results)
+    build_final_output(document, &results, &runtime_input)
 }
 
 fn topologically_sorted_agents(document: &WorkflowDocument) -> Result<Vec<&AgentDefinition>, ExecutionError> {
@@ -114,20 +117,23 @@ fn topologically_sorted_agents(document: &WorkflowDocument) -> Result<Vec<&Agent
 fn materialize_prompts(
     agent: &mut AgentDefinition,
     results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
 ) -> Result<(), ExecutionError> {
     if agent.for_each.is_some() {
         if let Some(for_each_binding) = &agent.for_each {
-            let materialized_collection = materialize_expression(&for_each_binding.collection, results)?;
+            let materialized_collection =
+                materialize_expression(&for_each_binding.collection, results, workflow_input)?;
             agent.for_each = Some(crate::ast::ForEachBinding {
                 collection: Box::new(materialized_collection),
                 binding: for_each_binding.binding.clone(),
             });
         }
+
         return Ok(());
     }
 
     if let Some(prompt_expr) = &agent.prompt {
-        let materialized = materialize_expression(prompt_expr, results)?;
+        let materialized = materialize_expression(prompt_expr, results, workflow_input)?;
         agent.prompt = Some(materialized);
     }
 
@@ -160,10 +166,11 @@ fn json_value_to_expression(value: &Value) -> Result<Expression, ExecutionError>
 fn materialize_expression(
     expr: &Expression,
     results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
 ) -> Result<Expression, ExecutionError> {
     match expr {
         Expression::String(s) | Expression::MultilineString(s) | Expression::InterpolatedString(s) => {
-            let variables = build_variable_map(results);
+            let variables = build_variable_map(results, workflow_input);
             log::debug!("Materializing template with {} variables", variables.len());
             for (key, value) in &variables {
                 log::debug!("  Variable '{}': {:?}", key, value);
@@ -178,24 +185,24 @@ fn materialize_expression(
         Expression::Array(items) => {
             let materialized_items = items
                 .iter()
-                .map(|item| materialize_expression(item, results))
+                .map(|item| materialize_expression(item, results, workflow_input))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Expression::Array(materialized_items))
         }
         Expression::Object(values) => {
             let materialized_values = values
                 .iter()
-                .map(|(k, v)| Ok((k.clone(), materialize_expression(v, results)?)))
+                .map(|(key, value)| Ok((key.clone(), materialize_expression(value, results, workflow_input)?)))
                 .collect::<Result<indexmap::IndexMap<_, _>, ExecutionError>>()?;
             Ok(Expression::Object(materialized_values))
         }
         Expression::Reference(reference) => {
-            let value = resolve_reference(reference, results)?;
+            let value = resolve_reference(reference, results, workflow_input)?;
             json_value_to_expression(&value)
         }
         Expression::FunctionCall(function_call) => {
             if function_call.name == "file" {
-                evaluate_file_function(function_call, results)
+                evaluate_file_function(function_call, results, workflow_input)
             } else {
                 Err(ExecutionError::UnsupportedExpression {
                     expression: format!("unknown function: {}", function_call.name),
@@ -209,6 +216,7 @@ fn materialize_expression(
 fn evaluate_file_function(
     function_call: &crate::ast::FunctionCall,
     results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
 ) -> Result<Expression, ExecutionError> {
     let file_path = match &*function_call.target {
         Expression::String(path) => path.clone(),
@@ -221,7 +229,7 @@ fn evaluate_file_function(
 
     let mut variables = HashMap::new();
     for (key, value_expr) in &function_call.arguments {
-        let materialized = materialize_expression(value_expr, results)?;
+        let materialized = materialize_expression(value_expr, results, workflow_input)?;
         let value = match materialized {
             Expression::String(s) => Value::String(s),
             Expression::Number(n) => serde_json::Number::from_f64(n)
@@ -247,8 +255,12 @@ fn evaluate_file_function(
     Ok(Expression::String(content))
 }
 
-fn build_variable_map(results: &HashMap<String, AgentExecutionResult>) -> HashMap<String, Value> {
+fn build_variable_map(
+    results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
+) -> HashMap<String, Value> {
     let mut variables = HashMap::new();
+    variables.insert("input".to_string(), workflow_input.clone());
 
     for (agent_name, result) in results {
         variables.insert(agent_name.clone(), result.output.clone());
@@ -260,8 +272,73 @@ fn build_variable_map(results: &HashMap<String, AgentExecutionResult>) -> HashMa
 fn resolve_reference(
     reference: &crate::ast::Reference,
     results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
 ) -> Result<Value, ExecutionError> {
     if reference.segments.is_empty() {
+        return Err(ExecutionError::InvalidContextReference {
+            reference: reference.as_string(),
+        });
+    }
+
+    if reference.segments[0] == "input" {
+        let mut current = workflow_input.clone();
+
+        for segment in &reference.segments[1..] {
+            current = match current {
+                Value::Object(map) => {
+                    map.get(segment)
+                        .cloned()
+                        .ok_or_else(|| ExecutionError::InvalidContextReference {
+                            reference: reference.as_string(),
+                        })?
+                }
+                Value::Array(array) => {
+                    let index: usize = segment.parse().map_err(|_| ExecutionError::InvalidContextReference {
+                        reference: reference.as_string(),
+                    })?;
+                    array
+                        .get(index)
+                        .cloned()
+                        .ok_or_else(|| ExecutionError::InvalidContextReference {
+                            reference: reference.as_string(),
+                        })?
+                }
+                _ => {
+                    return Err(ExecutionError::InvalidContextReference {
+                        reference: reference.as_string(),
+                    })
+                }
+            };
+        }
+
+        return Ok(current);
+    }
+
+    if reference.segments[0] == "agent" && reference.segments.len() >= 3 && reference.segments[2] == "context" {
+        let agent_name = reference
+            .segments
+            .get(1)
+            .ok_or_else(|| ExecutionError::InvalidContextReference {
+                reference: reference.as_string(),
+            })?;
+        let result = results
+            .get(agent_name)
+            .ok_or_else(|| ExecutionError::MissingAgentResult {
+                agent: agent_name.clone(),
+            })?;
+
+        if reference.segments.len() == 3 {
+            return Ok(result.context.as_json());
+        }
+
+        if reference.segments.len() == 4 && reference.segments[3] == "summary" {
+            return result.context.summary.clone().map(Value::String).ok_or_else(|| {
+                ExecutionError::InvalidContextReference {
+                    reference: reference.as_string(),
+                }
+            });
+        }
+
         return Err(ExecutionError::InvalidContextReference {
             reference: reference.as_string(),
         });
@@ -320,7 +397,7 @@ fn resolve_reference(
 
 async fn materialize_context(
     document: &WorkflowDocument,
-    results: &HashMap<String, AgentExecutionResult>,
+    results: &mut HashMap<String, AgentExecutionResult>,
     agent: &mut AgentDefinition,
     registry: &ProviderRegistry,
 ) -> Result<(), ExecutionError> {
@@ -344,8 +421,8 @@ async fn materialize_context(
             agent: source_agent_name.clone(),
         })?;
 
-    let context_text = match context {
-        ContextSource::Full(_) => source_result.context.messages.join("\n"),
+    let context_text = match &context {
+        ContextSource::Full(_) => source_result.context.render_for_prompt(),
         ContextSource::Summary(_) => {
             if let Some(summary) = &source_result.context.summary {
                 summary.clone()
@@ -373,7 +450,12 @@ async fn materialize_context(
                         provider: source_provider_name.clone(),
                     })?;
                 let provider = registry.get(&source_provider_def.driver)?;
-                summarize_context(document, source_agent_name, provider, &source_result.context).await?
+                let summary = summarize_context(document, source_agent_name, provider, &source_result.context).await?;
+                if let Some(result) = results.get_mut(source_agent_name) {
+                    result.context.summary = Some(summary.clone());
+                }
+
+                summary
             }
         }
     };
@@ -550,15 +632,20 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
             }
         }
         Expression::Reference(reference) => {
-            if reference.segments.first().map(String::as_str) != Some("schema") {
-                let agent_name = if reference.segments.first().map(String::as_str) == Some("agent") {
-                    reference.segments.get(1)
-                } else {
-                    reference.segments.first()
-                };
-                if let Some(name) = agent_name {
-                    dependencies.insert(name.clone());
-                }
+            if matches!(
+                reference.segments.first().map(String::as_str),
+                Some("schema") | Some("input")
+            ) {
+                return;
+            }
+
+            let agent_name = if reference.segments.first().map(String::as_str) == Some("agent") {
+                reference.segments.get(1)
+            } else {
+                reference.segments.first()
+            };
+            if let Some(name) = agent_name {
+                dependencies.insert(name.clone());
             }
         }
         Expression::FunctionCall(function_call) => {
@@ -582,10 +669,10 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
 fn extract_template_dependencies(template: &str, dependencies: &mut HashSet<String>) {
     if let Ok(re) = regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}") {
         for cap in re.captures_iter(template) {
-            if let Some(var_path) = cap.get(1) {
-                let path = var_path.as_str();
+            if let Some(variable_path) = cap.get(1) {
+                let path = variable_path.as_str();
                 let parts: Vec<&str> = path.split('.').collect();
-                if !parts.is_empty() && parts[0] != "schema" {
+                if !parts.is_empty() && parts[0] != "schema" && parts[0] != "input" {
                     dependencies.insert(parts[0].to_string());
                 }
             }
@@ -593,9 +680,26 @@ fn extract_template_dependencies(template: &str, dependencies: &mut HashSet<Stri
     }
 }
 
-fn collect_terminal_outputs(
+fn validate_workflow_input(
+    document: &WorkflowDocument,
+    workflow_input: Option<&Value>,
+) -> Result<Value, ExecutionError> {
+    match &document.input {
+        Some(input_schema) => {
+            let input_value = workflow_input.cloned().unwrap_or(Value::Object(Map::new()));
+            validate_value(input_schema, &input_value).map_err(|error| ExecutionError::WorkflowInputValidation {
+                message: error.to_string(),
+            })?;
+            Ok(input_value)
+        }
+        None => Ok(workflow_input.cloned().unwrap_or(Value::Null)),
+    }
+}
+
+fn build_final_output(
     document: &WorkflowDocument,
     results: &HashMap<String, AgentExecutionResult>,
+    workflow_input: &Value,
 ) -> Result<Value, ExecutionError> {
     let terminals = document
         .agents
@@ -603,12 +707,35 @@ fn collect_terminal_outputs(
         .filter(|agent| agent.is_terminal)
         .collect::<Vec<_>>();
 
-    if terminals.is_empty() {
+    let workflow_output = match &document.output {
+        Some(output_expression) => {
+            let materialized_output = materialize_expression(output_expression, results, workflow_input)?;
+            Some(expression_to_json(&materialized_output)?)
+        }
+        None => None,
+    };
+
+    if workflow_output.is_none() && terminals.is_empty() {
         return Ok(Value::Null);
     }
 
-    let mut output = Map::new();
+    let mut output = match workflow_output {
+        Some(Value::Object(object)) => object,
+        Some(other) => {
+            return Err(ExecutionError::UnsupportedExpression {
+                expression: format!("workflow output must materialize to an object, got {other:?}"),
+            })
+        }
+        None => Map::new(),
+    };
+
     for agent in terminals {
+        if output.contains_key(&agent.name) {
+            return Err(ExecutionError::DuplicateFinalOutputKey {
+                key: agent.name.clone(),
+            });
+        }
+
         let result = results
             .get(&agent.name)
             .ok_or_else(|| ExecutionError::MissingAgentResult {

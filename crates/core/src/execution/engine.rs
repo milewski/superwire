@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::{debug, info};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::ast::{AgentDefinition, WorkflowDocument};
 use crate::execution::error::ExecutionError;
@@ -19,10 +19,93 @@ pub struct AgentExecutionResult {
     pub context: AgentRuntimeContext,
 }
 
+#[derive(Debug, Clone)]
+pub enum RuntimeMessage {
+    User {
+        value: String,
+    },
+    Assistant {
+        value: String,
+    },
+    System {
+        value: String,
+    },
+    ToolCall {
+        name: String,
+        arguments: Value,
+        result: Value,
+    },
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AgentRuntimeContext {
-    pub messages: Vec<String>,
+    pub messages: Vec<RuntimeMessage>,
     pub summary: Option<String>,
+}
+
+impl AgentRuntimeContext {
+    pub fn as_json(&self) -> Value {
+        Value::Array(self.messages.iter().map(RuntimeMessage::as_json).collect())
+    }
+
+    pub fn render_for_prompt(&self) -> String {
+        self.messages
+            .iter()
+            .map(RuntimeMessage::render)
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+}
+
+impl RuntimeMessage {
+    pub fn as_json(&self) -> Value {
+        let mut message_map = Map::new();
+
+        match self {
+            RuntimeMessage::User { value } => {
+                message_map.insert("type".to_string(), Value::String("user".to_string()));
+                message_map.insert("value".to_string(), Value::String(value.clone()));
+            }
+            RuntimeMessage::Assistant { value } => {
+                message_map.insert("type".to_string(), Value::String("assistant".to_string()));
+                message_map.insert("value".to_string(), Value::String(value.clone()));
+            }
+            RuntimeMessage::System { value } => {
+                message_map.insert("type".to_string(), Value::String("system".to_string()));
+                message_map.insert("value".to_string(), Value::String(value.clone()));
+            }
+            RuntimeMessage::ToolCall {
+                name,
+                arguments,
+                result,
+            } => {
+                message_map.insert("type".to_string(), Value::String("tool_call".to_string()));
+                message_map.insert("name".to_string(), Value::String(name.clone()));
+                message_map.insert("arguments".to_string(), arguments.clone());
+                message_map.insert("result".to_string(), result.clone());
+            }
+        }
+
+        Value::Object(message_map)
+    }
+
+    pub fn render(&self) -> String {
+        match self {
+            RuntimeMessage::User { value } => format!("User: {}", value),
+            RuntimeMessage::Assistant { value } => format!("Assistant: {}", value),
+            RuntimeMessage::System { value } => format!("System: {}", value),
+            RuntimeMessage::ToolCall {
+                name,
+                arguments,
+                result,
+            } => format!(
+                "Tool Call: {}\nArguments: {}\nResult: {}",
+                name,
+                serde_json::to_string_pretty(arguments).unwrap_or_else(|_| arguments.to_string()),
+                serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string())
+            ),
+        }
+    }
 }
 
 pub async fn execute_agent(
@@ -76,7 +159,7 @@ pub async fn execute_agent(
         tools.len()
     );
 
-    let mut messages = Vec::new();
+    let mut messages = vec![RuntimeMessage::User { value: prompt.clone() }];
     let mut transcript = Vec::new();
     let max_iterations = 10;
 
@@ -85,7 +168,11 @@ pub async fn execute_agent(
             prompt: if iteration == 0 {
                 prompt.clone()
             } else {
-                messages.join("\n\n")
+                messages
+                    .iter()
+                    .map(RuntimeMessage::render)
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
             },
             tools: tools
                 .iter()
@@ -108,7 +195,9 @@ pub async fn execute_agent(
             agent.name, iteration, response.message
         );
 
-        messages.push(format!("Assistant: {}", response.message.clone()));
+        messages.push(RuntimeMessage::Assistant {
+            value: response.message.clone(),
+        });
         transcript.push(response.message.clone());
 
         if let Some(tool_call) = response.tool_calls.iter().find(|call| call.name == "done") {
@@ -116,6 +205,11 @@ pub async fn execute_agent(
                 .invoke(tool_call.arguments.clone())
                 .await
                 .map_err(ExecutionError::Tool)?;
+            messages.push(RuntimeMessage::ToolCall {
+                name: tool_call.name.clone(),
+                arguments: tool_call.arguments.clone(),
+                result: payload.clone(),
+            });
             debug!("done tool invoked: agent={}, payload={}", agent.name, payload);
 
             let status = payload
@@ -158,7 +252,9 @@ pub async fn execute_agent(
 
                     if let Err(validation_error) = validate_value(&schema, &output) {
                         let error_message = format!("Schema validation failed: {}", validation_error);
-                        messages.push(format!("System: {}", error_message));
+                        messages.push(RuntimeMessage::System {
+                            value: error_message.clone(),
+                        });
                         info!(
                             "schema validation failed: agent={}, error={}",
                             agent.name, error_message
@@ -182,7 +278,9 @@ pub async fn execute_agent(
         }
 
         if response.tool_calls.is_empty() {
-            messages.push("System: You must call the 'done' tool to complete your task. Call done with status='success' and your final output, or status='fail' with an error message.".into());
+            messages.push(RuntimeMessage::System {
+                value: "You must call the 'done' tool to complete your task. Call done with status='success' and your final output, or status='fail' with an error message.".into(),
+            });
         }
     }
 
@@ -217,14 +315,14 @@ pub async fn summarize_context(
     let model = crate::providers::registry::resolve_model_config(provider_definition, &model_ref.model);
     let request = ProviderRequest {
         prompt: format!(
-            "Summarize the following agent context for reuse by another agent:\n\n{}",
-            context.messages.join("\n")
+            "Summarize the following agent conversation history. Return only the summary text as plain text, with no JSON, no markdown code fences, and no tool call formatting:\n\n{}",
+            context.render_for_prompt()
         ),
         tools: Vec::new(),
         response_schema: None,
     };
     let response = provider.chat(&model, &request).await?;
-    Ok(response.message)
+    Ok(response.message.trim().trim_matches('`').trim().to_string())
 }
 
 pub fn render_expression(expression: &crate::ast::Expression) -> String {

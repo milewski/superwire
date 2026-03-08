@@ -24,6 +24,8 @@ pub enum ExecutionError {
     MissingSchema { agent: String, schema: String },
     #[error("schema compilation failed for agent `{agent}`: {message}")]
     SchemaCompilation { agent: String, message: String },
+    #[error("workflow input validation failed: {message}")]
+    WorkflowInputValidation { message: String },
     #[error("for_each requires an array collection, got `{actual}`")]
     InvalidForEachCollection { actual: String },
     #[error("unsupported expression in runtime conversion: `{expression}`")]
@@ -32,6 +34,8 @@ pub enum ExecutionError {
     InvalidNumericValue { value: String },
     #[error("invalid context reference `{reference}`")]
     InvalidContextReference { reference: String },
+    #[error("duplicate final output key `{key}`")]
+    DuplicateFinalOutputKey { key: String },
     #[error("agent `{agent}` is missing a model configuration")]
     MissingModel { agent: String },
     #[error("provider definition `{provider}` is missing")]

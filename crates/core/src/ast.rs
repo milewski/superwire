@@ -6,6 +6,8 @@ pub struct WorkflowDocument {
     pub agents: Vec<AgentDefinition>,
     pub schemas: Vec<SchemaDefinition>,
     pub providers: Vec<ProviderDefinition>,
+    pub input: Option<SchemaDefinition>,
+    pub output: Option<Expression>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

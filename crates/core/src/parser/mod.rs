@@ -35,6 +35,20 @@ pub fn parse_workflow(input: &str) -> Result<WorkflowDocument, ParserError> {
             Rule::agent_def => document.agents.push(parse_agent(pair)?),
             Rule::schema_def => document.schemas.push(parse_named_schema(pair)?),
             Rule::provider_def => document.providers.push(parse_provider(pair)?),
+            Rule::input_def => {
+                if document.input.is_some() {
+                    return Err(ParserError::DuplicateWorkflowInput);
+                }
+
+                document.input = Some(parse_workflow_input(pair)?);
+            }
+            Rule::output_def => {
+                if document.output.is_some() {
+                    return Err(ParserError::DuplicateWorkflowOutput);
+                }
+
+                document.output = Some(parse_workflow_output(pair)?);
+            }
             Rule::EOI => {}
             other => {
                 return Err(ParserError::UnexpectedRule {
@@ -145,6 +159,29 @@ fn parse_named_schema(pair: Pair<'_, Rule>) -> Result<SchemaDefinition, ParserEr
     })
 }
 
+fn parse_workflow_input(pair: Pair<'_, Rule>) -> Result<SchemaDefinition, ParserError> {
+    let span = pair.as_span();
+    let schema_block = pair.into_inner().next().ok_or_else(|| ParserError::MissingField {
+        field: "workflow input block".into(),
+        span: span.start()..span.end(),
+    })?;
+
+    Ok(SchemaDefinition {
+        name: None,
+        fields: parse_schema_fields(schema_block)?,
+    })
+}
+
+fn parse_workflow_output(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
+    let span = pair.as_span();
+    let output_block = pair.into_inner().next().ok_or_else(|| ParserError::MissingField {
+        field: "workflow output block".into(),
+        span: span.start()..span.end(),
+    })?;
+
+    parse_output_object(output_block)
+}
+
 fn parse_provider(pair: Pair<'_, Rule>) -> Result<ProviderDefinition, ParserError> {
     let span = pair.as_span();
     let mut inner = pair.into_inner();
@@ -242,6 +279,7 @@ fn parse_array(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
 }
 
 fn parse_object(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
+    let span = pair.as_span();
     let mut values = IndexMap::new();
     for property in pair.into_inner() {
         let mut inner = property.into_inner();
@@ -249,16 +287,39 @@ fn parse_object(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
             .next()
             .ok_or_else(|| ParserError::MissingField {
                 field: "object property key".into(),
-                span: 0..0,
+                span: span.start()..span.end(),
             })?
             .as_str()
             .to_owned();
         let value = inner.next().ok_or_else(|| ParserError::MissingField {
             field: format!("object property `{key}` value"),
-            span: 0..0,
+            span: span.start()..span.end(),
         })?;
         values.insert(key, parse_expression(value)?);
     }
+    Ok(Expression::Object(values))
+}
+
+fn parse_output_object(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
+    let span = pair.as_span();
+    let mut values = IndexMap::new();
+    for field in pair.into_inner() {
+        let mut inner = field.into_inner();
+        let key = inner
+            .next()
+            .ok_or_else(|| ParserError::MissingField {
+                field: "output field key".into(),
+                span: span.start()..span.end(),
+            })?
+            .as_str()
+            .to_owned();
+        let value = inner.next().ok_or_else(|| ParserError::MissingField {
+            field: format!("output field `{key}` value"),
+            span: span.start()..span.end(),
+        })?;
+        values.insert(key, parse_expression(value)?);
+    }
+
     Ok(Expression::Object(values))
 }
 

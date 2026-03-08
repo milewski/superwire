@@ -49,6 +49,16 @@ fn validate_unique_names(document: &WorkflowDocument) -> Result<(), ValidationEr
         }
     }
 
+    let workflow_input_count = usize::from(document.input.is_some());
+    if workflow_input_count > 1 {
+        return Err(ValidationError::DuplicateWorkflowInput);
+    }
+
+    let workflow_output_count = usize::from(document.output.is_some());
+    if workflow_output_count > 1 {
+        return Err(ValidationError::DuplicateWorkflowOutput);
+    }
+
     Ok(())
 }
 
@@ -143,16 +153,25 @@ fn validate_references(document: &WorkflowDocument) -> Result<(), ValidationErro
             let reference = match context {
                 ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
             };
-            validate_agent_reference(agent, reference, &agent_names)?;
+            validate_agent_reference(&format!("agent `{}`", agent.name), reference, &agent_names)?;
         }
 
         if let Some(prompt) = &agent.prompt {
-            validate_expression_references(agent, prompt, &agent_names, &schema_names)?;
+            validate_expression_references(&format!("agent `{}`", agent.name), prompt, &agent_names, &schema_names)?;
         }
 
         if let Some(binding) = &agent.for_each {
-            validate_expression_references(agent, &binding.collection, &agent_names, &schema_names)?;
+            validate_expression_references(
+                &format!("agent `{}`", agent.name),
+                &binding.collection,
+                &agent_names,
+                &schema_names,
+            )?;
         }
+    }
+
+    if let Some(output) = &document.output {
+        validate_expression_references("workflow output", output, &agent_names, &schema_names)?;
     }
 
     Ok(())
@@ -185,13 +204,13 @@ fn validate_cycles(document: &WorkflowDocument) -> Result<(), ValidationError> {
 }
 
 fn validate_agent_reference(
-    agent: &AgentDefinition,
+    scope: &str,
     reference: &Reference,
     agent_names: &HashSet<&str>,
 ) -> Result<(), ValidationError> {
     if reference.segments.is_empty() {
         return Err(ValidationError::UndefinedAgent {
-            agent: agent.name.clone(),
+            scope: scope.to_string(),
             reference: reference.as_string(),
         });
     }
@@ -201,7 +220,7 @@ fn validate_agent_reference(
             .segments
             .get(1)
             .ok_or_else(|| ValidationError::UndefinedAgent {
-                agent: agent.name.clone(),
+                scope: scope.to_string(),
                 reference: reference.as_string(),
             })?
     } else {
@@ -210,7 +229,7 @@ fn validate_agent_reference(
 
     if !agent_names.contains(referenced_agent.as_str()) {
         return Err(ValidationError::UndefinedAgent {
-            agent: agent.name.clone(),
+            scope: scope.to_string(),
             reference: reference.as_string(),
         });
     }
@@ -219,7 +238,7 @@ fn validate_agent_reference(
 }
 
 fn validate_expression_references(
-    agent: &AgentDefinition,
+    scope: &str,
     expression: &Expression,
     agent_names: &HashSet<&str>,
     schema_names: &HashSet<&str>,
@@ -227,32 +246,32 @@ fn validate_expression_references(
     match expression {
         Expression::Array(items) => {
             for item in items {
-                validate_expression_references(agent, item, agent_names, schema_names)?;
+                validate_expression_references(scope, item, agent_names, schema_names)?;
             }
         }
         Expression::Object(values) => {
             for value in values.values() {
-                validate_expression_references(agent, value, agent_names, schema_names)?;
+                validate_expression_references(scope, value, agent_names, schema_names)?;
             }
         }
-        Expression::Reference(reference) => {
-            if matches!(reference.segments.first().map(String::as_str), Some("schema")) {
+        Expression::Reference(reference) => match reference.segments.first().map(String::as_str) {
+            Some("schema") => {
                 if let Some(name) = reference.segments.get(1) {
                     if !schema_names.contains(name.as_str()) {
                         return Err(ValidationError::UndefinedSchema {
-                            agent: agent.name.clone(),
+                            agent: scope.to_string(),
                             schema: name.clone(),
                         });
                     }
                 }
-            } else {
-                validate_agent_reference(agent, reference, agent_names)?;
             }
-        }
+            Some("input") => {}
+            _ => validate_agent_reference(scope, reference, agent_names)?,
+        },
         Expression::FunctionCall(function_call) => {
-            validate_expression_references(agent, &function_call.target, agent_names, schema_names)?;
+            validate_expression_references(scope, &function_call.target, agent_names, schema_names)?;
             for value in function_call.arguments.values() {
-                validate_expression_references(agent, value, agent_names, schema_names)?;
+                validate_expression_references(scope, value, agent_names, schema_names)?;
             }
         }
         Expression::InlineSchema(_)
@@ -313,15 +332,20 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
             }
         }
         Expression::Reference(reference) => {
-            if reference.segments.first().map(String::as_str) != Some("schema") {
-                let agent_name = if reference.segments.first().map(String::as_str) == Some("agent") {
-                    reference.segments.get(1)
-                } else {
-                    reference.segments.first()
-                };
-                if let Some(name) = agent_name {
-                    dependencies.insert(name.clone());
-                }
+            if matches!(
+                reference.segments.first().map(String::as_str),
+                Some("schema") | Some("input")
+            ) {
+                return;
+            }
+
+            let agent_name = if reference.segments.first().map(String::as_str) == Some("agent") {
+                reference.segments.get(1)
+            } else {
+                reference.segments.first()
+            };
+            if let Some(name) = agent_name {
+                dependencies.insert(name.clone());
             }
         }
         Expression::FunctionCall(function_call) => {
