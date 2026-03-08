@@ -1,0 +1,10 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+<- agent simple {
+    model <- "ollama1/qwen3:8b"
+    prompt <- "Count from 1 to 5"
+}
