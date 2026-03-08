@@ -36,6 +36,18 @@ impl SchemaCompiler {
         Ok(schema_obj)
     }
 
+    pub fn compile_type(schema_type: &SchemaType, description: Option<&str>) -> Result<Value, SchemaError> {
+        let mut type_schema = Self::compile_field_type(schema_type)?;
+
+        if let Some(description_text) = description {
+            if let Value::Object(ref mut obj) = type_schema {
+                obj.insert("description".to_string(), Value::String(description_text.to_string()));
+            }
+        }
+
+        Ok(type_schema)
+    }
+
     fn compile_field_type(field_type: &SchemaType) -> Result<Value, SchemaError> {
         match field_type {
             SchemaType::String => Ok(serde_json::json!({"type": "string"})),

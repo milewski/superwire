@@ -55,10 +55,13 @@ property_for_each = { "for_each" }
 
 schema_reference = {
     ("schema" ~ "." ~ identifier) |
-    inline_schema
+    inline_schema |
+    inline_type
 }
 
 inline_schema = { "schema"? ~ "{" ~ schema_field* ~ "}" }
+
+inline_type = { schema_type ~ string_value? }
 
 // Values
 value = {

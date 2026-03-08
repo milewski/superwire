@@ -113,6 +113,10 @@ pub enum AgentProperty {
 pub enum SchemaReference {
     Named(String),
     Inline(Schema),
+    InlineType {
+        schema_type: SchemaType,
+        description: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

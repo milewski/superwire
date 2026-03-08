@@ -96,9 +96,48 @@ impl SchemaValidator {
     pub fn inject_schema_into_prompt(schema: &Value) -> String {
         let pretty_schema = serde_json::to_string_pretty(schema).unwrap_or_else(|_| schema.to_string());
 
-        format!(
-            "You must return your response as a JSON object (not a string) following this exact schema:\n\n{}\n\nIMPORTANT: Return the actual JSON object directly, NOT a string containing JSON. Do not escape quotes or wrap the JSON in quotes. Required string fields must not be empty strings - provide meaningful values.",
-            pretty_schema
-        )
+        let is_primitive_type = schema
+            .as_object()
+            .and_then(|obj| obj.get("type"))
+            .and_then(|t| t.as_str())
+            .map(|type_str| matches!(type_str, "string" | "number" | "boolean" | "null"))
+            .unwrap_or(false);
+
+        let is_array_type = schema
+            .as_object()
+            .and_then(|obj| obj.get("type"))
+            .and_then(|t| t.as_str())
+            .map(|type_str| type_str == "array")
+            .unwrap_or(false);
+
+        if is_primitive_type {
+            let type_name = schema
+                .as_object()
+                .and_then(|obj| obj.get("type"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("value");
+
+            let description = schema
+                .as_object()
+                .and_then(|obj| obj.get("description"))
+                .and_then(|d| d.as_str())
+                .map(|d| format!(" ({})", d))
+                .unwrap_or_default();
+
+            format!(
+                "You must return your response as a {} value{}. Return ONLY the {} value itself, not wrapped in an object or quotes (unless it's a string type).",
+                type_name, description, type_name
+            )
+        } else if is_array_type {
+            format!(
+                "You must return your response as a JSON array following this exact schema:\n\n{}\n\nIMPORTANT: Return the actual JSON array directly, NOT wrapped in an object.",
+                pretty_schema
+            )
+        } else {
+            format!(
+                "You must return your response as a JSON object (not a string) following this exact schema:\n\n{}\n\nIMPORTANT: Return the actual JSON object directly, NOT a string containing JSON. Do not escape quotes or wrap the JSON in quotes. Required string fields must not be empty strings - provide meaningful values.",
+                pretty_schema
+            )
+        }
     }
 }

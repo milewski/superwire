@@ -210,8 +210,22 @@
         },
         {
           "include": "#inline-schema"
+        },
+        {
+          "include": "#inline-type"
         }
       ]
+    },
+    "inline-type": {
+      "match": "\\b(string|number|boolean|null)\\b(?:\\s+(\"[^\"]*\"))?",
+      "captures": {
+        "1": {
+          "name": "storage.type.ai"
+        },
+        "2": {
+          "name": "string.quoted.double.ai"
+        }
+      }
     },
     "inline-schema": {
       "begin": "\\{",
