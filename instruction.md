@@ -558,8 +558,10 @@ output {
 }
 ```
 
-The `compact` function returns the same message structure as `agent.context`, making it fully compatible with any place
-that accepts context. This means you can use `compact` output directly as the context for another agent:
+The `compact` function returns a message array structure containing the summarized/compacted context. The function
+processes the input contexts using the specified model to generate a concise summary, then returns this summary as a
+message array that is compatible with any place that accepts context. This means you can use `compact` output directly
+as the context for another agent:
 
 ```txt
 agent summarize_person {
