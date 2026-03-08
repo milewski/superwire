@@ -11,7 +11,9 @@ agent numbers {
         values: [number]
     }
     
-    prompt <- "Generate a list of 3 random numbers between 1 and 10."
+    prompt <- """
+        Generate a list of 3 random numbers between 1 and 10.
+    """
 }
 
 <- agent doubled {
@@ -24,4 +26,8 @@ agent numbers {
     }
     
     prompt <- "What is {{ input.num }} multiplied by 2? Reply with just the number in JSON format."
+}
+
+output {
+    numbers <- agent.numbers
 }

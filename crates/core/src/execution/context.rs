@@ -21,14 +21,19 @@ impl RuntimeContext {
     }
 
     pub fn set_agent_output(&mut self, agent_name: String, output: JsonValue) {
+        log::debug!("Setting output for agent: {}", agent_name);
+        log::trace!("Agent '{}' output: {:?}", agent_name, output);
         self.agent_outputs.insert(agent_name, output);
     }
 
     pub fn set_agent_context(&mut self, agent_name: String, context: Vec<Message>) {
+        log::debug!("Setting context for agent: {} ({} messages)", agent_name, context.len());
         self.agent_contexts.insert(agent_name, context);
     }
 
     pub fn set_input_value(&mut self, field_name: String, value: JsonValue) {
+        log::debug!("Setting input value: {}", field_name);
+        log::trace!("Input '{}' value: {:?}", field_name, value);
         self.input_values.insert(field_name, value);
     }
 
@@ -119,19 +124,24 @@ impl RuntimeContext {
     }
 
     fn resolve_reference(&self, reference: &Reference) -> Result<JsonValue, ExecutionError> {
+        log::trace!("Resolving reference: {:?}", reference);
+
         match reference {
             Reference::Agent { agent, field } => {
                 if let Some(output) = self.agent_outputs.get(agent) {
                     if field == "_output" {
+                        log::trace!("Resolved agent '{}' full output", agent);
                         return Ok(output.clone());
                     }
 
                     if let JsonValue::Object(map) = output {
                         if let Some(value) = map.get(field) {
+                            log::trace!("Resolved agent '{}' field '{}'", agent, field);
                             return Ok(value.clone());
                         }
                     }
 
+                    log::warn!("Field '{}' not found in agent '{}' output", field, agent);
                     return Err(ExecutionError::RuntimeError {
                         agent: agent.clone(),
                         message: format!("Field '{}' not found in agent output", field),
@@ -139,6 +149,7 @@ impl RuntimeContext {
                     });
                 }
 
+                log::warn!("Agent '{}' output not found", agent);
                 Err(ExecutionError::RuntimeError {
                     agent: agent.clone(),
                     message: format!("Agent '{}' output not found", agent),
@@ -147,9 +158,11 @@ impl RuntimeContext {
             }
             Reference::AgentOutput { agent } => {
                 if let Some(output) = self.agent_outputs.get(agent) {
+                    log::trace!("Resolved agent '{}' output", agent);
                     return Ok(output.clone());
                 }
 
+                log::warn!("Agent '{}' output not found", agent);
                 Err(ExecutionError::RuntimeError {
                     agent: agent.clone(),
                     message: format!("Agent '{}' output not found", agent),
@@ -158,9 +171,11 @@ impl RuntimeContext {
             }
             Reference::AgentContext { agent } => {
                 if let Some(context) = self.agent_contexts.get(agent) {
+                    log::trace!("Resolved agent '{}' context ({} messages)", agent, context.len());
                     return Ok(serde_json::to_value(context).unwrap_or(JsonValue::Null));
                 }
 
+                log::warn!("Agent '{}' context not found", agent);
                 Err(ExecutionError::RuntimeError {
                     agent: agent.clone(),
                     message: "Agent context not found".to_string(),
@@ -169,16 +184,21 @@ impl RuntimeContext {
             }
             Reference::Input { field } => {
                 if let Some(value) = self.input_values.get(field) {
+                    log::trace!("Resolved input field '{}'", field);
                     return Ok(value.clone());
                 }
 
+                log::warn!("Input field '{}' not found", field);
                 Err(ExecutionError::RuntimeError {
                     agent: "input".to_string(),
                     message: format!("Input field '{}' not found", field),
                     suggestion: Some("Provide this input value when executing the workflow".to_string()),
                 })
             }
-            Reference::Schema { name } => Ok(JsonValue::String(format!("schema:{}", name))),
+            Reference::Schema { name } => {
+                log::trace!("Resolved schema reference: {}", name);
+                Ok(JsonValue::String(format!("schema:{}", name)))
+            }
         }
     }
 
@@ -217,6 +237,10 @@ impl RuntimeContext {
                 return Ok(Reference::Schema {
                     name: parts[1].to_string(),
                 });
+            } else if parts[0] == "agent" {
+                return Ok(Reference::AgentOutput {
+                    agent: parts[1].to_string(),
+                });
             }
         } else if parts.len() == 3 {
             if parts[0] == "agent" {
@@ -240,7 +264,9 @@ impl RuntimeContext {
         Err(ExecutionError::RuntimeError {
             agent: "parser".to_string(),
             message: format!("Invalid reference: {}", text),
-            suggestion: Some("Use format 'agent.name.field', 'input.field', or 'schema.name'".to_string()),
+            suggestion: Some(
+                "Use format 'agent.name', 'agent.name.field', 'input.field', or 'schema.name'".to_string(),
+            ),
         })
     }
 }
