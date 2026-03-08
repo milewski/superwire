@@ -1,5 +1,5 @@
 use jsonschema::JSONSchema;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use crate::ast::{SchemaDefinition, SchemaType};
 use crate::schemas::error::SchemaError;
@@ -9,24 +9,18 @@ pub fn compile_schema(schema: &SchemaDefinition) -> Result<Value, SchemaError> {
     let mut required = Vec::new();
 
     for field in &schema.fields {
-        let mut field_schema = compile_type(&field.ty)?;
-
-        if let Some(description) = &field.description {
-            if let Value::Object(ref mut obj) = field_schema {
-                obj.insert("description".into(), Value::String(description.clone()));
-            }
-        }
-
+        let field_schema = compile_type(&field.ty, field.description.as_deref())?;
         properties.insert(field.name.clone(), field_schema);
         required.push(Value::String(field.name.clone()));
     }
 
-    Ok(Value::Object(Map::from_iter([
-        ("type".into(), Value::String("object".into())),
-        ("properties".into(), Value::Object(properties)),
-        ("required".into(), Value::Array(required)),
-        ("additionalProperties".into(), Value::Bool(false)),
-    ])))
+    let mut schema_map = Map::new();
+    schema_map.insert("type".to_string(), Value::String("object".to_string()));
+    schema_map.insert("properties".to_string(), Value::Object(properties));
+    schema_map.insert("required".to_string(), Value::Array(required));
+    schema_map.insert("additionalProperties".to_string(), Value::Bool(false));
+
+    Ok(Value::Object(schema_map))
 }
 
 pub fn validate_value(schema: &SchemaDefinition, value: &Value) -> Result<(), SchemaError> {
@@ -45,35 +39,47 @@ pub fn validate_value(schema: &SchemaDefinition, value: &Value) -> Result<(), Sc
     Ok(())
 }
 
-fn compile_type(schema_type: &SchemaType) -> Result<Value, SchemaError> {
-    let value = match schema_type {
-        SchemaType::String => json!({ "type": "string" }),
-        SchemaType::Number => json!({ "type": "number" }),
-        SchemaType::Boolean => json!({ "type": "boolean" }),
-        SchemaType::Null => json!({ "type": "null" }),
-        SchemaType::Array(inner) => json!({
-            "type": "array",
-            "items": compile_type(inner)?,
-        }),
-        SchemaType::Union(variants) => Value::Object(Map::from_iter([(
-            "anyOf".into(),
-            Value::Array(
-                variants
-                    .iter()
-                    .map(compile_type)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-        )])),
-        SchemaType::LiteralString(literal) => json!({
-            "type": "string",
-            "enum": [literal],
-        }),
+fn compile_type(schema_type: &SchemaType, description: Option<&str>) -> Result<Value, SchemaError> {
+    let mut type_map = Map::new();
+
+    match schema_type {
+        SchemaType::String => {
+            type_map.insert("type".to_string(), Value::String("string".to_string()));
+        }
+        SchemaType::Number => {
+            type_map.insert("type".to_string(), Value::String("number".to_string()));
+        }
+        SchemaType::Boolean => {
+            type_map.insert("type".to_string(), Value::String("boolean".to_string()));
+        }
+        SchemaType::Null => {
+            type_map.insert("type".to_string(), Value::String("null".to_string()));
+        }
+        SchemaType::Array(inner) => {
+            type_map.insert("type".to_string(), Value::String("array".to_string()));
+            type_map.insert("items".to_string(), compile_type(inner, None)?);
+        }
+        SchemaType::Union(variants) => {
+            let any_of = variants
+                .iter()
+                .map(|v| compile_type(v, None))
+                .collect::<Result<Vec<_>, _>>()?;
+            type_map.insert("anyOf".to_string(), Value::Array(any_of));
+        }
+        SchemaType::LiteralString(literal) => {
+            type_map.insert("type".to_string(), Value::String("string".to_string()));
+            type_map.insert("enum".to_string(), Value::Array(vec![Value::String(literal.clone())]));
+        }
         SchemaType::Reference(name) => {
             return Err(SchemaError::UnsupportedReference {
                 name: name.clone(),
             })
         }
-    };
+    }
 
-    Ok(value)
+    if let Some(desc) = description {
+        type_map.insert("description".to_string(), Value::String(desc.to_string()));
+    }
+
+    Ok(Value::Object(type_map))
 }
