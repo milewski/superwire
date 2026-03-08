@@ -5,9 +5,7 @@ use petgraph::graph::DiGraph;
 
 pub mod error;
 
-use crate::ast::{
-    AgentDefinition, ContextSource, Expression, OutputDefinition, Reference, WorkflowDocument,
-};
+use crate::ast::{AgentDefinition, ContextSource, Expression, OutputDefinition, Reference, WorkflowDocument};
 use crate::parser::graph::build_dependency_graph;
 use error::ValidationError;
 
@@ -63,12 +61,13 @@ fn validate_provider_configuration(document: &WorkflowDocument) -> Result<(), Va
 
     for agent in &document.agents {
         if let Some(model) = &agent.model {
-            let provider = providers.get(model.provider.as_str()).ok_or_else(|| {
-                ValidationError::UndefinedProvider {
-                    agent: agent.name.clone(),
-                    provider: model.provider.clone(),
-                }
-            })?;
+            let provider =
+                providers
+                    .get(model.provider.as_str())
+                    .ok_or_else(|| ValidationError::UndefinedProvider {
+                        agent: agent.name.clone(),
+                        provider: model.provider.clone(),
+                    })?;
 
             if !provider.models.iter().any(|candidate| candidate == &model.model) {
                 return Err(ValidationError::ProviderModelMismatch {
@@ -198,10 +197,13 @@ fn validate_agent_reference(
     }
 
     let referenced_agent = if reference.segments[0] == "agent" {
-        reference.segments.get(1).ok_or_else(|| ValidationError::UndefinedAgent {
-            agent: agent.name.clone(),
-            reference: reference.as_string(),
-        })?
+        reference
+            .segments
+            .get(1)
+            .ok_or_else(|| ValidationError::UndefinedAgent {
+                agent: agent.name.clone(),
+                reference: reference.as_string(),
+            })?
     } else {
         &reference.segments[0]
     };

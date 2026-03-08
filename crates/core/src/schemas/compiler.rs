@@ -70,11 +70,7 @@ fn compile_type(schema_type: &SchemaType, description: Option<&str>) -> Result<V
             type_map.insert("type".to_string(), Value::String("string".to_string()));
             type_map.insert("enum".to_string(), Value::Array(vec![Value::String(literal.clone())]));
         }
-        SchemaType::Reference(name) => {
-            return Err(SchemaError::UnsupportedReference {
-                name: name.clone(),
-            })
-        }
+        SchemaType::Reference(name) => return Err(SchemaError::UnsupportedReference { name: name.clone() }),
     }
 
     if let Some(desc) = description {

@@ -31,13 +31,9 @@ pub async fn execute_agent(
     provider: DynProvider,
     model: ProviderModelConfig,
 ) -> Result<AgentExecutionResult, ExecutionError> {
-    let done = Arc::new(DoneTool::default());
-    let tools = vec![done.spec()];
-    let mut prompt = agent
-        .prompt
-        .as_ref()
-        .map(render_expression)
-        .unwrap_or_default();
+    let done = Arc::new(DoneTool);
+    let tools = [done.spec()];
+    let mut prompt = agent.prompt.as_ref().map(render_expression).unwrap_or_default();
 
     if let Some(output_definition) = &agent.output {
         let schema = match output_definition {
@@ -53,8 +49,8 @@ pub async fn execute_agent(
                 .clone(),
         };
 
-        let schema_json = crate::schemas::compiler::compile_schema(&schema)
-            .map_err(|error| ExecutionError::SchemaCompilation {
+        let schema_json =
+            crate::schemas::compiler::compile_schema(&schema).map_err(|error| ExecutionError::SchemaCompilation {
                 agent: agent.name.clone(),
                 message: error.to_string(),
             })?;
@@ -64,7 +60,11 @@ pub async fn execute_agent(
             serde_json::to_string_pretty(&schema_json).unwrap_or_else(|_| schema_json.to_string())
         );
 
-        debug!("injecting schema into agent prompt: agent={}, schema_size={}", agent.name, schema_instruction.len());
+        debug!(
+            "injecting schema into agent prompt: agent={}, schema_size={}",
+            agent.name,
+            schema_instruction.len()
+        );
         prompt.push_str(&schema_instruction);
     }
 
@@ -159,7 +159,10 @@ pub async fn execute_agent(
                     if let Err(validation_error) = validate_value(&schema, &output) {
                         let error_message = format!("Schema validation failed: {}", validation_error);
                         messages.push(format!("System: {}", error_message));
-                        info!("schema validation failed: agent={}, error={}", agent.name, error_message);
+                        info!(
+                            "schema validation failed: agent={}, error={}",
+                            agent.name, error_message
+                        );
                         continue;
                     }
 
@@ -201,12 +204,9 @@ pub async fn summarize_context(
         .ok_or_else(|| ExecutionError::MissingAgentResult {
             agent: agent_name.to_owned(),
         })?;
-    let model_ref = agent
-        .model
-        .as_ref()
-        .ok_or_else(|| ExecutionError::MissingModel {
-            agent: agent_name.to_owned(),
-        })?;
+    let model_ref = agent.model.as_ref().ok_or_else(|| ExecutionError::MissingModel {
+        agent: agent_name.to_owned(),
+    })?;
     let provider_definition = document
         .providers
         .iter()

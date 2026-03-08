@@ -6,9 +6,8 @@ use pest::Parser;
 use pest_derive::Parser;
 
 use crate::ast::{
-    AgentDefinition, ContextSource, Expression, ForEachBinding, FunctionCall, ModelReference,
-    OutputDefinition, ProviderDefinition, Reference, SchemaDefinition, SchemaField, SchemaType,
-    WorkflowDocument,
+    AgentDefinition, ContextSource, Expression, ForEachBinding, FunctionCall, ModelReference, OutputDefinition,
+    ProviderDefinition, Reference, SchemaDefinition, SchemaField, SchemaType, WorkflowDocument,
 };
 
 pub mod error;
@@ -21,16 +20,13 @@ use error::ParserError;
 struct WorkflowParser;
 
 pub fn parse_workflow(input: &str) -> Result<WorkflowDocument, ParserError> {
-    let mut pairs = WorkflowParser::parse(Rule::workflow, input)
-        .map_err(|source| ParserError::Grammar {
-            message: source.to_string(),
-        })?;
+    let mut pairs = WorkflowParser::parse(Rule::workflow, input).map_err(|source| ParserError::Grammar {
+        message: source.to_string(),
+    })?;
 
-    let workflow = pairs
-        .next()
-        .ok_or_else(|| ParserError::Grammar {
-            message: "missing workflow root".into(),
-        })?;
+    let workflow = pairs.next().ok_or_else(|| ParserError::Grammar {
+        message: "missing workflow root".into(),
+    })?;
 
     let mut document = WorkflowDocument::default();
 
@@ -215,14 +211,15 @@ fn parse_expression(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
         Rule::property_value => parse_expression(single_inner(pair)?),
         Rule::string => Ok(Expression::String(unquote(pair.as_str()))),
         Rule::multiline_string => Ok(Expression::MultilineString(unquote_multiline(pair.as_str()))),
-        Rule::number => pair
-            .as_str()
-            .parse::<f64>()
-            .map(Expression::Number)
-            .map_err(|source| ParserError::NumberParse {
-                value: pair.as_str().to_owned(),
-                source,
-            }),
+        Rule::number => {
+            pair.as_str()
+                .parse::<f64>()
+                .map(Expression::Number)
+                .map_err(|source| ParserError::NumberParse {
+                    value: pair.as_str().to_owned(),
+                    source,
+                })
+        }
         Rule::boolean => Ok(Expression::Boolean(pair.as_str() == "true")),
         Rule::null => Ok(Expression::Null),
         Rule::identifier => Ok(Expression::Identifier(pair.as_str().to_owned())),
@@ -240,10 +237,7 @@ fn parse_expression(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
 }
 
 fn parse_array(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
-    let items = pair
-        .into_inner()
-        .map(parse_expression)
-        .collect::<Result<Vec<_>, _>>()?;
+    let items = pair.into_inner().map(parse_expression).collect::<Result<Vec<_>, _>>()?;
     Ok(Expression::Array(items))
 }
 
@@ -259,12 +253,10 @@ fn parse_object(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
             })?
             .as_str()
             .to_owned();
-        let value = inner
-            .next()
-            .ok_or_else(|| ParserError::MissingField {
-                field: format!("object property `{key}` value"),
-                span: 0..0,
-            })?;
+        let value = inner.next().ok_or_else(|| ParserError::MissingField {
+            field: format!("object property `{key}` value"),
+            span: 0..0,
+        })?;
         values.insert(key, parse_expression(value)?);
     }
     Ok(Expression::Object(values))
@@ -323,13 +315,10 @@ fn parse_for_each(pair: Pair<'_, Rule>) -> Result<Expression, ParserError> {
 }
 
 fn parse_inline_schema(pair: Pair<'_, Rule>) -> Result<SchemaDefinition, ParserError> {
-    let schema_block = pair
-        .into_inner()
-        .next()
-        .ok_or_else(|| ParserError::MissingField {
-            field: "inline schema block".into(),
-            span: 0..0,
-        })?;
+    let schema_block = pair.into_inner().next().ok_or_else(|| ParserError::MissingField {
+        field: "inline schema block".into(),
+        span: 0..0,
+    })?;
 
     Ok(SchemaDefinition {
         name: None,
@@ -361,11 +350,7 @@ fn parse_schema_field(pair: Pair<'_, Rule>) -> Result<SchemaField, ParserError> 
     })?)?;
     let description = inner.next().map(|pair| unquote(pair.as_str()));
 
-    Ok(SchemaField {
-        name,
-        ty,
-        description,
-    })
+    Ok(SchemaField { name, ty, description })
 }
 
 fn parse_schema_type(pair: Pair<'_, Rule>) -> Result<SchemaType, ParserError> {
@@ -422,7 +407,9 @@ fn parse_schema_type(pair: Pair<'_, Rule>) -> Result<SchemaType, ParserError> {
 
 fn parse_output_definition(expression: Expression) -> Result<OutputDefinition, ParserError> {
     match expression {
-        Expression::Reference(reference) if matches!(reference.segments.first().map(String::as_str), Some("schema")) => {
+        Expression::Reference(reference)
+            if matches!(reference.segments.first().map(String::as_str), Some("schema")) =>
+        {
             let name = reference
                 .segments
                 .get(1)
@@ -443,9 +430,9 @@ fn parse_output_definition(expression: Expression) -> Result<OutputDefinition, P
 }
 
 fn parse_model_reference(raw: &str) -> Result<ModelReference, ParserError> {
-    let (provider, model) = raw.split_once('/').ok_or_else(|| ParserError::InvalidModelReference {
-        value: raw.to_owned(),
-    })?;
+    let (provider, model) = raw
+        .split_once('/')
+        .ok_or_else(|| ParserError::InvalidModelReference { value: raw.to_owned() })?;
 
     Ok(ModelReference {
         provider: provider.to_owned(),
@@ -458,11 +445,7 @@ fn parse_context_source(reference: Reference) -> Result<ContextSource, ParserErr
     let segments = &reference.segments;
     if segments.len() == 3 && segments[0] == "agent" && segments[2] == "context" {
         Ok(ContextSource::Full(reference))
-    } else if segments.len() == 4
-        && segments[0] == "agent"
-        && segments[2] == "context"
-        && segments[3] == "summary"
-    {
+    } else if segments.len() == 4 && segments[0] == "agent" && segments[2] == "context" && segments[3] == "summary" {
         Ok(ContextSource::Summary(reference))
     } else {
         Err(ParserError::InvalidReference {
@@ -480,7 +463,9 @@ fn parse_reference(input: &str) -> Reference {
 
 fn expect_string(expression: Expression, property: &str) -> Result<String, ParserError> {
     match expression {
-        Expression::String(value) | Expression::MultilineString(value) | Expression::InterpolatedString(value) => Ok(value),
+        Expression::String(value) | Expression::MultilineString(value) | Expression::InterpolatedString(value) => {
+            Ok(value)
+        }
         other => Err(ParserError::InvalidPropertyType {
             property: property.into(),
             expected: "string".into(),
@@ -491,10 +476,7 @@ fn expect_string(expression: Expression, property: &str) -> Result<String, Parse
 
 fn expect_string_array(expression: Expression, property: &str) -> Result<Vec<String>, ParserError> {
     match expression {
-        Expression::Array(items) => items
-            .into_iter()
-            .map(|item| expect_string(item, property))
-            .collect(),
+        Expression::Array(items) => items.into_iter().map(|item| expect_string(item, property)).collect(),
         other => Err(ParserError::InvalidPropertyType {
             property: property.into(),
             expected: "array of strings".into(),
@@ -539,10 +521,7 @@ fn unquote(input: &str) -> String {
 }
 
 fn unquote_multiline(input: &str) -> String {
-    input
-        .trim_start_matches("\"\"\"")
-        .trim_end_matches("\"\"\"")
-        .to_owned()
+    input.trim_start_matches("\"\"\"").trim_end_matches("\"\"\"").to_owned()
 }
 
 fn expression_kind(expression: &Expression) -> &'static str {

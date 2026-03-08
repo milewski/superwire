@@ -169,11 +169,10 @@ fn materialize_expression(
                 log::debug!("  Variable '{}': {:?}", key, value);
             }
             log::debug!("Template: {}", s);
-            let interpolated = interpolate_template(s, &variables).map_err(|e| {
-                ExecutionError::UnsupportedExpression {
+            let interpolated =
+                interpolate_template(s, &variables).map_err(|e| ExecutionError::UnsupportedExpression {
                     expression: format!("template interpolation failed: {}", e),
-                }
-            })?;
+                })?;
             Ok(Expression::String(interpolated))
         }
         Expression::Array(items) => {
@@ -239,10 +238,11 @@ fn evaluate_file_function(
         variables.insert(key.clone(), value);
     }
 
-    let content = crate::utils::template::read_and_interpolate_file(&file_path, &variables)
-        .map_err(|e| ExecutionError::UnsupportedExpression {
+    let content = crate::utils::template::read_and_interpolate_file(&file_path, &variables).map_err(|e| {
+        ExecutionError::UnsupportedExpression {
             expression: format!("file() evaluation failed: {}", e),
-        })?;
+        }
+    })?;
 
     Ok(Expression::String(content))
 }
@@ -268,16 +268,24 @@ fn resolve_reference(
     }
 
     let (agent_name, field_start) = if reference.segments[0] == "agent" {
-        (reference.segments.get(1).ok_or_else(|| ExecutionError::InvalidContextReference {
-            reference: reference.as_string(),
-        })?, 2)
+        (
+            reference
+                .segments
+                .get(1)
+                .ok_or_else(|| ExecutionError::InvalidContextReference {
+                    reference: reference.as_string(),
+                })?,
+            2,
+        )
     } else {
         (&reference.segments[0], 1)
     };
 
-    let result = results.get(agent_name).ok_or_else(|| ExecutionError::MissingAgentResult {
-        agent: agent_name.clone(),
-    })?;
+    let result = results
+        .get(agent_name)
+        .ok_or_else(|| ExecutionError::MissingAgentResult {
+            agent: agent_name.clone(),
+        })?;
 
     let mut current = result.output.clone();
 
@@ -383,10 +391,7 @@ async fn execute_for_each(
     provider: Arc<dyn crate::providers::provider::Provider>,
     model: ProviderModelConfig,
 ) -> Result<AgentExecutionResult, ExecutionError> {
-    let binding = agent
-        .for_each
-        .as_ref()
-        .expect("for_each execution requires binding");
+    let binding = agent.for_each.as_ref().expect("for_each execution requires binding");
     let items = evaluate_collection(&binding.collection)?;
 
     let mut outputs = Vec::with_capacity(items.len());
@@ -431,19 +436,14 @@ fn expression_to_json(expression: &Expression) -> Result<Value, ExecutionError> 
         | Expression::MultilineString(value)
         | Expression::InterpolatedString(value)
         | Expression::Identifier(value) => Value::String(value.clone()),
-        Expression::Number(value) => serde_json::Number::from_f64(*value)
-            .map(Value::Number)
-            .ok_or_else(|| ExecutionError::InvalidNumericValue {
+        Expression::Number(value) => serde_json::Number::from_f64(*value).map(Value::Number).ok_or_else(|| {
+            ExecutionError::InvalidNumericValue {
                 value: value.to_string(),
-            })?,
+            }
+        })?,
         Expression::Boolean(value) => Value::Bool(*value),
         Expression::Null => Value::Null,
-        Expression::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(expression_to_json)
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
+        Expression::Array(items) => Value::Array(items.iter().map(expression_to_json).collect::<Result<Vec<_>, _>>()?),
         Expression::Object(values) => Value::Object(
             values
                 .iter()
@@ -461,12 +461,8 @@ fn expression_to_json(expression: &Expression) -> Result<Value, ExecutionError> 
 fn apply_binding(expression: Expression, binding: &str, item: &Value) -> Expression {
     match expression {
         Expression::String(value) => Expression::String(replace_binding(&value, binding, item)),
-        Expression::MultilineString(value) => {
-            Expression::MultilineString(replace_binding(&value, binding, item))
-        }
-        Expression::InterpolatedString(value) => {
-            Expression::InterpolatedString(replace_binding(&value, binding, item))
-        }
+        Expression::MultilineString(value) => Expression::MultilineString(replace_binding(&value, binding, item)),
+        Expression::InterpolatedString(value) => Expression::InterpolatedString(replace_binding(&value, binding, item)),
         Expression::Array(items) => Expression::Array(
             items
                 .into_iter()
@@ -494,9 +490,7 @@ fn apply_binding(expression: Expression, binding: &str, item: &Value) -> Express
 
 fn inject_context(expression: Expression, context_text: &str) -> Expression {
     match expression {
-        Expression::String(value) => {
-            Expression::String(format!("{value}\n\nContext:\n{context_text}"))
-        }
+        Expression::String(value) => Expression::String(format!("{value}\n\nContext:\n{context_text}")),
         Expression::MultilineString(value) => {
             Expression::MultilineString(format!("{value}\n\nContext:\n{context_text}"))
         }
@@ -573,9 +567,7 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
                 collect_expression_dependencies(value, dependencies);
             }
         }
-        Expression::ForEach(binding) => {
-            collect_expression_dependencies(&binding.collection, dependencies)
-        }
+        Expression::ForEach(binding) => collect_expression_dependencies(&binding.collection, dependencies),
         Expression::String(s) | Expression::MultilineString(s) | Expression::InterpolatedString(s) => {
             extract_template_dependencies(s, dependencies);
         }
@@ -617,9 +609,11 @@ fn collect_terminal_outputs(
 
     let mut output = Map::new();
     for agent in terminals {
-        let result = results.get(&agent.name).ok_or_else(|| ExecutionError::MissingAgentResult {
-            agent: agent.name.clone(),
-        })?;
+        let result = results
+            .get(&agent.name)
+            .ok_or_else(|| ExecutionError::MissingAgentResult {
+                agent: agent.name.clone(),
+            })?;
         output.insert(agent.name.clone(), result.output.clone());
     }
 

@@ -20,7 +20,7 @@ async fn main() {
     validate_workflow(&document).expect("failed to validate workflow");
 
     let mut registry = ProviderRegistry::default();
-    registry.register("ollama", Arc::new(OllamaProvider::default()));
+    registry.register("ollama", Arc::new(OllamaProvider));
 
     info!("loaded workflow: {}", workflow_path);
     let output = engine_ai_core::execution::orchestrator::execute_workflow(&document, &registry)

@@ -27,10 +27,7 @@ impl ProviderRegistry {
     }
 }
 
-pub fn resolve_model_config(
-    provider: &ProviderDefinition,
-    model_name: &str,
-) -> ProviderModelConfig {
+pub fn resolve_model_config(provider: &ProviderDefinition, model_name: &str) -> ProviderModelConfig {
     ProviderModelConfig {
         provider_name: provider.name.clone(),
         model_name: model_name.to_owned(),

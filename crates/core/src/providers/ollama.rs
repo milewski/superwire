@@ -46,12 +46,13 @@ impl Provider for OllamaProvider {
         )
         .tools(tools);
 
-        let response = ollama
-            .send_chat_messages(chat_request)
-            .await
-            .map_err(|source| ProviderError::RequestFailed {
-                message: source.to_string(),
-            })?;
+        let response =
+            ollama
+                .send_chat_messages(chat_request)
+                .await
+                .map_err(|source| ProviderError::RequestFailed {
+                    message: source.to_string(),
+                })?;
 
         Ok(ProviderResponse {
             message: response.message.content,
@@ -73,10 +74,7 @@ impl Provider for OllamaProvider {
 }
 
 fn build_client(model: &ProviderModelConfig) -> Result<Ollama, ProviderError> {
-    let endpoint = model
-        .api_endpoint
-        .as_deref()
-        .unwrap_or("http://127.0.0.1:11434");
+    let endpoint = model.api_endpoint.as_deref().unwrap_or("http://127.0.0.1:11434");
     Ollama::try_new(endpoint).map_err(|source| ProviderError::RequestFailed {
         message: source.to_string(),
     })
