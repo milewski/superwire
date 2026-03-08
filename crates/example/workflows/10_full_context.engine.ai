@@ -1,0 +1,21 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3.5:27b"]
+}
+
+agent analyze_text {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- """
+        Analyze this text: "The quick brown fox jumps over the lazy dog."
+        Write 2-3 sentences about it.
+    """
+}
+
+<- agent continue_analysis {
+    model <- "ollama1/qwen3.5:27b"
+    context <- agent.analyze_text.context
+    prompt <- """
+        Based on the previous analysis, suggest one improvement to the sentence.
+    """
+}

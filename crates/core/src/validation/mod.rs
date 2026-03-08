@@ -190,10 +190,21 @@ fn validate_agent_reference(
     reference: &Reference,
     agent_names: &HashSet<&str>,
 ) -> Result<(), ValidationError> {
-    let referenced_agent = reference.segments.get(1).ok_or_else(|| ValidationError::UndefinedAgent {
-        agent: agent.name.clone(),
-        reference: reference.as_string(),
-    })?;
+    if reference.segments.is_empty() {
+        return Err(ValidationError::UndefinedAgent {
+            agent: agent.name.clone(),
+            reference: reference.as_string(),
+        });
+    }
+
+    let referenced_agent = if reference.segments[0] == "agent" {
+        reference.segments.get(1).ok_or_else(|| ValidationError::UndefinedAgent {
+            agent: agent.name.clone(),
+            reference: reference.as_string(),
+        })?
+    } else {
+        &reference.segments[0]
+    };
 
     if !agent_names.contains(referenced_agent.as_str()) {
         return Err(ValidationError::UndefinedAgent {
@@ -263,8 +274,15 @@ fn collect_agent_dependencies(agent: &AgentDefinition) -> HashSet<String> {
         let reference = match context {
             ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
         };
-        if let Some(name) = reference.segments.get(1) {
-            dependencies.insert(name.clone());
+        if !reference.segments.is_empty() {
+            let agent_name = if reference.segments[0] == "agent" {
+                reference.segments.get(1)
+            } else {
+                Some(&reference.segments[0])
+            };
+            if let Some(name) = agent_name {
+                dependencies.insert(name.clone());
+            }
         }
     }
 
@@ -294,7 +312,12 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
         }
         Expression::Reference(reference) => {
             if reference.segments.first().map(String::as_str) != Some("schema") {
-                if let Some(name) = reference.segments.get(1) {
+                let agent_name = if reference.segments.first().map(String::as_str) == Some("agent") {
+                    reference.segments.get(1)
+                } else {
+                    reference.segments.first()
+                };
+                if let Some(name) = agent_name {
                     dependencies.insert(name.clone());
                 }
             }

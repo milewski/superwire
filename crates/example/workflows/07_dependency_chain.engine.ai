@@ -1,0 +1,20 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3.5:27b"]
+}
+
+agent step_one {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "Generate a random city name."
+}
+
+agent step_two {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "The city is {{ step_one }}. What is a famous landmark there? Answer in one sentence."
+}
+
+<- agent step_three {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- "Based on this: {{ step_two }}. Write a travel tip in one sentence."
+}
