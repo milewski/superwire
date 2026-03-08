@@ -1,0 +1,20 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3.5:27b"]
+}
+
+agent write_story {
+    model <- "ollama1/qwen3.5:27b"
+    prompt <- """
+        Write a very short story (2-3 sentences) about a robot learning to paint.
+    """
+}
+
+<- agent summarize_story {
+    model <- "ollama1/qwen3.5:27b"
+    context <- agent.write_story.context.summary
+    prompt <- """
+        Based on the context, write a one-sentence summary.
+    """
+}

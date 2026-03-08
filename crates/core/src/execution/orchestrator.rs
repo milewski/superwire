@@ -24,6 +24,7 @@ pub async fn execute_workflow(
     info!("starting workflow execution with {} agents", ordered_agents.len());
 
     for agent in ordered_agents {
+        info!("processing agent: {}", agent.name);
         let model = agent
             .model
             .as_ref()
@@ -133,6 +134,29 @@ fn materialize_prompts(
     Ok(())
 }
 
+fn json_value_to_expression(value: &Value) -> Result<Expression, ExecutionError> {
+    match value {
+        Value::String(s) => Ok(Expression::String(s.clone())),
+        Value::Number(n) => Ok(Expression::Number(n.as_f64().unwrap_or(0.0))),
+        Value::Bool(b) => Ok(Expression::Boolean(*b)),
+        Value::Null => Ok(Expression::Null),
+        Value::Array(items) => {
+            let expressions = items
+                .iter()
+                .map(json_value_to_expression)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expression::Array(expressions))
+        }
+        Value::Object(map) => {
+            let mut object = indexmap::IndexMap::new();
+            for (key, val) in map {
+                object.insert(key.clone(), json_value_to_expression(val)?);
+            }
+            Ok(Expression::Object(object))
+        }
+    }
+}
+
 fn materialize_expression(
     expr: &Expression,
     results: &HashMap<String, AgentExecutionResult>,
@@ -140,6 +164,11 @@ fn materialize_expression(
     match expr {
         Expression::String(s) | Expression::MultilineString(s) | Expression::InterpolatedString(s) => {
             let variables = build_variable_map(results);
+            log::debug!("Materializing template with {} variables", variables.len());
+            for (key, value) in &variables {
+                log::debug!("  Variable '{}': {:?}", key, value);
+            }
+            log::debug!("Template: {}", s);
             let interpolated = interpolate_template(s, &variables).map_err(|e| {
                 ExecutionError::UnsupportedExpression {
                     expression: format!("template interpolation failed: {}", e),
@@ -163,7 +192,7 @@ fn materialize_expression(
         }
         Expression::Reference(reference) => {
             let value = resolve_reference(reference, results)?;
-            Ok(Expression::String(serde_json::to_string(&value).unwrap_or_default()))
+            json_value_to_expression(&value)
         }
         Expression::FunctionCall(function_call) => {
             if function_call.name == "file" {
@@ -238,14 +267,21 @@ fn resolve_reference(
         });
     }
 
-    let agent_name = &reference.segments[0];
+    let (agent_name, field_start) = if reference.segments[0] == "agent" {
+        (reference.segments.get(1).ok_or_else(|| ExecutionError::InvalidContextReference {
+            reference: reference.as_string(),
+        })?, 2)
+    } else {
+        (&reference.segments[0], 1)
+    };
+
     let result = results.get(agent_name).ok_or_else(|| ExecutionError::MissingAgentResult {
         agent: agent_name.clone(),
     })?;
 
     let mut current = result.output.clone();
 
-    for segment in &reference.segments[1..] {
+    for segment in &reference.segments[field_start..] {
         current = match current {
             Value::Object(map) => map
                 .get(segment)
@@ -484,8 +520,15 @@ fn collect_dependencies(agent: &AgentDefinition) -> HashSet<String> {
         let reference = match context {
             ContextSource::Full(reference) | ContextSource::Summary(reference) => reference,
         };
-        if let Some(name) = reference.segments.get(1) {
-            dependencies.insert(name.clone());
+        if !reference.segments.is_empty() {
+            let agent_name = if reference.segments[0] == "agent" {
+                reference.segments.get(1)
+            } else {
+                Some(&reference.segments[0])
+            };
+            if let Some(name) = agent_name {
+                dependencies.insert(name.clone());
+            }
         }
     }
 
@@ -514,7 +557,12 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
         }
         Expression::Reference(reference) => {
             if reference.segments.first().map(String::as_str) != Some("schema") {
-                if let Some(name) = reference.segments.get(1) {
+                let agent_name = if reference.segments.first().map(String::as_str) == Some("agent") {
+                    reference.segments.get(1)
+                } else {
+                    reference.segments.first()
+                };
+                if let Some(name) = agent_name {
                     dependencies.insert(name.clone());
                 }
             }
@@ -528,14 +576,28 @@ fn collect_expression_dependencies(expression: &Expression, dependencies: &mut H
         Expression::ForEach(binding) => {
             collect_expression_dependencies(&binding.collection, dependencies)
         }
+        Expression::String(s) | Expression::MultilineString(s) | Expression::InterpolatedString(s) => {
+            extract_template_dependencies(s, dependencies);
+        }
         Expression::InlineSchema(_)
-        | Expression::String(_)
-        | Expression::MultilineString(_)
         | Expression::Number(_)
         | Expression::Boolean(_)
         | Expression::Null
-        | Expression::Identifier(_)
-        | Expression::InterpolatedString(_) => {}
+        | Expression::Identifier(_) => {}
+    }
+}
+
+fn extract_template_dependencies(template: &str, dependencies: &mut HashSet<String>) {
+    if let Ok(re) = regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}") {
+        for cap in re.captures_iter(template) {
+            if let Some(var_path) = cap.get(1) {
+                let path = var_path.as_str();
+                let parts: Vec<&str> = path.split('.').collect();
+                if !parts.is_empty() && parts[0] != "schema" {
+                    dependencies.insert(parts[0].to_string());
+                }
+            }
+        }
     }
 }
 
