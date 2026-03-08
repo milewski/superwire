@@ -1,0 +1,18 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+<- agent person {
+    model <- "ollama1/qwen3:8b"
+    
+    output <- {
+        name: string
+        age: number
+        nickname: string | null
+        email: string | null
+    }
+    
+    prompt <- "Generate a random person with name, age, and optionally nickname and email. Some fields can be null."
+}

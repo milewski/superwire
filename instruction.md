@@ -436,14 +436,14 @@ agent personalize {
 
     prompt <- """
         Create a personalized message for {{ input.user_name }} about this research:
-        {{ research.summary }}
+        {{ agent.research.summary }}
     """
 }
 
 output {
     user <- input.user_name
-    research_summary <- research.summary
-    personalized_message <- personalize.message
+    research_summary <- agent.research.summary
+    personalized_message <- agent.personalize.message
 }
 ```
 
@@ -459,8 +459,8 @@ Example:
 ```txt
 output {
     user <- input.user_name
-    research_summary <- research.summary
-    personalized_message <- personalize.message
+    research_summary <- agent.research.summary
+    personalized_message <- agent.personalize.message
 }
 ```
 

@@ -1,0 +1,29 @@
+{
+  "name": "ai-dsl",
+  "displayName": "AI DSL",
+  "description": "Syntax highlighting for AI Engine DSL (.ai files)",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.0.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ai-dsl",
+        "aliases": ["AI DSL", "ai"],
+        "extensions": [".ai"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ai-dsl",
+        "scopeName": "source.ai",
+        "path": "./syntaxes/ai.tmLanguage.json"
+      }
+    ]
+  }
+}
