@@ -29,5 +29,5 @@ agent numbers {
 }
 
 output {
-    numbers <- agent.numbers
+    numbers agent.numbers
 }
