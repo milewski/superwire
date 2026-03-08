@@ -2,6 +2,7 @@ use crate::parser::Rule;
 use pest::error::Error as PestError;
 
 pub struct ErrorAnalyzer {
+    #[allow(dead_code)]
     file_path: String,
 }
 
@@ -434,9 +435,10 @@ fn levenshtein_distance(source: &str, target: &str) -> usize {
 
     let mut matrix = vec![vec![0; target_len + 1]; source_len + 1];
 
-    for index in 0..=source_len {
-        matrix[index][0] = index;
+    for (index, row) in matrix.iter_mut().enumerate().take(source_len + 1) {
+        row[0] = index;
     }
+    #[allow(clippy::needless_range_loop)]
     for index in 0..=target_len {
         matrix[0][index] = index;
     }

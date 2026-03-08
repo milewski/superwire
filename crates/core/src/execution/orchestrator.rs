@@ -3,8 +3,9 @@ use crate::execution::context::RuntimeContext;
 use crate::execution::error::ExecutionError;
 use crate::providers::provider::{Message, ProviderRef, ToolDefinition};
 use crate::schemas::{SchemaCompiler, SchemaValidator};
-use crate::tools::{DoneTool, Tool, ToolRegistry};
+use crate::tools::{DoneStatus, DoneTool, Tool, ToolRegistry};
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 const MAX_ITERATIONS: usize = 50;
@@ -169,12 +170,15 @@ impl AgentOrchestrator {
                             }
                         };
 
-                        let status = done_params.get("status").and_then(|v| v.as_str()).unwrap_or("success");
-                        log::debug!("Agent '{}' done status: {}", agent.name, status);
+                        let status: DoneStatus = done_params
+                            .get("status")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or(DoneStatus::Success);
+                        log::debug!("Agent '{}' done status: {:?}", agent.name, status);
 
                         let output_value = done_params.get("output").cloned().unwrap_or(JsonValue::Null);
 
-                        if status == "fail" {
+                        if matches!(status, DoneStatus::Fail) {
                             log::error!(
                                 "Agent '{}' failed: {}",
                                 agent.name,
@@ -347,8 +351,8 @@ impl AgentOrchestrator {
             .list()
             .iter()
             .map(|tool| ToolDefinition {
-                name: tool.name().to_string(),
-                description: tool.description().to_string(),
+                name: Cow::Owned(tool.name().to_string()),
+                description: Cow::Owned(tool.description().to_string()),
                 parameters_schema: tool.parameters_schema(),
             })
             .collect()
@@ -358,8 +362,8 @@ impl AgentOrchestrator {
         let mut tools = self.build_tool_definitions();
 
         tools.push(ToolDefinition {
-            name: done_tool.name().to_string(),
-            description: done_tool.description().to_string(),
+            name: Cow::Owned(done_tool.name().to_string()),
+            description: Cow::Owned(done_tool.description().to_string()),
             parameters_schema: done_tool.parameters_schema(),
         });
 

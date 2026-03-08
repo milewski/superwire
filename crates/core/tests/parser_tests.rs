@@ -25,6 +25,120 @@ agent test {
 }
 
 #[test]
+fn test_schema_field_descriptions() {
+    let workflow = r#"
+provider ollama1 {
+    driver <- "ollama"
+    models <- ["qwen3:8b"]
+}
+
+agent test {
+    model <- "ollama1/qwen3:8b"
+
+    output <- {
+        username: string "Must be lowercase alphanumeric"
+        email: string "Must be a valid email address"
+        age: number "Must be between 13 and 120"
+    }
+
+    prompt <- "Generate a user"
+}
+"#;
+
+    let builder = AstBuilder::new("test.ai".to_string());
+    let result = builder.parse(workflow);
+
+    assert!(result.is_ok());
+    let workflow = result.unwrap();
+
+    let output_property = workflow.agents[0]
+        .properties
+        .iter()
+        .find(|p| matches!(p, engine_ai_core::ast::AgentProperty::Output { .. }));
+
+    assert!(output_property.is_some());
+
+    if let Some(engine_ai_core::ast::AgentProperty::Output { value, .. }) = output_property {
+        if let engine_ai_core::ast::SchemaReference::Inline(schema) = value {
+            assert_eq!(schema.fields.len(), 3);
+
+            let username_field = schema.fields.iter().find(|f| f.name == "username").unwrap();
+            assert_eq!(
+                username_field.description.as_deref(),
+                Some("Must be lowercase alphanumeric")
+            );
+
+            let email_field = schema.fields.iter().find(|f| f.name == "email").unwrap();
+            assert_eq!(
+                email_field.description.as_deref(),
+                Some("Must be a valid email address")
+            );
+
+            let age_field = schema.fields.iter().find(|f| f.name == "age").unwrap();
+            assert_eq!(age_field.description.as_deref(), Some("Must be between 13 and 120"));
+        } else {
+            panic!("Expected inline schema");
+        }
+    }
+}
+
+#[test]
+fn test_schema_descriptions_in_json_schema() {
+    use engine_ai_core::schemas::SchemaCompiler;
+
+    let workflow = r#"
+provider ollama1 {
+    driver <- "ollama"
+    models <- ["qwen3:8b"]
+}
+
+agent test {
+    model <- "ollama1/qwen3:8b"
+
+    output <- {
+        username: string "Must be lowercase alphanumeric"
+        email: string "Must be a valid email address"
+    }
+
+    prompt <- "Generate a user"
+}
+"#;
+
+    let builder = AstBuilder::new("test.ai".to_string());
+    let workflow = builder.parse(workflow).unwrap();
+
+    let output_property = workflow.agents[0]
+        .properties
+        .iter()
+        .find_map(|p| {
+            if let engine_ai_core::ast::AgentProperty::Output { value, .. } = p {
+                Some(value)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+
+    if let engine_ai_core::ast::SchemaReference::Inline(schema) = output_property {
+        let json_schema = SchemaCompiler::compile(schema).unwrap();
+
+        let properties = json_schema.get("properties").unwrap().as_object().unwrap();
+
+        let username_schema = properties.get("username").unwrap();
+        assert_eq!(
+            username_schema.get("description").unwrap().as_str().unwrap(),
+            "Must be lowercase alphanumeric"
+        );
+
+        let email_schema = properties.get("email").unwrap();
+        assert_eq!(
+            email_schema.get("description").unwrap().as_str().unwrap(),
+            "Must be a valid email address"
+        );
+    }
+}
+
+#[test]
 fn test_parse_terminal_agent() {
     let workflow = r#"
 provider ollama1 {

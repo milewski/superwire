@@ -2,6 +2,7 @@ use crate::ast::{Reference, Value};
 use crate::execution::error::ExecutionError;
 use crate::providers::provider::Message;
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -213,9 +214,9 @@ impl RuntimeContext {
     }
 
     fn resolve_interpolated_string(&self, template: &str) -> Result<JsonValue, ExecutionError> {
-        let mut result = template.to_string();
-
         let interpolation_pattern = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+
+        let mut result = Cow::Borrowed(template);
 
         for capture in interpolation_pattern.captures_iter(template) {
             let full_match = &capture[0];
@@ -229,10 +230,10 @@ impl RuntimeContext {
                 other => other.to_string(),
             };
 
-            result = result.replace(full_match, &replacement);
+            result = Cow::Owned(result.replace(full_match, &replacement));
         }
 
-        Ok(JsonValue::String(result))
+        Ok(JsonValue::String(result.into_owned()))
     }
 
     fn parse_reference_from_string(&self, text: &str) -> Result<Reference, ExecutionError> {

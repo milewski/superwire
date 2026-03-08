@@ -16,6 +16,7 @@ impl WorkflowValidator {
         Self::check_provider_model_references(workflow, &mut errors);
         Self::check_agent_field_references(workflow, &mut errors);
         Self::check_template_variables(workflow, &mut errors);
+        Self::check_compact_function_calls(workflow, &mut errors);
 
         if errors.is_empty() {
             Ok(())
@@ -292,22 +293,24 @@ impl WorkflowValidator {
 
         for agent in &workflow.agents {
             for property in &agent.properties {
-                if let AgentProperty::Model { value, span } = property {
-                    if let Value::String(model_ref) | Value::Interpolated(model_ref) = value {
-                        if let Some((provider_name, model_name)) = model_ref.split_once('/') {
-                            if let Some(models) = provider_models.get(provider_name) {
-                                if !models.contains(&model_name.to_string()) {
-                                    errors.push(ValidationError::ProviderModelMismatch {
-                                        file_path: "workflow".to_string(),
-                                        line: span.line,
-                                        column: span.column,
-                                        message: format!(
-                                            "Model '{}' not found in provider '{}'",
-                                            model_name, provider_name
-                                        ),
-                                        suggestion: Some(format!("Available models: {}", models.join(", "))),
-                                    });
-                                }
+                if let AgentProperty::Model {
+                    value: Value::String(model_ref) | Value::Interpolated(model_ref),
+                    span,
+                } = property
+                {
+                    if let Some((provider_name, model_name)) = model_ref.split_once('/') {
+                        if let Some(models) = provider_models.get(provider_name) {
+                            if !models.contains(&model_name.to_string()) {
+                                errors.push(ValidationError::ProviderModelMismatch {
+                                    file_path: "workflow".to_string(),
+                                    line: span.line,
+                                    column: span.column,
+                                    message: format!(
+                                        "Model '{}' not found in provider '{}'",
+                                        model_name, provider_name
+                                    ),
+                                    suggestion: Some(format!("Available models: {}", models.join(", "))),
+                                });
                             }
                         }
                     }
@@ -380,23 +383,26 @@ impl WorkflowValidator {
     ) {
         match value {
             Value::Reference(Reference::Agent { agent, field }) => {
-                if let Some(schema_opt) = agent_schemas.get(agent) {
-                    if let Some(schema) = schema_opt {
-                        let field_exists = schema.fields.iter().any(|f| f.name == *field);
-                        if !field_exists {
-                            errors.push(ValidationError::UndefinedReference {
-                                file_path: "workflow".to_string(),
-                                line,
-                                column,
-                                reference: format!("{}.{}", agent, field),
-                                suggestion: Some(format!(
-                                    "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
-                                    agent,
-                                    field,
-                                    schema.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
-                                )),
-                            });
-                        }
+                if let Some(Some(schema)) = agent_schemas.get(agent) {
+                    let field_exists = schema.fields.iter().any(|f| f.name == *field);
+                    if !field_exists {
+                        errors.push(ValidationError::UndefinedReference {
+                            file_path: "workflow".to_string(),
+                            line,
+                            column,
+                            reference: format!("{}.{}", agent, field),
+                            suggestion: Some(format!(
+                                "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
+                                agent,
+                                field,
+                                schema
+                                    .fields
+                                    .iter()
+                                    .map(|f| f.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )),
+                        });
                     }
                 }
             }
@@ -540,6 +546,100 @@ impl WorkflowValidator {
             Value::Object(map) => {
                 for val in map.values() {
                     Self::check_template_in_value(val, errors);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn check_compact_function_calls(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
+        if let Some(output_block) = &workflow.output {
+            for field in &output_block.fields {
+                Self::validate_compact_in_value(&field.value, &workflow.providers, errors);
+            }
+        }
+
+        for agent in &workflow.agents {
+            for property in &agent.properties {
+                if let AgentProperty::Context { value, .. } = property {
+                    Self::validate_compact_in_value(value, &workflow.providers, errors);
+                }
+            }
+        }
+    }
+
+    fn validate_compact_in_value(value: &Value, providers: &[crate::ast::Provider], errors: &mut Vec<ValidationError>) {
+        match value {
+            Value::FunctionCall(function_call) => {
+                if function_call.name == "compact" {
+                    if !function_call.arguments.contains_key("model") {
+                        errors.push(ValidationError::MissingRequiredArgument {
+                            file_path: "workflow".to_string(),
+                            line: function_call.span.line,
+                            column: function_call.span.column,
+                            function_name: "compact".to_string(),
+                            argument_name: "model".to_string(),
+                            suggestion: Some(
+                                "Add model <- \"provider/model_name\" to the compact function".to_string(),
+                            ),
+                        });
+                    }
+
+                    if !function_call.arguments.contains_key("context") {
+                        errors.push(ValidationError::MissingRequiredArgument {
+                            file_path: "workflow".to_string(),
+                            line: function_call.span.line,
+                            column: function_call.span.column,
+                            function_name: "compact".to_string(),
+                            argument_name: "context".to_string(),
+                            suggestion: Some("Add context <- agent.name.context to the compact function".to_string()),
+                        });
+                    }
+
+                    if let Some(Value::String(model_ref) | Value::Interpolated(model_ref)) =
+                        function_call.arguments.get("model")
+                    {
+                        if let Some((provider_name, model_name)) = model_ref.split_once('/') {
+                            let provider_exists = providers.iter().any(|p| p.name == provider_name);
+                            if !provider_exists {
+                                errors.push(ValidationError::UndefinedReference {
+                                    file_path: "workflow".to_string(),
+                                    line: function_call.span.line,
+                                    column: function_call.span.column,
+                                    reference: provider_name.to_string(),
+                                    suggestion: Some(format!("Provider '{}' is not defined", provider_name)),
+                                });
+                            } else {
+                                let provider = providers.iter().find(|p| p.name == provider_name).unwrap();
+                                if !provider.models.contains(&model_name.to_string()) {
+                                    errors.push(ValidationError::ProviderModelMismatch {
+                                        file_path: "workflow".to_string(),
+                                        line: function_call.span.line,
+                                        column: function_call.span.column,
+                                        message: format!(
+                                            "Model '{}' not found in provider '{}'",
+                                            model_name, provider_name
+                                        ),
+                                        suggestion: Some(format!("Available models: {}", provider.models.join(", "))),
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    for arg_value in function_call.arguments.values() {
+                        Self::validate_compact_in_value(arg_value, providers, errors);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    Self::validate_compact_in_value(item, providers, errors);
+                }
+            }
+            Value::Object(map) => {
+                for val in map.values() {
+                    Self::validate_compact_in_value(val, providers, errors);
                 }
             }
             _ => {}
