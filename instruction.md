@@ -9,6 +9,8 @@ This document defines a domain-specific language (DSL) for describing agent work
 - `provider` definitions, which configure model backends
 - dependency references, which determine execution order
 
+DSL files use the `.ai` extension.
+
 The parser must validate the document before execution. Invalid graphs, invalid references, and invalid template usage
 must produce parse-time errors.
 
@@ -223,6 +225,32 @@ The following schema types are supported:
 - enums: `A | B`
 
 The output of a schema-validated agent is expected to be JSON compatible with the generated JSON Schema.
+
+### Schema Injection into Agent Context
+
+When an agent defines an `output` schema, the schema must be automatically injected into the agent's prompt context.
+This ensures the agent understands the expected output format from the start, reducing token waste from trial-and-error
+attempts.
+
+The schema should be injected as part of the system instructions with clear formatting guidance. The injection should
+include:
+
+- The complete JSON Schema representation
+- Clear instruction to return JSON following the schema
+- Field descriptions and constraints from the schema definition
+
+Example injection format:
+
+```
+You must return your response as JSON following this exact schema:
+
+{schema_json_here}
+
+Ensure your output is valid JSON that matches this structure.
+```
+
+This injection happens automatically during agent execution and is not visible in the DSL. The agent receives both its
+configured prompt and the schema requirements in its context.
 
 ---
 
@@ -546,6 +574,10 @@ The implementation should follow these guidelines:
   represents all possible errors from that module (e.g., `parser/error.rs`, `validation/error.rs`,
   `execution/error.rs`). This groups related errors together and makes error handling explicit and type-safe. Use the
   `thiserror` crate to reduce boilerplate when implementing error types.
+- **Create comprehensive workflow examples in the example crate that cover all features of the DSL.** Each workflow
+  should
+  execute against the real Ollama server and validate that the implementation works correctly. There should be at least
+  one example workflow for every DSL feature.
 
 The core library should be organized into the following submodules:
 
@@ -615,5 +647,31 @@ let result = parser! {
 
 // Assertions go here
 ```
+
+---
+
+## Editor Support
+
+### TextMate Syntax Highlighting for JetBrains IDEs
+
+To enable syntax highlighting for `.ai` files in JetBrains IDEs (IntelliJ IDEA, WebStorm, PyCharm, etc.), create a
+TextMate grammar bundle in the `editors/` directory.
+
+The directory structure should be:
+
+```txt
+editors/
+└── textmate
+    ├── package.json
+    └── syntaxes
+        └── ai.tmLanguage.json
+```
+
+The TextMate grammar should read this DSL specification document to understand all directives, keywords, operators, and
+syntax patterns, then create appropriate syntax highlighting rules for them. The grammar should use standard TextMate
+scope names to ensure proper highlighting with JetBrains IDE themes.
+
+Users should be able to install the bundle by adding the `editors/textmate` directory in their IDE's TextMate Bundles
+settings.
 
 Create a task list with ~20 tasks and start working on this project systematically, do not use git worktrees

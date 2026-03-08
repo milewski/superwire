@@ -33,11 +33,40 @@ pub async fn execute_agent(
 ) -> Result<AgentExecutionResult, ExecutionError> {
     let done = Arc::new(DoneTool::default());
     let tools = vec![done.spec()];
-    let prompt = agent
+    let mut prompt = agent
         .prompt
         .as_ref()
         .map(render_expression)
         .unwrap_or_default();
+
+    if let Some(output_definition) = &agent.output {
+        let schema = match output_definition {
+            crate::ast::OutputDefinition::Inline(schema) => schema.clone(),
+            crate::ast::OutputDefinition::SchemaReference(name) => document
+                .schemas
+                .iter()
+                .find(|schema| schema.name.as_deref() == Some(name))
+                .ok_or_else(|| ExecutionError::MissingSchema {
+                    agent: agent.name.clone(),
+                    schema: name.clone(),
+                })?
+                .clone(),
+        };
+
+        let schema_json = crate::schemas::compiler::compile_schema(&schema)
+            .map_err(|error| ExecutionError::SchemaCompilation {
+                agent: agent.name.clone(),
+                message: error.to_string(),
+            })?;
+
+        let schema_instruction = format!(
+            "\n\nYou must return your response as JSON following this exact schema:\n\n{}\n\nEnsure your output is valid JSON that matches this structure.",
+            serde_json::to_string_pretty(&schema_json).unwrap_or_else(|_| schema_json.to_string())
+        );
+
+        debug!("injecting schema into agent prompt: agent={}, schema_size={}", agent.name, schema_instruction.len());
+        prompt.push_str(&schema_instruction);
+    }
 
     info!(
         "starting agent execution: agent={}, provider={}, model={}, tools={}",

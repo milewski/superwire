@@ -1,2 +1,2 @@
 try:
-    cargo run -p engine-ai-example
+    RUST_LOG=debug cargo run -p engine-ai-example
