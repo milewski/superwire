@@ -14,6 +14,7 @@ pub fn validate_workflow(document: &WorkflowDocument) -> Result<(), ValidationEr
     validate_provider_configuration(document)?;
     validate_agent_properties(document)?;
     validate_references(document)?;
+    validate_compact_models(document)?;
     validate_cycles(document)?;
     build_dependency_graph(document).map_err(|source| ValidationError::DependencyGraph {
         message: source.to_string(),
@@ -181,6 +182,100 @@ fn validate_references(document: &WorkflowDocument) -> Result<(), ValidationErro
 
     if let Some(output) = &document.output {
         validate_expression_references("workflow output", output, &agent_names, &schema_names)?;
+    }
+
+    Ok(())
+}
+
+fn validate_compact_models(document: &WorkflowDocument) -> Result<(), ValidationError> {
+    let providers = document
+        .providers
+        .iter()
+        .map(|provider| (provider.name.as_str(), provider))
+        .collect::<HashMap<_, _>>();
+
+    for agent in &document.agents {
+        if let Some(ContextSource::Expression(expression)) = &agent.context {
+            validate_compact_model_in_expression(&format!("agent `{}`", agent.name), expression, &providers)?;
+        }
+
+        if let Some(prompt) = &agent.prompt {
+            validate_compact_model_in_expression(&format!("agent `{}`", agent.name), prompt, &providers)?;
+        }
+
+        if let Some(binding) = &agent.for_each {
+            validate_compact_model_in_expression(&format!("agent `{}`", agent.name), &binding.collection, &providers)?;
+        }
+    }
+
+    if let Some(output) = &document.output {
+        validate_compact_model_in_expression("workflow output", output, &providers)?;
+    }
+
+    Ok(())
+}
+
+fn validate_compact_model_in_expression(
+    scope: &str,
+    expression: &Expression,
+    providers: &HashMap<&str, &crate::ast::ProviderDefinition>,
+) -> Result<(), ValidationError> {
+    match expression {
+        Expression::Array(items) => {
+            for item in items {
+                validate_compact_model_in_expression(scope, item, providers)?;
+            }
+        }
+        Expression::Object(values) => {
+            for value in values.values() {
+                validate_compact_model_in_expression(scope, value, providers)?;
+            }
+        }
+        Expression::FunctionCall(function_call) => {
+            if function_call.name == "compact" {
+                if let Some(Expression::String(model_string)) = function_call.arguments.get("model") {
+                    let model_ref = crate::parser::parse_model_reference(model_string).map_err(|_| {
+                        ValidationError::InvalidFunctionCall {
+                            scope: scope.to_string(),
+                            function: "compact".into(),
+                            message: format!("invalid model reference: {}", model_string),
+                        }
+                    })?;
+
+                    let provider = providers.get(model_ref.provider.as_str()).ok_or_else(|| {
+                        ValidationError::UndefinedProvider {
+                            agent: scope.to_string(),
+                            provider: model_ref.provider.clone(),
+                        }
+                    })?;
+
+                    if !provider.models.iter().any(|candidate| candidate == &model_ref.model) {
+                        return Err(ValidationError::ProviderModelMismatch {
+                            agent: scope.to_string(),
+                            provider: model_ref.provider.clone(),
+                            model: model_ref.model.clone(),
+                        });
+                    }
+                }
+            }
+
+            validate_compact_model_in_expression(scope, &function_call.target, providers)?;
+            for value in function_call.arguments.values() {
+                validate_compact_model_in_expression(scope, value, providers)?;
+            }
+        }
+        Expression::ForEach(binding) => {
+            validate_compact_model_in_expression(scope, &binding.collection, providers)?;
+        }
+        Expression::InlineSchema(_)
+        | Expression::String(_)
+        | Expression::MultilineString(_)
+        | Expression::Number(_)
+        | Expression::Boolean(_)
+        | Expression::Null
+        | Expression::Identifier(_)
+        | Expression::Reference(_)
+        | Expression::InterpolatedString(_) => {}
     }
 
     Ok(())

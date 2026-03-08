@@ -326,8 +326,13 @@ agent consume_context {
         .expect("workflow should execute");
 
     assert!(output["context"].is_array());
-    assert_eq!(output["context"][0]["type"], "user");
+    assert_eq!(output["context"][0]["type"], "system");
     assert!(output["context"][0]["value"]
+        .as_str()
+        .unwrap()
+        .contains("You must call the 'done' tool"));
+    assert_eq!(output["context"][1]["type"], "user");
+    assert!(output["context"][1]["value"]
         .as_str()
         .unwrap()
         .contains("Generate a person"));
