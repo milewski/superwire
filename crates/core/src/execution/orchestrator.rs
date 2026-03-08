@@ -337,6 +337,26 @@ impl AgentOrchestrator {
 
                         return Ok(Some(compiled));
                     }
+                    SchemaReference::InlineType {
+                        schema_type,
+                        description,
+                    } => {
+                        let compiled =
+                            SchemaCompiler::compile_type(schema_type, description.as_deref()).map_err(|error| {
+                                ExecutionError::RuntimeError {
+                                    agent: agent.name.clone(),
+                                    message: format!("Failed to compile schema type: {}", error),
+                                    suggestion: Some("Check schema type definition".to_string()),
+                                }
+                            })?;
+
+                        log::debug!(
+                            "Compiled inline type schema: {}",
+                            serde_json::to_string_pretty(&compiled).unwrap_or_default()
+                        );
+
+                        return Ok(Some(compiled));
+                    }
                 }
             }
         }

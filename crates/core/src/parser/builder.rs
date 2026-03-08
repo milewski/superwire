@@ -595,6 +595,29 @@ impl AstBuilder {
                         span: span.clone(),
                     }));
                 }
+                Rule::inline_type => {
+                    let mut schema_type = None;
+                    let mut description = None;
+
+                    for type_inner in inner_pair.into_inner() {
+                        match type_inner.as_rule() {
+                            Rule::schema_type => {
+                                schema_type = Some(self.parse_schema_type(type_inner)?);
+                            }
+                            Rule::string_value => {
+                                description = Some(self.parse_string_value(type_inner)?);
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if let Some(schema_type_value) = schema_type {
+                        return Ok(SchemaReference::InlineType {
+                            schema_type: schema_type_value,
+                            description,
+                        });
+                    }
+                }
                 _ => {}
             }
         }

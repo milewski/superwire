@@ -6,14 +6,14 @@ provider ollama1 {
 
 agent numbers {
     model <- "ollama1/qwen3:8b"
-    
-    output <- {
-        values: [number]
-    }
-    
+
     prompt <- """
         Generate a list of 3 random numbers between 1 and 10.
     """
+
+    output <- {
+        values: [number]
+    }
 }
 
 <- agent doubled {
@@ -25,9 +25,9 @@ agent numbers {
         result: number
     }
     
-    prompt <- "What is {{ input.num }} multiplied by 2? Reply with just the number in JSON format."
+    prompt <- "What is {{ input.num }} multiplied by 2?"
 }
 
 output {
-    numbers <- agent.numbers
+    numbers <- agent.numbers.values
 }
