@@ -3,10 +3,11 @@ use crate::parser::error::ParserError;
 use petgraph::algo::is_cyclic_directed;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::Topo;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct DependencyGraph {
     graph: DiGraph<String, ()>,
+    #[allow(dead_code)]
     node_indices: HashMap<String, NodeIndex>,
 }
 
@@ -23,11 +24,10 @@ impl DependencyGraph {
         for agent in &workflow.agents {
             let dependencies = Self::extract_dependencies(agent);
 
+            let to_index = node_indices[&agent.name];
             for dependency in dependencies {
                 if let Some(&from_index) = node_indices.get(&dependency) {
-                    if let Some(&to_index) = node_indices.get(&agent.name) {
-                        graph.add_edge(from_index, to_index, ());
-                    }
+                    graph.add_edge(from_index, to_index, ());
                 }
             }
         }
@@ -93,8 +93,8 @@ impl DependencyGraph {
         levels
     }
 
-    fn extract_dependencies(agent: &Agent) -> Vec<String> {
-        let mut dependencies = Vec::new();
+    fn extract_dependencies(agent: &Agent) -> HashSet<String> {
+        let mut dependencies = HashSet::new();
 
         for property in &agent.properties {
             match property {
@@ -120,18 +120,14 @@ impl DependencyGraph {
         dependencies
     }
 
-    fn extract_references_from_value(value: &Value, dependencies: &mut Vec<String>) {
+    fn extract_references_from_value(value: &Value, dependencies: &mut HashSet<String>) {
         match value {
             Value::Reference(reference) => match reference {
                 Reference::Agent { agent, .. } => {
-                    if !dependencies.contains(agent) {
-                        dependencies.push(agent.clone());
-                    }
+                    dependencies.insert(agent.clone());
                 }
                 Reference::AgentContext { agent } => {
-                    if !dependencies.contains(agent) {
-                        dependencies.push(agent.clone());
-                    }
+                    dependencies.insert(agent.clone());
                 }
                 _ => {}
             },
@@ -152,9 +148,7 @@ impl DependencyGraph {
                         continue;
                     };
 
-                    if !dependencies.contains(&agent_name) {
-                        dependencies.push(agent_name);
-                    }
+                    dependencies.insert(agent_name);
                 }
             }
             Value::Array(values) => {

@@ -2,6 +2,7 @@ use crate::ast::Agent;
 use crate::providers::error::ProviderError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,8 +39,8 @@ pub struct AgentOutput {
 
 #[derive(Debug, Clone)]
 pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
+    pub name: Cow<'static, str>,
+    pub description: Cow<'static, str>,
     pub parameters_schema: Value,
 }
 

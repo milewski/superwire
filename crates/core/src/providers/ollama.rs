@@ -3,6 +3,7 @@ use crate::providers::error::ProviderError;
 use crate::providers::provider::{AgentOutput, Message, Provider, ToolCall, ToolDefinition};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 
 pub struct OllamaProvider {
     name: String,
@@ -22,7 +23,7 @@ struct OllamaChatRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OllamaMessage {
-    role: String,
+    role: Cow<'static, str>,
     content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<OllamaToolCall>>,
@@ -71,24 +72,19 @@ impl OllamaProvider {
     }
 
     fn convert_messages_to_ollama_format(messages: &[Message]) -> Vec<OllamaMessage> {
-        let mut ollama_messages = Vec::new();
-
-        for message in messages {
-            match message {
-                Message::System { content } => {
-                    ollama_messages.push(OllamaMessage {
-                        role: "system".to_string(),
-                        content: content.clone(),
-                        tool_calls: None,
-                    });
-                }
-                Message::User { content } => {
-                    ollama_messages.push(OllamaMessage {
-                        role: "user".to_string(),
-                        content: content.clone(),
-                        tool_calls: None,
-                    });
-                }
+        messages
+            .iter()
+            .map(|message| match message {
+                Message::System { content } => OllamaMessage {
+                    role: Cow::Borrowed("system"),
+                    content: content.clone(),
+                    tool_calls: None,
+                },
+                Message::User { content } => OllamaMessage {
+                    role: Cow::Borrowed("user"),
+                    content: content.clone(),
+                    tool_calls: None,
+                },
                 Message::Assistant { content, tool_calls } => {
                     let ollama_tool_calls = tool_calls.as_ref().map(|calls| {
                         calls
@@ -106,26 +102,22 @@ impl OllamaProvider {
                             .collect()
                     });
 
-                    ollama_messages.push(OllamaMessage {
-                        role: "assistant".to_string(),
+                    OllamaMessage {
+                        role: Cow::Borrowed("assistant"),
                         content: content.clone(),
                         tool_calls: ollama_tool_calls,
-                    });
+                    }
                 }
                 Message::Tool {
                     tool_call_id: _,
                     content,
-                } => {
-                    ollama_messages.push(OllamaMessage {
-                        role: "tool".to_string(),
-                        content: content.clone(),
-                        tool_calls: None,
-                    });
-                }
-            }
-        }
-
-        ollama_messages
+                } => OllamaMessage {
+                    role: Cow::Borrowed("tool"),
+                    content: content.clone(),
+                    tool_calls: None,
+                },
+            })
+            .collect()
     }
 
     fn build_ollama_tools(tools: &[ToolDefinition]) -> Vec<OllamaTool> {
@@ -143,8 +135,8 @@ impl OllamaProvider {
                 OllamaTool {
                     tool_type: "function".to_string(),
                     function: OllamaToolFunctionDef {
-                        name: tool.name.clone(),
-                        description: tool.description.clone(),
+                        name: tool.name.to_string(),
+                        description: tool.description.to_string(),
                         parameters: simplified_schema,
                     },
                 }
@@ -263,12 +255,12 @@ impl Provider for OllamaProvider {
             .properties
             .iter()
             .find_map(|prop| {
-                if let crate::ast::AgentProperty::Model { value, .. } = prop {
-                    if let crate::ast::Value::String(model_ref) = value {
-                        model_ref.split('/').nth(1).map(|s| s.to_string())
-                    } else {
-                        None
-                    }
+                if let crate::ast::AgentProperty::Model {
+                    value: crate::ast::Value::String(model_ref),
+                    ..
+                } = prop
+                {
+                    model_ref.split('/').nth(1).map(|s| s.to_string())
                 } else {
                     None
                 }

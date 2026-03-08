@@ -82,6 +82,16 @@ pub enum ValidationError {
         message: String,
         suggestion: Option<String>,
     },
+
+    #[error("{}", format_missing_required_argument(.file_path, *line, *column, .function_name, .argument_name, .suggestion))]
+    MissingRequiredArgument {
+        file_path: String,
+        line: usize,
+        column: usize,
+        function_name: String,
+        argument_name: String,
+        suggestion: Option<String>,
+    },
 }
 
 fn format_duplicate_name(
@@ -244,6 +254,26 @@ fn format_invalid_input_output(
     let mut result = format!(
         "Error: invalid input/output: {}\n  --> {}:{}:{}\n   |",
         message, file_path, line, column
+    );
+
+    if let Some(suggestion_text) = suggestion {
+        result.push_str(&format!("\n   = help: {}", suggestion_text));
+    }
+
+    result
+}
+
+fn format_missing_required_argument(
+    file_path: &str,
+    line: usize,
+    column: usize,
+    function_name: &str,
+    argument_name: &str,
+    suggestion: &Option<String>,
+) -> String {
+    let mut result = format!(
+        "Error: missing required argument '{}' in function '{}'\n  --> {}:{}:{}\n   |",
+        argument_name, function_name, file_path, line, column
     );
 
     if let Some(suggestion_text) = suggestion {
