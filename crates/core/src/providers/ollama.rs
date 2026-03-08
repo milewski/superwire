@@ -1,22 +1,234 @@
 use crate::ast::Agent;
 use crate::providers::error::ProviderError;
-use crate::providers::provider::{AgentOutput, Message, Provider, ToolDefinition};
-use ollama_rs::generation::chat::request::ChatMessageRequest;
-use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::Ollama as OllamaClient;
+use crate::providers::provider::{AgentOutput, Message, Provider, ToolCall, ToolDefinition};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub struct OllamaProvider {
     name: String,
-    client: OllamaClient,
+    api_endpoint: String,
     models: Vec<String>,
+    client: reqwest::Client,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaChatRequest {
+    model: String,
+    messages: Vec<OllamaMessage>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<OllamaTool>,
+    stream: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OllamaMessage {
+    role: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OllamaToolCall>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OllamaToolCall {
+    function: OllamaToolFunction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OllamaToolFunction {
+    name: String,
+    arguments: Value,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaTool {
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OllamaToolFunctionDef,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaToolFunctionDef {
+    name: String,
+    description: String,
+    parameters: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaChatResponse {
+    message: OllamaMessage,
 }
 
 impl OllamaProvider {
     pub fn new(name: String, api_endpoint: String, models: Vec<String>) -> Self {
-        let client = OllamaClient::new(api_endpoint, 11434);
+        let client = reqwest::Client::new();
 
-        Self { name, client, models }
+        Self {
+            name,
+            api_endpoint,
+            models,
+            client,
+        }
+    }
+
+    fn convert_messages_to_ollama_format(messages: &[Message]) -> Vec<OllamaMessage> {
+        let mut ollama_messages = Vec::new();
+
+        for message in messages {
+            match message {
+                Message::System { content } => {
+                    ollama_messages.push(OllamaMessage {
+                        role: "system".to_string(),
+                        content: content.clone(),
+                        tool_calls: None,
+                    });
+                }
+                Message::User { content } => {
+                    ollama_messages.push(OllamaMessage {
+                        role: "user".to_string(),
+                        content: content.clone(),
+                        tool_calls: None,
+                    });
+                }
+                Message::Assistant { content, tool_calls } => {
+                    let ollama_tool_calls = tool_calls.as_ref().map(|calls| {
+                        calls
+                            .iter()
+                            .map(|call| {
+                                let arguments: Value = serde_json::from_str(&call.arguments).unwrap_or(Value::Null);
+
+                                OllamaToolCall {
+                                    function: OllamaToolFunction {
+                                        name: call.name.clone(),
+                                        arguments,
+                                    },
+                                }
+                            })
+                            .collect()
+                    });
+
+                    ollama_messages.push(OllamaMessage {
+                        role: "assistant".to_string(),
+                        content: content.clone(),
+                        tool_calls: ollama_tool_calls,
+                    });
+                }
+                Message::Tool {
+                    tool_call_id: _,
+                    content,
+                } => {
+                    ollama_messages.push(OllamaMessage {
+                        role: "tool".to_string(),
+                        content: content.clone(),
+                        tool_calls: None,
+                    });
+                }
+            }
+        }
+
+        ollama_messages
+    }
+
+    fn build_ollama_tools(tools: &[ToolDefinition]) -> Vec<OllamaTool> {
+        tools
+            .iter()
+            .map(|tool| {
+                let simplified_schema = Self::simplify_schema_for_ollama(&tool.parameters_schema);
+
+                OllamaTool {
+                    tool_type: "function".to_string(),
+                    function: OllamaToolFunctionDef {
+                        name: tool.name.clone(),
+                        description: tool.description.clone(),
+                        parameters: simplified_schema,
+                    },
+                }
+            })
+            .collect()
+    }
+
+    fn simplify_schema_for_ollama(schema: &Value) -> Value {
+        if let Some(obj) = schema.as_object() {
+            let mut simplified = serde_json::Map::new();
+
+            simplified.insert("type".to_string(), Value::String("object".to_string()));
+
+            if let Some(properties) = obj.get("properties").and_then(|v| v.as_object()) {
+                let mut simple_props = serde_json::Map::new();
+
+                for (key, value) in properties {
+                    simple_props.insert(key.clone(), Self::simplify_property(value));
+                }
+
+                simplified.insert("properties".to_string(), Value::Object(simple_props));
+            }
+
+            if let Some(required) = obj.get("required") {
+                simplified.insert("required".to_string(), required.clone());
+            }
+
+            Value::Object(simplified)
+        } else {
+            schema.clone()
+        }
+    }
+
+    fn simplify_property(prop: &Value) -> Value {
+        if let Some(obj) = prop.as_object() {
+            let mut simple_prop = serde_json::Map::new();
+
+            if let Some(prop_type) = obj.get("type") {
+                simple_prop.insert("type".to_string(), prop_type.clone());
+            } else if let Some(any_of) = obj.get("anyOf") {
+                if let Some(array) = any_of.as_array() {
+                    for item in array {
+                        if let Some(item_type) = item.get("type") {
+                            if item_type.as_str() != Some("null") {
+                                simple_prop.insert("type".to_string(), item_type.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else if let Some(one_of) = obj.get("oneOf") {
+                if let Some(array) = one_of.as_array() {
+                    if let Some(first) = array.first() {
+                        if let Some(first_type) = first.get("type") {
+                            simple_prop.insert("type".to_string(), first_type.clone());
+                        }
+                    }
+                }
+            }
+
+            if simple_prop.is_empty() {
+                simple_prop.insert("type".to_string(), Value::String("string".to_string()));
+            }
+
+            if let Some(description) = obj.get("description") {
+                simple_prop.insert("description".to_string(), description.clone());
+            }
+
+            if let Some(enum_values) = obj.get("enum") {
+                simple_prop.insert("enum".to_string(), enum_values.clone());
+            }
+
+            if let Some(items) = obj.get("items") {
+                simple_prop.insert("items".to_string(), Self::simplify_property(items));
+            }
+
+            if let Some(properties) = obj.get("properties").and_then(|v| v.as_object()) {
+                let mut simple_nested_props = serde_json::Map::new();
+
+                for (key, value) in properties {
+                    simple_nested_props.insert(key.clone(), Self::simplify_property(value));
+                }
+
+                simple_prop.insert("properties".to_string(), Value::Object(simple_nested_props));
+            }
+
+            Value::Object(simple_prop)
+        } else {
+            serde_json::json!({"type": "string"})
+        }
     }
 }
 
@@ -32,48 +244,106 @@ impl Provider for OllamaProvider {
 
     async fn execute_agent(
         &self,
-        _agent: &Agent,
+        agent: &Agent,
         context: Vec<Message>,
-        _tools: Vec<ToolDefinition>,
+        tools: Vec<ToolDefinition>,
     ) -> Result<AgentOutput, ProviderError> {
-        let mut messages = Vec::new();
+        log::debug!("OllamaProvider executing agent: {}", agent.name);
 
-        for message in &context {
-            match message {
-                Message::User { content } => {
-                    messages.push(ChatMessage::user(content.clone()));
+        let ollama_messages = Self::convert_messages_to_ollama_format(&context);
+        log::trace!("Converted {} messages to Ollama format", ollama_messages.len());
+
+        let model_name = agent
+            .properties
+            .iter()
+            .find_map(|prop| {
+                if let crate::ast::AgentProperty::Model { value, .. } = prop {
+                    if let crate::ast::Value::String(model_ref) = value {
+                        model_ref.split('/').nth(1).map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-                Message::Assistant { content, .. } => {
-                    messages.push(ChatMessage::assistant(content.clone()));
-                }
-                Message::Tool { content, .. } => {
-                    messages.push(ChatMessage::user(content.clone()));
-                }
-            }
-        }
+            })
+            .unwrap_or_else(|| "qwen3:8b".to_string());
 
-        let model_name = "qwen3:8b".to_string();
+        log::info!("Using model: {}", model_name);
 
-        let request = ChatMessageRequest::new(model_name, messages);
+        let ollama_tools = Self::build_ollama_tools(&tools);
+        log::debug!("Configured {} tools for Ollama", ollama_tools.len());
 
-        let response = self
-            .client
-            .send_chat_messages(request)
-            .await
-            .map_err(|error| ProviderError::ApiError {
-                message: format!("Ollama API error: {}", error),
+        let request = OllamaChatRequest {
+            model: model_name.clone(),
+            messages: ollama_messages,
+            tools: ollama_tools,
+            stream: false,
+        };
+
+        let url = format!("{}/api/chat", self.api_endpoint);
+        log::debug!("Sending request to Ollama: {}", url);
+
+        let response = self.client.post(&url).json(&request).send().await.map_err(|error| {
+            log::error!("Ollama HTTP request failed: {}", error);
+            ProviderError::ApiError {
+                message: format!("Ollama HTTP request failed: {}", error),
                 status_code: None,
                 suggestion: Some("Check that Ollama server is running and accessible".to_string()),
-            })?;
+            }
+        })?;
 
-        let output_content = response.message.content.clone();
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+
+            log::error!("Ollama API error: {} - {}", status, error_text);
+
+            return Err(ProviderError::ApiError {
+                message: format!("Ollama API error: {} - {}", status, error_text),
+                status_code: Some(status.as_u16()),
+                suggestion: Some("Check Ollama server logs for details".to_string()),
+            });
+        }
+
+        log::debug!("Received successful response from Ollama");
+
+        let ollama_response: OllamaChatResponse = response.json().await.map_err(|error| {
+            log::error!("Failed to parse Ollama response: {}", error);
+            ProviderError::ApiError {
+                message: format!("Failed to parse Ollama response: {}", error),
+                status_code: None,
+                suggestion: Some("Check Ollama API compatibility".to_string()),
+            }
+        })?;
+
+        let output_content = ollama_response.message.content.clone();
+        log::debug!("Ollama response content length: {} chars", output_content.len());
+
+        let tool_calls = ollama_response.message.tool_calls.as_ref().map(|calls| {
+            log::debug!("Ollama response contains {} tool calls", calls.len());
+            calls
+                .iter()
+                .enumerate()
+                .map(|(index, call)| {
+                    log::trace!("Tool call {}: {}", index, call.function.name);
+                    ToolCall {
+                        id: format!("call_{}", index),
+                        name: call.function.name.clone(),
+                        arguments: serde_json::to_string(&call.function.arguments).unwrap_or_default(),
+                    }
+                })
+                .collect()
+        });
 
         let mut updated_context = context.clone();
 
         updated_context.push(Message::Assistant {
             content: output_content.clone(),
-            tool_calls: None,
+            tool_calls: tool_calls.clone(),
         });
+
+        log::info!("OllamaProvider execution completed successfully");
 
         Ok(AgentOutput {
             output: Value::String(output_content),

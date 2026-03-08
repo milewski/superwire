@@ -1,0 +1,19 @@
+provider ollama1 {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+agent simple_test {
+    model <- "ollama1/qwen3:8b"
+
+    output <- schema {
+        message: string
+    }
+
+    prompt <- "Generate a simple greeting message. When done, call the done tool with status='success' and output containing a 'message' field with your greeting."
+}
+
+output {
+    result <- agent.simple_test
+}

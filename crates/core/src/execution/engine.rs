@@ -30,12 +30,17 @@ impl ExecutionEngine {
         workflow_path: &str,
         inputs: HashMap<String, Value>,
     ) -> Result<Value, ExecutionError> {
+        log::info!("Starting workflow execution: {}", workflow_path);
+        log::debug!("Workflow inputs: {:?}", inputs);
+
         let workflow_content =
             std::fs::read_to_string(workflow_path).map_err(|error| ExecutionError::RuntimeError {
                 agent: "workflow".to_string(),
                 message: format!("Failed to read workflow file: {}", error),
                 suggestion: Some("Check that the file exists and is readable".to_string()),
             })?;
+
+        log::debug!("Workflow file read successfully");
 
         let builder = AstBuilder::new(workflow_path.to_string());
 
@@ -46,6 +51,13 @@ impl ExecutionEngine {
                 message: format!("Failed to parse workflow: {}", error),
                 suggestion: Some("Check workflow syntax".to_string()),
             })?;
+
+        log::info!("Workflow parsed successfully");
+        log::debug!(
+            "Workflow contains {} agents, {} providers",
+            workflow.agents.len(),
+            workflow.providers.len()
+        );
 
         self.execute_parsed_workflow_with_inputs(&workflow, inputs).await
     }
@@ -59,18 +71,49 @@ impl ExecutionEngine {
         workflow: &Workflow,
         inputs: HashMap<String, Value>,
     ) -> Result<Value, ExecutionError> {
-        WorkflowValidator::validate(workflow).map_err(|errors| ExecutionError::RuntimeError {
-            agent: "workflow".to_string(),
-            message: format!(
-                "Validation errors:\n{}",
-                errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")
-            ),
-            suggestion: Some("Fix the validation errors above".to_string()),
+        log::info!("Validating workflow");
+
+        WorkflowValidator::validate(workflow).map_err(|errors| {
+            let error_messages: Vec<String> = errors
+                .iter()
+                .map(|error| {
+                    let base_message = error.to_string();
+                    let suggestion = match error {
+                        crate::validation::error::ValidationError::UndefinedReference { suggestion, .. }
+                        | crate::validation::error::ValidationError::DuplicateName { suggestion, .. }
+                        | crate::validation::error::ValidationError::ProviderModelMismatch { suggestion, .. }
+                        | crate::validation::error::ValidationError::MissingTemplateVariable { suggestion, .. }
+                        | crate::validation::error::ValidationError::UnusedTemplateBinding { suggestion, .. }
+                        | crate::validation::error::ValidationError::InvalidProperty { suggestion, .. }
+                        | crate::validation::error::ValidationError::CyclicDependency { suggestion, .. }
+                        | crate::validation::error::ValidationError::InvalidInputOutput { suggestion, .. } => {
+                            suggestion.as_ref()
+                        }
+                    };
+
+                    if let Some(suggestion_text) = suggestion {
+                        format!("{}\n  Suggestion: {}", base_message, suggestion_text)
+                    } else {
+                        base_message
+                    }
+                })
+                .collect();
+
+            ExecutionError::RuntimeError {
+                agent: "workflow".to_string(),
+                message: format!("Validation errors:\n{}", error_messages.join("\n")),
+                suggestion: Some("Fix the validation errors above".to_string()),
+            }
         })?;
+
+        log::info!("Workflow validation successful");
 
         let mut provider_registry = ProviderRegistry::new();
 
         for provider in &workflow.providers {
+            log::info!("Initializing provider: {}", provider.name);
+            log::debug!("Provider models: {:?}", provider.models);
+
             let provider_instance =
                 ProviderFactory::create_provider(provider).map_err(|error| ExecutionError::ProviderError {
                     agent: "workflow".to_string(),
@@ -79,7 +122,10 @@ impl ExecutionEngine {
                 })?;
 
             provider_registry.register(provider.name.clone(), provider_instance);
+            log::info!("Provider '{}' initialized successfully", provider.name);
         }
+
+        log::info!("Building dependency graph");
 
         let dependency_graph = DependencyGraph::build(workflow).map_err(|error| ExecutionError::RuntimeError {
             agent: "workflow".to_string(),
@@ -88,6 +134,7 @@ impl ExecutionEngine {
         })?;
 
         let execution_order = dependency_graph.topological_order();
+        log::info!("Execution order determined: {:?}", execution_order);
 
         let mut runtime_context = RuntimeContext::new();
 
@@ -96,6 +143,8 @@ impl ExecutionEngine {
         }
 
         for agent_name in execution_order {
+            log::info!("Executing agent: {}", agent_name);
+
             let agent = workflow
                 .agents
                 .iter()
@@ -107,6 +156,7 @@ impl ExecutionEngine {
                 })?;
 
             let provider = Self::get_provider_for_agent(agent, &provider_registry)?;
+            log::debug!("Agent '{}' using provider: {}", agent_name, provider.name());
 
             let orchestrator = AgentOrchestrator::new(provider);
 
@@ -157,9 +207,18 @@ impl ExecutionEngine {
                     });
                 };
 
-                let mut results = Vec::new();
+                log::info!("Agent '{}' executing for_each with {} items", agent_name, items.len());
 
-                for item in items {
+                let mut results = Vec::new();
+                let total_items = items.len();
+
+                for (iteration_index, item) in items.into_iter().enumerate() {
+                    log::debug!(
+                        "Agent '{}' iteration {} of {}",
+                        agent_name,
+                        iteration_index + 1,
+                        total_items
+                    );
                     let mut iteration_context = runtime_context.clone();
                     iteration_context.set_input_value(iteration_var.clone(), item);
 
@@ -167,9 +226,15 @@ impl ExecutionEngine {
                         .execute_agent(agent, initial_context.clone(), &iteration_context)
                         .await?;
 
+                    log::debug!("Agent '{}' iteration {} completed", agent_name, iteration_index + 1);
                     results.push(output);
                 }
 
+                log::info!(
+                    "Agent '{}' for_each completed with {} results",
+                    agent_name,
+                    results.len()
+                );
                 runtime_context.set_agent_output(agent_name.clone(), Value::Array(results));
                 runtime_context.set_agent_context(agent_name.clone(), Vec::new());
             } else {
@@ -177,26 +242,24 @@ impl ExecutionEngine {
                     .execute_agent(agent, initial_context, &runtime_context)
                     .await?;
 
+                log::info!("Agent '{}' completed successfully", agent_name);
+                log::debug!("Agent '{}' output: {:?}", agent_name, output);
+
                 runtime_context.set_agent_output(agent_name.clone(), output);
                 runtime_context.set_agent_context(agent_name.clone(), context);
             }
         }
 
+        log::info!("All agents executed successfully");
+
         let terminal_agents: Vec<_> = workflow.agents.iter().filter(|agent| agent.is_terminal).collect();
 
         if terminal_agents.is_empty() && workflow.output.is_none() {
+            log::info!("No terminal agents or output block defined, returning null");
             return Ok(Value::Null);
         }
 
-        if terminal_agents.len() == 1 && workflow.output.is_none() {
-            let terminal_agent = terminal_agents[0];
-            return runtime_context
-                .resolve_value(&crate::ast::Value::Reference(crate::ast::Reference::Agent {
-                    agent: terminal_agent.name.clone(),
-                    field: "_output".to_string(),
-                }))
-                .or_else(|_| Ok(Value::Null));
-        }
+        log::info!("Building final output");
 
         let mut result = serde_json::Map::new();
 
@@ -227,6 +290,9 @@ impl ExecutionEngine {
                 result.insert(field.name.clone(), value);
             }
         }
+
+        log::info!("Workflow execution completed successfully");
+        log::debug!("Final output: {:?}", result);
 
         Ok(Value::Object(result))
     }
@@ -309,22 +375,22 @@ impl ExecutionEngine {
 
         let resolved_context = runtime_context.resolve_value(context_value)?;
 
-        let contexts = if let Value::Array(array) = resolved_context {
-            array
-        } else {
-            vec![resolved_context]
-        };
-
         let mut combined_messages = Vec::new();
 
-        for context in contexts {
-            if let Value::Array(messages) = context {
-                for msg in messages {
-                    if let Ok(message) = serde_json::from_value(msg) {
-                        combined_messages.push(message);
-                    }
+        if let Value::Array(messages) = resolved_context {
+            for msg in messages {
+                if let Ok(message) = serde_json::from_value(msg) {
+                    combined_messages.push(message);
                 }
             }
+        }
+
+        if combined_messages.is_empty() {
+            return Err(ExecutionError::RuntimeError {
+                agent: "compact".to_string(),
+                message: "No messages found in context to compact".to_string(),
+                suggestion: Some("Ensure the context reference points to a valid agent context".to_string()),
+            });
         }
 
         let summary_prompt = "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed.";
@@ -349,6 +415,14 @@ impl ExecutionEngine {
                 suggestion: Some("Check provider connectivity".to_string()),
             })?;
 
-        Ok(serde_json::to_value(&result.context).unwrap_or(Value::Null))
+        let last_message = result.context.last().ok_or_else(|| ExecutionError::RuntimeError {
+            agent: "compact".to_string(),
+            message: "No response from compact operation".to_string(),
+            suggestion: None,
+        })?;
+
+        let compacted_context = vec![last_message.clone()];
+
+        Ok(serde_json::to_value(&compacted_context).unwrap_or(Value::Null))
     }
 }

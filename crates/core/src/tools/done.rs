@@ -38,7 +38,7 @@ impl Tool for DoneTool {
     }
 
     fn description(&self) -> &str {
-        "Signal completion of the agent loop. Must be called with status 'success' and the final output, or status 'fail' with an error reason."
+        "Signal completion of the agent loop. Must be called with status 'success' and the final output as a JSON object (not a string). The 'output' parameter must be the actual JSON object, not a string containing JSON."
     }
 
     fn parameters_schema(&self) -> Value {

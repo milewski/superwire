@@ -7,6 +7,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Message {
+    System {
+        content: String,
+    },
     User {
         content: String,
     },

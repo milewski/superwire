@@ -13,6 +13,7 @@ impl WorkflowValidator {
         Self::check_duplicate_provider_names(workflow, &mut errors);
         Self::check_undefined_references(workflow, &mut errors);
         Self::check_provider_model_references(workflow, &mut errors);
+        Self::check_agent_field_references(workflow, &mut errors);
 
         if errors.is_empty() {
             Ok(())
@@ -144,6 +145,16 @@ impl WorkflowValidator {
                                 suggestion: Some(format!("Define an agent named '{}'", parts[0])),
                             });
                         }
+                    } else if parts.len() == 2 && parts[0] == "agent" {
+                        if !agent_names.contains(parts[1]) {
+                            errors.push(ValidationError::UndefinedReference {
+                                file_path: "workflow".to_string(),
+                                line,
+                                column,
+                                reference: parts[1].to_string(),
+                                suggestion: Some(format!("Define an agent named '{}'", parts[1])),
+                            });
+                        }
                     } else if parts.len() == 2 && parts[0] != "input" && !agent_names.contains(parts[0]) {
                         errors.push(ValidationError::UndefinedReference {
                             file_path: "workflow".to_string(),
@@ -261,6 +272,148 @@ impl WorkflowValidator {
                     }
                 }
             }
+        }
+    }
+
+    fn check_agent_field_references(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
+        let agent_schemas: HashMap<String, Option<&crate::ast::Schema>> = workflow
+            .agents
+            .iter()
+            .map(|agent| {
+                let schema = agent.properties.iter().find_map(|prop| {
+                    if let AgentProperty::Output { value, .. } = prop {
+                        match value {
+                            crate::ast::SchemaReference::Inline(schema) => Some(schema),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                });
+                (agent.name.clone(), schema)
+            })
+            .collect();
+
+        for agent in &workflow.agents {
+            for property in &agent.properties {
+                match property {
+                    AgentProperty::Prompt { value, span } => {
+                        Self::check_field_references_in_value(value, &agent_schemas, span.line, span.column, errors);
+                    }
+                    AgentProperty::Context { value, span } => {
+                        Self::check_field_references_in_value(value, &agent_schemas, span.line, span.column, errors);
+                    }
+                    AgentProperty::ForEach { collection, span, .. } => {
+                        Self::check_field_references_in_value(
+                            collection,
+                            &agent_schemas,
+                            span.line,
+                            span.column,
+                            errors,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some(output_block) = &workflow.output {
+            for field in &output_block.fields {
+                Self::check_field_references_in_value(
+                    &field.value,
+                    &agent_schemas,
+                    output_block.span.line,
+                    output_block.span.column,
+                    errors,
+                );
+            }
+        }
+    }
+
+    fn check_field_references_in_value(
+        value: &Value,
+        agent_schemas: &HashMap<String, Option<&crate::ast::Schema>>,
+        line: usize,
+        column: usize,
+        errors: &mut Vec<ValidationError>,
+    ) {
+        match value {
+            Value::Reference(Reference::Agent { agent, field }) => {
+                if let Some(schema_opt) = agent_schemas.get(agent) {
+                    if let Some(schema) = schema_opt {
+                        let field_exists = schema.fields.iter().any(|f| f.name == *field);
+                        if !field_exists {
+                            errors.push(ValidationError::UndefinedReference {
+                                file_path: "workflow".to_string(),
+                                line,
+                                column,
+                                reference: format!("{}.{}", agent, field),
+                                suggestion: Some(format!(
+                                    "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
+                                    agent,
+                                    field,
+                                    schema.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
+                                )),
+                            });
+                        }
+                    }
+                }
+            }
+            Value::Interpolated(template) => {
+                let interpolation_pattern = regex::Regex::new(r"\{\{\s*agent\.([^.}]+)\.([^}\s]+)\s*\}\}").unwrap();
+
+                for capture in interpolation_pattern.captures_iter(template) {
+                    let agent_name = capture[1].trim();
+                    let field_name = capture[2].trim();
+
+                    if let Some(schema_opt) = agent_schemas.get(agent_name) {
+                        if let Some(schema) = schema_opt {
+                            let field_exists = schema.fields.iter().any(|f| f.name == field_name);
+                            if !field_exists {
+                                errors.push(ValidationError::UndefinedReference {
+                                    file_path: "workflow".to_string(),
+                                    line,
+                                    column,
+                                    reference: format!("agent.{}.{}", agent_name, field_name),
+                                    suggestion: Some(format!(
+                                        "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
+                                        agent_name,
+                                        field_name,
+                                        schema.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
+                                    )),
+                                });
+                            }
+                        } else {
+                            errors.push(ValidationError::UndefinedReference {
+                                file_path: "workflow".to_string(),
+                                line,
+                                column,
+                                reference: format!("agent.{}.{}", agent_name, field_name),
+                                suggestion: Some(format!(
+                                    "Agent '{}' does not have an output schema. You can only reference the entire agent output using '{{{{ agent.{} }}}}'",
+                                    agent_name, agent_name
+                                )),
+                            });
+                        }
+                    }
+                }
+            }
+            Value::Array(values) => {
+                for val in values {
+                    Self::check_field_references_in_value(val, agent_schemas, line, column, errors);
+                }
+            }
+            Value::Object(map) => {
+                for val in map.values() {
+                    Self::check_field_references_in_value(val, agent_schemas, line, column, errors);
+                }
+            }
+            Value::FunctionCall(func_call) => {
+                for val in func_call.arguments.values() {
+                    Self::check_field_references_in_value(val, agent_schemas, line, column, errors);
+                }
+            }
+            _ => {}
         }
     }
 }

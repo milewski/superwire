@@ -7,6 +7,8 @@ use crate::tools::{DoneTool, ToolRegistry};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
+const MAX_ITERATIONS: usize = 50;
+
 pub struct AgentOrchestrator {
     provider: ProviderRef,
     tool_registry: ToolRegistry,
@@ -30,57 +32,282 @@ impl AgentOrchestrator {
         initial_context: Vec<Message>,
         runtime_context: &RuntimeContext,
     ) -> Result<(JsonValue, Vec<Message>), ExecutionError> {
-        let mut context = initial_context;
+        log::info!("Starting agent execution: {}", agent.name);
 
         let prompt = self.extract_prompt(agent, runtime_context)?;
+        log::debug!("Agent '{}' prompt: {}", agent.name, prompt);
+
         let schema = self.extract_schema(agent)?;
+
+        let mut context = Vec::new();
+
+        let has_schema = schema.is_some();
+
+        if let Some(ref schema_value) = schema {
+            log::debug!("Agent '{}' has output schema defined", agent.name);
+
+            let schema_instruction = SchemaValidator::inject_schema_into_prompt(schema_value);
+
+            context.push(Message::System {
+                content: schema_instruction,
+            });
+
+            context.push(Message::System {
+                content: "You must call the 'done' tool to complete your task. Call it with status='success' and your final output as a JSON object in the 'output' parameter. IMPORTANT: Pass the JSON object directly to the output parameter, NOT as a string. Example: done(status='success', output={\"key\": \"value\"})".to_string(),
+            });
+        } else {
+            log::debug!("Agent '{}' has no output schema", agent.name);
+        }
+
+        context.extend(initial_context);
 
         context.push(Message::User {
             content: prompt.clone(),
         });
 
-        if let Some(ref schema_value) = schema {
-            let schema_instruction = SchemaValidator::inject_schema_into_prompt(schema_value);
-
-            context.push(Message::User {
-                content: schema_instruction,
-            });
-        }
-
-        let tools = self.build_tool_definitions();
-
-        let output = self
-            .provider
-            .execute_agent(agent, context.clone(), tools)
-            .await
-            .map_err(|error| ExecutionError::ProviderError {
-                agent: agent.name.clone(),
-                message: error.to_string(),
-                suggestion: Some("Check provider configuration and connectivity".to_string()),
-            })?;
-
-        let parsed_output = if schema.is_some() {
-            if let JsonValue::String(string) = &output.output {
-                serde_json::from_str(string).unwrap_or_else(|_| output.output.clone())
-            } else {
-                output.output.clone()
-            }
+        let tools = if has_schema {
+            self.build_tool_definitions()
         } else {
-            output.output
+            Vec::new()
         };
 
-        if let Some(ref schema_value) = schema {
-            SchemaValidator::validate(schema_value, &parsed_output).map_err(|error| {
-                ExecutionError::SchemaValidationError {
-                    agent: agent.name.clone(),
-                    message: error.to_string(),
-                    field_path: None,
-                    suggestion: Some("Ensure output matches the defined schema".to_string()),
-                }
-            })?;
+        log::info!("Agent '{}' has {} tools available", agent.name, tools.len());
+        if !tools.is_empty() {
+            log::debug!(
+                "Agent '{}' tools: {:?}",
+                agent.name,
+                tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+            );
         }
 
-        Ok((parsed_output, output.context))
+        let mut iteration_count = 0;
+
+        loop {
+            iteration_count += 1;
+
+            log::debug!("Agent '{}' iteration {}", agent.name, iteration_count);
+
+            if iteration_count > MAX_ITERATIONS {
+                log::error!(
+                    "Agent '{}' exceeded maximum iterations ({})",
+                    agent.name,
+                    MAX_ITERATIONS
+                );
+                return Err(ExecutionError::RuntimeError {
+                    agent: agent.name.clone(),
+                    message: format!(
+                        "Agent exceeded maximum iterations ({}). Agent may be stuck in a loop.",
+                        MAX_ITERATIONS
+                    ),
+                    suggestion: Some("Check agent logic and ensure it calls the done tool to exit".to_string()),
+                });
+            }
+
+            log::debug!("Agent '{}' calling provider", agent.name);
+
+            let output = self
+                .provider
+                .execute_agent(agent, context.clone(), tools.clone())
+                .await
+                .map_err(|error| ExecutionError::ProviderError {
+                    agent: agent.name.clone(),
+                    message: error.to_string(),
+                    suggestion: Some("Check provider configuration and connectivity".to_string()),
+                })?;
+
+            log::debug!("Agent '{}' received response from provider", agent.name);
+
+            context = output.context.clone();
+
+            if !has_schema {
+                log::debug!("Agent '{}' has no schema, returning text response", agent.name);
+
+                let last_message = context.last().ok_or_else(|| ExecutionError::RuntimeError {
+                    agent: agent.name.clone(),
+                    message: "No response from agent".to_string(),
+                    suggestion: None,
+                })?;
+
+                if let Message::Assistant { content, .. } = last_message {
+                    log::info!("Agent '{}' completed successfully (no schema)", agent.name);
+                    log::debug!("Agent '{}' response: {}", agent.name, content);
+                    return Ok((JsonValue::String(content.clone()), context));
+                } else {
+                    return Err(ExecutionError::RuntimeError {
+                        agent: agent.name.clone(),
+                        message: "Expected assistant message".to_string(),
+                        suggestion: None,
+                    });
+                }
+            }
+
+            if let Some(tool_calls) = context
+                .last()
+                .and_then(|msg| {
+                    if let Message::Assistant { tool_calls, .. } = msg {
+                        tool_calls.as_ref()
+                    } else {
+                        None
+                    }
+                })
+                .cloned()
+            {
+                let mut done_called = false;
+                let mut done_output = None;
+
+                log::debug!("Agent '{}' made {} tool calls", agent.name, tool_calls.len());
+
+                for tool_call in &tool_calls {
+                    log::info!(
+                        "Agent '{}' calling tool: {} (id: {})",
+                        agent.name,
+                        tool_call.name,
+                        tool_call.id
+                    );
+                    log::debug!("Tool '{}' arguments: {}", tool_call.name, tool_call.arguments);
+
+                    let tool_result = match self.execute_tool(&tool_call.name, &tool_call.arguments).await {
+                        Ok(result) => {
+                            log::debug!("Tool '{}' executed successfully", tool_call.name);
+                            log::trace!("Tool '{}' result: {}", tool_call.name, result);
+                            result
+                        }
+                        Err(error) => {
+                            log::warn!("Tool '{}' execution failed: {}", tool_call.name, error);
+                            let error_message = format!(
+                                "Tool execution error: {}. Please fix the tool call and try again.",
+                                error
+                            );
+
+                            context.push(Message::Tool {
+                                tool_call_id: tool_call.id.clone(),
+                                content: error_message,
+                            });
+
+                            continue;
+                        }
+                    };
+
+                    if tool_call.name == "done" {
+                        log::info!("Agent '{}' called done tool", agent.name);
+                        done_called = true;
+
+                        let done_params: serde_json::Map<String, JsonValue> = match serde_json::from_str(
+                            &tool_call.arguments,
+                        ) {
+                            Ok(params) => params,
+                            Err(error) => {
+                                log::warn!("Agent '{}' done tool parameters parse failed: {}", agent.name, error);
+                                let error_message = format!(
+                                    "Failed to parse done tool parameters: {}. Please ensure you provide 'status' and 'output' fields.",
+                                    error
+                                );
+
+                                context.push(Message::Tool {
+                                    tool_call_id: tool_call.id.clone(),
+                                    content: error_message,
+                                });
+
+                                continue;
+                            }
+                        };
+
+                        let status = done_params.get("status").and_then(|v| v.as_str()).unwrap_or("success");
+                        log::debug!("Agent '{}' done status: {}", agent.name, status);
+
+                        let output_value = done_params.get("output").cloned().unwrap_or(JsonValue::Null);
+
+                        if status == "fail" {
+                            log::error!(
+                                "Agent '{}' failed: {}",
+                                agent.name,
+                                output_value.as_str().unwrap_or("Unknown error")
+                            );
+                            return Err(ExecutionError::RuntimeError {
+                                agent: agent.name.clone(),
+                                message: format!("Agent failed: {}", output_value.as_str().unwrap_or("Unknown error")),
+                                suggestion: None,
+                            });
+                        }
+
+                        if let Some(ref schema_value) = schema {
+                            log::debug!("Agent '{}' validating output against schema", agent.name);
+                            match SchemaValidator::validate(schema_value, &output_value) {
+                                Ok(_) => {
+                                    log::info!("Agent '{}' output validated successfully", agent.name);
+                                    done_output = Some(output_value);
+                                }
+                                Err(validation_error) => {
+                                    log::warn!("Agent '{}' schema validation failed: {}", agent.name, validation_error);
+                                    let error_message = format!(
+                                        "Schema validation failed: {}. Please fix the output and call done again.",
+                                        validation_error
+                                    );
+
+                                    context.push(Message::Tool {
+                                        tool_call_id: tool_call.id.clone(),
+                                        content: error_message,
+                                    });
+
+                                    continue;
+                                }
+                            }
+                        } else {
+                            done_output = Some(output_value);
+                        }
+                    } else {
+                        context.push(Message::Tool {
+                            tool_call_id: tool_call.id.clone(),
+                            content: tool_result,
+                        });
+                    }
+                }
+
+                if done_called {
+                    if let Some(final_output) = done_output {
+                        log::info!("Agent '{}' completed successfully with valid output", agent.name);
+                        log::debug!("Agent '{}' final output: {:?}", agent.name, final_output);
+                        return Ok((final_output, context));
+                    } else {
+                        log::debug!(
+                            "Agent '{}' done called but output validation failed, continuing loop",
+                            agent.name
+                        );
+                    }
+                }
+            } else {
+                log::trace!("Agent '{}' response had no tool calls", agent.name);
+            }
+        }
+    }
+
+    async fn execute_tool(&self, tool_name: &str, arguments_json: &str) -> Result<String, ExecutionError> {
+        let tool = self
+            .tool_registry
+            .get(tool_name)
+            .ok_or_else(|| ExecutionError::RuntimeError {
+                agent: "tool_execution".to_string(),
+                message: format!("Unknown tool: {}", tool_name),
+                suggestion: Some("Check that the tool is registered".to_string()),
+            })?;
+
+        let arguments: JsonValue =
+            serde_json::from_str(arguments_json).map_err(|error| ExecutionError::RuntimeError {
+                agent: "tool_execution".to_string(),
+                message: format!("Failed to parse tool arguments: {}", error),
+                suggestion: Some("Ensure tool arguments are valid JSON".to_string()),
+            })?;
+
+        let result = tool
+            .execute(arguments)
+            .await
+            .map_err(|error| ExecutionError::RuntimeError {
+                agent: "tool_execution".to_string(),
+                message: format!("Tool execution failed: {}", error),
+                suggestion: None,
+            })?;
+
+        Ok(serde_json::to_string(&result).unwrap_or_else(|_| result.to_string()))
     }
 
     fn extract_prompt(&self, agent: &Agent, runtime_context: &RuntimeContext) -> Result<String, ExecutionError> {
