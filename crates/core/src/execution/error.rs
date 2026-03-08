@@ -22,6 +22,8 @@ pub enum ExecutionError {
     MissingAgentResult { agent: String },
     #[error("schema `{schema}` referenced by agent `{agent}` not found")]
     MissingSchema { agent: String, schema: String },
+    #[error("schema compilation failed for agent `{agent}`: {message}")]
+    SchemaCompilation { agent: String, message: String },
     #[error("for_each requires an array collection, got `{actual}`")]
     InvalidForEachCollection { actual: String },
     #[error("unsupported expression in runtime conversion: `{expression}`")]
