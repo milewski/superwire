@@ -17,17 +17,19 @@ pub struct DoneParameters {
     pub output: Value,
 }
 
-pub struct DoneTool;
+pub struct DoneTool {
+    output_schema: Option<Value>,
+}
 
 impl DoneTool {
-    pub fn new() -> Self {
-        Self
+    pub fn new(output_schema: Option<Value>) -> Self {
+        Self { output_schema }
     }
 }
 
 impl Default for DoneTool {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
@@ -38,12 +40,22 @@ impl Tool for DoneTool {
     }
 
     fn description(&self) -> &str {
-        "Signal completion of the agent loop. Must be called with status 'success' and the final output as a JSON object (not a string). The 'output' parameter must be the actual JSON object, not a string containing JSON."
+        "Signal completion of the agent loop. Must be called with status 'success' and the final output. For status 'fail', provide an error message string in the output parameter."
     }
 
     fn parameters_schema(&self) -> Value {
-        let schema = schema_for!(DoneParameters);
-        serde_json::to_value(schema).unwrap()
+        let base_schema = schema_for!(DoneParameters);
+        let mut schema_value = serde_json::to_value(base_schema).unwrap();
+
+        if let Some(ref output_schema) = self.output_schema {
+            if let Some(schema_obj) = schema_value.as_object_mut() {
+                if let Some(properties) = schema_obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                    properties.insert("output".to_string(), output_schema.clone());
+                }
+            }
+        }
+
+        schema_value
     }
 
     async fn execute(&self, parameters: Value) -> Result<Value, ToolError> {

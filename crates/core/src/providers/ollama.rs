@@ -134,6 +134,12 @@ impl OllamaProvider {
             .map(|tool| {
                 let simplified_schema = Self::simplify_schema_for_ollama(&tool.parameters_schema);
 
+                log::debug!(
+                    "Building Ollama tool '{}' with schema: {}",
+                    tool.name,
+                    serde_json::to_string_pretty(&simplified_schema).unwrap_or_default()
+                );
+
                 OllamaTool {
                     tool_type: "function".to_string(),
                     function: OllamaToolFunctionDef {

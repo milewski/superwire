@@ -1,11 +1,11 @@
 provider ollama1 {
     driver <- "ollama"
     api_endpoint <- "http://100.76.5.36:11434"
-    models <- ["qwen3:8b"]
+    models <- ["qwen3.5:27b"]
 }
 
 agent numbers {
-    model <- "ollama1/qwen3:8b"
+    model <- "ollama1/qwen3.5:27b"
 
     prompt <- """
         Generate a list of 3 random numbers between 1 and 10.
@@ -17,17 +17,16 @@ agent numbers {
 }
 
 <- agent doubled {
-    model <- "ollama1/qwen3:8b"
+    model <- "ollama1/qwen3.5:27b"
     
     for_each <- agent.numbers.values as num
     
-    output <- {
-        result: number
-    }
+    output <- number
     
     prompt <- "What is {{ input.num }} multiplied by 2?"
 }
 
 output {
-    numbers agent.numbers
+    context <- agent.doubled.context
+    numbers <- agent.numbers
 }
