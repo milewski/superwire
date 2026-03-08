@@ -78,9 +78,12 @@ schema person {
     validate_workflow(&document).expect("workflow should validate");
 
     let mut registry = ProviderRegistry::default();
-    registry.register("mock", Arc::new(MockProvider {
-        last_prompt: Arc::new(Mutex::new(String::new())),
-    }));
+    registry.register(
+        "mock",
+        Arc::new(MockProvider {
+            last_prompt: Arc::new(Mutex::new(String::new())),
+        }),
+    );
 
     let output = execute_workflow(&document, &registry)
         .await
@@ -108,9 +111,12 @@ provider local {
     validate_workflow(&document).expect("workflow should validate");
 
     let mut registry = ProviderRegistry::default();
-    registry.register("mock", Arc::new(MockProvider {
-        last_prompt: Arc::new(Mutex::new(String::new())),
-    }));
+    registry.register(
+        "mock",
+        Arc::new(MockProvider {
+            last_prompt: Arc::new(Mutex::new(String::new())),
+        }),
+    );
 
     let output = execute_workflow(&document, &registry)
         .await

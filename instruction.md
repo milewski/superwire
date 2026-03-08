@@ -421,6 +421,129 @@ names and whose values are their respective outputs.
 
 If no terminal agents are declared, the workflow executes all agents but produces no final output.
 
+---
+
+## Input and Output Blocks
+
+### Input Block
+
+The `input` block defines external parameters that can be provided to the workflow at runtime. This allows workflows to
+be parameterized and reused with different values.
+
+Example:
+
+```txt
+input {
+    user_name: string
+    topic: string
+}
+
+agent research {
+    model <- "ollama1/qwen3.5:27b"
+    output <- {
+        summary: string
+        key_points: [string]
+    }
+
+    prompt <- "Research the topic: {{ input.topic }}"
+}
+
+agent personalize {
+    model <- "ollama1/qwen3.5:27b"
+    output <- {
+        message: string
+    }
+
+    prompt <- """
+        Create a personalized message for {{ input.user_name }} about this research:
+        {{ research.summary }}
+    """
+}
+
+output {
+    user <- input.user_name
+    research_summary <- research.summary
+    personalized_message <- personalize.message
+}
+```
+
+Input fields are referenced using the `input.` prefix (e.g., `input.user_name`, `input.topic`).
+
+### Output Block
+
+The `output` block defines the final structure of the workflow output. It allows grouping and transforming agent outputs
+into a single structured result.
+
+Example:
+
+```txt
+output {
+    user <- input.user_name
+    research_summary <- research.summary
+    personalized_message <- personalize.message
+}
+```
+
+Each field in the `output` block can reference agent outputs, context summaries, input values, or hardcoded values.
+
+### Merging Terminal Agents with Output Block
+
+When both terminal agents (prefixed with `<-`) and an `output` block are present, their outputs are merged into a single
+JSON object. Terminal agent outputs are included as keys with their agent names, and output block fields are included as
+additional keys.
+
+Example:
+
+```txt
+input {
+    topic: string
+}
+
+<- agent summary {
+    model <- "ollama1/qwen3.5:27b"
+    output <- {
+        text: string
+    }
+
+    prompt <- "Summarize: {{ input.topic }}"
+}
+
+<- agent keywords {
+    model <- "ollama1/qwen3.5:27b"
+    output <- {
+        words: [string]
+    }
+
+    prompt <- "Extract keywords from: {{ input.topic }}"
+}
+
+output {
+    topic <- input.topic
+    timestamp <- "2026-03-08T10:00:00Z"
+}
+```
+
+Expected output:
+
+```json
+{
+  "topic": "artificial intelligence",
+  "timestamp": "2026-03-08T10:00:00Z",
+  "summary": {
+    "text": "AI is the simulation of human intelligence..."
+  },
+  "keywords": {
+    "words": ["artificial", "intelligence", "machine", "learning"]
+  }
+}
+```
+
+In this example:
+- The terminal agent `summary` contributes its output under the key `"summary"`
+- The terminal agent `keywords` contributes its output under the key `"keywords"`
+- The `output` block contributes `"topic"` and `"timestamp"` fields
+- All fields are merged into a single JSON object
+
 Example with multiple terminal agents:
 
 ```txt
@@ -463,8 +586,6 @@ The final program output is:
 
 The output is always a JSON object with the agent name as the key, regardless of whether there is one or multiple
 terminal agents.
-
----
 
 ## Providers
 
@@ -559,9 +680,9 @@ The implementation should follow these guidelines:
 - Design the system to be extensible for future features such as conditionals, loops, and more complex data types.
 - Implement `providers` using traits so new provider backends can be added later.
 - Start with an Ollama provider implementation using the `ollama-rs` crate.
-- A test Ollama server is available at `http://100.76.5.36:11434` with the model `qwen3.5:27b`. The implementation
-  should be tested and debugged against this server to validate that the provider integration, agent execution, and tool
-  calling work correctly in practice.
+- A test Ollama server is available at `http://100.76.5.36:11434` with the models `qwen3:8b` and `qwen3.5:27b`. The
+  implementation should be tested and debugged against this server to validate that the provider integration, agent
+  execution, and tool calling work correctly in practice.
 - The Ollama implementation must use `ollama_rs::coordinator::Coordinator` to add tools and maintain the agentic loop.
   Use the `coordinator.chat()` API for tool calling support. The `.generate()` API does not support tool calling and
   should not be used for agents that require tools.

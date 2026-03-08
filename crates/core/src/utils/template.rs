@@ -6,15 +6,9 @@ use std::path::Path;
 
 use crate::utils::error::UtilsError;
 
-pub fn interpolate_template(
-    template: &str,
-    variables: &HashMap<String, Value>,
-) -> Result<String, UtilsError> {
-    let re = Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}").map_err(|e| {
-        UtilsError::TemplateParse {
-            message: e.to_string(),
-        }
-    })?;
+pub fn interpolate_template(template: &str, variables: &HashMap<String, Value>) -> Result<String, UtilsError> {
+    let re = Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}")
+        .map_err(|e| UtilsError::TemplateParse { message: e.to_string() })?;
 
     let mut result = template.to_string();
     let mut missing_vars = Vec::new();
@@ -45,10 +39,7 @@ pub fn interpolate_template(
     Ok(result)
 }
 
-pub fn read_and_interpolate_file(
-    file_path: &str,
-    variables: &HashMap<String, Value>,
-) -> Result<String, UtilsError> {
+pub fn read_and_interpolate_file(file_path: &str, variables: &HashMap<String, Value>) -> Result<String, UtilsError> {
     let path = Path::new(file_path);
     let content = fs::read_to_string(path).map_err(|e| UtilsError::FileRead {
         message: format!("failed to read file '{}': {}", file_path, e),
@@ -59,15 +50,9 @@ pub fn read_and_interpolate_file(
     interpolate_template(&content, variables)
 }
 
-fn validate_template_bindings(
-    template: &str,
-    variables: &HashMap<String, Value>,
-) -> Result<(), UtilsError> {
-    let re = Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}").map_err(|e| {
-        UtilsError::TemplateParse {
-            message: e.to_string(),
-        }
-    })?;
+fn validate_template_bindings(template: &str, variables: &HashMap<String, Value>) -> Result<(), UtilsError> {
+    let re = Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}")
+        .map_err(|e| UtilsError::TemplateParse { message: e.to_string() })?;
 
     let mut template_vars = HashSet::new();
     for cap in re.captures_iter(template) {
@@ -162,4 +147,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-
