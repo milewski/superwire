@@ -73,7 +73,8 @@ impl CachedProvider {
 
     fn cache_path(test_name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(".test_cache")
+            .join("tests")
+            .join(".cache")
             .join(format!("{test_name}.json"))
     }
 
