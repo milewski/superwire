@@ -1,7 +1,7 @@
 {
-  "workflow_hash": "1569c1e9a8273578",
+  "workflow_hash": "0a7021dc124557cf",
   "agents": {
-    "simple_test": {
+    "person": {
       "model": "ollama1/qwen3:8b",
       "messages": [
         {
@@ -11,7 +11,7 @@
             {
               "id": "call_0",
               "name": "done",
-              "arguments": "{\"output\":{\"message\":\"Hello! How can I assist you today?\"},\"status\":\"success\"}"
+              "arguments": "{\"output\":{\"age\":25,\"hobbies\":[\"reading\",\"hiking\",\"photography\"],\"name\":\"John Doe\"},\"status\":\"success\"}"
             }
           ]
         }

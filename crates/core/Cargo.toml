@@ -23,3 +23,6 @@ async-trait = "0.1"
 regex = { workspace = true }
 reqwest = { workspace = true }
 engine-ai-macros = { path = "../macros" }
+
+[dev-dependencies]
+stdext = "0.3"

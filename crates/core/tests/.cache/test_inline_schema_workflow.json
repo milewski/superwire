@@ -11,7 +11,7 @@
             {
               "id": "call_0",
               "name": "done",
-              "arguments": "{\"output\":{\"age\":34,\"city\":\"Los Angeles\",\"name\":\"John Smith\"},\"status\":\"success\"}"
+              "arguments": "{\"output\":{\"age\":30,\"city\":\"New York\",\"name\":\"John Doe\"},\"status\":\"success\"}"
             }
           ]
         }

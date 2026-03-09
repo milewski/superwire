@@ -416,6 +416,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "stdext",
  "thiserror",
  "tokio",
 ]
@@ -423,17 +424,6 @@ dependencies = [
 [[package]]
 name = "engine-ai-macros"
 version = "0.1.0"
-
-[[package]]
-name = "engine-ai-test"
-version = "0.1.0"
-dependencies = [
- "engine-ai-core",
- "serde",
- "serde_json",
- "stdext",
- "tokio",
-]
 
 [[package]]
 name = "engine_ai_cli"
