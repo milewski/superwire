@@ -4,3 +4,11 @@ clippy:
 
 try:
     RUST_LOG=debug cargo run -p engine-ai-example
+
+# Build a workflow to a standalone executable
+build workflow output:
+    cargo run --release -p engine_ai_cli -- build {{workflow}} --output {{output}}
+
+# Example: compile the input_output workflow
+build-example:
+    cargo run --release -p engine_ai_cli -- build crates/test/workflows/input_output.ai --output ./compiled-workflow
