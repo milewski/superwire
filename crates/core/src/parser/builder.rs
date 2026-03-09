@@ -567,15 +567,13 @@ impl AstBuilder {
     }
 
     fn parse_interpolated_string(&self, pair: pest::iterators::Pair<Rule>) -> Result<String, ParserError> {
-        let mut result = String::new();
+        let text = pair.as_str();
 
-        for inner_pair in pair.into_inner() {
-            if inner_pair.as_rule() == Rule::interpolated_content {
-                result.push_str(inner_pair.as_str());
-            }
+        if text.starts_with('"') && text.ends_with('"') && text.len() >= 2 {
+            return Ok(text[1..text.len() - 1].to_string());
         }
 
-        Ok(result)
+        Ok(text.to_string())
     }
 
     fn parse_schema_reference(&self, pair: pest::iterators::Pair<Rule>) -> Result<SchemaReference, ParserError> {
