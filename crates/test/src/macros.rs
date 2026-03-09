@@ -40,13 +40,8 @@ macro_rules! try_workflow {
 
         async move {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(
-                test_name,
-                $path,
-                content,
-                std::collections::HashMap::new(),
-            )
-            .await
+            $crate::execute_cached_workflow_from_content(test_name, $path, content, std::collections::HashMap::new())
+                .await
         }
     }};
 
@@ -62,13 +57,8 @@ macro_rules! try_workflow {
     ($test_name:expr, $path:expr) => {{
         async {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(
-                $test_name,
-                $path,
-                content,
-                std::collections::HashMap::new(),
-            )
-            .await
+            $crate::execute_cached_workflow_from_content($test_name, $path, content, std::collections::HashMap::new())
+                .await
         }
     }};
 
@@ -87,14 +77,9 @@ macro_rules! workflow {
 
         async move {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(
-                test_name,
-                $path,
-                content,
-                std::collections::HashMap::new(),
-            )
-            .await
-            .unwrap()
+            $crate::execute_cached_workflow_from_content(test_name, $path, content, std::collections::HashMap::new())
+                .await
+                .unwrap()
         }
     }};
 
@@ -141,14 +126,9 @@ macro_rules! workflow {
     ($test_name:expr, $path:expr) => {{
         async {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(
-                $test_name,
-                $path,
-                content,
-                std::collections::HashMap::new(),
-            )
-            .await
-            .unwrap()
+            $crate::execute_cached_workflow_from_content($test_name, $path, content, std::collections::HashMap::new())
+                .await
+                .unwrap()
         }
     }};
 
@@ -185,11 +165,4 @@ macro_rules! workflow {
             serde_json::from_value::<$output_type>(value).unwrap()
         }
     }};
-}
-
-#[must_use]
-pub fn get<'a>(output: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
-    output
-        .pointer(path)
-        .unwrap_or_else(|| panic!("Path '{path}' not found in output"))
 }

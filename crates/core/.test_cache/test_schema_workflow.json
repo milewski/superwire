@@ -1,0 +1,21 @@
+{
+  "workflow_hash": "0a7021dc124557cf",
+  "agents": {
+    "person": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"age\":25,\"hobbies\":[\"reading\",\"hiking\",\"painting\"],\"name\":\"Emily Johnson\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

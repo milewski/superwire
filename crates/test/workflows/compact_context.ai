@@ -13,11 +13,6 @@ agent research {
     prompt <- "Research the topic: {{ input.topic }}. Provide detailed information."
 }
 
-agent analysis {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Analyze the previous research and provide key insights."
-}
-
 output {
     topic <- input.topic
     research_context <- agent.research.context
