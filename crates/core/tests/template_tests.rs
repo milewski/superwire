@@ -1,5 +1,6 @@
 use engine_ai_core::execution::RuntimeContext;
 use engine_ai_core::parser::AstBuilder;
+use engine_ai_core::workflow;
 use serde_json::json;
 use std::fs;
 use std::io::Write;
@@ -199,7 +200,34 @@ agent test {{
 }
 
 #[test]
-fn test_runtime_interpolation_preserves_spaces_around_references() {
+fn test_static_interpolation_workflow_preserves_spaces() {
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
+
+        agent test {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "What is {{ input.num }} multiplied by 2?"
+        }
+    };
+
+    let prompt_property = workflow.agents[0].properties.iter().find_map(|prop| {
+        if let engine_ai_core::ast::AgentProperty::Prompt { value, .. } = prop {
+            Some(value)
+        } else {
+            None
+        }
+    });
+
+    assert_eq!(
+        prompt_property,
+        Some(&engine_ai_core::ast::Value::Interpolated(
+            "What is {{ input.num }} multiplied by 2?".to_string(),
+        ))
+    );
+
     let mut runtime_context = RuntimeContext::new();
     runtime_context.set_input_value("num".to_string(), json!(3));
 

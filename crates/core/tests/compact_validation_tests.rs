@@ -1,31 +1,26 @@
-use engine_ai_core::parser::AstBuilder;
 use engine_ai_core::validation::WorkflowValidator;
+use engine_ai_core::workflow;
 
 #[test]
 fn test_compact_missing_model() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow_ast = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent one {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
+        agent one {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
 
-output {
-    summary <- compact {
-        context <- agent.one.context
-    }
-}
-"#;
+        output {
+            summary <- compact {
+                context <- agent.one.context
+            }
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let parsed = builder.parse(workflow);
-    assert!(parsed.is_ok());
-
-    let workflow_ast = parsed.unwrap();
     let validation_result = WorkflowValidator::validate(&workflow_ast);
 
     assert!(validation_result.is_err());
@@ -38,29 +33,24 @@ output {
 
 #[test]
 fn test_compact_missing_context() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow_ast = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent one {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
+        agent one {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
 
-output {
-    summary <- compact {
-        model <- "ollama1/qwen3:8b"
-    }
-}
-"#;
+        output {
+            summary <- compact {
+                model <- "ollama1/qwen3:8b"
+            }
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let parsed = builder.parse(workflow);
-    assert!(parsed.is_ok());
-
-    let workflow_ast = parsed.unwrap();
     let validation_result = WorkflowValidator::validate(&workflow_ast);
 
     assert!(validation_result.is_err());
@@ -73,30 +63,25 @@ output {
 
 #[test]
 fn test_compact_invalid_provider() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow_ast = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent one {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
+        agent one {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
 
-output {
-    summary <- compact {
-        model <- "invalid_provider/qwen3:8b"
-        context <- agent.one.context
-    }
-}
-"#;
+        output {
+            summary <- compact {
+                model <- "invalid_provider/qwen3:8b"
+                context <- agent.one.context
+            }
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let parsed = builder.parse(workflow);
-    assert!(parsed.is_ok());
-
-    let workflow_ast = parsed.unwrap();
     let validation_result = WorkflowValidator::validate(&workflow_ast);
 
     assert!(validation_result.is_err());
@@ -109,30 +94,25 @@ output {
 
 #[test]
 fn test_compact_invalid_model() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow_ast = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent one {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
+        agent one {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
 
-output {
-    summary <- compact {
-        model <- "ollama1/invalid_model"
-        context <- agent.one.context
-    }
-}
-"#;
+        output {
+            summary <- compact {
+                model <- "ollama1/invalid_model"
+                context <- agent.one.context
+            }
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let parsed = builder.parse(workflow);
-    assert!(parsed.is_ok());
-
-    let workflow_ast = parsed.unwrap();
     let validation_result = WorkflowValidator::validate(&workflow_ast);
 
     assert!(validation_result.is_err());
@@ -145,30 +125,25 @@ output {
 
 #[test]
 fn test_compact_valid() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow_ast = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent one {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
+        agent one {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
 
-output {
-    summary <- compact {
-        model <- "ollama1/qwen3:8b"
-        context <- agent.one.context
-    }
-}
-"#;
+        output {
+            summary <- compact {
+                model <- "ollama1/qwen3:8b"
+                context <- agent.one.context
+            }
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let parsed = builder.parse(workflow);
-    assert!(parsed.is_ok());
-
-    let workflow_ast = parsed.unwrap();
     let validation_result = WorkflowValidator::validate(&workflow_ast);
 
     assert!(validation_result.is_ok());
