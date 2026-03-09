@@ -12,18 +12,6 @@ macro_rules! input {
     }};
 }
 
-#[macro_export]
-macro_rules! output {
-    ($name:ident { $($field:ident: $field_type:ty),* $(,)? }) => {
-        #[derive(Debug, serde::Deserialize)]
-        struct $name {
-            $(
-                $field: $field_type,
-            )*
-        }
-    };
-}
-
 #[doc(hidden)]
 #[must_use]
 pub fn current_test_name(function_name: &str) -> &str {
@@ -40,8 +28,13 @@ macro_rules! try_workflow {
 
         async move {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(test_name, $path, content, std::collections::HashMap::new())
-                .await
+            $crate::executor::execute_cached_workflow_from_content(
+                test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
         }
     }};
 
@@ -50,22 +43,27 @@ macro_rules! try_workflow {
 
         async move {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(test_name, $path, content, $inputs).await
+            $crate::executor::execute_cached_workflow_from_content(test_name, $path, content, $inputs).await
         }
     }};
 
     ($test_name:expr, $path:expr) => {{
         async {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content($test_name, $path, content, std::collections::HashMap::new())
-                .await
+            $crate::executor::execute_cached_workflow_from_content(
+                $test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
         }
     }};
 
     ($test_name:expr, $inputs:expr => $path:expr) => {{
         async {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content($test_name, $path, content, $inputs).await
+            $crate::executor::execute_cached_workflow_from_content($test_name, $path, content, $inputs).await
         }
     }};
 }
@@ -77,9 +75,14 @@ macro_rules! workflow {
 
         async move {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(test_name, $path, content, std::collections::HashMap::new())
-                .await
-                .unwrap()
+            $crate::executor::execute_cached_workflow_from_content(
+                test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+            .unwrap()
         }
     }};
 
@@ -88,7 +91,7 @@ macro_rules! workflow {
 
         async move {
             let content = include_str!($path);
-            let value = $crate::execute_cached_workflow_from_content(
+            let value = $crate::executor::execute_cached_workflow_from_content(
                 test_name,
                 $path,
                 content,
@@ -105,7 +108,7 @@ macro_rules! workflow {
 
         async move {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
+            $crate::executor::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
                 .await
                 .unwrap()
         }
@@ -116,7 +119,7 @@ macro_rules! workflow {
 
         async move {
             let content = include_str!($path);
-            let value = $crate::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
+            let value = $crate::executor::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
                 .await
                 .unwrap();
             serde_json::from_value::<$output_type>(value).unwrap()
@@ -126,16 +129,21 @@ macro_rules! workflow {
     ($test_name:expr, $path:expr) => {{
         async {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content($test_name, $path, content, std::collections::HashMap::new())
-                .await
-                .unwrap()
+            $crate::executor::execute_cached_workflow_from_content(
+                $test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+            .unwrap()
         }
     }};
 
     ($test_name:expr, $path:expr => $output_type:ty) => {{
         async {
             let content = include_str!($path);
-            let value = $crate::execute_cached_workflow_from_content(
+            let value = $crate::executor::execute_cached_workflow_from_content(
                 $test_name,
                 $path,
                 content,
@@ -150,7 +158,7 @@ macro_rules! workflow {
     ($test_name:expr, $inputs:expr => $path:expr) => {{
         async {
             let content = include_str!($path);
-            $crate::execute_cached_workflow_from_content($test_name, $path, content, $inputs)
+            $crate::executor::execute_cached_workflow_from_content($test_name, $path, content, $inputs)
                 .await
                 .unwrap()
         }
@@ -159,7 +167,7 @@ macro_rules! workflow {
     ($test_name:expr, $inputs:expr => $path:expr => $output_type:ty) => {{
         async {
             let content = include_str!($path);
-            let value = $crate::execute_cached_workflow_from_content($test_name, $path, content, $inputs)
+            let value = $crate::executor::execute_cached_workflow_from_content($test_name, $path, content, $inputs)
                 .await
                 .unwrap();
             serde_json::from_value::<$output_type>(value).unwrap()
