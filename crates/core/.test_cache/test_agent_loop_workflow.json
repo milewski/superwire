@@ -1,0 +1,21 @@
+{
+  "workflow_hash": "1569c1e9a8273578",
+  "agents": {
+    "simple_test": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"message\":\"Hello! How can I assist you today?\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
