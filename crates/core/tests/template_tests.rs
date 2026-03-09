@@ -1,4 +1,6 @@
+use engine_ai_core::execution::RuntimeContext;
 use engine_ai_core::parser::AstBuilder;
+use serde_json::json;
 use std::fs;
 use std::io::Write;
 
@@ -194,4 +196,18 @@ agent test {{
     }
 
     fs::remove_file(template_path).ok();
+}
+
+#[test]
+fn test_runtime_interpolation_preserves_spaces_around_references() {
+    let mut runtime_context = RuntimeContext::new();
+    runtime_context.set_input_value("num".to_string(), json!(3));
+
+    let resolved = runtime_context
+        .resolve_value(&engine_ai_core::ast::Value::Interpolated(
+            "What is {{ input.num }} multiplied by 2?".to_string(),
+        ))
+        .unwrap();
+
+    assert_eq!(resolved, json!("What is 3 multiplied by 2?"));
 }

@@ -207,6 +207,39 @@ agent test {
 }
 
 #[test]
+fn test_parse_string_interpolation_preserves_surrounding_spaces() {
+    let workflow = r#"
+provider ollama1 {
+    driver <- "ollama"
+    models <- ["qwen3:8b"]
+}
+
+agent test {
+    model <- "ollama1/qwen3:8b"
+    prompt <- "What is {{ input.num }} multiplied by 2?"
+}
+"#;
+
+    let builder = AstBuilder::new("test.ai".to_string());
+    let workflow = builder.parse(workflow).unwrap();
+
+    let prompt_value = workflow.agents[0].properties.iter().find_map(|property| {
+        if let engine_ai_core::ast::AgentProperty::Prompt { value, .. } = property {
+            Some(value)
+        } else {
+            None
+        }
+    });
+
+    assert_eq!(
+        prompt_value,
+        Some(&engine_ai_core::ast::Value::Interpolated(
+            "What is {{ input.num }} multiplied by 2?".to_string()
+        ))
+    );
+}
+
+#[test]
 fn test_parse_inline_type() {
     let workflow = r#"
 provider ollama1 {
