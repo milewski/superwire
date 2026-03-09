@@ -412,20 +412,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-ai-example"
+name = "engine-ai-macros"
+version = "0.1.0"
+
+[[package]]
+name = "engine-ai-test"
 version = "0.1.0"
 dependencies = [
- "colog",
  "engine-ai-core",
- "log",
- "ollama-rs",
+ "serde",
  "serde_json",
  "tokio",
 ]
-
-[[package]]
-name = "engine-ai-macros"
-version = "0.1.0"
 
 [[package]]
 name = "engine_ai_cli"
