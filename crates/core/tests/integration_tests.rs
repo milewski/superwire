@@ -8,7 +8,7 @@ fn get_workflow_path(name: &str) -> String {
     path.pop();
     path.pop();
     path.push("crates");
-    path.push("example");
+    path.push("test");
     path.push("workflows");
     path.push(name);
     path.to_str().unwrap().to_string()
