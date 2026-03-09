@@ -1,55 +1,44 @@
-use engine_ai_core::parser::AstBuilder;
+use engine_ai_core::workflow;
 
 #[test]
 fn test_parse_basic_agent() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    api_endpoint <- "http://localhost:11434"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            api_endpoint <- "http://localhost:11434"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello world"
-}
-"#;
+        agent test {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello world"
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
     assert_eq!(workflow.agents.len(), 1);
     assert_eq!(workflow.agents[0].name, "test");
 }
 
 #[test]
 fn test_schema_field_descriptions() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    output <- {
-        username: string "Must be lowercase alphanumeric"
-        email: string "Must be a valid email address"
-        age: number "Must be between 13 and 120"
-    }
+            output <- {
+                username: string "Must be lowercase alphanumeric"
+                email: string "Must be a valid email address"
+                age: number "Must be between 13 and 120"
+            }
 
-    prompt <- "Generate a user"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
+            prompt <- "Generate a user"
+        }
+    };
 
     let output_property = workflow.agents[0]
         .properties
@@ -86,26 +75,23 @@ agent test {
 fn test_schema_descriptions_in_json_schema() {
     use engine_ai_core::schemas::SchemaCompiler;
 
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    output <- {
-        username: string "Must be lowercase alphanumeric"
-        email: string "Must be a valid email address"
-    }
+            output <- {
+                username: string "Must be lowercase alphanumeric"
+                email: string "Must be a valid email address"
+            }
 
-    prompt <- "Generate a user"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let workflow = builder.parse(workflow).unwrap();
+            prompt <- "Generate a user"
+        }
+    };
 
     let output_property = workflow.agents[0]
         .properties
@@ -140,88 +126,74 @@ agent test {
 
 #[test]
 fn test_parse_terminal_agent() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-<- agent test {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
-"#;
+        <- agent test {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
     assert!(workflow.agents[0].is_terminal);
 }
 
 #[test]
 fn test_parse_inline_schema() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
-    
-    output <- {
-        name: string
-        age: number
-    }
-    
-    prompt <- "Generate a person"
-}
-"#;
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
+            output <- {
+                name: string
+                age: number
+            }
 
-    assert!(result.is_ok());
+            prompt <- "Generate a person"
+        }
+    };
+
+    assert_eq!(workflow.agents.len(), 1);
 }
 
 #[test]
 fn test_parse_string_interpolation() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello {{ input.name }}"
-}
-"#;
+        agent test {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello {{ input.name }}"
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
+    assert_eq!(workflow.agents.len(), 1);
 }
 
 #[test]
 fn test_parse_string_interpolation_preserves_surrounding_spaces() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "What is {{ input.num }} multiplied by 2?"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let workflow = builder.parse(workflow).unwrap();
+        agent test {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "What is {{ input.num }} multiplied by 2?"
+        }
+    };
 
     let prompt_value = workflow.agents[0].properties.iter().find_map(|property| {
         if let engine_ai_core::ast::AgentProperty::Prompt { value, .. } = property {
@@ -241,26 +213,20 @@ agent test {
 
 #[test]
 fn test_parse_inline_type() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    output <- number "the result"
+            output <- number "the result"
 
-    prompt <- "Calculate 2 + 2"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
+            prompt <- "Calculate 2 + 2"
+        }
+    };
 
     let output_property = workflow.agents[0]
         .properties
@@ -285,26 +251,20 @@ agent test {
 
 #[test]
 fn test_parse_inline_type_without_description() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    output <- string
+            output <- string
 
-    prompt <- "Say hello"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
+            prompt <- "Say hello"
+        }
+    };
 
     let output_property = workflow.agents[0]
         .properties
@@ -329,24 +289,19 @@ agent test {
 
 #[test]
 fn test_parse_url_with_slashes() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    api_endpoint <- "http://100.76.5.36:11434"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            api_endpoint <- "http://100.76.5.36:11434"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
-    prompt <- "Hello"
-}
-"#;
+        agent test {
+            model <- "ollama1/qwen3:8b"
+            prompt <- "Hello"
+        }
+    };
 
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
     assert_eq!(
         workflow.providers[0].api_endpoint,
         Some("http://100.76.5.36:11434".to_string())
@@ -355,33 +310,27 @@ agent test {
 
 #[test]
 fn test_parse_auto_unwrap_workflow() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent single_field {
-    model <- "ollama1/qwen3:8b"
+        agent single_field {
+            model <- "ollama1/qwen3:8b"
 
-    output <- {
-        value: string
-    }
+            output <- {
+                value: string
+            }
 
-    prompt <- "Test"
-}
+            prompt <- "Test"
+        }
 
-output {
-    unwrapped <- agent.single_field
-    explicit <- agent.single_field.value
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
+        output {
+            unwrapped <- agent.single_field
+            explicit <- agent.single_field.value
+        }
+    };
 
     assert!(workflow.output.is_some());
     let output_block = workflow.output.unwrap();

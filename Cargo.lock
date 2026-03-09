@@ -354,6 +354,7 @@ name = "engine-ai-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "engine-ai-macros",
  "jsonschema",
  "log",
  "ollama-rs",

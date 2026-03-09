@@ -1,30 +1,24 @@
-use engine_ai_core::parser::AstBuilder;
+use engine_ai_core::workflow;
 
 #[test]
 fn test_parse_enum_schema() {
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    output <- {
-        status: "active" | "inactive" | "pending"
-        priority: "low" | "medium" | "high"
-    }
+            output <- {
+                status: "active" | "inactive" | "pending"
+                priority: "low" | "medium" | "high"
+            }
 
-    prompt <- "Generate a task"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let result = builder.parse(workflow);
-
-    assert!(result.is_ok());
-    let workflow = result.unwrap();
+            prompt <- "Generate a task"
+        }
+    };
 
     let output_property = workflow.agents[0]
         .properties
@@ -67,25 +61,22 @@ agent test {
 fn test_enum_schema_compilation() {
     use engine_ai_core::schemas::SchemaCompiler;
 
-    let workflow = r#"
-provider ollama1 {
-    driver <- "ollama"
-    models <- ["qwen3:8b"]
-}
+    let workflow = workflow! {
+        provider ollama1 {
+            driver <- "ollama"
+            models <- ["qwen3:8b"]
+        }
 
-agent test {
-    model <- "ollama1/qwen3:8b"
+        agent test {
+            model <- "ollama1/qwen3:8b"
 
-    output <- {
-        status: "active" | "inactive"
-    }
+            output <- {
+                status: "active" | "inactive"
+            }
 
-    prompt <- "Generate a task"
-}
-"#;
-
-    let builder = AstBuilder::new("test.ai".to_string());
-    let workflow = builder.parse(workflow).unwrap();
+            prompt <- "Generate a task"
+        }
+    };
 
     let output_property = workflow.agents[0]
         .properties
