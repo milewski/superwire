@@ -13,22 +13,69 @@ macro_rules! input {
 }
 
 #[macro_export]
+macro_rules! output {
+    ($name:ident { $($field:ident: $field_type:ty),* $(,)? }) => {
+        #[derive(Debug, serde::Deserialize)]
+        struct $name {
+            $(
+                $field: $field_type,
+            )*
+        }
+    };
+}
+
+#[doc(hidden)]
+#[must_use]
+pub fn current_test_name(function_name: &str) -> &str {
+    function_name
+        .rsplit("::")
+        .find(|segment| !segment.is_empty() && *segment != "{{closure}}")
+        .unwrap_or("unknown")
+}
+
+#[macro_export]
 macro_rules! try_workflow {
     ($path:expr) => {{
-        async {
-            let engine = engine_ai_core::execution::engine::ExecutionEngine::new();
+        let test_name = $crate::current_test_name(stdext::function_name!());
+
+        async move {
             let content = include_str!($path);
-            engine.execute_workflow_from_content(content, $path).await
+            $crate::execute_cached_workflow_from_content(
+                test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
         }
     }};
 
-    ($path:expr, $inputs:expr) => {{
-        async {
-            let engine = engine_ai_core::execution::engine::ExecutionEngine::new();
+    ($inputs:expr => $path:expr) => {{
+        let test_name = $crate::current_test_name(stdext::function_name!());
+
+        async move {
             let content = include_str!($path);
-            engine
-                .execute_workflow_from_content_with_inputs(content, $path, $inputs)
-                .await
+            $crate::execute_cached_workflow_from_content(test_name, $path, content, $inputs).await
+        }
+    }};
+
+    ($test_name:expr, $path:expr) => {{
+        async {
+            let content = include_str!($path);
+            $crate::execute_cached_workflow_from_content(
+                $test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+        }
+    }};
+
+    ($test_name:expr, $inputs:expr => $path:expr) => {{
+        async {
+            let content = include_str!($path);
+            $crate::execute_cached_workflow_from_content($test_name, $path, content, $inputs).await
         }
     }};
 }
@@ -36,32 +83,113 @@ macro_rules! try_workflow {
 #[macro_export]
 macro_rules! workflow {
     ($path:expr) => {{
-        async {
-            let engine = engine_ai_core::execution::engine::ExecutionEngine::new();
+        let test_name = $crate::current_test_name(stdext::function_name!());
+
+        async move {
             let content = include_str!($path);
-            engine.execute_workflow_from_content(content, $path).await.unwrap()
+            $crate::execute_cached_workflow_from_content(
+                test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+            .unwrap()
         }
     }};
 
-    ($path:expr, $inputs:expr) => {{
-        async {
-            let engine = engine_ai_core::execution::engine::ExecutionEngine::new();
+    ($path:expr => $output_type:ty) => {{
+        let test_name = $crate::current_test_name(stdext::function_name!());
+
+        async move {
             let content = include_str!($path);
-            engine
-                .execute_workflow_from_content_with_inputs(content, $path, $inputs)
+            let value = $crate::execute_cached_workflow_from_content(
+                test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+            .unwrap();
+            serde_json::from_value::<$output_type>(value).unwrap()
+        }
+    }};
+
+    ($inputs:expr => $path:expr) => {{
+        let test_name = $crate::current_test_name(stdext::function_name!());
+
+        async move {
+            let content = include_str!($path);
+            $crate::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
                 .await
                 .unwrap()
         }
     }};
+
+    ($inputs:expr => $path:expr => $output_type:ty) => {{
+        let test_name = $crate::current_test_name(stdext::function_name!());
+
+        async move {
+            let content = include_str!($path);
+            let value = $crate::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
+                .await
+                .unwrap();
+            serde_json::from_value::<$output_type>(value).unwrap()
+        }
+    }};
+
+    ($test_name:expr, $path:expr) => {{
+        async {
+            let content = include_str!($path);
+            $crate::execute_cached_workflow_from_content(
+                $test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+            .unwrap()
+        }
+    }};
+
+    ($test_name:expr, $path:expr => $output_type:ty) => {{
+        async {
+            let content = include_str!($path);
+            let value = $crate::execute_cached_workflow_from_content(
+                $test_name,
+                $path,
+                content,
+                std::collections::HashMap::new(),
+            )
+            .await
+            .unwrap();
+            serde_json::from_value::<$output_type>(value).unwrap()
+        }
+    }};
+
+    ($test_name:expr, $inputs:expr => $path:expr) => {{
+        async {
+            let content = include_str!($path);
+            $crate::execute_cached_workflow_from_content($test_name, $path, content, $inputs)
+                .await
+                .unwrap()
+        }
+    }};
+
+    ($test_name:expr, $inputs:expr => $path:expr => $output_type:ty) => {{
+        async {
+            let content = include_str!($path);
+            let value = $crate::execute_cached_workflow_from_content($test_name, $path, content, $inputs)
+                .await
+                .unwrap();
+            serde_json::from_value::<$output_type>(value).unwrap()
+        }
+    }};
 }
 
-#[macro_export]
-macro_rules! assert_output {
-    ($output:expr, $($path:expr => $check:ident),+ $(,)?) => {{
-        assert!($output.is_object(), "Output is not an object");
-        $(
-            let value = $output.pointer($path).unwrap_or_else(|| panic!("Path {} not found in output", $path));
-            assert!(value.$check(), "Value at {} is not {}", $path, stringify!($check));
-        )+
-    }};
+#[must_use]
+pub fn get<'a>(output: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
+    output
+        .pointer(path)
+        .unwrap_or_else(|| panic!("Path '{path}' not found in output"))
 }

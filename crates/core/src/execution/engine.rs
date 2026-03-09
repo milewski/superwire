@@ -95,20 +95,6 @@ impl ExecutionEngine {
         workflow: &Workflow,
         inputs: HashMap<String, Value>,
     ) -> Result<Value, ExecutionError> {
-        log::info!("Validating workflow");
-
-        WorkflowValidator::validate(workflow).map_err(|errors| {
-            let error_messages: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();
-
-            ExecutionError::RuntimeError {
-                agent: "workflow".to_string(),
-                message: format!("Validation errors:\n{}", error_messages.join("\n")),
-                suggestion: Some("Fix the validation errors above".to_string()),
-            }
-        })?;
-
-        log::info!("Workflow validation successful");
-
         let mut provider_registry = ProviderRegistry::new();
 
         for provider in &workflow.providers {
@@ -125,6 +111,31 @@ impl ExecutionEngine {
             provider_registry.register(provider.name.clone(), provider_instance);
             log::info!("Provider '{}' initialized successfully", provider.name);
         }
+
+        self.execute_parsed_workflow_with_inputs_and_registry(workflow, inputs, provider_registry)
+            .await
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub async fn execute_parsed_workflow_with_inputs_and_registry(
+        &self,
+        workflow: &Workflow,
+        inputs: HashMap<String, Value>,
+        provider_registry: ProviderRegistry,
+    ) -> Result<Value, ExecutionError> {
+        log::info!("Validating workflow");
+
+        WorkflowValidator::validate(workflow).map_err(|errors| {
+            let error_messages: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();
+
+            ExecutionError::RuntimeError {
+                agent: "workflow".to_string(),
+                message: format!("Validation errors:\n{}", error_messages.join("\n")),
+                suggestion: Some("Fix the validation errors above".to_string()),
+            }
+        })?;
+
+        log::info!("Workflow validation successful");
 
         log::info!("Building dependency graph");
 

@@ -1,9 +1,11 @@
+pub mod cached;
 pub mod error;
 pub mod factory;
 pub mod ollama;
 pub mod provider;
 pub mod registry;
 
+pub use cached::CachedProvider;
 pub use error::ProviderError;
 pub use factory::ProviderFactory;
 pub use ollama::OllamaProvider;
