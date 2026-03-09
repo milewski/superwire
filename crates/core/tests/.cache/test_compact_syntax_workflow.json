@@ -1,0 +1,68 @@
+{
+  "workflow_hash": "1e5e2a2f33201bb5",
+  "agents": {
+    "two": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "compact": {
+      "model": "unknown",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "The conversation involved the user requesting a greeting, which led to schema validation errors due to incorrect response formatting. After adjusting the response to comply with the schema (as an object with a \"message\" field), the user asked for a concise summary of the interaction. The key points are:  \n1. Initial greeting request.  \n2. Schema validation errors due to non-object responses.  \n3. Correction to meet format requirements.  \n4. Final summary request.",
+          "tool_calls": null
+        }
+      ]
+    },
+    "one": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "Hello! How can I assist you today?",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Hello! How can I assist you today?\",\"status\":\"success\"}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"message\":\"Hello! How can I assist you today?\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "workflow_hash": "3aa0c9959569f62b",
+  "agents": {
+    "simple": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "1, 2, 3, 4, 5",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "\n\n",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"1, 2, 3, 4, 5\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

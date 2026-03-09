@@ -29,10 +29,10 @@ pub fn extract_test_name(full_path: &str) -> &str {
 #[macro_export]
 macro_rules! workflow {
     ($path:expr => $output_type:ty) => {{
-        let test_name = workflow_helpers::macros::extract_test_name(stdext::function_name!());
+        let test_name = crate::helpers::macros::extract_test_name(stdext::function_name!());
         async move {
             let content = include_str!($path);
-            let value = workflow_helpers::executor::execute_cached_workflow_from_content(
+            let value = crate::helpers::executor::execute_cached_workflow_from_content(
                 test_name,
                 $path,
                 content,
@@ -45,10 +45,10 @@ macro_rules! workflow {
     }};
 
     ($inputs:expr => $path:expr => $output_type:ty) => {{
-        let test_name = workflow_helpers::macros::extract_test_name(stdext::function_name!());
+        let test_name = crate::helpers::macros::extract_test_name(stdext::function_name!());
         async move {
             let content = include_str!($path);
-            let value = workflow_helpers::executor::execute_cached_workflow_from_content(
+            let value = crate::helpers::executor::execute_cached_workflow_from_content(
                 test_name,
                 $path,
                 content,

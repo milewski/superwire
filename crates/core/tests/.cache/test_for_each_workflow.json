@@ -1,0 +1,96 @@
+{
+  "workflow_hash": "8f7756407f55f382",
+  "agents": {
+    "numbers": {
+      "model": "ollama1/qwen3.5:27b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"status\":\"success\",\"values\":[4,7,2]}}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"status\":\"success\",\"values\":[5,9,3]}}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"status\":\"success\",\"values\":[3,8,1]}}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"values\":[5,2,9]},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "doubled": {
+      "model": "ollama1/qwen3.5:27b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "The result of multiplying 5 by 2 is 10.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "2 multiplied by 2 is 4.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":18,\"status\":\"success\"}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": " The answer is 4.\n\n",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":4,\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
