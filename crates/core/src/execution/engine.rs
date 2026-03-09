@@ -17,7 +17,8 @@ impl Default for ExecutionEngine {
 }
 
 impl ExecutionEngine {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 
@@ -30,13 +31,13 @@ impl ExecutionEngine {
         workflow_path: &str,
         inputs: HashMap<String, Value>,
     ) -> Result<Value, ExecutionError> {
-        log::info!("Starting workflow execution: {}", workflow_path);
-        log::debug!("Workflow inputs: {:?}", inputs);
+        log::info!("Starting workflow execution: {workflow_path}");
+        log::debug!("Workflow inputs: {inputs:?}");
 
         let workflow_content =
             std::fs::read_to_string(workflow_path).map_err(|error| ExecutionError::RuntimeError {
                 agent: "workflow".to_string(),
-                message: format!("Failed to read workflow file: {}", error),
+                message: format!("Failed to read workflow file: {error}"),
                 suggestion: Some("Check that the file exists and is readable".to_string()),
             })?;
 
@@ -48,7 +49,7 @@ impl ExecutionEngine {
             .parse(&workflow_content)
             .map_err(|error| ExecutionError::RuntimeError {
                 agent: "workflow".to_string(),
-                message: format!("Failed to parse workflow: {}", error),
+                message: format!("Failed to parse workflow: {error}"),
                 suggestion: Some("Check workflow syntax".to_string()),
             })?;
 
@@ -66,6 +67,7 @@ impl ExecutionEngine {
         self.execute_parsed_workflow_with_inputs(workflow, HashMap::new()).await
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn execute_parsed_workflow_with_inputs(
         &self,
         workflow: &Workflow,
@@ -74,7 +76,7 @@ impl ExecutionEngine {
         log::info!("Validating workflow");
 
         WorkflowValidator::validate(workflow).map_err(|errors| {
-            let error_messages: Vec<String> = errors.iter().map(|error| error.to_string()).collect();
+            let error_messages: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();
 
             ExecutionError::RuntimeError {
                 agent: "workflow".to_string(),
@@ -106,12 +108,12 @@ impl ExecutionEngine {
 
         let dependency_graph = DependencyGraph::build(workflow).map_err(|error| ExecutionError::RuntimeError {
             agent: "workflow".to_string(),
-            message: format!("Failed to build dependency graph: {}", error),
+            message: format!("Failed to build dependency graph: {error}"),
             suggestion: Some("Check for circular dependencies".to_string()),
         })?;
 
         let execution_levels = dependency_graph.get_execution_levels();
-        log::info!("Execution levels determined: {:?}", execution_levels);
+        log::info!("Execution levels determined: {execution_levels:?}");
 
         let mut runtime_context = RuntimeContext::new();
 
@@ -181,9 +183,7 @@ impl ExecutionEngine {
                     if let Some((collection_value, iteration_var)) = for_each_property {
                         let collection = runtime_context_clone.resolve_value(collection_value)?;
 
-                        let items = if let Value::Array(array) = collection {
-                            array
-                        } else {
+                        let Value::Array(items) = collection else {
                             return Err(ExecutionError::RuntimeError {
                                 agent: agent_clone.name.clone(),
                                 message: "for_each collection must be an array".to_string(),
@@ -218,7 +218,7 @@ impl ExecutionEngine {
                             let (iteration_index, result) =
                                 iteration_task.await.map_err(|error| ExecutionError::RuntimeError {
                                     agent: agent_clone.name.clone(),
-                                    message: format!("Failed to execute for_each iteration: {}", error),
+                                    message: format!("Failed to execute for_each iteration: {error}"),
                                     suggestion: None,
                                 })?;
 
@@ -251,7 +251,7 @@ impl ExecutionEngine {
             for task in tasks {
                 let (agent_name, output, context) = task.await.map_err(|error| ExecutionError::RuntimeError {
                     agent: "parallel_execution".to_string(),
-                    message: format!("Failed to execute agent in parallel: {}", error),
+                    message: format!("Failed to execute agent in parallel: {error}"),
                     suggestion: None,
                 })??;
 
@@ -302,7 +302,7 @@ impl ExecutionEngine {
         }
 
         log::info!("Workflow execution completed successfully");
-        log::debug!("Final output: {:?}", result);
+        log::debug!("Final output: {result:?}");
 
         Ok(Value::Object(result))
     }

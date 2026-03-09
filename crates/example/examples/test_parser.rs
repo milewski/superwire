@@ -21,12 +21,12 @@ fn main() {
                 println!("Properties: {}", agent.properties.len());
 
                 for (index, property) in agent.properties.iter().enumerate() {
-                    println!("  Property {}: {:?}", index, property);
+                    println!("  Property {index}: {property:?}");
                 }
             }
         }
         Err(error) => {
-            eprintln!("Parse error: {}", error);
+            eprintln!("Parse error: {error}");
         }
     }
 }

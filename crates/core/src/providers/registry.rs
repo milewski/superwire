@@ -8,6 +8,7 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             providers: HashMap::new(),
@@ -23,7 +24,7 @@ impl ProviderRegistry {
             .get(name)
             .cloned()
             .ok_or_else(|| ProviderError::ConnectionError {
-                message: format!("Provider '{}' not found", name),
+                message: format!("Provider '{name}' not found"),
                 suggestion: Some(format!(
                     "Available providers: {}",
                     self.providers.keys().cloned().collect::<Vec<_>>().join(", ")
@@ -50,15 +51,13 @@ impl ProviderRegistry {
             Ok((provider, model_name.to_string()))
         } else {
             Err(ProviderError::ConnectionError {
-                message: format!(
-                    "Invalid model reference: '{}'. Expected format: 'provider/model'",
-                    model_ref
-                ),
+                message: format!("Invalid model reference: '{model_ref}'. Expected format: 'provider/model'"),
                 suggestion: Some("Use format 'provider_name/model_name'".to_string()),
             })
         }
     }
 
+    #[must_use]
     pub fn list_providers(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }

@@ -45,6 +45,7 @@ impl DependencyGraph {
         Ok(Self { graph, node_indices })
     }
 
+    #[must_use]
     pub fn topological_order(&self) -> Vec<String> {
         let mut topo = Topo::new(&self.graph);
         let mut order = Vec::new();
@@ -58,6 +59,7 @@ impl DependencyGraph {
         order
     }
 
+    #[must_use]
     pub fn get_execution_levels(&self) -> Vec<Vec<String>> {
         let mut levels: Vec<Vec<String>> = Vec::new();
         let mut level_map: HashMap<String, usize> = HashMap::new();

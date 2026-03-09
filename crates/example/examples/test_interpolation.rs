@@ -1,4 +1,4 @@
-use engine_ai_core::ast::{Reference, Value};
+use engine_ai_core::ast::Value;
 use engine_ai_core::execution::RuntimeContext;
 
 fn main() {
@@ -10,10 +10,10 @@ fn main() {
 
     match context.resolve_value(&interpolated) {
         Ok(result) => {
-            println!("Resolved: {}", result);
+            println!("Resolved: {result}");
         }
         Err(error) => {
-            eprintln!("Error: {}", error);
+            eprintln!("Error: {error}");
         }
     }
 }

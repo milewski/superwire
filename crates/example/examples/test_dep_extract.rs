@@ -20,12 +20,12 @@ agent topic {
             for agent in &workflow.agents {
                 println!("\nAgent: {}", agent.name);
                 for (i, prop) in agent.properties.iter().enumerate() {
-                    println!("  Property {}: {:?}", i, prop);
+                    println!("  Property {i}: {prop:?}");
                 }
             }
         }
         Err(error) => {
-            eprintln!("Parse error: {}", error);
+            eprintln!("Parse error: {error}");
         }
     }
 }

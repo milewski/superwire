@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::env;
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     colog::init();
 
@@ -48,13 +49,13 @@ async fn main() {
 
     // Parse the workflow to get input field names
     let workflow_content = std::fs::read_to_string(workflow_path).unwrap_or_else(|error| {
-        eprintln!("Failed to read workflow file '{}': {}", workflow_path, error);
+        eprintln!("Failed to read workflow file '{workflow_path}': {error}");
         std::process::exit(1);
     });
 
-    let builder = AstBuilder::new(workflow_path.to_string());
+    let builder = AstBuilder::new(workflow_path.clone());
     let workflow = builder.parse(&workflow_content).unwrap_or_else(|error| {
-        eprintln!("Failed to parse workflow: {}", error);
+        eprintln!("Failed to parse workflow: {error}");
         std::process::exit(1);
     });
 
@@ -79,12 +80,12 @@ async fn main() {
 
             let input_file = &arguments[index + 1];
             let input_content = std::fs::read_to_string(input_file).unwrap_or_else(|error| {
-                eprintln!("Failed to read input file '{}': {}", input_file, error);
+                eprintln!("Failed to read input file '{input_file}': {error}");
                 std::process::exit(1);
             });
 
             let input_json: Value = serde_json::from_str(&input_content).unwrap_or_else(|error| {
-                eprintln!("Failed to parse input JSON: {}", error);
+                eprintln!("Failed to parse input JSON: {error}");
                 std::process::exit(1);
             });
 
@@ -109,7 +110,7 @@ async fn main() {
                 inputs.insert(key.to_string(), parsed_value);
             } else {
                 eprintln!("Error: --value argument must be in format key=value");
-                eprintln!("Got: {}", value_arg);
+                eprintln!("Got: {value_arg}");
                 std::process::exit(1);
             }
 
@@ -119,7 +120,7 @@ async fn main() {
             // Remove "--" prefix
 
             if index + 1 >= arguments.len() {
-                eprintln!("Error: {} requires a value", arg);
+                eprintln!("Error: {arg} requires a value");
                 std::process::exit(1);
             }
 
@@ -158,7 +159,7 @@ async fn main() {
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         Err(error) => {
-            eprintln!("Error: {}", error);
+            eprintln!("Error: {error}");
             std::process::exit(1);
         }
     }

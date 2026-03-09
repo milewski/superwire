@@ -55,8 +55,7 @@ async fn test_enum_schema_execution() {
     let condition_str = condition.as_str().unwrap();
     assert!(
         ["sunny", "rainy", "cloudy", "snowy"].contains(&condition_str),
-        "Invalid condition: {}",
-        condition_str
+        "Invalid condition: {condition_str}"
     );
 
     let temperature = weather.get("temperature").expect("temperature field should exist");
@@ -64,7 +63,7 @@ async fn test_enum_schema_execution() {
 }
 
 #[tokio::test]
-#[ignore] // This test requires a running Ollama server
+#[ignore = "This test requires a running Ollama server"]
 async fn test_input_output_blocks() {
     let engine = ExecutionEngine::new();
 
@@ -89,7 +88,7 @@ async fn test_input_output_blocks() {
 }
 
 #[tokio::test]
-#[ignore] // LLM may refuse to generate random numbers
+#[ignore = "LLM may refuse to generate random numbers"]
 async fn test_for_each_execution() {
     let engine = ExecutionEngine::new();
 

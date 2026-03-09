@@ -1,4 +1,7 @@
-use crate::ast::*;
+use crate::ast::{
+    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField, Provider,
+    Reference, Schema, SchemaField, SchemaReference, SchemaType, Span, Value, Workflow,
+};
 use crate::parser::error::ParserError;
 use crate::parser::error_analyzer::ErrorAnalyzer;
 use crate::parser::{Rule, WorkflowParser};
@@ -10,7 +13,8 @@ pub struct AstBuilder {
 }
 
 impl AstBuilder {
-    pub fn new(file_path: String) -> Self {
+    #[must_use]
+    pub const fn new(file_path: String) -> Self {
         Self { file_path }
     }
 
@@ -591,10 +595,7 @@ impl AstBuilder {
                         }
                     }
 
-                    return Ok(SchemaReference::Inline(Schema {
-                        fields,
-                        span: span.clone(),
-                    }));
+                    return Ok(SchemaReference::Inline(Schema { fields, span }));
                 }
                 Rule::inline_type => {
                     let mut schema_type = None;

@@ -23,6 +23,7 @@ impl AgentOrchestrator {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn execute_agent(
         &self,
         agent: &Agent,
@@ -73,8 +74,7 @@ impl AgentOrchestrator {
                 return Err(ExecutionError::RuntimeError {
                     agent: agent.name.clone(),
                     message: format!(
-                        "Agent exceeded maximum iterations ({}). Agent may be stuck in a loop.",
-                        MAX_ITERATIONS
+                        "Agent exceeded maximum iterations ({MAX_ITERATIONS}). Agent may be stuck in a loop."
                     ),
                     suggestion: Some("Check agent logic and ensure it calls the done tool to exit".to_string()),
                 });
@@ -94,7 +94,7 @@ impl AgentOrchestrator {
 
             log::debug!("Agent '{}' received response from provider", agent.name);
 
-            context = output.context.clone();
+            context.clone_from(&output.context);
 
             if let Some(tool_calls) = context
                 .last()
@@ -132,10 +132,8 @@ impl AgentOrchestrator {
                         }
                         Err(error) => {
                             log::warn!("Tool '{}' execution failed: {}", tool_call.name, error);
-                            let error_message = format!(
-                                "Tool execution error: {}. Please fix the tool call and try again.",
-                                error
-                            );
+                            let error_message =
+                                format!("Tool execution error: {error}. Please fix the tool call and try again.");
 
                             context.push(Message::Tool {
                                 tool_call_id: tool_call.id.clone(),
@@ -157,8 +155,7 @@ impl AgentOrchestrator {
                             Err(error) => {
                                 log::warn!("Agent '{}' done tool parameters parse failed: {}", agent.name, error);
                                 let error_message = format!(
-                                    "Failed to parse done tool parameters: {}. Please ensure you provide 'status' and 'output' fields.",
-                                    error
+                                    "Failed to parse done tool parameters: {error}. Please ensure you provide 'status' and 'output' fields."
                                 );
 
                                 context.push(Message::Tool {
@@ -194,23 +191,20 @@ impl AgentOrchestrator {
                         if let Some(ref schema_value) = schema {
                             log::debug!("Agent '{}' validating output against schema", agent.name);
                             match SchemaValidator::validate(schema_value, &output_value) {
-                                Ok(_) => {
+                                Ok(()) => {
                                     log::info!("Agent '{}' output validated successfully", agent.name);
                                     done_output = Some(output_value);
                                 }
                                 Err(validation_error) => {
                                     log::warn!("Agent '{}' schema validation failed: {}", agent.name, validation_error);
                                     let error_message = format!(
-                                        "Schema validation failed: {}. Please fix the output and call done again.",
-                                        validation_error
+                                        "Schema validation failed: {validation_error}. Please fix the output and call done again."
                                     );
 
                                     context.push(Message::Tool {
                                         tool_call_id: tool_call.id.clone(),
                                         content: error_message,
                                     });
-
-                                    continue;
                                 }
                             }
                         } else {
@@ -229,12 +223,11 @@ impl AgentOrchestrator {
                         log::info!("Agent '{}' completed successfully with valid output", agent.name);
                         log::debug!("Agent '{}' final output: {:?}", agent.name, final_output);
                         return Ok((final_output, context));
-                    } else {
-                        log::debug!(
-                            "Agent '{}' done called but output validation failed, continuing loop",
-                            agent.name
-                        );
                     }
+                    log::debug!(
+                        "Agent '{}' done called but output validation failed, continuing loop",
+                        agent.name
+                    );
                 }
             } else {
                 log::trace!("Agent '{}' response had no tool calls", agent.name);
@@ -259,7 +252,7 @@ impl AgentOrchestrator {
                 .get(tool_name)
                 .ok_or_else(|| ExecutionError::RuntimeError {
                     agent: "tool_execution".to_string(),
-                    message: format!("Unknown tool: {}", tool_name),
+                    message: format!("Unknown tool: {tool_name}"),
                     suggestion: Some("Check that the tool is registered".to_string()),
                 })?
         };
@@ -267,7 +260,7 @@ impl AgentOrchestrator {
         let arguments: JsonValue =
             serde_json::from_str(arguments_json).map_err(|error| ExecutionError::RuntimeError {
                 agent: "tool_execution".to_string(),
-                message: format!("Failed to parse tool arguments: {}", error),
+                message: format!("Failed to parse tool arguments: {error}"),
                 suggestion: Some("Ensure tool arguments are valid JSON".to_string()),
             })?;
 
@@ -276,7 +269,7 @@ impl AgentOrchestrator {
             .await
             .map_err(|error| ExecutionError::RuntimeError {
                 agent: "tool_execution".to_string(),
-                message: format!("Tool execution failed: {}", error),
+                message: format!("Tool execution failed: {error}"),
                 suggestion: None,
             })?;
 
@@ -304,7 +297,7 @@ impl AgentOrchestrator {
                         let compiled =
                             SchemaCompiler::compile(schema).map_err(|error| ExecutionError::RuntimeError {
                                 agent: agent.name.clone(),
-                                message: format!("Failed to compile schema: {}", error),
+                                message: format!("Failed to compile schema: {error}"),
                                 suggestion: Some("Check schema definition".to_string()),
                             })?;
 
@@ -318,7 +311,7 @@ impl AgentOrchestrator {
                             SchemaCompiler::compile_type(schema_type, description.as_deref()).map_err(|error| {
                                 ExecutionError::RuntimeError {
                                     agent: agent.name.clone(),
-                                    message: format!("Failed to compile schema type: {}", error),
+                                    message: format!("Failed to compile schema type: {error}"),
                                     suggestion: Some("Check schema type definition".to_string()),
                                 }
                             })?;
