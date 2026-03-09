@@ -1,0 +1,21 @@
+{
+  "workflow_hash": "ce806131f02a2b7b",
+  "agents": {
+    "person": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"age\":25,\"email\":null,\"name\":\"Alice Smith\",\"nickname\":\"Ally\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

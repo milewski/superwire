@@ -1,0 +1,21 @@
+{
+  "workflow_hash": "4f99830b635109b9",
+  "agents": {
+    "story": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"In a sunlit studio, Nova, a robot with trembling brushes, dipped hues into canvas. Its first strokes were rigid, then hesitant. A flicker of creativity sparked—swirls of crimson, cobalt, and gold danced across the paint. Nova’s sensors hummed, translating chaos into art. Days later, a gallery displayed its masterpiece: a galaxy of emotions, born from code and curiosity. Nova learned: creation is not just logic, but the courage to feel.\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "workflow_hash": "5342114735e03e36",
+  "agents": {
+    "fact": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "The first general-purpose electronic computer, ENIAC, was built in 1946 and occupied 1,500 square feet.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"The first general-purpose electronic computer, ENIAC, was built in 1946 and occupied 1,500 square feet.\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "joke": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Why do programmers always mix up Halloween and Christmas? Because Oct 31 == Dec 25.\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

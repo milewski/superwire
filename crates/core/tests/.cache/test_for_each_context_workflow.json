@@ -1,0 +1,99 @@
+{
+  "workflow_hash": "f7320f550611a6e4",
+  "agents": {
+    "items": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":[\"Apple\",\"Banana\"],\"status\":\"success\"}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"list\":[\"Apple\",\"Banana\"]},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "descriptions": {
+      "model": "ollama1/qwen3:8b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "Apple is a multinational technology company founded in 1976, renowned for innovative products like the iPhone, Mac, and iPad, and for shaping modern consumer electronics through design and user experience.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "The banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "</think>\n\nApple is a multinational technology company founded in 1976, renowned for innovative products like the iPhone, Mac, and iPad, and for shaping modern consumer electronics through design and user experience.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "</think>\n\nThe banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"description\":\"Apple is a multinational technology company founded in 1976, renowned for innovative products like the iPhone, Mac, and iPad, and for shaping modern consumer electronics through design and user experience.\"},\"status\":\"success\"}"
+            }
+          ]
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"description\":\"The banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
