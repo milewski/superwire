@@ -1,5 +1,5 @@
 [package]
-name = "engine-ai-example"
+name = "engine-ai-test"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,6 @@ workspace = true
 
 [dependencies]
 engine-ai-core = { path = "../core" }
-ollama-rs = { workspace = true }
 tokio = { workspace = true }
-log = { workspace = true }
-colog = { workspace = true }
 serde_json = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }

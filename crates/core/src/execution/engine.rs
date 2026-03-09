@@ -26,6 +26,44 @@ impl ExecutionEngine {
         self.execute_workflow_with_inputs(workflow_path, HashMap::new()).await
     }
 
+    pub async fn execute_workflow_from_content(
+        &self,
+        workflow_content: &str,
+        workflow_name: &str,
+    ) -> Result<Value, ExecutionError> {
+        self.execute_workflow_from_content_with_inputs(workflow_content, workflow_name, HashMap::new())
+            .await
+    }
+
+    pub async fn execute_workflow_from_content_with_inputs(
+        &self,
+        workflow_content: &str,
+        workflow_name: &str,
+        inputs: HashMap<String, Value>,
+    ) -> Result<Value, ExecutionError> {
+        log::info!("Starting workflow execution: {workflow_name}");
+        log::debug!("Workflow inputs: {inputs:?}");
+
+        let builder = AstBuilder::new(workflow_name.to_string());
+
+        let workflow = builder
+            .parse(workflow_content)
+            .map_err(|error| ExecutionError::RuntimeError {
+                agent: "workflow".to_string(),
+                message: format!("Failed to parse workflow: {error}"),
+                suggestion: Some("Check workflow syntax".to_string()),
+            })?;
+
+        log::info!("Workflow parsed successfully");
+        log::debug!(
+            "Workflow contains {} agents, {} providers",
+            workflow.agents.len(),
+            workflow.providers.len()
+        );
+
+        self.execute_parsed_workflow_with_inputs(&workflow, inputs).await
+    }
+
     pub async fn execute_workflow_with_inputs(
         &self,
         workflow_path: &str,
@@ -43,24 +81,8 @@ impl ExecutionEngine {
 
         log::debug!("Workflow file read successfully");
 
-        let builder = AstBuilder::new(workflow_path.to_string());
-
-        let workflow = builder
-            .parse(&workflow_content)
-            .map_err(|error| ExecutionError::RuntimeError {
-                agent: "workflow".to_string(),
-                message: format!("Failed to parse workflow: {error}"),
-                suggestion: Some("Check workflow syntax".to_string()),
-            })?;
-
-        log::info!("Workflow parsed successfully");
-        log::debug!(
-            "Workflow contains {} agents, {} providers",
-            workflow.agents.len(),
-            workflow.providers.len()
-        );
-
-        self.execute_parsed_workflow_with_inputs(&workflow, inputs).await
+        self.execute_workflow_from_content_with_inputs(&workflow_content, workflow_path, inputs)
+            .await
     }
 
     pub async fn execute_parsed_workflow(&self, workflow: &Workflow) -> Result<Value, ExecutionError> {
