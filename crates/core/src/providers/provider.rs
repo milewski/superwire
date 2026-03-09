@@ -31,7 +31,7 @@ pub struct ToolCall {
     pub arguments: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentOutput {
     pub output: Value,
     pub context: Vec<Message>,

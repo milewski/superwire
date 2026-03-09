@@ -1,0 +1,21 @@
+{
+  "workflow_hash": "f8f0be77295810d0",
+  "agents": {
+    "greeting": {
+      "model": "ollama/qwen3.5:27b",
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Hello! I'm an AI assistant designed to help with various tasks and answer questions. How can I assist you today?\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

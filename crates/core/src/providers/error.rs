@@ -33,4 +33,7 @@ pub enum ProviderError {
         message: String,
         suggestion: Option<String>,
     },
+
+    #[error("Execution error: {message}")]
+    ExecutionError { message: String },
 }
