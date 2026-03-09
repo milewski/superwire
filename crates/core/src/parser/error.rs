@@ -1,8 +1,9 @@
+use std::fmt::Write;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ParserError {
-    #[error("{}", format_syntax_error(.file_path, *line, *column, .message, .suggestion, .source_line))]
+    #[error("{}", format_syntax_error(.file_path, *line, *column, .message, .suggestion.as_ref(), .source_line.as_ref()))]
     SyntaxError {
         file_path: String,
         line: usize,
@@ -12,7 +13,7 @@ pub enum ParserError {
         source_line: Option<String>,
     },
 
-    #[error("{}", format_undefined_reference(.file_path, *line, *column, .reference, .suggestion))]
+    #[error("{}", format_undefined_reference(.file_path, *line, *column, .reference, .suggestion.as_ref()))]
     UndefinedReference {
         file_path: String,
         line: usize,
@@ -21,7 +22,7 @@ pub enum ParserError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_template_variable_mismatch(.file_path, *line, *column, .message, .suggestion))]
+    #[error("{}", format_template_variable_mismatch(.file_path, *line, *column, .message, .suggestion.as_ref()))]
     TemplateVariableMismatch {
         file_path: String,
         line: usize,
@@ -30,7 +31,7 @@ pub enum ParserError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_file_read_error(.file_path, *line, *column, .path, .source, .suggestion))]
+    #[error("{}", format_file_read_error(.file_path, *line, *column, .path, .source, .suggestion.as_ref()))]
     FileReadError {
         file_path: String,
         line: usize,
@@ -49,26 +50,26 @@ fn format_syntax_error(
     line: usize,
     column: usize,
     message: &str,
-    suggestion: &Option<String>,
-    source_line: &Option<String>,
+    suggestion: Option<&String>,
+    source_line: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: {}\n  --> {}:{}:{}\n   |", message, file_path, line, column);
+    let mut result = format!("Error: {message}\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(source) = source_line {
-        let line_number_width = format!("{}", line).len();
-        result.push_str(&format!("\n{:>width$} | {}", line, source, width = line_number_width));
+        let line_number_width = format!("{line}").len();
+        write!(result, "\n{line:>line_number_width$} | {source}").unwrap();
 
         if column > 0 {
             let caret_position = column - 1;
             let spaces = " ".repeat(caret_position);
-            result.push_str(&format!("\n{:>width$} | {}^", "", spaces, width = line_number_width));
+            write!(result, "\n{:>width$} | {}^", "", spaces, width = line_number_width).unwrap();
         }
     }
 
     result.push_str("\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -79,15 +80,12 @@ fn format_undefined_reference(
     line: usize,
     column: usize,
     reference: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: undefined reference '{}'\n  --> {}:{}:{}\n   |",
-        reference, file_path, line, column
-    );
+    let mut result = format!("Error: undefined reference '{reference}'\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -98,15 +96,12 @@ fn format_template_variable_mismatch(
     line: usize,
     column: usize,
     message: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: template variable mismatch: {}\n  --> {}:{}:{}\n   |",
-        message, file_path, line, column
-    );
+    let mut result = format!("Error: template variable mismatch: {message}\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -118,22 +113,20 @@ fn format_file_read_error(
     column: usize,
     path: &str,
     source: &std::io::Error,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: file read error: {} ({})\n  --> {}:{}:{}\n   |",
-        path, source, file_path, line, column
-    );
+    let mut result = format!("Error: file read error: {path} ({source})\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
 }
 
 impl ParserError {
-    pub fn syntax_error(
+    #[must_use]
+    pub const fn syntax_error(
         file_path: String,
         line: usize,
         column: usize,
@@ -150,7 +143,8 @@ impl ParserError {
         }
     }
 
-    pub fn syntax_error_with_source(
+    #[must_use]
+    pub const fn syntax_error_with_source(
         file_path: String,
         line: usize,
         column: usize,
@@ -168,7 +162,8 @@ impl ParserError {
         }
     }
 
-    pub fn undefined_reference(
+    #[must_use]
+    pub const fn undefined_reference(
         file_path: String,
         line: usize,
         column: usize,
@@ -184,7 +179,8 @@ impl ParserError {
         }
     }
 
-    pub fn template_variable_mismatch(
+    #[must_use]
+    pub const fn template_variable_mismatch(
         file_path: String,
         line: usize,
         column: usize,
@@ -200,7 +196,8 @@ impl ParserError {
         }
     }
 
-    pub fn file_read_error(
+    #[must_use]
+    pub const fn file_read_error(
         file_path: String,
         line: usize,
         column: usize,

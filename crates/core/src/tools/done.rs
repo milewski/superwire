@@ -22,7 +22,8 @@ pub struct DoneTool {
 }
 
 impl DoneTool {
-    pub fn new(output_schema: Option<Value>) -> Self {
+    #[must_use]
+    pub const fn new(output_schema: Option<Value>) -> Self {
         Self { output_schema }
     }
 }
@@ -35,11 +36,11 @@ impl Default for DoneTool {
 
 #[async_trait::async_trait]
 impl Tool for DoneTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "done"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Signal completion of the agent loop. Must be called with status 'success' and the final output. For status 'fail', provide an error message string in the output parameter."
     }
 
@@ -62,7 +63,7 @@ impl Tool for DoneTool {
         let params: DoneParameters =
             serde_json::from_value(parameters).map_err(|error| ToolError::InvalidParameters {
                 tool_name: "done".to_string(),
-                message: format!("Failed to parse done parameters: {}", error),
+                message: format!("Failed to parse done parameters: {error}"),
                 suggestion: Some("Ensure you provide 'status' (success or fail) and 'output' fields".to_string()),
             })?;
 

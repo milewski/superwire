@@ -1,5 +1,5 @@
 clippy:
-    cargo clippy --fix --allow-dirty
+    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty -- -D warnings
     cargo fmt
 
 try:

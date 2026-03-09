@@ -29,15 +29,15 @@ agent topic {
             match DependencyGraph::build(&workflow) {
                 Ok(graph) => {
                     let order = graph.topological_order();
-                    println!("\nExecution order: {:?}", order);
+                    println!("\nExecution order: {order:?}");
                 }
                 Err(error) => {
-                    eprintln!("Dependency graph error: {}", error);
+                    eprintln!("Dependency graph error: {error}");
                 }
             }
         }
         Err(error) => {
-            eprintln!("Parse error: {}", error);
+            eprintln!("Parse error: {error}");
         }
     }
 }

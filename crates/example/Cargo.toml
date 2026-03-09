@@ -3,6 +3,9 @@ name = "engine-ai-example"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 engine-ai-core = { path = "../core" }
 ollama-rs = { workspace = true }

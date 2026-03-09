@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -11,7 +11,8 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
+    #[must_use]
+    pub const fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
         Self {
             start,
             end,
@@ -31,7 +32,7 @@ pub struct Workflow {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Provider {
     pub name: String,
     pub driver: String,
@@ -67,7 +68,7 @@ pub enum SchemaType {
     Number,
     Boolean,
     Null,
-    Array(Box<SchemaType>),
+    Array(Box<Self>),
     Enum(Vec<String>),
     Object(Vec<SchemaField>),
 }
@@ -125,14 +126,14 @@ pub enum Value {
     Number(f64),
     Boolean(bool),
     Null,
-    Array(Vec<Value>),
-    Object(HashMap<String, Value>),
+    Array(Vec<Self>),
+    Object(HashMap<String, Self>),
     Reference(Reference),
     FunctionCall(FunctionCall),
     Interpolated(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Reference {
     Agent { agent: String, field: String },
     AgentOutput { agent: String },

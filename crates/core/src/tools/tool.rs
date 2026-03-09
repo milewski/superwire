@@ -21,6 +21,7 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self { tools: Vec::new() }
     }
@@ -29,10 +30,12 @@ impl ToolRegistry {
         self.tools.push(tool);
     }
 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<ToolRef> {
         self.tools.iter().find(|tool| tool.name() == name).cloned()
     }
 
+    #[must_use]
     pub fn list(&self) -> Vec<ToolRef> {
         self.tools.clone()
     }

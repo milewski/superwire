@@ -3,6 +3,9 @@ name = "engine-ai-core"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 pest = { workspace = true }
 pest_derive = { workspace = true }

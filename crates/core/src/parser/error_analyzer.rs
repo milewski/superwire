@@ -16,10 +16,12 @@ pub struct AnalyzedError {
 }
 
 impl ErrorAnalyzer {
-    pub fn new(file_path: String) -> Self {
+    #[must_use]
+    pub const fn new(file_path: String) -> Self {
         Self { file_path }
     }
 
+    #[must_use]
     pub fn analyze(&self, error: &PestError<Rule>, input: &str) -> AnalyzedError {
         let (line, column) = self.extract_position(error);
         let lines: Vec<&str> = input.lines().collect();
@@ -53,7 +55,7 @@ impl ErrorAnalyzer {
         self.create_generic_error(line, column, error, context.current_line())
     }
 
-    fn extract_position(&self, error: &PestError<Rule>) -> (usize, usize) {
+    const fn extract_position(&self, error: &PestError<Rule>) -> (usize, usize) {
         match error.line_col {
             pest::error::LineColLocation::Pos((line, column)) => (line, column),
             pest::error::LineColLocation::Span((line, column), _) => (line, column),
@@ -90,10 +92,9 @@ impl ErrorAnalyzer {
                     column: position_after_first_word + 1,
                     message: "Missing assignment operator".to_string(),
                     suggestion: Some(format!(
-                        "Add '<-' between '{}' and '{}'. Example: {} <- {}",
-                        first_word, second_word, first_word, second_word
+                        "Add '<-' between '{first_word}' and '{second_word}'. Example: {first_word} <- {second_word}"
                     )),
-                    source_line: context.current_line_untrimmed().map(|s| s.to_string()),
+                    source_line: context.current_line_untrimmed().map(std::string::ToString::to_string),
                 });
             }
         }
@@ -129,7 +130,7 @@ impl ErrorAnalyzer {
                     return Some(AnalyzedError {
                         line: line_number,
                         column: position + 1,
-                        message: format!("Invalid assignment operator '{}'", operator),
+                        message: format!("Invalid assignment operator '{operator}'"),
                         suggestion: Some(help_message.to_string()),
                         source_line: Some(line.to_string()),
                     });
@@ -198,8 +199,8 @@ impl ErrorAnalyzer {
         Some(AnalyzedError {
             line: line_number,
             column: position + 1,
-            message: format!("Unknown property '{}'", property_name),
-            suggestion: suggestion.map(|s| format!("Did you mean '{}'?", s)),
+            message: format!("Unknown property '{property_name}'"),
+            suggestion: suggestion.map(|s| format!("Did you mean '{s}'?")),
             source_line: Some(line.to_string()),
         })
     }
@@ -273,10 +274,9 @@ impl ErrorAnalyzer {
         Some(AnalyzedError {
             line: context.line_number - 1,
             column: arrow_position + value_position + 1,
-            message: format!("Invalid reference: '{}'", value_part),
+            message: format!("Invalid reference: '{value_part}'"),
             suggestion: Some(format!(
-                "Did you mean 'agent.{}'? Bare identifiers are not valid values. Use 'agent.name' to reference an agent, or '\"{}\"' for a string literal",
-                value_part, value_part
+                "Did you mean 'agent.{value_part}'? Bare identifiers are not valid values. Use 'agent.name' to reference an agent, or '\"{value_part}\"' for a string literal"
             )),
             source_line: Some(full_line.to_string()),
         })
@@ -305,9 +305,8 @@ impl ErrorAnalyzer {
                         }
                     }
                     return None;
-                } else {
-                    brace_count -= 1;
                 }
+                brace_count -= 1;
             }
         }
 
@@ -362,9 +361,9 @@ impl ErrorAnalyzer {
         AnalyzedError {
             line,
             column,
-            message: format!("Unexpected syntax: {}", expected_description),
+            message: format!("Unexpected syntax: {expected_description}"),
             suggestion: Some("Check the syntax of your workflow definition".to_string()),
-            source_line: source_line.map(|s| s.to_string()),
+            source_line: source_line.map(std::string::ToString::to_string),
         }
     }
 
@@ -391,7 +390,7 @@ struct LineContext<'a> {
 }
 
 impl<'a> LineContext<'a> {
-    fn new(lines: &'a [&'a str], line_number: usize) -> Self {
+    const fn new(lines: &'a [&'a str], line_number: usize) -> Self {
         Self { lines, line_number }
     }
 
@@ -445,7 +444,7 @@ fn levenshtein_distance(source: &str, target: &str) -> usize {
 
     for (source_index, source_char) in source.chars().enumerate() {
         for (target_index, target_char) in target.chars().enumerate() {
-            let cost = if source_char == target_char { 0 } else { 1 };
+            let cost = usize::from(source_char != target_char);
             matrix[source_index + 1][target_index + 1] = std::cmp::min(
                 std::cmp::min(
                     matrix[source_index][target_index + 1] + 1,
@@ -468,6 +467,6 @@ fn rule_to_friendly_name(rule: &Rule) -> String {
         Rule::property_prompt => "a prompt property".to_string(),
         Rule::property_model => "a model property".to_string(),
         Rule::property_output => "an output property".to_string(),
-        _ => format!("{:?}", rule),
+        _ => format!("{rule:?}"),
     }
 }

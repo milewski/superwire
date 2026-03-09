@@ -1,8 +1,9 @@
+use std::fmt::Write;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ValidationError {
-    #[error("{}", format_duplicate_name(.file_path, *line, *column, .name, .first_defined_at, .suggestion))]
+    #[error("{}", format_duplicate_name(.file_path, *line, *column, .name, .first_defined_at, .suggestion.as_ref()))]
     DuplicateName {
         file_path: String,
         line: usize,
@@ -12,7 +13,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_undefined_reference(.file_path, *line, *column, .reference, .suggestion))]
+    #[error("{}", format_undefined_reference(.file_path, *line, *column, .reference, .suggestion.as_ref()))]
     UndefinedReference {
         file_path: String,
         line: usize,
@@ -21,7 +22,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_provider_model_mismatch(.file_path, *line, *column, .message, .suggestion))]
+    #[error("{}", format_provider_model_mismatch(.file_path, *line, *column, .message, .suggestion.as_ref()))]
     ProviderModelMismatch {
         file_path: String,
         line: usize,
@@ -30,7 +31,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_missing_template_variable(.file_path, *line, *column, .variable, .suggestion))]
+    #[error("{}", format_missing_template_variable(.file_path, *line, *column, .variable, .suggestion.as_ref()))]
     MissingTemplateVariable {
         file_path: String,
         line: usize,
@@ -39,7 +40,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_unused_template_binding(.file_path, *line, *column, .binding, .suggestion))]
+    #[error("{}", format_unused_template_binding(.file_path, *line, *column, .binding, .suggestion.as_ref()))]
     UnusedTemplateBinding {
         file_path: String,
         line: usize,
@@ -48,7 +49,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_invalid_property(.file_path, *line, *column, .property, .suggestion))]
+    #[error("{}", format_invalid_property(.file_path, *line, *column, .property, .suggestion.as_ref()))]
     InvalidProperty {
         file_path: String,
         line: usize,
@@ -57,7 +58,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_missing_required_property(.file_path, *line, *column, .agent_name, .property_name, .suggestion))]
+    #[error("{}", format_missing_required_property(.file_path, *line, *column, .agent_name, .property_name, .suggestion.as_ref()))]
     MissingRequiredProperty {
         file_path: String,
         line: usize,
@@ -67,14 +68,14 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_cyclic_dependency(.file_path, .cycle, .suggestion))]
+    #[error("{}", format_cyclic_dependency(.file_path, .cycle, .suggestion.as_ref()))]
     CyclicDependency {
         file_path: String,
         cycle: String,
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_invalid_input_output(.file_path, *line, *column, .message, .suggestion))]
+    #[error("{}", format_invalid_input_output(.file_path, *line, *column, .message, .suggestion.as_ref()))]
     InvalidInputOutput {
         file_path: String,
         line: usize,
@@ -83,7 +84,7 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    #[error("{}", format_missing_required_argument(.file_path, *line, *column, .function_name, .argument_name, .suggestion))]
+    #[error("{}", format_missing_required_argument(.file_path, *line, *column, .function_name, .argument_name, .suggestion.as_ref()))]
     MissingRequiredArgument {
         file_path: String,
         line: usize,
@@ -100,15 +101,14 @@ fn format_duplicate_name(
     column: usize,
     name: &str,
     first_defined_at: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
     let mut result = format!(
-        "Error: duplicate name '{}' (first defined at {})\n  --> {}:{}:{}\n   |",
-        name, first_defined_at, file_path, line, column
+        "Error: duplicate name '{name}' (first defined at {first_defined_at})\n  --> {file_path}:{line}:{column}\n   |"
     );
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -119,15 +119,12 @@ fn format_undefined_reference(
     line: usize,
     column: usize,
     reference: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: undefined reference '{}'\n  --> {}:{}:{}\n   |",
-        reference, file_path, line, column
-    );
+    let mut result = format!("Error: undefined reference '{reference}'\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -138,15 +135,12 @@ fn format_provider_model_mismatch(
     line: usize,
     column: usize,
     message: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: provider/model mismatch: {}\n  --> {}:{}:{}\n   |",
-        message, file_path, line, column
-    );
+    let mut result = format!("Error: provider/model mismatch: {message}\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -157,15 +151,12 @@ fn format_missing_template_variable(
     line: usize,
     column: usize,
     variable: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: missing template variable '{}'\n  --> {}:{}:{}\n   |",
-        variable, file_path, line, column
-    );
+    let mut result = format!("Error: missing template variable '{variable}'\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -176,15 +167,12 @@ fn format_unused_template_binding(
     line: usize,
     column: usize,
     binding: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: unused template binding '{}'\n  --> {}:{}:{}\n   |",
-        binding, file_path, line, column
-    );
+    let mut result = format!("Error: unused template binding '{binding}'\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -195,15 +183,12 @@ fn format_invalid_property(
     line: usize,
     column: usize,
     property: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: invalid property '{}'\n  --> {}:{}:{}\n   |",
-        property, file_path, line, column
-    );
+    let mut result = format!("Error: invalid property '{property}'\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -215,30 +200,25 @@ fn format_missing_required_property(
     column: usize,
     agent_name: &str,
     property_name: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: missing required property '{}'\n  --> {}:{}:{}\n   |",
-        property_name, file_path, line, column
-    );
+    let mut result =
+        format!("Error: missing required property '{property_name}'\n  --> {file_path}:{line}:{column}\n   |");
 
-    result.push_str(&format!("\n   = note: agent '{}' requires this property", agent_name));
+    write!(result, "\n   = note: agent '{agent_name}' requires this property").unwrap();
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
 }
 
-fn format_cyclic_dependency(file_path: &str, cycle: &str, suggestion: &Option<String>) -> String {
-    let mut result = format!(
-        "Error: cyclic dependency detected\n  --> {}\n   |\n   = note: {}",
-        file_path, cycle
-    );
+fn format_cyclic_dependency(file_path: &str, cycle: &str, suggestion: Option<&String>) -> String {
+    let mut result = format!("Error: cyclic dependency detected\n  --> {file_path}\n   |\n   = note: {cycle}");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -249,15 +229,12 @@ fn format_invalid_input_output(
     line: usize,
     column: usize,
     message: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: invalid input/output: {}\n  --> {}:{}:{}\n   |",
-        message, file_path, line, column
-    );
+    let mut result = format!("Error: invalid input/output: {message}\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result
@@ -269,15 +246,14 @@ fn format_missing_required_argument(
     column: usize,
     function_name: &str,
     argument_name: &str,
-    suggestion: &Option<String>,
+    suggestion: Option<&String>,
 ) -> String {
     let mut result = format!(
-        "Error: missing required argument '{}' in function '{}'\n  --> {}:{}:{}\n   |",
-        argument_name, function_name, file_path, line, column
+        "Error: missing required argument '{argument_name}' in function '{function_name}'\n  --> {file_path}:{line}:{column}\n   |"
     );
 
     if let Some(suggestion_text) = suggestion {
-        result.push_str(&format!("\n   = help: {}", suggestion_text));
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
     }
 
     result

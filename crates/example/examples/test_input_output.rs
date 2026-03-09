@@ -26,7 +26,7 @@ fn main() {
             println!("\nAgents: {}", workflow.agents.len());
         }
         Err(error) => {
-            eprintln!("Parse error: {}", error);
+            eprintln!("Parse error: {error}");
         }
     }
 }

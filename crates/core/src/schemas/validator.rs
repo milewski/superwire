@@ -11,17 +11,17 @@ impl SchemaValidator {
         log::trace!("Data: {}", serde_json::to_string_pretty(data).unwrap_or_default());
 
         let compiled_schema = Validator::new(schema).map_err(|error| {
-            log::error!("Schema compilation failed: {}", error);
+            log::error!("Schema compilation failed: {error}");
             SchemaError::CompilationError {
                 schema_name: None,
-                message: format!("Failed to compile schema: {}", error),
+                message: format!("Failed to compile schema: {error}"),
                 suggestion: Some("Check that the schema is valid JSON Schema".to_string()),
             }
         })?;
 
         if let Err(error) = compiled_schema.validate(data) {
             let error_message = format!("{}: {}", error.instance_path, error);
-            log::warn!("Schema validation failed: {}", error_message);
+            log::warn!("Schema validation failed: {error_message}");
 
             return Err(SchemaError::ValidationError {
                 schema_name: None,
@@ -47,13 +47,12 @@ impl SchemaValidator {
                             if let Some(field_value) = data_obj.get(field_name) {
                                 if let Some(string_value) = field_value.as_str() {
                                     if string_value.is_empty() {
-                                        log::warn!("Required field '{}' is an empty string", field_name);
+                                        log::warn!("Required field '{field_name}' is an empty string");
                                         return Err(SchemaError::ValidationError {
                                             schema_name: None,
-                                            field_path: Some(format!("/{}", field_name)),
+                                            field_path: Some(format!("/{field_name}")),
                                             message: format!(
-                                                "/{}: Required field '{}' cannot be an empty string",
-                                                field_name, field_name
+                                                "/{field_name}: Required field '{field_name}' cannot be an empty string"
                                             ),
                                             suggestion: Some(
                                                 "Provide a non-empty value for this required field".to_string(),
@@ -93,6 +92,7 @@ impl SchemaValidator {
         Ok(())
     }
 
+    #[must_use]
     pub fn inject_schema_into_prompt(schema: &Value) -> String {
         let pretty_schema = serde_json::to_string_pretty(schema).unwrap_or_else(|_| schema.to_string());
 
@@ -100,15 +100,13 @@ impl SchemaValidator {
             .as_object()
             .and_then(|obj| obj.get("type"))
             .and_then(|t| t.as_str())
-            .map(|type_str| matches!(type_str, "string" | "number" | "boolean" | "null"))
-            .unwrap_or(false);
+            .is_some_and(|type_str| matches!(type_str, "string" | "number" | "boolean" | "null"));
 
         let is_array_type = schema
             .as_object()
             .and_then(|obj| obj.get("type"))
             .and_then(|t| t.as_str())
-            .map(|type_str| type_str == "array")
-            .unwrap_or(false);
+            .is_some_and(|type_str| type_str == "array");
 
         if is_primitive_type {
             let type_name = schema
@@ -121,22 +119,19 @@ impl SchemaValidator {
                 .as_object()
                 .and_then(|obj| obj.get("description"))
                 .and_then(|d| d.as_str())
-                .map(|d| format!(" ({})", d))
+                .map(|d| format!(" ({d})"))
                 .unwrap_or_default();
 
             format!(
-                "You must return your response as a {} value{}. Return ONLY the {} value itself, not wrapped in an object or quotes (unless it's a string type).",
-                type_name, description, type_name
+                "You must return your response as a {type_name} value{description}. Return ONLY the {type_name} value itself, not wrapped in an object or quotes (unless it's a string type)."
             )
         } else if is_array_type {
             format!(
-                "You must return your response as a JSON array following this exact schema:\n\n{}\n\nIMPORTANT: Return the actual JSON array directly, NOT wrapped in an object.",
-                pretty_schema
+                "You must return your response as a JSON array following this exact schema:\n\n{pretty_schema}\n\nIMPORTANT: Return the actual JSON array directly, NOT wrapped in an object."
             )
         } else {
             format!(
-                "You must return your response as a JSON object (not a string) following this exact schema:\n\n{}\n\nIMPORTANT: Return the actual JSON object directly, NOT a string containing JSON. Do not escape quotes or wrap the JSON in quotes. Required string fields must not be empty strings - provide meaningful values.",
-                pretty_schema
+                "You must return your response as a JSON object (not a string) following this exact schema:\n\n{pretty_schema}\n\nIMPORTANT: Return the actual JSON object directly, NOT a string containing JSON. Do not escape quotes or wrap the JSON in quotes. Required string fields must not be empty strings - provide meaningful values."
             )
         }
     }

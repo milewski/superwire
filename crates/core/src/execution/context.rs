@@ -13,6 +13,7 @@ pub struct RuntimeContext {
 }
 
 impl RuntimeContext {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             agent_outputs: HashMap::new(),
@@ -22,8 +23,8 @@ impl RuntimeContext {
     }
 
     pub fn set_agent_output(&mut self, agent_name: String, output: JsonValue) {
-        log::debug!("Setting output for agent: {}", agent_name);
-        log::trace!("Agent '{}' output: {:?}", agent_name, output);
+        log::debug!("Setting output for agent: {agent_name}");
+        log::trace!("Agent '{agent_name}' output: {output:?}");
         self.agent_outputs.insert(agent_name, output);
     }
 
@@ -33,8 +34,8 @@ impl RuntimeContext {
     }
 
     pub fn set_input_value(&mut self, field_name: String, value: JsonValue) {
-        log::debug!("Setting input value: {}", field_name);
-        log::trace!("Input '{}' value: {:?}", field_name, value);
+        log::debug!("Setting input value: {field_name}");
+        log::trace!("Input '{field_name}' value: {value:?}");
         self.input_values.insert(field_name, value);
     }
 
@@ -88,7 +89,7 @@ impl RuntimeContext {
 
                 let content = std::fs::read_to_string(&path_str).map_err(|error| ExecutionError::RuntimeError {
                     agent: "function".to_string(),
-                    message: format!("Failed to read file '{}': {}", path_str, error),
+                    message: format!("Failed to read file '{path_str}': {error}"),
                     suggestion: Some("Check that the file exists and is readable".to_string()),
                 })?;
 
@@ -105,7 +106,7 @@ impl RuntimeContext {
                         other => other.to_string(),
                     };
 
-                    let placeholder = format!("{{{{ {} }}}}", key);
+                    let placeholder = format!("{{{{ {key} }}}}");
                     result = result.replace(&placeholder, &replacement);
                 }
 
@@ -125,46 +126,46 @@ impl RuntimeContext {
     }
 
     fn resolve_reference(&self, reference: &Reference) -> Result<JsonValue, ExecutionError> {
-        log::trace!("Resolving reference: {:?}", reference);
+        log::trace!("Resolving reference: {reference:?}");
 
         match reference {
             Reference::Agent { agent, field } => {
                 if let Some(output) = self.agent_outputs.get(agent) {
                     if field == "_output" {
-                        log::trace!("Resolved agent '{}' full output", agent);
+                        log::trace!("Resolved agent '{agent}' full output");
                         return Ok(output.clone());
                     }
 
                     if let JsonValue::Object(map) = output {
                         if let Some(value) = map.get(field) {
-                            log::trace!("Resolved agent '{}' field '{}'", agent, field);
+                            log::trace!("Resolved agent '{agent}' field '{field}'");
                             return Ok(value.clone());
                         }
                     }
 
-                    log::warn!("Field '{}' not found in agent '{}' output", field, agent);
+                    log::warn!("Field '{field}' not found in agent '{agent}' output");
                     return Err(ExecutionError::RuntimeError {
                         agent: agent.clone(),
-                        message: format!("Field '{}' not found in agent output", field),
+                        message: format!("Field '{field}' not found in agent output"),
                         suggestion: Some("Check that the agent produces this field".to_string()),
                     });
                 }
 
-                log::warn!("Agent '{}' output not found", agent);
+                log::warn!("Agent '{agent}' output not found");
                 Err(ExecutionError::RuntimeError {
                     agent: agent.clone(),
-                    message: format!("Agent '{}' output not found", agent),
+                    message: format!("Agent '{agent}' output not found"),
                     suggestion: Some("Check that the agent has executed".to_string()),
                 })
             }
             Reference::AgentOutput { agent } => {
                 if let Some(output) = self.agent_outputs.get(agent) {
-                    log::trace!("Resolved agent '{}' output", agent);
+                    log::trace!("Resolved agent '{agent}' output");
 
                     if let JsonValue::Object(map) = output {
                         if map.len() == 1 {
                             if let Some((_key, value)) = map.iter().next() {
-                                log::trace!("Auto-unwrapping single-field object for agent '{}'", agent);
+                                log::trace!("Auto-unwrapping single-field object for agent '{agent}'");
                                 return Ok(value.clone());
                             }
                         }
@@ -173,10 +174,10 @@ impl RuntimeContext {
                     return Ok(output.clone());
                 }
 
-                log::warn!("Agent '{}' output not found", agent);
+                log::warn!("Agent '{agent}' output not found");
                 Err(ExecutionError::RuntimeError {
                     agent: agent.clone(),
-                    message: format!("Agent '{}' output not found", agent),
+                    message: format!("Agent '{agent}' output not found"),
                     suggestion: Some("Check that the agent has executed".to_string()),
                 })
             }
@@ -186,7 +187,7 @@ impl RuntimeContext {
                     return Ok(serde_json::to_value(context).unwrap_or(JsonValue::Null));
                 }
 
-                log::warn!("Agent '{}' context not found", agent);
+                log::warn!("Agent '{agent}' context not found");
                 Err(ExecutionError::RuntimeError {
                     agent: agent.clone(),
                     message: "Agent context not found".to_string(),
@@ -195,20 +196,20 @@ impl RuntimeContext {
             }
             Reference::Input { field } => {
                 if let Some(value) = self.input_values.get(field) {
-                    log::trace!("Resolved input field '{}'", field);
+                    log::trace!("Resolved input field '{field}'");
                     return Ok(value.clone());
                 }
 
-                log::warn!("Input field '{}' not found", field);
+                log::warn!("Input field '{field}' not found");
                 Err(ExecutionError::RuntimeError {
                     agent: "input".to_string(),
-                    message: format!("Input field '{}' not found", field),
+                    message: format!("Input field '{field}' not found"),
                     suggestion: Some("Provide this input value when executing the workflow".to_string()),
                 })
             }
             Reference::Schema { name } => {
-                log::trace!("Resolved schema reference: {}", name);
-                Ok(JsonValue::String(format!("schema:{}", name)))
+                log::trace!("Resolved schema reference: {name}");
+                Ok(JsonValue::String(format!("schema:{name}")))
             }
         }
     }
@@ -259,12 +260,11 @@ impl RuntimeContext {
                     return Ok(Reference::AgentContext {
                         agent: parts[1].to_string(),
                     });
-                } else {
-                    return Ok(Reference::Agent {
-                        agent: parts[1].to_string(),
-                        field: parts[2].to_string(),
-                    });
                 }
+                return Ok(Reference::Agent {
+                    agent: parts[1].to_string(),
+                    field: parts[2].to_string(),
+                });
             }
         } else if parts.len() == 4 && parts[0] == "agent" && parts[2] == "context" {
             return Ok(Reference::AgentContext {
@@ -274,7 +274,7 @@ impl RuntimeContext {
 
         Err(ExecutionError::RuntimeError {
             agent: "parser".to_string(),
-            message: format!("Invalid reference: {}", text),
+            message: format!("Invalid reference: {text}"),
             suggestion: Some(
                 "Use format 'agent.name', 'agent.name.field', 'input.field', or 'schema.name'".to_string(),
             ),

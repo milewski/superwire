@@ -35,7 +35,7 @@ impl WorkflowValidator {
                     line: agent.span.line,
                     column: agent.span.column,
                     name: agent.name.clone(),
-                    first_defined_at: format!("line {}", first_location),
+                    first_defined_at: format!("line {first_location}"),
                     suggestion: Some(format!("Rename one of the '{}' agents", agent.name)),
                 });
             } else {
@@ -54,7 +54,7 @@ impl WorkflowValidator {
                     line: schema.span.line,
                     column: schema.span.column,
                     name: schema.name.clone(),
-                    first_defined_at: format!("line {}", first_location),
+                    first_defined_at: format!("line {first_location}"),
                     suggestion: Some(format!("Rename one of the '{}' schemas", schema.name)),
                 });
             } else {
@@ -73,7 +73,7 @@ impl WorkflowValidator {
                     line: provider.span.line,
                     column: provider.span.column,
                     name: provider.name.clone(),
-                    first_defined_at: format!("line {}", first_location),
+                    first_defined_at: format!("line {first_location}"),
                     suggestion: Some(format!("Rename one of the '{}' providers", provider.name)),
                 });
             } else {
@@ -243,7 +243,7 @@ impl WorkflowValidator {
                         line,
                         column,
                         reference: agent.clone(),
-                        suggestion: Some(format!("Define an agent named '{}'", agent)),
+                        suggestion: Some(format!("Define an agent named '{agent}'")),
                     });
                 }
             }
@@ -254,7 +254,7 @@ impl WorkflowValidator {
                         line,
                         column,
                         reference: agent.clone(),
-                        suggestion: Some(format!("Define an agent named '{}'", agent)),
+                        suggestion: Some(format!("Define an agent named '{agent}'")),
                     });
                 }
             }
@@ -265,7 +265,7 @@ impl WorkflowValidator {
                         line,
                         column,
                         reference: agent.clone(),
-                        suggestion: Some(format!("Define an agent named '{}'", agent)),
+                        suggestion: Some(format!("Define an agent named '{agent}'")),
                     });
                 }
             }
@@ -276,7 +276,7 @@ impl WorkflowValidator {
                         line,
                         column,
                         reference: name.clone(),
-                        suggestion: Some(format!("Define a schema named '{}'", name)),
+                        suggestion: Some(format!("Define a schema named '{name}'")),
                     });
                 }
             }
@@ -305,10 +305,7 @@ impl WorkflowValidator {
                                     file_path: "workflow".to_string(),
                                     line: span.line,
                                     column: span.column,
-                                    message: format!(
-                                        "Model '{}' not found in provider '{}'",
-                                        model_name, provider_name
-                                    ),
+                                    message: format!("Model '{model_name}' not found in provider '{provider_name}'"),
                                     suggestion: Some(format!("Available models: {}", models.join(", "))),
                                 });
                             }
@@ -390,7 +387,7 @@ impl WorkflowValidator {
                             file_path: "workflow".to_string(),
                             line,
                             column,
-                            reference: format!("{}.{}", agent, field),
+                            reference: format!("{agent}.{field}"),
                             suggestion: Some(format!(
                                 "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
                                 agent,
@@ -421,7 +418,7 @@ impl WorkflowValidator {
                                     file_path: "workflow".to_string(),
                                     line,
                                     column,
-                                    reference: format!("agent.{}.{}", agent_name, field_name),
+                                    reference: format!("agent.{agent_name}.{field_name}"),
                                     suggestion: Some(format!(
                                         "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
                                         agent_name,
@@ -435,10 +432,9 @@ impl WorkflowValidator {
                                 file_path: "workflow".to_string(),
                                 line,
                                 column,
-                                reference: format!("agent.{}.{}", agent_name, field_name),
+                                reference: format!("agent.{agent_name}.{field_name}"),
                                 suggestion: Some(format!(
-                                    "Agent '{}' does not have an output schema. You can only reference the entire agent output using '{{{{ agent.{} }}}}'",
-                                    agent_name, agent_name
+                                    "Agent '{agent_name}' does not have an output schema. You can only reference the entire agent output using '{{{{ agent.{agent_name} }}}}'"
                                 )),
                             });
                         }
@@ -509,8 +505,7 @@ impl WorkflowValidator {
                                         column: func_call.span.column,
                                         variable: template_var.clone(),
                                         suggestion: Some(format!(
-                                            "Add binding for '{}' in the file function call",
-                                            template_var
+                                            "Add binding for '{template_var}' in the file function call"
                                         )),
                                     });
                                 }
@@ -524,8 +519,7 @@ impl WorkflowValidator {
                                         column: func_call.span.column,
                                         binding: binding.clone(),
                                         suggestion: Some(format!(
-                                            "Remove unused binding '{}' or add '{{{{ {} }}}}' to the template file",
-                                            binding, binding
+                                            "Remove unused binding '{binding}' or add '{{{{ {binding} }}}}' to the template file"
                                         )),
                                     });
                                 }
@@ -601,15 +595,7 @@ impl WorkflowValidator {
                     {
                         if let Some((provider_name, model_name)) = model_ref.split_once('/') {
                             let provider_exists = providers.iter().any(|p| p.name == provider_name);
-                            if !provider_exists {
-                                errors.push(ValidationError::UndefinedReference {
-                                    file_path: "workflow".to_string(),
-                                    line: function_call.span.line,
-                                    column: function_call.span.column,
-                                    reference: provider_name.to_string(),
-                                    suggestion: Some(format!("Provider '{}' is not defined", provider_name)),
-                                });
-                            } else {
+                            if provider_exists {
                                 let provider = providers.iter().find(|p| p.name == provider_name).unwrap();
                                 if !provider.models.contains(&model_name.to_string()) {
                                     errors.push(ValidationError::ProviderModelMismatch {
@@ -617,12 +603,19 @@ impl WorkflowValidator {
                                         line: function_call.span.line,
                                         column: function_call.span.column,
                                         message: format!(
-                                            "Model '{}' not found in provider '{}'",
-                                            model_name, provider_name
+                                            "Model '{model_name}' not found in provider '{provider_name}'"
                                         ),
                                         suggestion: Some(format!("Available models: {}", provider.models.join(", "))),
                                     });
                                 }
+                            } else {
+                                errors.push(ValidationError::UndefinedReference {
+                                    file_path: "workflow".to_string(),
+                                    line: function_call.span.line,
+                                    column: function_call.span.column,
+                                    reference: provider_name.to_string(),
+                                    suggestion: Some(format!("Provider '{provider_name}' is not defined")),
+                                });
                             }
                         }
                     }

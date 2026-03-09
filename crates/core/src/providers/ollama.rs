@@ -60,6 +60,7 @@ struct OllamaChatResponse {
 }
 
 impl OllamaProvider {
+    #[must_use]
     pub fn new(name: String, api_endpoint: String, models: Vec<String>) -> Self {
         let client = reqwest::Client::new();
 
@@ -260,14 +261,14 @@ impl Provider for OllamaProvider {
                     ..
                 } = prop
                 {
-                    model_ref.split('/').nth(1).map(|s| s.to_string())
+                    model_ref.split('/').nth(1).map(std::string::ToString::to_string)
                 } else {
                     None
                 }
             })
             .unwrap_or_else(|| "qwen3:8b".to_string());
 
-        log::info!("Using model: {}", model_name);
+        log::info!("Using model: {model_name}");
 
         let ollama_tools = Self::build_ollama_tools(&tools);
         log::debug!("Configured {} tools for Ollama", ollama_tools.len());
@@ -280,12 +281,12 @@ impl Provider for OllamaProvider {
         };
 
         let url = format!("{}/api/chat", self.api_endpoint);
-        log::debug!("Sending request to Ollama: {}", url);
+        log::debug!("Sending request to Ollama: {url}");
 
         let response = self.client.post(&url).json(&request).send().await.map_err(|error| {
-            log::error!("Ollama HTTP request failed: {}", error);
+            log::error!("Ollama HTTP request failed: {error}");
             ProviderError::ApiError {
-                message: format!("Ollama HTTP request failed: {}", error),
+                message: format!("Ollama HTTP request failed: {error}"),
                 status_code: None,
                 suggestion: Some("Check that Ollama server is running and accessible".to_string()),
             }
@@ -295,10 +296,10 @@ impl Provider for OllamaProvider {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
 
-            log::error!("Ollama API error: {} - {}", status, error_text);
+            log::error!("Ollama API error: {status} - {error_text}");
 
             return Err(ProviderError::ApiError {
-                message: format!("Ollama API error: {} - {}", status, error_text),
+                message: format!("Ollama API error: {status} - {error_text}"),
                 status_code: Some(status.as_u16()),
                 suggestion: Some("Check Ollama server logs for details".to_string()),
             });
@@ -307,9 +308,9 @@ impl Provider for OllamaProvider {
         log::debug!("Received successful response from Ollama");
 
         let ollama_response: OllamaChatResponse = response.json().await.map_err(|error| {
-            log::error!("Failed to parse Ollama response: {}", error);
+            log::error!("Failed to parse Ollama response: {error}");
             ProviderError::ApiError {
-                message: format!("Failed to parse Ollama response: {}", error),
+                message: format!("Failed to parse Ollama response: {error}"),
                 status_code: None,
                 suggestion: Some("Check Ollama API compatibility".to_string()),
             }
@@ -326,7 +327,7 @@ impl Provider for OllamaProvider {
                 .map(|(index, call)| {
                     log::trace!("Tool call {}: {}", index, call.function.name);
                     ToolCall {
-                        id: format!("call_{}", index),
+                        id: format!("call_{index}"),
                         name: call.function.name.clone(),
                         arguments: serde_json::to_string(&call.function.arguments).unwrap_or_default(),
                     }
@@ -338,7 +339,7 @@ impl Provider for OllamaProvider {
 
         updated_context.push(Message::Assistant {
             content: output_content.clone(),
-            tool_calls: tool_calls.clone(),
+            tool_calls,
         });
 
         log::info!("OllamaProvider execution completed successfully");
