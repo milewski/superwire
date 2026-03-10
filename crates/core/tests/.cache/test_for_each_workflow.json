@@ -7,34 +7,11 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
             "content": "\r\n        Generate a list of 3 random numbers between 1 and 10.\r\n    "
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "\r\n        Generate a list of 3 random numbers between 1 and 10.\r\n    "
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
           },
           {
             "type": "assistant",
@@ -43,7 +20,23 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"values\":[4,7,2]},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"status\":\"success\",\"values\":[7,2,9]}}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Tool execution error: Runtime error in agent tool_execution: Tool execution failed: Invalid tool parameters: Failed to parse done parameters: missing field `status`. Please fix the tool call and try again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"values\":[4,8,3]},\"status\":\"success\"}"
               }
             ]
           }
@@ -56,11 +49,11 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
-            "content": "What is 2 multiplied by 2?"
+            "content": "What is 8 multiplied by 2?"
           },
           {
             "type": "assistant",
@@ -69,7 +62,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":4,\"status\":\"success\"}"
+                "arguments": "{\"output\":16,\"status\":\"success\"}"
               }
             ]
           }
@@ -80,31 +73,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "What is 7 multiplied by 2?"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":14,\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -122,13 +91,37 @@
             ]
           }
         ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "What is 3 multiplied by 2?"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":6,\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
       }
     ]
   },
   "output": {
     "context": [
       {
-        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
+        "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready.",
         "type": "system"
       },
       {
@@ -147,18 +140,18 @@
         "type": "assistant"
       },
       {
-        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
+        "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready.",
         "type": "system"
       },
       {
-        "content": "What is 7 multiplied by 2?",
+        "content": "What is 8 multiplied by 2?",
         "type": "user"
       },
       {
         "content": "",
         "tool_calls": [
           {
-            "arguments": "{\"output\":14,\"status\":\"success\"}",
+            "arguments": "{\"output\":16,\"status\":\"success\"}",
             "id": "call_0",
             "name": "done"
           }
@@ -166,18 +159,18 @@
         "type": "assistant"
       },
       {
-        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
+        "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready.",
         "type": "system"
       },
       {
-        "content": "What is 2 multiplied by 2?",
+        "content": "What is 3 multiplied by 2?",
         "type": "user"
       },
       {
         "content": "",
         "tool_calls": [
           {
-            "arguments": "{\"output\":4,\"status\":\"success\"}",
+            "arguments": "{\"output\":6,\"status\":\"success\"}",
             "id": "call_0",
             "name": "done"
           }
@@ -187,13 +180,13 @@
     ],
     "doubled": [
       8,
-      14,
-      4
+      16,
+      6
     ],
     "numbers": [
       4,
-      7,
-      2
+      8,
+      3
     ]
   }
 }

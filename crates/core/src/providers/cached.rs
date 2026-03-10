@@ -169,11 +169,29 @@ impl Provider for CachedProvider {
 
                 let agent_conversations = cache.agents.entry(agent_name.clone()).or_default();
 
-                // Add this execution as a new conversation
-                agent_conversations.push(AgentConversation {
-                    model: model.clone(),
-                    messages: output.context.clone(),
-                });
+                // Check if this is a continuation of the last conversation
+                // by comparing the context prefix
+                let is_continuation = if let Some(last_conv) = agent_conversations.last() {
+                    // If the output context starts with the last conversation's messages,
+                    // it's a continuation (iteration)
+                    output.context.len() > last_conv.messages.len()
+                        && output.context[..last_conv.messages.len()] == last_conv.messages[..]
+                } else {
+                    false
+                };
+
+                if is_continuation {
+                    // Update the last conversation with the extended context
+                    if let Some(last_conv) = agent_conversations.last_mut() {
+                        last_conv.messages.clone_from(&output.context);
+                    }
+                } else {
+                    // This is a new execution - add a new conversation
+                    agent_conversations.push(AgentConversation {
+                        model: model.clone(),
+                        messages: output.context.clone(),
+                    });
+                }
 
                 Self::save_cache(&self.test_name, &cache);
             }

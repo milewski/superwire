@@ -7,7 +7,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"key_points\":[\"Rust's ownership model ensures memory safety without a garbage collector, preventing null pointer dereferencing and data races.\",\"Zero-cost abstractions allow high-performance code with minimal runtime overhead, comparable to C++.\",\"Fearless concurrency features, like the borrow checker, enforce safety in multi-threaded applications.\"],\"summary\":\"Rust is a systems programming language focused on safety, speed, and modern tooling. It combines memory safety with performance via ownership and borrowing, zero-cost abstractions, and robust concurrency support, making it ideal for reliable, high-performance software.\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"key_points\":[\"Rust's ownership model eliminates null pointer dereferences and data races at compile time.\",\"Zero-cost abstractions enable high-performance systems programming with memory safety guarantees.\",\"Seamless interoperability with C/C++ makes it ideal for embedded systems and legacy code integration.\"],\"summary\":\"Rust is a modern systems programming language that prioritizes safety and performance through innovative ownership semantics, eliminating common memory-related bugs while maintaining runtime efficiency. Its focus on zero-cost abstractions and fearless concurrency makes it a compelling choice for building reliable, high-performance software.\"},\"status\":\"success\"}"
               }
             ]
           }
@@ -30,7 +30,7 @@
   },
   "output": {
     "audience": "developers",
-    "summary": "Rust is a systems programming language focused on safety, speed, and modern tooling. It combines memory safety with performance via ownership and borrowing, zero-cost abstractions, and robust concurrency support, making it ideal for reliable, high-performance software.",
+    "summary": "Rust is a modern systems programming language that prioritizes safety and performance through innovative ownership semantics, eliminating common memory-related bugs while maintaining runtime efficiency. Its focus on zero-cost abstractions and fearless concurrency makes it a compelling choice for building reliable, high-performance software.",
     "topic": "Rust"
   }
 }

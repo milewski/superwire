@@ -1,103 +1,52 @@
 {
   "workflow_hash": "8cfc9bf739869bf9",
   "agents": {
-    "story": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Write a very short story (under 50 words) about: The Forgotten City of Zerath"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":\"The Forgotten City of Zerath lay buried beneath vines. Whispers spoke of its lost glory, where time stood still. A single stone tablet, etched with a forgotten language, hinted at a civilization that vanished without a trace. Scholars called it a myth—until the storm unearthed its secrets, revealing a past that defied history.\",\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
     "topic": [
       {
         "model": "ollama/qwen3:8b",
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
             "content": "Suggest a random topic for a story. Reply with just the topic name in JSON format."
-          },
-          {
-            "type": "assistant",
-            "content": "{\"name\": \"The Forgotten City of Zerath\"}",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Suggest a random topic for a story. Reply with just the topic name in JSON format."
-          },
-          {
-            "type": "assistant",
-            "content": "{\"name\": \"The Forgotten City of Zerath\"}",
-            "tool_calls": null
           },
           {
             "type": "assistant",
             "content": "",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Suggest a random topic for a story. Reply with just the topic name in JSON format."
-          },
-          {
-            "type": "assistant",
-            "content": "{\"name\": \"The Forgotten City of Zerath\"}",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "</think>\n\n",
             "tool_calls": [
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"name\":\"The Forgotten City of Zerath\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"name\":\"The Starlight Train\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "story": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "Write a very short story (under 50 words) about: The Starlight Train"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"The Starlight Train arrived, silver and shimmering. A girl stepped aboard, her shadow fading into the night. As it vanished, she realized she’d traveled to a world where stars whispered secrets—eternal, unspoken, and hers to keep.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -106,6 +55,6 @@
     ]
   },
   "output": {
-    "story": "The Forgotten City of Zerath lay buried beneath vines. Whispers spoke of its lost glory, where time stood still. A single stone tablet, etched with a forgotten language, hinted at a civilization that vanished without a trace. Scholars called it a myth—until the storm unearthed its secrets, revealing a past that defied history."
+    "story": "The Starlight Train arrived, silver and shimmering. A girl stepped aboard, her shadow fading into the night. As it vanished, she realized she’d traveled to a world where stars whispered secrets—eternal, unspoken, and hers to keep."
   }
 }

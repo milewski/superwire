@@ -7,7 +7,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Why do programmers always mix up Halloween and Christmas? Because Oct 31 equals Dec 25!\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Why do programmers prefer dark mode? Because light attracts bugs.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -33,7 +33,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -41,35 +41,12 @@
           },
           {
             "type": "assistant",
-            "content": "The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time.",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Tell me an interesting fact about computers."
-          },
-          {
-            "type": "assistant",
-            "content": "The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": " However, it was also extremely power-hungry, consuming 150 kilowatts of electricity at peak operation.\n",
+            "content": "",
             "tool_calls": [
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time. However, it was also extremely power-hungry, consuming 150 kilowatts of electricity at peak operation.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Did you know that the first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, using 18,000 vacuum tubes to perform calculations?\",\"status\":\"success\"}"
               }
             ]
           }
@@ -82,7 +59,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -95,7 +72,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Innovation distinguishes between a leader and a follower. — Steve Jobs\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"The best way to predict the future is to invent it.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -104,8 +81,8 @@
     ]
   },
   "output": {
-    "fact": "The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time. However, it was also extremely power-hungry, consuming 150 kilowatts of electricity at peak operation.",
-    "joke": "Why do programmers always mix up Halloween and Christmas? Because Oct 31 equals Dec 25!",
-    "quote": "Innovation distinguishes between a leader and a follower. — Steve Jobs"
+    "fact": "Did you know that the first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, using 18,000 vacuum tubes to perform calculations?",
+    "joke": "Why do programmers prefer dark mode? Because light attracts bugs.",
+    "quote": "The best way to predict the future is to invent it."
   }
 }

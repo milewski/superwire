@@ -8,6 +8,23 @@ use serde_json::Value as JsonValue;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+macro_rules! system {
+    ($($content:tt)*) => {{
+        let text = stringify!($($content)*);
+        // Remove leading/trailing whitespace from each line
+        // Join with newlines to preserve paragraph structure
+        let normalized = text
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Message::System {
+            content: normalized,
+        }
+    }};
+}
+
 const MAX_ITERATIONS: usize = 50;
 
 pub struct AgentOrchestrator {
@@ -43,8 +60,19 @@ impl AgentOrchestrator {
 
         context.extend(initial_context);
 
-        context.push(Message::System {
-            content: "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.".to_string(),
+        context.push(system! {
+            You are an AI agent executing a task. CRITICAL: You have access to a done tool that you MUST use to return your final result.
+
+            IMPORTANT INSTRUCTIONS:
+            1. Do NOT respond with plain text - you MUST call the done tool
+            2. The done tool is how you return your result to the system
+            3. After completing your task, immediately call the done tool with your output
+            4. Your response will NOT be processed unless you call the done tool
+            5. Think of the done tool as your ONLY way to communicate your final answer
+
+            Example: If asked to generate a number, call done with output 42 and status success instead of just saying 42.
+
+            Remember: ALWAYS call the done tool when you have your answer ready.
         });
 
         context.push(Message::User {

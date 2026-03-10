@@ -7,7 +7,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"condition\":\"cloudy\",\"temperature\":14},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"condition\":\"cloudy\",\"temperature\":18},\"status\":\"success\"}"
               }
             ]
           }
@@ -31,7 +31,7 @@
   "output": {
     "weather": {
       "condition": "cloudy",
-      "temperature": 14
+      "temperature": 18
     }
   }
 }

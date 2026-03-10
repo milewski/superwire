@@ -7,7 +7,7 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -33,11 +33,27 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
             "content": "Is 105 greater than 100? Return true or false"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"type\":\"boolean\",\"value\":true},\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : {\"type\":\"boolean\",\"value\":true} is not of type \"boolean\". Please fix the output and call done again."
           },
           {
             "type": "assistant",
@@ -53,65 +69,13 @@
         ]
       }
     ],
-    "list_generator": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "List 5 popular programming languages as a JSON array of strings"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":[\"Python\",\"JavaScript\",\"Java\",\"C++\",\"C\"],\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "summary": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "\r\n    Summarize the following results:\r\n    - Calculation result: {{ agent.calculator }}\r\n    - Greeting: {{ agent.greeter }}\r\n    - Is greater than 100: {{ agent.validator }}\r\n    - Programming languages: {{ agent.list_generator }}\r\n    "
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":\"Summary:\\n- Calculation result: {{ agent.calculator }}\\n- Greeting: {{ agent.greeter }}\\n- Is greater than 100: {{ agent.validator }}\\n- Programming languages: {{ agent.list_generator }}\",\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
     "greeter": [
       {
         "model": "ollama/qwen3:8b",
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
@@ -124,7 +88,59 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Hello! How can I assist you today?\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Hello! Let me know how I can assist you.\",\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "summary": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "\r\n    Summarize the following results:\r\n    - Calculation result: {{ agent.calculator }}\r\n    - Greeting: {{ agent.greeter }}\r\n    - Is greater than 100: {{ agent.validator }}\r\n    - Programming languages: {{ agent.list_generator }}\r\n    "
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Summary:\\n- Calculation result: [value]\\n- Greeting: [message]\\n- Is greater than 100: [true/false]\\n- Programming languages: [list]\",\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "list_generator": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "List 5 popular programming languages as a JSON array of strings"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":[\"JavaScript\",\"Python\",\"Java\",\"C#\",\"PHP\"],\"status\":\"success\"}"
               }
             ]
           }
@@ -134,15 +150,15 @@
   },
   "output": {
     "calculation": 105,
-    "greeting": "Hello! How can I assist you today?",
+    "greeting": "Hello! Let me know how I can assist you.",
     "is_large": true,
     "languages": [
-      "Python",
       "JavaScript",
+      "Python",
       "Java",
-      "C++",
-      "C"
+      "C#",
+      "PHP"
     ],
-    "summary": "Summary:\n- Calculation result: {{ agent.calculator }}\n- Greeting: {{ agent.greeter }}\n- Is greater than 100: {{ agent.validator }}\n- Programming languages: {{ agent.list_generator }}"
+    "summary": "Summary:\n- Calculation result: [value]\n- Greeting: [message]\n- Is greater than 100: [true/false]\n- Programming languages: [list]"
   }
 }

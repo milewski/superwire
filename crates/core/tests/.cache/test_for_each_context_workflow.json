@@ -7,51 +7,11 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
             "content": "Generate a list of 2 fruits"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":[\"Apple\",\"Banana\"],\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Generate a list of 2 fruits"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":[\"Apple\",\"Banana\"],\"status\":\"success\"}"
-              }
-            ]
-          },
-          {
-            "type": "tool",
-            "tool_call_id": "call_0",
-            "content": "Schema validation failed: Schema validation error: : [\"Apple\",\"Banana\"] is not of type \"object\". Please fix the output and call done again."
           },
           {
             "type": "assistant",
@@ -73,103 +33,11 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Describe Banana in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
             "content": "Describe Apple in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Describe Banana in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Describe Apple in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Describe Banana in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
           },
           {
             "type": "assistant",
@@ -178,7 +46,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -189,21 +57,11 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
-            "content": "Describe Apple in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
+            "content": "Describe Banana in one sentence"
           },
           {
             "type": "assistant",
@@ -212,7 +70,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"description\":\"Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":\"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -223,21 +81,11 @@
         "messages": [
           {
             "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
           },
           {
             "type": "user",
-            "content": "Describe Banana in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
+            "content": "Describe Apple in one sentence"
           },
           {
             "type": "assistant",
@@ -246,14 +94,14 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\",\"status\":\"success\"}"
               }
             ]
           },
           {
             "type": "tool",
             "tool_call_id": "call_0",
-            "content": "Schema validation failed: Schema validation error: : \"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\" is not of type \"object\". Please fix the output and call done again."
+            "content": "Schema validation failed: Schema validation error: : \"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\" is not of type \"object\". Please fix the output and call done again."
           },
           {
             "type": "assistant",
@@ -262,7 +110,47 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"description\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"description\":\"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "Describe Banana in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\",\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : \"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\" is not of type \"object\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"description\":\"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\"},\"status\":\"success\"}"
               }
             ]
           }
@@ -273,15 +161,15 @@
   "output": {
     "descriptions": [
       {
-        "description": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services."
+        "description": "Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability."
       },
       {
-        "description": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh."
+        "description": "A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking."
       }
     ],
     "descriptions_context": [
       {
-        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
+        "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready.",
         "type": "system"
       },
       {
@@ -289,20 +177,10 @@
         "type": "user"
       },
       {
-        "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
-        "tool_calls": null,
-        "type": "assistant"
-      },
-      {
-        "content": "",
-        "tool_calls": null,
-        "type": "assistant"
-      },
-      {
         "content": "",
         "tool_calls": [
           {
-            "arguments": "{\"output\":{\"description\":\"Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.\"},\"status\":\"success\"}",
+            "arguments": "{\"output\":\"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\",\"status\":\"success\"}",
             "id": "call_0",
             "name": "done"
           }
@@ -310,36 +188,7 @@
         "type": "assistant"
       },
       {
-        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
-        "type": "system"
-      },
-      {
-        "content": "Describe Banana in one sentence",
-        "type": "user"
-      },
-      {
-        "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
-        "tool_calls": null,
-        "type": "assistant"
-      },
-      {
-        "content": "",
-        "tool_calls": null,
-        "type": "assistant"
-      },
-      {
-        "content": "",
-        "tool_calls": [
-          {
-            "arguments": "{\"output\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\",\"status\":\"success\"}",
-            "id": "call_0",
-            "name": "done"
-          }
-        ],
-        "type": "assistant"
-      },
-      {
-        "content": "Schema validation failed: Schema validation error: : \"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\" is not of type \"object\". Please fix the output and call done again.",
+        "content": "Schema validation failed: Schema validation error: : \"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\" is not of type \"object\". Please fix the output and call done again.",
         "tool_call_id": "call_0",
         "type": "tool"
       },
@@ -347,7 +196,42 @@
         "content": "",
         "tool_calls": [
           {
-            "arguments": "{\"output\":{\"description\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\"},\"status\":\"success\"}",
+            "arguments": "{\"output\":{\"description\":\"Apple Inc., founded in 1976, is a leading technology company known for innovative products like the Mac, iPhone, and iPad, along with services such as the App Store, and a focus on design and sustainability.\"},\"status\":\"success\"}",
+            "id": "call_0",
+            "name": "done"
+          }
+        ],
+        "type": "assistant"
+      },
+      {
+        "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready.",
+        "type": "system"
+      },
+      {
+        "content": "Describe Banana in one sentence",
+        "type": "user"
+      },
+      {
+        "content": "",
+        "tool_calls": [
+          {
+            "arguments": "{\"output\":\"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\",\"status\":\"success\"}",
+            "id": "call_0",
+            "name": "done"
+          }
+        ],
+        "type": "assistant"
+      },
+      {
+        "content": "Schema validation failed: Schema validation error: : \"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\" is not of type \"object\". Please fix the output and call done again.",
+        "tool_call_id": "call_0",
+        "type": "tool"
+      },
+      {
+        "content": "",
+        "tool_calls": [
+          {
+            "arguments": "{\"output\":{\"description\":\"A banana is a sweet, yellow tropical fruit with a soft texture and curved shape, commonly eaten raw or used in cooking.\"},\"status\":\"success\"}",
             "id": "call_0",
             "name": "done"
           }
