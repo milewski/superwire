@@ -78,8 +78,8 @@ macro_rules! workflow {
                     // If direct deserialization fails, try to unwrap single-field object
                     if let serde_json::Value::Object(map) = value {
                         if map.len() == 1 {
-                            let (_key, val) = map.into_iter().next().unwrap();
-                            serde_json::from_value::<$output_type>(val).unwrap()
+                            let (_, value) = map.into_iter().next().unwrap();
+                            serde_json::from_value::<$output_type>(value).unwrap()
                         } else {
                             panic!("Cannot deserialize workflow output to target type");
                         }
