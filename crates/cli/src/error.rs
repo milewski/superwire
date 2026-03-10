@@ -21,7 +21,10 @@ pub enum CliError {
     IoError(#[from] std::io::Error),
 
     #[error("Serialization error: {0}")]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] bincode_next::error::EncodeError),
+
+    #[error("Deserialization error: {0}")]
+    DeserializationError(#[from] bincode_next::error::DecodeError),
 
     #[error("Validation error: {0}")]
     ValidationError(#[from] engine_ai_core::validation::error::ValidationError),

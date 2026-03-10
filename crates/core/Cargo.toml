@@ -10,14 +10,12 @@ workspace = true
 pest = { workspace = true }
 pest_derive = { workspace = true }
 petgraph = { workspace = true }
-rayon = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
-ollama-rs = { workspace = true }
 jsonschema = { workspace = true }
 async-trait = "0.1"
 regex = { workspace = true }

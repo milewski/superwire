@@ -20,12 +20,12 @@ impl SchemaValidator {
         })?;
 
         if let Err(error) = compiled_schema.validate(data) {
-            let error_message = format!("{}: {}", error.instance_path, error);
+            let error_message = format!("{}: {}", error.instance_path(), error);
             log::warn!("Schema validation failed: {error_message}");
 
             return Err(SchemaError::ValidationError {
                 schema_name: None,
-                field_path: Some(error.instance_path.to_string()),
+                field_path: Some(error.instance_path().to_string()),
                 message: error_message,
                 suggestion: Some("Ensure the data matches the schema structure".to_string()),
             });
