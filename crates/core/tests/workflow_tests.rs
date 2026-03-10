@@ -3,6 +3,7 @@
 // Tests use cached LLM responses stored in tests/.cache/ for fast execution
 #[macro_use]
 mod helpers;
+mod tools;
 
 #[cfg(test)]
 mod test {
@@ -403,5 +404,29 @@ mod test {
         assert_eq!(output.items.len(), 2);
         assert_eq!(output.descriptions.len(), 2);
         assert!(!output.descriptions_context.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_empty_tools_workflow() {
+        #[derive(Deserialize)]
+        struct Output {
+            result: String,
+        }
+
+        let output = workflow!("workflows/empty_tools.ai" => Output).await;
+
+        assert!(!output.result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_explicit_tools_workflow() {
+        #[derive(Deserialize)]
+        struct Output {
+            result: f64,
+        }
+
+        let output = workflow!("workflows/explicit_tools.ai" => Output).await;
+
+        assert_eq!(output.result, 8.0);
     }
 }

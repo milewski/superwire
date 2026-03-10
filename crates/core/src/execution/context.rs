@@ -211,6 +211,10 @@ impl RuntimeContext {
                 log::trace!("Resolved schema reference: {name}");
                 Ok(JsonValue::String(format!("schema:{name}")))
             }
+            Reference::Tool { name } => {
+                log::trace!("Resolved tool reference: {name}");
+                Ok(JsonValue::String(format!("tool.{name}")))
+            }
         }
     }
 

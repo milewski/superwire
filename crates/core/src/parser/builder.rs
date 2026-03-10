@@ -510,6 +510,18 @@ impl AstBuilder {
 
                     return Ok(Value::Reference(Reference::Schema { name: schema_name }));
                 }
+                Rule::tool_reference => {
+                    let mut tool_name = String::new();
+
+                    for ref_inner in inner_pair.into_inner() {
+                        if ref_inner.as_rule() == Rule::identifier {
+                            tool_name = ref_inner.as_str().to_string();
+                            break;
+                        }
+                    }
+
+                    return Ok(Value::Reference(Reference::Tool { name: tool_name }));
+                }
                 _ => {}
             }
         }

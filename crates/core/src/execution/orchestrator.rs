@@ -87,7 +87,9 @@ impl AgentOrchestrator {
             content: prompt.clone(),
         });
 
-        let tools = self.build_tool_definitions_with_done(done_tool.clone());
+        let allowed_tools = self.extract_tools(agent, runtime_context)?;
+
+        let tools = self.build_tool_definitions_with_done(done_tool.clone(), allowed_tools.as_deref());
 
         log::info!("Agent '{}' has {} tools available", agent.name, tools.len());
         if !tools.is_empty() {
@@ -326,6 +328,55 @@ impl AgentOrchestrator {
         Ok(String::new())
     }
 
+    fn extract_tools(
+        &self,
+        agent: &Agent,
+        runtime_context: &RuntimeContext,
+    ) -> Result<Option<Vec<String>>, ExecutionError> {
+        for property in &agent.properties {
+            if let AgentProperty::Tools { value, .. } = property {
+                let resolved = runtime_context.resolve_value(value)?;
+
+                if let JsonValue::Array(tools) = resolved {
+                    let tool_names: Result<Vec<String>, ExecutionError> = tools
+                        .iter()
+                        .map(|tool_value| {
+                            if let JsonValue::String(tool_ref) = tool_value {
+                                if let Some(tool_name) = tool_ref.strip_prefix("tool.") {
+                                    Ok(tool_name.to_string())
+                                } else {
+                                    Err(ExecutionError::RuntimeError {
+                                        agent: agent.name.clone(),
+                                        message: format!(
+                                            "Invalid tool reference: {tool_ref}. Expected format: tool.name"
+                                        ),
+                                        suggestion: Some("Use format like tool.calculator".to_string()),
+                                    })
+                                }
+                            } else {
+                                Err(ExecutionError::RuntimeError {
+                                    agent: agent.name.clone(),
+                                    message: "Tool reference must be a string".to_string(),
+                                    suggestion: Some("Use format like tool.calculator".to_string()),
+                                })
+                            }
+                        })
+                        .collect();
+
+                    return Ok(Some(tool_names?));
+                }
+
+                return Err(ExecutionError::RuntimeError {
+                    agent: agent.name.clone(),
+                    message: "Tools property must be an array".to_string(),
+                    suggestion: Some("Use format: tools <- [tool.calculator]".to_string()),
+                });
+            }
+        }
+
+        Ok(None)
+    }
+
     fn extract_schema(&self, agent: &Agent) -> Result<Option<JsonValue>, ExecutionError> {
         for property in &agent.properties {
             if let AgentProperty::Output { value, .. } = property {
@@ -379,9 +430,19 @@ impl AgentOrchestrator {
         }
     }
 
-    fn build_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tool_registry
-            .list()
+    fn build_tool_definitions(&self, allowed_tools: Option<&[String]>) -> Vec<ToolDefinition> {
+        let all_tools = self.tool_registry.list();
+
+        let filtered_tools = if let Some(allowed) = allowed_tools {
+            all_tools
+                .into_iter()
+                .filter(|tool| allowed.contains(&tool.name().to_string()))
+                .collect::<Vec<_>>()
+        } else {
+            all_tools
+        };
+
+        filtered_tools
             .iter()
             .map(|tool| ToolDefinition {
                 name: Cow::Owned(tool.name().to_string()),
@@ -391,8 +452,12 @@ impl AgentOrchestrator {
             .collect()
     }
 
-    fn build_tool_definitions_with_done(&self, done_tool: Arc<dyn Tool>) -> Vec<ToolDefinition> {
-        let mut tools = self.build_tool_definitions();
+    fn build_tool_definitions_with_done(
+        &self,
+        done_tool: Arc<dyn Tool>,
+        allowed_tools: Option<&[String]>,
+    ) -> Vec<ToolDefinition> {
+        let mut tools = self.build_tool_definitions(allowed_tools);
 
         tools.push(ToolDefinition {
             name: Cow::Owned(done_tool.name().to_string()),

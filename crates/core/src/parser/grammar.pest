@@ -91,7 +91,8 @@ reference = {
     agent_field_reference |
     agent_output_reference |
     input_reference |
-    schema_name_reference
+    schema_name_reference |
+    tool_reference
 }
 
 agent_context_reference = { "agent" ~ "." ~ identifier ~ "." ~ "context" }
@@ -99,6 +100,7 @@ agent_field_reference = { "agent" ~ "." ~ identifier ~ "." ~ identifier ~ !("." 
 agent_output_reference = { "agent" ~ "." ~ identifier ~ !(("." ~ identifier) | ("." ~ "context")) }
 input_reference = { "input" ~ "." ~ identifier }
 schema_name_reference = { "schema" ~ "." ~ identifier }
+tool_reference = { "tool" ~ "." ~ identifier }
 
 // String interpolation
 interpolated_string = { string_start ~ interpolated_content+ ~ string_end }
