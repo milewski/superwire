@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "4df57ec727760595",
+  "workflow_hash": "2fa9838363524657",
   "agents": {
     "test": [
       {
@@ -29,7 +29,6 @@
     ]
   },
   "output": {
-    "result": "success",
     "test": "success"
   }
 }

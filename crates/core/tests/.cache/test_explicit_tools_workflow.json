@@ -1,7 +1,7 @@
 {
-  "workflow_hash": "f42a088bff3cd4ce",
+  "workflow_hash": "c3b5cca2a0c111cf",
   "agents": {
-    "calculator_test": [
+    "calculator": [
       {
         "model": "ollama/qwen3:8b",
         "messages": [
@@ -45,7 +45,6 @@
     ]
   },
   "output": {
-    "calculator_test": 8,
-    "result": 8
+    "calculator": 8
   }
 }
