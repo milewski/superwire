@@ -1,0 +1,125 @@
+{
+  "workflow_hash": "c111d34949ff456a",
+  "agents": {
+    "calculator": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Calculate 15 * 7 and return only the number"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":105,\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "list_generator": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "List 5 popular programming languages as a JSON array of strings"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":[\"JavaScript\",\"Python\",\"Java\",\"C++\",\"C#\"],\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "summary": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "\r\n    Summarize the following results:\r\n    - Calculation result: {{ agent.calculator }}\r\n    - Greeting: {{ agent.greeter }}\r\n    - Is greater than 100: {{ agent.validator }}\r\n    - Programming languages: {{ agent.list_generator }}\r\n    "
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Summary: Calculation result, Greeting, Is greater than 100 check, and Programming languages list are ready. However, specific values are not provided in the input.\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "greeter": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Write a short greeting message (one sentence)"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Hello! How can I assist you today?\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "validator": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Is 105 greater than 100? Return true or false"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":true,\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

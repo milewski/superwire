@@ -1,0 +1,63 @@
+{
+  "workflow_hash": "8cfc9bf739869bf9",
+  "agents": {
+    "topic": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Suggest a random topic for a story. Reply with just the topic name in JSON format."
+        },
+        {
+          "type": "assistant",
+          "content": "{\"topic\": \"The Island of Floating Lanterns\"}",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"name\":\"The Island of Floating Lanterns\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "story": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Write a very short story (under 50 words) about: The Island of Floating Lanterns"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"The village of Luminara clung to cliffs, their shores lit by lanterns that floated on the tide. Each year, they released glowing orbs into the sea, believing they carried wishes to the mythical Island of Floating Lanterns—a place where dreams drift forever.\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
