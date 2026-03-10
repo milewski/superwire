@@ -26,6 +26,7 @@ pub fn extract_test_name(full_path: &str) -> &str {
 // Macro to execute workflow and return typed result
 // Automatically captures the test function name
 // Usage: workflow!("path/to/workflow.ai" => OutputType)
+// For single-value outputs, the macro will auto-unwrap if the workflow returns a single-field object
 #[macro_export]
 macro_rules! workflow {
     ($path:expr => $output_type:ty) => {{
@@ -40,7 +41,24 @@ macro_rules! workflow {
             )
             .await
             .unwrap();
-            serde_json::from_value::<$output_type>(value).unwrap()
+
+            // Try to deserialize directly first
+            match serde_json::from_value::<$output_type>(value.clone()) {
+                Ok(result) => result,
+                Err(_) => {
+                    // If direct deserialization fails, try to unwrap single-field object
+                    if let serde_json::Value::Object(map) = value {
+                        if map.len() == 1 {
+                            let (_, value) = map.into_iter().next().unwrap();
+                            serde_json::from_value::<$output_type>(value).unwrap()
+                        } else {
+                            panic!("Cannot deserialize workflow output to target type");
+                        }
+                    } else {
+                        panic!("Cannot deserialize workflow output to target type");
+                    }
+                }
+            }
         }
     }};
 
@@ -52,7 +70,24 @@ macro_rules! workflow {
                 crate::helpers::executor::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
                     .await
                     .unwrap();
-            serde_json::from_value::<$output_type>(value).unwrap()
+
+            // Try to deserialize directly first
+            match serde_json::from_value::<$output_type>(value.clone()) {
+                Ok(result) => result,
+                Err(_) => {
+                    // If direct deserialization fails, try to unwrap single-field object
+                    if let serde_json::Value::Object(map) = value {
+                        if map.len() == 1 {
+                            let (_key, val) = map.into_iter().next().unwrap();
+                            serde_json::from_value::<$output_type>(val).unwrap()
+                        } else {
+                            panic!("Cannot deserialize workflow output to target type");
+                        }
+                    } else {
+                        panic!("Cannot deserialize workflow output to target type");
+                    }
+                }
+            }
         }
     }};
 }

@@ -10,7 +10,3 @@ provider ollama {
     output <- string
     prompt <- "Return the word 'success' as your output"
 }
-
-output {
-    result <- agent.test
-}

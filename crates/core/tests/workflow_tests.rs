@@ -408,25 +408,11 @@ mod test {
 
     #[tokio::test]
     async fn test_empty_tools_workflow() {
-        #[derive(Deserialize)]
-        struct Output {
-            result: String,
-        }
-
-        let output = workflow!("workflows/empty_tools.ai" => Output).await;
-
-        assert!(!output.result.is_empty());
+        assert_eq!(workflow!("workflows/empty_tools.ai" => String).await, "success");
     }
 
     #[tokio::test]
     async fn test_explicit_tools_workflow() {
-        #[derive(Deserialize)]
-        struct Output {
-            result: f64,
-        }
-
-        let output = workflow!("workflows/explicit_tools.ai" => Output).await;
-
-        assert_eq!(output.result, 8.0);
+        assert_eq!(workflow!("workflows/explicit_tools.ai" => f64).await, 8.0);
     }
 }

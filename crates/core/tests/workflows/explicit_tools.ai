@@ -4,13 +4,9 @@ provider ollama {
     models <- ["qwen3:8b"]
 }
 
-<- agent calculator_test {
+<- agent calculator {
     model <- "ollama/qwen3:8b"
     tools <- [tool.calculator]
     output <- number
     prompt <- "Use the calculator tool to compute 5 + 3 and return the result"
-}
-
-output {
-    result <- agent.calculator_test
 }
