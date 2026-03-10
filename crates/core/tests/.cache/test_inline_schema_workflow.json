@@ -20,12 +20,19 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"age\":25,\"city\":\"New York\",\"name\":\"John Doe\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"age\":25,\"city\":\"London\",\"name\":\"Alice Smith\"},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "person": {
+      "age": 25,
+      "city": "London",
+      "name": "Alice Smith"
+    }
   }
 }

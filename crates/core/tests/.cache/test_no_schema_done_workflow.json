@@ -15,17 +15,43 @@
           },
           {
             "type": "assistant",
-            "content": "1\n2\n3\n4\n5\n\n",
+            "content": "1  \n2  \n3  \n4  \n5",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Count from 1 to 5"
+          },
+          {
+            "type": "assistant",
+            "content": "1  \n2  \n3  \n4  \n5",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "  \n</think>\n\n",
             "tool_calls": [
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"1\\n2\\n3\\n4\\n5\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"1\\n2\\n3\\n4\\n5\\n\",\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "simple": "1\n2\n3\n4\n5\n"
   }
 }

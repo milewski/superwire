@@ -20,12 +20,18 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"condition\":\"cloudy\",\"temperature\":15},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"condition\":\"cloudy\",\"temperature\":14},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "weather": {
+      "condition": "cloudy",
+      "temperature": 14
+    }
   }
 }

@@ -20,12 +20,20 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"age\":28,\"email\":null,\"name\":\"Emily Davis\",\"nickname\":\"Em\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"age\":22,\"email\":\"emily.davis@example.com\",\"name\":\"Emily Davis\",\"nickname\":null},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "person": {
+      "age": 22,
+      "email": "emily.davis@example.com",
+      "name": "Emily Davis",
+      "nickname": null
+    }
   }
 }

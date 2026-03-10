@@ -11,7 +11,7 @@
           },
           {
             "type": "user",
-            "content": "Write a very short story (under 50 words) about: The Last Library of Atlantis"
+            "content": "Write a very short story (under 50 words) about: The Forgotten City of Zerath"
           },
           {
             "type": "assistant",
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Beneath the waves, the Last Library of Atlantis glowed. Books floated in silent archives, their pages whispering secrets. A lone diver, Dr. Elara, found it, but the moment she touched a tome, the sea swallowed the city, leaving only the library—its knowledge eternal, its fate sealed.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"The Forgotten City of Zerath lay buried beneath vines. Whispers spoke of its lost glory, where time stood still. A single stone tablet, etched with a forgotten language, hinted at a civilization that vanished without a trace. Scholars called it a myth—until the storm unearthed its secrets, revealing a past that defied history.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -41,7 +41,7 @@
           },
           {
             "type": "assistant",
-            "content": "{\"name\": \"The Last Library of Atlantis\"}",
+            "content": "{\"name\": \"The Forgotten City of Zerath\"}",
             "tool_calls": null
           }
         ]
@@ -59,7 +59,7 @@
           },
           {
             "type": "assistant",
-            "content": "{\"name\": \"The Last Library of Atlantis\"}",
+            "content": "{\"name\": \"The Forgotten City of Zerath\"}",
             "tool_calls": null
           },
           {
@@ -82,7 +82,7 @@
           },
           {
             "type": "assistant",
-            "content": "{\"name\": \"The Last Library of Atlantis\"}",
+            "content": "{\"name\": \"The Forgotten City of Zerath\"}",
             "tool_calls": null
           },
           {
@@ -97,12 +97,15 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"name\":\"The Last Library of Atlantis\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"name\":\"The Forgotten City of Zerath\"},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "story": "The Forgotten City of Zerath lay buried beneath vines. Whispers spoke of its lost glory, where time stood still. A single stone tablet, etched with a forgotten language, hinted at a civilization that vanished without a trace. Scholars called it a myth—until the storm unearthed its secrets, revealing a past that defied history."
   }
 }

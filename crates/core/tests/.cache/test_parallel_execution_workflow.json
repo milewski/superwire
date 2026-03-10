@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Why do programmers always mix up Halloween and Christmas? Because Oct 31 == Dec 25!\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Why do programmers always mix up Halloween and Christmas? Because Oct 31 equals Dec 25!\",\"status\":\"success\"}"
               }
             ]
           }
@@ -41,12 +41,35 @@
           },
           {
             "type": "assistant",
-            "content": "",
+            "content": "The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time.",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Tell me an interesting fact about computers."
+          },
+          {
+            "type": "assistant",
+            "content": "The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": " However, it was also extremely power-hungry, consuming 150 kilowatts of electricity at peak operation.\n",
             "tool_calls": [
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Did you know that the term 'bug' in computing originated from a literal bug? In 1947, a moth was found trapped in the Harvard Mark II computer, causing a malfunction. The incident led to the practice of 'debugging' software.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time. However, it was also extremely power-hungry, consuming 150 kilowatts of electricity at peak operation.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -72,12 +95,17 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"The only way to do great work is to love what you do. - Steve Jobs\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Innovation distinguishes between a leader and a follower. — Steve Jobs\",\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "fact": "The first general-purpose electronic computer, ENIAC (Electronic Numerical Integrator and Computer), was built in 1946. It occupied 167 square meters (约1,800 square feet) and weighed 27 tons (about 27,000 kg), equivalent to the size of three large buses. ENIAC used 17,468 vacuum tubes and could perform 5,000 additions per second, making it one of the most powerful machines of its time. However, it was also extremely power-hungry, consuming 150 kilowatts of electricity at peak operation.",
+    "joke": "Why do programmers always mix up Halloween and Christmas? Because Oct 31 equals Dec 25!",
+    "quote": "Innovation distinguishes between a leader and a follower. — Steve Jobs"
   }
 }

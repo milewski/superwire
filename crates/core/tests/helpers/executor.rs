@@ -42,6 +42,7 @@ async fn execute_with_cached_providers(
     workflow_hash: &str,
 ) -> Result<Value, engine_ai_core::execution::error::ExecutionError> {
     let mut provider_registry = ProviderRegistry::new();
+    let mut cached_providers = Vec::new();
 
     for provider in &workflow.providers {
         let inner_provider = ProviderFactory::create_provider(provider).map_err(|error| {
@@ -52,12 +53,31 @@ async fn execute_with_cached_providers(
             }
         })?;
 
-        let cached_provider = CachedProvider::new(test_name.to_string(), workflow_hash.to_string(), inner_provider);
+        let cached_provider = Arc::new(CachedProvider::new(
+            test_name.to_string(),
+            workflow_hash.to_string(),
+            inner_provider,
+        ));
+        cached_providers.push(cached_provider.clone());
 
-        provider_registry.register(provider.name.clone(), Arc::new(cached_provider));
+        provider_registry.register(provider.name.clone(), cached_provider);
     }
 
-    engine
+    // Check if we have a cached output
+    if let Some(cached_provider) = cached_providers.first() {
+        if let Some(cached_output) = cached_provider.get_cached_output() {
+            return Ok(cached_output);
+        }
+    }
+
+    let output = engine
         .execute_parsed_workflow_with_inputs_and_registry(workflow, inputs, provider_registry)
-        .await
+        .await?;
+
+    // Save the output to cache
+    if let Some(cached_provider) = cached_providers.first() {
+        cached_provider.save_workflow_output(output.clone());
+    }
+
+    Ok(output)
 }

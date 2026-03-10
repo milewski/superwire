@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"There are 10 types of people in the world: those who understand binary and those who don't.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Why do programmers prefer dark mode? Because light attracts bugs.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -41,17 +41,72 @@
           },
           {
             "type": "assistant",
+            "content": "The first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, weighing over 27 tons.",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Tell me an interesting fact about computers. Just the fact, nothing else."
+          },
+          {
+            "type": "assistant",
+            "content": "The first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, weighing over 27 tons.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Tell me an interesting fact about computers. Just the fact, nothing else."
+          },
+          {
+            "type": "assistant",
+            "content": "The first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, weighing over 27 tons.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
             "content": "",
             "tool_calls": [
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"The first general-purpose electronic computer, ENIAC, was built in 1945 and weighed over 27 tons.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"The first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, weighing over 27 tons.\",\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "fact": "The first general-purpose electronic computer, ENIAC, was built in 1945 and occupied an entire room, weighing over 27 tons.",
+    "joke": "Why do programmers prefer dark mode? Because light attracts bugs."
   }
 }
