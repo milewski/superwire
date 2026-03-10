@@ -1,182 +1,144 @@
 {
   "workflow_hash": "ae3050da6fb63cda",
   "agents": {
-    "two": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Say goodbye"
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    },
-    "compact": {
-      "model": "unknown",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Say hello"
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":\"Hello!\",\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Schema validation failed: Schema validation error: : \"Hello!\" is not of type \"object\". Please fix the output and call done again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"message\":\"Hello!\",\"status\":\"success\"}}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Tool execution error: Runtime error in agent tool_execution: Tool execution failed: Invalid tool parameters: Failed to parse done parameters: missing field `status`. Please fix the tool call and try again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"message\":\"Hello!\",\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Tool execution error: Runtime error in agent tool_execution: Tool execution failed: Invalid tool parameters: Failed to parse done parameters: missing field `output`. Please fix the tool call and try again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "user",
-          "content": "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
-        },
-        {
-          "type": "assistant",
-          "content": "The conversation demonstrates an iterative process where an AI agent adjusts its response format to meet schema validation requirements. Key points:  \n1. **Initial Request**: User asked to \"Say hello.\"  \n2. **Format Issues**: The agent's responses were rejected for incorrect types (string vs. object).  \n3. **Schema Corrections**: The agent progressively adjusted the output structure, adding fields like `message` and `status` to comply with validation rules.  \n4. **Final Attempt**: The agent included both `output` (containing the message) and `status` fields, though the system continued to flag errors, suggesting persistent schema mismatches.  \n5. **Main Topic**: The core task was to generate a simple greeting, but the focus shifted to resolving format validation errors.  \n\nThe interaction highlights challenges in aligning tool outputs with strict schema expectations.",
-          "tool_calls": null
-        }
-      ]
-    },
-    "one": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Say hello"
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":\"Hello!\",\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Schema validation failed: Schema validation error: : \"Hello!\" is not of type \"object\". Please fix the output and call done again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"message\":\"Hello!\",\"status\":\"success\"}}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Tool execution error: Runtime error in agent tool_execution: Tool execution failed: Invalid tool parameters: Failed to parse done parameters: missing field `status`. Please fix the tool call and try again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"message\":\"Hello!\",\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Tool execution error: Runtime error in agent tool_execution: Tool execution failed: Invalid tool parameters: Failed to parse done parameters: missing field `output`. Please fix the tool call and try again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    }
+    "compact": [
+      {
+        "model": "unknown",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "user",
+            "content": "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
+          },
+          {
+            "type": "assistant",
+            "content": "The conversation consisted of a simple greeting exchange. The user requested \"Say hello,\" and the assistant responded using the 'done' tool with a success status, delivering the message \"Hello!\". The key topic was the greeting, and the interaction demonstrated the use of the done tool for structured responses.",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "unknown",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say goodbye"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "user",
+            "content": "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
+          },
+          {
+            "type": "assistant",
+            "content": "The conversation consisted of the user requesting greetings (\"Say hello,\" \"Say goodbye\") and the assistant responding with formatted acknowledgment via the `done` tool. Key points:  \n1. Simple exchange of greetings.  \n2. Assistant's responses followed a structured format with status and output.  \n3. No deeper discussion or context beyond the initial interactions.",
+            "tool_calls": null
+          }
+        ]
+      }
+    ],
+    "one": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "two": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say goodbye"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

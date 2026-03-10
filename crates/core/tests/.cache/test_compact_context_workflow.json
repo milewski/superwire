@@ -1,62 +1,66 @@
 {
   "workflow_hash": "2daa983f68acb68c",
   "agents": {
-    "research": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Research the topic: artificial intelligence. Provide detailed information."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":\"Artificial Intelligence (AI) refers to systems designed to perform tasks requiring human intelligence, such as learning, reasoning, problem-solving, perception, and language understanding. Key aspects include:\\n\\n1. **History**: Coined in 1956, AI evolved through phases of optimism and challenges (e.g., 'AI winters'). Milestones include expert systems (1980s) and modern machine learning (2000s).\\n\\n2. **Key Concepts**: Machine learning (supervised/unsupervised/reinforcement), neural networks, deep learning, NLP, computer vision, and robotics. AI types: narrow (task-specific) vs. general (human-like intelligence, theoretical).\\n\\n3. **Applications**: Healthcare (diagnostics), finance (fraud detection), autonomous vehicles, smart assistants, recommendation systems, and cybersecurity.\\n\\n4. **Challenges**: Data privacy, algorithmic bias, energy consumption, and ethical concerns (e.g., job displacement, surveillance).\\n\\n5. **Future Trends**: Quantum computing integration, AI ethics frameworks, and expanded use in creative industries. AI remains transformative but faces ongoing technical and societal hurdles.\",\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    },
-    "compact": {
-      "model": "unknown",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Research the topic: artificial intelligence. Provide detailed information."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":\"Artificial Intelligence (AI) refers to systems designed to perform tasks requiring human intelligence, such as learning, reasoning, problem-solving, perception, and language understanding. Key aspects include:\\n\\n1. **History**: Coined in 1956, AI evolved through phases of optimism and challenges (e.g., 'AI winters'). Milestones include expert systems (1980s) and modern machine learning (2000s).\\n\\n2. **Key Concepts**: Machine learning (supervised/unsupervised/reinforcement), neural networks, deep learning, NLP, computer vision, and robotics. AI types: narrow (task-specific) vs. general (human-like intelligence, theoretical).\\n\\n3. **Applications**: Healthcare (diagnostics), finance (fraud detection), autonomous vehicles, smart assistants, recommendation systems, and cybersecurity.\\n\\n4. **Challenges**: Data privacy, algorithmic bias, energy consumption, and ethical concerns (e.g., job displacement, surveillance).\\n\\n5. **Future Trends**: Quantum computing integration, AI ethics frameworks, and expanded use in creative industries. AI remains transformative but faces ongoing technical and societal hurdles.\",\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "user",
-          "content": "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
-        },
-        {
-          "type": "assistant",
-          "content": "The conversation provided a comprehensive overview of **Artificial Intelligence (AI)**, covering its **definition**, **historical development**, **core concepts** (e.g., machine learning, neural networks), **applications** (healthcare, finance, robotics), **challenges** (ethics, bias, energy use), and **future trends** (quantum computing, ethical frameworks). The summary emphasized AI's transformative potential alongside ongoing technical and societal challenges.",
-          "tool_calls": null
-        }
-      ]
-    }
+    "research": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Research the topic: artificial intelligence. Provide detailed information."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Artificial Intelligence (AI) refers to the simulation of human intelligence in machines programmed to perform tasks requiring human-like cognition. Key aspects include:\\n\\n1. **Definition**: AI encompasses robotics, machine learning, natural language processing, and computer vision, aiming to enable systems to learn, reason, and adapt.\\n\\n2. **History**: Coined in 1956 at the Dartmouth Conference, AI evolved through stages like the 'AI Winter' (periods of reduced funding) and breakthroughs in machine learning (1980s-2000s).\\n\\n3. **Types**: \\n   - **Narrow AI**: Specialized systems (e.g., Siri, recommendation algorithms).\\n   - **General AI**: Theoretical human-level intelligence (not yet achieved).\\n   - **Superintelligent AI**: Hypothetical systems surpassing human capabilities.\\n\\n4. **Applications**: \\n   - Healthcare (diagnostics, drug discovery).\\n   - Finance (fraud detection, algorithmic trading).\\n   - Transportation (autonomous vehicles).\\n   - Entertainment (content generation, personalized experiences).\\n\\n5. **Ethical Challenges**: Bias in algorithms, job displacement, privacy concerns, and autonomous weapon systems.\\n\\n6. **Current Trends**: Growth of large language models (e.g., GPT, BERT), AI ethics frameworks, and increased investment in AI research.\\n\\nFor further details, specific subtopics can be explored.\",\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "compact": [
+      {
+        "model": "unknown",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Research the topic: artificial intelligence. Provide detailed information."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Artificial Intelligence (AI) refers to the simulation of human intelligence in machines programmed to perform tasks requiring human-like cognition. Key aspects include:\\n\\n1. **Definition**: AI encompasses robotics, machine learning, natural language processing, and computer vision, aiming to enable systems to learn, reason, and adapt.\\n\\n2. **History**: Coined in 1956 at the Dartmouth Conference, AI evolved through stages like the 'AI Winter' (periods of reduced funding) and breakthroughs in machine learning (1980s-2000s).\\n\\n3. **Types**: \\n   - **Narrow AI**: Specialized systems (e.g., Siri, recommendation algorithms).\\n   - **General AI**: Theoretical human-level intelligence (not yet achieved).\\n   - **Superintelligent AI**: Hypothetical systems surpassing human capabilities.\\n\\n4. **Applications**: \\n   - Healthcare (diagnostics, drug discovery).\\n   - Finance (fraud detection, algorithmic trading).\\n   - Transportation (autonomous vehicles).\\n   - Entertainment (content generation, personalized experiences).\\n\\n5. **Ethical Challenges**: Bias in algorithms, job displacement, privacy concerns, and autonomous weapon systems.\\n\\n6. **Current Trends**: Growth of large language models (e.g., GPT, BERT), AI ethics frameworks, and increased investment in AI research.\\n\\nFor further details, specific subtopics can be explored.\",\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "user",
+            "content": "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
+          },
+          {
+            "type": "assistant",
+            "content": "The conversation provided a detailed overview of **Artificial Intelligence (AI)**, covering its **definition** (simulation of human intelligence in machines), **history** (coined in 1956, evolution through AI winters and machine learning advancements), **types** (narrow, general, and superintelligent AI), **applications** (healthcare, finance, transportation, entertainment), **ethical challenges** (bias, job displacement, privacy), and **current trends** (growth of large language models and AI ethics frameworks). The summary emphasizes AI's scope, impact, and ongoing developments.",
+            "tool_calls": null
+          }
+        ]
+      }
+    ]
   }
 }

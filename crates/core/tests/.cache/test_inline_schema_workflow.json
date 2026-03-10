@@ -1,29 +1,31 @@
 {
   "workflow_hash": "2d78a3a12cdf4c2b",
   "agents": {
-    "person": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Generate a random person with name, age, and city."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"age\":32,\"city\":\"London\",\"name\":\"Alice Smith\"},\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    }
+    "person": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Generate a random person with name, age, and city."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"age\":25,\"city\":\"New York\",\"name\":\"John Doe\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

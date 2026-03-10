@@ -1,29 +1,31 @@
 {
   "workflow_hash": "eb4282d3259fe945",
   "agents": {
-    "person": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Generate a random person with name, age, and optionally nickname and email. Some fields can be null."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"age\":34,\"email\":null,\"name\":\"Emily Davis\",\"nickname\":\"Em\"},\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    }
+    "person": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Generate a random person with name, age, and optionally nickname and email. Some fields can be null."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"age\":28,\"email\":null,\"name\":\"Emily Davis\",\"nickname\":\"Em\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }
