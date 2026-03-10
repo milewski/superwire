@@ -1,0 +1,53 @@
+{
+  "workflow_hash": "ff95988f0cf832b1",
+  "agents": {
+    "article": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Write a short article about: The Future of Work: How AI and Automation Are Reshaping Careers"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"The Future of Work: How AI and Automation Are Reshaping Careers\\n\\nThe rapid advancement of artificial intelligence (AI) and automation is revolutionizing the global workforce, redefining job roles, skills requirements, and industry dynamics. While these technologies promise increased efficiency and innovation, they also pose challenges that demand proactive adaptation.\\n\\n**Opportunities in the AI Era**\\nAI is creating new career paths in fields like data science, machine learning engineering, and robotics. Industries such as healthcare, finance, and manufacturing are leveraging automation to streamline processes—from AI-driven diagnostics to autonomous assembly lines. Additionally, the demand for 'human-AI collaboration' roles, such as ethical AI auditors and digital transformation consultants, is surging.\\n\\n**Challenges and Adaptation**\\nAutomation threatens to displace repetitive, manual jobs, particularly in sectors like retail and logistics. However, history shows that technological shifts ultimately create new opportunities. Workers must prioritize upskilling through education and continuous learning to remain competitive. Governments and organizations are also investing in reskilling programs to bridge the skills gap.\\n\\n**The Road Ahead**\\nThe future of work will likely involve a hybrid model where humans focus on creativity, critical thinking, and emotional intelligence, while machines handle data-driven tasks. Success will depend on adaptability, ethical AI development, and policies that ensure equitable access to opportunities. As AI continues to evolve, its impact on careers will remain a dynamic interplay of challenge and transformation.\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "topic": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Suggest an interesting topic for a blog post. Reply in JSON format."
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"topic\":\"The Future of Work: How AI and Automation Are Reshaping Careers\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

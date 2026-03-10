@@ -1,0 +1,63 @@
+{
+  "workflow_hash": "9883f660af090bfa",
+  "agents": {
+    "items": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Generate a list of 2 fruits"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"list\":[\"Apple\",\"Banana\"]},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "descriptions": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Describe Banana in one sentence"
+        },
+        {
+          "type": "assistant",
+          "content": "A banana is a sweet, yellow tropical fruit with a curved shape and soft texture, commonly eaten fresh.",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": null
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"description\":\"A banana is a sweet, yellow tropical fruit with a curved shape and soft texture, commonly eaten fresh.\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

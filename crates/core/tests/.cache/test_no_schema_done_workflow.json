@@ -1,0 +1,29 @@
+{
+  "workflow_hash": "4a1a712fa7c9dd17",
+  "agents": {
+    "simple": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Count from 1 to 5"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"1 2 3 4 5\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

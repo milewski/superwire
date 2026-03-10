@@ -1,0 +1,77 @@
+{
+  "workflow_hash": "4f9bd980653481f8",
+  "agents": {
+    "quote": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Give me an inspiring quote about technology."
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"The best way to predict the future is to invent it. - Peter Drucker\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "joke": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Tell me a short programming joke."
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Why do programmers always mix up Halloween and Christmas? Because Oct 31 equals Dec 25! (Octal 31 is 25 in decimal.)\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "fact": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Tell me an interesting fact about computers."
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"Did you know that the term 'bug' in computing originated from an actual insect? In 1947, a moth (insect) was found trapped in a relay of the Harvard Mark II computer, causing a malfunction. The team removed the moth and taped it into their log book, marking one of the first documented 'software bugs' in computing history!\",\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

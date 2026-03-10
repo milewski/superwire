@@ -1,0 +1,29 @@
+{
+  "workflow_hash": "72b082da370fba20",
+  "agents": {
+    "simple_test": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Generate a simple greeting message. When done, call the done tool with status='success' and output containing a 'message' field with your greeting."
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"message\":\"Hello, how can I assist you today?\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

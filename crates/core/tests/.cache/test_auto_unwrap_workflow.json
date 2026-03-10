@@ -1,0 +1,69 @@
+{
+  "workflow_hash": "cc283ab7262498c7",
+  "agents": {
+    "multi_field": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Generate a person with name 'Alice' and age 25"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"age\":25,\"name\":\"Alice\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "single_field": {
+      "model": "ollama/qwen3:8b",
+      "messages": [
+        {
+          "type": "system",
+          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+        },
+        {
+          "type": "user",
+          "content": "Say 'hello world'"
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":\"hello world\",\"status\":\"success\"}"
+            }
+          ]
+        },
+        {
+          "type": "tool",
+          "tool_call_id": "call_0",
+          "content": "Schema validation failed: Schema validation error: : \"hello world\" is not of type \"object\". Please fix the output and call done again."
+        },
+        {
+          "type": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "name": "done",
+              "arguments": "{\"output\":{\"value\":\"hello world\"},\"status\":\"success\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
