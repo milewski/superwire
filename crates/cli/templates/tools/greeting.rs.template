@@ -1,44 +1,24 @@
-use engine_ai_core::tools::{Tool, ToolError};
-use serde_json::Value;
+use engine_ai_core::impl_tool;
+use engine_ai_core::tools::ToolError;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GreetingParams {
+    /// The name of the person to greet
+    pub name: String,
+}
 
 pub struct GreetingTool;
 
-#[async_trait::async_trait]
-impl Tool for GreetingTool {
-    fn name(&self) -> &str {
-        "greeting"
-    }
-
-    fn description(&self) -> &str {
-        "Generate a personalized greeting message"
-    }
-
-    fn parameters_schema(&self) -> Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "The name of the person to greet"
-                }
-            },
-            "required": ["name"]
-        })
-    }
-
-    async fn execute(&self, parameters: Value) -> Result<Value, ToolError> {
-        let name = parameters["name"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidParameters {
-                tool_name: "greeting".to_string(),
-                message: "Missing 'name' parameter".to_string(),
-                suggestion: Some("Provide a name as a string".to_string()),
-            })?;
-
-        let greeting = format!("Hello, {}! Welcome to Engine AI!", name);
+impl_tool!(GreetingTool, GreetingParams, {
+    name: "greeting",
+    description: "Generate a personalized greeting message",
+    execute: |params| {
+        let greeting = format!("Hello, {}! Welcome to Engine AI!", params.name);
 
         Ok(serde_json::json!({
             "message": greeting
         }))
     }
-}
+});

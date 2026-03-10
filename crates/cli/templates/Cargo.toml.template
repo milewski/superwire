@@ -7,6 +7,8 @@ edition = "2021"
 engine-ai-core = { path = "../crates/core" }
 tokio = { version = "1.50", features = ["full"] }
 serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+schemars = "1.2"
 log = "0.4"
 colog = "1.4"
 async-trait = "0.1"

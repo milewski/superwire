@@ -1,93 +1,54 @@
-use engine_ai_core::tools::{Tool, ToolError};
-use serde_json::Value;
+use engine_ai_core::impl_tool;
+use engine_ai_core::tools::ToolError;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Operation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CalculatorParams {
+    /// The arithmetic operation to perform
+    pub operation: Operation,
+    /// First operand
+    pub a: f64,
+    /// Second operand
+    pub b: f64,
+}
 
 pub struct CalculatorTool;
 
-#[async_trait::async_trait]
-impl Tool for CalculatorTool {
-    fn name(&self) -> &str {
-        "calculator"
-    }
-
-    fn description(&self) -> &str {
-        "Perform basic arithmetic operations (add, subtract, multiply, divide)"
-    }
-
-    fn parameters_schema(&self) -> Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "operation": {
-                    "type": "string",
-                    "enum": ["add", "subtract", "multiply", "divide"],
-                    "description": "The arithmetic operation to perform"
-                },
-                "a": {
-                    "type": "number",
-                    "description": "First operand"
-                },
-                "b": {
-                    "type": "number",
-                    "description": "Second operand"
-                }
-            },
-            "required": ["operation", "a", "b"]
-        })
-    }
-
-    async fn execute(&self, parameters: Value) -> Result<Value, ToolError> {
-        let operation = parameters["operation"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidParameters {
-                tool_name: "calculator".to_string(),
-                message: "Missing 'operation' parameter".to_string(),
-                suggestion: Some("Provide operation as one of: add, subtract, multiply, divide".to_string()),
-            })?;
-
-        let a = parameters["a"]
-            .as_f64()
-            .ok_or_else(|| ToolError::InvalidParameters {
-                tool_name: "calculator".to_string(),
-                message: "Missing or invalid 'a' parameter".to_string(),
-                suggestion: Some("Provide 'a' as a number".to_string()),
-            })?;
-
-        let b = parameters["b"]
-            .as_f64()
-            .ok_or_else(|| ToolError::InvalidParameters {
-                tool_name: "calculator".to_string(),
-                message: "Missing or invalid 'b' parameter".to_string(),
-                suggestion: Some("Provide 'b' as a number".to_string()),
-            })?;
-
-        let result = match operation {
-            "add" => a + b,
-            "subtract" => a - b,
-            "multiply" => a * b,
-            "divide" => {
-                if b == 0.0 {
+impl_tool!(CalculatorTool, CalculatorParams, {
+    name: "calculator",
+    description: "Perform basic arithmetic operations (add, subtract, multiply, divide)",
+    execute: |params| {
+        let result = match params.operation {
+            Operation::Add => params.a + params.b,
+            Operation::Subtract => params.a - params.b,
+            Operation::Multiply => params.a * params.b,
+            Operation::Divide => {
+                if params.b == 0.0 {
                     return Err(ToolError::ExecutionError {
                         tool_name: "calculator".to_string(),
                         message: "Division by zero".to_string(),
                         suggestion: Some("Ensure the divisor is not zero".to_string()),
                     });
                 }
-                a / b
-            }
-            _ => {
-                return Err(ToolError::InvalidParameters {
-                    tool_name: "calculator".to_string(),
-                    message: format!("Unknown operation: {}", operation),
-                    suggestion: Some("Use one of: add, subtract, multiply, divide".to_string()),
-                });
+                params.a / params.b
             }
         };
 
         Ok(serde_json::json!({
-            "operation": operation,
-            "a": a,
-            "b": b,
+            "operation": params.operation,
+            "a": params.a,
+            "b": params.b,
             "result": result
         }))
     }
-}
+});
