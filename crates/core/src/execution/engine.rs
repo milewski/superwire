@@ -23,7 +23,7 @@ impl ExecutionEngine {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            tool_registry: ToolRegistry::new(),
+            tool_registry: ToolRegistry::default(),
         }
     }
 
