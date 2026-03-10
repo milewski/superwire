@@ -20,12 +20,19 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"age\":25,\"email\":\"user123@example.com\",\"username\":\"user123\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"age\":25,\"email\":\"john.doe@example.com\",\"username\":\"john_doe123\"},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "user": {
+      "age": 25,
+      "email": "john.doe@example.com",
+      "username": "john_doe123"
+    }
   }
 }

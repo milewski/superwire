@@ -27,5 +27,16 @@
         ]
       }
     ]
+  },
+  "output": {
+    "person": {
+      "age": 28,
+      "hobbies": [
+        "reading",
+        "hiking",
+        "photography"
+      ],
+      "name": "Emma Johnson"
+    }
   }
 }

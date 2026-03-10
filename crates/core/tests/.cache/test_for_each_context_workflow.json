@@ -20,7 +20,47 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"list\":[\"apple\",\"banana\"]},\"status\":\"success\"}"
+                "arguments": "{\"output\":[\"Apple\",\"Banana\"],\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Generate a list of 2 fruits"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":[\"Apple\",\"Banana\"],\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : [\"Apple\",\"Banana\"] is not of type \"object\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"list\":[\"Apple\",\"Banana\"]},\"status\":\"success\"}"
               }
             ]
           }
@@ -37,7 +77,99 @@
           },
           {
             "type": "user",
-            "content": "Describe apple in one sentence"
+            "content": "Describe Banana in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Describe Apple in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Describe Banana in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Describe Apple in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Describe Banana in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
           },
           {
             "type": "assistant",
@@ -46,7 +178,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"description\":\"An apple is a common, sweet and tart fruit, typically red or green, known for its nutritional value.\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -61,52 +193,11 @@
           },
           {
             "type": "user",
-            "content": "Describe banana in one sentence"
+            "content": "Describe Apple in one sentence"
           },
           {
             "type": "assistant",
-            "content": "A banana is a sweet, yellow tropical fruit with a curved shape and soft skin, rich in potassium.",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Describe banana in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "A banana is a sweet, yellow tropical fruit with a curved shape and soft skin, rich in potassium.",
-            "tool_calls": null
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Describe banana in one sentence"
-          },
-          {
-            "type": "assistant",
-            "content": "A banana is a sweet, yellow tropical fruit with a curved shape and soft skin, rich in potassium.",
+            "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
             "tool_calls": null
           },
           {
@@ -121,12 +212,152 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"description\":\"A banana is a sweet, yellow tropical fruit with a curved shape and soft skin, rich in potassium.\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"description\":\"Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Describe Banana in one sentence"
+          },
+          {
+            "type": "assistant",
+            "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\",\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : \"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\" is not of type \"object\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"description\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\"},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
+    ]
+  },
+  "output": {
+    "descriptions": [
+      {
+        "description": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services."
+      },
+      {
+        "description": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh."
+      }
+    ],
+    "descriptions_context": [
+      {
+        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
+        "type": "system"
+      },
+      {
+        "content": "Describe Apple in one sentence",
+        "type": "user"
+      },
+      {
+        "content": "Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.",
+        "tool_calls": null,
+        "type": "assistant"
+      },
+      {
+        "content": "",
+        "tool_calls": null,
+        "type": "assistant"
+      },
+      {
+        "content": "",
+        "tool_calls": [
+          {
+            "arguments": "{\"output\":{\"description\":\"Apple Inc., founded in 1976 and based in Cupertino, California, is renowned for its innovative products such as the iPhone, iPad, and MacBook, emphasizing sleek design and a seamless ecosystem of services.\"},\"status\":\"success\"}",
+            "id": "call_0",
+            "name": "done"
+          }
+        ],
+        "type": "assistant"
+      },
+      {
+        "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.",
+        "type": "system"
+      },
+      {
+        "content": "Describe Banana in one sentence",
+        "type": "user"
+      },
+      {
+        "content": "A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.",
+        "tool_calls": null,
+        "type": "assistant"
+      },
+      {
+        "content": "",
+        "tool_calls": null,
+        "type": "assistant"
+      },
+      {
+        "content": "",
+        "tool_calls": [
+          {
+            "arguments": "{\"output\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\",\"status\":\"success\"}",
+            "id": "call_0",
+            "name": "done"
+          }
+        ],
+        "type": "assistant"
+      },
+      {
+        "content": "Schema validation failed: Schema validation error: : \"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\" is not of type \"object\". Please fix the output and call done again.",
+        "tool_call_id": "call_0",
+        "type": "tool"
+      },
+      {
+        "content": "",
+        "tool_calls": [
+          {
+            "arguments": "{\"output\":{\"description\":\"A banana is a sweet, curved tropical fruit with a yellow peel and creamy texture, rich in potassium and commonly eaten fresh.\"},\"status\":\"success\"}",
+            "id": "call_0",
+            "name": "done"
+          }
+        ],
+        "type": "assistant"
+      }
+    ],
+    "items": [
+      "Apple",
+      "Banana"
     ]
   }
 }

@@ -20,12 +20,17 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"key_points\":[\"Memory safety through ownership and borrowing without a garbage collector\",\"High performance comparable to C/C++ with zero-cost abstractions\",\"Strong focus on concurrency and parallelism with safe abstractions\"],\"summary\":\"Rust is a systems programming language emphasizing safety, speed, and concurrency. Its ownership model eliminates common bugs like null dereferences and data races while maintaining performance. Developers appreciate its modern tooling and growing ecosystem for building reliable software.\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"key_points\":[\"Rust's ownership model ensures memory safety without a garbage collector, preventing null pointer dereferencing and data races.\",\"Zero-cost abstractions allow high-performance code with minimal runtime overhead, comparable to C++.\",\"Fearless concurrency features, like the borrow checker, enforce safety in multi-threaded applications.\"],\"summary\":\"Rust is a systems programming language focused on safety, speed, and modern tooling. It combines memory safety with performance via ownership and borrowing, zero-cost abstractions, and robust concurrency support, making it ideal for reliable, high-performance software.\"},\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "audience": "developers",
+    "summary": "Rust is a systems programming language focused on safety, speed, and modern tooling. It combines memory safety with performance via ownership and borrowing, zero-cost abstractions, and robust concurrency support, making it ideal for reliable, high-performance software.",
+    "topic": "Rust"
   }
 }

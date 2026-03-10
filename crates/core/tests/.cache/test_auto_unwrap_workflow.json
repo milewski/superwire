@@ -1,32 +1,6 @@
 {
   "workflow_hash": "cc283ab7262498c7",
   "agents": {
-    "single_field": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Say 'hello world'"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"value\":\"hello world\"},\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
     "multi_field": [
       {
         "model": "ollama/qwen3:8b",
@@ -52,6 +26,42 @@
           }
         ]
       }
+    ],
+    "single_field": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say 'hello world'"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"value\":\"hello world\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
     ]
+  },
+  "output": {
+    "multi_age": 25,
+    "multi_full": {
+      "age": 25,
+      "name": "Alice"
+    },
+    "multi_name": "Alice",
+    "single_explicit": "hello world",
+    "single_unwrapped": "hello world"
   }
 }

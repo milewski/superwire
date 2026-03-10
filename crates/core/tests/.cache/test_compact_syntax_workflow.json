@@ -1,6 +1,32 @@
 {
   "workflow_hash": "ae3050da6fb63cda",
   "agents": {
+    "one": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
     "two": [
       {
         "model": "ollama/qwen3:8b",
@@ -56,88 +82,26 @@
           },
           {
             "type": "assistant",
-            "content": "The conversation involved the user requesting a greeting, followed by the AI agent using the 'done' tool to return a successful response with the message \"Hello!\". The summary highlights the interaction where the AI fulfilled the user's request via the specified tool.",
-            "tool_calls": null
-          }
-        ]
-      },
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Say hello"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
-              }
-            ]
-          },
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Say goodbye"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
-              }
-            ]
-          },
-          {
-            "type": "user",
-            "content": "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
-          },
-          {
-            "type": "assistant",
-            "content": "The conversation consisted of the user requesting the assistant to \"say hello\" and \"say goodbye,\" followed by the assistant responding with the `done` tool to deliver the respective greetings. The interaction was brief, focusing on simple, direct exchanges without further discussion. Key points: user commands, assistant's structured response via the `done` tool, and the absence of complex topics.",
+            "content": "The conversation consisted of a simple greeting exchange. The user requested \"Say hello,\" and the assistant responded with \"Hello!\" via the `done` tool, indicating the task was successfully completed. No further discussion or topics were addressed.",
             "tool_calls": null
           }
         ]
       }
-    ],
-    "one": [
+    ]
+  },
+  "output": {
+    "multi_context_summary": [
       {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Say hello"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
+        "content": "The conversation consisted of a simple greeting exchange. The user requested \"Say hello,\" and the assistant responded with \"Hello!\" via the `done` tool, indicating the task was successfully completed. No further discussion or topics were addressed.",
+        "tool_calls": null,
+        "type": "assistant"
+      }
+    ],
+    "single_context_summary": [
+      {
+        "content": "The conversation consisted of a simple greeting exchange. The user requested \"Say hello,\" and the assistant responded with \"Hello!\" via the `done` tool, indicating the task was successfully completed. No further discussion or topics were addressed.",
+        "tool_calls": null,
+        "type": "assistant"
       }
     ]
   }

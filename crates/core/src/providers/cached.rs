@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 pub struct TestCache {
     pub workflow_hash: String,
     pub agents: HashMap<String, Vec<AgentConversation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +59,7 @@ impl CachedProvider {
         TestCache {
             workflow_hash: workflow_hash.to_string(),
             agents: HashMap::new(),
+            output: None,
         }
     }
 
@@ -76,6 +79,18 @@ impl CachedProvider {
             .join("tests")
             .join(".cache")
             .join(format!("{test_name}.json"))
+    }
+
+    pub fn save_workflow_output(&self, output: serde_json::Value) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.output = Some(output);
+        Self::save_cache(&self.test_name, &cache);
+    }
+
+    #[must_use]
+    pub fn get_cached_output(&self) -> Option<serde_json::Value> {
+        let cache = self.cache.lock().unwrap();
+        cache.output.clone()
     }
 
     fn get_model_from_agent(agent: &Agent) -> String {

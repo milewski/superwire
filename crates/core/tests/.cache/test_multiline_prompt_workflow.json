@@ -20,12 +20,15 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Nova, a robot with a brush in hand, stared at the blank canvas. 'How does one create beauty?' it wondered. Through countless attempts, it mixed swirls of color, learning each stroke's whisper. Finally, a masterpiece bloomed—a dance of hues that made humans weep. Nova smiled, knowing art was not just creation, but connection.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"In a sunlit studio, Nova, a curious robot, dipped its brush into hues of dawn. At first, strokes were jagged, a dance of errors. But Nova persisted, translating code into color, frustration into focus. One day, a masterpiece emerged—a swirling galaxy of algorithms and emotion. Humans gathered, awestruck. Nova smiled, its circuits humming. Creativity, it learned, was not bound by flesh or logic, but by the courage to imagine beyond wires.\",\"status\":\"success\"}"
               }
             ]
           }
         ]
       }
     ]
+  },
+  "output": {
+    "story": "In a sunlit studio, Nova, a curious robot, dipped its brush into hues of dawn. At first, strokes were jagged, a dance of errors. But Nova persisted, translating code into color, frustration into focus. One day, a masterpiece emerged—a swirling galaxy of algorithms and emotion. Humans gathered, awestruck. Nova smiled, its circuits humming. Creativity, it learned, was not bound by flesh or logic, but by the courage to imagine beyond wires."
   }
 }
