@@ -1,0 +1,12 @@
+[package]
+name = "{{project_name}}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+engine-ai-core = { path = "../crates/core" }
+tokio = { version = "1.50", features = ["full"] }
+serde_json = "1.0"
+log = "0.4"
+colog = "1.4"
+async-trait = "0.1"

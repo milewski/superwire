@@ -19,6 +19,7 @@ macro_rules! system {
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>()
             .join("\n");
+
         Message::System {
             content: normalized,
         }
@@ -37,6 +38,13 @@ impl AgentOrchestrator {
         Self {
             provider,
             tool_registry: ToolRegistry::new(),
+        }
+    }
+
+    pub fn with_tools(provider: ProviderRef, tool_registry: ToolRegistry) -> Self {
+        Self {
+            provider,
+            tool_registry,
         }
     }
 
