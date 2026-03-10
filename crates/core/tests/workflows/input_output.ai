@@ -1,7 +1,7 @@
-provider ollama1 {
+provider ollama {
     driver <- "ollama"
     api_endpoint <- "http://100.76.5.36:11434"
-    models <- ["qwen3:8b", "qwen3.5:27b"]
+    models <- ["qwen3:8b"]
 }
 
 input {
@@ -10,7 +10,7 @@ input {
 }
 
 agent research {
-    model <- "ollama1/qwen3:8b"
+    model <- "ollama/qwen3:8b"
 
     output <- {
         summary: string

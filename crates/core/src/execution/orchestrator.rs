@@ -43,6 +43,10 @@ impl AgentOrchestrator {
 
         context.extend(initial_context);
 
+        context.push(Message::System {
+            content: "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished.".to_string(),
+        });
+
         context.push(Message::User {
             content: prompt.clone(),
         });

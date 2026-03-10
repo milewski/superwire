@@ -112,46 +112,44 @@ impl Provider for CachedProvider {
         let model = Self::get_model_from_agent(agent);
 
         // Try to replay from cache
-        let (can_replay, cached_messages) = {
+        let replay_result = {
             let cache = self.cache.lock().unwrap();
             let mut replay_indices = self.agent_replay_indices.lock().unwrap();
 
             let replay_index = replay_indices.entry(agent_name.clone()).or_insert(0);
 
             if let Some(agent_conv) = cache.agents.get(&agent_name) {
-                if *replay_index < agent_conv.messages.len() {
-                    let mut messages = Vec::new();
-                    let mut found_assistant = false;
+                // Find the next assistant message starting from replay_index
+                let mut found_assistant_index = None;
 
-                    for message in agent_conv.messages.iter().skip(*replay_index) {
-                        messages.push(message.clone());
-                        *replay_index += 1;
-
-                        if matches!(message, Message::Assistant { .. }) {
-                            found_assistant = true;
-                            break;
-                        }
+                for (index, message) in agent_conv.messages.iter().enumerate().skip(*replay_index) {
+                    if matches!(message, Message::Assistant { .. }) {
+                        found_assistant_index = Some(index);
+                        break;
                     }
+                }
 
-                    (found_assistant, messages)
+                if let Some(assistant_index) = found_assistant_index {
+                    // Return all messages up to and including this assistant message
+                    let replay_context = agent_conv.messages[..=assistant_index].to_vec();
+                    *replay_index = assistant_index + 1;
+
+                    Some(replay_context)
                 } else {
-                    (false, Vec::new())
+                    None
                 }
             } else {
-                (false, Vec::new())
+                None
             }
         };
 
-        if can_replay {
-            let mut new_context = context.clone();
-            new_context.extend(cached_messages.clone());
-
-            if let Some(Message::Assistant { content, .. }) = cached_messages.last() {
+        if let Some(replay_context) = replay_result {
+            if let Some(Message::Assistant { content, .. }) = replay_context.last() {
                 let output_value = serde_json::json!({ "content": content });
 
                 return Ok(AgentOutput {
                     output: output_value,
-                    context: new_context,
+                    context: replay_context,
                 });
             }
         }
@@ -160,7 +158,7 @@ impl Provider for CachedProvider {
         if let Some(ref inner) = self.inner {
             let output = inner.execute_agent(agent, context.clone(), tools).await?;
 
-            // Save the new messages to cache
+            // Save the complete conversation to cache
             {
                 let mut cache = self.cache.lock().unwrap();
 
@@ -172,11 +170,8 @@ impl Provider for CachedProvider {
                         messages: Vec::new(),
                     });
 
-                // Add only the new messages that weren't in the original context
-                let original_len = context.len();
-                for message in output.context.iter().skip(original_len) {
-                    agent_conv.messages.push(message.clone());
-                }
+                // Store the complete output context which includes all messages in order
+                agent_conv.messages.clone_from(&output.context);
 
                 Self::save_cache(&self.test_name, &cache);
             }

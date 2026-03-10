@@ -48,14 +48,10 @@ macro_rules! workflow {
         let test_name = crate::helpers::macros::extract_test_name(stdext::function_name!());
         async move {
             let content = include_str!($path);
-            let value = crate::helpers::executor::execute_cached_workflow_from_content(
-                test_name,
-                $path,
-                content,
-                $inputs,
-            )
-            .await
-            .unwrap();
+            let value =
+                crate::helpers::executor::execute_cached_workflow_from_content(test_name, $path, content, $inputs)
+                    .await
+                    .unwrap();
             serde_json::from_value::<$output_type>(value).unwrap()
         }
     }};
