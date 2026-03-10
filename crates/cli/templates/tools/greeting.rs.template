@@ -1,0 +1,44 @@
+use engine_ai_core::tools::{Tool, ToolError};
+use serde_json::Value;
+
+pub struct GreetingTool;
+
+#[async_trait::async_trait]
+impl Tool for GreetingTool {
+    fn name(&self) -> &str {
+        "greeting"
+    }
+
+    fn description(&self) -> &str {
+        "Generate a personalized greeting message"
+    }
+
+    fn parameters_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the person to greet"
+                }
+            },
+            "required": ["name"]
+        })
+    }
+
+    async fn execute(&self, parameters: Value) -> Result<Value, ToolError> {
+        let name = parameters["name"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidParameters {
+                tool_name: "greeting".to_string(),
+                message: "Missing 'name' parameter".to_string(),
+                suggestion: Some("Provide a name as a string".to_string()),
+            })?;
+
+        let greeting = format!("Hello, {}! Welcome to Engine AI!", name);
+
+        Ok(serde_json::json!({
+            "message": greeting
+        }))
+    }
+}

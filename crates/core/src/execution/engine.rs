@@ -4,11 +4,14 @@ use crate::execution::error::ExecutionError;
 use crate::execution::orchestrator::AgentOrchestrator;
 use crate::parser::{AstBuilder, DependencyGraph};
 use crate::providers::{ProviderFactory, ProviderRef, ProviderRegistry};
+use crate::tools::ToolRegistry;
 use crate::validation::WorkflowValidator;
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub struct ExecutionEngine;
+pub struct ExecutionEngine {
+    tool_registry: ToolRegistry,
+}
 
 impl Default for ExecutionEngine {
     fn default() -> Self {
@@ -18,12 +21,23 @@ impl Default for ExecutionEngine {
 
 impl ExecutionEngine {
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self {
+            tool_registry: ToolRegistry::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_tools(tool_registry: ToolRegistry) -> Self {
+        Self { tool_registry }
     }
 
     pub async fn execute_workflow(&self, workflow_path: &str) -> Result<Value, ExecutionError> {
         self.execute_workflow_with_inputs(workflow_path, HashMap::new()).await
+    }
+
+    pub async fn execute_workflow_content(&self, workflow_content: &str) -> Result<Value, ExecutionError> {
+        self.execute_workflow_from_content(workflow_content, "workflow").await
     }
 
     pub async fn execute_workflow_from_content(
@@ -173,11 +187,12 @@ impl ExecutionEngine {
                 let agent_clone = agent.clone();
                 let provider_registry_clone = provider_registry.clone();
                 let runtime_context_clone = runtime_context.clone();
+                let tool_registry_clone = self.tool_registry.clone();
 
                 let task = tokio::task::spawn(async move {
                     let provider = Self::get_provider_for_agent(&agent_clone, &provider_registry_clone)?;
                     let provider_clone = provider.clone();
-                    let orchestrator = AgentOrchestrator::new(provider);
+                    let orchestrator = AgentOrchestrator::with_tools(provider, tool_registry_clone.clone());
 
                     let context_property = agent_clone.properties.iter().find_map(|prop| {
                         if let crate::ast::AgentProperty::Context { value, .. } = prop {
@@ -233,9 +248,11 @@ impl ExecutionEngine {
                             let mut iteration_context = runtime_context_clone.clone();
                             iteration_context.set_input_value(iteration_var.clone(), item);
                             let provider_for_iteration = provider_clone.clone();
+                            let tool_registry_for_iteration = tool_registry_clone.clone();
 
                             let iteration_task = tokio::task::spawn(async move {
-                                let orchestrator_inner = AgentOrchestrator::new(provider_for_iteration);
+                                let orchestrator_inner =
+                                    AgentOrchestrator::with_tools(provider_for_iteration, tool_registry_for_iteration);
                                 let result = orchestrator_inner
                                     .execute_agent(&agent_clone_inner, initial_context_clone, &iteration_context)
                                     .await;
