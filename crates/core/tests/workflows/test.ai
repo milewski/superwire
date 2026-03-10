@@ -1,11 +1,11 @@
-provider ollama1 {
+provider ollama {
     driver <- "ollama"
     api_endpoint <- "http://100.76.5.36:11434"
-    models <- ["qwen3:8b", "qwen3.5:27b"]
+    models <- ["qwen3:8b"]
 }
 
 agent person_generator {
-    model <- "ollama1/qwen3.5:27b"
+    model <- "ollama/qwen3:8b"
     output <- schema {
         name: string
         age: number
@@ -16,18 +16,18 @@ agent person_generator {
 }
 
 agent greeter {
-    model <- "ollama1/qwen3.5:27b"
+    model <- "ollama/qwen3:8b"
     prompt <- "Write a warm welcome message to {{ agent.person_generator.name }}"
 }
 
 agent summary {
-    model <- "ollama1/qwen3.5:27b"
+    model <- "ollama/qwen3:8b"
     prompt <- "Summarize the following: {{ agent.greeter }}"
 }
 
 output {
     context <- compact {
-        model <- "ollama1/qwen3.5:27b"
+        model <- "ollama/qwen3:8b"
         context <- agent.summary.context
     }
     message <- agent.summary

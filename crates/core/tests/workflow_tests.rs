@@ -6,9 +6,9 @@ mod helpers;
 
 #[cfg(test)]
 mod test {
+    use crate::{input, workflow};
     use serde::Deserialize;
     use serde_json::Value;
-    use crate::{input, workflow};
 
     #[tokio::test]
     async fn test_basic_workflow() {
