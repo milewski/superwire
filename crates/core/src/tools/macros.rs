@@ -11,6 +11,7 @@
 ///     field: String,
 /// }
 ///
+/// #[derive(Default)]
 /// struct MyTool;
 ///
 /// impl_tool!(MyTool, MyToolParams, {
@@ -27,6 +28,7 @@
 /// ```
 /// use engine_ai_core::impl_tool;
 ///
+/// #[derive(Default)]
 /// struct MyTool;
 ///
 /// impl_tool!(MyTool, {
@@ -50,6 +52,7 @@
 ///     field: String,
 /// }
 ///
+/// #[derive(Default)]
 /// struct MyTool {
 ///     custom_field: String,
 /// }
@@ -65,6 +68,20 @@
 ///     },
 ///     execute: |params| {
 ///         // implementation
+///         Ok(serde_json::json!({"result": params.field}))
+///     }
+/// });
+/// ```
+///
+/// To disable automatic registration, add `#[no_auto_register]` before the tool struct:
+/// ```ignore
+/// #[no_auto_register]
+/// struct MyTool;
+///
+/// impl_tool!(MyTool, MyToolParams, {
+///     name: "my_tool",
+///     description: "Does something useful",
+///     execute: |params| {
 ///         Ok(serde_json::json!({"result": params.field}))
 ///     }
 /// });
@@ -108,6 +125,8 @@ macro_rules! impl_tool {
                 result.map_err(|e| e.into_tool_error(self.name().to_string()))
             }
         }
+
+        $crate::register_tool!($tool_type);
     };
 
     // With parameters and custom schema
@@ -147,6 +166,8 @@ macro_rules! impl_tool {
                 result.map_err(|e| e.into_tool_error(self.name().to_string()))
             }
         }
+
+        $crate::register_tool!($tool_type);
     };
 
     // Without parameters
@@ -181,5 +202,25 @@ macro_rules! impl_tool {
                 result.map_err(|e| e.into_tool_error(self.name().to_string()))
             }
         }
+
+        $crate::register_tool!($tool_type);
+    };
+}
+
+/// Helper macro to register a tool with the inventory system
+#[macro_export]
+macro_rules! register_tool {
+    ($tool_type:ty) => {
+        const _: () = {
+            fn __tool_factory() -> $crate::tools::ToolRef {
+                std::sync::Arc::new(<$tool_type>::default()) as $crate::tools::ToolRef
+            }
+
+            inventory::submit! {
+                $crate::tools::ToolFactory {
+                    factory: __tool_factory
+                }
+            }
+        };
     };
 }
