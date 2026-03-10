@@ -281,6 +281,7 @@ impl WorkflowValidator {
                 }
             }
             Reference::Input { .. } => {}
+            Reference::Tool { .. } => {}
         }
     }
 

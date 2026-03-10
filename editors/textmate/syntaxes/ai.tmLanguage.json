@@ -276,7 +276,7 @@
     "references": {
       "patterns": [
         {
-          "match": "\\b(agent|input|schema)\\.(\\w+)(?:\\.(\\w+))?",
+          "match": "\\b(agent|input|schema|tool)\\.(\\w+)(?:\\.(\\w+))?",
           "captures": {
             "1": {
               "name": "keyword.other.ai"
@@ -351,6 +351,9 @@
       "begin": "\\[",
       "end": "\\]",
       "patterns": [
+        {
+          "include": "#references"
+        },
         {
           "include": "#strings"
         },

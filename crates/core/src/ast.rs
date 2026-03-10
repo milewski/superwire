@@ -140,6 +140,7 @@ pub enum Reference {
     AgentContext { agent: String },
     Input { field: String },
     Schema { name: String },
+    Tool { name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

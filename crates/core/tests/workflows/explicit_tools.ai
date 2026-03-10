@@ -1,0 +1,16 @@
+provider ollama {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+<- agent calculator_test {
+    model <- "ollama/qwen3:8b"
+    tools <- [tool.calculator]
+    output <- number
+    prompt <- "Use the calculator tool to compute 5 + 3 and return the result"
+}
+
+output {
+    result <- agent.calculator_test
+}

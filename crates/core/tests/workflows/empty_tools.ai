@@ -1,0 +1,16 @@
+provider ollama {
+    driver <- "ollama"
+    api_endpoint <- "http://100.76.5.36:11434"
+    models <- ["qwen3:8b"]
+}
+
+<- agent test {
+    model <- "ollama/qwen3:8b"
+    tools <- []
+    output <- string
+    prompt <- "Return the word 'success' as your output"
+}
+
+output {
+    result <- agent.test
+}
