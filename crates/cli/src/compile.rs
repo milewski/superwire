@@ -29,7 +29,7 @@ pub fn compile_workflow(workflow_path: &Path, output_path: &Path) -> Result<(), 
     let embedded_files = embed_files(&workflow, workflow_path)?;
 
     log::info!("Serializing AST...");
-    let serialized_ast = bincode::serialize(&workflow)?;
+    let serialized_ast = bincode_next::serde::encode_to_vec(&workflow, bincode_next::config::standard())?;
 
     log::info!("Generating executable source...");
     let source_code = generate_executable_source(&serialized_ast, &embedded_files, &workflow)?;
@@ -141,7 +141,7 @@ async fn main() {{
 async fn run() -> Result<(), Box<dyn std::error::Error>> {{
     let inputs = parse_args();
 
-    let workflow: engine_ai_core::ast::Workflow = bincode::deserialize(WORKFLOW_AST)?;
+    let (workflow, _): (engine_ai_core::ast::Workflow, _) = bincode_next::serde::decode_from_slice(WORKFLOW_AST, bincode_next::config::standard())?;
 
     let engine = engine_ai_core::execution::engine::ExecutionEngine::new();
     let result = engine.execute_parsed_workflow_with_inputs(&workflow, inputs).await?;
@@ -273,7 +273,7 @@ edition = "2021"
 engine-ai-core = {{ path = "{}" }}
 tokio = {{ version = "1", features = ["full"] }}
 serde_json = "1"
-bincode = "1.3"
+bincode-next = {{ version = "3.0.0-rc.5", features = ["serde"] }}
 clap = {{ version = "4.5", features = ["derive"] }}
 env_logger = "0.11"
 
