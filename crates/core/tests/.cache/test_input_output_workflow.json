@@ -1,29 +1,31 @@
 {
   "workflow_hash": "11bb67936a96b0f8",
   "agents": {
-    "research": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Research the topic: Rust for a developers audience. Provide a summary and 3 key points."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"key_points\":[\"Memory safety through ownership and borrowing system prevents null pointer dereferencing and data races without a garbage collector.\",\"Zero-cost abstractions and minimal runtime overhead make it suitable for high-performance systems programming.\",\"Strong community and ecosystem with Cargo package manager, extensive libraries, and cross-platform support.\"],\"summary\":\"Rust is a systems programming language emphasizing safety, speed, and concurrency. Its ownership model ensures memory safety at compile time, while its performance rivals C++ and robust tooling makes it popular for reliable, efficient software development.\"},\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    }
+    "research": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Research the topic: Rust for a developers audience. Provide a summary and 3 key points."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"key_points\":[\"Memory safety through ownership and borrowing without a garbage collector\",\"High performance comparable to C/C++ with zero-cost abstractions\",\"Strong focus on concurrency and parallelism with safe abstractions\"],\"summary\":\"Rust is a systems programming language emphasizing safety, speed, and concurrency. Its ownership model eliminates common bugs like null dereferences and data races while maintaining performance. Developers appreciate its modern tooling and growing ecosystem for building reliable software.\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

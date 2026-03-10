@@ -1,109 +1,123 @@
 {
   "workflow_hash": "d8d799eea6d87e5d",
   "agents": {
-    "create_greeting": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Say hello in one short sentence."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":\"Hello! How can I assist you?\",\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    },
-    "add_numbers": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "What is 42 + 58? Return only the number."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"description\":\"sum of 42 and 58\",\"type\":\"number\"},\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Schema validation failed: Schema validation error: : {\"description\":\"sum of 42 and 58\",\"type\":\"number\"} is not of type \"number\". Please fix the output and call done again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":100,\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    },
-    "check_value": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Is 100 equal to 100? Return true or false."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":{\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"},\"status\":\"success\"}"
-            }
-          ]
-        },
-        {
-          "type": "tool",
-          "tool_call_id": "call_0",
-          "content": "Schema validation failed: Schema validation error: : {\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"} is not of type \"boolean\". Please fix the output and call done again."
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":true,\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    }
+    "check_value": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Is 100 equal to 100? Return true or false."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Is 100 equal to 100? Return true or false."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"},\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : {\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"} is not of type \"boolean\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":true,\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "create_greeting": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello in one short sentence."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Hello! How can I assist you today?\",\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "add_numbers": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "What is 42 + 58? Return only the number."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":100,\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

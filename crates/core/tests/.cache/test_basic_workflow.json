@@ -1,44 +1,115 @@
 {
   "workflow_hash": "7dbb11a59b3b2840",
   "agents": {
-    "greeting": {
-      "model": "ollama/qwen3:8b",
-      "messages": [
-        {
-          "type": "system",
-          "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-        },
-        {
-          "type": "user",
-          "content": "Say hello and introduce yourself as an AI assistant"
-        },
-        {
-          "type": "assistant",
-          "content": "Hello! I'm Qwen, an AI assistant developed by Alibaba Cloud. I'm here to help you with various tasks, answer questions, and engage in conversations. How can I assist you today?",
-          "tool_calls": null
-        },
-        {
-          "type": "assistant",
-          "content": " 😊\n</think>\n\nHello! I'm Qwen, an AI assistant developed by Alibaba Cloud. I'm here to help you with various tasks, answer questions, and engage in conversations. How can I assist you today? 😊",
-          "tool_calls": null
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": null
-        },
-        {
-          "type": "assistant",
-          "content": "",
-          "tool_calls": [
-            {
-              "id": "call_0",
-              "name": "done",
-              "arguments": "{\"output\":\"Hello! I'm Qwen, an AI assistant developed by Alibaba Cloud. I'm here to help you with various tasks, answer questions, and engage in conversations. How can I assist you today? 😊\",\"status\":\"success\"}"
-            }
-          ]
-        }
-      ]
-    }
+    "greeting": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello and introduce yourself as an AI assistant"
+          },
+          {
+            "type": "assistant",
+            "content": "Hello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today?",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello and introduce yourself as an AI assistant"
+          },
+          {
+            "type": "assistant",
+            "content": "Hello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today?",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": " 😊\n</think>\n\nHello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today? 😊",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello and introduce yourself as an AI assistant"
+          },
+          {
+            "type": "assistant",
+            "content": "Hello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today?",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": " 😊\n</think>\n\nHello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today? 😊",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          }
+        ]
+      },
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say hello and introduce yourself as an AI assistant"
+          },
+          {
+            "type": "assistant",
+            "content": "Hello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today?",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": " 😊\n</think>\n\nHello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today? 😊",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": null
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Hello! I'm an AI assistant designed to help with tasks, answer questions, and provide information. How can I assist you today? 😊\",\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestCache {
     pub workflow_hash: String,
-    pub agents: HashMap<String, AgentConversation>,
+    pub agents: HashMap<String, Vec<AgentConversation>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,23 +118,13 @@ impl Provider for CachedProvider {
 
             let replay_index = replay_indices.entry(agent_name.clone()).or_insert(0);
 
-            if let Some(agent_conv) = cache.agents.get(&agent_name) {
-                // Find the next assistant message starting from replay_index
-                let mut found_assistant_index = None;
+            if let Some(agent_conversations) = cache.agents.get(&agent_name) {
+                // Get the conversation at the current replay index
+                if *replay_index < agent_conversations.len() {
+                    let conversation = &agent_conversations[*replay_index];
+                    *replay_index += 1;
 
-                for (index, message) in agent_conv.messages.iter().enumerate().skip(*replay_index) {
-                    if matches!(message, Message::Assistant { .. }) {
-                        found_assistant_index = Some(index);
-                        break;
-                    }
-                }
-
-                if let Some(assistant_index) = found_assistant_index {
-                    // Return all messages up to and including this assistant message
-                    let replay_context = agent_conv.messages[..=assistant_index].to_vec();
-                    *replay_index = assistant_index + 1;
-
-                    Some(replay_context)
+                    Some(conversation.messages.clone())
                 } else {
                     None
                 }
@@ -162,16 +152,13 @@ impl Provider for CachedProvider {
             {
                 let mut cache = self.cache.lock().unwrap();
 
-                let agent_conv = cache
-                    .agents
-                    .entry(agent_name.clone())
-                    .or_insert_with(|| AgentConversation {
-                        model: model.clone(),
-                        messages: Vec::new(),
-                    });
+                let agent_conversations = cache.agents.entry(agent_name.clone()).or_default();
 
-                // Store the complete output context which includes all messages in order
-                agent_conv.messages.clone_from(&output.context);
+                // Add this execution as a new conversation
+                agent_conversations.push(AgentConversation {
+                    model: model.clone(),
+                    messages: output.context.clone(),
+                });
 
                 Self::save_cache(&self.test_name, &cache);
             }
