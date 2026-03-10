@@ -465,7 +465,10 @@ impl ExecutionEngine {
         let dummy_agent = crate::ast::Agent {
             name: "compact".to_string(),
             is_terminal: false,
-            properties: vec![],
+            properties: vec![crate::ast::AgentProperty::Model {
+                value: crate::ast::Value::String(model_ref.clone()),
+                span: crate::ast::Span::new(0, 0, 0, 0),
+            }],
             span: crate::ast::Span::new(0, 0, 0, 0),
         };
 

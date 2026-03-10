@@ -1,9 +1,35 @@
 {
   "workflow_hash": "ae3050da6fb63cda",
   "agents": {
+    "two": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
+          },
+          {
+            "type": "user",
+            "content": "Say goodbye"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
     "compact": [
       {
-        "model": "unknown",
+        "model": "ollama/qwen3:8b",
         "messages": [
           {
             "type": "system",
@@ -30,13 +56,13 @@
           },
           {
             "type": "assistant",
-            "content": "The conversation consisted of a simple greeting exchange. The user requested \"Say hello,\" and the assistant responded using the 'done' tool with a success status, delivering the message \"Hello!\". The key topic was the greeting, and the interaction demonstrated the use of the done tool for structured responses.",
+            "content": "The conversation involved the user requesting a greeting, followed by the AI agent using the 'done' tool to return a successful response with the message \"Hello!\". The summary highlights the interaction where the AI fulfilled the user's request via the specified tool.",
             "tool_calls": null
           }
         ]
       },
       {
-        "model": "unknown",
+        "model": "ollama/qwen3:8b",
         "messages": [
           {
             "type": "system",
@@ -82,7 +108,7 @@
           },
           {
             "type": "assistant",
-            "content": "The conversation consisted of the user requesting greetings (\"Say hello,\" \"Say goodbye\") and the assistant responding with formatted acknowledgment via the `done` tool. Key points:  \n1. Simple exchange of greetings.  \n2. Assistant's responses followed a structured format with status and output.  \n3. No deeper discussion or context beyond the initial interactions.",
+            "content": "The conversation consisted of the user requesting the assistant to \"say hello\" and \"say goodbye,\" followed by the assistant responding with the `done` tool to deliver the respective greetings. The interaction was brief, focusing on simple, direct exchanges without further discussion. Key points: user commands, assistant's structured response via the `done` tool, and the absence of complex topics.",
             "tool_calls": null
           }
         ]
@@ -108,32 +134,6 @@
                 "id": "call_0",
                 "name": "done",
                 "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "two": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent. When you have completed your task, you MUST call the 'done' tool to return your result. Do not forget to call the done tool when finished."
-          },
-          {
-            "type": "user",
-            "content": "Say goodbye"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"message\":\"Goodbye!\"},\"status\":\"success\"}"
               }
             ]
           }
