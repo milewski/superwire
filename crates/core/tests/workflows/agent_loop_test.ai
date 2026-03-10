@@ -11,7 +11,7 @@ agent simple_test {
         message: string
     }
 
-    prompt <- "Generate a simple greeting message. When done, call the done tool with status='success' and output containing a 'message' field with your greeting."
+    prompt <- "Generate a simple greeting message."
 }
 
 output {
