@@ -36,7 +36,10 @@
 - [ ] Add concurrent execution tests for race conditions
 
 ### Macros & Code Generation
-- [ ] Create macro to reduce boilerplate in validation rules
+- [x] Create macro to reduce boilerplate in validation rules (check_duplicates)
+- [x] Create macro for span creation (make_span)
+- [x] Create validation macros module structure
+- [x] Create parser macros module structure
 - [ ] Create macro for error construction patterns
 - [ ] Create macro for common AST traversal patterns
 - [ ] Optimize existing tool and provider macros
@@ -48,7 +51,11 @@
 - [x] Improve separation of concerns in orchestrator
 - [x] Optimize string allocations in formatter (11 locations now use `String::with_capacity()`)
 - [x] Create `WorkflowExecutor` class structure (needs integration with engine.rs)
+- [x] Create parser and validation macro modules
+- [x] Implement check_duplicates macro for validation
+- [x] Implement make_span macro for AST construction
+- [x] Create ValidationRule trait for future rule-based validation
 
 ## Current Focus
-Created WorkflowExecutor class to handle the 225-line execute_parsed_workflow_with_inputs_and_registry method.
-Next: Complete integration and remove old code.
+Created macro infrastructure for parser and validation modules.
+Next: Apply macros to reduce code duplication in validator.rs and builder.rs.

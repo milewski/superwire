@@ -2,6 +2,7 @@ pub mod builder;
 pub mod error;
 pub mod error_analyzer;
 pub mod graph;
+pub mod macros;
 
 use pest_derive::Parser;
 

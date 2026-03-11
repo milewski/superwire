@@ -30,12 +30,11 @@ impl<'a> WorkflowExecutor<'a> {
     pub async fn execute(&self, inputs: HashMap<String, JsonValue>) -> Result<JsonValue, ExecutionError> {
         log::info!("Building dependency graph");
 
-        let dependency_graph =
-            DependencyGraph::build(self.workflow).map_err(|error| ExecutionError::RuntimeError {
-                agent: "workflow".to_string(),
-                message: format!("Failed to build dependency graph: {error}"),
-                suggestion: Some("Check for circular dependencies".to_string()),
-            })?;
+        let dependency_graph = DependencyGraph::build(self.workflow).map_err(|error| ExecutionError::RuntimeError {
+            agent: "workflow".to_string(),
+            message: format!("Failed to build dependency graph: {error}"),
+            suggestion: Some("Check for circular dependencies".to_string()),
+        })?;
 
         let execution_levels = dependency_graph.get_execution_levels();
         log::info!("Execution levels determined: {execution_levels:?}");
@@ -91,8 +90,10 @@ impl<'a> WorkflowExecutor<'a> {
         &self,
         agent: &Agent,
         runtime_context: &RuntimeContext,
-    ) -> Result<tokio::task::JoinHandle<Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>>, ExecutionError>
-    {
+    ) -> Result<
+        tokio::task::JoinHandle<Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>>,
+        ExecutionError,
+    > {
         let agent_clone = agent.clone();
         let provider_registry_clone = self.provider_registry.clone();
         let runtime_context_clone = runtime_context.clone();
@@ -166,11 +167,13 @@ impl<'a> WorkflowExecutor<'a> {
 
         let provider_name = parts[0];
 
-        provider_registry.get(provider_name).map_err(|error| ExecutionError::ProviderError {
-            agent: agent.name.clone(),
-            message: format!("Provider '{provider_name}' not found: {error}"),
-            suggestion: Some("Check that the provider is defined in the workflow".to_string()),
-        })
+        provider_registry
+            .get(provider_name)
+            .map_err(|error| ExecutionError::ProviderError {
+                agent: agent.name.clone(),
+                message: format!("Provider '{provider_name}' not found: {error}"),
+                suggestion: Some("Check that the provider is defined in the workflow".to_string()),
+            })
     }
 
     fn extract_initial_context(
@@ -204,9 +207,7 @@ impl<'a> WorkflowExecutor<'a> {
     fn extract_for_each_property(agent: &Agent) -> Option<(&Value, &String)> {
         agent.properties.iter().find_map(|prop| {
             if let AgentProperty::ForEach {
-                collection,
-                identifier,
-                ..
+                collection, identifier, ..
             } = prop
             {
                 Some((collection, identifier))
