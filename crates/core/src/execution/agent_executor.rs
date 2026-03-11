@@ -295,7 +295,7 @@ impl<'a> AgentExecutor<'a> {
             });
         }
 
-        if let Some(ref schema_value) = schema {
+        if let Some(schema_value) = schema {
             log::debug!("Agent '{}' validating output against schema", self.agent.name);
             match SchemaValidator::validate(schema_value, &output_value) {
                 Ok(()) => {

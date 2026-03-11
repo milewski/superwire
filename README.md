@@ -12,8 +12,8 @@
 
 ### Performance Optimizations
 - [x] Use `LazyLock` for regex patterns (currently compiled on every call)
+- [x] Optimize string allocations in formatter using `String::with_capacity()`
 - [ ] Reduce excessive cloning (146 occurrences, many in hot paths)
-- [ ] Optimize string allocations in formatter using `String::with_capacity()`
 - [ ] Batch HashMap lookups in context resolver
 - [ ] Reduce unnecessary JSON serialization in hot paths
 
@@ -46,6 +46,7 @@
 - [x] Extract `AgentExecutor` class from `execute_agent` method (improved Single Responsibility Principle)
 - [x] Reduce code duplication in agent execution logic
 - [x] Improve separation of concerns in orchestrator
+- [x] Optimize string allocations in formatter (11 locations now use `String::with_capacity()`)
 
 ## Current Focus
 Continuing with more refactoring and optimization tasks.

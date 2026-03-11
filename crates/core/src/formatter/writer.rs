@@ -26,7 +26,9 @@ impl Writer {
     }
 
     pub fn write_workflow(&self, workflow: &Workflow) -> String {
-        let mut output = String::new();
+        let estimated_size =
+            workflow.providers.len() * 200 + workflow.schemas.len() * 300 + workflow.agents.len() * 400 + 200;
+        let mut output = String::with_capacity(estimated_size);
         let mut sections = Vec::new();
 
         // Write providers first
@@ -76,7 +78,7 @@ impl Writer {
     }
 
     fn write_providers(&self, providers: &[Provider]) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(providers.len() * 200);
 
         for (index, provider) in providers.iter().enumerate() {
             if index > 0 {
@@ -89,7 +91,7 @@ impl Writer {
     }
 
     fn write_provider(&self, provider: &Provider) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(200);
         let indent = self.get_indent(self.indent_level);
 
         writeln!(output, "{}provider {} {{", indent, provider.name).unwrap();
@@ -134,7 +136,7 @@ impl Writer {
     }
 
     fn write_schemas(&self, schemas: &[NamedSchema]) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(schemas.len() * 300);
 
         for (index, schema) in schemas.iter().enumerate() {
             if index > 0 {
@@ -147,7 +149,7 @@ impl Writer {
     }
 
     fn write_named_schema(&self, schema: &NamedSchema) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(300);
         let indent = self.get_indent(self.indent_level);
 
         writeln!(output, "{}schema {} {{", indent, schema.name).unwrap();
@@ -158,7 +160,7 @@ impl Writer {
     }
 
     fn write_schema_fields(&self, fields: &[SchemaField], indent_level: usize) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(fields.len() * 80);
 
         for field in fields {
             output.push_str(&self.write_schema_field(field, indent_level));
@@ -168,7 +170,7 @@ impl Writer {
     }
 
     fn write_schema_field(&self, field: &SchemaField, indent_level: usize) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(100);
         let indent = self.get_indent(indent_level);
 
         write!(
@@ -221,7 +223,7 @@ impl Writer {
     }
 
     fn write_input_block(&self, input: &InputBlock) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(input.fields.len() * 60 + 50);
         let indent = self.get_indent(self.indent_level);
 
         writeln!(output, "{indent}input {{").unwrap();
@@ -242,7 +244,7 @@ impl Writer {
     }
 
     fn write_agents(&self, agents: &[Agent]) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(agents.len() * 400);
 
         for (index, agent) in agents.iter().enumerate() {
             if index > 0 {
@@ -264,7 +266,7 @@ impl Writer {
     }
 
     fn write_agent(&self, agent: &Agent) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(400);
         let indent = self.get_indent(self.indent_level);
 
         // Write agent declaration - always use regular agent syntax
@@ -374,6 +376,7 @@ impl Writer {
             Value::MultilineString(s) => self.write_multiline_string_with_indent(s, indent_level),
             Value::Number(n) => {
                 // Handle integer vs float formatting
+                #[allow(clippy::cast_possible_truncation)]
                 if n.fract() == 0.0 {
                     format!("{}", n.trunc() as i64)
                 } else {
@@ -514,7 +517,7 @@ impl Writer {
     }
 
     fn write_output_block(&self, output_block: &OutputBlock) -> String {
-        let mut output = String::new();
+        let mut output = String::with_capacity(output_block.fields.len() * 80 + 50);
         let indent = self.get_indent(self.indent_level);
 
         writeln!(output, "{indent}output {{").unwrap();
