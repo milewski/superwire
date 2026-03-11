@@ -4,9 +4,9 @@
 
 ### Architecture & SOLID Principles
 - [x] Extract `AgentExecutor` class from `execute_agent` method (227 lines → multiple focused classes)
+- [x] Create `WorkflowExecutor` class to handle workflow execution logic (in progress - needs integration)
 - [ ] Create `ValueResolver` trait with implementations for references, interpolations, and function calls
 - [ ] Implement validation rule system using Chain of Responsibility pattern
-- [ ] Separate workflow orchestration into dedicated `WorkflowOrchestrator` class
 - [ ] Extract schema operations into `SchemaService`
 - [ ] Implement provider registration system (remove hardcoded factory)
 
@@ -47,6 +47,8 @@
 - [x] Reduce code duplication in agent execution logic
 - [x] Improve separation of concerns in orchestrator
 - [x] Optimize string allocations in formatter (11 locations now use `String::with_capacity()`)
+- [x] Create `WorkflowExecutor` class structure (needs integration with engine.rs)
 
 ## Current Focus
-Continuing with more refactoring and optimization tasks.
+Created WorkflowExecutor class to handle the 225-line execute_parsed_workflow_with_inputs_and_registry method.
+Next: Complete integration and remove old code.
