@@ -47,10 +47,6 @@ impl FormattingRule for SpacingRule {
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "SpacingRule"
-    }
-
     fn priority(&self) -> u32 {
         10 // High priority - spacing should be applied early
     }
@@ -70,7 +66,6 @@ mod tests {
     #[test]
     fn test_spacing_rule_creation() {
         let rule = SpacingRule::new();
-        assert_eq!(rule.name(), "SpacingRule");
         assert_eq!(rule.priority(), 10);
     }
 

@@ -358,11 +358,10 @@ impl Writer {
     fn write_value_with_indent(&self, value: &Value, indent_level: usize) -> String {
         match value {
             Value::String(s) => {
-                if s.contains('\n') && true {
-                    self.write_multiline_string_with_indent(s, indent_level)
-                } else {
-                    format!("\"{}\"", s.replace('"', "\\\""))
-                }
+                format!("\"{}\"", s.replace('"', "\\\""))
+            }
+            Value::MultilineString(s) => {
+                self.write_multiline_string_with_indent(s, indent_level)
             }
             Value::Number(n) => {
                 // Handle integer vs float formatting
@@ -384,10 +383,13 @@ impl Writer {
 
     fn write_multiline_string_with_indent(&self, content: &str, indent_level: usize) -> String {
         let base_indent = self.get_indent(indent_level);
-        let mut output = String::from("\"\"\"");
+        let content_indent = self.get_indent(indent_level + 1);
 
-        // Add the content exactly as it is, preserving original formatting
-        output.push_str(content.trim_end());
+        let mut output = String::from("\"\"\"\n");
+
+        // Add the content with proper indentation
+        output.push_str(&content_indent);
+        output.push_str(content.trim());
 
         // Close the multiline string with proper base indentation
         output.push_str(&format!("\n{base_indent}\"\"\""));

@@ -10,9 +10,6 @@ pub trait FormattingRule {
     /// Apply this rule to a workflow, modifying it in place
     fn apply(&self, workflow: &mut Workflow) -> Result<(), FormattingError>;
 
-    /// Get the name of this rule for debugging/logging
-    fn name(&self) -> &'static str;
-
     /// Get the priority of this rule (lower numbers run first)
     fn priority(&self) -> u32 {
         100 // Default priority

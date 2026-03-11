@@ -24,10 +24,6 @@ impl FormattingRule for IndentationRule {
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "IndentationRule"
-    }
-
     fn priority(&self) -> u32 {
         20 // Medium priority - after spacing but before line breaks
     }
@@ -47,7 +43,6 @@ mod tests {
     #[test]
     fn test_indentation_rule_creation() {
         let rule = IndentationRule::new();
-        assert_eq!(rule.name(), "IndentationRule");
         assert_eq!(rule.priority(), 20);
     }
 
