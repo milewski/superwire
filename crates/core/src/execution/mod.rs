@@ -1,3 +1,4 @@
+pub mod agent_executor;
 pub mod context;
 pub mod engine;
 pub mod error;

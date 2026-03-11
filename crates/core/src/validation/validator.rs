@@ -1,6 +1,10 @@
 use crate::ast::{Agent, AgentProperty, Reference, Value, Workflow};
 use crate::validation::error::ValidationError;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
+
+static INTERPOLATION_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\{\{([^}]+)\}\}").expect("Invalid regex pattern"));
 
 pub struct WorkflowValidator;
 
@@ -171,9 +175,7 @@ impl WorkflowValidator {
                 Self::check_reference(reference, agent_names, schema_names, line, column, errors);
             }
             Value::Interpolated(template) => {
-                let interpolation_pattern = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
-
-                for capture in interpolation_pattern.captures_iter(template) {
+                for capture in INTERPOLATION_PATTERN.captures_iter(template) {
                     let reference_text = capture[1].trim();
                     let parts: Vec<&str> = reference_text.split('.').collect();
 

@@ -440,6 +440,7 @@ dependencies = [
  "inventory",
  "jsonschema",
  "log",
+ "once_cell",
  "pest",
  "pest_derive",
  "petgraph",

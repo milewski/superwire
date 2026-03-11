@@ -1,9 +1,10 @@
-use super::rules::{IndentationRule, ArrayFormattingRule};
+use super::rules::{ArrayFormattingRule, IndentationRule};
 use crate::ast::{
     Agent, AgentProperty, FunctionCall, InputBlock, NamedSchema, OutputBlock, Provider, Reference, SchemaField,
     SchemaReference, SchemaType, Value, Workflow,
 };
 use std::collections::HashMap;
+use std::fmt::Write;
 
 pub struct Writer {
     indent_level: usize,
@@ -78,7 +79,7 @@ impl Writer {
         let mut output = String::new();
 
         for (index, provider) in providers.iter().enumerate() {
-            if index > 0 && true {
+            if index > 0 {
                 output.push('\n');
             }
             output.push_str(&self.write_provider(provider));
@@ -91,38 +92,44 @@ impl Writer {
         let mut output = String::new();
         let indent = self.get_indent(self.indent_level);
 
-        output.push_str(&format!("{}provider {} {{\n", indent, provider.name));
+        writeln!(output, "{}provider {} {{", indent, provider.name).unwrap();
 
         // Write driver
-        output.push_str(&format!(
-            "{}driver{}<- \"{}\"\n",
+        writeln!(
+            output,
+            "{}driver{}<- \"{}\"",
             self.get_indent(self.indent_level + 1),
             if true { " " } else { "" },
             provider.driver
-        ));
+        )
+        .unwrap();
 
         // Write api_endpoint if present
         if let Some(api_endpoint) = &provider.api_endpoint {
-            output.push_str(&format!(
-                "{}api_endpoint{}<- \"{}\"\n",
+            writeln!(
+                output,
+                "{}api_endpoint{}<- \"{}\"",
                 self.get_indent(self.indent_level + 1),
                 if true { " " } else { "" },
                 api_endpoint
-            ));
+            )
+            .unwrap();
         }
 
         // Write models
         if !provider.models.is_empty() {
             let models_value = Value::Array(provider.models.iter().map(|m| Value::String(m.clone())).collect());
-            output.push_str(&format!(
-                "{}models{}<- {}\n",
+            writeln!(
+                output,
+                "{}models{}<- {}",
                 self.get_indent(self.indent_level + 1),
                 if true { " " } else { "" },
                 self.write_value_with_indent(&models_value, self.indent_level + 1)
-            ));
+            )
+            .unwrap();
         }
 
-        output.push_str(&format!("{indent}}}"));
+        write!(output, "{indent}}}").unwrap();
         output
     }
 
@@ -130,7 +137,7 @@ impl Writer {
         let mut output = String::new();
 
         for (index, schema) in schemas.iter().enumerate() {
-            if index > 0 && true {
+            if index > 0 {
                 output.push('\n');
             }
             output.push_str(&self.write_named_schema(schema));
@@ -143,9 +150,9 @@ impl Writer {
         let mut output = String::new();
         let indent = self.get_indent(self.indent_level);
 
-        output.push_str(&format!("{}schema {} {{\n", indent, schema.name));
+        writeln!(output, "{}schema {} {{", indent, schema.name).unwrap();
         output.push_str(&self.write_schema_fields(&schema.schema.fields, self.indent_level + 1));
-        output.push_str(&format!("{indent}}}"));
+        write!(output, "{indent}}}").unwrap();
 
         output
     }
@@ -164,15 +171,17 @@ impl Writer {
         let mut output = String::new();
         let indent = self.get_indent(indent_level);
 
-        output.push_str(&format!(
+        write!(
+            output,
             "{}{}: {}",
             indent,
             field.name,
             self.write_schema_type_with_indent(&field.field_type, indent_level)
-        ));
+        )
+        .unwrap();
 
         if let Some(description) = &field.description {
-            output.push_str(&format!(" // {description}"));
+            write!(output, " // {description}").unwrap();
         }
 
         output.push('\n');
@@ -202,7 +211,7 @@ impl Writer {
                     for field in fields {
                         output.push_str(&self.write_schema_field(field, indent_level + 1));
                     }
-                    output.push_str(&format!("{}}}", self.get_indent(indent_level)));
+                    write!(output, "{}}}", self.get_indent(indent_level)).unwrap();
                     output
                 } else {
                     "{}".to_string()
@@ -215,18 +224,20 @@ impl Writer {
         let mut output = String::new();
         let indent = self.get_indent(self.indent_level);
 
-        output.push_str(&format!("{indent}input {{\n"));
+        writeln!(output, "{indent}input {{").unwrap();
 
         for field in &input.fields {
-            output.push_str(&format!(
-                "{}{}: {}\n",
+            writeln!(
+                output,
+                "{}{}: {}",
                 self.get_indent(self.indent_level + 1),
                 field.name,
                 self.write_schema_type_with_indent(&field.field_type, self.indent_level + 1)
-            ));
+            )
+            .unwrap();
         }
 
-        output.push_str(&format!("{indent}}}"));
+        write!(output, "{indent}}}").unwrap();
         output
     }
 
@@ -234,7 +245,7 @@ impl Writer {
         let mut output = String::new();
 
         for (index, agent) in agents.iter().enumerate() {
-            if index > 0 && true {
+            if index > 0 {
                 output.push('\n');
             }
             output.push_str(&self.write_agent(agent));
@@ -257,14 +268,14 @@ impl Writer {
         let indent = self.get_indent(self.indent_level);
 
         // Write agent declaration - always use regular agent syntax
-        output.push_str(&format!("{}agent {} {{\n", indent, agent.name));
+        writeln!(output, "{}agent {} {{", indent, agent.name).unwrap();
 
         // Write properties
         for property in &agent.properties {
             output.push_str(&self.write_agent_property(property));
         }
 
-        output.push_str(&format!("{indent}}}"));
+        write!(output, "{indent}}}").unwrap();
         output
     }
 
@@ -336,7 +347,7 @@ impl Writer {
                     for field in &schema.fields {
                         output.push_str(&self.write_schema_field(field, indent_level + 1));
                     }
-                    output.push_str(&format!("{}}}", self.get_indent(indent_level)));
+                    write!(output, "{}}}", self.get_indent(indent_level)).unwrap();
                     output
                 } else {
                     "{}".to_string()
@@ -348,7 +359,7 @@ impl Writer {
             } => {
                 let mut output = self.write_schema_type_with_indent(schema_type, indent_level);
                 if let Some(desc) = description {
-                    output.push_str(&format!(" // {desc}"));
+                    write!(output, " // {desc}").unwrap();
                 }
                 output
             }
@@ -360,13 +371,11 @@ impl Writer {
             Value::String(s) => {
                 format!("\"{}\"", s.replace('"', "\\\""))
             }
-            Value::MultilineString(s) => {
-                self.write_multiline_string_with_indent(s, indent_level)
-            }
+            Value::MultilineString(s) => self.write_multiline_string_with_indent(s, indent_level),
             Value::Number(n) => {
                 // Handle integer vs float formatting
                 if n.fract() == 0.0 {
-                    format!("{}", *n as i64)
+                    format!("{}", n.trunc() as i64)
                 } else {
                     n.to_string()
                 }
@@ -392,7 +401,7 @@ impl Writer {
         output.push_str(content.trim());
 
         // Close the multiline string with proper base indentation
-        output.push_str(&format!("\n{base_indent}\"\"\""));
+        write!(output, "\n{base_indent}\"\"\"").unwrap();
         output
     }
 
@@ -406,13 +415,9 @@ impl Writer {
         if self.array_rule.should_break_array(items) {
             let mut output = String::from("[\n");
             for item_str in &items_str {
-                output.push_str(&format!(
-                    "{}{},\n",
-                    self.get_indent(indent_level + 1),
-                    item_str
-                ));
+                writeln!(output, "{}{},", self.get_indent(indent_level + 1), item_str).unwrap();
             }
-            output.push_str(&format!("{}]", self.get_indent(indent_level)));
+            write!(output, "{}]", self.get_indent(indent_level)).unwrap();
             output
         } else {
             format!("[{}]", items_str.join(", "))
@@ -427,14 +432,16 @@ impl Writer {
             sorted_keys.sort();
             for key in sorted_keys {
                 let value = &obj[key];
-                output.push_str(&format!(
-                    "{}{}: {},\n",
+                writeln!(
+                    output,
+                    "{}{}: {},",
                     self.get_indent(indent_level + 1),
                     key,
                     self.write_value_with_indent(value, indent_level + 1)
-                ));
+                )
+                .unwrap();
             }
-            output.push_str(&format!("{}}}", self.get_indent(indent_level)));
+            write!(output, "{}}}", self.get_indent(indent_level)).unwrap();
             output
         } else {
             let mut sorted_keys: Vec<_> = obj.keys().collect();
@@ -476,14 +483,16 @@ impl Writer {
             sorted_keys.sort();
             for key in sorted_keys {
                 let value = &func.arguments[key];
-                output.push_str(&format!(
-                    "{}{}: {},\n",
+                writeln!(
+                    output,
+                    "{}{}: {},",
                     self.get_indent(indent_level + 1),
                     key,
                     self.write_value_with_indent(value, indent_level + 1)
-                ));
+                )
+                .unwrap();
             }
-            output.push_str(&format!("{})", self.get_indent(indent_level)));
+            write!(output, "{})", self.get_indent(indent_level)).unwrap();
         } else {
             let mut sorted_keys: Vec<_> = func.arguments.keys().collect();
             sorted_keys.sort();
@@ -508,19 +517,21 @@ impl Writer {
         let mut output = String::new();
         let indent = self.get_indent(self.indent_level);
 
-        output.push_str(&format!("{indent}output {{\n"));
+        writeln!(output, "{indent}output {{").unwrap();
 
         for field in &output_block.fields {
-            output.push_str(&format!(
-                "{}{}{}{}\n",
+            writeln!(
+                output,
+                "{}{}{}{}",
                 self.get_indent(self.indent_level + 1),
                 field.name,
                 if true { " <- " } else { "<-" },
                 self.write_value_with_indent(&field.value, self.indent_level + 1)
-            ));
+            )
+            .unwrap();
         }
 
-        output.push_str(&format!("{indent}}}"));
+        write!(output, "{indent}}}").unwrap();
         output
     }
 }

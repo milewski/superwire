@@ -3,8 +3,10 @@ use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
+use super::rules::{
+    ArrayFormattingRule, IndentationRule, LineBreaksRule, RuleEngine, SpacingRule, StringFormattingRule,
+};
 use super::writer::Writer;
-use super::rules::{RuleEngine, SpacingRule, IndentationRule, LineBreaksRule, ArrayFormattingRule, StringFormattingRule};
 
 #[derive(Debug, Clone)]
 pub struct FormatResult {
