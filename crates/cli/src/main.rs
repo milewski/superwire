@@ -5,6 +5,7 @@ mod error;
 use args::parse_inputs;
 use clap::Parser;
 use engine_ai_core::execution::engine::ExecutionEngine;
+use engine_ai_core::formatter::Formatter;
 use error::CliError;
 use std::path::PathBuf;
 use std::process;
@@ -40,6 +41,14 @@ enum Command {
     New {
         #[arg(help = "Project name (optional, defaults to current directory)")]
         name: Option<String>,
+    },
+    #[command(about = "Format .ai files or directories containing .ai files")]
+    Fmt {
+        #[arg(help = "Path to a .ai file or directory containing .ai files")]
+        path: PathBuf,
+
+        #[arg(short, long, help = "Check formatting without making changes")]
+        check: bool,
     },
 }
 
@@ -98,6 +107,82 @@ async fn run() -> Result<(), CliError> {
         }
         Command::New { name } => {
             create_new_project(name)?;
+            Ok(())
+        }
+        Command::Fmt { path, check } => {
+            if !path.exists() {
+                return Err(CliError::InvalidArguments(format!(
+                    "Path '{}' does not exist",
+                    path.display()
+                )));
+            }
+
+            let formatter = Formatter::new();
+
+            if path.is_file() {
+                // Handle single file
+                if check {
+                    log::info!("Checking formatting of file: {}", path.display());
+
+                    let result = formatter.format_file(&path)?;
+                    if result.changed {
+                        log::warn!("File is not properly formatted: {}", path.display());
+                        return Err(CliError::InvalidArguments(
+                            "File is not properly formatted. Run without --check to format it.".to_string()
+                        ));
+                    } else {
+                        log::info!("File is properly formatted");
+                    }
+                } else {
+                    log::info!("Formatting file: {}", path.display());
+
+                    let result = formatter.format_file(&path)?;
+                    if result.changed {
+                        formatter.write_file(&path, &result.content)?;
+                        log::info!("Formatted file: {}", path.display());
+                    } else {
+                        log::info!("File was already properly formatted");
+                    }
+                }
+            } else if path.is_dir() {
+                // Handle directory
+                if check {
+                    log::info!("Checking formatting of .ai files in: {}", path.display());
+
+                    let unformatted_files = formatter.check_directory(&path)?;
+
+                    if unformatted_files.is_empty() {
+                        log::info!("All .ai files are properly formatted");
+                    } else {
+                        log::warn!("Found {} unformatted files:", unformatted_files.len());
+                        for file_path in &unformatted_files {
+                            log::warn!("  {}", file_path.display());
+                        }
+                        return Err(CliError::InvalidArguments(
+                            "Some files are not properly formatted. Run without --check to format them.".to_string(),
+                        ));
+                    }
+                } else {
+                    log::info!("Formatting .ai files in: {}", path.display());
+
+                    let formatted_files = formatter.format_directory(&path)?;
+
+                    if formatted_files.is_empty() {
+                        log::info!("All .ai files were already properly formatted");
+                    } else {
+                        log::info!("Formatted {} files:", formatted_files.len());
+                        for file_path in &formatted_files {
+                            log::info!("  {}", file_path.display());
+                        }
+                    }
+                }
+            } else {
+                return Err(CliError::InvalidArguments(format!(
+                    "'{}' is neither a file nor a directory",
+                    path.display()
+                )));
+            }
+
             Ok(())
         }
     }

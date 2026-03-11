@@ -25,3 +25,4 @@ inventory = "0.3"
 
 [dev-dependencies]
 stdext = "0.3"
+tempfile = "3.0"
