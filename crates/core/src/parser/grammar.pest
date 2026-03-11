@@ -124,8 +124,8 @@ number_value = { "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 boolean_value = { "true" | "false" }
 null_value = { "null" }
 
-array_value = { "[" ~ (value ~ ("," ~ value)*)? ~ "]" }
-object_value = { "{" ~ (object_pair ~ ("," ~ object_pair)*)? ~ "}" }
+array_value = { "[" ~ (value ~ ("," ~ value)* ~ ","?)? ~ "]" }
+object_value = { "{" ~ (object_pair ~ ("," ~ object_pair)* ~ ","?)? ~ "}" }
 object_pair = { identifier ~ ":" ~ value }
 
 // Identifiers - used for names, not as values

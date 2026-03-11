@@ -1,13 +1,10 @@
-//! Code formatter for .ai workflow files
+//! AST-based formatter for .ai files
 //!
-//! This module provides functionality to format .ai files according to
-//! consistent style guidelines and syntax rules.
+//! This module provides clean, consistent formatting for Engine AI workflow files
+//! by parsing the AST and reassembling it with unified formatting rules.
 
-pub mod error;
-pub mod formatter;
+mod formatter;
+mod rules;
+mod writer;
 
-pub use error::FormatterError;
-pub use formatter::{Formatter, FormatterConfig, FormatResult};
-
-/// Result type for formatter operations
-pub type FormatterResult<T> = Result<T, FormatterError>;
+pub use formatter::{FormatResult, Formatter, FormatterError};
