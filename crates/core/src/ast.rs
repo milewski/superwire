@@ -123,6 +123,7 @@ pub enum SchemaReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     String(String),
+    MultilineString(String),
     Number(f64),
     Boolean(bool),
     Null,

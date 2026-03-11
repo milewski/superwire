@@ -1,5 +1,8 @@
 use super::{FormattingError, FormattingRule};
-use crate::ast::{AgentProperty, Value, Workflow, Agent, Span};
+use crate::ast::{AgentProperty, Value, Workflow};
+
+#[cfg(test)]
+use crate::ast::{Agent, Span};
 
 /// Rule that handles array formatting decisions
 /// Arrays break into multiple lines only when content is very long (>80 chars)
@@ -29,6 +32,7 @@ impl ArrayFormattingRule {
     fn estimate_value_length(&self, value: &Value) -> usize {
         match value {
             Value::String(s) => s.len() + 2, // Add quotes
+            Value::MultilineString(s) => s.len() + 6, // Add triple quotes
             Value::Number(_) => 10, // Rough estimate
             Value::Boolean(b) => if *b { 4 } else { 5 }, // "true" or "false"
             Value::Null => 4, // "null"
@@ -117,10 +121,6 @@ impl FormattingRule for ArrayFormattingRule {
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "ArrayFormattingRule"
-    }
-
     fn priority(&self) -> u32 {
         40 // Lower priority - after basic formatting
     }
@@ -139,7 +139,6 @@ mod tests {
     #[test]
     fn test_array_formatting_rule_creation() {
         let rule = ArrayFormattingRule::new();
-        assert_eq!(rule.name(), "ArrayFormattingRule");
         assert_eq!(rule.priority(), 40);
     }
 

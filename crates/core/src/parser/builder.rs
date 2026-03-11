@@ -356,7 +356,7 @@ impl AstBuilder {
                     return Ok(Value::String(self.parse_string_value(inner_pair)?));
                 }
                 Rule::multiline_string => {
-                    return Ok(Value::String(self.parse_multiline_string(inner_pair)?));
+                    return Ok(Value::MultilineString(self.parse_multiline_string(inner_pair)?));
                 }
                 Rule::number_value => {
                     let num_str = inner_pair.as_str();

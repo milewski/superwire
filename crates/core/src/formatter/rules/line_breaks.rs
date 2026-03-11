@@ -1,5 +1,8 @@
 use super::{FormattingError, FormattingRule};
-use crate::ast::{Workflow, Agent, Span};
+use crate::ast::Workflow;
+
+#[cfg(test)]
+use crate::ast::{Agent, Span};
 
 /// Rule that ensures proper line breaks between different sections
 pub struct LineBreaksRule;
@@ -15,10 +18,6 @@ impl FormattingRule for LineBreaksRule {
         // Line breaks are handled during serialization
         // Standard formatting: newlines between agents, double newlines between sections
         Ok(())
-    }
-
-    fn name(&self) -> &'static str {
-        "LineBreaksRule"
     }
 
     fn priority(&self) -> u32 {
@@ -39,7 +38,6 @@ mod tests {
     #[test]
     fn test_line_breaks_rule_creation() {
         let rule = LineBreaksRule::new();
-        assert_eq!(rule.name(), "LineBreaksRule");
         assert_eq!(rule.priority(), 30);
     }
 

@@ -1,5 +1,8 @@
 use super::{FormattingError, FormattingRule};
-use crate::ast::{AgentProperty, Value, Workflow, Agent, Span};
+use crate::ast::{AgentProperty, Value, Workflow};
+
+#[cfg(test)]
+use crate::ast::{Agent, Span};
 
 /// Rule that handles string formatting, especially multiline strings
 pub struct StringFormattingRule;
@@ -12,9 +15,20 @@ impl StringFormattingRule {
     /// Apply string formatting to a value recursively
     fn apply_to_value(&self, value: &mut Value) -> Result<(), FormattingError> {
         match value {
-            Value::String(_) => {
-                // String formatting is handled during serialization
-                // This rule ensures consistent string handling standards
+            Value::String(s) => {
+                // Convert to multiline if string is longer than 80 characters or contains newlines
+                if s.len() > 80 || s.contains('\n') {
+                    *value = Value::MultilineString(s.clone());
+                }
+            }
+            Value::Interpolated(s) => {
+                // Convert interpolated strings to multiline if they're long
+                if s.len() > 80 || s.contains('\n') {
+                    *value = Value::MultilineString(s.clone());
+                }
+            }
+            Value::MultilineString(_) => {
+                // Already multiline, nothing to do
             }
             Value::Array(items) => {
                 // Recursively apply to nested values
@@ -45,8 +59,8 @@ impl StringFormattingRule {
 impl FormattingRule for StringFormattingRule {
     fn apply(&self, workflow: &mut Workflow) -> Result<(), FormattingError> {
         // Apply string formatting to all agents
-        for agent in &mut workflow.agents {
-            for property in &mut agent.properties {
+        for agent in workflow.agents.iter_mut() {
+            for property in agent.properties.iter_mut() {
                 match property {
                     AgentProperty::Model { value, .. } => {
                         self.apply_to_value(value)?;
@@ -80,10 +94,6 @@ impl FormattingRule for StringFormattingRule {
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "StringFormattingRule"
-    }
-
     fn priority(&self) -> u32 {
         50 // Lower priority - after array formatting
     }
@@ -102,7 +112,6 @@ mod tests {
     #[test]
     fn test_string_formatting_rule_creation() {
         let rule = StringFormattingRule::new();
-        assert_eq!(rule.name(), "StringFormattingRule");
         assert_eq!(rule.priority(), 50);
     }
 
@@ -116,7 +125,7 @@ mod tests {
                 is_terminal: false,
                 properties: vec![
                     AgentProperty::Prompt {
-                        value: Value::String("Hello\nWorld".to_string()),
+                        value: Value::String("This is a very long string that should automatically break into multiline format when it exceeds a certain length threshold".to_string()),
                         span: Span::new(0, 0, 0, 0),
                     },
                 ],
@@ -130,6 +139,18 @@ mod tests {
         let rule = StringFormattingRule::new();
         let result = rule.apply(&mut workflow);
         assert!(result.is_ok());
+
+        // Check that the long string was converted to multiline
+        if let AgentProperty::Prompt { value, .. } = &workflow.agents[0].properties[0] {
+            match value {
+                Value::MultilineString(_) => {
+                    // Success - string was converted to multiline
+                }
+                _ => panic!("Expected MultilineString, got {:?}", value),
+            }
+        } else {
+            panic!("Expected Prompt property");
+        }
     }
 
     #[test]
@@ -143,8 +164,8 @@ mod tests {
                 properties: vec![
                     AgentProperty::Context {
                         value: Value::Array(vec![
-                            Value::String("item1".to_string()),
-                            Value::String("item2".to_string()),
+                            Value::String("short".to_string()),
+                            Value::String("This is a very long string that should automatically break into multiline format when it exceeds a certain length threshold".to_string()),
                         ]),
                         span: Span::new(0, 0, 0, 0),
                     },
@@ -159,5 +180,19 @@ mod tests {
         let rule = StringFormattingRule::new();
         let result = rule.apply(&mut workflow);
         assert!(result.is_ok());
+
+        // Check that the long string in the array was converted to multiline
+        if let AgentProperty::Context { value, .. } = &workflow.agents[0].properties[0] {
+            if let Value::Array(items) = value {
+                // First item should remain a regular string
+                assert!(matches!(items[0], Value::String(_)));
+                // Second item should be converted to multiline
+                assert!(matches!(items[1], Value::MultilineString(_)));
+            } else {
+                panic!("Expected Array value");
+            }
+        } else {
+            panic!("Expected Context property");
+        }
     }
 }
