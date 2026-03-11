@@ -1,10 +1,14 @@
 provider ollama {
     driver <- "ollama"
-    api_endpoint <- "http://100.76.5.36:11434"
+    api_endpoint <- "http://localhost:11434"
     models <- ["qwen3:8b"]
 }
 
-<- agent greeting {
+<- agent file_explorer {
     model <- "ollama/qwen3:8b"
-    prompt <- "Say hello and introduce yourself as an AI assistant"
+    tools <- [tool.bash]
+    prompt <- """
+        You are a helpful file system assistant.
+        List the files in the current directory and provide a brief summary of what you find.
+    """
 }

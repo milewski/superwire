@@ -1,26 +1,12 @@
 mod tools;
 
-use engine_ai_core::execution::engine::ExecutionEngine;
-use engine_ai_core::tools::{ToolRef, ToolRegistry};
-use std::sync::Arc;
-use tools::{CalculatorTool, GreetingTool};
+use engine_ai_core::try_workflow;
 
 #[tokio::main]
 async fn main() {
     colog::init();
 
-    // Create a tool registry and register custom tools
-    let mut tool_registry = ToolRegistry::new();
-    tool_registry.register(Arc::new(GreetingTool) as ToolRef);
-    tool_registry.register(Arc::new(CalculatorTool) as ToolRef);
-
-    // Note: Currently the ExecutionEngine doesn't support custom tool registries
-    // This is a placeholder for when that feature is implemented
-    // For now, tools need to be registered at the provider level
-
-    let engine = ExecutionEngine::new();
-
-    match engine.execute_workflow("workflow.ai").await {
+    match try_workflow!("workflow.ai").await {
         Ok(result) => {
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
         }
