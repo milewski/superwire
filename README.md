@@ -5,10 +5,10 @@
 ### Architecture & SOLID Principles
 - [x] Extract `AgentExecutor` class from `execute_agent` method (227 lines → multiple focused classes)
 - [x] Create `WorkflowExecutor` class to handle workflow execution logic (in progress - needs integration)
+- [x] Implement provider registration system (Open/Closed Principle - no more hardcoded match statements)
 - [ ] Create `ValueResolver` trait with implementations for references, interpolations, and function calls
 - [ ] Implement validation rule system using Chain of Responsibility pattern
 - [ ] Extract schema operations into `SchemaService`
-- [ ] Implement provider registration system (remove hardcoded factory)
 
 ### Performance Optimizations
 - [x] Use `LazyLock` for regex patterns (currently compiled on every call)
@@ -58,7 +58,10 @@
 - [x] Consolidate duplicate checking in validator (3 methods → 1 generic function)
 - [x] Consolidate error formatting (9 functions → 1 generic + 9 thin wrappers)
 - [x] Reduce validation code duplication by ~60 lines
+- [x] Implement provider registration system (Open/Closed Principle)
+- [x] Create ProviderBuilder trait and registry
+- [x] Refactor ProviderFactory to use registration system
 
 ## Current Focus
-Applied refactoring to validation module - reduced code duplication significantly.
-Next: Apply similar patterns to parser module and create more helper functions.
+Implemented provider registration system following Open/Closed Principle.
+Next: Add unit tests and optimize context resolver.

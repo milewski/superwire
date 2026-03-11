@@ -350,3 +350,23 @@ impl Provider for OllamaProvider {
         })
     }
 }
+
+// Provider builder implementation
+pub struct OllamaProviderBuilder;
+
+impl crate::providers::builder::ProviderBuilder for OllamaProviderBuilder {
+    fn build(&self, provider: &crate::ast::Provider) -> Result<crate::providers::provider::ProviderRef, ProviderError> {
+        let api_endpoint = provider
+            .api_endpoint
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
+
+        let ollama_provider = OllamaProvider::new(provider.name.clone(), api_endpoint, provider.models.clone());
+
+        Ok(std::sync::Arc::new(ollama_provider))
+    }
+
+    fn driver_name(&self) -> &'static str {
+        "ollama"
+    }
+}
