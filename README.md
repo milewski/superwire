@@ -55,7 +55,10 @@
 - [x] Implement check_duplicates macro for validation
 - [x] Implement make_span macro for AST construction
 - [x] Create ValidationRule trait for future rule-based validation
+- [x] Consolidate duplicate checking in validator (3 methods → 1 generic function)
+- [x] Consolidate error formatting (9 functions → 1 generic + 9 thin wrappers)
+- [x] Reduce validation code duplication by ~60 lines
 
 ## Current Focus
-Created macro infrastructure for parser and validation modules.
-Next: Apply macros to reduce code duplication in validator.rs and builder.rs.
+Applied refactoring to validation module - reduced code duplication significantly.
+Next: Apply similar patterns to parser module and create more helper functions.
