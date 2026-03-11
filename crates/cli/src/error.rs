@@ -31,4 +31,7 @@ pub enum CliError {
 
     #[error("Parse error: {0}")]
     ParseError(#[from] engine_ai_core::parser::error::ParserError),
+
+    #[error("Formatter error: {0}")]
+    FormatterError(#[from] engine_ai_core::formatter::FormatterError),
 }
