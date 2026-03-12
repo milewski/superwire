@@ -1,5 +1,69 @@
+use crate::define_error_formatters;
 use std::fmt::Write;
 use thiserror::Error;
+
+/// Generic error formatter that all specific formatters delegate to
+fn format_validation_error(
+    error_message: &str,
+    file_path: &str,
+    line: usize,
+    column: usize,
+    suggestion: Option<&String>,
+) -> String {
+    let mut result = format!("Error: {error_message}\n  --> {file_path}:{line}:{column}\n   |");
+
+    if let Some(suggestion_text) = suggestion {
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
+    }
+
+    result
+}
+
+// Generate standard error formatters using the macro
+define_error_formatters! {
+    base_formatter: format_validation_error,
+    formatters: [
+        (format_duplicate_name, "duplicate name '{}' (first defined at {})", [name: &str, first_defined_at: &str]),
+        (format_undefined_reference, "undefined reference '{}'", [reference: &str]),
+        (format_provider_model_mismatch, "provider/model mismatch: {}", [message: &str]),
+        (format_missing_template_variable, "missing template variable '{}'", [variable: &str]),
+        (format_unused_template_binding, "unused template binding '{}'", [binding: &str]),
+        (format_invalid_property, "invalid property '{}'", [property: &str]),
+        (format_invalid_input_output, "invalid input/output: {}", [message: &str]),
+        (format_missing_required_argument, "missing required argument '{}' in function '{}'", [argument_name: &str, function_name: &str]),
+    ]
+}
+
+// Custom formatters that need special logic beyond simple message formatting
+fn format_missing_required_property(
+    file_path: &str,
+    line: usize,
+    column: usize,
+    agent_name: &str,
+    property_name: &str,
+    suggestion: Option<&String>,
+) -> String {
+    let mut result =
+        format!("Error: missing required property '{property_name}'\n  --> {file_path}:{line}:{column}\n   |");
+
+    write!(result, "\n   = note: agent '{agent_name}' requires this property").unwrap();
+
+    if let Some(suggestion_text) = suggestion {
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
+    }
+
+    result
+}
+
+fn format_cyclic_dependency(file_path: &str, cycle: &str, suggestion: Option<&String>) -> String {
+    let mut result = format!("Error: cyclic dependency detected\n  --> {file_path}\n   |\n   = note: {cycle}");
+
+    if let Some(suggestion_text) = suggestion {
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
+    }
+
+    result
+}
 
 #[derive(Debug, Error)]
 pub enum ValidationError {
@@ -93,181 +157,4 @@ pub enum ValidationError {
         argument_name: String,
         suggestion: Option<String>,
     },
-}
-
-/// Generic error formatter that all specific formatters delegate to
-fn format_validation_error(
-    error_message: &str,
-    file_path: &str,
-    line: usize,
-    column: usize,
-    suggestion: Option<&String>,
-) -> String {
-    let mut result = format!("Error: {error_message}\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
-}
-
-fn format_duplicate_name(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    name: &str,
-    first_defined_at: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("duplicate name '{name}' (first defined at {first_defined_at})"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_undefined_reference(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    reference: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("undefined reference '{reference}'"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_provider_model_mismatch(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    message: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("provider/model mismatch: {message}"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_missing_template_variable(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    variable: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("missing template variable '{variable}'"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_unused_template_binding(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    binding: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("unused template binding '{binding}'"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_invalid_property(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    property: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("invalid property '{property}'"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_missing_required_property(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    agent_name: &str,
-    property_name: &str,
-    suggestion: Option<&String>,
-) -> String {
-    let mut result =
-        format!("Error: missing required property '{property_name}'\n  --> {file_path}:{line}:{column}\n   |");
-
-    write!(result, "\n   = note: agent '{agent_name}' requires this property").unwrap();
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
-}
-
-fn format_cyclic_dependency(file_path: &str, cycle: &str, suggestion: Option<&String>) -> String {
-    let mut result = format!("Error: cyclic dependency detected\n  --> {file_path}\n   |\n   = note: {cycle}");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
-}
-
-fn format_invalid_input_output(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    message: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("invalid input/output: {message}"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
-}
-
-fn format_missing_required_argument(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    function_name: &str,
-    argument_name: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_validation_error(
-        &format!("missing required argument '{argument_name}' in function '{function_name}'"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
 }

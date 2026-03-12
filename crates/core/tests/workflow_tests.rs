@@ -28,6 +28,7 @@ mod test {
     async fn test_input_output_workflow() {
         let inputs = input!(topic: "Rust", audience: "developers");
 
+        #[allow(clippy::items_after_statements)]
         #[derive(Deserialize)]
         #[allow(clippy::items_after_statements)]
         struct Output {
@@ -319,6 +320,7 @@ mod test {
     async fn test_terminal_with_output_workflow() {
         let inputs = input!(user_name: "Alice");
 
+        #[allow(clippy::items_after_statements)]
         #[derive(Deserialize)]
         #[allow(clippy::items_after_statements)]
         struct Output {
@@ -353,6 +355,7 @@ mod test {
     async fn test_compact_context_workflow() {
         let inputs = input!(topic: "artificial intelligence");
 
+        #[allow(clippy::items_after_statements)]
         #[derive(Deserialize)]
         #[allow(clippy::items_after_statements)]
         struct Output {
