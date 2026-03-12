@@ -1,4 +1,5 @@
 use crate::impl_tool;
+use crate::tools::error::SimpleToolError;
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -38,7 +39,10 @@ impl_tool!(DoneTool, DoneParameters, {
     description: "Signal completion of the agent loop. Must be called with status 'success' and the final output. For status 'fail', provide an error message string in the output parameter.",
     schema: |self| {
         let base_schema = schema_for!(DoneParameters);
-        let mut schema_value = serde_json::to_value(base_schema).unwrap();
+        let mut schema_value = match serde_json::to_value(base_schema) {
+            Ok(value) => value,
+            Err(_) => return serde_json::Value::Null, // Return null schema if serialization fails
+        };
 
         if let Some(ref output) = self.output_schema {
             if let Some(schema) = schema_value.as_object_mut() {
@@ -51,6 +55,9 @@ impl_tool!(DoneTool, DoneParameters, {
         schema_value
     },
     execute: |params| {
-        Ok(serde_json::to_value(params).unwrap())
+        match serde_json::to_value(params) {
+            Ok(value) => Ok(value),
+            Err(e) => Err(SimpleToolError::new(format!("Failed to serialize done parameters: {e}"))),
+        }
     }
 });
