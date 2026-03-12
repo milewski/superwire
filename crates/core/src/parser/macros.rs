@@ -1,5 +1,4 @@
 /// Macros for reducing parser boilerplate
-
 /// Macro to check for duplicates in a collection
 #[macro_export]
 macro_rules! check_duplicates {

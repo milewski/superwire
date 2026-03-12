@@ -80,7 +80,7 @@ macro_rules! impl_validation_rule {
             fn validate(
                 &self,
                 $workflow: &$crate::ast::Workflow,
-                $errors: &mut Vec<crate::validation::error::ValidationError>,
+                $errors: &mut Vec<$crate::validation::error::ValidationError>,
             ) {
                 $body
             }
