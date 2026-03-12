@@ -15,6 +15,7 @@ pub struct WorkflowExecutor<'a> {
 }
 
 impl<'a> WorkflowExecutor<'a> {
+    #[must_use]
     pub fn new(
         workflow: &'a Workflow,
         provider_registry: &'a ProviderRegistry,

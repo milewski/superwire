@@ -23,6 +23,7 @@ reqwest = { workspace = true }
 once_cell = { workspace = true }
 engine-ai-macros = { path = "../macros" }
 inventory = "0.3"
+async-openai = { workspace = true }
 
 [dev-dependencies]
 stdext = "0.3"

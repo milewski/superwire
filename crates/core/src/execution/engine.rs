@@ -2,7 +2,6 @@ use crate::ast::Workflow;
 use crate::execution::context::RuntimeContext;
 use crate::execution::error::ExecutionError;
 use crate::execution::orchestrator::AgentOrchestrator;
-use crate::execution::workflow_executor::WorkflowExecutor;
 use crate::parser::{AstBuilder, DependencyGraph};
 use crate::providers::{ProviderFactory, ProviderRef, ProviderRegistry};
 use crate::tools::ToolRegistry;

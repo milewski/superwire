@@ -79,7 +79,7 @@ impl WorkflowValidator {
                     column: span.column,
                     name: name.clone(),
                     first_defined_at: format!("line {first_location}"),
-                    suggestion: Some(format!("Rename one of the '{}' {item_type}s", name)),
+                    suggestion: Some(format!("Rename one of the '{name}' {item_type}s")),
                 });
             } else {
                 seen.insert(name.clone(), span.line);

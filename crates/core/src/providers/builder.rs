@@ -20,6 +20,7 @@ pub struct ProviderBuilderRegistry {
 
 impl ProviderBuilderRegistry {
     /// Create a new empty registry
+    #[must_use]
     pub fn new() -> Self {
         Self {
             builders: RwLock::new(HashMap::new()),
@@ -69,6 +70,7 @@ pub fn global_registry() -> &'static ProviderBuilderRegistry {
 
         // Register built-in providers
         registry.register(Arc::new(crate::providers::ollama::OllamaProviderBuilder));
+        registry.register(Arc::new(crate::providers::openai::OpenAiProviderBuilder));
 
         registry
     })
