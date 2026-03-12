@@ -57,13 +57,12 @@ impl ProviderBuilderRegistry {
 
     /// Get list of registered driver names
     pub fn registered_drivers(&self) -> Vec<String> {
-        self.builders
-            .read()
-            .map(|builders| builders.keys().cloned().collect())
-            .unwrap_or_else(|_| {
-                log::error!("Failed to acquire read lock for provider builder registry");
-                Vec::new()
-            })
+        if let Ok(builders) = self.builders.read() {
+            builders.keys().cloned().collect()
+        } else {
+            log::error!("Failed to acquire read lock for provider builder registry");
+            Vec::new()
+        }
     }
 }
 

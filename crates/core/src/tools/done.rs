@@ -39,9 +39,8 @@ impl_tool!(DoneTool, DoneParameters, {
     description: "Signal completion of the agent loop. Must be called with status 'success' and the final output. For status 'fail', provide an error message string in the output parameter.",
     schema: |self| {
         let base_schema = schema_for!(DoneParameters);
-        let mut schema_value = match serde_json::to_value(base_schema) {
-            Ok(value) => value,
-            Err(_) => return serde_json::Value::Null, // Return null schema if serialization fails
+        let Ok(mut schema_value) = serde_json::to_value(base_schema) else {
+            return serde_json::Value::Null; // Return null schema if serialization fails
         };
 
         if let Some(ref output) = self.output_schema {
