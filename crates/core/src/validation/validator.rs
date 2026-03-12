@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 static INTERPOLATION_PATTERN: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"\{\{([^}]+)\}\}").expect("Invalid regex pattern"));
 
+const WORKFLOW_FILE_PATH: &str = "workflow";
+
 pub struct WorkflowValidator;
 
 impl WorkflowValidator {
@@ -74,7 +76,7 @@ impl WorkflowValidator {
 
             if let Some(first_location) = seen.get(name) {
                 errors.push(ValidationError::DuplicateName {
-                    file_path: "workflow".to_string(),
+                    file_path: WORKFLOW_FILE_PATH.to_string(),
                     line: span.line,
                     column: span.column,
                     name: name.clone(),
@@ -104,7 +106,7 @@ impl WorkflowValidator {
 
             if !has_model {
                 errors.push(ValidationError::MissingRequiredProperty {
-                    file_path: "workflow".to_string(),
+                    file_path: WORKFLOW_FILE_PATH.to_string(),
                     line: agent.span.line,
                     column: agent.span.column,
                     agent_name: agent.name.clone(),
@@ -115,7 +117,7 @@ impl WorkflowValidator {
 
             if !has_prompt {
                 errors.push(ValidationError::MissingRequiredProperty {
-                    file_path: "workflow".to_string(),
+                    file_path: WORKFLOW_FILE_PATH.to_string(),
                     line: agent.span.line,
                     column: agent.span.column,
                     agent_name: agent.name.clone(),
@@ -183,7 +185,7 @@ impl WorkflowValidator {
                     if parts.len() == 1 && parts[0] != "input" {
                         if !agent_names.contains(parts[0]) {
                             errors.push(ValidationError::UndefinedReference {
-                                file_path: "workflow".to_string(),
+                                file_path: WORKFLOW_FILE_PATH.to_string(),
                                 line,
                                 column,
                                 reference: parts[0].to_string(),
@@ -193,7 +195,7 @@ impl WorkflowValidator {
                     } else if parts.len() == 2 && parts[0] == "agent" {
                         if !agent_names.contains(parts[1]) {
                             errors.push(ValidationError::UndefinedReference {
-                                file_path: "workflow".to_string(),
+                                file_path: WORKFLOW_FILE_PATH.to_string(),
                                 line,
                                 column,
                                 reference: parts[1].to_string(),
@@ -202,7 +204,7 @@ impl WorkflowValidator {
                         }
                     } else if parts.len() == 2 && parts[0] != "input" && !agent_names.contains(parts[0]) {
                         errors.push(ValidationError::UndefinedReference {
-                            file_path: "workflow".to_string(),
+                            file_path: WORKFLOW_FILE_PATH.to_string(),
                             line,
                             column,
                             reference: parts[0].to_string(),
@@ -242,7 +244,7 @@ impl WorkflowValidator {
             Reference::Agent { agent, .. } => {
                 if !agent_names.contains(agent.as_str()) {
                     errors.push(ValidationError::UndefinedReference {
-                        file_path: "workflow".to_string(),
+                        file_path: WORKFLOW_FILE_PATH.to_string(),
                         line,
                         column,
                         reference: agent.clone(),
@@ -253,7 +255,7 @@ impl WorkflowValidator {
             Reference::AgentOutput { agent } => {
                 if !agent_names.contains(agent.as_str()) {
                     errors.push(ValidationError::UndefinedReference {
-                        file_path: "workflow".to_string(),
+                        file_path: WORKFLOW_FILE_PATH.to_string(),
                         line,
                         column,
                         reference: agent.clone(),
@@ -264,7 +266,7 @@ impl WorkflowValidator {
             Reference::AgentContext { agent } => {
                 if !agent_names.contains(agent.as_str()) {
                     errors.push(ValidationError::UndefinedReference {
-                        file_path: "workflow".to_string(),
+                        file_path: WORKFLOW_FILE_PATH.to_string(),
                         line,
                         column,
                         reference: agent.clone(),
@@ -275,7 +277,7 @@ impl WorkflowValidator {
             Reference::Schema { name } => {
                 if !schema_names.contains(name.as_str()) {
                     errors.push(ValidationError::UndefinedReference {
-                        file_path: "workflow".to_string(),
+                        file_path: WORKFLOW_FILE_PATH.to_string(),
                         line,
                         column,
                         reference: name.clone(),
@@ -306,7 +308,7 @@ impl WorkflowValidator {
                         if let Some(models) = provider_models.get(provider_name) {
                             if !models.contains(&model_name.to_string()) {
                                 errors.push(ValidationError::ProviderModelMismatch {
-                                    file_path: "workflow".to_string(),
+                                    file_path: WORKFLOW_FILE_PATH.to_string(),
                                     line: span.line,
                                     column: span.column,
                                     message: format!("Model '{model_name}' not found in provider '{provider_name}'"),
@@ -388,7 +390,7 @@ impl WorkflowValidator {
                     let field_exists = schema.fields.iter().any(|f| f.name == *field);
                     if !field_exists {
                         errors.push(ValidationError::UndefinedReference {
-                            file_path: "workflow".to_string(),
+                            file_path: WORKFLOW_FILE_PATH.to_string(),
                             line,
                             column,
                             reference: format!("{agent}.{field}"),
@@ -422,7 +424,7 @@ impl WorkflowValidator {
                             let field_exists = schema.fields.iter().any(|f| f.name == field_name);
                             if !field_exists {
                                 errors.push(ValidationError::UndefinedReference {
-                                    file_path: "workflow".to_string(),
+                                    file_path: WORKFLOW_FILE_PATH.to_string(),
                                     line,
                                     column,
                                     reference: format!("agent.{agent_name}.{field_name}"),
@@ -436,7 +438,7 @@ impl WorkflowValidator {
                             }
                         } else {
                             errors.push(ValidationError::UndefinedReference {
-                                file_path: "workflow".to_string(),
+                                file_path: WORKFLOW_FILE_PATH.to_string(),
                                 line,
                                 column,
                                 reference: format!("agent.{agent_name}.{field_name}"),
@@ -509,7 +511,7 @@ impl WorkflowValidator {
                             for template_var in &template_vars {
                                 if !provided_bindings.contains(template_var) {
                                     errors.push(ValidationError::MissingTemplateVariable {
-                                        file_path: "workflow".to_string(),
+                                        file_path: WORKFLOW_FILE_PATH.to_string(),
                                         line: func_call.span.line,
                                         column: func_call.span.column,
                                         variable: template_var.clone(),
@@ -523,7 +525,7 @@ impl WorkflowValidator {
                             for binding in &provided_bindings {
                                 if !template_vars.contains(binding) {
                                     errors.push(ValidationError::UnusedTemplateBinding {
-                                        file_path: "workflow".to_string(),
+                                        file_path: WORKFLOW_FILE_PATH.to_string(),
                                         line: func_call.span.line,
                                         column: func_call.span.column,
                                         binding: binding.clone(),
@@ -577,7 +579,7 @@ impl WorkflowValidator {
                 if function_call.name == "compact" {
                     if !function_call.arguments.contains_key("model") {
                         errors.push(ValidationError::MissingRequiredArgument {
-                            file_path: "workflow".to_string(),
+                            file_path: WORKFLOW_FILE_PATH.to_string(),
                             line: function_call.span.line,
                             column: function_call.span.column,
                             function_name: "compact".to_string(),
@@ -590,7 +592,7 @@ impl WorkflowValidator {
 
                     if !function_call.arguments.contains_key("context") {
                         errors.push(ValidationError::MissingRequiredArgument {
-                            file_path: "workflow".to_string(),
+                            file_path: WORKFLOW_FILE_PATH.to_string(),
                             line: function_call.span.line,
                             column: function_call.span.column,
                             function_name: "compact".to_string(),
@@ -608,7 +610,7 @@ impl WorkflowValidator {
                                 if let Some(provider) = providers.iter().find(|p| p.name == provider_name) {
                                     if !provider.models.contains(&model_name.to_string()) {
                                         errors.push(ValidationError::ProviderModelMismatch {
-                                            file_path: "workflow".to_string(),
+                                            file_path: WORKFLOW_FILE_PATH.to_string(),
                                             line: function_call.span.line,
                                             column: function_call.span.column,
                                             message: format!(
@@ -623,7 +625,7 @@ impl WorkflowValidator {
                                 }
                             } else {
                                 errors.push(ValidationError::UndefinedReference {
-                                    file_path: "workflow".to_string(),
+                                    file_path: WORKFLOW_FILE_PATH.to_string(),
                                     line: function_call.span.line,
                                     column: function_call.span.column,
                                     reference: provider_name.to_string(),
