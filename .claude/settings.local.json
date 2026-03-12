@@ -16,7 +16,8 @@
       "mcp__linear-server__list_teams",
       "mcp__linear-server__list_issue_statuses",
       "mcp__linear-server__list_issues",
-      "mcp__linear-server__get_issue"
+      "mcp__linear-server__get_issue",
+      "mcp__github__sub_issue_write"
     ]
   }
 }
