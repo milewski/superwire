@@ -47,9 +47,7 @@ pub struct RuleEngine {
 
 impl RuleEngine {
     pub fn new() -> Self {
-        Self {
-            rules: Vec::new(),
-        }
+        Self { rules: Vec::new() }
     }
 
     /// Add a rule to the engine
@@ -76,14 +74,14 @@ impl Default for RuleEngine {
 }
 
 // Re-export all rule modules
-pub mod spacing;
+pub mod array_formatting;
 pub mod indentation;
 pub mod line_breaks;
-pub mod array_formatting;
+pub mod spacing;
 pub mod string_formatting;
 
-pub use spacing::SpacingRule;
+pub use array_formatting::ArrayFormattingRule;
 pub use indentation::IndentationRule;
 pub use line_breaks::LineBreaksRule;
-pub use array_formatting::ArrayFormattingRule;
+pub use spacing::SpacingRule;
 pub use string_formatting::StringFormattingRule;

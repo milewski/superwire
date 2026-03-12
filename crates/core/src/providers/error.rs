@@ -36,4 +36,7 @@ pub enum ProviderError {
 
     #[error("Execution error: {message}")]
     ExecutionError { message: String },
+
+    #[error("Invalid input: {message}")]
+    InvalidInput { message: String },
 }

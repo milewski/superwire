@@ -95,6 +95,23 @@ pub enum ValidationError {
     },
 }
 
+/// Generic error formatter that all specific formatters delegate to
+fn format_validation_error(
+    error_message: &str,
+    file_path: &str,
+    line: usize,
+    column: usize,
+    suggestion: Option<&String>,
+) -> String {
+    let mut result = format!("Error: {error_message}\n  --> {file_path}:{line}:{column}\n   |");
+
+    if let Some(suggestion_text) = suggestion {
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
+    }
+
+    result
+}
+
 fn format_duplicate_name(
     file_path: &str,
     line: usize,
@@ -103,15 +120,13 @@ fn format_duplicate_name(
     first_defined_at: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: duplicate name '{name}' (first defined at {first_defined_at})\n  --> {file_path}:{line}:{column}\n   |"
-    );
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("duplicate name '{name}' (first defined at {first_defined_at})"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_undefined_reference(
@@ -121,13 +136,13 @@ fn format_undefined_reference(
     reference: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: undefined reference '{reference}'\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("undefined reference '{reference}'"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_provider_model_mismatch(
@@ -137,13 +152,13 @@ fn format_provider_model_mismatch(
     message: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: provider/model mismatch: {message}\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("provider/model mismatch: {message}"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_missing_template_variable(
@@ -153,13 +168,13 @@ fn format_missing_template_variable(
     variable: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: missing template variable '{variable}'\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("missing template variable '{variable}'"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_unused_template_binding(
@@ -169,13 +184,13 @@ fn format_unused_template_binding(
     binding: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: unused template binding '{binding}'\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("unused template binding '{binding}'"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_invalid_property(
@@ -185,13 +200,13 @@ fn format_invalid_property(
     property: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: invalid property '{property}'\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("invalid property '{property}'"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_missing_required_property(
@@ -231,13 +246,13 @@ fn format_invalid_input_output(
     message: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: invalid input/output: {message}\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("invalid input/output: {message}"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_missing_required_argument(
@@ -248,13 +263,11 @@ fn format_missing_required_argument(
     argument_name: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!(
-        "Error: missing required argument '{argument_name}' in function '{function_name}'\n  --> {file_path}:{line}:{column}\n   |"
-    );
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_validation_error(
+        &format!("missing required argument '{argument_name}' in function '{function_name}'"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }

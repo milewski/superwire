@@ -9,7 +9,10 @@
       "WebFetch(domain:docs.rs)",
       "WebFetch(domain:docs.ollama.com)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:crates.io)"
+      "WebFetch(domain:crates.io)",
+      "mcp__github__create_pull_request",
+      "mcp__linear-server__save_issue",
+      "mcp__linear-server__list_issue_labels"
     ]
   }
 }

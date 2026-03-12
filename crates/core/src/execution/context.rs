@@ -1,9 +1,13 @@
 use crate::ast::{Reference, Value};
 use crate::execution::error::ExecutionError;
 use crate::providers::provider::Message;
+use regex::Regex;
 use serde_json::Value as JsonValue;
 use std::borrow::Cow;
 use std::collections::HashMap;
+
+static INTERPOLATION_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\{\{([^}]+)\}\}").expect("Invalid regex pattern"));
 
 #[derive(Clone)]
 pub struct RuntimeContext {
@@ -220,11 +224,9 @@ impl RuntimeContext {
     }
 
     fn resolve_interpolated_string(&self, template: &str) -> Result<JsonValue, ExecutionError> {
-        let interpolation_pattern = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
-
         let mut result = Cow::Borrowed(template);
 
-        for capture in interpolation_pattern.captures_iter(template) {
+        for capture in INTERPOLATION_PATTERN.captures_iter(template) {
             let full_match = &capture[0];
             let reference_text = capture[1].trim();
 
