@@ -289,10 +289,10 @@ impl WorkflowValidator {
     }
 
     fn check_provider_model_references(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        let provider_models: HashMap<String, Vec<String>> = workflow
+        let provider_models: HashMap<&str, &Vec<String>> = workflow
             .providers
             .iter()
-            .map(|p| (p.name.clone(), p.models.clone()))
+            .map(|p| (p.name.as_str(), &p.models))
             .collect();
 
         for agent in &workflow.agents {
@@ -321,7 +321,7 @@ impl WorkflowValidator {
     }
 
     fn check_agent_field_references(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        let agent_schemas: HashMap<String, Option<&crate::ast::Schema>> = workflow
+        let agent_schemas: HashMap<&str, Option<&crate::ast::Schema>> = workflow
             .agents
             .iter()
             .map(|agent| {
@@ -335,7 +335,7 @@ impl WorkflowValidator {
                         None
                     }
                 });
-                (agent.name.clone(), schema)
+                (agent.name.as_str(), schema)
             })
             .collect();
 
@@ -377,14 +377,14 @@ impl WorkflowValidator {
 
     fn check_field_references_in_value(
         value: &Value,
-        agent_schemas: &HashMap<String, Option<&crate::ast::Schema>>,
+        agent_schemas: &HashMap<&str, Option<&crate::ast::Schema>>,
         line: usize,
         column: usize,
         errors: &mut Vec<ValidationError>,
     ) {
         match value {
             Value::Reference(Reference::Agent { agent, field }) => {
-                if let Some(Some(schema)) = agent_schemas.get(agent) {
+                if let Some(Some(schema)) = agent_schemas.get(agent.as_str()) {
                     let field_exists = schema.fields.iter().any(|f| f.name == *field);
                     if !field_exists {
                         errors.push(ValidationError::UndefinedReference {
