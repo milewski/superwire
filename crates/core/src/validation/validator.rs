@@ -408,7 +408,10 @@ impl WorkflowValidator {
                 }
             }
             Value::Interpolated(template) => {
-                let interpolation_pattern = regex::Regex::new(r"\{\{\s*agent\.([^.}]+)\.([^}\s]+)\s*\}\}").unwrap();
+                let interpolation_pattern = match regex::Regex::new(r"\{\{\s*agent\.([^.}]+)\.([^}\s]+)\s*\}\}") {
+                    Ok(pattern) => pattern,
+                    Err(_) => return, // Skip this template if regex compilation fails
+                };
 
                 for capture in interpolation_pattern.captures_iter(template) {
                     let agent_name = capture[1].trim();
@@ -486,8 +489,10 @@ impl WorkflowValidator {
                 if func_call.name == "file" {
                     if let Some(Value::String(path)) = func_call.arguments.get("path") {
                         if let Ok(content) = std::fs::read_to_string(path) {
-                            let template_pattern =
-                                regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}").unwrap();
+                            let template_pattern = match regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}") {
+                                Ok(pattern) => pattern,
+                                Err(_) => return, // Skip template validation if regex compilation fails
+                            };
 
                             let mut template_vars = HashSet::new();
                             for capture in template_pattern.captures_iter(&content) {
@@ -600,17 +605,21 @@ impl WorkflowValidator {
                         if let Some((provider_name, model_name)) = model_ref.split_once('/') {
                             let provider_exists = providers.iter().any(|p| p.name == provider_name);
                             if provider_exists {
-                                let provider = providers.iter().find(|p| p.name == provider_name).unwrap();
-                                if !provider.models.contains(&model_name.to_string()) {
-                                    errors.push(ValidationError::ProviderModelMismatch {
-                                        file_path: "workflow".to_string(),
-                                        line: function_call.span.line,
-                                        column: function_call.span.column,
-                                        message: format!(
-                                            "Model '{model_name}' not found in provider '{provider_name}'"
-                                        ),
-                                        suggestion: Some(format!("Available models: {}", provider.models.join(", "))),
-                                    });
+                                if let Some(provider) = providers.iter().find(|p| p.name == provider_name) {
+                                    if !provider.models.contains(&model_name.to_string()) {
+                                        errors.push(ValidationError::ProviderModelMismatch {
+                                            file_path: "workflow".to_string(),
+                                            line: function_call.span.line,
+                                            column: function_call.span.column,
+                                            message: format!(
+                                                "Model '{model_name}' not found in provider '{provider_name}'"
+                                            ),
+                                            suggestion: Some(format!(
+                                                "Available models: {}",
+                                                provider.models.join(", ")
+                                            )),
+                                        });
+                                    }
                                 }
                             } else {
                                 errors.push(ValidationError::UndefinedReference {
