@@ -3,8 +3,8 @@
 //! This module provides clean, consistent formatting for Engine AI workflow files
 //! by parsing the AST and reassembling it with unified formatting rules.
 
-mod formatter;
+mod engine;
 mod rules;
 mod writer;
 
-pub use formatter::{FormatResult, Formatter, FormatterError};
+pub use engine::{FormatResult, Formatter, FormatterError};

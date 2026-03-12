@@ -1,6 +1,10 @@
 use crate::ast::{Agent, AgentProperty, Reference, Value, Workflow};
 use crate::validation::error::ValidationError;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
+
+static INTERPOLATION_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\{\{([^}]+)\}\}").expect("Invalid regex pattern"));
 
 pub struct WorkflowValidator;
 
@@ -26,58 +30,59 @@ impl WorkflowValidator {
     }
 
     fn check_duplicate_agent_names(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        let mut seen = HashMap::new();
-
-        for agent in &workflow.agents {
-            if let Some(first_location) = seen.get(&agent.name) {
-                errors.push(ValidationError::DuplicateName {
-                    file_path: "workflow".to_string(),
-                    line: agent.span.line,
-                    column: agent.span.column,
-                    name: agent.name.clone(),
-                    first_defined_at: format!("line {first_location}"),
-                    suggestion: Some(format!("Rename one of the '{}' agents", agent.name)),
-                });
-            } else {
-                seen.insert(agent.name.clone(), agent.span.line);
-            }
-        }
+        Self::check_duplicates(
+            &workflow.agents,
+            |agent| &agent.name,
+            |agent| &agent.span,
+            "agent",
+            errors,
+        );
     }
 
     fn check_duplicate_schema_names(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        let mut seen = HashMap::new();
-
-        for schema in &workflow.schemas {
-            if let Some(first_location) = seen.get(&schema.name) {
-                errors.push(ValidationError::DuplicateName {
-                    file_path: "workflow".to_string(),
-                    line: schema.span.line,
-                    column: schema.span.column,
-                    name: schema.name.clone(),
-                    first_defined_at: format!("line {first_location}"),
-                    suggestion: Some(format!("Rename one of the '{}' schemas", schema.name)),
-                });
-            } else {
-                seen.insert(schema.name.clone(), schema.span.line);
-            }
-        }
+        Self::check_duplicates(
+            &workflow.schemas,
+            |schema| &schema.name,
+            |schema| &schema.span,
+            "schema",
+            errors,
+        );
     }
 
     fn check_duplicate_provider_names(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
+        Self::check_duplicates(
+            &workflow.providers,
+            |provider| &provider.name,
+            |provider| &provider.span,
+            "provider",
+            errors,
+        );
+    }
+
+    fn check_duplicates<T>(
+        collection: &[T],
+        name_getter: impl Fn(&T) -> &String,
+        span_getter: impl Fn(&T) -> &crate::ast::Span,
+        item_type: &str,
+        errors: &mut Vec<ValidationError>,
+    ) {
         let mut seen = HashMap::new();
 
-        for provider in &workflow.providers {
-            if let Some(first_location) = seen.get(&provider.name) {
+        for item in collection {
+            let name = name_getter(item);
+            let span = span_getter(item);
+
+            if let Some(first_location) = seen.get(name) {
                 errors.push(ValidationError::DuplicateName {
                     file_path: "workflow".to_string(),
-                    line: provider.span.line,
-                    column: provider.span.column,
-                    name: provider.name.clone(),
+                    line: span.line,
+                    column: span.column,
+                    name: name.clone(),
                     first_defined_at: format!("line {first_location}"),
-                    suggestion: Some(format!("Rename one of the '{}' providers", provider.name)),
+                    suggestion: Some(format!("Rename one of the '{name}' {item_type}s")),
                 });
             } else {
-                seen.insert(provider.name.clone(), provider.span.line);
+                seen.insert(name.clone(), span.line);
             }
         }
     }
@@ -171,9 +176,7 @@ impl WorkflowValidator {
                 Self::check_reference(reference, agent_names, schema_names, line, column, errors);
             }
             Value::Interpolated(template) => {
-                let interpolation_pattern = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
-
-                for capture in interpolation_pattern.captures_iter(template) {
+                for capture in INTERPOLATION_PATTERN.captures_iter(template) {
                     let reference_text = capture[1].trim();
                     let parts: Vec<&str> = reference_text.split('.').collect();
 

@@ -13,7 +13,7 @@ impl StringFormattingRule {
     }
 
     /// Apply string formatting to a value recursively
-    fn apply_to_value(&self, value: &mut Value) -> Result<(), FormattingError> {
+    fn apply_to_value(value: &mut Value) -> Result<(), FormattingError> {
         match value {
             Value::String(s) => {
                 // Convert to multiline if string is longer than 80 characters or contains newlines
@@ -33,19 +33,19 @@ impl StringFormattingRule {
             Value::Array(items) => {
                 // Recursively apply to nested values
                 for item in items.iter_mut() {
-                    self.apply_to_value(item)?;
+                    Self::apply_to_value(item)?;
                 }
             }
             Value::Object(obj) => {
                 // Recursively apply to object values
                 for (_, val) in obj.iter_mut() {
-                    self.apply_to_value(val)?;
+                    Self::apply_to_value(val)?;
                 }
             }
             Value::FunctionCall(func) => {
                 // Apply to function call arguments
-                for (_, arg) in func.arguments.iter_mut() {
-                    self.apply_to_value(arg)?;
+                for arg in func.arguments.values_mut() {
+                    Self::apply_to_value(arg)?;
                 }
             }
             _ => {
@@ -59,20 +59,20 @@ impl StringFormattingRule {
 impl FormattingRule for StringFormattingRule {
     fn apply(&self, workflow: &mut Workflow) -> Result<(), FormattingError> {
         // Apply string formatting to all agents
-        for agent in workflow.agents.iter_mut() {
-            for property in agent.properties.iter_mut() {
+        for agent in &mut workflow.agents {
+            for property in &mut agent.properties {
                 match property {
                     AgentProperty::Model { value, .. } => {
-                        self.apply_to_value(value)?;
+                        Self::apply_to_value(value)?;
                     }
                     AgentProperty::Tools { value, .. } => {
-                        self.apply_to_value(value)?;
+                        Self::apply_to_value(value)?;
                     }
                     AgentProperty::Context { value, .. } => {
-                        self.apply_to_value(value)?;
+                        Self::apply_to_value(value)?;
                     }
                     AgentProperty::Prompt { value, .. } => {
-                        self.apply_to_value(value)?;
+                        Self::apply_to_value(value)?;
                     }
                     AgentProperty::ForEach { .. } => {
                         // ForEach doesn't have a value field
@@ -87,7 +87,7 @@ impl FormattingRule for StringFormattingRule {
         // Apply to output block values
         if let Some(output) = &mut workflow.output {
             for field in &mut output.fields {
-                self.apply_to_value(&mut field.value)?;
+                Self::apply_to_value(&mut field.value)?;
             }
         }
 

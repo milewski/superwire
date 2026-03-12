@@ -61,7 +61,7 @@ impl Default for SpacingRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Agent, AgentProperty, Value, Workflow, Span};
+    use crate::ast::{Agent, AgentProperty, Span, Value, Workflow};
 
     #[test]
     fn test_spacing_rule_creation() {

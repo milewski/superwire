@@ -130,9 +130,8 @@ async fn run() -> Result<(), CliError> {
                         return Err(CliError::InvalidArguments(
                             "File is not properly formatted. Run without --check to format it.".to_string(),
                         ));
-                    } else {
-                        log::info!("File is properly formatted");
                     }
+                    log::info!("File is properly formatted");
                 } else {
                     log::info!("Formatting file: {}", path.display());
 
