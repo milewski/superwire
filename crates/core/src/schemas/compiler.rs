@@ -13,7 +13,16 @@ impl SchemaCompiler {
         for field in &schema.fields {
             let field_schema = Self::compile_field_type(&field.field_type)?;
 
-            let mut field_schema_obj = field_schema.as_object().unwrap().clone();
+            let mut field_schema_obj = match field_schema.as_object() {
+                Some(obj) => obj.clone(),
+                None => {
+                    return Err(SchemaError::CompilationError {
+                        schema_name: Some(field.name.clone()),
+                        message: format!("Field '{}' schema is not a valid object", field.name),
+                        suggestion: None,
+                    });
+                }
+            };
 
             if let Some(description) = &field.description {
                 field_schema_obj.insert("description".to_string(), Value::String(description.clone()));
@@ -94,7 +103,16 @@ impl SchemaCompiler {
                 for field in fields {
                     let field_schema = Self::compile_field_type(&field.field_type)?;
 
-                    let mut field_schema_obj = field_schema.as_object().unwrap().clone();
+                    let mut field_schema_obj = match field_schema.as_object() {
+                        Some(obj) => obj.clone(),
+                        None => {
+                            return Err(SchemaError::CompilationError {
+                                schema_name: Some(field.name.clone()),
+                                message: format!("Field '{}' schema is not a valid object", field.name),
+                                suggestion: None,
+                            });
+                        }
+                    };
 
                     if let Some(description) = &field.description {
                         field_schema_obj.insert("description".to_string(), Value::String(description.clone()));

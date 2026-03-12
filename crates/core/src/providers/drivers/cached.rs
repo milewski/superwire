@@ -70,8 +70,14 @@ impl CachedProvider {
             fs::create_dir_all(parent).ok();
         }
 
-        let content = serde_json::to_string_pretty(cache).unwrap();
-        fs::write(&cache_path, content).ok();
+        match serde_json::to_string_pretty(cache) {
+            Ok(content) => {
+                fs::write(&cache_path, content).ok();
+            }
+            Err(e) => {
+                log::warn!("Failed to serialize cache for {test_name}: {e}");
+            }
+        }
     }
 
     fn cache_path(test_name: &str) -> PathBuf {
@@ -82,15 +88,17 @@ impl CachedProvider {
     }
 
     pub fn save_workflow_output(&self, output: serde_json::Value) {
-        let mut cache = self.cache.lock().unwrap();
-        cache.output = Some(output);
-        Self::save_cache(&self.test_name, &cache);
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.output = Some(output);
+            Self::save_cache(&self.test_name, &cache);
+        } else {
+            log::error!("Failed to acquire cache lock for saving workflow output");
+        }
     }
 
     #[must_use]
     pub fn get_cached_output(&self) -> Option<serde_json::Value> {
-        let cache = self.cache.lock().unwrap();
-        cache.output.clone()
+        self.cache.lock().ok()?.output.clone()
     }
 
     fn get_model_from_agent(agent: &Agent) -> String {
@@ -128,8 +136,15 @@ impl Provider for CachedProvider {
 
         // Try to replay from cache
         let replay_result = {
-            let cache = self.cache.lock().unwrap();
-            let mut replay_indices = self.agent_replay_indices.lock().unwrap();
+            let cache = self.cache.lock().map_err(|_| ProviderError::ExecutionError {
+                message: "Failed to acquire cache lock".to_string(),
+            })?;
+            let mut replay_indices = self
+                .agent_replay_indices
+                .lock()
+                .map_err(|_| ProviderError::ExecutionError {
+                    message: "Failed to acquire replay indices lock".to_string(),
+                })?;
 
             let replay_index = replay_indices.entry(agent_name.clone()).or_insert(0);
 
@@ -165,7 +180,9 @@ impl Provider for CachedProvider {
 
             // Save the complete conversation to cache
             {
-                let mut cache = self.cache.lock().unwrap();
+                let mut cache = self.cache.lock().map_err(|_| ProviderError::ExecutionError {
+                    message: "Failed to acquire cache lock for saving".to_string(),
+                })?;
 
                 let agent_conversations = cache.agents.entry(agent_name.clone()).or_default();
 

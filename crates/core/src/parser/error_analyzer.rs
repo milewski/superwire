@@ -76,7 +76,10 @@ impl ErrorAnalyzer {
             let first_word = words[0];
             let second_word = words[1];
 
-            let identifier_pattern = regex::Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
+            let identifier_pattern = match regex::Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$") {
+                Ok(pattern) => pattern,
+                Err(_) => return None, // Skip this analysis if regex compilation fails
+            };
 
             if identifier_pattern.is_match(first_word)
                 && (second_word.starts_with("agent.")
@@ -262,7 +265,10 @@ impl ErrorAnalyzer {
             return None;
         }
 
-        let identifier_pattern = regex::Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
+        let identifier_pattern = match regex::Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$") {
+            Ok(pattern) => pattern,
+            Err(_) => return None, // Skip this analysis if regex compilation fails
+        };
         if !identifier_pattern.is_match(value_part) {
             return None;
         }

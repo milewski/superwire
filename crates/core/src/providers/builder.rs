@@ -30,12 +30,19 @@ impl ProviderBuilderRegistry {
     /// Register a provider builder
     pub fn register(&self, builder: Arc<dyn ProviderBuilder>) {
         let driver_name = builder.driver_name().to_string();
-        self.builders.write().unwrap().insert(driver_name, builder);
+        if let Ok(mut builders) = self.builders.write() {
+            builders.insert(driver_name, builder);
+        } else {
+            log::error!("Failed to acquire write lock for provider builder registry");
+        }
     }
 
     /// Build a provider from AST configuration
     pub fn build(&self, provider: &AstProvider) -> Result<ProviderRef, ProviderError> {
-        let builders = self.builders.read().unwrap();
+        let builders = self.builders.read().map_err(|_| ProviderError::ConnectionError {
+            message: "Failed to acquire read lock for provider builder registry".to_string(),
+            suggestion: None,
+        })?;
 
         if let Some(builder) = builders.get(&provider.driver) {
             builder.build(provider)
@@ -50,7 +57,13 @@ impl ProviderBuilderRegistry {
 
     /// Get list of registered driver names
     pub fn registered_drivers(&self) -> Vec<String> {
-        self.builders.read().unwrap().keys().cloned().collect()
+        self.builders
+            .read()
+            .map(|builders| builders.keys().cloned().collect())
+            .unwrap_or_else(|_| {
+                log::error!("Failed to acquire read lock for provider builder registry");
+                Vec::new()
+            })
     }
 }
 

@@ -134,7 +134,10 @@ impl DependencyGraph {
                 _ => {}
             },
             Value::Interpolated(template) => {
-                let interpolation_pattern = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+                let interpolation_pattern = match regex::Regex::new(r"\{\{([^}]+)\}\}") {
+                    Ok(pattern) => pattern,
+                    Err(_) => return, // Return early if regex compilation fails
+                };
 
                 for capture in interpolation_pattern.captures_iter(template) {
                     let reference_text = capture[1].trim();
