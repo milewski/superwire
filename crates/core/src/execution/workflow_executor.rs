@@ -8,9 +8,8 @@ use crate::tools::ToolRegistry;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-type AgentTaskHandle = tokio::task::JoinHandle<
-    Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>,
->;
+type AgentTaskHandle =
+    tokio::task::JoinHandle<Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>>;
 
 pub struct WorkflowExecutor<'a> {
     workflow: &'a Workflow,

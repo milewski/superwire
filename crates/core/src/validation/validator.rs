@@ -408,9 +408,8 @@ impl WorkflowValidator {
                 }
             }
             Value::Interpolated(template) => {
-                let interpolation_pattern = match regex::Regex::new(r"\{\{\s*agent\.([^.}]+)\.([^}\s]+)\s*\}\}") {
-                    Ok(pattern) => pattern,
-                    Err(_) => return, // Skip this template if regex compilation fails
+                let Ok(interpolation_pattern) = regex::Regex::new(r"\{\{\s*agent\.([^.}]+)\.([^}\s]+)\s*\}\}") else {
+                    return; // Skip this template if regex compilation fails
                 };
 
                 for capture in interpolation_pattern.captures_iter(template) {
@@ -489,9 +488,9 @@ impl WorkflowValidator {
                 if func_call.name == "file" {
                     if let Some(Value::String(path)) = func_call.arguments.get("path") {
                         if let Ok(content) = std::fs::read_to_string(path) {
-                            let template_pattern = match regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}") {
-                                Ok(pattern) => pattern,
-                                Err(_) => return, // Skip template validation if regex compilation fails
+                            let Ok(template_pattern) = regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+                            else {
+                                return; // Skip template validation if regex compilation fails
                             };
 
                             let mut template_vars = HashSet::new();

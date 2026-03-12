@@ -30,7 +30,6 @@ mod test {
 
         #[allow(clippy::items_after_statements)]
         #[derive(Deserialize)]
-        #[allow(clippy::items_after_statements)]
         struct Output {
             topic: String,
             audience: String,
@@ -322,7 +321,6 @@ mod test {
 
         #[allow(clippy::items_after_statements)]
         #[derive(Deserialize)]
-        #[allow(clippy::items_after_statements)]
         struct Output {
             user: String,
             timestamp: String,
@@ -357,7 +355,6 @@ mod test {
 
         #[allow(clippy::items_after_statements)]
         #[derive(Deserialize)]
-        #[allow(clippy::items_after_statements)]
         struct Output {
             topic: String,
             summary: Vec<Value>,
