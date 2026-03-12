@@ -1,33 +1,43 @@
 use crate::providers::error::ProviderError;
 use crate::providers::provider::ProviderRef;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
 pub struct ProviderRegistry {
-    providers: HashMap<String, ProviderRef>,
+    providers: Arc<RwLock<HashMap<String, ProviderRef>>>,
 }
 
 impl ProviderRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            providers: HashMap::new(),
+            providers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub fn register(&mut self, name: String, provider: ProviderRef) {
-        self.providers.insert(name, provider);
+    pub fn register(&self, name: String, provider: ProviderRef) {
+        if let Ok(mut providers) = self.providers.write() {
+            providers.insert(name, provider);
+        } else {
+            log::error!("Failed to acquire write lock for ProviderRegistry");
+        }
     }
 
     pub fn get(&self, name: &str) -> Result<ProviderRef, ProviderError> {
-        self.providers
+        let providers = self.providers.read().map_err(|_| ProviderError::ConnectionError {
+            message: "Failed to acquire read lock for ProviderRegistry".to_string(),
+            suggestion: Some("This may indicate a deadlock or poisoned lock".to_string()),
+        })?;
+
+        providers
             .get(name)
             .cloned()
             .ok_or_else(|| ProviderError::ConnectionError {
                 message: format!("Provider '{name}' not found"),
                 suggestion: Some(format!(
                     "Available providers: {}",
-                    self.providers.keys().cloned().collect::<Vec<_>>().join(", ")
+                    providers.keys().cloned().collect::<Vec<_>>().join(", ")
                 )),
             })
     }
@@ -59,7 +69,13 @@ impl ProviderRegistry {
 
     #[must_use]
     pub fn list_providers(&self) -> Vec<String> {
-        self.providers.keys().cloned().collect()
+        self.providers
+            .read()
+            .map(|providers| providers.keys().cloned().collect())
+            .unwrap_or_else(|_| {
+                log::error!("Failed to acquire read lock for ProviderRegistry");
+                Vec::new()
+            })
     }
 }
 
