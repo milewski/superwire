@@ -45,6 +45,23 @@ pub enum ParserError {
     PestError(#[from] Box<pest::error::Error<crate::parser::Rule>>),
 }
 
+/// Base formatter for simple parser errors
+fn format_parser_error(
+    error_message: &str,
+    file_path: &str,
+    line: usize,
+    column: usize,
+    suggestion: Option<&String>,
+) -> String {
+    let mut result = format!("Error: {error_message}\n  --> {file_path}:{line}:{column}\n   |");
+
+    if let Some(suggestion_text) = suggestion {
+        write!(result, "\n   = help: {suggestion_text}").unwrap();
+    }
+
+    result
+}
+
 fn format_syntax_error(
     file_path: &str,
     line: usize,
@@ -82,13 +99,13 @@ fn format_undefined_reference(
     reference: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: undefined reference '{reference}'\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_parser_error(
+        &format!("undefined reference '{reference}'"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_template_variable_mismatch(
@@ -98,13 +115,13 @@ fn format_template_variable_mismatch(
     message: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: template variable mismatch: {message}\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_parser_error(
+        &format!("template variable mismatch: {message}"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 fn format_file_read_error(
@@ -115,13 +132,13 @@ fn format_file_read_error(
     source: &std::io::Error,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result = format!("Error: file read error: {path} ({source})\n  --> {file_path}:{line}:{column}\n   |");
-
-    if let Some(suggestion_text) = suggestion {
-        write!(result, "\n   = help: {suggestion_text}").unwrap();
-    }
-
-    result
+    format_parser_error(
+        &format!("file read error: {path} ({source})"),
+        file_path,
+        line,
+        column,
+        suggestion,
+    )
 }
 
 impl ParserError {
