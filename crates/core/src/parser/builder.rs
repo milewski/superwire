@@ -1,7 +1,8 @@
 use crate::ast::{
-    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField, Provider,
+    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField,
     Reference, Schema, SchemaField, SchemaReference, SchemaType, Span, Value, Workflow,
 };
+use crate::parser::ast_constructor::AstConstructor;
 use crate::parser::error::ParserError;
 use crate::parser::error_analyzer::ErrorAnalyzer;
 use crate::parser::{Rule, WorkflowParser};
@@ -22,6 +23,7 @@ impl AstBuilder {
         let pairs = WorkflowParser::parse(Rule::workflow, input_str)
             .map_err(|error| self.enhance_pest_error(error, input_str))?;
 
+        let constructor = AstConstructor::new(self.file_path.clone());
         let mut providers = Vec::new();
         let mut schemas = Vec::new();
         let mut agents = Vec::new();
@@ -33,7 +35,7 @@ impl AstBuilder {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
                         Rule::provider => {
-                            providers.push(self.parse_provider(inner_pair)?);
+                            providers.push(constructor.parse_provider(inner_pair)?);
                         }
                         Rule::schema => {
                             schemas.push(self.parse_named_schema(inner_pair)?);
@@ -61,83 +63,6 @@ impl AstBuilder {
             input,
             output,
             span: Span::new(0, input_str.len(), 1, 1),
-        })
-    }
-
-    fn parse_provider(&self, pair: pest::iterators::Pair<Rule>) -> Result<Provider, ParserError> {
-        let span = self.pair_to_span(&pair);
-        let mut name = String::new();
-        let mut driver = String::new();
-        let mut api_endpoint = None;
-        let mut models = Vec::new();
-
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => {
-                    if name.is_empty() {
-                        name = inner_pair.as_str().to_string();
-                    }
-                }
-                Rule::provider_property => {
-                    let full_text = inner_pair.as_str();
-                    let property_name = if full_text.starts_with("driver") {
-                        "driver"
-                    } else if full_text.starts_with("api_endpoint") {
-                        "api_endpoint"
-                    } else if full_text.starts_with("models") {
-                        "models"
-                    } else {
-                        ""
-                    };
-
-                    let mut property_value = None;
-
-                    for prop_pair in inner_pair.into_inner() {
-                        if prop_pair.as_rule() == Rule::string_value {
-                            property_value = Some(Value::String(self.parse_string_value(prop_pair)?));
-                        } else if prop_pair.as_rule() == Rule::array_value {
-                            property_value = Some(self.parse_array_value(prop_pair)?);
-                        }
-                    }
-
-                    if let Some(value) = property_value {
-                        match property_name {
-                            "driver" => {
-                                if let Value::String(string) = value {
-                                    driver = string;
-                                }
-                            }
-                            "api_endpoint" => {
-                                if let Value::String(string) = value {
-                                    api_endpoint = Some(string);
-                                }
-                            }
-                            "models" => {
-                                if let Value::Array(array) = value {
-                                    models = array
-                                        .iter()
-                                        .filter_map(|v| match v {
-                                            Value::String(string) => Some(string.clone()),
-                                            Value::Interpolated(string) => Some(string.clone()),
-                                            _ => None,
-                                        })
-                                        .collect();
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(Provider {
-            name,
-            driver,
-            api_endpoint,
-            models,
-            span,
         })
     }
 
