@@ -121,7 +121,7 @@ macro_rules! impl_tool {
                     }
                 })?;
 
-                let result: Result<serde_json::Value, $crate::tools::error::SimpleToolError> = (|| $body)();
+                let result: Result<serde_json::Value, $crate::tools::error::SimpleToolError> = $body;
                 result.map_err(|e| e.into_tool_error(self.name().to_string()))
             }
         }
@@ -162,7 +162,7 @@ macro_rules! impl_tool {
                     }
                 })?;
 
-                let result: Result<serde_json::Value, $crate::tools::error::SimpleToolError> = (|| $body)();
+                let result: Result<serde_json::Value, $crate::tools::error::SimpleToolError> = $body;
                 result.map_err(|e| e.into_tool_error(self.name().to_string()))
             }
         }
@@ -198,7 +198,7 @@ macro_rules! impl_tool {
                 &self,
                 _parameters: serde_json::Value,
             ) -> Result<serde_json::Value, $crate::tools::ToolError> {
-                let result: Result<serde_json::Value, $crate::tools::error::SimpleToolError> = (|| $body)();
+                let result: Result<serde_json::Value, $crate::tools::error::SimpleToolError> = $body;
                 result.map_err(|e| e.into_tool_error(self.name().to_string()))
             }
         }

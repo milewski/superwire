@@ -146,7 +146,7 @@ mod tests {
                 Value::MultilineString(_) => {
                     // Success - string was converted to multiline
                 }
-                _ => panic!("Expected MultilineString, got {:?}", value),
+                _ => panic!("Expected MultilineString, got {value:?}"),
             }
         } else {
             panic!("Expected Prompt property");
