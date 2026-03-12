@@ -62,6 +62,7 @@ async fn main() {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run() -> Result<(), CliError> {
     let arguments = CliArgs::parse();
 

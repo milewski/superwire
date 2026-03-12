@@ -14,6 +14,7 @@ mod test {
     #[tokio::test]
     async fn test_basic_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             greeting: String,
         }
@@ -28,6 +29,7 @@ mod test {
         let inputs = input!(topic: "Rust", audience: "developers");
 
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             topic: String,
             audience: String,
@@ -44,6 +46,7 @@ mod test {
     #[tokio::test]
     async fn test_schema_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             person: Person,
         }
@@ -65,6 +68,7 @@ mod test {
     #[tokio::test]
     async fn test_inline_schema_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             person: Person,
         }
@@ -86,6 +90,7 @@ mod test {
     #[tokio::test]
     async fn test_parallel_execution_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             joke: String,
             fact: String,
@@ -102,6 +107,7 @@ mod test {
     #[tokio::test]
     async fn test_enum_schema_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             weather: Weather,
         }
@@ -121,6 +127,7 @@ mod test {
     #[tokio::test]
     async fn test_dependencies_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             article: String,
         }
@@ -133,6 +140,7 @@ mod test {
     #[tokio::test]
     async fn test_context_sharing_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             conversation_continue: String,
         }
@@ -145,6 +153,7 @@ mod test {
     #[tokio::test]
     async fn test_for_each_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             doubled: Vec<f64>,
             numbers: Vec<f64>,
@@ -167,6 +176,7 @@ mod test {
     #[tokio::test]
     async fn test_string_interpolation_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             story: String,
         }
@@ -179,6 +189,7 @@ mod test {
     #[tokio::test]
     async fn test_schema_descriptions_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             user: User,
         }
@@ -200,6 +211,7 @@ mod test {
     #[tokio::test]
     async fn test_multiline_prompt_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             story: String,
         }
@@ -213,6 +225,7 @@ mod test {
     #[tokio::test]
     async fn test_nullable_schema_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             person: Person,
         }
@@ -236,6 +249,7 @@ mod test {
     #[tokio::test]
     async fn test_compact_syntax_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             single_context_summary: Vec<Value>,
             multi_context_summary: Vec<Value>,
@@ -250,6 +264,7 @@ mod test {
     #[tokio::test]
     async fn test_auto_unwrap_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             single_unwrapped: String,
             single_explicit: String,
@@ -277,6 +292,7 @@ mod test {
     #[tokio::test]
     async fn test_agent_loop_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             result: String,
         }
@@ -289,6 +305,7 @@ mod test {
     #[tokio::test]
     async fn test_no_schema_done_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             simple: String,
         }
@@ -303,6 +320,7 @@ mod test {
         let inputs = input!(user_name: "Alice");
 
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             user: String,
             timestamp: String,
@@ -319,6 +337,7 @@ mod test {
     #[tokio::test]
     async fn test_multiple_terminal_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             joke: String,
             fact: String,
@@ -335,6 +354,7 @@ mod test {
         let inputs = input!(topic: "artificial intelligence");
 
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             topic: String,
             summary: Vec<Value>,
@@ -351,6 +371,7 @@ mod test {
     #[tokio::test]
     async fn test_simple_inline_type_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             sum: u32,
             greeting: String,
@@ -367,6 +388,7 @@ mod test {
     #[tokio::test]
     async fn test_inline_type_demo_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             calculation: u32,
             greeting: String,
@@ -387,6 +409,7 @@ mod test {
     #[tokio::test]
     async fn test_for_each_context_workflow() {
         #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
         struct Output {
             items: Vec<String>,
             descriptions: Vec<Description>,
@@ -412,6 +435,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[allow(clippy::float_cmp)]
     async fn test_explicit_tools_workflow() {
         assert_eq!(workflow!("workflows/explicit_tools.ai" => f64).await, 8.0);
     }

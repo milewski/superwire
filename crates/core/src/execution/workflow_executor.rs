@@ -8,6 +8,10 @@ use crate::tools::ToolRegistry;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
+type AgentTaskHandle = tokio::task::JoinHandle<
+    Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>,
+>;
+
 pub struct WorkflowExecutor<'a> {
     workflow: &'a Workflow,
     provider_registry: &'a ProviderRegistry,
@@ -50,7 +54,7 @@ impl<'a> WorkflowExecutor<'a> {
 
         log::info!("All agents executed successfully");
 
-        self.build_final_output(&runtime_context).await
+        self.build_final_output(&runtime_context)
     }
 
     async fn execute_levels(
@@ -65,7 +69,7 @@ impl<'a> WorkflowExecutor<'a> {
 
             for agent_name in level {
                 let agent = self.find_agent(agent_name)?;
-                let task = self.spawn_agent_task(agent, runtime_context).await?;
+                let task = self.spawn_agent_task(agent, runtime_context)?;
                 tasks.push(task);
             }
 
@@ -87,14 +91,11 @@ impl<'a> WorkflowExecutor<'a> {
             })
     }
 
-    async fn spawn_agent_task(
+    fn spawn_agent_task(
         &self,
         agent: &Agent,
         runtime_context: &RuntimeContext,
-    ) -> Result<
-        tokio::task::JoinHandle<Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>>,
-        ExecutionError,
-    > {
+    ) -> Result<AgentTaskHandle, ExecutionError> {
         let agent_clone = agent.clone();
         let provider_registry_clone = self.provider_registry.clone();
         let runtime_context_clone = runtime_context.clone();
@@ -286,11 +287,7 @@ impl<'a> WorkflowExecutor<'a> {
 
     async fn collect_task_results(
         &self,
-        tasks: Vec<
-            tokio::task::JoinHandle<
-                Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>,
-            >,
-        >,
+        tasks: Vec<AgentTaskHandle>,
         runtime_context: &mut RuntimeContext,
     ) -> Result<(), ExecutionError> {
         for task in tasks {
@@ -307,7 +304,7 @@ impl<'a> WorkflowExecutor<'a> {
         Ok(())
     }
 
-    async fn build_final_output(&self, runtime_context: &RuntimeContext) -> Result<JsonValue, ExecutionError> {
+    fn build_final_output(&self, runtime_context: &RuntimeContext) -> Result<JsonValue, ExecutionError> {
         let terminal_agents: Vec<_> = self.workflow.agents.iter().filter(|agent| agent.is_terminal).collect();
 
         if terminal_agents.is_empty() && self.workflow.output.is_none() {
