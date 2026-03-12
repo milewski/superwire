@@ -7,4 +7,5 @@ pub mod providers;
 pub mod schemas;
 pub mod tools;
 pub mod utils;
+#[macro_use]
 pub mod validation;
