@@ -272,7 +272,7 @@ impl ExecutionEngine {
         workflow: &Workflow,
         inputs: HashMap<String, Value>,
     ) -> Result<Value, ExecutionError> {
-        let mut provider_registry = ProviderRegistry::new();
+        let provider_registry = ProviderRegistry::new();
 
         for provider in &workflow.providers {
             log::info!("Initializing provider: {}", provider.name);
@@ -351,7 +351,7 @@ impl ExecutionEngine {
     }
 
     fn initialize_runtime_context(&self, inputs: HashMap<String, Value>) -> RuntimeContext {
-        let mut runtime_context = RuntimeContext::new();
+        let runtime_context = RuntimeContext::new();
 
         for (field_name, value) in inputs {
             runtime_context.set_input_value(field_name, value);
@@ -532,7 +532,7 @@ impl ExecutionEngine {
         for (iteration_index, item) in items.into_iter().enumerate() {
             let agent_clone = agent.clone();
             let initial_context_clone = initial_context.clone();
-            let mut iteration_context = runtime_context.clone();
+            let iteration_context = runtime_context.clone();
             iteration_context.set_input_value(iteration_var.to_string(), item);
             let provider_for_iteration = provider.clone();
             let tool_registry_for_iteration = tool_registry.clone();

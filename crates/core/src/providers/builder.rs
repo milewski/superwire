@@ -47,7 +47,7 @@ impl ProviderBuilderRegistry {
         if let Some(builder) = builders.get(&provider.driver) {
             builder.build(provider)
         } else {
-            let available: Vec<_> = builders.keys().cloned().collect();
+            let available: Vec<String> = builders.keys().cloned().collect();
             Err(ProviderError::ConnectionError {
                 message: format!("Unknown provider driver: {}", provider.driver),
                 suggestion: Some(format!("Supported drivers: {}", available.join(", "))),
@@ -57,13 +57,12 @@ impl ProviderBuilderRegistry {
 
     /// Get list of registered driver names
     pub fn registered_drivers(&self) -> Vec<String> {
-        self.builders
-            .read()
-            .map(|builders| builders.keys().cloned().collect())
-            .unwrap_or_else(|_| {
-                log::error!("Failed to acquire read lock for provider builder registry");
-                Vec::new()
-            })
+        if let Ok(builders) = self.builders.read() {
+            builders.keys().cloned().collect()
+        } else {
+            log::error!("Failed to acquire read lock for provider builder registry");
+            Vec::new()
+        }
     }
 }
 
