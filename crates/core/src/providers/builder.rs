@@ -47,7 +47,7 @@ impl ProviderBuilderRegistry {
         if let Some(builder) = builders.get(&provider.driver) {
             builder.build(provider)
         } else {
-            let available: Vec<_> = builders.keys().cloned().collect();
+            let available: Vec<String> = builders.keys().cloned().collect();
             Err(ProviderError::ConnectionError {
                 message: format!("Unknown provider driver: {}", provider.driver),
                 suggestion: Some(format!("Supported drivers: {}", available.join(", "))),

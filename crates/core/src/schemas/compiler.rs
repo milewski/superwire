@@ -25,7 +25,7 @@ impl SchemaCompiler {
             };
 
             if let Some(description) = &field.description {
-                field_schema_obj.insert("description".to_string(), Value::String(description.clone()));
+                field_schema_obj.insert("description".to_string(), Value::String(description.to_string()));
             }
 
             properties.insert(field.name.clone(), Value::Object(field_schema_obj));
@@ -115,7 +115,7 @@ impl SchemaCompiler {
                     };
 
                     if let Some(description) = &field.description {
-                        field_schema_obj.insert("description".to_string(), Value::String(description.clone()));
+                        field_schema_obj.insert("description".to_string(), Value::String(description.to_string()));
                     }
 
                     properties.insert(field.name.clone(), Value::Object(field_schema_obj));

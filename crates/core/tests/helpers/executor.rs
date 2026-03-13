@@ -41,7 +41,7 @@ async fn execute_with_cached_providers(
     test_name: &str,
     workflow_hash: &str,
 ) -> Result<Value, engine_ai_core::execution::error::ExecutionError> {
-    let mut provider_registry = ProviderRegistry::new();
+    let provider_registry = ProviderRegistry::new();
     let mut cached_providers = Vec::new();
 
     for provider in &workflow.providers {
