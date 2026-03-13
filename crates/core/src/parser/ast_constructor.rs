@@ -1,6 +1,4 @@
-use crate::ast::{
-    FunctionCall, Provider, Reference, Span, Value,
-};
+use crate::ast::{FunctionCall, Provider, Reference, Span, Value};
 use crate::parser::error::ParserError;
 use crate::parser::Rule;
 use std::collections::HashMap;
@@ -16,6 +14,7 @@ impl AstConstructor {
         Self { file_path }
     }
 
+    #[must_use]
     pub fn pair_to_span(&self, pair: &pest::iterators::Pair<Rule>) -> Span {
         let span = pair.as_span();
         let (line, column) = span.start_pos().line_col();
