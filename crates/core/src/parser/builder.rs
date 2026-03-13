@@ -1,6 +1,6 @@
 use crate::ast::{
-    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField,
-    Reference, Schema, SchemaField, SchemaReference, SchemaType, Span, Value, Workflow,
+    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField, Reference,
+    Schema, SchemaField, SchemaReference, SchemaType, Span, Value, Workflow,
 };
 use crate::parser::ast_constructor::AstConstructor;
 use crate::parser::error::ParserError;
