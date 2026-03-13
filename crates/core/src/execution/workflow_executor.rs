@@ -242,7 +242,7 @@ impl<'a> WorkflowExecutor<'a> {
         for (iteration_index, item) in items.into_iter().enumerate() {
             let agent_clone = agent.clone();
             let initial_context_clone = initial_context.to_vec();
-            let mut iteration_context = runtime_context.clone();
+            let iteration_context = runtime_context.clone();
             iteration_context.set_input_value(iteration_var.to_string(), item);
             let provider_for_iteration = provider.clone();
             let tool_registry_for_iteration = tool_registry.clone();
@@ -296,8 +296,8 @@ impl<'a> WorkflowExecutor<'a> {
                 suggestion: None,
             })??;
 
-            runtime_context.set_agent_output(agent_name.clone(), output);
-            runtime_context.set_agent_context(agent_name, context);
+            runtime_context.set_agent_context(agent_name.clone(), context);
+            runtime_context.set_agent_output(agent_name, output);
         }
 
         Ok(())

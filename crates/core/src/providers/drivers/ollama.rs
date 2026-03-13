@@ -335,8 +335,8 @@ impl Provider for OllamaProvider {
                 .collect()
         });
 
-        let mut updated_context = context.clone();
-
+        let mut updated_context = Vec::with_capacity(context.len() + 1);
+        updated_context.extend_from_slice(&context);
         updated_context.push(Message::Assistant {
             content: output_content.clone(),
             tool_calls,

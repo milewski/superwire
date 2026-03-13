@@ -5,12 +5,18 @@ use regex::Regex;
 use serde_json::Value as JsonValue;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 static INTERPOLATION_PATTERN: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"\{\{([^}]+)\}\}").expect("Invalid regex pattern"));
 
+/// Shared runtime context that can be safely accessed across threads
 #[derive(Clone)]
 pub struct RuntimeContext {
+    inner: Arc<RwLock<RuntimeContextInner>>,
+}
+
+struct RuntimeContextInner {
     agent_outputs: HashMap<String, JsonValue>,
     agent_contexts: HashMap<String, Vec<Message>>,
     input_values: HashMap<String, JsonValue>,
@@ -20,27 +26,44 @@ impl RuntimeContext {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            agent_outputs: HashMap::new(),
-            agent_contexts: HashMap::new(),
-            input_values: HashMap::new(),
+            inner: Arc::new(RwLock::new(RuntimeContextInner {
+                agent_outputs: HashMap::new(),
+                agent_contexts: HashMap::new(),
+                input_values: HashMap::new(),
+            })),
         }
     }
 
-    pub fn set_agent_output(&mut self, agent_name: String, output: JsonValue) {
+    pub fn set_agent_output(&self, agent_name: String, output: JsonValue) {
         log::debug!("Setting output for agent: {agent_name}");
         log::trace!("Agent '{agent_name}' output: {output:?}");
-        self.agent_outputs.insert(agent_name, output);
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.agent_outputs.insert(agent_name, output);
+        } else {
+            log::error!("Failed to acquire write lock for RuntimeContext");
+        }
     }
 
-    pub fn set_agent_context(&mut self, agent_name: String, context: Vec<Message>) {
+    pub fn set_agent_context(&self, agent_name: String, context: Vec<Message>) {
         log::debug!("Setting context for agent: {} ({} messages)", agent_name, context.len());
-        self.agent_contexts.insert(agent_name, context);
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.agent_contexts.insert(agent_name, context);
+        } else {
+            log::error!("Failed to acquire write lock for RuntimeContext");
+        }
     }
 
-    pub fn set_input_value(&mut self, field_name: String, value: JsonValue) {
+    pub fn set_input_value(&self, field_name: String, value: JsonValue) {
         log::debug!("Setting input value: {field_name}");
         log::trace!("Input '{field_name}' value: {value:?}");
-        self.input_values.insert(field_name, value);
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.input_values.insert(field_name, value);
+        } else {
+            log::error!("Failed to acquire write lock for RuntimeContext");
+        }
     }
 
     pub fn resolve_value(&self, value: &Value) -> Result<JsonValue, ExecutionError> {
@@ -133,9 +156,15 @@ impl RuntimeContext {
     fn resolve_reference(&self, reference: &Reference) -> Result<JsonValue, ExecutionError> {
         log::trace!("Resolving reference: {reference:?}");
 
+        let inner = self.inner.read().map_err(|_| ExecutionError::RuntimeError {
+            agent: "context".to_string(),
+            message: "Failed to acquire read lock for RuntimeContext".to_string(),
+            suggestion: Some("This may indicate a deadlock or poisoned lock".to_string()),
+        })?;
+
         match reference {
             Reference::Agent { agent, field } => {
-                if let Some(output) = self.agent_outputs.get(agent) {
+                if let Some(output) = inner.agent_outputs.get(agent) {
                     if field == "_output" {
                         log::trace!("Resolved agent '{agent}' full output");
                         return Ok(output.clone());
@@ -164,7 +193,7 @@ impl RuntimeContext {
                 })
             }
             Reference::AgentOutput { agent } => {
-                if let Some(output) = self.agent_outputs.get(agent) {
+                if let Some(output) = inner.agent_outputs.get(agent) {
                     log::trace!("Resolved agent '{agent}' output");
 
                     if let JsonValue::Object(map) = output {
@@ -187,7 +216,7 @@ impl RuntimeContext {
                 })
             }
             Reference::AgentContext { agent } => {
-                if let Some(context) = self.agent_contexts.get(agent) {
+                if let Some(context) = inner.agent_contexts.get(agent) {
                     log::trace!("Resolved agent '{}' context ({} messages)", agent, context.len());
                     return Ok(serde_json::to_value(context).unwrap_or(JsonValue::Null));
                 }
@@ -200,7 +229,7 @@ impl RuntimeContext {
                 })
             }
             Reference::Input { field } => {
-                if let Some(value) = self.input_values.get(field) {
+                if let Some(value) = inner.input_values.get(field) {
                     log::trace!("Resolved input field '{field}'");
                     return Ok(value.clone());
                 }
