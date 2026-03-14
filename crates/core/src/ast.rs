@@ -68,7 +68,7 @@ pub enum SchemaType {
     Number,
     Boolean,
     Null,
-    Array(Box<Self>),
+    Array(Box<Self>, Option<usize>),
     Enum(Vec<String>),
     Object(Vec<SchemaField>),
 }

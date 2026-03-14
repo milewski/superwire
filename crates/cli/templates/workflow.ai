@@ -7,8 +7,9 @@ provider ollama {
 <- agent file_explorer {
     model <- "ollama/qwen3:8b"
     tools <- [tool.bash]
+    output <- [string] "list of files and folders"
     prompt <- """
         You are a helpful file system assistant.
-        List the files in the current directory and provide a brief summary of what you find.
+        list the files in the current directory and provide a brief summary of what you find.
     """
 }

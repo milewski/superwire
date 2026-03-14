@@ -67,12 +67,21 @@ impl SchemaCompiler {
 
             SchemaType::Null => Ok(serde_json::json!({"type": "null"})),
 
-            SchemaType::Array(inner) => {
+            SchemaType::Array(inner, quantity) => {
                 let inner_schema = Self::compile_field_type(inner)?;
-                Ok(serde_json::json!({
+                let mut array_schema = serde_json::json!({
                     "type": "array",
                     "items": inner_schema
-                }))
+                });
+
+                if let Some(count) = quantity {
+                    if let Some(obj) = array_schema.as_object_mut() {
+                        obj.insert("minItems".to_string(), Value::Number((*count).into()));
+                        obj.insert("maxItems".to_string(), Value::Number((*count).into()));
+                    }
+                }
+
+                Ok(array_schema)
             }
 
             SchemaType::Enum(variants) => {
@@ -141,5 +150,81 @@ impl SchemaCompiler {
             SchemaType::Enum(variants) => variants.contains(&"null".to_string()),
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{Schema, SchemaField, SchemaType, Span};
+
+    fn dummy_span() -> Span {
+        Span::new(0, 0, 0, 0)
+    }
+
+    #[test]
+    fn test_array_with_quantity_constraint() {
+        let schema = Schema {
+            fields: vec![SchemaField {
+                name: "files".to_string(),
+                field_type: SchemaType::Array(Box::new(SchemaType::String), Some(4)),
+                description: Some("exactly 4 files".to_string()),
+                span: dummy_span(),
+            }],
+            span: dummy_span(),
+        };
+
+        let compiled = SchemaCompiler::compile(&schema).unwrap();
+        let properties = compiled.get("properties").unwrap().as_object().unwrap();
+        let files_schema = properties.get("files").unwrap().as_object().unwrap();
+
+        assert_eq!(files_schema.get("type").unwrap().as_str().unwrap(), "array");
+        assert_eq!(files_schema.get("minItems").unwrap().as_u64().unwrap(), 4);
+        assert_eq!(files_schema.get("maxItems").unwrap().as_u64().unwrap(), 4);
+        assert_eq!(
+            files_schema.get("description").unwrap().as_str().unwrap(),
+            "exactly 4 files"
+        );
+    }
+
+    #[test]
+    fn test_array_without_quantity_constraint() {
+        let schema = Schema {
+            fields: vec![SchemaField {
+                name: "items".to_string(),
+                field_type: SchemaType::Array(Box::new(SchemaType::String), None),
+                description: None,
+                span: dummy_span(),
+            }],
+            span: dummy_span(),
+        };
+
+        let compiled = SchemaCompiler::compile(&schema).unwrap();
+        let properties = compiled.get("properties").unwrap().as_object().unwrap();
+        let items_schema = properties.get("items").unwrap().as_object().unwrap();
+
+        assert_eq!(items_schema.get("type").unwrap().as_str().unwrap(), "array");
+        assert!(items_schema.get("minItems").is_none());
+        assert!(items_schema.get("maxItems").is_none());
+    }
+
+    #[test]
+    fn test_nested_array_with_quantity() {
+        let schema_type = SchemaType::Array(
+            Box::new(SchemaType::Array(Box::new(SchemaType::Number), Some(3))),
+            Some(2),
+        );
+
+        let compiled = SchemaCompiler::compile_type(&schema_type, None).unwrap();
+        let obj = compiled.as_object().unwrap();
+
+        assert_eq!(obj.get("type").unwrap().as_str().unwrap(), "array");
+        assert_eq!(obj.get("minItems").unwrap().as_u64().unwrap(), 2);
+        assert_eq!(obj.get("maxItems").unwrap().as_u64().unwrap(), 2);
+
+        let items = obj.get("items").unwrap().as_object().unwrap();
+        assert_eq!(items.get("type").unwrap().as_str().unwrap(), "array");
+        assert_eq!(items.get("minItems").unwrap().as_u64().unwrap(), 3);
+        assert_eq!(items.get("maxItems").unwrap().as_u64().unwrap(), 3);
     }
 }
