@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "4e4109765cabfce6",
+  "workflow_hash": "3b572b9617e704b7",
   "agents": {
     "person": [
       {
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"age\":34,\"hobbies\":[\"Reading\",\"Hiking\",\"Painting\",\"Cooking\",\"Photography\"],\"name\":\"Olivia Smith\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"age\":34,\"hobbies\":[\"reading\",\"hiking\",\"photography\"],\"name\":\"Alice Johnson\"},\"status\":\"success\"}"
               }
             ]
           }
@@ -32,13 +32,11 @@
     "person": {
       "age": 34,
       "hobbies": [
-        "Reading",
-        "Hiking",
-        "Painting",
-        "Cooking",
-        "Photography"
+        "reading",
+        "hiking",
+        "photography"
       ],
-      "name": "Olivia Smith"
+      "name": "Alice Johnson"
     }
   }
 }

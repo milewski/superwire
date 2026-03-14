@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "341ab647442e8358",
+  "workflow_hash": "33736a6be61f24d6",
   "agents": {
     "greeting": [
       {
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Hello, Alice! 😊\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Hello, Alice! How are you today?\",\"status\":\"success\"}"
               }
             ]
           }
@@ -29,7 +29,7 @@
     ]
   },
   "output": {
-    "greeting": "Hello, Alice! 😊",
+    "greeting": "Hello, Alice! How are you today?",
     "timestamp": "2026-03-08",
     "user": "Alice"
   }

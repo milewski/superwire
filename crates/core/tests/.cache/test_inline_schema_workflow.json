@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "2d78a3a12cdf4c2b",
+  "workflow_hash": "8e6c0067f810ea0c",
   "agents": {
     "person": [
       {
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"age\":25,\"city\":\"London\",\"name\":\"Alice Smith\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"age\":34,\"city\":\"New York\",\"name\":\"Alice Johnson\"},\"status\":\"success\"}"
               }
             ]
           }
@@ -30,9 +30,9 @@
   },
   "output": {
     "person": {
-      "age": 25,
-      "city": "London",
-      "name": "Alice Smith"
+      "age": 34,
+      "city": "New York",
+      "name": "Alice Johnson"
     }
   }
 }

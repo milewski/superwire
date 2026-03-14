@@ -1,6 +1,32 @@
 {
-  "workflow_hash": "8cfc9bf739869bf9",
+  "workflow_hash": "57467fca29191ad8",
   "agents": {
+    "story": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "Write a very short story (under 50 words) about: A Lost City in the Amazon Jungle"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Beneath the Amazon's emerald veil, slumbered Xibalba, a civilization erased by time. A guide's whisper led Dr. Mara through tangled roots to stone monoliths etched with celestial maps. The city's secrets hummed in the air—a civilization reborn in legend.\",\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
+    ],
     "topic": [
       {
         "model": "ollama/qwen3:8b",
@@ -20,33 +46,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"name\":\"The Starlight Train\"},\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "story": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
-          },
-          {
-            "type": "user",
-            "content": "Write a very short story (under 50 words) about: The Starlight Train"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":\"The Starlight Train arrived, silver and shimmering. A girl stepped aboard, her shadow fading into the night. As it vanished, she realized she’d traveled to a world where stars whispered secrets—eternal, unspoken, and hers to keep.\",\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"name\":\"A Lost City in the Amazon Jungle\"},\"status\":\"success\"}"
               }
             ]
           }
@@ -55,6 +55,6 @@
     ]
   },
   "output": {
-    "story": "The Starlight Train arrived, silver and shimmering. A girl stepped aboard, her shadow fading into the night. As it vanished, she realized she’d traveled to a world where stars whispered secrets—eternal, unspoken, and hers to keep."
+    "story": "Beneath the Amazon's emerald veil, slumbered Xibalba, a civilization erased by time. A guide's whisper led Dr. Mara through tangled roots to stone monoliths etched with celestial maps. The city's secrets hummed in the air—a civilization reborn in legend."
   }
 }

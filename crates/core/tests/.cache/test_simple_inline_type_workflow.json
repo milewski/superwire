@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "d8d799eea6d87e5d",
+  "workflow_hash": "605cf3be8a90fbdb",
   "agents": {
     "add_numbers": [
       {
@@ -19,15 +19,15 @@
             "tool_calls": [
               {
                 "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"description\":\"sum of 42 and 58\",\"type\":\"number\"},\"status\":\"success\"}"
+                "name": "calculator",
+                "arguments": "{\"a\":42,\"b\":58,\"operation\":\"add\"}"
               }
             ]
           },
           {
             "type": "tool",
             "tool_call_id": "call_0",
-            "content": "Schema validation failed: Schema validation error: : {\"description\":\"sum of 42 and 58\",\"type\":\"number\"} is not of type \"number\". Please fix the output and call done again."
+            "content": "{\"a\":42.0,\"b\":58.0,\"operation\":\"add\",\"result\":100.0}"
           },
           {
             "type": "assistant",
@@ -62,14 +62,14 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":\"true\",\"status\":\"success\"}"
               }
             ]
           },
           {
             "type": "tool",
             "tool_call_id": "call_0",
-            "content": "Schema validation failed: Schema validation error: : {\"description\":\"true if sum is 100, false otherwise\",\"type\":\"boolean\"} is not of type \"boolean\". Please fix the output and call done again."
+            "content": "Schema validation failed: Schema validation error: : \"true\" is not of type \"boolean\". Please fix the output and call done again."
           },
           {
             "type": "assistant",
