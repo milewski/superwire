@@ -431,7 +431,7 @@ impl Writer {
             write!(output, "{}]", self.get_indent(indent_level)).unwrap();
             output
         } else {
-            format!("[{}]", items_str.join(", "))
+            format!("[ {} ]", items_str.join(", "))
         }
     }
 
