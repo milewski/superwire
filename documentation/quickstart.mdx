@@ -29,7 +29,7 @@ description: 'Get started with Engine AI in under 5 minutes'
 
 Let's create a simple AI agent that generates a greeting. Create a file called `hello.ai`:
 
-```ai hello.ai
+```rust hello.ai
 // Configure the LLM provider
 provider ollama {
     driver <- "ollama"
@@ -84,7 +84,7 @@ provider ollama {
 
 Let's create a more practical workflow that accepts input and produces structured output:
 
-```ai research.ai
+```rust research.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -168,7 +168,7 @@ output {
 
 Now let's create a workflow where multiple agents work together:
 
-```ai multi_agent.ai
+```rust multi_agent.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -215,7 +215,7 @@ agent analyze {
 
 Process multiple items in parallel using `for_each`:
 
-```ai parallel.ai
+```rust parallel.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -281,7 +281,7 @@ engine-ai run parallel.ai --input '{"items": ["apple", "banana", "cherry"]}'
 
 ### Pattern 1: Extract-Transform-Load (ETL)
 
-```ai
+```rust
 // Extract data
 agent extract {
     model <- "ollama/qwen3:8b"
@@ -304,7 +304,7 @@ agent transform {
 
 ### Pattern 2: Consensus Building
 
-```ai
+```rust
 // Multiple agents analyze independently
 agent analyst1 {
     model <- "ollama/qwen3:8b"
@@ -325,7 +325,7 @@ agent analyst2 {
 
 ### Pattern 3: Iterative Refinement
 
-```ai
+```rust
 agent draft {
     model <- "ollama/qwen3:8b"
     prompt <- "Create a draft: {{ input.requirements }}"

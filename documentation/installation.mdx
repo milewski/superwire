@@ -164,7 +164,7 @@ Engine AI requires an LLM provider to execute workflows. Choose one:
 
     Configure in your workflow:
 
-    ```ai
+    ```rust
     provider ollama {
         driver <- "ollama"
         config <- { endpoint <- "http://localhost:11434" }
@@ -182,7 +182,7 @@ Engine AI requires an LLM provider to execute workflows. Choose one:
 
     Configure in your workflow:
 
-    ```ai
+    ```rust
     provider openai {
         driver <- "openai"
         config <- {
@@ -199,7 +199,7 @@ Engine AI requires an LLM provider to execute workflows. Choose one:
 
     Configure in your workflow:
 
-    ```ai
+    ```rust
     provider anthropic {
         driver <- "anthropic"
         config <- {
@@ -216,7 +216,7 @@ Engine AI requires an LLM provider to execute workflows. Choose one:
 
 Create a test workflow `test.ai`:
 
-```ai test.ai
+```rust test.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }

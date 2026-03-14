@@ -7,7 +7,7 @@ description: 'Generate structured data with schemas'
 
 Define schemas for structured output:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -32,7 +32,7 @@ schema UserProfile {
 
 Create complex nested schemas:
 
-```ai
+```rust
 schema Address {
     street: string
     city: string
@@ -58,7 +58,7 @@ schema Company {
 
 Generate arrays of structured data:
 
-```ai
+```rust
 schema Product {
     name: string
     price: float
@@ -77,7 +77,7 @@ schema Product {
 
 Use structured output in subsequent agents:
 
-```ai
+```rust
 schema Analysis {
     sentiment: string
     confidence: float

@@ -9,7 +9,7 @@ A workflow is a complete `.ai` file that defines providers, inputs, agents, and 
 
 ## Workflow Structure
 
-```ai
+```rust
 // 1. Provider Configuration
 provider <name> {
     driver <- "<type>"
@@ -36,7 +36,7 @@ output {
 
 ## Complete Workflow Example
 
-```ai workflow.ai
+```rust workflow.ai
 // Configure LLM provider
 provider ollama {
     driver <- "ollama"
@@ -106,7 +106,7 @@ Define parameters your workflow accepts:
 
 ### Basic Input
 
-```ai
+```rust
 input {
     user_query: string
     max_results: number
@@ -116,7 +116,7 @@ input {
 
 ### Complex Input
 
-```ai
+```rust
 input {
     user: {
         name: string
@@ -136,7 +136,7 @@ input {
 
 ### Accessing Input
 
-```ai
+```rust
 agent process {
     model <- "ollama/qwen3:8b"
     prompt <- """
@@ -153,7 +153,7 @@ Define what data the workflow returns:
 
 ### Basic Output
 
-```ai
+```rust
 output {
     result <- agent.final.text
     status <- "completed"
@@ -162,7 +162,7 @@ output {
 
 ### Complex Output
 
-```ai
+```rust
 output {
     // Copy input fields
     original_query <- input.query
@@ -195,7 +195,7 @@ output {
 
 Agents with dependencies execute in order:
 
-```ai
+```rust
 agent step1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Step 1"
@@ -218,7 +218,7 @@ agent step3 {
 
 Independent agents run simultaneously:
 
-```ai
+```rust
 agent task_a {
     model <- "ollama/qwen3:8b"
     prompt <- "Task A"
@@ -241,7 +241,7 @@ agent task_c {
 
 Combine sequential and parallel patterns:
 
-```ai
+```rust
 // Phase 1: Parallel
 agent research_a {
     model <- "ollama/qwen3:8b"
@@ -280,7 +280,7 @@ agent output_b {
 
 ### Pattern 1: Linear Pipeline
 
-```ai
+```rust
 agent extract {
     model <- "ollama/qwen3:8b"
     prompt <- "Extract data from {{ input.source }}"
@@ -304,7 +304,7 @@ agent load {
 
 ### Pattern 2: Fan-Out/Fan-In
 
-```ai
+```rust
 // Single input
 agent prepare {
     model <- "ollama/qwen3:8b"
@@ -341,7 +341,7 @@ agent process_topics {
 
 ### Pattern 3: Iterative Refinement
 
-```ai
+```rust
 agent draft {
     model <- "ollama/qwen3:8b"
     prompt <- "Create draft: {{ input.requirements }}"
@@ -364,7 +364,7 @@ agent review {
 
 ### Pattern 4: Consensus Building
 
-```ai
+```rust
 // Multiple independent analyses
 agent analyst_1 {
     model <- "ollama/qwen3:8b"
@@ -395,7 +395,7 @@ agent analyst_3 {
 
 ### Pattern 5: Conditional Processing
 
-```ai
+```rust
 agent classify {
     model <- "ollama/qwen3:8b"
     output <- { category: string }
@@ -516,7 +516,7 @@ console.log(result);
 
 Break complex workflows into smaller, reusable pieces:
 
-```ai research.ai
+```rust research.ai
 // Reusable research workflow
 provider ollama {
     driver <- "ollama"
@@ -538,7 +538,7 @@ input {
 }
 ```
 
-```ai main.ai
+```rust main.ai
 // Main workflow that uses research
 provider ollama {
     driver <- "ollama"

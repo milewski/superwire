@@ -7,7 +7,7 @@ description: 'Best practices for designing effective workflows'
 
 A well-structured workflow has clear stages:
 
-```ai
+```rust
 // 1. Configuration
 provider ollama {
     driver <- "ollama"
@@ -47,7 +47,7 @@ topic <- "Artificial Intelligence"
 
 Each agent should have one clear purpose:
 
-```ai
+```rust
 // Good: Clear, focused agents
 <- agent extractor {
     model <- "ollama/qwen3:8b"
@@ -70,7 +70,7 @@ Each agent should have one clear purpose:
 
 Build reusable components:
 
-```ai
+```rust
 // Reusable validation pattern
 <- agent validate_input {
     model <- "ollama/qwen3:8b"
@@ -88,7 +88,7 @@ agent process_valid {
 
 Always include fallback paths:
 
-```ai
+```rust
 <- agent primary {
     model <- "ollama/qwen3:8b"
     prompt <- "Primary approach"
@@ -107,7 +107,7 @@ agent fallback {
 
 Sequential processing stages:
 
-```ai
+```rust
 <- agent extract {
     model <- "ollama/qwen3:8b"
     prompt <- "Extract data"
@@ -128,7 +128,7 @@ Sequential processing stages:
 
 Parallel processing with merge:
 
-```ai
+```rust
 <- agent input {
     model <- "ollama/qwen3:8b"
     prompt <- "Process input"
@@ -156,7 +156,7 @@ Parallel processing with merge:
 
 Validate before processing:
 
-```ai
+```rust
 <- agent validator {
     model <- "ollama/qwen3:8b"
     prompt <- "Validate input"

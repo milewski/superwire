@@ -28,7 +28,7 @@ Schemas define the structure and types of data that agents produce. They provide
 
 Define schemas inline in agent `output` blocks:
 
-```ai
+```rust
 agent person {
     model <- "ollama/qwen3:8b"
     
@@ -50,7 +50,7 @@ agent person {
   <Tab title="string">
     Text data of any length
     
-    ```ai
+    ```rust
     output <- {
         name: string
         description: string
@@ -61,7 +61,7 @@ agent person {
   <Tab title="number">
     Numeric values (integers or floats)
     
-    ```ai
+    ```rust
     output <- {
         age: number
         price: number
@@ -73,7 +73,7 @@ agent person {
   <Tab title="boolean">
     True or false values
     
-    ```ai
+    ```rust
     output <- {
         is_active: boolean
         verified: boolean
@@ -84,7 +84,7 @@ agent person {
   <Tab title="null">
     Null values
     
-    ```ai
+    ```rust
     output <- {
         optional_field: string | null
     }
@@ -96,7 +96,7 @@ agent person {
 
 Define arrays using `[type]` syntax:
 
-```ai
+```rust
 agent list_example {
     model <- "ollama/qwen3:8b"
     
@@ -114,7 +114,7 @@ agent list_example {
 
 Nest objects for complex structures:
 
-```ai
+```rust
 agent nested_example {
     model <- "ollama/qwen3:8b"
     
@@ -137,7 +137,7 @@ agent nested_example {
 
 Use `|` for values that can be one of several types:
 
-```ai
+```rust
 agent union_example {
     model <- "ollama/qwen3:8b"
     
@@ -154,7 +154,7 @@ agent union_example {
 
 Define specific allowed string values:
 
-```ai
+```rust
 agent weather {
     model <- "ollama/qwen3:8b"
     
@@ -176,7 +176,7 @@ agent weather {
 
 ### E-commerce Product
 
-```ai
+```rust
 agent product {
     model <- "ollama/qwen3:8b"
     
@@ -211,7 +211,7 @@ agent product {
 
 ### Blog Article
 
-```ai
+```rust
 agent article {
     model <- "ollama/qwen3:8b"
     
@@ -252,7 +252,7 @@ agent article {
 
 ### API Response
 
-```ai
+```rust
 agent api_response {
     model <- "ollama/qwen3:8b"
     
@@ -290,7 +290,7 @@ agent api_response {
 
 ### Direct Field Access
 
-```ai
+```rust
 agent person {
     model <- "ollama/qwen3:8b"
     output <- {
@@ -308,7 +308,7 @@ agent use_data {
 
 ### Nested Field Access
 
-```ai
+```rust
 agent user {
     model <- "ollama/qwen3:8b"
     output <- {
@@ -330,7 +330,7 @@ agent send_email {
 
 ### Array Access
 
-```ai
+```rust
 agent list_items {
     model <- "ollama/qwen3:8b"
     output <- {
@@ -378,7 +378,7 @@ at workflow.ai:12:5
   <Accordion title="Start simple, add complexity gradually">
     Begin with basic schemas and add fields as needed:
     
-    ```ai
+    ```rust
     // Start simple
     output <- { name: string }
     
@@ -403,7 +403,7 @@ at workflow.ai:12:5
   <Accordion title="Use descriptive field names">
     Clear names improve prompt effectiveness:
     
-    ```ai
+    ```rust
     // Good: Descriptive names
     output <- {
         user_email: string
@@ -423,7 +423,7 @@ at workflow.ai:12:5
   <Accordion title="Use enums for fixed values">
     Constrain outputs to valid options:
     
-    ```ai
+    ```rust
     output <- {
         priority: "low" | "medium" | "high" | "critical"
         status: "pending" | "in_progress" | "completed" | "failed"
@@ -434,7 +434,7 @@ at workflow.ai:12:5
   <Accordion title="Make optional fields explicit">
     Use union with null for optional fields:
     
-    ```ai
+    ```rust
     output <- {
         required_field: string
         optional_field: string | null
@@ -446,7 +446,7 @@ at workflow.ai:12:5
   <Accordion title="Include schema hints in prompts">
     Help the AI understand the expected format:
     
-    ```ai
+    ```rust
     agent person {
         output <- {
             name: string
@@ -470,7 +470,7 @@ at workflow.ai:12:5
 
 ### Pattern 1: Status Response
 
-```ai
+```rust
 output <- {
     success: boolean
     message: string
@@ -481,7 +481,7 @@ output <- {
 
 ### Pattern 2: Paginated List
 
-```ai
+```rust
 output <- {
     items: [{
         id: string
@@ -497,7 +497,7 @@ output <- {
 
 ### Pattern 3: Validation Result
 
-```ai
+```rust
 output <- {
     valid: boolean
     errors: [{
@@ -510,7 +510,7 @@ output <- {
 
 ### Pattern 4: Metadata Wrapper
 
-```ai
+```rust
 output <- {
     content: string
     metadata: {
@@ -530,7 +530,7 @@ output <- {
     
     **Solution:** Update prompt to specify exact format:
     
-    ```ai
+    ```rust
     // Before
     prompt <- "Generate a person"
     
@@ -550,7 +550,7 @@ output <- {
     
     **Solution:** Explicitly request array format:
     
-    ```ai
+    ```rust
     output <- { items: [string] }
     prompt <- "Generate a JSON array of 5 items: [\"item1\", \"item2\", ...]"
     ```
@@ -561,7 +561,7 @@ output <- {
     
     **Solution:** Show example structure in prompt:
     
-    ```ai
+    ```rust
     prompt <- """
         Generate data in this exact structure:
         {
@@ -581,7 +581,7 @@ output <- {
     
     **Solution:** List valid values explicitly:
     
-    ```ai
+    ```rust
     output <- { status: "active" | "inactive" | "pending" }
     prompt <- "Generate status. Must be exactly one of: active, inactive, pending"
     ```
@@ -592,7 +592,7 @@ output <- {
 
 ### Recursive Structures
 
-```ai
+```rust
 output <- {
     name: string
     children: [{
@@ -604,7 +604,7 @@ output <- {
 
 ### Mixed Type Arrays
 
-```ai
+```rust
 output <- {
     values: [string | number]  // Array can contain strings or numbers
 }
@@ -612,7 +612,7 @@ output <- {
 
 ### Conditional Fields
 
-```ai
+```rust
 output <- {
     type: "user" | "admin"
     // Different fields based on type
@@ -625,7 +625,7 @@ output <- {
 
 ### Without Schema
 
-```ai
+```rust
 agent unstructured {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate a person"
@@ -639,7 +639,7 @@ agent use {
 
 ### With Schema
 
-```ai
+```rust
 agent structured {
     model <- "ollama/qwen3:8b"
     output <- {

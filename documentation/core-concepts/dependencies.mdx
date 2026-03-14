@@ -7,7 +7,7 @@ description: 'Managing agent execution order and dependencies'
 
 Engine AI automatically detects dependencies between agents based on variable references:
 
-```ai
+```rust
 <- agent step1 {
     model <- "ollama/qwen3:8b"
     prompt <- "First step"
@@ -24,7 +24,7 @@ Engine AI automatically detects dependencies between agents based on variable re
 
 Agents execute in dependency order:
 
-```ai
+```rust
 <- agent analyze {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze the data"
@@ -47,7 +47,7 @@ Agents execute in dependency order:
 
 Agents without dependencies run in parallel:
 
-```ai
+```rust
 // These three agents run simultaneously
 <- agent task1 {
     model <- "ollama/qwen3:8b"
@@ -69,7 +69,7 @@ Agents without dependencies run in parallel:
 
 An agent can depend on multiple other agents:
 
-```ai
+```rust
 <- agent source1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate data 1"
@@ -91,7 +91,7 @@ An agent can depend on multiple other agents:
 
 Handle complex dependency graphs:
 
-```ai
+```rust
 <- agent input {
     model <- "ollama/qwen3:8b"
     prompt <- "Process input"
@@ -118,7 +118,7 @@ Handle complex dependency graphs:
 
 Dependencies respect conditional execution:
 
-```ai
+```rust
 use_cache <- true
 
 <- agent fetch_data {
@@ -139,7 +139,7 @@ use_cache <- true
 
 Circular dependencies cause errors:
 
-```ai
+```rust
 // ERROR: Circular dependency
 agent a {
     model <- "ollama/qwen3:8b"
@@ -160,7 +160,7 @@ agent b {
 
 Visualize your workflow dependencies:
 
-```ai
+```rust
 // Linear chain
 A → B → C → D
 
@@ -181,7 +181,7 @@ A ──┤      ├─→ E → F
 
 ### Sequential Pipeline
 
-```ai
+```rust
 <- agent extract {
     model <- "ollama/qwen3:8b"
     prompt <- "Extract data from source"
@@ -200,7 +200,7 @@ A ──┤      ├─→ E → F
 
 ### Parallel Processing with Merge
 
-```ai
+```rust
 input <- "Process this data"
 
 // Process in parallel
@@ -231,7 +231,7 @@ Method 3: {{ processor3.text }}"
 
 ### Conditional Pipeline
 
-```ai
+```rust
 <- agent analyzer {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze input"
@@ -268,7 +268,7 @@ Method 3: {{ processor3.text }}"
 
 ### Sequential vs Parallel
 
-```ai
+```rust
 // Sequential: Total time = sum of all agents
 A → B → C → D  // 4x time
 
@@ -280,7 +280,7 @@ A ─┬─→ B
 
 ### Optimizing Dependencies
 
-```ai
+```rust
 // Inefficient: Unnecessary sequential execution
 <- agent a {
     model <- "ollama/qwen3:8b"

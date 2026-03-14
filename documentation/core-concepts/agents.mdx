@@ -9,7 +9,7 @@ Agents are the fundamental units of execution in Engine AI. Each agent runs a pr
 
 ## Basic Agent Structure
 
-```ai
+```rust
 agent <name> {
     model <- "<provider>/<model>"
     prompt <- "<your prompt>"
@@ -18,7 +18,7 @@ agent <name> {
 
 ### Minimal Example
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -38,7 +38,7 @@ agent greeting {
 <ParamField path="model" type="string" required>
   The LLM model to use, in format `provider/model`
   
-  ```ai
+  ```rust
   model <- "ollama/qwen3:8b"
   ```
 </ParamField>
@@ -46,7 +46,7 @@ agent greeting {
 <ParamField path="prompt" type="string" required>
   The prompt to send to the model
   
-  ```ai
+  ```rust
   prompt <- "Analyze this text"
   ```
 </ParamField>
@@ -56,7 +56,7 @@ agent greeting {
 <ParamField path="output" type="schema">
   Define structured output schema
   
-  ```ai
+  ```rust
   output <- {
       title: string
       summary: string
@@ -68,7 +68,7 @@ agent greeting {
 <ParamField path="context" type="reference">
   Share conversation history with other agents
   
-  ```ai
+  ```rust
   context <- agent.previous.context
   ```
 </ParamField>
@@ -76,7 +76,7 @@ agent greeting {
 <ParamField path="for_each" type="expression">
   Execute agent for each item in a collection
   
-  ```ai
+  ```rust
   for_each <- input.items as item
   ```
 </ParamField>
@@ -85,7 +85,7 @@ agent greeting {
 
 Agents marked with `<-` are **terminal agents** - their outputs are included in the final workflow result:
 
-```ai
+```rust
 // Internal agent - output not returned
 agent internal {
     model <- "ollama/qwen3:8b"
@@ -107,7 +107,7 @@ agent internal {
 
 ### Simple Prompts
 
-```ai
+```rust
 agent task {
     model <- "ollama/qwen3:8b"
     prompt <- "Write a haiku about programming"
@@ -118,7 +118,7 @@ agent task {
 
 Use triple quotes for multiline prompts:
 
-```ai
+```rust
 agent task {
     model <- "ollama/qwen3:8b"
     prompt <- """
@@ -138,7 +138,7 @@ agent task {
 
 Reference inputs and other agents using `{{ }}`:
 
-```ai
+```rust
 input {
     user_name: string
     topic: string
@@ -167,7 +167,7 @@ Define schemas to get structured, validated data from agents:
 
 ### Inline Schemas
 
-```ai
+```rust
 agent person {
     model <- "ollama/qwen3:8b"
     
@@ -184,7 +184,7 @@ agent person {
 
 ### Accessing Structured Data
 
-```ai
+```rust
 agent use_data {
     model <- "ollama/qwen3:8b"
     prompt <- """
@@ -196,7 +196,7 @@ agent use_data {
 
 ### Complex Schemas
 
-```ai
+```rust
 agent article {
     model <- "ollama/qwen3:8b"
     
@@ -221,7 +221,7 @@ agent article {
 
 ### Array Outputs
 
-```ai
+```rust
 agent list_items {
     model <- "ollama/qwen3:8b"
     
@@ -252,7 +252,7 @@ Agents can reference outputs from other agents, creating execution dependencies:
 
 ### Simple Dependencies
 
-```ai
+```rust
 agent step1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate a topic"
@@ -268,7 +268,7 @@ agent step2 {
 
 ### Multiple Dependencies
 
-```ai
+```rust
 agent research {
     model <- "ollama/qwen3:8b"
     prompt <- "Research {{ input.topic }}"
@@ -311,7 +311,7 @@ Process collections in parallel:
 
 ### Basic for_each
 
-```ai
+```rust
 input {
     items: [string]
 }
@@ -329,7 +329,7 @@ agent process for_each item in input.items {
 
 ### for_each with Agent Outputs
 
-```ai
+```rust
 agent generate_numbers {
     model <- "ollama/qwen3:8b"
     output <- { values: [number] }
@@ -345,7 +345,7 @@ agent double for_each num in agent.generate_numbers.values {
 
 ### Accessing for_each Results
 
-```ai
+```rust
 // Results are collected in an array
 agent use_results {
     model <- "ollama/qwen3:8b"
@@ -359,7 +359,7 @@ Share conversation history between agents for multi-turn interactions:
 
 ### Basic Context Sharing
 
-```ai
+```rust
 agent start {
     model <- "ollama/qwen3:8b"
     prompt <- "Start a conversation about space exploration"
@@ -374,7 +374,7 @@ agent continue {
 
 ### Context Chain
 
-```ai
+```rust
 agent turn1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Ask a question about AI"
@@ -401,7 +401,7 @@ agent turn3 {
 
 Use compact context to summarize history:
 
-```ai
+```rust
 agent long_conversation {
     model <- "ollama/qwen3:8b"
     context <- agent.previous.context
@@ -416,7 +416,7 @@ agent long_conversation {
 
 Use descriptive, action-oriented names:
 
-```ai
+```rust
 // Good names
 agent analyze_sentiment { ... }
 agent generate_summary { ... }
@@ -440,7 +440,7 @@ agent process { ... }
 
 ### Pattern 1: Extract-Transform-Load
 
-```ai
+```rust
 agent extract {
     model <- "ollama/qwen3:8b"
     output <- { raw_data: string }
@@ -466,7 +466,7 @@ agent transform {
 
 ### Pattern 2: Fan-Out/Fan-In
 
-```ai
+```rust
 // Fan-out: Multiple agents process in parallel
 agent analyze_sentiment {
     model <- "ollama/qwen3:8b"
@@ -497,7 +497,7 @@ agent identify_topics {
 
 ### Pattern 3: Pipeline
 
-```ai
+```rust
 agent stage1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Stage 1: {{ input.data }}"
@@ -521,7 +521,7 @@ agent stage3 {
 
 ### Pattern 4: Consensus
 
-```ai
+```rust
 // Multiple agents provide independent opinions
 agent expert1 {
     model <- "ollama/qwen3:8b"
@@ -556,7 +556,7 @@ agent expert3 {
   <Accordion title="Keep prompts focused">
     Each agent should have a single, clear purpose. Break complex tasks into multiple agents.
     
-    ```ai
+    ```rust
     // Good: Focused agents
     agent summarize { prompt <- "Summarize: {{ input.text }}" }
     agent analyze { prompt <- "Analyze: {{ summarize.text }}" }
@@ -571,7 +571,7 @@ agent expert3 {
   <Accordion title="Use structured outputs">
     Define schemas for predictable, type-safe data access.
     
-    ```ai
+    ```rust
     agent structured {
         output <- { name: string, age: number }
         prompt <- "Generate person data"
@@ -582,7 +582,7 @@ agent expert3 {
   <Accordion title="Minimize dependencies">
     Reduce dependencies to maximize parallel execution.
     
-    ```ai
+    ```rust
     // Good: Independent agents run in parallel
     agent task1 { ... }
     agent task2 { ... }
@@ -597,7 +597,7 @@ agent expert3 {
   <Accordion title="Handle errors gracefully">
     Use schemas to validate outputs and catch errors early.
     
-    ```ai
+    ```rust
     agent validated {
         output <- {
             status: string
@@ -613,7 +613,7 @@ agent expert3 {
 
 ### Simple Classification
 
-```ai
+```rust
 input {
     text: string
 }
@@ -630,7 +630,7 @@ input {
 
 ### Multi-Step Analysis
 
-```ai
+```rust
 input {
     document: string
 }
@@ -665,7 +665,7 @@ agent extract_entities {
 
 ### Batch Processing
 
-```ai
+```rust
 input {
     documents: [string]
 }

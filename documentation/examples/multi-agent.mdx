@@ -26,7 +26,7 @@ Multi-agent workflows break complex tasks into smaller, focused steps. Each agen
 
 Agents execute one after another:
 
-```ai sequential.ai
+```rust sequential.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -95,7 +95,7 @@ engine-ai run sequential.ai --input '{
 
 Independent agents run simultaneously:
 
-```ai parallel.ai
+```rust parallel.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -156,7 +156,7 @@ agent identify_topics {
 
 A practical example combining research, analysis, and content generation:
 
-```ai research_article.ai
+```rust research_article.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -277,7 +277,7 @@ agent write_conclusion {
 
 Multiple agents provide independent opinions, then build consensus:
 
-```ai consensus.ai
+```rust consensus.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -364,7 +364,7 @@ agent evaluate_risk {
 
 Extract, transform, and load data through multiple stages:
 
-```ai etl_pipeline.ai
+```rust etl_pipeline.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -453,7 +453,7 @@ agent validate_data {
 
 Agents review and improve each other's work:
 
-```ai iterative_refinement.ai
+```rust iterative_refinement.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -525,7 +525,7 @@ agent review_style {
   <Accordion title="Design for parallelization">
     Structure workflows so independent agents can run simultaneously.
     
-    ```ai
+    ```rust
     // Good: Parallel execution
     agent task_a { ... }
     agent task_b { ... }
@@ -547,7 +547,7 @@ agent review_style {
   <Accordion title="Keep agents focused">
     Each agent should have one clear responsibility.
     
-    ```ai
+    ```rust
     // Good: Focused agents
     agent extract { ... }
     agent transform { ... }
@@ -563,7 +563,7 @@ agent review_style {
   <Accordion title="Use structured outputs">
     Define schemas for predictable data flow between agents.
     
-    ```ai
+    ```rust
     agent analyze {
         output <- {
             sentiment: string
@@ -581,7 +581,7 @@ agent review_style {
   <Accordion title="Name agents descriptively">
     Use action-oriented names that indicate purpose.
     
-    ```ai
+    ```rust
     // Good names
     agent extract_entities { ... }
     agent analyze_sentiment { ... }

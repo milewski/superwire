@@ -9,7 +9,7 @@ description: 'Understanding data types in Engine AI'
 
 Text values enclosed in double quotes:
 
-```ai
+```rust
 name <- "Alice"
 message <- "Hello, world!"
 multiline <- "Line 1
@@ -21,7 +21,7 @@ Line 3"
 
 Whole numbers:
 
-```ai
+```rust
 count <- 42
 negative <- -10
 zero <- 0
@@ -31,7 +31,7 @@ zero <- 0
 
 Decimal numbers:
 
-```ai
+```rust
 price <- 19.99
 temperature <- -3.5
 pi <- 3.14159
@@ -41,7 +41,7 @@ pi <- 3.14159
 
 True or false values:
 
-```ai
+```rust
 is_active <- true
 is_complete <- false
 ```
@@ -52,7 +52,7 @@ is_complete <- false
 
 Ordered collections of values:
 
-```ai
+```rust
 numbers <- [1, 2, 3, 4, 5]
 names <- ["Alice", "Bob", "Charlie"]
 mixed <- [1, "two", 3.0, true]
@@ -60,7 +60,7 @@ mixed <- [1, "two", 3.0, true]
 
 Access array elements:
 
-```ai
+```rust
 items <- ["a", "b", "c"]
 first <- items[0]  // "a"
 second <- items[1]  // "b"
@@ -70,7 +70,7 @@ second <- items[1]  // "b"
 
 Key-value pairs:
 
-```ai
+```rust
 user <- {
     name <- "Alice"
     age <- 30
@@ -80,7 +80,7 @@ user <- {
 
 Access object properties:
 
-```ai
+```rust
 user_name <- user.name
 user_age <- user.age
 ```
@@ -89,7 +89,7 @@ user_age <- user.age
 
 Combine arrays and objects:
 
-```ai
+```rust
 users <- [
     { name <- "Alice", age <- 30 },
     { name <- "Bob", age <- 25 }
@@ -108,7 +108,7 @@ config <- {
 
 Engine AI automatically converts between compatible types:
 
-```ai
+```rust
 // String to number
 num <- "42"
 result <- num + 10  // 52
@@ -122,7 +122,7 @@ message <- "Count: " + count  // "Count: 42"
 
 Use `null` for absent values:
 
-```ai
+```rust
 optional_value <- null
 
 config <- {
@@ -135,7 +135,7 @@ config <- {
 
 Check types in conditional expressions:
 
-```ai
+```rust
 value <- 42
 
 agent checker {
@@ -148,7 +148,7 @@ agent checker {
 
 Agent responses have a structured type:
 
-```ai
+```rust
 <- agent task {
     model <- "ollama/qwen3:8b"
     prompt <- "Hello"

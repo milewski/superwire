@@ -7,7 +7,7 @@ description: 'Learn the fundamentals with a simple agent'
 
 The most basic workflow contains a single agent that generates text:
 
-```ai hello.ai
+```rust hello.ai
 // Configure the LLM provider
 provider ollama {
     driver <- "ollama"
@@ -46,7 +46,7 @@ engine-ai run hello.ai
 
 Add input parameters to make your workflow dynamic:
 
-```ai personalized_greeting.ai
+```rust personalized_greeting.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -89,7 +89,7 @@ engine-ai run personalized_greeting.ai --input '{"name": "Alice", "language": "S
 
 Define a schema to get structured, validated data:
 
-```ai person_generator.ai
+```rust person_generator.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -149,7 +149,7 @@ engine-ai run person_generator.ai
 
 Use enums to constrain outputs to specific values:
 
-```ai sentiment_classifier.ai
+```rust sentiment_classifier.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -202,7 +202,7 @@ engine-ai run sentiment_classifier.ai --input '{"text": "I love this product! It
 
 Extract structured information from unstructured text:
 
-```ai extract_contact.ai
+```rust extract_contact.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -274,7 +274,7 @@ engine-ai run extract_contact.ai --input '{
 
 Generate rich content with metadata:
 
-```ai blog_post.ai
+```rust blog_post.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -356,7 +356,7 @@ engine-ai run blog_post.ai --input '{
 
 Generate educational content:
 
-```ai quiz_generator.ai
+```rust quiz_generator.ai
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }

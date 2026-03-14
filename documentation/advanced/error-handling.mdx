@@ -7,7 +7,7 @@ description: 'Handle errors and failures gracefully'
 
 Use conditional execution for fallback logic:
 
-```ai
+```rust
 <- agent primary {
     model <- "ollama/qwen3:8b"
     prompt <- "Try primary approach"
@@ -24,7 +24,7 @@ agent fallback {
 
 Switch providers on failure:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -56,7 +56,7 @@ agent backup {
 
 Validate outputs before proceeding:
 
-```ai
+```rust
 <- agent generator {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate content"
@@ -84,7 +84,7 @@ agent error_handler {
 
 Implement retry patterns:
 
-```ai
+```rust
 <- agent attempt1 {
     model <- "ollama/qwen3:8b"
     prompt <- "First attempt"
@@ -107,7 +107,7 @@ agent attempt3 {
 
 Provide helpful error context:
 
-```ai
+```rust
 <- agent task {
     model <- "ollama/qwen3:8b"
     prompt <- "Perform task"

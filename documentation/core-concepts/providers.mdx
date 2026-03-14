@@ -11,7 +11,7 @@ Providers are the LLM backends that power your agents. Engine AI supports multip
 
 Every workflow must define at least one provider:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -21,7 +21,7 @@ provider ollama {
 
 ### Provider Structure
 
-```ai
+```rust
 provider <name> {
     driver <- "<driver_type>"
     config <- { <configuration_options> }
@@ -40,7 +40,7 @@ provider <name> {
   <Tab title="Ollama">
     **Ollama** provides local LLM inference with no API costs.
 
-    ```ai
+    ```rust
     provider ollama {
         driver <- "ollama"
         config <- { 
@@ -63,7 +63,7 @@ provider <name> {
 
     ### Using Ollama Models
 
-    ```ai
+    ```rust
     agent task {
         model <- "ollama/qwen3:8b"
         prompt <- "Your prompt here"
@@ -78,7 +78,7 @@ provider <name> {
   <Tab title="OpenAI">
     **OpenAI** provides access to GPT models via API.
 
-    ```ai
+    ```rust
     provider openai {
         driver <- "openai"
         config <- {
@@ -102,7 +102,7 @@ provider <name> {
 
     ### Using OpenAI Models
 
-    ```ai
+    ```rust
     agent task {
         model <- "openai/gpt-4"
         prompt <- "Your prompt here"
@@ -113,7 +113,7 @@ provider <name> {
 
     Use OpenAI-compatible endpoints like OpenCode:
 
-    ```ai
+    ```rust
     provider opencode {
         driver <- "openai"
         config <- {
@@ -137,7 +137,7 @@ provider <name> {
   <Tab title="Anthropic">
     **Anthropic** provides access to Claude models via API.
 
-    ```ai
+    ```rust
     provider anthropic {
         driver <- "anthropic"
         config <- {
@@ -161,7 +161,7 @@ provider <name> {
 
     ### Using Anthropic Models
 
-    ```ai
+    ```rust
     agent task {
         model <- "anthropic/claude-3-opus-20240229"
         prompt <- "Your prompt here"
@@ -172,7 +172,7 @@ provider <name> {
 
     Use Anthropic-compatible endpoints:
 
-    ```ai
+    ```rust
     provider custom_anthropic {
         driver <- "anthropic"
         config <- {
@@ -194,7 +194,7 @@ provider <name> {
 
 You can define multiple providers in a single workflow:
 
-```ai
+```rust
 // Local provider for development
 provider ollama {
     driver <- "ollama"
@@ -231,7 +231,7 @@ agent refine {
 
 Reference models using the format `provider/model`:
 
-```ai
+```rust
 agent task {
     model <- "ollama/qwen3:8b"
     //        ^^^^^^  ^^^^^^^^
@@ -246,7 +246,7 @@ agent task {
 
 Models must be declared in the provider's `models` list:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -270,7 +270,7 @@ agent invalid {
 
 Use custom API endpoints for self-hosted or proxy services:
 
-```ai
+```rust
 // OpenAI-compatible endpoint
 provider openai {
     driver <- "openai"
@@ -296,7 +296,7 @@ provider anthropic {
 
 Pass additional parameters to the provider:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- {
@@ -340,7 +340,7 @@ Choose providers based on your needs:
 
 ### Development Setup
 
-```ai
+```rust
 // Use local Ollama for fast iteration
 provider ollama {
     driver <- "ollama"
@@ -356,7 +356,7 @@ agent test {
 
 ### Production Setup
 
-```ai
+```rust
 // Use OpenAI with fallback to Anthropic
 provider openai {
     driver <- "openai"
@@ -389,7 +389,7 @@ agent fallback {
 
 ### Hybrid Setup
 
-```ai
+```rust
 // Use local for simple tasks, cloud for complex ones
 provider ollama {
     driver <- "ollama"
@@ -457,7 +457,7 @@ agent complex_task {
     - Check your network connection
     - Verify the provider endpoint is accessible
     - For Ollama, ensure the model is fully loaded
-    ```ai
+    ```rust
     provider ollama {
         driver <- "ollama"
         config <- {

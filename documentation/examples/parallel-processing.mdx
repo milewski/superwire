@@ -7,7 +7,7 @@ description: 'Process multiple items simultaneously'
 
 Process multiple items in parallel:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -48,7 +48,7 @@ documents <- [
 
 Analyze from different angles:
 
-```ai
+```rust
 text <- "Content to analyze"
 
 <- agent sentiment {
@@ -85,7 +85,7 @@ Summary: {{ summary.text }}"
 
 Run multiple processing pipelines:
 
-```ai
+```rust
 input <- "Raw data"
 
 // Pipeline 1

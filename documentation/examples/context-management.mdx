@@ -7,7 +7,7 @@ description: 'Manage and share context across agents'
 
 Accumulate context through agent chain:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -39,7 +39,7 @@ provider ollama {
 
 Use shared config across agents:
 
-```ai
+```rust
 config <- {
     style <- "professional"
     tone <- "friendly"
@@ -61,7 +61,7 @@ agent writer2 {
 
 Select relevant context:
 
-```ai
+```rust
 <- agent analyzer {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze and extract key points"

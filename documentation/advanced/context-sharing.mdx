@@ -7,7 +7,7 @@ description: 'Share data and context between agents'
 
 Access outputs from previous agents:
 
-```ai
+```rust
 <- agent analyzer {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze the data"
@@ -23,7 +23,7 @@ agent processor {
 
 Reference multiple agent outputs:
 
-```ai
+```rust
 <- agent source1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate data 1"
@@ -44,7 +44,7 @@ Reference multiple agent outputs:
 
 Use variables to share context:
 
-```ai
+```rust
 config <- {
     style <- "formal"
     tone <- "professional"
@@ -61,7 +61,7 @@ agent writer {
 
 Build context through agent chain:
 
-```ai
+```rust
 <- agent step1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Step 1: Initial analysis"

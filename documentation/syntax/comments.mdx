@@ -7,7 +7,7 @@ description: 'Document your workflows with comments'
 
 Use `//` for single-line comments:
 
-```ai
+```rust
 // This is a comment
 name <- "Alice"
 
@@ -18,7 +18,7 @@ age <- 30  // Inline comment
 
 Use `/* */` for multi-line comments:
 
-```ai
+```rust
 /*
 This is a multi-line comment
 that spans multiple lines
@@ -35,7 +35,7 @@ provider ollama {
 
 Add comments to explain workflow logic:
 
-```ai
+```rust
 // Configuration
 provider ollama {
     driver <- "ollama"
@@ -63,7 +63,7 @@ user_query <- "What is AI?"
 
 Document agent purpose and behavior:
 
-```ai
+```rust
 // Primary content generator
 // Uses GPT-4 for high-quality output
 <- agent generator {
@@ -83,7 +83,7 @@ Document agent purpose and behavior:
 
 Add context to complex expressions:
 
-```ai
+```rust
 price <- 100
 tax_rate <- 0.08  // 8% sales tax
 shipping <- 15    // Flat rate shipping
@@ -96,7 +96,7 @@ total <- (price * (1 + tax_rate)) + shipping
 
 Comment out code temporarily:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -115,7 +115,7 @@ provider ollama {
 
 Organize workflows with comment headers:
 
-```ai
+```rust
 // ============================================
 // CONFIGURATION
 // ============================================
@@ -149,7 +149,7 @@ provider ollama {
 
 Mark areas for future work:
 
-```ai
+```rust
 // TODO: Add error handling
 // TODO: Implement retry logic
 // FIXME: This prompt needs improvement
@@ -166,7 +166,7 @@ agent task {
   Write comments that explain WHY, not WHAT. The code shows what it does; comments should explain the reasoning.
 </Tip>
 
-```ai
+```rust
 // Good: Explains reasoning
 // Use GPT-4 for complex analysis because local models struggle with nuance
 agent analyzer {
@@ -190,7 +190,7 @@ agent analyzer {
 
 ### Documented Workflow
 
-```ai
+```rust
 /*
 Multi-Agent Content Pipeline
 1. Generate initial draft
@@ -230,7 +230,7 @@ topic <- "Artificial Intelligence"
 
 ### Configuration Documentation
 
-```ai
+```rust
 // Provider Configuration
 // Using local Ollama for development
 // Switch to OpenAI for production by uncommenting below

@@ -7,7 +7,7 @@ description: 'Embed variables and expressions in strings'
 
 Use `{{ }}` to embed variables in strings:
 
-```ai
+```rust
 name <- "Alice"
 age <- 30
 
@@ -21,7 +21,7 @@ agent greeter {
 
 Embed calculations and expressions:
 
-```ai
+```rust
 price <- 100
 tax_rate <- 0.08
 total <- price * (1 + tax_rate)
@@ -36,7 +36,7 @@ agent calculator {
 
 Reference previous agent outputs:
 
-```ai
+```rust
 <- agent analyzer {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze this data"
@@ -52,7 +52,7 @@ agent summarizer {
 
 Access nested object properties:
 
-```ai
+```rust
 user <- {
     name <- "Alice"
     profile <- {
@@ -71,7 +71,7 @@ agent notifier {
 
 Access array elements by index:
 
-```ai
+```rust
 items <- ["apple", "banana", "cherry"]
 
 agent selector {
@@ -84,7 +84,7 @@ agent selector {
 
 Combine multiple operations:
 
-```ai
+```rust
 count <- 5
 total <- 10
 percentage <- (count / total) * 100
@@ -99,7 +99,7 @@ agent reporter {
 
 Use boolean expressions:
 
-```ai
+```rust
 is_premium <- true
 credits <- 100
 
@@ -113,7 +113,7 @@ agent status {
 
 Interpolation works in multi-line strings:
 
-```ai
+```rust
 name <- "Alice"
 role <- "Developer"
 
@@ -132,7 +132,7 @@ The Team"
 
 To use literal `{{` or `}}`, escape them:
 
-```ai
+```rust
 agent example {
     model <- "ollama/qwen3:8b"
     prompt <- "Use \{{ and \}} for literal braces"
@@ -143,7 +143,7 @@ agent example {
 
 ### User Profile Message
 
-```ai
+```rust
 user <- {
     name <- "Bob"
     email <- "bob@example.com"
@@ -158,7 +158,7 @@ agent welcome {
 
 ### Progress Report
 
-```ai
+```rust
 completed_tasks <- 7
 total_tasks <- 10
 remaining <- total_tasks - completed_tasks
@@ -173,7 +173,7 @@ Progress: {{ (completed_tasks / total_tasks) * 100 }}%"
 
 ### Chained Agent Outputs
 
-```ai
+```rust
 <- agent step1 {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate a topic"
@@ -208,7 +208,7 @@ Progress: {{ (completed_tasks / total_tasks) * 100 }}%"
 
 ### Template Prompts
 
-```ai
+```rust
 template <- "Analyze the following {{ data_type }}: {{ content }}"
 data_type <- "text"
 content <- "Sample content here"
@@ -221,7 +221,7 @@ agent analyzer {
 
 ### Dynamic Configuration
 
-```ai
+```rust
 config <- {
     model_name <- "ollama/qwen3:8b"
     temperature <- 0.7

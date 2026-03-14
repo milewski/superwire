@@ -7,7 +7,7 @@ description: 'Operators for expressions and calculations'
 
 Perform mathematical operations:
 
-```ai
+```rust
 // Addition
 sum <- 10 + 5  // 15
 
@@ -28,7 +28,7 @@ remainder <- 10 % 3  // 1
 
 Compare values:
 
-```ai
+```rust
 // Equal
 is_equal <- 5 == 5  // true
 
@@ -52,7 +52,7 @@ is_lte <- 5 <= 10  // true
 
 Combine boolean expressions:
 
-```ai
+```rust
 // AND
 result <- true && false  // false
 
@@ -67,7 +67,7 @@ result <- !true  // false
 
 Work with strings:
 
-```ai
+```rust
 // Concatenation
 greeting <- "Hello, " + "world!"  // "Hello, world!"
 
@@ -80,7 +80,7 @@ message <- "Hello, {{ name }}!"  // "Hello, Alice!"
 
 Assign values to variables:
 
-```ai
+```rust
 // Basic assignment
 value <- 42
 
@@ -92,7 +92,7 @@ value <- value + 10
 
 Operators follow standard precedence rules:
 
-```ai
+```rust
 result <- 2 + 3 * 4  // 14 (multiplication first)
 result <- (2 + 3) * 4  // 20 (parentheses first)
 ```
@@ -111,7 +111,7 @@ result <- (2 + 3) * 4  // 20 (parentheses first)
 
 Operators can be used in string interpolation:
 
-```ai
+```rust
 count <- 5
 total <- 10
 
@@ -125,7 +125,7 @@ agent reporter {
 
 Use operators in conditional logic:
 
-```ai
+```rust
 score <- 85
 passed <- score >= 60
 
@@ -139,7 +139,7 @@ agent evaluator {
 
 ### Calculate Percentage
 
-```ai
+```rust
 completed <- 7
 total <- 10
 percentage <- (completed / total) * 100
@@ -152,7 +152,7 @@ agent reporter {
 
 ### Combine Conditions
 
-```ai
+```rust
 age <- 25
 has_license <- true
 can_drive <- age >= 18 && has_license
@@ -165,7 +165,7 @@ agent checker {
 
 ### String Manipulation
 
-```ai
+```rust
 first_name <- "Alice"
 last_name <- "Smith"
 full_name <- first_name + " " + last_name

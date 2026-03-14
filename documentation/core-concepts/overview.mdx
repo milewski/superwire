@@ -47,7 +47,7 @@ graph TD
 
 Every Engine AI workflow follows this basic structure:
 
-```ai
+```rust
 // 1. Provider Configuration
 provider ollama {
     driver <- "ollama"
@@ -98,7 +98,7 @@ Engine AI automatically builds a dependency graph from your agents:
 
 ### Example Execution Flow
 
-```ai
+```rust
 agent a {
     model <- "ollama/qwen3:8b"
     prompt <- "Task A"
@@ -126,7 +126,7 @@ agent c {
 
 Data flows through your workflow in several ways:
 
-```ai
+```rust
 input {
     user_data: string
 }
@@ -152,7 +152,7 @@ Agents produce outputs that can be:
 2. **Structured data**: `agent.name.field_name`
 3. **Context**: `agent.name.context` (conversation history)
 
-```ai
+```rust
 agent structured {
     model <- "ollama/qwen3:8b"
     output <- {
@@ -174,7 +174,7 @@ agent use_output {
 
 Agents marked with `<-` are **terminal agents** - their outputs are included in the final workflow result:
 
-```ai
+```rust
 agent internal {
     model <- "ollama/qwen3:8b"
     prompt <- "Internal processing"
@@ -200,7 +200,7 @@ Engine AI has three variable scopes:
 
 Access workflow inputs:
 
-```ai
+```rust
 input {
     name: string
 }
@@ -214,7 +214,7 @@ agent greet {
 
 Access other agent outputs:
 
-```ai
+```rust
 agent first {
     prompt <- "Generate a topic"
 }
@@ -228,7 +228,7 @@ agent second {
 
 Access iteration variables:
 
-```ai
+```rust
 agent process for_each item in input.items {
     prompt <- "Process {{ input.item }}"
 }
@@ -251,7 +251,7 @@ Engine AI supports these data types:
 
 Outputs are validated against their schemas:
 
-```ai
+```rust
 agent person {
     model <- "ollama/qwen3:8b"
     
@@ -290,7 +290,7 @@ Error: Circular dependency detected
 
 Independent agents run in parallel automatically:
 
-```ai
+```rust
 // These three agents run simultaneously
 agent task1 { ... }
 agent task2 { ... }
@@ -306,7 +306,7 @@ agent combine {
 
 Provider responses can be cached to avoid redundant API calls:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { 
@@ -321,7 +321,7 @@ provider ollama {
 
 Use `for_each` for efficient batch processing:
 
-```ai
+```rust
 agent process for_each item in input.items {
     model <- "ollama/qwen3:8b"
     prompt <- "Process {{ input.item }}"

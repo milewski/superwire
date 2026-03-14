@@ -55,7 +55,7 @@ Engine AI is a domain-specific language (DSL) designed for building sophisticate
 
 Define complex AI workflows using a clean, readable syntax. No boilerplate code - just describe what you want to accomplish.
 
-```ai
+```rust
 // Define a simple summarization agent
 agent summary {
     model <- "ollama/qwen3:8b"
@@ -68,7 +68,7 @@ agent summary {
 
 Agents can depend on outputs from other agents, creating sophisticated execution graphs that Engine AI automatically resolves.
 
-```ai
+```rust
 agent analyze {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze this summary: {{ summary.text }}"
@@ -79,7 +79,7 @@ agent analyze {
 
 Define structured outputs with full JSON Schema validation, ensuring your AI agents produce reliable, predictable data.
 
-```ai
+```rust
 schema person {
     name: string
     age: number
@@ -92,7 +92,7 @@ schema person {
 
 Use `for_each` to process collections in parallel, dramatically reducing execution time for batch operations.
 
-```ai
+```rust
 agent process_items for_each item in input.items {
     model <- "ollama/qwen3:8b"
     prompt <- "Process: {{ item }}"
@@ -103,7 +103,7 @@ agent process_items for_each item in input.items {
 
 Share conversation history between agents for coherent multi-turn interactions.
 
-```ai
+```rust
 agent first {
     model <- "ollama/qwen3:8b"
     context <- shared_context

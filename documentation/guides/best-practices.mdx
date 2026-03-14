@@ -9,7 +9,7 @@ description: 'Guidelines for building effective workflows'
 
 Organize workflows with clear sections:
 
-```ai
+```rust
 // ============================================
 // CONFIGURATION
 // ============================================
@@ -40,7 +40,7 @@ input_data <- "data to process"
 
 Use clear, descriptive names:
 
-```ai
+```rust
 // Good
 <- agent sentiment_analyzer {
     model <- "ollama/qwen3:8b"
@@ -60,7 +60,7 @@ Use clear, descriptive names:
 
 Run independent agents in parallel:
 
-```ai
+```rust
 // Good: Parallel execution
 <- agent task1 {
     model <- "ollama/qwen3:8b"
@@ -88,7 +88,7 @@ Run independent agents in parallel:
 
 Use the right model for each task:
 
-```ai
+```rust
 // Fast local model for simple tasks
 agent simple_task {
     model <- "ollama/qwen3:8b"
@@ -108,7 +108,7 @@ agent complex_task {
 
 Always include fallback paths:
 
-```ai
+```rust
 <- agent primary {
     model <- "ollama/qwen3:8b"
     prompt <- "Primary approach"
@@ -125,7 +125,7 @@ agent fallback {
 
 Validate outputs before proceeding:
 
-```ai
+```rust
 <- agent generator {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate data"
@@ -149,7 +149,7 @@ agent processor {
 
 Never hardcode API keys:
 
-```ai
+```rust
 // Avoid: Hardcoded key
 provider openai {
     driver <- "openai"
@@ -175,7 +175,7 @@ provider openai {
 
 Validate user inputs:
 
-```ai
+```rust
 user_input <- "untrusted input"
 
 <- agent validator {
@@ -196,7 +196,7 @@ agent processor {
 
 Document complex logic:
 
-```ai
+```rust
 // Multi-stage content pipeline
 // 1. Generate initial draft
 // 2. Review for quality
@@ -222,7 +222,7 @@ Document complex logic:
 
 Break complex workflows into smaller pieces:
 
-```ai
+```rust
 // Reusable validation component
 <- agent validate_input {
     model <- "ollama/qwen3:8b"
@@ -243,7 +243,7 @@ agent process_data {
 
 Use local providers for development:
 
-```ai
+```rust
 // Development
 provider ollama {
     driver <- "ollama"

@@ -7,7 +7,7 @@ description: 'Conditional execution and loops in Engine AI'
 
 Execute agents based on conditions:
 
-```ai
+```rust
 score <- 85
 
 agent pass_message {
@@ -27,7 +27,7 @@ agent fail_message {
 
 Control agent execution with boolean expressions:
 
-```ai
+```rust
 is_premium <- true
 credits <- 100
 
@@ -42,7 +42,7 @@ agent premium_feature {
 
 Agents execute in dependency order:
 
-```ai
+```rust
 <- agent step1 {
     model <- "ollama/qwen3:8b"
     prompt <- "First step"
@@ -63,7 +63,7 @@ Agents execute in dependency order:
 
 Agents without dependencies run in parallel:
 
-```ai
+```rust
 // These run simultaneously
 <- agent task1 {
     model <- "ollama/qwen3:8b"
@@ -85,7 +85,7 @@ Agents without dependencies run in parallel:
 
 Combine multiple conditions:
 
-```ai
+```rust
 user_role <- "admin"
 is_active <- true
 has_permission <- true
@@ -101,7 +101,7 @@ agent admin_action {
 
 Create branching workflows:
 
-```ai
+```rust
 input_type <- "text"
 
 <- agent text_processor {
@@ -127,7 +127,7 @@ input_type <- "text"
 
 Handle different scenarios:
 
-```ai
+```rust
 <- agent primary_task {
     model <- "ollama/qwen3:8b"
     prompt <- "Try primary approach"
@@ -144,7 +144,7 @@ agent fallback_task {
 
 ### Multi-Stage Pipeline
 
-```ai
+```rust
 <- agent analyze {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze the input data"
@@ -170,7 +170,7 @@ agent handle_invalid {
 
 ### Role-Based Execution
 
-```ai
+```rust
 user_role <- "editor"
 
 agent admin_dashboard {

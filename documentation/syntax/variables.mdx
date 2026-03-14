@@ -7,7 +7,7 @@ description: 'Declare and use variables in Engine AI'
 
 Variables in Engine AI are declared using the `<-` assignment operator:
 
-```ai
+```rust
 name <- "Alice"
 age <- 30
 is_active <- true
@@ -20,7 +20,7 @@ Variable names must:
 - Contain only letters, numbers, and underscores
 - Be case-sensitive
 
-```ai
+```rust
 user_name <- "Bob"
 _private <- "secret"
 count123 <- 42
@@ -30,7 +30,7 @@ count123 <- 42
 
 Variables are scoped to the workflow or agent where they're defined:
 
-```ai
+```rust
 global_var <- "accessible everywhere"
 
 agent task {
@@ -44,7 +44,7 @@ agent task {
 
 Agent outputs are automatically stored as variables:
 
-```ai
+```rust
 <- agent analyzer {
     model <- "ollama/qwen3:8b"
     prompt <- "Analyze this text"
@@ -61,7 +61,7 @@ agent summarizer {
 
 Variables can be reassigned:
 
-```ai
+```rust
 counter <- 0
 counter <- counter + 1
 counter <- counter + 1
@@ -72,7 +72,7 @@ counter <- counter + 1
 
 Engine AI automatically infers variable types:
 
-```ai
+```rust
 text <- "hello"        // string
 number <- 42           // integer
 decimal <- 3.14        // float
@@ -87,7 +87,7 @@ config <- { key <- "value" }  // object
   Use descriptive variable names that clearly indicate their purpose.
 </Tip>
 
-```ai
+```rust
 // Good
 user_email <- "user@example.com"
 max_retries <- 3

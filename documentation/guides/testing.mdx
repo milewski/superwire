@@ -9,7 +9,7 @@ description: 'Test and validate your workflows'
 
 Test individual agents:
 
-```ai
+```rust
 // test_agent.ai
 provider ollama {
     driver <- "ollama"
@@ -29,7 +29,7 @@ test_input <- "test data"
 
 Test agent interactions:
 
-```ai
+```rust
 // test_workflow.ai
 provider ollama {
     driver <- "ollama"
@@ -54,7 +54,7 @@ provider ollama {
 
 Test output validation:
 
-```ai
+```rust
 <- agent generator {
     model <- "ollama/qwen3:8b"
     prompt <- "Generate data"
@@ -74,7 +74,7 @@ Test output validation:
 
 Use local providers for testing:
 
-```ai
+```rust
 // Use Ollama for fast, free testing
 provider ollama {
     driver <- "ollama"
@@ -92,7 +92,7 @@ provider ollama {
 
 Use consistent test data:
 
-```ai
+```rust
 test_cases <- [
     "test case 1",
     "test case 2",
@@ -109,7 +109,7 @@ test_cases <- [
 
 Validate against expected results:
 
-```ai
+```rust
 expected <- "expected output"
 
 <- agent under_test {

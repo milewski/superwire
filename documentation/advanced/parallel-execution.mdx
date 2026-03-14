@@ -7,7 +7,7 @@ description: 'Execute multiple agents simultaneously for better performance'
 
 Engine AI automatically runs independent agents in parallel:
 
-```ai
+```rust
 // These agents run simultaneously
 <- agent task1 {
     model <- "ollama/qwen3:8b"
@@ -29,7 +29,7 @@ Engine AI automatically runs independent agents in parallel:
 
 Parallel execution reduces total workflow time:
 
-```ai
+```rust
 // Sequential: 30 seconds total (10s each)
 A → B → C
 
@@ -42,7 +42,7 @@ A ─┬─→ B
 
 Process data in parallel, then combine results:
 
-```ai
+```rust
 input <- "Analyze this text from multiple perspectives"
 
 <- agent sentiment {
@@ -74,7 +74,7 @@ Summary: {{ summary.text }}"
 
 Combine parallel and sequential execution:
 
-```ai
+```rust
 // Stage 1: Single agent
 <- agent prepare {
     model <- "ollama/qwen3:8b"
@@ -108,7 +108,7 @@ Combine parallel and sequential execution:
 
 Create branching workflows:
 
-```ai
+```rust
 <- agent input {
     model <- "ollama/qwen3:8b"
     prompt <- "Process input"
@@ -149,7 +149,7 @@ Performance: {{ performance_report.text }}"
 
 Use different providers in parallel:
 
-```ai
+```rust
 provider ollama {
     driver <- "ollama"
     config <- { endpoint <- "http://localhost:11434" }
@@ -188,7 +188,7 @@ Quality: {{ quality_draft.text }}"
 
 ### Multi-Perspective Analysis
 
-```ai
+```rust
 document <- "Long document to analyze"
 
 // Analyze from different angles in parallel
@@ -225,7 +225,7 @@ UX: {{ user_experience.text }}"
 
 ### Batch Processing
 
-```ai
+```rust
 items <- ["item1", "item2", "item3", "item4", "item5"]
 
 // Process all items in parallel
@@ -284,7 +284,7 @@ items <- ["item1", "item2", "item3", "item4", "item5"]
 
 ### Optimal Parallelization
 
-```ai
+```rust
 // Good: Maximum parallelization
 A ─┬─→ B
    ├─→ C
@@ -299,7 +299,7 @@ A → B → C → D → E → F
 
 Consider provider capacity:
 
-```ai
+```rust
 // Local Ollama: Can handle many parallel requests
 provider ollama {
     driver <- "ollama"
@@ -313,7 +313,7 @@ provider ollama {
 // ... up to task10
 ```
 
-```ai
+```rust
 // Cloud API: Watch rate limits
 provider openai {
     driver <- "openai"

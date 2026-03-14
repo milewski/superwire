@@ -15,7 +15,7 @@ Tool calling allows agents to interact with external systems, APIs, and function
 
 Tools are defined as functions that agents can call:
 
-```ai
+```rust
 // Tool definition example
 tool get_weather {
     description <- "Get current weather for a location"
@@ -30,7 +30,7 @@ tool get_weather {
 
 Agents can be configured to use available tools:
 
-```ai
+```rust
 agent assistant {
     model <- "ollama/qwen3:8b"
     prompt <- "What's the weather in San Francisco?"
@@ -42,7 +42,7 @@ agent assistant {
 
 Process tool call results:
 
-```ai
+```rust
 <- agent with_tools {
     model <- "ollama/qwen3:8b"
     prompt <- "Get weather and summarize"
@@ -59,7 +59,7 @@ agent summarizer {
 
 ### API Integration
 
-```ai
+```rust
 tool api_call {
     description <- "Call external API"
     parameters <- {
@@ -72,7 +72,7 @@ tool api_call {
 
 ### Data Processing
 
-```ai
+```rust
 tool process_data {
     description <- "Process structured data"
     parameters <- {
