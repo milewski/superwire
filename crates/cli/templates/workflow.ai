@@ -1,6 +1,6 @@
 provider ollama {
     driver <- "ollama"
-    api_endpoint <- "http://localhost:11434"
+    config <- { endpoint: "http://localhost:11434" }
     models <- ["qwen3:8b"]
 }
 
@@ -10,6 +10,6 @@ provider ollama {
     output <- [string] "list of files and folders"
     prompt <- """
         You are a helpful file system assistant.
-        list the files in the current directory and provide a brief summary of what you find.
+        List the files in the current directory.
     """
 }
