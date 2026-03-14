@@ -163,7 +163,7 @@ impl AstConstructor {
             let content = &text[3..text.len() - 3];
             let normalized = content
                 .lines()
-                .map(|line| line.trim())
+                .map(str::trim)
                 .filter(|line| !line.is_empty())
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -173,7 +173,7 @@ impl AstConstructor {
 
         let normalized = text
             .lines()
-            .map(|line| line.trim())
+            .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>()
             .join("\n");

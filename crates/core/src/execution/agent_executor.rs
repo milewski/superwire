@@ -169,9 +169,7 @@ impl<'a> AgentExecutor<'a> {
             .cloned();
 
         if let Some(tool_calls) = tool_calls {
-            return self
-                .process_tool_calls(context, &tool_calls, done_tool, schema)
-                .await;
+            return self.process_tool_calls(context, &tool_calls, done_tool, schema).await;
         }
 
         log::trace!("Agent '{}' response had no tool calls", self.agent.name);
