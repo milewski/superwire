@@ -135,11 +135,26 @@ impl AstBuilder {
                     });
                 }
                 Rule::schema_type_array => {
+                    let mut inner_type = None;
+                    let mut quantity = None;
+
                     for array_inner in inner_pair.into_inner() {
-                        if array_inner.as_rule() == Rule::schema_type {
-                            let inner_type = self.parse_schema_type(array_inner)?;
-                            return Ok(SchemaType::Array(Box::new(inner_type)));
+                        match array_inner.as_rule() {
+                            Rule::schema_type => {
+                                inner_type = Some(self.parse_schema_type(array_inner)?);
+                            }
+                            Rule::number_value => {
+                                let num_str = array_inner.as_str();
+                                if let Ok(num) = num_str.parse::<usize>() {
+                                    quantity = Some(num);
+                                }
+                            }
+                            _ => {}
                         }
+                    }
+
+                    if let Some(inner) = inner_type {
+                        return Ok(SchemaType::Array(Box::new(inner), quantity));
                     }
                 }
                 Rule::schema_type_enum => {
@@ -316,7 +331,7 @@ impl AstBuilder {
             let content = &text[3..text.len() - 3];
             let normalized = content
                 .lines()
-                .map(|line| line.trim())
+                .map(str::trim)
                 .filter(|line| !line.is_empty())
                 .collect::<Vec<_>>()
                 .join("\n");

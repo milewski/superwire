@@ -196,7 +196,14 @@ impl Writer {
             SchemaType::Number => "number".to_string(),
             SchemaType::Boolean => "boolean".to_string(),
             SchemaType::Null => "null".to_string(),
-            SchemaType::Array(inner) => format!("[{}]", self.write_schema_type_with_indent(inner, indent_level)),
+            SchemaType::Array(inner, quantity) => {
+                let inner_str = self.write_schema_type_with_indent(inner, indent_level);
+                if let Some(count) = quantity {
+                    format!("[{inner_str};{count}]")
+                } else {
+                    format!("[{inner_str}]")
+                }
+            }
             SchemaType::Enum(variants) => {
                 format!(
                     "enum({})",

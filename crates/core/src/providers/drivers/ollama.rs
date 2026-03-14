@@ -281,27 +281,28 @@ impl Provider for OllamaProvider {
         log::trace!("Converted {} messages to Ollama format", ollama_messages.len());
 
         for (i, msg) in ollama_messages.iter().enumerate() {
-            log::trace!("Message {}: role={}, content_len={}, has_tool_calls={}",
-                i, msg.role, msg.content.len(), msg.tool_calls.is_some());
+            log::trace!(
+                "Message {}: role={}, content_len={}, has_tool_calls={}",
+                i,
+                msg.role,
+                msg.content.len(),
+                msg.tool_calls.is_some()
+            );
         }
 
         let model_name = agent
             .properties
             .iter()
-            .find_map(|prop| {
-                match prop {
-                    crate::ast::AgentProperty::Model { value, .. } => {
-                        let model_ref = match value {
-                            crate::ast::Value::String(s) | crate::ast::Value::Interpolated(s) => Some(s.as_str()),
-                            _ => None,
-                        };
+            .find_map(|prop| match prop {
+                crate::ast::AgentProperty::Model { value, .. } => {
+                    let model_ref = match value {
+                        crate::ast::Value::String(s) | crate::ast::Value::Interpolated(s) => Some(s.as_str()),
+                        _ => None,
+                    };
 
-                        model_ref.and_then(|model_ref| {
-                            model_ref.split('/').nth(1).map(std::string::ToString::to_string)
-                        })
-                    }
-                    _ => None,
+                    model_ref.and_then(|model_ref| model_ref.split('/').nth(1).map(std::string::ToString::to_string))
                 }
+                _ => None,
             })
             .unwrap_or_else(|| "qwen3:8b".to_string());
 
@@ -317,7 +318,10 @@ impl Provider for OllamaProvider {
             stream: false,
         };
 
-        log::trace!("Ollama request: {:?}", serde_json::to_string_pretty(&request).unwrap_or_default());
+        log::trace!(
+            "Ollama request: {:?}",
+            serde_json::to_string_pretty(&request).unwrap_or_default()
+        );
 
         let url = format!("{}/api/chat", self.api_endpoint);
         log::debug!("Sending request to Ollama: {url}");
@@ -355,7 +359,7 @@ impl Provider for OllamaProvider {
             }
         })?;
 
-        log::trace!("Ollama response: {:?}", ollama_response);
+        log::trace!("Ollama response: {ollama_response:?}");
 
         let output_content = ollama_response.message.content.clone();
         log::debug!("Ollama response content length: {} chars", output_content.len());

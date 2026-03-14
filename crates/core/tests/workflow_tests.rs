@@ -439,4 +439,22 @@ mod test {
     async fn test_explicit_tools_workflow() {
         assert_eq!(workflow!("workflows/explicit_tools.ai" => f64).await, 8.0);
     }
+
+    #[tokio::test]
+    async fn test_array_quantity_workflow() {
+        #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
+        struct Output {
+            file_lister: FileList,
+        }
+
+        #[derive(Deserialize)]
+        struct FileList {
+            files: Vec<String>,
+        }
+
+        let output = workflow!("workflows/array_quantity_test.ai" => Output).await;
+
+        assert_eq!(output.file_lister.files.len(), 4, "Expected exactly 4 files");
+    }
 }
