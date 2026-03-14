@@ -135,6 +135,26 @@ impl AstConstructor {
                 Rule::multiline_string => {
                     return Ok(Value::String(self.parse_multiline_string(inner_pair)?));
                 }
+                Rule::number_value => {
+                    let number_string = inner_pair.as_str();
+                    let number = number_string.parse::<f64>().map_err(|error| {
+                        ParserError::syntax_error(
+                            self.file_path.clone(),
+                            0,
+                            0,
+                            format!("Failed to parse number '{number_string}': {error}"),
+                            None,
+                        )
+                    })?;
+                    return Ok(Value::Number(number));
+                }
+                Rule::boolean_value => {
+                    let boolean_value = inner_pair.as_str() == "true";
+                    return Ok(Value::Boolean(boolean_value));
+                }
+                Rule::null_value => {
+                    return Ok(Value::Null);
+                }
                 Rule::array_value => {
                     return self.parse_array_value(inner_pair);
                 }

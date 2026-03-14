@@ -445,7 +445,7 @@ impl Writer {
                 let value = &obj[key];
                 writeln!(
                     output,
-                    "{}{}: {},",
+                    "{}{} <- {},",
                     self.get_indent(indent_level + 1),
                     key,
                     self.write_value_with_indent(value, indent_level + 1)
@@ -461,13 +461,13 @@ impl Writer {
                 .iter()
                 .map(|k| {
                     format!(
-                        "{}: {}",
+                        "{} <- {}",
                         k,
                         self.write_value_with_indent(&obj[k.as_str()], indent_level)
                     )
                 })
                 .collect();
-            format!("{{{}}}", pairs.join(", "))
+            format!("{{ {} }}", pairs.join(", "))
         }
     }
 

@@ -1,15 +1,15 @@
 provider ollama {
     driver <- "ollama"
-    config <- { endpoint: "http://100.76.5.36:11434" }
     models <- ["qwen3:8b"]
+    config <- { endpoint <- "http://100.76.5.36:11434" }
 }
 
-<- agent file_explorer {
+agent file_explorer {
     model <- "ollama/qwen3:8b"
     tools <- [tool.bash]
-    output <- [string] "list of files and folders"
+    output <- [string] // list of files and folders
     prompt <- """
         You are a helpful file system assistant.
-        List the files in the current directory and provide a brief summary of what you find.
+List the files in the current directory and provide a brief summary of what you find.
     """
 }

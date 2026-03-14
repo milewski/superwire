@@ -120,13 +120,13 @@ multiline_content = { (!("\"\"\"") ~ ANY)* }
 string_value = @{ "\"" ~ string_inner ~ "\"" }
 string_inner = { (!(("\"") | ("{{")) ~ ANY)* }
 
-number_value = { "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+number_value = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 boolean_value = { "true" | "false" }
 null_value = { "null" }
 
 array_value = { "[" ~ (value ~ ("," ~ value)* ~ ","?)? ~ "]" }
 object_value = { "{" ~ (object_pair ~ ("," ~ object_pair)* ~ ","?)? ~ "}" }
-object_pair = { identifier ~ ":" ~ value }
+object_pair = { identifier ~ "<-" ~ value }
 
 // Identifiers - used for names, not as values
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
