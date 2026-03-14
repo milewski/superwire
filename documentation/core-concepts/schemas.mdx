@@ -1,0 +1,677 @@
+---
+title: 'Schemas'
+description: 'Define and validate structured outputs from AI agents'
+---
+
+## What are Schemas?
+
+Schemas define the structure and types of data that agents produce. They provide type safety, validation, and predictable data access, ensuring your AI agents return reliable, structured information.
+
+## Why Use Schemas?
+
+<CardGroup cols={2}>
+  <Card title="Type Safety" icon="shield-check">
+    Catch data structure errors at runtime before they propagate
+  </Card>
+  <Card title="Validation" icon="check-circle">
+    Ensure AI outputs match expected formats
+  </Card>
+  <Card title="Predictability" icon="chart-line">
+    Know exactly what data structure to expect
+  </Card>
+  <Card title="Documentation" icon="book">
+    Schemas serve as self-documenting contracts
+  </Card>
+</CardGroup>
+
+## Basic Schema Definition
+
+Define schemas inline in agent `output` blocks:
+
+```ai
+agent person {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        name: string
+        age: number
+        email: string
+    }
+    
+    prompt <- "Generate a random person"
+}
+```
+
+## Supported Types
+
+### Primitive Types
+
+<Tabs>
+  <Tab title="string">
+    Text data of any length
+    
+    ```ai
+    output <- {
+        name: string
+        description: string
+    }
+    ```
+  </Tab>
+  
+  <Tab title="number">
+    Numeric values (integers or floats)
+    
+    ```ai
+    output <- {
+        age: number
+        price: number
+        score: number
+    }
+    ```
+  </Tab>
+  
+  <Tab title="boolean">
+    True or false values
+    
+    ```ai
+    output <- {
+        is_active: boolean
+        verified: boolean
+    }
+    ```
+  </Tab>
+  
+  <Tab title="null">
+    Null values
+    
+    ```ai
+    output <- {
+        optional_field: string | null
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Array Types
+
+Define arrays using `[type]` syntax:
+
+```ai
+agent list_example {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        tags: [string]
+        scores: [number]
+        flags: [boolean]
+    }
+    
+    prompt <- "Generate example data"
+}
+```
+
+### Object Types
+
+Nest objects for complex structures:
+
+```ai
+agent nested_example {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        user: {
+            name: string
+            email: string
+            profile: {
+                bio: string
+                avatar_url: string
+            }
+        }
+    }
+    
+    prompt <- "Generate user data"
+}
+```
+
+### Union Types
+
+Use `|` for values that can be one of several types:
+
+```ai
+agent union_example {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        status: "success" | "error" | "pending"
+        value: string | number | null
+    }
+    
+    prompt <- "Generate status data"
+}
+```
+
+### Enum Types
+
+Define specific allowed string values:
+
+```ai
+agent weather {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        condition: "sunny" | "rainy" | "cloudy" | "snowy"
+        temperature: number
+        wind: "calm" | "moderate" | "strong"
+    }
+    
+    prompt <- "Generate a weather report"
+}
+```
+
+<Info>
+  Enum types ensure the AI returns only valid values from your predefined set.
+</Info>
+
+## Complex Schema Examples
+
+### E-commerce Product
+
+```ai
+agent product {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        id: string
+        name: string
+        description: string
+        price: number
+        currency: "USD" | "EUR" | "GBP"
+        in_stock: boolean
+        categories: [string]
+        specifications: {
+            weight: number
+            dimensions: {
+                length: number
+                width: number
+                height: number
+            }
+            color: string
+        }
+        reviews: [{
+            author: string
+            rating: number
+            comment: string
+            verified: boolean
+        }]
+    }
+    
+    prompt <- "Generate a product listing"
+}
+```
+
+### Blog Article
+
+```ai
+agent article {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        title: string
+        slug: string
+        author: {
+            name: string
+            email: string
+            bio: string
+        }
+        content: string
+        excerpt: string
+        published_at: string
+        updated_at: string
+        status: "draft" | "published" | "archived"
+        metadata: {
+            word_count: number
+            reading_time: number
+            seo: {
+                title: string
+                description: string
+                keywords: [string]
+            }
+        }
+        tags: [string]
+        categories: [string]
+        featured_image: {
+            url: string
+            alt: string
+            caption: string
+        }
+    }
+    
+    prompt <- "Generate a blog article with complete metadata"
+}
+```
+
+### API Response
+
+```ai
+agent api_response {
+    model <- "ollama/qwen3:8b"
+    
+    output <- {
+        success: boolean
+        status_code: number
+        message: string
+        data: {
+            users: [{
+                id: string
+                username: string
+                email: string
+                role: "admin" | "user" | "guest"
+                created_at: string
+            }]
+            pagination: {
+                page: number
+                per_page: number
+                total: number
+                total_pages: number
+            }
+        }
+        errors: [{
+            field: string
+            message: string
+            code: string
+        }] | null
+    }
+    
+    prompt <- "Generate an API response"
+}
+```
+
+## Accessing Schema Fields
+
+### Direct Field Access
+
+```ai
+agent person {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        name: string
+        age: number
+    }
+    prompt <- "Generate a person"
+}
+
+agent use_data {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write about {{ person.name }} who is {{ person.age }} years old"
+}
+```
+
+### Nested Field Access
+
+```ai
+agent user {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        profile: {
+            name: string
+            contact: {
+                email: string
+            }
+        }
+    }
+    prompt <- "Generate user data"
+}
+
+agent send_email {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Send email to {{ user.profile.contact.email }}"
+}
+```
+
+### Array Access
+
+```ai
+agent list_items {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        items: [string]
+    }
+    prompt <- "List 5 items"
+}
+
+agent process_items for_each item in agent.list_items.items {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ input.item }}"
+}
+```
+
+## Schema Validation
+
+### How Validation Works
+
+1. **Agent executes** and produces output
+2. **Parser extracts** JSON from response
+3. **Validator checks** against schema
+4. **Success**: Data is available to dependent agents
+5. **Failure**: Workflow stops with validation error
+
+### Validation Errors
+
+```
+Error: Schema validation failed for agent 'person'
+
+Expected: { name: string, age: number }
+Received: { name: "John", age: "thirty" }
+
+Field 'age': Expected number, got string
+
+at workflow.ai:12:5
+```
+
+<Warning>
+  Validation errors stop workflow execution. Ensure your prompts clearly specify the expected output format.
+</Warning>
+
+## Schema Best Practices
+
+<AccordionGroup>
+  <Accordion title="Start simple, add complexity gradually">
+    Begin with basic schemas and add fields as needed:
+    
+    ```ai
+    // Start simple
+    output <- { name: string }
+    
+    // Add fields incrementally
+    output <- { 
+        name: string
+        age: number
+    }
+    
+    // Add complexity when needed
+    output <- {
+        name: string
+        age: number
+        contact: {
+            email: string
+            phone: string
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use descriptive field names">
+    Clear names improve prompt effectiveness:
+    
+    ```ai
+    // Good: Descriptive names
+    output <- {
+        user_email: string
+        account_status: "active" | "suspended"
+        last_login_timestamp: string
+    }
+    
+    // Avoid: Ambiguous names
+    output <- {
+        e: string
+        s: string
+        t: string
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use enums for fixed values">
+    Constrain outputs to valid options:
+    
+    ```ai
+    output <- {
+        priority: "low" | "medium" | "high" | "critical"
+        status: "pending" | "in_progress" | "completed" | "failed"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Make optional fields explicit">
+    Use union with null for optional fields:
+    
+    ```ai
+    output <- {
+        required_field: string
+        optional_field: string | null
+        another_optional: number | null
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Include schema hints in prompts">
+    Help the AI understand the expected format:
+    
+    ```ai
+    agent person {
+        output <- {
+            name: string
+            age: number
+            hobbies: [string]
+        }
+        prompt <- """
+            Generate a person with:
+            - name (string)
+            - age (number)
+            - hobbies (array of strings)
+            
+            Return as JSON.
+        """
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Schema Patterns
+
+### Pattern 1: Status Response
+
+```ai
+output <- {
+    success: boolean
+    message: string
+    data: object | null
+    error: string | null
+}
+```
+
+### Pattern 2: Paginated List
+
+```ai
+output <- {
+    items: [{
+        id: string
+        name: string
+    }]
+    pagination: {
+        page: number
+        per_page: number
+        total: number
+    }
+}
+```
+
+### Pattern 3: Validation Result
+
+```ai
+output <- {
+    valid: boolean
+    errors: [{
+        field: string
+        message: string
+    }]
+    warnings: [string]
+}
+```
+
+### Pattern 4: Metadata Wrapper
+
+```ai
+output <- {
+    content: string
+    metadata: {
+        created_at: string
+        author: string
+        version: number
+        tags: [string]
+    }
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Validation fails with type mismatch">
+    **Problem:** Agent returns wrong type
+    
+    **Solution:** Update prompt to specify exact format:
+    
+    ```ai
+    // Before
+    prompt <- "Generate a person"
+    
+    // After
+    prompt <- """
+        Generate a person in JSON format:
+        {
+            "name": "string",
+            "age": number (not string)
+        }
+    """
+    ```
+  </Accordion>
+
+  <Accordion title="Array validation fails">
+    **Problem:** Agent returns single value instead of array
+    
+    **Solution:** Explicitly request array format:
+    
+    ```ai
+    output <- { items: [string] }
+    prompt <- "Generate a JSON array of 5 items: [\"item1\", \"item2\", ...]"
+    ```
+  </Accordion>
+
+  <Accordion title="Nested object validation fails">
+    **Problem:** Agent returns flat structure
+    
+    **Solution:** Show example structure in prompt:
+    
+    ```ai
+    prompt <- """
+        Generate data in this exact structure:
+        {
+            "user": {
+                "name": "...",
+                "profile": {
+                    "bio": "..."
+                }
+            }
+        }
+    """
+    ```
+  </Accordion>
+
+  <Accordion title="Enum validation fails">
+    **Problem:** Agent returns invalid enum value
+    
+    **Solution:** List valid values explicitly:
+    
+    ```ai
+    output <- { status: "active" | "inactive" | "pending" }
+    prompt <- "Generate status. Must be exactly one of: active, inactive, pending"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Schema Features
+
+### Recursive Structures
+
+```ai
+output <- {
+    name: string
+    children: [{
+        name: string
+        children: [object]  // Recursive
+    }]
+}
+```
+
+### Mixed Type Arrays
+
+```ai
+output <- {
+    values: [string | number]  // Array can contain strings or numbers
+}
+```
+
+### Conditional Fields
+
+```ai
+output <- {
+    type: "user" | "admin"
+    // Different fields based on type
+    user_data: object | null
+    admin_permissions: [string] | null
+}
+```
+
+## Schema vs No Schema
+
+### Without Schema
+
+```ai
+agent unstructured {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate a person"
+}
+
+// Access as text only
+agent use {
+    prompt <- "Use this data: {{ unstructured.text }}"
+}
+```
+
+### With Schema
+
+```ai
+agent structured {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        name: string
+        age: number
+    }
+    prompt <- "Generate a person"
+}
+
+// Access specific fields
+agent use {
+    prompt <- "{{ structured.name }} is {{ structured.age }} years old"
+}
+```
+
+<Tip>
+  Use schemas whenever you need to access specific fields or ensure data consistency.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workflows" icon="diagram-project" href="/core-concepts/workflows">
+    Learn how to build complete workflows
+  </Card>
+  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
+    Understand agent dependencies
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/structured-output">
+    See schema examples in action
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/rust-api">
+    Explore the API documentation
+  </Card>
+</CardGroup>

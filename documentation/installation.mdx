@@ -1,0 +1,400 @@
+---
+title: 'Installation'
+description: 'Install Engine AI on your system'
+---
+
+## Prerequisites
+
+Before installing Engine AI, ensure you have:
+
+- **Rust** (1.70 or later) - for building from source or using the Rust API
+- **Node.js** (16 or later) - for using the JavaScript/TypeScript API
+- **An LLM Provider** - Ollama, OpenAI, or Anthropic account
+
+## Install the CLI
+
+<Tabs>
+  <Tab title="Cargo">
+    The easiest way to install Engine AI is through Cargo:
+
+    ```bash
+    cargo install engine-ai
+    ```
+
+    Verify the installation:
+
+    ```bash
+    engine-ai --version
+    ```
+  </Tab>
+
+  <Tab title="From Source">
+    Clone and build from source:
+
+    ```bash
+    git clone https://github.com/yourusername/engine-ai
+    cd engine-ai
+    cargo build --release
+    ```
+
+    The binary will be available at `target/release/engine-ai`.
+
+    Add it to your PATH:
+
+    ```bash
+    export PATH="$PATH:$(pwd)/target/release"
+    ```
+  </Tab>
+
+  <Tab title="Pre-built Binaries">
+    Download pre-built binaries from the [releases page](https://github.com/yourusername/engine-ai/releases):
+
+    **Linux:**
+    ```bash
+    wget https://github.com/yourusername/engine-ai/releases/latest/download/engine-ai-linux-x64.tar.gz
+    tar -xzf engine-ai-linux-x64.tar.gz
+    sudo mv engine-ai /usr/local/bin/
+    ```
+
+    **macOS:**
+    ```bash
+    wget https://github.com/yourusername/engine-ai/releases/latest/download/engine-ai-macos-x64.tar.gz
+    tar -xzf engine-ai-macos-x64.tar.gz
+    sudo mv engine-ai /usr/local/bin/
+    ```
+
+    **Windows:**
+    Download `engine-ai-windows-x64.zip` and extract to a directory in your PATH.
+  </Tab>
+</Tabs>
+
+## Install Language Bindings
+
+<Tabs>
+  <Tab title="Rust">
+    Add Engine AI to your `Cargo.toml`:
+
+    ```toml Cargo.toml
+    [dependencies]
+    engine-ai = "0.1.0"
+    tokio = { version = "1", features = ["full"] }
+    serde_json = "1.0"
+    ```
+
+    Basic usage:
+
+    ```rust
+    use engine_ai::Engine;
+
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        let engine = Engine::new();
+        let result = engine.execute_workflow("workflow.ai").await?;
+        println!("{:?}", result);
+        Ok(())
+    }
+    ```
+  </Tab>
+
+  <Tab title="JavaScript/TypeScript">
+    Install via npm:
+
+    ```bash
+    npm install engine-ai
+    ```
+
+    Or with yarn:
+
+    ```bash
+    yarn add engine-ai
+    ```
+
+    Or with pnpm:
+
+    ```bash
+    pnpm add engine-ai
+    ```
+
+    Basic usage:
+
+    ```typescript
+    import { Engine } from 'engine-ai';
+
+    const engine = new Engine();
+    const result = await engine.executeWorkflow('workflow.ai');
+    console.log(result);
+    ```
+
+    TypeScript types are included automatically.
+  </Tab>
+</Tabs>
+
+## Set Up an LLM Provider
+
+Engine AI requires an LLM provider to execute workflows. Choose one:
+
+<Tabs>
+  <Tab title="Ollama (Local)">
+    **Recommended for development and testing**
+
+    Install Ollama:
+
+    ```bash
+    # macOS
+    brew install ollama
+
+    # Linux
+    curl -fsSL https://ollama.com/install.sh | sh
+
+    # Windows
+    # Download from https://ollama.com/download
+    ```
+
+    Start Ollama:
+
+    ```bash
+    ollama serve
+    ```
+
+    Pull a model:
+
+    ```bash
+    ollama pull qwen3:8b
+    ```
+
+    Configure in your workflow:
+
+    ```ai
+    provider ollama {
+        driver <- "ollama"
+        config <- { endpoint <- "http://localhost:11434" }
+        models <- ["qwen3:8b"]
+    }
+    ```
+
+    <Tip>
+      Ollama is perfect for local development - no API keys required and completely free!
+    </Tip>
+  </Tab>
+
+  <Tab title="OpenAI">
+    Get an API key from [OpenAI](https://platform.openai.com/api-keys).
+
+    Set your API key:
+
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    ```
+
+    Configure in your workflow:
+
+    ```ai
+    provider openai {
+        driver <- "openai"
+        config <- { 
+            api_key <- env("OPENAI_API_KEY")
+        }
+        models <- ["gpt-4", "gpt-3.5-turbo"]
+    }
+    ```
+  </Tab>
+
+  <Tab title="Anthropic">
+    Get an API key from [Anthropic](https://console.anthropic.com/).
+
+    Set your API key:
+
+    ```bash
+    export ANTHROPIC_API_KEY="sk-ant-..."
+    ```
+
+    Configure in your workflow:
+
+    ```ai
+    provider anthropic {
+        driver <- "anthropic"
+        config <- { 
+            api_key <- env("ANTHROPIC_API_KEY")
+        }
+        models <- ["claude-3-opus", "claude-3-sonnet"]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Verify Installation
+
+Create a test workflow `test.ai`:
+
+```ai test.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+<- agent test {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Say 'Installation successful!'"
+}
+```
+
+Run it:
+
+```bash
+engine-ai run test.ai
+```
+
+You should see output from the AI model confirming successful installation.
+
+## Editor Support
+
+### VS Code
+
+Install the Engine AI extension from the VS Code marketplace:
+
+```bash
+code --install-extension engine-ai.engine-ai-vscode
+```
+
+Features:
+- Syntax highlighting
+- Code completion
+- Error checking
+- Workflow execution
+
+### TextMate / Sublime Text
+
+The repository includes a TextMate grammar for syntax highlighting:
+
+```bash
+cp editors/textmate/engine-ai.tmLanguage ~/Library/Application\ Support/Sublime\ Text/Packages/User/
+```
+
+### Vim / Neovim
+
+Add syntax highlighting:
+
+```bash
+mkdir -p ~/.vim/syntax
+cp editors/vim/engine-ai.vim ~/.vim/syntax/
+
+# Add to ~/.vimrc
+au BufRead,BufNewFile *.ai set filetype=engine-ai
+```
+
+## Configuration
+
+### Global Configuration
+
+Create a global configuration file at `~/.engine-ai/config.toml`:
+
+```toml
+[providers.ollama]
+endpoint = "http://localhost:11434"
+default_model = "qwen3:8b"
+
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+default_model = "gpt-4"
+
+[execution]
+max_parallel_agents = 10
+timeout_seconds = 300
+
+[cache]
+enabled = true
+ttl_seconds = 3600
+```
+
+### Project Configuration
+
+Create a project-specific configuration at `.engine-ai/config.toml` in your project root:
+
+```toml
+[providers.ollama]
+endpoint = "http://custom-endpoint:11434"
+
+[execution]
+max_parallel_agents = 5
+```
+
+Project configuration overrides global configuration.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Command not found: engine-ai">
+    Make sure the binary is in your PATH:
+
+    ```bash
+    # Check if it's installed
+    which engine-ai
+
+    # If using cargo install, ensure cargo bin is in PATH
+    export PATH="$HOME/.cargo/bin:$PATH"
+    ```
+  </Accordion>
+
+  <Accordion title="Provider connection failed">
+    Verify your provider is running:
+
+    ```bash
+    # For Ollama
+    curl http://localhost:11434/api/tags
+
+    # For OpenAI
+    curl https://api.openai.com/v1/models \
+      -H "Authorization: Bearer $OPENAI_API_KEY"
+    ```
+  </Accordion>
+
+  <Accordion title="Rust compilation errors">
+    Update Rust to the latest version:
+
+    ```bash
+    rustup update stable
+    ```
+
+    Clear the build cache:
+
+    ```bash
+    cargo clean
+    cargo build --release
+    ```
+  </Accordion>
+
+  <Accordion title="JavaScript module not found">
+    Ensure you're using a compatible Node.js version:
+
+    ```bash
+    node --version  # Should be 16 or later
+    ```
+
+    Try reinstalling:
+
+    ```bash
+    rm -rf node_modules package-lock.json
+    npm install
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Build your first workflow
+  </Card>
+  <Card
+    title="Core Concepts"
+    icon="book"
+    href="/core-concepts/overview"
+  >
+    Learn the fundamentals
+  </Card>
+</CardGroup>

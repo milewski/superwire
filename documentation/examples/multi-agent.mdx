@@ -1,0 +1,612 @@
+---
+title: 'Multi-Agent Workflows'
+description: 'Coordinate multiple AI agents to solve complex tasks'
+---
+
+## Why Multi-Agent Workflows?
+
+Multi-agent workflows break complex tasks into smaller, focused steps. Each agent specializes in one aspect, making the overall system more maintainable, testable, and effective.
+
+<CardGroup cols={2}>
+  <Card title="Specialization" icon="bullseye">
+    Each agent focuses on one task
+  </Card>
+  <Card title="Parallelization" icon="bolt">
+    Independent agents run simultaneously
+  </Card>
+  <Card title="Maintainability" icon="wrench">
+    Easier to debug and improve
+  </Card>
+  <Card title="Reusability" icon="recycle">
+    Agents can be reused across workflows
+  </Card>
+</CardGroup>
+
+## Simple Sequential Workflow
+
+Agents execute one after another:
+
+```ai sequential.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    text: string
+}
+
+// Step 1: Summarize
+agent summarize {
+    model <- "ollama/qwen3:8b"
+    output <- { summary: string }
+    prompt <- "Summarize in one sentence: {{ input.text }}"
+}
+
+// Step 2: Analyze (depends on summarize)
+agent analyze {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        sentiment: "positive" | "negative" | "neutral"
+        topics: [string]
+    }
+    prompt <- "Analyze this summary: {{ summarize.summary }}"
+}
+
+// Step 3: Generate recommendations (depends on analyze)
+<- agent recommend {
+    model <- "ollama/qwen3:8b"
+    output <- { recommendations: [string] }
+    prompt <- """
+        Based on sentiment: {{ analyze.sentiment }}
+        And topics: {{ analyze.topics }}
+        
+        Provide 3 actionable recommendations.
+    """
+}
+```
+
+**Execution order:** summarize → analyze → recommend
+
+### Running the Workflow
+
+```bash
+engine-ai run sequential.ai --input '{
+    "text": "Our product launch exceeded expectations. Sales are up 150% and customer feedback is overwhelmingly positive."
+}'
+```
+
+### Expected Output
+
+```json
+{
+    "recommend": {
+        "recommendations": [
+            "Capitalize on momentum with targeted marketing campaign",
+            "Gather detailed customer testimonials for case studies",
+            "Plan product expansion based on positive reception"
+        ]
+    }
+}
+```
+
+## Parallel Processing Workflow
+
+Independent agents run simultaneously:
+
+```ai parallel.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    text: string
+}
+
+// These three agents run in parallel
+agent extract_entities {
+    model <- "ollama/qwen3:8b"
+    output <- { entities: [string] }
+    prompt <- "Extract named entities from: {{ input.text }}"
+}
+
+agent analyze_sentiment {
+    model <- "ollama/qwen3:8b"
+    output <- { sentiment: string, score: number }
+    prompt <- "Analyze sentiment of: {{ input.text }}"
+}
+
+agent identify_topics {
+    model <- "ollama/qwen3:8b"
+    output <- { topics: [string] }
+    prompt <- "Identify main topics in: {{ input.text }}"
+}
+
+// This agent waits for all three to complete
+<- agent synthesize {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        summary: string
+        insights: [string]
+    }
+    prompt <- """
+        Synthesize analysis:
+        
+        Entities: {{ extract_entities.entities }}
+        Sentiment: {{ analyze_sentiment.sentiment }} ({{ analyze_sentiment.score }})
+        Topics: {{ identify_topics.topics }}
+        
+        Provide summary and 3 key insights.
+    """
+}
+```
+
+**Execution order:**
+1. extract_entities, analyze_sentiment, identify_topics (parallel)
+2. synthesize (waits for all three)
+
+<Info>
+  Parallel execution dramatically reduces total workflow time when agents don't depend on each other.
+</Info>
+
+## Research and Writing Workflow
+
+A practical example combining research, analysis, and content generation:
+
+```ai research_article.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    topic: string
+    target_audience: string
+    word_count: number
+}
+
+// Phase 1: Parallel research
+agent research_facts {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        facts: [string]
+        sources: [string]
+    }
+    prompt <- "Research key facts about {{ input.topic }}"
+}
+
+agent research_trends {
+    model <- "ollama/qwen3:8b"
+    output <- { trends: [string] }
+    prompt <- "Identify current trends in {{ input.topic }}"
+}
+
+agent research_examples {
+    model <- "ollama/qwen3:8b"
+    output <- { examples: [string] }
+    prompt <- "Find real-world examples of {{ input.topic }}"
+}
+
+// Phase 2: Synthesize research
+agent synthesize_research {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        key_points: [string]
+        narrative_arc: string
+    }
+    prompt <- """
+        Synthesize research for {{ input.target_audience }}:
+        
+        Facts: {{ research_facts.facts }}
+        Trends: {{ research_trends.trends }}
+        Examples: {{ research_examples.examples }}
+        
+        Create narrative arc and identify 5 key points.
+    """
+}
+
+// Phase 3: Parallel content creation
+agent write_introduction {
+    model <- "ollama/qwen3:8b"
+    output <- { text: string }
+    prompt <- """
+        Write engaging introduction about {{ input.topic }}.
+        Key points: {{ synthesize_research.key_points }}
+        Target: {{ input.target_audience }}
+    """
+}
+
+agent write_body {
+    model <- "ollama/qwen3:8b"
+    output <- { text: string }
+    prompt <- """
+        Write main content ({{ input.word_count }} words) about {{ input.topic }}.
+        
+        Narrative: {{ synthesize_research.narrative_arc }}
+        Key points: {{ synthesize_research.key_points }}
+        Examples: {{ research_examples.examples }}
+        Target: {{ input.target_audience }}
+    """
+}
+
+agent write_conclusion {
+    model <- "ollama/qwen3:8b"
+    output <- { text: string }
+    prompt <- """
+        Write conclusion for article about {{ input.topic }}.
+        Key points: {{ synthesize_research.key_points }}
+        Target: {{ input.target_audience }}
+    """
+}
+
+// Phase 4: Assemble and polish
+<- agent finalize {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        title: string
+        article: string
+        metadata: {
+            word_count: number
+            reading_time: number
+            key_takeaways: [string]
+        }
+    }
+    prompt <- """
+        Assemble complete article:
+        
+        Introduction: {{ write_introduction.text }}
+        Body: {{ write_body.text }}
+        Conclusion: {{ write_conclusion.text }}
+        
+        Create title, combine sections, and generate metadata.
+    """
+}
+```
+
+**Execution flow:**
+1. research_facts, research_trends, research_examples (parallel)
+2. synthesize_research (waits for research)
+3. write_introduction, write_body, write_conclusion (parallel)
+4. finalize (waits for all writing)
+
+## Consensus Building Workflow
+
+Multiple agents provide independent opinions, then build consensus:
+
+```ai consensus.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    proposal: string
+}
+
+// Multiple independent evaluators
+agent evaluate_technical {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        score: number
+        pros: [string]
+        cons: [string]
+        recommendation: "approve" | "reject" | "revise"
+    }
+    prompt <- """
+        Evaluate technical feasibility of: {{ input.proposal }}
+        Score 1-10, list pros/cons, recommend action.
+    """
+}
+
+agent evaluate_business {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        score: number
+        pros: [string]
+        cons: [string]
+        recommendation: "approve" | "reject" | "revise"
+    }
+    prompt <- """
+        Evaluate business value of: {{ input.proposal }}
+        Score 1-10, list pros/cons, recommend action.
+    """
+}
+
+agent evaluate_risk {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        score: number
+        risks: [string]
+        mitigation: [string]
+        recommendation: "approve" | "reject" | "revise"
+    }
+    prompt <- """
+        Evaluate risks of: {{ input.proposal }}
+        Score 1-10, identify risks and mitigation, recommend action.
+    """
+}
+
+// Build consensus
+<- agent consensus {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        overall_score: number
+        decision: "approve" | "reject" | "revise"
+        rationale: string
+        action_items: [string]
+    }
+    prompt <- """
+        Build consensus from evaluations:
+        
+        Technical: {{ evaluate_technical.score }}/10 - {{ evaluate_technical.recommendation }}
+        Pros: {{ evaluate_technical.pros }}
+        Cons: {{ evaluate_technical.cons }}
+        
+        Business: {{ evaluate_business.score }}/10 - {{ evaluate_business.recommendation }}
+        Pros: {{ evaluate_business.pros }}
+        Cons: {{ evaluate_business.cons }}
+        
+        Risk: {{ evaluate_risk.score }}/10 - {{ evaluate_risk.recommendation }}
+        Risks: {{ evaluate_risk.risks }}
+        Mitigation: {{ evaluate_risk.mitigation }}
+        
+        Provide overall score, decision, rationale, and action items.
+    """
+}
+```
+
+## Data Processing Pipeline
+
+Extract, transform, and load data through multiple stages:
+
+```ai etl_pipeline.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    raw_data: string
+}
+
+// Extract phase
+agent extract_structured {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        records: [{
+            id: string
+            type: string
+            value: string
+        }]
+    }
+    prompt <- "Extract structured records from: {{ input.raw_data }}"
+}
+
+// Transform phase - parallel transformations
+agent enrich_data {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        enriched: [{
+            id: string
+            type: string
+            value: string
+            category: string
+            priority: number
+        }]
+    }
+    prompt <- "Enrich records with category and priority: {{ extract_structured.records }}"
+}
+
+agent validate_data {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        valid: [{
+            id: string
+            type: string
+            value: string
+        }]
+        invalid: [{
+            id: string
+            reason: string
+        }]
+    }
+    prompt <- "Validate records and separate valid/invalid: {{ extract_structured.records }}"
+}
+
+// Load phase
+<- agent load_data {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        summary: {
+            total_records: number
+            valid_records: number
+            invalid_records: number
+            categories: object
+        }
+        ready_for_import: [{
+            id: string
+            type: string
+            value: string
+            category: string
+            priority: number
+        }]
+    }
+    prompt <- """
+        Combine enriched and validated data:
+        
+        Enriched: {{ enrich_data.enriched }}
+        Valid: {{ validate_data.valid }}
+        Invalid: {{ validate_data.invalid }}
+        
+        Create final dataset and summary statistics.
+    """
+}
+```
+
+## Iterative Refinement Workflow
+
+Agents review and improve each other's work:
+
+```ai iterative_refinement.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    requirements: string
+}
+
+// Draft
+agent create_draft {
+    model <- "ollama/qwen3:8b"
+    output <- { content: string }
+    prompt <- "Create initial draft based on: {{ input.requirements }}"
+}
+
+// Review
+agent review_content {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        strengths: [string]
+        weaknesses: [string]
+        suggestions: [string]
+    }
+    prompt <- "Review this draft: {{ create_draft.content }}"
+}
+
+agent review_style {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        clarity_score: number
+        tone_feedback: string
+        improvements: [string]
+    }
+    prompt <- "Review style and clarity: {{ create_draft.content }}"
+}
+
+// Refine
+<- agent refine {
+    model <- "ollama/qwen3:8b"
+    output <- {
+        final_content: string
+        changes_made: [string]
+    }
+    prompt <- """
+        Refine draft based on feedback:
+        
+        Original: {{ create_draft.content }}
+        
+        Content feedback:
+        Strengths: {{ review_content.strengths }}
+        Weaknesses: {{ review_content.weaknesses }}
+        Suggestions: {{ review_content.suggestions }}
+        
+        Style feedback:
+        Clarity: {{ review_style.clarity_score }}/10
+        Tone: {{ review_style.tone_feedback }}
+        Improvements: {{ review_style.improvements }}
+        
+        Create final version and list changes made.
+    """
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Design for parallelization">
+    Structure workflows so independent agents can run simultaneously.
+    
+    ```ai
+    // Good: Parallel execution
+    agent task_a { ... }
+    agent task_b { ... }
+    agent combine { 
+        prompt <- "{{ task_a.text }} and {{ task_b.text }}" 
+    }
+    
+    // Avoid: Unnecessary sequential dependencies
+    agent task_a { ... }
+    agent task_b { 
+        prompt <- "{{ task_a.text }}" 
+    }
+    agent task_c { 
+        prompt <- "{{ task_b.text }}" 
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Keep agents focused">
+    Each agent should have one clear responsibility.
+    
+    ```ai
+    // Good: Focused agents
+    agent extract { ... }
+    agent transform { ... }
+    agent validate { ... }
+    
+    // Avoid: One agent doing everything
+    agent do_all { 
+        prompt <- "Extract, transform, and validate..." 
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use structured outputs">
+    Define schemas for predictable data flow between agents.
+    
+    ```ai
+    agent analyze {
+        output <- {
+            sentiment: string
+            score: number
+        }
+        prompt <- "..."
+    }
+    
+    agent use_analysis {
+        prompt <- "Sentiment: {{ analyze.sentiment }} ({{ analyze.score }})"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Name agents descriptively">
+    Use action-oriented names that indicate purpose.
+    
+    ```ai
+    // Good names
+    agent extract_entities { ... }
+    agent analyze_sentiment { ... }
+    agent generate_summary { ... }
+    
+    // Avoid generic names
+    agent agent1 { ... }
+    agent process { ... }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Structured Outputs" icon="table" href="/examples/structured-output">
+    Master complex data structures
+  </Card>
+  <Card title="Parallel Processing" icon="bolt" href="/examples/parallel-processing">
+    Process collections efficiently
+  </Card>
+  <Card title="Context Management" icon="comments" href="/examples/context-management">
+    Build conversational workflows
+  </Card>
+  <Card title="Advanced Features" icon="rocket" href="/advanced/parallel-execution">
+    Explore advanced techniques
+  </Card>
+</CardGroup>

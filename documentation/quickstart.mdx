@@ -1,0 +1,373 @@
+---
+title: 'Quickstart'
+description: 'Get started with Engine AI in under 5 minutes'
+---
+
+## Installation
+
+<Tabs>
+  <Tab title="Cargo (Rust)">
+    ```bash
+    cargo install engine-ai
+    ```
+  </Tab>
+  <Tab title="npm (JavaScript)">
+    ```bash
+    npm install engine-ai
+    ```
+  </Tab>
+  <Tab title="From Source">
+    ```bash
+    git clone https://github.com/yourusername/engine-ai
+    cd engine-ai
+    cargo build --release
+    ```
+  </Tab>
+</Tabs>
+
+## Your First Workflow
+
+Let's create a simple AI agent that generates a greeting. Create a file called `hello.ai`:
+
+```ai hello.ai
+// Configure the LLM provider
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+// Define a terminal agent (marked with <-)
+<- agent greeting {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Say hello and introduce yourself as an AI assistant"
+}
+```
+
+<Note>
+  The `<-` prefix marks this agent as a **terminal agent**, meaning its output will be included in the final workflow result.
+</Note>
+
+## Run Your Workflow
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    engine-ai run hello.ai
+    ```
+  </Tab>
+  <Tab title="Rust">
+    ```rust
+    use engine_ai::Engine;
+
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        let engine = Engine::new();
+        let result = engine.execute_workflow("hello.ai").await?;
+        println!("{:?}", result);
+        Ok(())
+    }
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    import { Engine } from 'engine-ai';
+
+    const engine = new Engine();
+    const result = await engine.executeWorkflow('hello.ai');
+    console.log(result);
+    ```
+  </Tab>
+</Tabs>
+
+## Adding Input and Output
+
+Let's create a more practical workflow that accepts input and produces structured output:
+
+```ai research.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+// Define input parameters
+input {
+    topic: string
+    audience: string
+}
+
+// Create an agent that uses the input
+agent research {
+    model <- "ollama/qwen3:8b"
+
+    // Define structured output schema
+    output <- {
+        summary: string
+        key_points: [string]
+    }
+
+    // Use string interpolation to inject input values
+    prompt <- "Research the topic: {{ input.topic }} for a {{ input.audience }} audience. Provide a summary and 3 key points."
+}
+
+// Define what the workflow returns
+output {
+    topic <- input.topic
+    audience <- input.audience
+    summary <- agent.research.summary
+}
+```
+
+### Running with Input
+
+<Tabs>
+  <Tab title="CLI">
+    ```bash
+    engine-ai run research.ai --input '{"topic": "AI agents", "audience": "developers"}'
+    ```
+  </Tab>
+  <Tab title="Rust">
+    ```rust
+    use engine_ai::Engine;
+    use serde_json::json;
+
+    #[tokio::main]
+    async fn main() -> Result<(), Box<dyn std::error::Error>> {
+        let engine = Engine::new();
+        
+        let input = json!({
+            "topic": "AI agents",
+            "audience": "developers"
+        });
+        
+        let result = engine.execute_workflow_with_input("research.ai", input).await?;
+        println!("{:?}", result);
+        Ok(())
+    }
+    ```
+  </Tab>
+  <Tab title="JavaScript">
+    ```javascript
+    import { Engine } from 'engine-ai';
+
+    const engine = new Engine();
+    
+    const input = {
+        topic: "AI agents",
+        audience: "developers"
+    };
+    
+    const result = await engine.executeWorkflow('research.ai', input);
+    console.log(result);
+    ```
+  </Tab>
+</Tabs>
+
+## Multi-Agent Workflow
+
+Now let's create a workflow where multiple agents work together:
+
+```ai multi_agent.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    text: string
+}
+
+// First agent: summarize the text
+agent summarize {
+    model <- "ollama/qwen3:8b"
+    output <- { summary: string }
+    prompt <- "Summarize this text in one sentence: {{ input.text }}"
+}
+
+// Second agent: analyze the summary (depends on first agent)
+agent analyze {
+    model <- "ollama/qwen3:8b"
+    output <- { 
+        sentiment: string
+        topics: [string]
+    }
+    prompt <- "Analyze this summary and identify the sentiment and main topics: {{ summarize.summary }}"
+}
+
+// Third agent: generate recommendations (depends on second agent)
+<- agent recommend {
+    model <- "ollama/qwen3:8b"
+    output <- { recommendations: [string] }
+    prompt <- "Based on these topics: {{ analyze.topics }}, provide 3 recommendations"
+}
+```
+
+<Info>
+  Engine AI automatically detects dependencies between agents and executes them in the correct order. In this example:
+  1. `summarize` runs first
+  2. `analyze` runs after `summarize` completes
+  3. `recommend` runs after `analyze` completes
+</Info>
+
+## Parallel Processing
+
+Process multiple items in parallel using `for_each`:
+
+```ai parallel.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+input {
+    items: [string]
+}
+
+// Process each item in parallel
+<- agent process for_each item in input.items {
+    model <- "ollama/qwen3:8b"
+    output <- { result: string }
+    prompt <- "Process this item: {{ item }}"
+}
+```
+
+Run it with:
+
+```bash
+engine-ai run parallel.ai --input '{"items": ["apple", "banana", "cherry"]}'
+```
+
+<Tip>
+  All independent agents execute in parallel automatically. Use `for_each` when you need to process collections.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Core Concepts"
+    icon="book"
+    href="/core-concepts/overview"
+  >
+    Learn about providers, agents, schemas, and more
+  </Card>
+  <Card
+    title="Language Syntax"
+    icon="code"
+    href="/syntax/variables"
+  >
+    Deep dive into the language syntax
+  </Card>
+  <Card
+    title="Advanced Features"
+    icon="rocket"
+    href="/advanced/parallel-execution"
+  >
+    Explore context sharing, tool calling, and caching
+  </Card>
+  <Card
+    title="Examples"
+    icon="lightbulb"
+    href="/examples/basic-agent"
+  >
+    Browse comprehensive examples
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Pattern 1: Extract-Transform-Load (ETL)
+
+```ai
+// Extract data
+agent extract {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract key information from: {{ input.raw_data }}"
+}
+
+// Transform data
+agent transform {
+    model <- "ollama/qwen3:8b"
+    output <- { structured_data: object }
+    prompt <- "Convert to structured format: {{ extract.text }}"
+}
+
+// Load/validate data
+<- agent validate {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate this data: {{ transform.structured_data }}"
+}
+```
+
+### Pattern 2: Consensus Building
+
+```ai
+// Multiple agents analyze independently
+agent analyst1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze: {{ input.data }}"
+}
+
+agent analyst2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze: {{ input.data }}"
+}
+
+// Synthesize results
+<- agent synthesize {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Compare these analyses and provide consensus: {{ analyst1.text }} and {{ analyst2.text }}"
+}
+```
+
+### Pattern 3: Iterative Refinement
+
+```ai
+agent draft {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Create a draft: {{ input.requirements }}"
+}
+
+agent review {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Review and suggest improvements: {{ draft.text }}"
+}
+
+<- agent refine {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Refine based on feedback: {{ draft.text }} Feedback: {{ review.text }}"
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Provider connection failed">
+    Make sure your LLM provider is running and accessible:
+    ```bash
+    # For Ollama
+    curl http://localhost:11434/api/tags
+    ```
+    
+    Check that the endpoint in your workflow matches your provider's address.
+  </Accordion>
+
+  <Accordion title="Schema validation errors">
+    Ensure your output schema matches the data structure your agent produces. Use simpler schemas initially and add complexity gradually.
+  </Accordion>
+
+  <Accordion title="Dependency cycle detected">
+    Check that your agents don't have circular dependencies. Agent A cannot depend on Agent B if Agent B depends on Agent A.
+  </Accordion>
+
+  <Accordion title="Model not found">
+    Verify the model name is correct and available in your provider:
+    ```bash
+    # For Ollama
+    ollama list
+    ```
+  </Accordion>
+</AccordionGroup>
