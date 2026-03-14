@@ -3,8 +3,10 @@ name = "{{project_name}}"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+
 [dependencies]
-engine-ai-core = { path = "../crates/core" }
+engine-ai-core = { git = "https://github.com/milewski/engine-ai.git" }
 tokio = { version = "1.50", features = ["full"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
