@@ -457,4 +457,22 @@ mod test {
 
         assert_eq!(output.file_lister.files.len(), 4, "Expected exactly 4 files");
     }
+
+    #[tokio::test]
+    async fn test_single_field_object_no_unwrap() {
+        #[derive(Deserialize)]
+        #[allow(clippy::items_after_statements)]
+        struct Output {
+            files: FileExplorerOutput,
+        }
+
+        #[derive(Deserialize)]
+        struct FileExplorerOutput {
+            items: Vec<String>,
+        }
+
+        let output = workflow!("workflows/single_field_object.ai" => Output).await;
+
+        assert!(!output.files.items.is_empty(), "Expected items array to be populated");
+    }
 }
