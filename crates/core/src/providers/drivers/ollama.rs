@@ -422,9 +422,14 @@ pub struct OllamaProviderBuilder;
 
 impl crate::providers::builder::ProviderBuilder for OllamaProviderBuilder {
     fn build(&self, provider: &crate::ast::Provider) -> Result<crate::providers::provider::ProviderRef, ProviderError> {
+        // Try to get endpoint from config, fall back to default
         let api_endpoint = provider
-            .api_endpoint
-            .clone()
+            .config
+            .get("endpoint")
+            .and_then(|v| match v {
+                crate::ast::Value::String(s) => Some(s.clone()),
+                _ => None,
+            })
             .unwrap_or_else(|| "http://localhost:11434".to_string());
 
         let ollama_provider = OllamaProvider::new(provider.name.clone(), api_endpoint, provider.models.clone());

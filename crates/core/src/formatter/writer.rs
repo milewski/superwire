@@ -106,18 +106,6 @@ impl Writer {
         )
         .unwrap();
 
-        // Write api_endpoint if present
-        if let Some(api_endpoint) = &provider.api_endpoint {
-            writeln!(
-                output,
-                "{}api_endpoint{}<- \"{}\"",
-                self.get_indent(self.indent_level + 1),
-                if true { " " } else { "" },
-                api_endpoint
-            )
-            .unwrap();
-        }
-
         // Write models
         if !provider.models.is_empty() {
             let models_value = Value::Array(provider.models.iter().map(|m| Value::String(m.clone())).collect());
@@ -127,6 +115,19 @@ impl Writer {
                 self.get_indent(self.indent_level + 1),
                 if true { " " } else { "" },
                 self.write_value_with_indent(&models_value, self.indent_level + 1)
+            )
+            .unwrap();
+        }
+
+        // Write config if present
+        if !provider.config.is_empty() {
+            let config_value = Value::Object(provider.config.clone());
+            writeln!(
+                output,
+                "{}config{}<- {}",
+                self.get_indent(self.indent_level + 1),
+                if true { " " } else { "" },
+                self.write_value_with_indent(&config_value, self.indent_level + 1)
             )
             .unwrap();
         }
