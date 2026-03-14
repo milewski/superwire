@@ -15,14 +15,8 @@ impl StringFormattingRule {
     /// Apply string formatting to a value recursively
     fn apply_to_value(value: &mut Value) -> Result<(), FormattingError> {
         match value {
-            Value::String(s) => {
+            Value::String(s) | Value::Interpolated(s) => {
                 // Convert to multiline if string is longer than 80 characters or contains newlines
-                if s.len() > 80 || s.contains('\n') {
-                    *value = Value::MultilineString(s.clone());
-                }
-            }
-            Value::Interpolated(s) => {
-                // Convert interpolated strings to multiline if they're long
                 if s.len() > 80 || s.contains('\n') {
                     *value = Value::MultilineString(s.clone());
                 }

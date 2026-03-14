@@ -73,10 +73,8 @@ impl AstBuilder {
 
         for inner_pair in pair.into_inner() {
             match inner_pair.as_rule() {
-                Rule::identifier => {
-                    if name.is_empty() {
-                        name = inner_pair.as_str().to_string();
-                    }
+                Rule::identifier if name.is_empty() => {
+                    name = inner_pair.as_str().to_string();
                 }
                 Rule::schema_field => {
                     fields.push(self.parse_schema_field(inner_pair)?);
@@ -103,10 +101,8 @@ impl AstBuilder {
 
         for inner_pair in pair.into_inner() {
             match inner_pair.as_rule() {
-                Rule::identifier => {
-                    if name.is_empty() {
-                        name = inner_pair.as_str().to_string();
-                    }
+                Rule::identifier if name.is_empty() => {
+                    name = inner_pair.as_str().to_string();
                 }
                 Rule::schema_type => {
                     field_type = self.parse_schema_type(inner_pair)?;
@@ -577,10 +573,8 @@ impl AstBuilder {
 
                 for field_inner in inner_pair.into_inner() {
                     match field_inner.as_rule() {
-                        Rule::identifier => {
-                            if name.is_empty() {
-                                name = field_inner.as_str().to_string();
-                            }
+                        Rule::identifier if name.is_empty() => {
+                            name = field_inner.as_str().to_string();
                         }
                         Rule::schema_type => {
                             field_type = self.parse_schema_type(field_inner)?;
@@ -612,10 +606,8 @@ impl AstBuilder {
 
                 for field_inner in inner_pair.into_inner() {
                     match field_inner.as_rule() {
-                        Rule::identifier => {
-                            if name.is_empty() {
-                                name = field_inner.as_str().to_string();
-                            }
+                        Rule::identifier if name.is_empty() => {
+                            name = field_inner.as_str().to_string();
                         }
                         Rule::value => {
                             value = self.parse_value(field_inner)?;
