@@ -69,13 +69,13 @@ impl ProviderRegistry {
 
     #[must_use]
     pub fn list_providers(&self) -> Vec<String> {
-        self.providers
-            .read()
-            .map(|providers| providers.keys().cloned().collect())
-            .unwrap_or_else(|_| {
+        self.providers.read().map_or_else(
+            |_| {
                 log::error!("Failed to acquire read lock for ProviderRegistry");
                 Vec::new()
-            })
+            },
+            |providers| providers.keys().cloned().collect(),
+        )
     }
 }
 

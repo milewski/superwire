@@ -574,69 +574,62 @@ impl WorkflowValidator {
 
     fn validate_compact_in_value(value: &Value, providers: &[crate::ast::Provider], errors: &mut Vec<ValidationError>) {
         match value {
-            Value::FunctionCall(function_call) => {
-                if function_call.name == "compact" {
-                    if !function_call.arguments.contains_key("model") {
-                        errors.push(ValidationError::MissingRequiredArgument {
-                            file_path: WORKFLOW_FILE_PATH.to_string(),
-                            line: function_call.span.line,
-                            column: function_call.span.column,
-                            function_name: "compact".to_string(),
-                            argument_name: "model".to_string(),
-                            suggestion: Some(
-                                "Add model <- \"provider/model_name\" to the compact function".to_string(),
-                            ),
-                        });
-                    }
+            Value::FunctionCall(function_call) if function_call.name == "compact" => {
+                if !function_call.arguments.contains_key("model") {
+                    errors.push(ValidationError::MissingRequiredArgument {
+                        file_path: WORKFLOW_FILE_PATH.to_string(),
+                        line: function_call.span.line,
+                        column: function_call.span.column,
+                        function_name: "compact".to_string(),
+                        argument_name: "model".to_string(),
+                        suggestion: Some("Add model <- \"provider/model_name\" to the compact function".to_string()),
+                    });
+                }
 
-                    if !function_call.arguments.contains_key("context") {
-                        errors.push(ValidationError::MissingRequiredArgument {
-                            file_path: WORKFLOW_FILE_PATH.to_string(),
-                            line: function_call.span.line,
-                            column: function_call.span.column,
-                            function_name: "compact".to_string(),
-                            argument_name: "context".to_string(),
-                            suggestion: Some("Add context <- agent.name.context to the compact function".to_string()),
-                        });
-                    }
+                if !function_call.arguments.contains_key("context") {
+                    errors.push(ValidationError::MissingRequiredArgument {
+                        file_path: WORKFLOW_FILE_PATH.to_string(),
+                        line: function_call.span.line,
+                        column: function_call.span.column,
+                        function_name: "compact".to_string(),
+                        argument_name: "context".to_string(),
+                        suggestion: Some("Add context <- agent.name.context to the compact function".to_string()),
+                    });
+                }
 
-                    if let Some(Value::String(model_ref) | Value::Interpolated(model_ref)) =
-                        function_call.arguments.get("model")
-                    {
-                        if let Some((provider_name, model_name)) = model_ref.split_once('/') {
-                            let provider_exists = providers.iter().any(|p| p.name == provider_name);
-                            if provider_exists {
-                                if let Some(provider) = providers.iter().find(|p| p.name == provider_name) {
-                                    if !provider.models.contains(&model_name.to_string()) {
-                                        errors.push(ValidationError::ProviderModelMismatch {
-                                            file_path: WORKFLOW_FILE_PATH.to_string(),
-                                            line: function_call.span.line,
-                                            column: function_call.span.column,
-                                            message: format!(
-                                                "Model '{model_name}' not found in provider '{provider_name}'"
-                                            ),
-                                            suggestion: Some(format!(
-                                                "Available models: {}",
-                                                provider.models.join(", ")
-                                            )),
-                                        });
-                                    }
+                if let Some(Value::String(model_ref) | Value::Interpolated(model_ref)) =
+                    function_call.arguments.get("model")
+                {
+                    if let Some((provider_name, model_name)) = model_ref.split_once('/') {
+                        let provider_exists = providers.iter().any(|p| p.name == provider_name);
+                        if provider_exists {
+                            if let Some(provider) = providers.iter().find(|p| p.name == provider_name) {
+                                if !provider.models.contains(&model_name.to_string()) {
+                                    errors.push(ValidationError::ProviderModelMismatch {
+                                        file_path: WORKFLOW_FILE_PATH.to_string(),
+                                        line: function_call.span.line,
+                                        column: function_call.span.column,
+                                        message: format!(
+                                            "Model '{model_name}' not found in provider '{provider_name}'"
+                                        ),
+                                        suggestion: Some(format!("Available models: {}", provider.models.join(", "))),
+                                    });
                                 }
-                            } else {
-                                errors.push(ValidationError::UndefinedReference {
-                                    file_path: WORKFLOW_FILE_PATH.to_string(),
-                                    line: function_call.span.line,
-                                    column: function_call.span.column,
-                                    reference: provider_name.to_string(),
-                                    suggestion: Some(format!("Provider '{provider_name}' is not defined")),
-                                });
                             }
+                        } else {
+                            errors.push(ValidationError::UndefinedReference {
+                                file_path: WORKFLOW_FILE_PATH.to_string(),
+                                line: function_call.span.line,
+                                column: function_call.span.column,
+                                reference: provider_name.to_string(),
+                                suggestion: Some(format!("Provider '{provider_name}' is not defined")),
+                            });
                         }
                     }
+                }
 
-                    for arg_value in function_call.arguments.values() {
-                        Self::validate_compact_in_value(arg_value, providers, errors);
-                    }
+                for arg_value in function_call.arguments.values() {
+                    Self::validate_compact_in_value(arg_value, providers, errors);
                 }
             }
             Value::Array(items) => {
