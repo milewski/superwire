@@ -1,6 +1,6 @@
 provider ollama {
     driver <- "ollama"
-    config <- { endpoint: "http://100.76.5.36:11434" }
+    config <- { endpoint <- "http://100.76.5.36:11434" }
     models <- ["qwen3:8b"]
 }
 
