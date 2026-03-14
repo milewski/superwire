@@ -313,7 +313,15 @@ impl AstBuilder {
         let text = pair.as_str();
 
         if text.starts_with("\"\"\"") && text.ends_with("\"\"\"") && text.len() >= 6 {
-            return Ok(text[3..text.len() - 3].to_string());
+            let content = &text[3..text.len() - 3];
+            let normalized = content
+                .lines()
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            return Ok(normalized);
         }
 
         Ok(text.to_string())
