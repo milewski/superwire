@@ -31,10 +31,8 @@ impl AstConstructor {
 
         for inner_pair in pair.into_inner() {
             match inner_pair.as_rule() {
-                Rule::identifier => {
-                    if name.is_empty() {
-                        name = inner_pair.as_str().to_string();
-                    }
+                Rule::identifier if name.is_empty() => {
+                    name = inner_pair.as_str().to_string();
                 }
                 Rule::provider_property => {
                     let full_text = inner_pair.as_str();
@@ -291,16 +289,12 @@ impl AstConstructor {
 
         for inner_pair in pair.into_inner() {
             match inner_pair.as_rule() {
-                Rule::identifier => {
-                    if function_name.is_empty() {
-                        function_name = inner_pair.as_str().to_string();
-                    }
+                Rule::identifier if function_name.is_empty() => {
+                    function_name = inner_pair.as_str().to_string();
                 }
-                Rule::string_value => {
+                Rule::string_value if !arguments.contains_key("path") => {
                     // First string is the path argument
-                    if !arguments.contains_key("path") {
-                        arguments.insert("path".to_string(), Value::String(self.parse_string_value(inner_pair)?));
-                    }
+                    arguments.insert("path".to_string(), Value::String(self.parse_string_value(inner_pair)?));
                 }
                 Rule::function_binding => {
                     let mut binding_key = String::new();
@@ -334,6 +328,12 @@ impl AstConstructor {
     }
 
     pub fn parse_interpolated_string(&self, pair: pest::iterators::Pair<Rule>) -> Result<String, ParserError> {
-        Ok(pair.as_str().to_string())
+        let text = pair.as_str();
+
+        if text.starts_with('"') && text.ends_with('"') && text.len() >= 2 {
+            return Ok(text[1..text.len() - 1].to_string());
+        }
+
+        Ok(text.to_string())
     }
 }
