@@ -133,9 +133,9 @@ impl DependencyGraph {
                 }
                 _ => {}
             },
-            Value::Interpolated(template) => {
+            Value::Interpolated(template) | Value::MultilineString(template) => {
                 let Ok(interpolation_pattern) = regex::Regex::new(r"\{\{([^}]+)\}\}") else {
-                    return; // Return early if regex compilation fails
+                    return;
                 };
 
                 for capture in interpolation_pattern.captures_iter(template) {

@@ -20,6 +20,7 @@ impl Default for ExecutionEngine {
 #[napi]
 impl ExecutionEngine {
     #[napi(constructor)]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: CoreExecutionEngine::new(),
@@ -27,6 +28,7 @@ impl ExecutionEngine {
     }
 
     #[napi(factory)]
+    #[must_use]
     pub fn with_tools(tools: Vec<&Tool>) -> Self {
         let mut registry = ToolRegistry::new();
         for tool in tools {

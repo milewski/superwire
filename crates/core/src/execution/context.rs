@@ -69,7 +69,13 @@ impl RuntimeContext {
     pub fn resolve_value(&self, value: &Value) -> Result<JsonValue, ExecutionError> {
         match value {
             Value::String(string) => Ok(JsonValue::String(string.clone())),
-            Value::MultilineString(string) => Ok(JsonValue::String(string.clone())),
+            Value::MultilineString(string) => {
+                if INTERPOLATION_PATTERN.is_match(string) {
+                    self.resolve_interpolated_string(string)
+                } else {
+                    Ok(JsonValue::String(string.clone()))
+                }
+            }
             Value::Number(number) => Ok(JsonValue::Number(
                 serde_json::Number::from_f64(*number).unwrap_or(serde_json::Number::from(0)),
             )),
