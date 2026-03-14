@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/macros", "crates/cli"]
+members = ["crates/core", "crates/macros", "crates/cli", "crates/ffi/javascript"]
 resolver = "2"
 exclude = ["example-project"]
 

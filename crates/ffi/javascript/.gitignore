@@ -1,0 +1,4 @@
+index.d.ts
+*.js
+*.node
+node_modules
