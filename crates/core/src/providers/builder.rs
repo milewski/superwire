@@ -81,6 +81,7 @@ pub fn global_registry() -> &'static ProviderBuilderRegistry {
         let registry = ProviderBuilderRegistry::new();
 
         // Register built-in providers
+        registry.register(Arc::new(crate::providers::drivers::anthropic::AnthropicProviderBuilder));
         registry.register(Arc::new(crate::providers::drivers::ollama::OllamaProviderBuilder));
         registry.register(Arc::new(crate::providers::drivers::openai::OpenAiProviderBuilder));
 
