@@ -280,7 +280,11 @@ impl<'a> AgentExecutor<'a> {
             .unwrap_or(DoneStatus::Success);
         log::debug!("Agent '{}' done status: {:?}", self.agent.name, status);
 
-        let output_value = done_params.get("output").cloned().unwrap_or(JsonValue::Null);
+        let mut output_value = done_params.get("output").cloned().unwrap_or(JsonValue::Null);
+
+        if let Some(schema_value) = schema {
+            output_value = Self::coerce_type_if_needed(schema_value, output_value);
+        }
 
         if matches!(status, DoneStatus::Fail) {
             log::error!(
@@ -322,6 +326,74 @@ impl<'a> AgentExecutor<'a> {
             }
         } else {
             Ok(Some(output_value))
+        }
+    }
+
+    fn coerce_type_if_needed(schema: &JsonValue, value: JsonValue) -> JsonValue {
+        let schema_type = schema
+            .as_object()
+            .and_then(|obj| obj.get("type"))
+            .and_then(|t| t.as_str());
+
+        match schema_type {
+            Some("number") => {
+                if let Some(string_value) = value.as_str() {
+                    if let Ok(number) = string_value.parse::<f64>() {
+                        if let Some(json_number) = serde_json::Number::from_f64(number) {
+                            log::debug!("Coerced string '{string_value}' to number {number}");
+                            return JsonValue::Number(json_number);
+                        }
+                        log::warn!("Failed to convert f64 to Number, keeping original value");
+                    }
+                }
+                value
+            }
+            Some("boolean") => {
+                if let Some(string_value) = value.as_str() {
+                    match string_value.to_lowercase().as_str() {
+                        "true" => {
+                            log::debug!("Coerced string 'true' to boolean true");
+                            return JsonValue::Bool(true);
+                        }
+                        "false" => {
+                            log::debug!("Coerced string 'false' to boolean false");
+                            return JsonValue::Bool(false);
+                        }
+                        _ => {}
+                    }
+                }
+                value
+            }
+            Some("array") => {
+                if let Some(string_value) = value.as_str() {
+                    if let Ok(parsed_array) = serde_json::from_str::<JsonValue>(string_value) {
+                        if parsed_array.is_array() {
+                            log::debug!("Coerced JSON string to array");
+                            return parsed_array;
+                        }
+                    }
+                }
+                value
+            }
+            Some("object") => {
+                if let Some(string_value) = value.as_str() {
+                    if let Ok(parsed_object) = serde_json::from_str::<JsonValue>(string_value) {
+                        if parsed_object.is_object() {
+                            log::debug!("Coerced JSON string to object");
+                            return parsed_object;
+                        }
+                    }
+                }
+                value
+            }
+            Some("string") => {
+                if !value.is_string() && !value.is_null() {
+                    log::debug!("Coerced non-string value to string: {value}");
+                    return JsonValue::String(value.to_string());
+                }
+                value
+            }
+            _ => value,
         }
     }
 
