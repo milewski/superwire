@@ -1,4 +1,4 @@
-use crate::ast::{Agent, AgentProperty, Reference, Value, Workflow};
+use crate::ast::{Agent, AgentProperty, NamedSchema, Reference, Value, Workflow};
 use crate::execution::context::RuntimeContext;
 use crate::execution::error::ExecutionError;
 use crate::execution::orchestrator::AgentOrchestrator;
@@ -99,11 +99,17 @@ impl<'a> WorkflowExecutor<'a> {
         let provider_registry_clone = self.provider_registry.clone();
         let runtime_context_clone = runtime_context.clone();
         let tool_registry_clone = self.tool_registry.clone();
+        let schemas_clone = self.workflow.schemas.clone();
+
+        log::debug!(
+            "Spawning task for agent '{}', schemas count: {}",
+            agent.name,
+            schemas_clone.len()
+        );
 
         let task = tokio::task::spawn(async move {
             let provider = Self::get_provider_for_agent(&agent_clone, &provider_registry_clone)?;
             let provider_clone = provider.clone();
-            let orchestrator = AgentOrchestrator::with_tools(provider, tool_registry_clone.clone());
 
             let initial_context = Self::extract_initial_context(&agent_clone, &runtime_context_clone)?;
             let for_each_property = Self::extract_for_each_property(&agent_clone);
@@ -117,9 +123,12 @@ impl<'a> WorkflowExecutor<'a> {
                     &runtime_context_clone,
                     &provider_clone,
                     &tool_registry_clone,
+                    &schemas_clone,
                 )
                 .await
             } else {
+                let orchestrator =
+                    AgentOrchestrator::with_schemas(provider, tool_registry_clone.clone(), schemas_clone);
                 let (output, context) = orchestrator
                     .execute_agent(&agent_clone, initial_context, &runtime_context_clone)
                     .await?;
@@ -226,6 +235,7 @@ impl<'a> WorkflowExecutor<'a> {
         runtime_context: &RuntimeContext,
         provider: &ProviderRef,
         tool_registry: &ToolRegistry,
+        schemas: &[NamedSchema],
     ) -> Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError> {
         let collection = runtime_context.resolve_value(collection_value)?;
 
@@ -246,10 +256,14 @@ impl<'a> WorkflowExecutor<'a> {
             iteration_context.set_input_value(iteration_var.to_string(), item);
             let provider_for_iteration = provider.clone();
             let tool_registry_for_iteration = tool_registry.clone();
+            let schemas_for_iteration = schemas.to_vec();
 
             let iteration_task = tokio::task::spawn(async move {
-                let orchestrator_inner =
-                    AgentOrchestrator::with_tools(provider_for_iteration, tool_registry_for_iteration);
+                let orchestrator_inner = AgentOrchestrator::with_schemas(
+                    provider_for_iteration,
+                    tool_registry_for_iteration,
+                    schemas_for_iteration,
+                );
                 let result = orchestrator_inner
                     .execute_agent(&agent_clone, initial_context_clone, &iteration_context)
                     .await;

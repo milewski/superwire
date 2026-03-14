@@ -8,22 +8,6 @@ use crate::tools::done::{DoneStatus, DoneTool};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
-macro_rules! system {
-    ($($content:tt)*) => {{
-        let text = stringify!($($content)*);
-        let normalized = text
-            .lines()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        Message::System {
-            content: normalized,
-        }
-    }};
-}
-
 const MAX_ITERATIONS: usize = 50;
 
 enum CheckResult {
@@ -56,26 +40,38 @@ impl<'a> AgentExecutor<'a> {
         let schema = self.orchestrator.extract_schema(self.agent)?;
         let done_tool = Arc::new(DoneTool::new(schema.clone()));
 
-        let context = self.build_initial_context(initial_context, &prompt);
+        let context = self.build_initial_context(initial_context, &prompt, schema.as_ref());
         let tools = self.build_tools(done_tool.clone())?;
 
         self.execute_loop(context, tools, done_tool, schema).await
     }
 
-    fn build_initial_context(&self, mut initial_context: Vec<Message>, prompt: &str) -> Vec<Message> {
-        initial_context.push(system! {
-            You are an AI agent executing a task. CRITICAL: You have access to a done tool that you MUST use to return your final result.
+    fn build_initial_context(
+        &self,
+        mut initial_context: Vec<Message>,
+        prompt: &str,
+        schema: Option<&JsonValue>,
+    ) -> Vec<Message> {
+        let mut system_message = String::from(
+            "You are an AI agent executing a task. CRITICAL: You have access to a done tool that you MUST use to return your final result.\n\n\
+            IMPORTANT INSTRUCTIONS:\n\
+            1. Do NOT respond with plain text - you MUST call the done tool\n\
+            2. The done tool is how you return your result to the system\n\
+            3. After completing your task, immediately call the done tool with your output\n\
+            4. Your response will NOT be processed unless you call the done tool\n\
+            5. Think of the done tool as your ONLY way to communicate your final answer\n\n\
+            Example: If asked to generate a number, call done with output 42 and status success instead of just saying 42.\n\n\
+            Remember: ALWAYS call the done tool when you have your answer ready."
+        );
 
-            IMPORTANT INSTRUCTIONS:
-            1. Do NOT respond with plain text - you MUST call the done tool
-            2. The done tool is how you return your result to the system
-            3. After completing your task, immediately call the done tool with your output
-            4. Your response will NOT be processed unless you call the done tool
-            5. Think of the done tool as your ONLY way to communicate your final answer
+        if let Some(schema_value) = schema {
+            let schema_instructions = SchemaValidator::inject_schema_into_prompt(schema_value);
+            system_message.push_str("\n\nOUTPUT SCHEMA:\n");
+            system_message.push_str(&schema_instructions);
+        }
 
-            Example: If asked to generate a number, call done with output 42 and status success instead of just saying 42.
-
-            Remember: ALWAYS call the done tool when you have your answer ready.
+        initial_context.push(Message::System {
+            content: system_message,
         });
 
         initial_context.push(Message::User {

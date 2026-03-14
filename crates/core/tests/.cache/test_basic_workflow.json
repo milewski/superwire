@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "7dbb11a59b3b2840",
+  "workflow_hash": "686fec4c0934cd4b",
   "agents": {
     "greeting": [
       {
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":\"Hello! I'm an AI assistant. How can I help you today?\",\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Hello! I'm an AI assistant here to help with any tasks you need.\",\"status\":\"success\"}"
               }
             ]
           }
@@ -29,6 +29,6 @@
     ]
   },
   "output": {
-    "greeting": "Hello! I'm an AI assistant. How can I help you today?"
+    "greeting": "Hello! I'm an AI assistant here to help with any tasks you need."
   }
 }

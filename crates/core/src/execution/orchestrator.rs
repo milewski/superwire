@@ -1,4 +1,4 @@
-use crate::ast::{Agent, AgentProperty, SchemaReference, Value};
+use crate::ast::{Agent, AgentProperty, NamedSchema, SchemaReference, Value};
 use crate::execution::agent_executor::AgentExecutor;
 use crate::execution::context::RuntimeContext;
 use crate::execution::error::ExecutionError;
@@ -12,6 +12,7 @@ use std::sync::Arc;
 pub struct AgentOrchestrator {
     provider: ProviderRef,
     tool_registry: ToolRegistry,
+    schemas: Vec<NamedSchema>,
 }
 
 impl AgentOrchestrator {
@@ -19,6 +20,7 @@ impl AgentOrchestrator {
         Self {
             provider,
             tool_registry: ToolRegistry::new(),
+            schemas: Vec::new(),
         }
     }
 
@@ -26,6 +28,15 @@ impl AgentOrchestrator {
         Self {
             provider,
             tool_registry,
+            schemas: Vec::new(),
+        }
+    }
+
+    pub fn with_schemas(provider: ProviderRef, tool_registry: ToolRegistry, schemas: Vec<NamedSchema>) -> Self {
+        Self {
+            provider,
+            tool_registry,
+            schemas,
         }
     }
 
@@ -145,11 +156,35 @@ impl AgentOrchestrator {
     }
 
     pub fn extract_schema(&self, agent: &Agent) -> Result<Option<JsonValue>, ExecutionError> {
+        log::debug!(
+            "Extracting schema for agent '{}', available schemas: {:?}",
+            agent.name,
+            self.schemas.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+
         for property in &agent.properties {
             if let AgentProperty::Output { value, .. } = property {
                 match value {
                     SchemaReference::Named(_name) => {
-                        return Ok(None);
+                        let schema_name = _name.strip_prefix("schema.").unwrap_or(_name);
+
+                        let named_schema = self.schemas.iter().find(|s| s.name == schema_name).ok_or_else(|| {
+                            ExecutionError::RuntimeError {
+                                agent: agent.name.clone(),
+                                message: format!("Schema '{schema_name}' not found"),
+                                suggestion: Some("Check that the schema is defined in the workflow".to_string()),
+                            }
+                        })?;
+
+                        let compiled = SchemaCompiler::compile(&named_schema.schema).map_err(|error| {
+                            ExecutionError::RuntimeError {
+                                agent: agent.name.clone(),
+                                message: format!("Failed to compile schema '{schema_name}': {error}"),
+                                suggestion: Some("Check schema definition".to_string()),
+                            }
+                        })?;
+
+                        return Ok(Some(compiled));
                     }
                     SchemaReference::Inline(schema) => {
                         let compiled =
