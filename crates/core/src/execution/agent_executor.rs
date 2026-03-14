@@ -26,6 +26,11 @@ macro_rules! system {
 
 const MAX_ITERATIONS: usize = 50;
 
+enum CheckResult {
+    Done(JsonValue, Vec<Message>),
+    Continue(Vec<Message>),
+}
+
 pub struct AgentExecutor<'a> {
     orchestrator: &'a AgentOrchestrator,
     agent: &'a Agent,
@@ -117,8 +122,9 @@ impl<'a> AgentExecutor<'a> {
 
             context = self.execute_iteration(context, &tools).await?;
 
-            if let Some(result) = self.check_for_done(&context, &done_tool, schema.as_ref()).await? {
-                return Ok(result);
+            match self.check_for_done(context, &done_tool, schema.as_ref()).await? {
+                CheckResult::Done(output, final_context) => return Ok((output, final_context)),
+                CheckResult::Continue(updated_context) => context = updated_context,
             }
         }
     }
@@ -147,10 +153,10 @@ impl<'a> AgentExecutor<'a> {
 
     async fn check_for_done(
         &self,
-        context: &[Message],
+        context: Vec<Message>,
         done_tool: &Arc<DoneTool>,
         schema: Option<&JsonValue>,
-    ) -> Result<Option<(JsonValue, Vec<Message>)>, ExecutionError> {
+    ) -> Result<CheckResult, ExecutionError> {
         let tool_calls = context
             .last()
             .and_then(|msg| {
@@ -164,12 +170,12 @@ impl<'a> AgentExecutor<'a> {
 
         if let Some(tool_calls) = tool_calls {
             return self
-                .process_tool_calls(context.to_vec(), &tool_calls, done_tool, schema)
+                .process_tool_calls(context, &tool_calls, done_tool, schema)
                 .await;
         }
 
         log::trace!("Agent '{}' response had no tool calls", self.agent.name);
-        Ok(None)
+        Ok(CheckResult::Continue(context))
     }
 
     async fn process_tool_calls(
@@ -178,7 +184,7 @@ impl<'a> AgentExecutor<'a> {
         tool_calls: &[crate::providers::provider::ToolCall],
         done_tool: &Arc<DoneTool>,
         schema: Option<&JsonValue>,
-    ) -> Result<Option<(JsonValue, Vec<Message>)>, ExecutionError> {
+    ) -> Result<CheckResult, ExecutionError> {
         let mut done_called = false;
         let mut done_output = None;
 
@@ -234,7 +240,7 @@ impl<'a> AgentExecutor<'a> {
             if let Some(final_output) = done_output {
                 log::info!("Agent '{}' completed successfully with valid output", self.agent.name);
                 log::debug!("Agent '{}' final output: {:?}", self.agent.name, final_output);
-                return Ok(Some((final_output, context)));
+                return Ok(CheckResult::Done(final_output, context));
             }
             log::debug!(
                 "Agent '{}' done called but output validation failed, continuing loop",
@@ -242,7 +248,7 @@ impl<'a> AgentExecutor<'a> {
             );
         }
 
-        Ok(None)
+        Ok(CheckResult::Continue(context))
     }
 
     fn handle_done_tool(

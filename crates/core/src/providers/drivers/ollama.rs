@@ -21,7 +21,7 @@ struct OllamaChatRequest {
     stream: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct OllamaMessage {
     role: Cow<'static, str>,
     content: String,
@@ -125,6 +125,12 @@ impl OllamaProvider {
         tools
             .iter()
             .map(|tool| {
+                log::trace!(
+                    "Original schema for tool '{}': {}",
+                    tool.name,
+                    serde_json::to_string_pretty(&tool.parameters_schema).unwrap_or_default()
+                );
+
                 let simplified_schema = Self::simplify_schema_for_ollama(&tool.parameters_schema);
 
                 log::debug!(
@@ -155,7 +161,7 @@ impl OllamaProvider {
                 let mut simple_props = serde_json::Map::new();
 
                 for (key, value) in properties {
-                    simple_props.insert(key.clone(), Self::simplify_property(value));
+                    simple_props.insert(key.clone(), Self::simplify_property(value, obj));
                 }
 
                 simplified.insert("properties".to_string(), Value::Object(simple_props));
@@ -171,8 +177,14 @@ impl OllamaProvider {
         }
     }
 
-    fn simplify_property(prop: &Value) -> Value {
+    fn simplify_property(prop: &Value, root_schema: &serde_json::Map<String, Value>) -> Value {
         if let Some(obj) = prop.as_object() {
+            if let Some(ref_path) = obj.get("$ref").and_then(|v| v.as_str()) {
+                if let Some(resolved) = Self::resolve_ref(ref_path, root_schema) {
+                    return Self::simplify_property(&resolved, root_schema);
+                }
+            }
+
             let mut simple_prop = serde_json::Map::new();
 
             if let Some(prop_type) = obj.get("type") {
@@ -211,14 +223,14 @@ impl OllamaProvider {
             }
 
             if let Some(items) = obj.get("items") {
-                simple_prop.insert("items".to_string(), Self::simplify_property(items));
+                simple_prop.insert("items".to_string(), Self::simplify_property(items, root_schema));
             }
 
             if let Some(properties) = obj.get("properties").and_then(|v| v.as_object()) {
                 let mut simple_nested_props = serde_json::Map::new();
 
                 for (key, value) in properties {
-                    simple_nested_props.insert(key.clone(), Self::simplify_property(value));
+                    simple_nested_props.insert(key.clone(), Self::simplify_property(value, root_schema));
                 }
 
                 simple_prop.insert("properties".to_string(), Value::Object(simple_nested_props));
@@ -228,6 +240,21 @@ impl OllamaProvider {
         } else {
             serde_json::json!({"type": "string"})
         }
+    }
+
+    fn resolve_ref(ref_path: &str, root_schema: &serde_json::Map<String, Value>) -> Option<Value> {
+        if !ref_path.starts_with("#/") {
+            return None;
+        }
+
+        let path_parts: Vec<&str> = ref_path[2..].split('/').collect();
+        let mut current = Value::Object(root_schema.clone());
+
+        for part in path_parts {
+            current = current.get(part)?.clone();
+        }
+
+        Some(current)
     }
 }
 
@@ -248,22 +275,32 @@ impl Provider for OllamaProvider {
         tools: Vec<ToolDefinition>,
     ) -> Result<AgentOutput, ProviderError> {
         log::debug!("OllamaProvider executing agent: {}", agent.name);
+        log::debug!("Context has {} messages", context.len());
 
         let ollama_messages = Self::convert_messages_to_ollama_format(&context);
         log::trace!("Converted {} messages to Ollama format", ollama_messages.len());
+
+        for (i, msg) in ollama_messages.iter().enumerate() {
+            log::trace!("Message {}: role={}, content_len={}, has_tool_calls={}",
+                i, msg.role, msg.content.len(), msg.tool_calls.is_some());
+        }
 
         let model_name = agent
             .properties
             .iter()
             .find_map(|prop| {
-                if let crate::ast::AgentProperty::Model {
-                    value: crate::ast::Value::String(model_ref),
-                    ..
-                } = prop
-                {
-                    model_ref.split('/').nth(1).map(std::string::ToString::to_string)
-                } else {
-                    None
+                match prop {
+                    crate::ast::AgentProperty::Model { value, .. } => {
+                        let model_ref = match value {
+                            crate::ast::Value::String(s) | crate::ast::Value::Interpolated(s) => Some(s.as_str()),
+                            _ => None,
+                        };
+
+                        model_ref.and_then(|model_ref| {
+                            model_ref.split('/').nth(1).map(std::string::ToString::to_string)
+                        })
+                    }
+                    _ => None,
                 }
             })
             .unwrap_or_else(|| "qwen3:8b".to_string());
@@ -275,10 +312,12 @@ impl Provider for OllamaProvider {
 
         let request = OllamaChatRequest {
             model: model_name.clone(),
-            messages: ollama_messages,
+            messages: ollama_messages.clone(),
             tools: ollama_tools,
             stream: false,
         };
+
+        log::trace!("Ollama request: {:?}", serde_json::to_string_pretty(&request).unwrap_or_default());
 
         let url = format!("{}/api/chat", self.api_endpoint);
         log::debug!("Sending request to Ollama: {url}");
@@ -316,6 +355,8 @@ impl Provider for OllamaProvider {
             }
         })?;
 
+        log::trace!("Ollama response: {:?}", ollama_response);
+
         let output_content = ollama_response.message.content.clone();
         log::debug!("Ollama response content length: {} chars", output_content.len());
 
@@ -334,6 +375,15 @@ impl Provider for OllamaProvider {
                 })
                 .collect()
         });
+
+        if output_content.is_empty() && tool_calls.is_none() {
+            log::error!("Ollama returned empty response with no content and no tool calls");
+            return Err(ProviderError::ApiError {
+                message: "Ollama returned empty response. This may indicate a problem with the conversation format or model compatibility.".to_string(),
+                status_code: None,
+                suggestion: Some("Try using a different model or check Ollama logs".to_string()),
+            });
+        }
 
         let mut updated_context = Vec::with_capacity(context.len() + 1);
         updated_context.extend_from_slice(&context);
