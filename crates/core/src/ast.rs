@@ -66,6 +66,7 @@ pub struct SchemaField {
 pub enum SchemaType {
     String,
     Number,
+    Float,
     Boolean,
     Null,
     Array(Box<Self>, Option<usize>),

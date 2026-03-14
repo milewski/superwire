@@ -129,6 +129,7 @@ impl AstBuilder {
                     return Ok(match inner_pair.as_str() {
                         "string" => SchemaType::String,
                         "number" => SchemaType::Number,
+                        "float" => SchemaType::Float,
                         "boolean" => SchemaType::Boolean,
                         "null" => SchemaType::Null,
                         _ => SchemaType::String,

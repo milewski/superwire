@@ -61,7 +61,9 @@ impl SchemaCompiler {
         match field_type {
             SchemaType::String => Ok(serde_json::json!({"type": "string"})),
 
-            SchemaType::Number => Ok(serde_json::json!({"type": "number"})),
+            SchemaType::Number => Ok(serde_json::json!({"type": "integer"})),
+
+            SchemaType::Float => Ok(serde_json::json!({"type": "number"})),
 
             SchemaType::Boolean => Ok(serde_json::json!({"type": "boolean"})),
 

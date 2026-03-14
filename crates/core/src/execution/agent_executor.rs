@@ -336,11 +336,20 @@ impl<'a> AgentExecutor<'a> {
             .and_then(|t| t.as_str());
 
         match schema_type {
+            Some("integer") => {
+                if let Some(string_value) = value.as_str() {
+                    if let Ok(integer) = string_value.parse::<i64>() {
+                        log::debug!("Coerced string '{string_value}' to integer {integer}");
+                        return JsonValue::Number(integer.into());
+                    }
+                }
+                value
+            }
             Some("number") => {
                 if let Some(string_value) = value.as_str() {
                     if let Ok(number) = string_value.parse::<f64>() {
                         if let Some(json_number) = serde_json::Number::from_f64(number) {
-                            log::debug!("Coerced string '{string_value}' to number {number}");
+                            log::debug!("Coerced string '{string_value}' to float {number}");
                             return JsonValue::Number(json_number);
                         }
                         log::warn!("Failed to convert f64 to Number, keeping original value");

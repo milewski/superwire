@@ -195,6 +195,7 @@ impl Writer {
         match schema_type {
             SchemaType::String => "string".to_string(),
             SchemaType::Number => "number".to_string(),
+            SchemaType::Float => "float".to_string(),
             SchemaType::Boolean => "boolean".to_string(),
             SchemaType::Null => "null".to_string(),
             SchemaType::Array(inner, quantity) => {

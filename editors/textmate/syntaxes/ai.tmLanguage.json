@@ -217,7 +217,7 @@
       ]
     },
     "inline-type": {
-      "match": "\\b(string|number|boolean|null)\\b(?:\\s+(\"[^\"]*\"))?",
+      "match": "\\b(string|number|float|boolean|null)\\b(?:\\s+(\"[^\"]*\"))?",
       "captures": {
         "1": {
           "name": "storage.type.ai"

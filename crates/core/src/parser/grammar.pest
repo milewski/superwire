@@ -24,7 +24,7 @@ schema_type = {
     schema_type_object |
     schema_type_primitive
 }
-schema_type_primitive = { "string" | "number" | "boolean" | "null" }
+schema_type_primitive = { "string" | "number" | "float" | "boolean" | "null" }
 schema_type_array = { "[" ~ schema_type ~ (";" ~ number_value)? ~ "]" }
 schema_type_enum = { (schema_type_primitive | string_value) ~ ("|" ~ (schema_type_primitive | string_value))+ }
 schema_type_object = { "{" ~ schema_field* ~ "}" }

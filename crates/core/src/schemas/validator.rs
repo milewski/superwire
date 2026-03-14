@@ -100,7 +100,7 @@ impl SchemaValidator {
             .as_object()
             .and_then(|obj| obj.get("type"))
             .and_then(|t| t.as_str())
-            .is_some_and(|type_str| matches!(type_str, "string" | "number" | "boolean" | "null"));
+            .is_some_and(|type_str| matches!(type_str, "string" | "number" | "integer" | "boolean" | "null"));
 
         let is_array_type = schema
             .as_object()
