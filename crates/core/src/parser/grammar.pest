@@ -7,13 +7,13 @@ workflow = { SOI ~ (provider | schema | input_block | output_block | agent)* ~ E
 provider = { "provider" ~ identifier ~ "{" ~ provider_property* ~ "}" }
 provider_property = {
     (property_driver ~ "<-" ~ string_value) |
-    (property_api_endpoint ~ "<-" ~ string_value) |
-    (property_models ~ "<-" ~ array_value)
+    (property_models ~ "<-" ~ array_value) |
+    (property_config ~ "<-" ~ object_value)
 }
 
 property_driver = { "driver" }
-property_api_endpoint = { "api_endpoint" }
 property_models = { "models" }
+property_config = { "config" }
 
 // Schema definition
 schema = { "schema" ~ identifier ~ "{" ~ schema_field* ~ "}" }

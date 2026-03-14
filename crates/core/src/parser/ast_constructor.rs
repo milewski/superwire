@@ -26,8 +26,8 @@ impl AstConstructor {
         let span = self.pair_to_span(&pair);
         let mut name = String::new();
         let mut driver = String::new();
-        let mut api_endpoint = None;
         let mut models = Vec::new();
+        let mut config = HashMap::new();
 
         for inner_pair in pair.into_inner() {
             match inner_pair.as_rule() {
@@ -38,10 +38,10 @@ impl AstConstructor {
                     let full_text = inner_pair.as_str();
                     let property_name = if full_text.starts_with("driver") {
                         "driver"
-                    } else if full_text.starts_with("api_endpoint") {
-                        "api_endpoint"
                     } else if full_text.starts_with("models") {
                         "models"
+                    } else if full_text.starts_with("config") {
+                        "config"
                     } else {
                         ""
                     };
@@ -49,10 +49,17 @@ impl AstConstructor {
                     let mut property_value = None;
 
                     for prop_pair in inner_pair.into_inner() {
-                        if prop_pair.as_rule() == Rule::string_value {
-                            property_value = Some(Value::String(self.parse_string_value(prop_pair)?));
-                        } else if prop_pair.as_rule() == Rule::array_value {
-                            property_value = Some(self.parse_array_value(prop_pair)?);
+                        match prop_pair.as_rule() {
+                            Rule::string_value => {
+                                property_value = Some(Value::String(self.parse_string_value(prop_pair)?));
+                            }
+                            Rule::array_value => {
+                                property_value = Some(self.parse_array_value(prop_pair)?);
+                            }
+                            Rule::object_value => {
+                                property_value = Some(self.parse_object_value(prop_pair)?);
+                            }
+                            _ => {}
                         }
                     }
 
@@ -61,11 +68,6 @@ impl AstConstructor {
                             "driver" => {
                                 if let Value::String(string) = value {
                                     driver = string;
-                                }
-                            }
-                            "api_endpoint" => {
-                                if let Value::String(string) = value {
-                                    api_endpoint = Some(string);
                                 }
                             }
                             "models" => {
@@ -80,6 +82,11 @@ impl AstConstructor {
                                         .collect();
                                 }
                             }
+                            "config" => {
+                                if let Value::Object(obj) = value {
+                                    config = obj;
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -91,8 +98,8 @@ impl AstConstructor {
         Ok(Provider {
             name,
             driver,
-            api_endpoint,
             models,
+            config,
             span,
         })
     }
