@@ -158,13 +158,27 @@ impl AstConstructor {
 
     pub fn parse_multiline_string(&self, pair: pest::iterators::Pair<Rule>) -> Result<String, ParserError> {
         let text = pair.as_str();
-        let lines: Vec<&str> = text.lines().collect();
 
-        if lines.is_empty() {
-            return Ok(String::new());
+        if text.starts_with("\"\"\"") && text.ends_with("\"\"\"") && text.len() >= 6 {
+            let content = &text[3..text.len() - 3];
+            let normalized = content
+                .lines()
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            return Ok(normalized);
         }
 
-        Ok(lines.join("\n"))
+        let normalized = text
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Ok(normalized)
     }
 
     pub fn parse_object_value(&self, pair: pest::iterators::Pair<Rule>) -> Result<Value, ParserError> {
