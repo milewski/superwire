@@ -20,16 +20,40 @@ pub struct OpenAiProvider {
 impl OpenAiProvider {
     #[must_use]
     pub fn new(name: String, api_key: String, models: Vec<String>) -> Self {
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("Failed to build HTTP client");
+
         let config = OpenAIConfig::new().with_api_key(api_key);
-        let client = Client::with_config(config);
+        let client =
+            Client::with_config(config)
+                .with_http_client(http_client)
+                .with_backoff(backoff::ExponentialBackoff {
+                    max_elapsed_time: Some(std::time::Duration::from_millis(1)),
+                    ..Default::default()
+                });
 
         Self { name, models, client }
     }
 
     #[must_use]
     pub fn with_endpoint(name: String, api_key: String, endpoint: String, models: Vec<String>) -> Self {
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("Failed to build HTTP client");
+
         let config = OpenAIConfig::new().with_api_key(api_key).with_api_base(endpoint);
-        let client = Client::with_config(config);
+        let client =
+            Client::with_config(config)
+                .with_http_client(http_client)
+                .with_backoff(backoff::ExponentialBackoff {
+                    max_elapsed_time: Some(std::time::Duration::from_millis(1)),
+                    ..Default::default()
+                });
 
         Self { name, models, client }
     }
@@ -177,14 +201,74 @@ impl Provider for OpenAiProvider {
 
         log::debug!("Sending request to OpenAI");
 
-        let response = self.client.chat().create(request).await.map_err(|error| {
-            log::error!("OpenAI API request failed: {error}");
-            ProviderError::ApiError {
-                message: format!("OpenAI API request failed: {error}"),
-                status_code: None,
-                suggestion: Some("Check your API key and network connection".to_string()),
+        let max_retries = 3;
+        let mut retry_count = 0;
+        let mut wait_time = std::time::Duration::from_secs(30);
+
+        let response = loop {
+            let response_result = tokio::time::timeout(
+                std::time::Duration::from_secs(35),
+                self.client.chat().create(request.clone()),
+            )
+            .await;
+
+            match response_result {
+                Ok(Ok(response)) => break Ok(response),
+                Ok(Err(error)) => {
+                    log::error!("OpenAI API request failed: {error:?}");
+
+                    let error_message = format!("{error}");
+                    let is_rate_limit = error_message.contains("429")
+                        || error_message.contains("Rate limit")
+                        || error_message.contains("Too Many Requests");
+
+                    if is_rate_limit && retry_count < max_retries {
+                        retry_count += 1;
+                        log::warn!("Rate limit hit. Waiting {wait_time:?} before retry {retry_count}/{max_retries}");
+                        tokio::time::sleep(wait_time).await;
+                        wait_time *= 2;
+                        continue;
+                    }
+
+                    let status_code = if error_message.contains("401") {
+                        Some(401)
+                    } else if error_message.contains("404") {
+                        Some(404)
+                    } else if is_rate_limit {
+                        Some(429)
+                    } else if error_message.contains("500") {
+                        Some(500)
+                    } else {
+                        None
+                    };
+
+                    let suggestion = match status_code {
+                        Some(401) => Some("Invalid API key. Check your config { api_key: \"...\" }".to_string()),
+                        Some(404) => Some(
+                            "Model or endpoint not found. Check your config { endpoint: \"...\" } and model name"
+                                .to_string(),
+                        ),
+                        Some(429) => Some("Rate limit exceeded after retries. Wait longer and try again".to_string()),
+                        Some(500) => Some("Server error. Try again later".to_string()),
+                        _ => Some("Check your API configuration and network connection".to_string()),
+                    };
+
+                    break Err(ProviderError::ApiError {
+                        message: format!("OpenAI API request failed: {error}"),
+                        status_code,
+                        suggestion,
+                    });
+                }
+                Err(_) => {
+                    log::error!("OpenAI API request timed out after 35 seconds - this may indicate a rate limit");
+                    break Err(ProviderError::ApiError {
+                        message: "OpenAI API request timed out. This often indicates a rate limit or server issue.".to_string(),
+                        status_code: Some(408),
+                        suggestion: Some("If you're hitting rate limits, wait a few minutes and try again. Otherwise, check your network connection.".to_string()),
+                    });
+                }
             }
-        })?;
+        }?;
 
         log::debug!("Received successful response from OpenAI");
 
@@ -237,22 +321,21 @@ pub struct OpenAiProviderBuilder;
 
 impl crate::providers::builder::ProviderBuilder for OpenAiProviderBuilder {
     fn build(&self, provider: &crate::ast::Provider) -> Result<crate::providers::provider::ProviderRef, ProviderError> {
-        // Try to get api_key from config first, then fall back to environment variable
+        log::debug!("Building OpenAI provider with config: {:?}", provider.config);
+
         let api_key = provider
             .config
             .get("api_key")
             .and_then(|v| match v {
-                crate::ast::Value::String(s) => Some(s.clone()),
+                crate::ast::Value::String(s) | crate::ast::Value::Interpolated(s) => Some(s.clone()),
                 _ => None,
             })
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
             .ok_or_else(|| ProviderError::InvalidInput {
-                message: "API key not found. Provide it in config { api_key: \"...\" } or set OPENAI_API_KEY environment variable".to_string(),
+                message: "API key not found. Provide it in config { api_key: \"...\" }".to_string(),
             })?;
 
-        // Check if custom endpoint is provided
         let endpoint = provider.config.get("endpoint").and_then(|v| match v {
-            crate::ast::Value::String(s) => Some(s.clone()),
+            crate::ast::Value::String(s) | crate::ast::Value::Interpolated(s) => Some(s.clone()),
             _ => None,
         });
 

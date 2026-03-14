@@ -71,9 +71,9 @@ inline_type = { schema_type ~ string_value? }
 value = {
     function_call |
     reference |
-    interpolated_string |
     multiline_string |
     string_value |
+    interpolated_string |
     number_value |
     boolean_value |
     null_value |
