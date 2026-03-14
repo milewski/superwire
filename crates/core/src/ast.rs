@@ -32,12 +32,12 @@ pub struct Workflow {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Provider {
     pub name: String,
     pub driver: String,
-    pub api_endpoint: Option<String>,
     pub models: Vec<String>,
+    pub config: HashMap<String, Value>,
     pub span: Span,
 }
 

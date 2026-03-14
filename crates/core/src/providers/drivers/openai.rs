@@ -26,6 +26,14 @@ impl OpenAiProvider {
         Self { name, models, client }
     }
 
+    #[must_use]
+    pub fn with_endpoint(name: String, api_key: String, endpoint: String, models: Vec<String>) -> Self {
+        let config = OpenAIConfig::new().with_api_key(api_key).with_api_base(endpoint);
+        let client = Client::with_config(config);
+
+        Self { name, models, client }
+    }
+
     fn convert_messages_to_openai_format(
         messages: &[Message],
     ) -> Result<Vec<ChatCompletionRequestMessage>, ProviderError> {
@@ -229,11 +237,30 @@ pub struct OpenAiProviderBuilder;
 
 impl crate::providers::builder::ProviderBuilder for OpenAiProviderBuilder {
     fn build(&self, provider: &crate::ast::Provider) -> Result<crate::providers::provider::ProviderRef, ProviderError> {
-        let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| ProviderError::InvalidInput {
-            message: "OPENAI_API_KEY environment variable not set".to_string(),
-        })?;
+        // Try to get api_key from config first, then fall back to environment variable
+        let api_key = provider
+            .config
+            .get("api_key")
+            .and_then(|v| match v {
+                crate::ast::Value::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+            .ok_or_else(|| ProviderError::InvalidInput {
+                message: "API key not found. Provide it in config { api_key: \"...\" } or set OPENAI_API_KEY environment variable".to_string(),
+            })?;
 
-        let openai_provider = OpenAiProvider::new(provider.name.clone(), api_key, provider.models.clone());
+        // Check if custom endpoint is provided
+        let endpoint = provider.config.get("endpoint").and_then(|v| match v {
+            crate::ast::Value::String(s) => Some(s.clone()),
+            _ => None,
+        });
+
+        let openai_provider = if let Some(endpoint_url) = endpoint {
+            OpenAiProvider::with_endpoint(provider.name.clone(), api_key, endpoint_url, provider.models.clone())
+        } else {
+            OpenAiProvider::new(provider.name.clone(), api_key, provider.models.clone())
+        };
 
         Ok(std::sync::Arc::new(openai_provider))
     }
