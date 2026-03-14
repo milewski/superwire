@@ -334,6 +334,12 @@ impl AstConstructor {
     }
 
     pub fn parse_interpolated_string(&self, pair: pest::iterators::Pair<Rule>) -> Result<String, ParserError> {
-        Ok(pair.as_str().to_string())
+        let text = pair.as_str();
+
+        if text.starts_with('"') && text.ends_with('"') && text.len() >= 2 {
+            return Ok(text[1..text.len() - 1].to_string());
+        }
+
+        Ok(text.to_string())
     }
 }
