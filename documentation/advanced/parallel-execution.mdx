@@ -1,0 +1,342 @@
+---
+title: 'Parallel Execution'
+description: 'Execute multiple agents simultaneously for better performance'
+---
+
+## Automatic Parallelization
+
+Engine AI automatically runs independent agents in parallel:
+
+```ai
+// These agents run simultaneously
+<- agent task1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process dataset 1"
+}
+
+<- agent task2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process dataset 2"
+}
+
+<- agent task3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process dataset 3"
+}
+```
+
+## Performance Benefits
+
+Parallel execution reduces total workflow time:
+
+```ai
+// Sequential: 30 seconds total (10s each)
+A → B → C
+
+// Parallel: 10 seconds total (all run together)
+A ─┬─→ B
+   └─→ C
+```
+
+## Parallel with Merge
+
+Process data in parallel, then combine results:
+
+```ai
+input <- "Analyze this text from multiple perspectives"
+
+<- agent sentiment {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze sentiment: {{ input }}"
+}
+
+<- agent topics {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract topics: {{ input }}"
+}
+
+<- agent summary {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ input }}"
+}
+
+// Merge runs after all three complete
+<- agent report {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Create report:
+Sentiment: {{ sentiment.text }}
+Topics: {{ topics.text }}
+Summary: {{ summary.text }}"
+}
+```
+
+## Mixed Parallel and Sequential
+
+Combine parallel and sequential execution:
+
+```ai
+// Stage 1: Single agent
+<- agent prepare {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Prepare data"
+}
+
+// Stage 2: Parallel processing
+<- agent process_a {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process A: {{ prepare.text }}"
+}
+
+<- agent process_b {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process B: {{ prepare.text }}"
+}
+
+<- agent process_c {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process C: {{ prepare.text }}"
+}
+
+// Stage 3: Merge results
+<- agent finalize {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Finalize: {{ process_a.text }}, {{ process_b.text }}, {{ process_c.text }}"
+}
+```
+
+## Parallel Branches
+
+Create branching workflows:
+
+```ai
+<- agent input {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process input"
+}
+
+// Branch 1: Quality path
+<- agent quality_check {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Check quality: {{ input.text }}"
+}
+
+<- agent quality_report {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Quality report: {{ quality_check.text }}"
+}
+
+// Branch 2: Performance path
+<- agent performance_check {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Check performance: {{ input.text }}"
+}
+
+<- agent performance_report {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Performance report: {{ performance_check.text }}"
+}
+
+// Merge both branches
+<- agent final_report {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Final report:
+Quality: {{ quality_report.text }}
+Performance: {{ performance_report.text }}"
+}
+```
+
+## Provider Distribution
+
+Use different providers in parallel:
+
+```ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+provider openai {
+    driver <- "openai"
+    config <- {
+        api_key <- "sk-proj-..."
+        endpoint <- "https://api.openai.com/v1"
+    }
+    models <- ["gpt-4"]
+}
+
+// Run on different providers simultaneously
+<- agent fast_draft {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Quick draft"
+}
+
+<- agent quality_draft {
+    model <- "openai/gpt-4"
+    prompt <- "High-quality draft"
+}
+
+<- agent compare {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Compare drafts:
+Fast: {{ fast_draft.text }}
+Quality: {{ quality_draft.text }}"
+}
+```
+
+## Examples
+
+### Multi-Perspective Analysis
+
+```ai
+document <- "Long document to analyze"
+
+// Analyze from different angles in parallel
+<- agent technical {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Technical analysis: {{ document }}"
+}
+
+<- agent business {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Business analysis: {{ document }}"
+}
+
+<- agent legal {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Legal analysis: {{ document }}"
+}
+
+<- agent user_experience {
+    model <- "ollama/qwen3:8b"
+    prompt <- "UX analysis: {{ document }}"
+}
+
+// Comprehensive report
+<- agent comprehensive {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Comprehensive analysis:
+Technical: {{ technical.text }}
+Business: {{ business.text }}
+Legal: {{ legal.text }}
+UX: {{ user_experience.text }}"
+}
+```
+
+### Batch Processing
+
+```ai
+items <- ["item1", "item2", "item3", "item4", "item5"]
+
+// Process all items in parallel
+<- agent process_1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ items[0] }}"
+}
+
+<- agent process_2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ items[1] }}"
+}
+
+<- agent process_3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ items[2] }}"
+}
+
+<- agent process_4 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ items[3] }}"
+}
+
+<- agent process_5 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ items[4] }}"
+}
+
+// Collect results
+<- agent collector {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Collect results:
+1: {{ process_1.text }}
+2: {{ process_2.text }}
+3: {{ process_3.text }}
+4: {{ process_4.text }}
+5: {{ process_5.text }}"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Maximize parallelization by minimizing dependencies between agents.
+</Tip>
+
+<Info>
+  Parallel execution is most effective when agents take similar amounts of time.
+</Info>
+
+<Warning>
+  Be mindful of API rate limits when running many agents in parallel.
+</Warning>
+
+## Performance Considerations
+
+### Optimal Parallelization
+
+```ai
+// Good: Maximum parallelization
+A ─┬─→ B
+   ├─→ C
+   ├─→ D
+   └─→ E → F
+
+// Less optimal: Unnecessary sequential execution
+A → B → C → D → E → F
+```
+
+### Resource Management
+
+Consider provider capacity:
+
+```ai
+// Local Ollama: Can handle many parallel requests
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+// 10 parallel agents on local Ollama
+<- agent task1 { model <- "ollama/qwen3:8b" prompt <- "Task 1" }
+<- agent task2 { model <- "ollama/qwen3:8b" prompt <- "Task 2" }
+// ... up to task10
+```
+
+```ai
+// Cloud API: Watch rate limits
+provider openai {
+    driver <- "openai"
+    config <- {
+        api_key <- "sk-proj-..."
+        endpoint <- "https://api.openai.com/v1"
+    }
+    models <- ["gpt-4"]
+}
+
+// Limit parallel requests to avoid rate limits
+<- agent task1 { model <- "openai/gpt-4" prompt <- "Task 1" }
+<- agent task2 { model <- "openai/gpt-4" prompt <- "Task 2" }
+<- agent task3 { model <- "openai/gpt-4" prompt <- "Task 3" }
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
+    Understand dependencies
+  </Card>
+  <Card title="Context Sharing" icon="share-nodes" href="/advanced/context-sharing">
+    Share context between agents
+  </Card>
+</CardGroup>

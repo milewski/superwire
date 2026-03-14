@@ -1,0 +1,146 @@
+---
+title: 'Error Handling'
+description: 'Handle errors and failures gracefully'
+---
+
+## Conditional Fallbacks
+
+Use conditional execution for fallback logic:
+
+```ai
+<- agent primary {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Try primary approach"
+}
+
+agent fallback {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Use fallback approach"
+    when <- primary.text == null || primary.text == ""
+}
+```
+
+## Provider Fallbacks
+
+Switch providers on failure:
+
+```ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+provider openai {
+    driver <- "openai"
+    config <- {
+        api_key <- "sk-proj-..."
+        endpoint <- "https://api.openai.com/v1"
+    }
+    models <- ["gpt-4"]
+}
+
+<- agent primary {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process with local model"
+}
+
+agent backup {
+    model <- "openai/gpt-4"
+    prompt <- "Process with cloud model"
+    when <- primary.text == null
+}
+```
+
+## Validation Agents
+
+Validate outputs before proceeding:
+
+```ai
+<- agent generator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate content"
+}
+
+<- agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate this content: {{ generator.text }}. Respond with 'valid' or 'invalid'"
+}
+
+agent processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process valid content: {{ generator.text }}"
+    when <- validator.text == "valid"
+}
+
+agent error_handler {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Handle invalid content: {{ generator.text }}"
+    when <- validator.text == "invalid"
+}
+```
+
+## Retry Logic
+
+Implement retry patterns:
+
+```ai
+<- agent attempt1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "First attempt"
+}
+
+agent attempt2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Second attempt"
+    when <- attempt1.text == null
+}
+
+agent attempt3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Third attempt"
+    when <- attempt2.text == null
+}
+```
+
+## Error Messages
+
+Provide helpful error context:
+
+```ai
+<- agent task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Perform task"
+}
+
+agent error_reporter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Task failed. Please check: 1) Provider is running, 2) Model is available, 3) Input is valid"
+    when <- task.text == null
+}
+```
+
+## Best Practices
+
+<Tip>
+  Always provide fallback paths for critical workflows.
+</Tip>
+
+<Warning>
+  Avoid infinite retry loops - set maximum retry limits.
+</Warning>
+
+<Info>
+  Log errors and failures for debugging and monitoring.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Control Flow" icon="code-branch" href="/syntax/control-flow">
+    Learn about control flow
+  </Card>
+  <Card title="Best Practices" icon="star" href="/guides/best-practices">
+    Workflow best practices
+  </Card>
+</CardGroup>

@@ -1,0 +1,139 @@
+---
+title: 'Parallel Processing'
+description: 'Process multiple items simultaneously'
+---
+
+## Batch Processing
+
+Process multiple items in parallel:
+
+```ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+documents <- [
+    "Document 1 content",
+    "Document 2 content",
+    "Document 3 content"
+]
+
+<- agent process_doc1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ documents[0] }}"
+}
+
+<- agent process_doc2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ documents[1] }}"
+}
+
+<- agent process_doc3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ documents[2] }}"
+}
+
+<- agent combine {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Combine summaries:
+1: {{ process_doc1.text }}
+2: {{ process_doc2.text }}
+3: {{ process_doc3.text }}"
+}
+```
+
+## Multi-Perspective Analysis
+
+Analyze from different angles:
+
+```ai
+text <- "Content to analyze"
+
+<- agent sentiment {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze sentiment: {{ text }}"
+}
+
+<- agent topics {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract topics: {{ text }}"
+}
+
+<- agent keywords {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract keywords: {{ text }}"
+}
+
+<- agent summary {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ text }}"
+}
+
+<- agent report {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Create comprehensive report:
+Sentiment: {{ sentiment.text }}
+Topics: {{ topics.text }}
+Keywords: {{ keywords.text }}
+Summary: {{ summary.text }}"
+}
+```
+
+## Parallel Pipelines
+
+Run multiple processing pipelines:
+
+```ai
+input <- "Raw data"
+
+// Pipeline 1
+<- agent pipeline1_step1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Pipeline 1 Step 1: {{ input }}"
+}
+
+<- agent pipeline1_step2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Pipeline 1 Step 2: {{ pipeline1_step1.text }}"
+}
+
+// Pipeline 2
+<- agent pipeline2_step1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Pipeline 2 Step 1: {{ input }}"
+}
+
+<- agent pipeline2_step2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Pipeline 2 Step 2: {{ pipeline2_step1.text }}"
+}
+
+// Merge results
+<- agent merge {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Merge: {{ pipeline1_step2.text }} and {{ pipeline2_step2.text }}"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Use parallel processing for independent tasks to maximize throughput.
+</Tip>
+
+<Warning>
+  Monitor resource usage when processing large batches in parallel.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Parallel Execution" icon="arrows-split-up-and-left" href="/advanced/parallel-execution">
+    Learn about parallel execution
+  </Card>
+  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
+    Understand dependencies
+  </Card>
+</CardGroup>

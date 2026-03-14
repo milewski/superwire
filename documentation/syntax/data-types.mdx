@@ -1,0 +1,181 @@
+---
+title: 'Data Types'
+description: 'Understanding data types in Engine AI'
+---
+
+## Primitive Types
+
+### String
+
+Text values enclosed in double quotes:
+
+```ai
+name <- "Alice"
+message <- "Hello, world!"
+multiline <- "Line 1
+Line 2
+Line 3"
+```
+
+### Integer
+
+Whole numbers:
+
+```ai
+count <- 42
+negative <- -10
+zero <- 0
+```
+
+### Float
+
+Decimal numbers:
+
+```ai
+price <- 19.99
+temperature <- -3.5
+pi <- 3.14159
+```
+
+### Boolean
+
+True or false values:
+
+```ai
+is_active <- true
+is_complete <- false
+```
+
+## Complex Types
+
+### Array
+
+Ordered collections of values:
+
+```ai
+numbers <- [1, 2, 3, 4, 5]
+names <- ["Alice", "Bob", "Charlie"]
+mixed <- [1, "two", 3.0, true]
+```
+
+Access array elements:
+
+```ai
+items <- ["a", "b", "c"]
+first <- items[0]  // "a"
+second <- items[1]  // "b"
+```
+
+### Object
+
+Key-value pairs:
+
+```ai
+user <- {
+    name <- "Alice"
+    age <- 30
+    email <- "alice@example.com"
+}
+```
+
+Access object properties:
+
+```ai
+user_name <- user.name
+user_age <- user.age
+```
+
+### Nested Structures
+
+Combine arrays and objects:
+
+```ai
+users <- [
+    { name <- "Alice", age <- 30 },
+    { name <- "Bob", age <- 25 }
+]
+
+config <- {
+    database <- {
+        host <- "localhost"
+        port <- 5432
+    }
+    features <- ["auth", "api", "admin"]
+}
+```
+
+## Type Conversion
+
+Engine AI automatically converts between compatible types:
+
+```ai
+// String to number
+num <- "42"
+result <- num + 10  // 52
+
+// Number to string
+count <- 42
+message <- "Count: " + count  // "Count: 42"
+```
+
+## Null Values
+
+Use `null` for absent values:
+
+```ai
+optional_value <- null
+
+config <- {
+    required <- "value"
+    optional <- null
+}
+```
+
+## Type Checking
+
+Check types in conditional expressions:
+
+```ai
+value <- 42
+
+agent checker {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Is {{ value }} a number? {{ value is number }}"
+}
+```
+
+## Agent Response Types
+
+Agent responses have a structured type:
+
+```ai
+<- agent task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Hello"
+}
+
+// Access response fields
+text_content <- task.text
+model_used <- task.model
+```
+
+## Best Practices
+
+<Tip>
+  Use consistent types throughout your workflow to avoid unexpected conversions.
+</Tip>
+
+<Warning>
+  Be careful when mixing types in arrays - it can make data processing more complex.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Variables" icon="code" href="/syntax/variables">
+    Learn about variables
+  </Card>
+  <Card title="Operators" icon="calculator" href="/syntax/operators">
+    Work with operators
+  </Card>
+</CardGroup>

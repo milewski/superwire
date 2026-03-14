@@ -1,0 +1,201 @@
+---
+title: 'Building Workflows'
+description: 'Best practices for designing effective workflows'
+---
+
+## Workflow Structure
+
+A well-structured workflow has clear stages:
+
+```ai
+// 1. Configuration
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+// 2. Input variables
+topic <- "Artificial Intelligence"
+
+// 3. Processing agents
+<- agent research {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Research: {{ topic }}"
+}
+
+<- agent outline {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Create outline: {{ research.text }}"
+}
+
+<- agent draft {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write draft: {{ outline.text }}"
+}
+
+// 4. Output agent
+<- agent final {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Finalize: {{ draft.text }}"
+}
+```
+
+## Design Principles
+
+### Single Responsibility
+
+Each agent should have one clear purpose:
+
+```ai
+// Good: Clear, focused agents
+<- agent extractor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract key information"
+}
+
+<- agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate extracted data"
+}
+
+// Avoid: Agent doing too much
+<- agent do_everything {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract, validate, process, and format data"
+}
+```
+
+### Composability
+
+Build reusable components:
+
+```ai
+// Reusable validation pattern
+<- agent validate_input {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate: {{ input }}"
+}
+
+agent process_valid {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ input }}"
+    when <- validate_input.text == "valid"
+}
+```
+
+### Error Handling
+
+Always include fallback paths:
+
+```ai
+<- agent primary {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Primary approach"
+}
+
+agent fallback {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Fallback approach"
+    when <- primary.text == null
+}
+```
+
+## Common Patterns
+
+### Pipeline Pattern
+
+Sequential processing stages:
+
+```ai
+<- agent extract {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Extract data"
+}
+
+<- agent transform {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Transform: {{ extract.text }}"
+}
+
+<- agent load {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Load: {{ transform.text }}"
+}
+```
+
+### Fan-Out/Fan-In Pattern
+
+Parallel processing with merge:
+
+```ai
+<- agent input {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process input"
+}
+
+// Fan out
+<- agent process1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process 1: {{ input.text }}"
+}
+
+<- agent process2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process 2: {{ input.text }}"
+}
+
+// Fan in
+<- agent merge {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Merge: {{ process1.text }} and {{ process2.text }}"
+}
+```
+
+### Validation Pattern
+
+Validate before processing:
+
+```ai
+<- agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate input"
+}
+
+agent processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process validated input"
+    when <- validator.text == "valid"
+}
+
+agent error_handler {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Handle invalid input"
+    when <- validator.text != "valid"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Start simple and add complexity only when needed.
+</Tip>
+
+<Info>
+  Use descriptive names for agents and variables.
+</Info>
+
+<Warning>
+  Avoid deep dependency chains - they increase latency.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Best Practices" icon="star" href="/guides/best-practices">
+    Workflow best practices
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test your workflows
+  </Card>
+</CardGroup>

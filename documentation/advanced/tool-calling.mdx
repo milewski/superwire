@@ -1,0 +1,104 @@
+---
+title: 'Tool Calling'
+description: 'Enable agents to use external tools and functions'
+---
+
+## Overview
+
+Tool calling allows agents to interact with external systems, APIs, and functions during execution.
+
+<Info>
+  Tool calling support varies by provider and model. Check your provider's documentation for capabilities.
+</Info>
+
+## Defining Tools
+
+Tools are defined as functions that agents can call:
+
+```ai
+// Tool definition example
+tool get_weather {
+    description <- "Get current weather for a location"
+    parameters <- {
+        location <- "string"
+        units <- "string"
+    }
+}
+```
+
+## Using Tools in Agents
+
+Agents can be configured to use available tools:
+
+```ai
+agent assistant {
+    model <- "ollama/qwen3:8b"
+    prompt <- "What's the weather in San Francisco?"
+    tools <- [get_weather]
+}
+```
+
+## Tool Response Handling
+
+Process tool call results:
+
+```ai
+<- agent with_tools {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Get weather and summarize"
+    tools <- [get_weather]
+}
+
+agent summarizer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ with_tools.text }}"
+}
+```
+
+## Common Tool Patterns
+
+### API Integration
+
+```ai
+tool api_call {
+    description <- "Call external API"
+    parameters <- {
+        endpoint <- "string"
+        method <- "string"
+        data <- "object"
+    }
+}
+```
+
+### Data Processing
+
+```ai
+tool process_data {
+    description <- "Process structured data"
+    parameters <- {
+        data <- "array"
+        operation <- "string"
+    }
+}
+```
+
+## Best Practices
+
+<Tip>
+  Provide clear tool descriptions to help agents understand when and how to use them.
+</Tip>
+
+<Warning>
+  Tool calling may increase execution time and API costs.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schemas" icon="table" href="/core-concepts/schemas">
+    Learn about schemas
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/advanced/error-handling">
+    Handle errors
+  </Card>
+</CardGroup>

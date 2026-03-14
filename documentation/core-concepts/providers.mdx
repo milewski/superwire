@@ -60,8 +60,6 @@ provider <name> {
     | Option | Type | Required | Description |
     |--------|------|----------|-------------|
     | `endpoint` | string | Yes | Ollama server URL |
-    | `timeout` | number | No | Request timeout in seconds (default: 300) |
-    | `cache_ttl` | number | No | Cache duration in seconds (default: 0) |
 
     ### Using Ollama Models
 
@@ -83,9 +81,9 @@ provider <name> {
     ```ai
     provider openai {
         driver <- "openai"
-        config <- { 
-            api_key <- env("OPENAI_API_KEY")
-            organization <- env("OPENAI_ORG_ID")  // Optional
+        config <- {
+            api_key <- "sk-proj-..."
+            endpoint <- "https://api.openai.com/v1"
         }
         models <- [
             "gpt-4",
@@ -100,10 +98,7 @@ provider <name> {
     | Option | Type | Required | Description |
     |--------|------|----------|-------------|
     | `api_key` | string | Yes | OpenAI API key |
-    | `organization` | string | No | Organization ID |
-    | `base_url` | string | No | Custom API endpoint |
-    | `timeout` | number | No | Request timeout in seconds |
-    | `max_retries` | number | No | Maximum retry attempts (default: 3) |
+    | `endpoint` | string | No | API endpoint URL (default: https://api.openai.com/v1) |
 
     ### Using OpenAI Models
 
@@ -114,8 +109,28 @@ provider <name> {
     }
     ```
 
+    ### Custom Endpoint Example
+
+    Use OpenAI-compatible endpoints like OpenCode:
+
+    ```ai
+    provider opencode {
+        driver <- "openai"
+        config <- {
+            api_key <- "your-api-key"
+            endpoint <- "https://opencode.ai/zen/v1"
+        }
+        models <- ["zen-bigpickle"]
+    }
+
+    agent task {
+        model <- "opencode/zen-bigpickle"
+        prompt <- "Your prompt here"
+    }
+    ```
+
     <Warning>
-      Store API keys in environment variables, never hardcode them in workflow files.
+      Keep your API keys secure. Never commit them to version control.
     </Warning>
   </Tab>
 
@@ -125,8 +140,9 @@ provider <name> {
     ```ai
     provider anthropic {
         driver <- "anthropic"
-        config <- { 
-            api_key <- env("ANTHROPIC_API_KEY")
+        config <- {
+            api_key <- "sk-ant-..."
+            endpoint <- "https://api.anthropic.com/v1/messages"
         }
         models <- [
             "claude-3-opus-20240229",
@@ -141,15 +157,33 @@ provider <name> {
     | Option | Type | Required | Description |
     |--------|------|----------|-------------|
     | `api_key` | string | Yes | Anthropic API key |
-    | `base_url` | string | No | Custom API endpoint |
-    | `timeout` | number | No | Request timeout in seconds |
-    | `max_retries` | number | No | Maximum retry attempts (default: 3) |
+    | `endpoint` | string | No | API endpoint URL (default: https://api.anthropic.com/v1/messages) |
 
     ### Using Anthropic Models
 
     ```ai
     agent task {
         model <- "anthropic/claude-3-opus-20240229"
+        prompt <- "Your prompt here"
+    }
+    ```
+
+    ### Custom Endpoint Example
+
+    Use Anthropic-compatible endpoints:
+
+    ```ai
+    provider custom_anthropic {
+        driver <- "anthropic"
+        config <- {
+            api_key <- "your-api-key"
+            endpoint <- "https://custom-proxy.example.com/v1/messages"
+        }
+        models <- ["claude-3-opus-20240229"]
+    }
+
+    agent task {
+        model <- "custom_anthropic/claude-3-opus-20240229"
         prompt <- "Your prompt here"
     }
     ```
@@ -171,7 +205,7 @@ provider ollama {
 // Cloud provider for production
 provider openai {
     driver <- "openai"
-    config <- { api_key <- env("OPENAI_API_KEY") }
+    config <- { api_key <- "sk-proj-..." }
     models <- ["gpt-4"]
 }
 
@@ -190,29 +224,6 @@ agent refine {
 <Info>
   Using multiple providers lets you optimize for cost, speed, and quality based on each agent's requirements.
 </Info>
-
-## Environment Variables
-
-Use `env()` to access environment variables:
-
-```ai
-provider openai {
-    driver <- "openai"
-    config <- { 
-        api_key <- env("OPENAI_API_KEY")
-        organization <- env("OPENAI_ORG_ID")
-    }
-    models <- ["gpt-4"]
-}
-```
-
-Set environment variables before running:
-
-```bash
-export OPENAI_API_KEY="sk-..."
-export OPENAI_ORG_ID="org-..."
-engine-ai run workflow.ai
-```
 
 ## Model Selection
 
@@ -253,32 +264,6 @@ agent invalid {
 }
 ```
 
-## Provider Caching
-
-Enable caching to avoid redundant API calls:
-
-```ai
-provider ollama {
-    driver <- "ollama"
-    config <- { 
-        endpoint <- "http://localhost:11434"
-        cache_ttl <- 3600  // Cache responses for 1 hour
-    }
-    models <- ["qwen3:8b"]
-}
-```
-
-### How Caching Works
-
-1. **Cache Key**: Generated from model, prompt, and parameters
-2. **Cache Hit**: Return cached response if available and not expired
-3. **Cache Miss**: Call provider API and cache the response
-4. **Expiration**: Cached responses expire after `cache_ttl` seconds
-
-<Warning>
-  Caching is based on exact prompt matching. Small changes to prompts result in cache misses.
-</Warning>
-
 ## Advanced Configuration
 
 ### Custom Endpoints
@@ -286,29 +271,24 @@ provider ollama {
 Use custom API endpoints for self-hosted or proxy services:
 
 ```ai
+// OpenAI-compatible endpoint
 provider openai {
     driver <- "openai"
-    config <- { 
-        api_key <- env("OPENAI_API_KEY")
-        base_url <- "https://custom-proxy.example.com/v1"
+    config <- {
+        api_key <- "your-api-key"
+        endpoint <- "https://custom-proxy.example.com/v1"
     }
     models <- ["gpt-4"]
 }
-```
 
-### Timeouts and Retries
-
-Configure timeout and retry behavior:
-
-```ai
-provider openai {
-    driver <- "openai"
-    config <- { 
-        api_key <- env("OPENAI_API_KEY")
-        timeout <- 60  // 60 second timeout
-        max_retries <- 5  // Retry up to 5 times
+// Anthropic-compatible endpoint
+provider anthropic {
+    driver <- "anthropic"
+    config <- {
+        api_key <- "your-api-key"
+        endpoint <- "https://custom-proxy.example.com/v1/messages"
     }
-    models <- ["gpt-4"]
+    models <- ["claude-3-opus-20240229"]
 }
 ```
 
@@ -319,7 +299,7 @@ Pass additional parameters to the provider:
 ```ai
 provider ollama {
     driver <- "ollama"
-    config <- { 
+    config <- {
         endpoint <- "http://localhost:11434"
         temperature <- 0.7
         top_p <- 0.9
@@ -380,20 +360,18 @@ agent test {
 // Use OpenAI with fallback to Anthropic
 provider openai {
     driver <- "openai"
-    config <- { 
-        api_key <- env("OPENAI_API_KEY")
-        timeout <- 30
-        max_retries <- 3
+    config <- {
+        api_key <- "sk-proj-..."
+        endpoint <- "https://api.openai.com/v1"
     }
     models <- ["gpt-4", "gpt-3.5-turbo"]
 }
 
 provider anthropic {
     driver <- "anthropic"
-    config <- { 
-        api_key <- env("ANTHROPIC_API_KEY")
-        timeout <- 30
-        max_retries <- 3
+    config <- {
+        api_key <- "sk-ant-..."
+        endpoint <- "https://api.anthropic.com/v1/messages"
     }
     models <- ["claude-3-opus-20240229"]
 }
@@ -421,7 +399,7 @@ provider ollama {
 
 provider openai {
     driver <- "openai"
-    config <- { api_key <- env("OPENAI_API_KEY") }
+    config <- { api_key <- "sk-proj-..." }
     models <- ["gpt-4"]
 }
 
@@ -468,28 +446,22 @@ agent complex_task {
   </Accordion>
 
   <Accordion title="API rate limits">
-    Configure retries and backoff:
-    ```ai
-    provider openai {
-        driver <- "openai"
-        config <- { 
-            api_key <- env("OPENAI_API_KEY")
-            max_retries <- 5
-            retry_delay <- 2  // Seconds between retries
-        }
-        models <- ["gpt-4"]
-    }
-    ```
+    If you encounter rate limits, consider:
+    - Reducing parallel agent execution
+    - Adding delays between requests
+    - Using a different provider or model tier
   </Accordion>
 
   <Accordion title="Timeout errors">
-    Increase timeout for slow models:
+    If requests are timing out:
+    - Check your network connection
+    - Verify the provider endpoint is accessible
+    - For Ollama, ensure the model is fully loaded
     ```ai
     provider ollama {
         driver <- "ollama"
-        config <- { 
+        config <- {
             endpoint <- "http://localhost:11434"
-            timeout <- 600  // 10 minutes
         }
         models <- ["large-model:70b"]
     }

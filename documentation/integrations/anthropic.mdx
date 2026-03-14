@@ -1,0 +1,123 @@
+---
+title: 'Anthropic Integration'
+description: 'Use Claude models via Anthropic API'
+---
+
+## Overview
+
+Anthropic provides access to Claude models, known for their strong reasoning and safety features.
+
+## Get API Key
+
+1. Go to [console.anthropic.com](https://console.anthropic.com)
+2. Sign up or log in
+3. Navigate to API Keys
+4. Create a new API key
+
+## Configuration
+
+```ai
+provider anthropic {
+    driver <- "anthropic"
+    config <- {
+        api_key <- "sk-ant-..."
+        endpoint <- "https://api.anthropic.com/v1/messages"
+    }
+    models <- [
+        "claude-3-opus-20240229",
+        "claude-3-sonnet-20240229",
+        "claude-3-haiku-20240307"
+    ]
+}
+```
+
+## Available Models
+
+- `claude-3-opus-20240229` - Most capable Claude model
+- `claude-3-sonnet-20240229` - Balanced performance and speed
+- `claude-3-haiku-20240307` - Fast and cost-effective
+
+## Using Anthropic
+
+```ai
+provider anthropic {
+    driver <- "anthropic"
+    config <- {
+        api_key <- "sk-ant-..."
+        endpoint <- "https://api.anthropic.com/v1/messages"
+    }
+    models <- ["claude-3-opus-20240229"]
+}
+
+<- agent task {
+    model <- "anthropic/claude-3-opus-20240229"
+    prompt <- "Explain machine learning"
+}
+```
+
+## Custom Endpoints
+
+Use Anthropic-compatible endpoints:
+
+```ai
+provider custom_anthropic {
+    driver <- "anthropic"
+    config <- {
+        api_key <- "your-api-key"
+        endpoint <- "https://custom-proxy.example.com/v1/messages"
+    }
+    models <- ["claude-3-opus-20240229"]
+}
+
+<- agent task {
+    model <- "custom_anthropic/claude-3-opus-20240229"
+    prompt <- "Your prompt here"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Use Claude Haiku for simple tasks to reduce costs.
+</Tip>
+
+<Warning>
+  Keep your API key secure. Never commit it to version control.
+</Warning>
+
+<Info>
+  Claude models excel at complex reasoning and analysis tasks.
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Invalid API key">
+    - Verify your API key is correct
+    - Check if the key has been revoked
+    - Ensure you have credits available
+  </Accordion>
+
+  <Accordion title="Rate limits">
+    - Reduce parallel agent execution
+    - Upgrade your API tier
+    - Add delays between requests
+  </Accordion>
+
+  <Accordion title="Model not found">
+    - Check model name spelling
+    - Use the full model identifier with date
+    - Verify model availability
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Providers" icon="server" href="/core-concepts/providers">
+    Learn about providers
+  </Card>
+  <Card title="Ollama" icon="server" href="/integrations/ollama">
+    Ollama integration
+  </Card>
+</CardGroup>

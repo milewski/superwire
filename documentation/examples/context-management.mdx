@@ -1,0 +1,95 @@
+---
+title: 'Context Management'
+description: 'Manage and share context across agents'
+---
+
+## Building Context
+
+Accumulate context through agent chain:
+
+```ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+<- agent research {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Research the topic"
+}
+
+<- agent outline {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Create outline based on: {{ research.text }}"
+}
+
+<- agent draft {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write draft using outline: {{ outline.text }} and research: {{ research.text }}"
+}
+
+<- agent refine {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Refine draft: {{ draft.text }}"
+}
+```
+
+## Shared Configuration
+
+Use shared config across agents:
+
+```ai
+config <- {
+    style <- "professional"
+    tone <- "friendly"
+    max_length <- 500
+}
+
+agent writer1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write in {{ config.style }} style, {{ config.tone }} tone, max {{ config.max_length }} words"
+}
+
+agent writer2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write in {{ config.style }} style, {{ config.tone }} tone, max {{ config.max_length }} words"
+}
+```
+
+## Context Filtering
+
+Select relevant context:
+
+```ai
+<- agent analyzer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze and extract key points"
+}
+
+agent summarizer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize only the key points: {{ analyzer.text }}"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Keep context focused and relevant to avoid overwhelming agents.
+</Tip>
+
+<Info>
+  Use variables to share configuration and reduce duplication.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Context Sharing" icon="share-nodes" href="/advanced/context-sharing">
+    Learn about context sharing
+  </Card>
+  <Card title="Variables" icon="code" href="/syntax/variables">
+    Understand variables
+  </Card>
+</CardGroup>

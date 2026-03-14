@@ -1,0 +1,109 @@
+---
+title: 'Variables'
+description: 'Declare and use variables in Engine AI'
+---
+
+## Variable Declaration
+
+Variables in Engine AI are declared using the `<-` assignment operator:
+
+```ai
+name <- "Alice"
+age <- 30
+is_active <- true
+```
+
+## Variable Naming
+
+Variable names must:
+- Start with a letter or underscore
+- Contain only letters, numbers, and underscores
+- Be case-sensitive
+
+```ai
+user_name <- "Bob"
+_private <- "secret"
+count123 <- 42
+```
+
+## Variable Scope
+
+Variables are scoped to the workflow or agent where they're defined:
+
+```ai
+global_var <- "accessible everywhere"
+
+agent task {
+    model <- "ollama/qwen3:8b"
+    local_var <- "only in this agent"
+    prompt <- "Use {{ global_var }} and {{ local_var }}"
+}
+```
+
+## Agent Output Variables
+
+Agent outputs are automatically stored as variables:
+
+```ai
+<- agent analyzer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze this text"
+}
+
+// Access the agent's output
+agent summarizer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize: {{ analyzer.text }}"
+}
+```
+
+## Reassignment
+
+Variables can be reassigned:
+
+```ai
+counter <- 0
+counter <- counter + 1
+counter <- counter + 1
+// counter is now 2
+```
+
+## Type Inference
+
+Engine AI automatically infers variable types:
+
+```ai
+text <- "hello"        // string
+number <- 42           // integer
+decimal <- 3.14        // float
+flag <- true           // boolean
+items <- [1, 2, 3]     // array
+config <- { key <- "value" }  // object
+```
+
+## Best Practices
+
+<Tip>
+  Use descriptive variable names that clearly indicate their purpose.
+</Tip>
+
+```ai
+// Good
+user_email <- "user@example.com"
+max_retries <- 3
+
+// Avoid
+e <- "user@example.com"
+x <- 3
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Types" icon="database" href="/syntax/data-types">
+    Learn about available data types
+  </Card>
+  <Card title="Operators" icon="calculator" href="/syntax/operators">
+    Work with operators
+  </Card>
+</CardGroup>

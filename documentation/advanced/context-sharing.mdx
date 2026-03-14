@@ -1,0 +1,96 @@
+---
+title: 'Context Sharing'
+description: 'Share data and context between agents'
+---
+
+## Agent Output Access
+
+Access outputs from previous agents:
+
+```ai
+<- agent analyzer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze the data"
+}
+
+agent processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process this analysis: {{ analyzer.text }}"
+}
+```
+
+## Multiple Agent References
+
+Reference multiple agent outputs:
+
+```ai
+<- agent source1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate data 1"
+}
+
+<- agent source2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate data 2"
+}
+
+<- agent combiner {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Combine: {{ source1.text }} and {{ source2.text }}"
+}
+```
+
+## Shared Variables
+
+Use variables to share context:
+
+```ai
+config <- {
+    style <- "formal"
+    tone <- "professional"
+    max_length <- 500
+}
+
+agent writer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write in {{ config.style }} style with {{ config.tone }} tone, max {{ config.max_length }} words"
+}
+```
+
+## Context Accumulation
+
+Build context through agent chain:
+
+```ai
+<- agent step1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Step 1: Initial analysis"
+}
+
+<- agent step2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Step 2: Build on {{ step1.text }}"
+}
+
+<- agent step3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Step 3: Finalize based on {{ step1.text }} and {{ step2.text }}"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Keep shared context focused and relevant to avoid overwhelming agents with unnecessary information.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
+    Understand dependencies
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/core-concepts/workflows">
+    Build workflows
+  </Card>
+</CardGroup>

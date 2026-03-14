@@ -1,0 +1,96 @@
+---
+title: 'Rust API'
+description: 'Use Engine AI in Rust applications'
+---
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+engine-ai = "0.1.0"
+tokio = { version = "1", features = ["full"] }
+```
+
+## Basic Usage
+
+```rust
+use engine_ai::Engine;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = Engine::new();
+    let result = engine.execute_workflow("workflow.ai").await?;
+    println!("{:?}", result);
+    Ok(())
+}
+```
+
+## Execute Workflow
+
+```rust
+use engine_ai::Engine;
+
+let engine = Engine::new();
+let result = engine.execute_workflow("path/to/workflow.ai").await?;
+```
+
+## Execute from String
+
+```rust
+use engine_ai::Engine;
+
+let workflow_content = r#"
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+<- agent task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Hello, world!"
+}
+"#;
+
+let engine = Engine::new();
+let result = engine.execute_workflow_string(workflow_content).await?;
+```
+
+## Configuration
+
+```rust
+use engine_ai::{Engine, Config};
+
+let config = Config::builder()
+    .max_parallel_agents(10)
+    .timeout_seconds(300)
+    .build();
+
+let engine = Engine::with_config(config);
+```
+
+## Error Handling
+
+```rust
+use engine_ai::{Engine, EngineError};
+
+match engine.execute_workflow("workflow.ai").await {
+    Ok(result) => println!("Success: {:?}", result),
+    Err(EngineError::ParseError(e)) => eprintln!("Parse error: {}", e),
+    Err(EngineError::ExecutionError(e)) => eprintln!("Execution error: {}", e),
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="JavaScript API" icon="js" href="/api-reference/javascript-api">
+    JavaScript/TypeScript API
+  </Card>
+  <Card title="CLI" icon="terminal" href="/api-reference/cli">
+    Command-line interface
+  </Card>
+</CardGroup>

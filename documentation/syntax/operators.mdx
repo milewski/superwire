@@ -1,0 +1,198 @@
+---
+title: 'Operators'
+description: 'Operators for expressions and calculations'
+---
+
+## Arithmetic Operators
+
+Perform mathematical operations:
+
+```ai
+// Addition
+sum <- 10 + 5  // 15
+
+// Subtraction
+diff <- 10 - 5  // 5
+
+// Multiplication
+product <- 10 * 5  // 50
+
+// Division
+quotient <- 10 / 5  // 2
+
+// Modulo
+remainder <- 10 % 3  // 1
+```
+
+## Comparison Operators
+
+Compare values:
+
+```ai
+// Equal
+is_equal <- 5 == 5  // true
+
+// Not equal
+is_different <- 5 != 3  // true
+
+// Greater than
+is_greater <- 10 > 5  // true
+
+// Less than
+is_less <- 5 < 10  // true
+
+// Greater than or equal
+is_gte <- 10 >= 10  // true
+
+// Less than or equal
+is_lte <- 5 <= 10  // true
+```
+
+## Logical Operators
+
+Combine boolean expressions:
+
+```ai
+// AND
+result <- true && false  // false
+
+// OR
+result <- true || false  // true
+
+// NOT
+result <- !true  // false
+```
+
+## String Operators
+
+Work with strings:
+
+```ai
+// Concatenation
+greeting <- "Hello, " + "world!"  // "Hello, world!"
+
+// String interpolation (preferred)
+name <- "Alice"
+message <- "Hello, {{ name }}!"  // "Hello, Alice!"
+```
+
+## Assignment Operator
+
+Assign values to variables:
+
+```ai
+// Basic assignment
+value <- 42
+
+// Reassignment
+value <- value + 10
+```
+
+## Operator Precedence
+
+Operators follow standard precedence rules:
+
+```ai
+result <- 2 + 3 * 4  // 14 (multiplication first)
+result <- (2 + 3) * 4  // 20 (parentheses first)
+```
+
+### Precedence Order (highest to lowest)
+
+1. Parentheses `()`
+2. Multiplication `*`, Division `/`, Modulo `%`
+3. Addition `+`, Subtraction `-`
+4. Comparison `<`, `>`, `<=`, `>=`
+5. Equality `==`, `!=`
+6. Logical AND `&&`
+7. Logical OR `||`
+
+## Using Operators in Prompts
+
+Operators can be used in string interpolation:
+
+```ai
+count <- 5
+total <- 10
+
+agent reporter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Progress: {{ count }} / {{ total }} ({{ (count / total) * 100 }}%)"
+}
+```
+
+## Conditional Expressions
+
+Use operators in conditional logic:
+
+```ai
+score <- 85
+passed <- score >= 60
+
+agent evaluator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Score: {{ score }}. Passed: {{ passed }}"
+}
+```
+
+## Examples
+
+### Calculate Percentage
+
+```ai
+completed <- 7
+total <- 10
+percentage <- (completed / total) * 100
+
+agent reporter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "{{ percentage }}% complete"
+}
+```
+
+### Combine Conditions
+
+```ai
+age <- 25
+has_license <- true
+can_drive <- age >= 18 && has_license
+
+agent checker {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Can drive: {{ can_drive }}"
+}
+```
+
+### String Manipulation
+
+```ai
+first_name <- "Alice"
+last_name <- "Smith"
+full_name <- first_name + " " + last_name
+
+agent greeter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Hello, {{ full_name }}!"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Use parentheses to make complex expressions more readable, even when not strictly necessary.
+</Tip>
+
+<Warning>
+  Be careful with division by zero - it will cause runtime errors.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Control Flow" icon="code-branch" href="/syntax/control-flow">
+    Learn about control flow
+  </Card>
+  <Card title="String Interpolation" icon="brackets-curly" href="/syntax/string-interpolation">
+    Master string interpolation
+  </Card>
+</CardGroup>

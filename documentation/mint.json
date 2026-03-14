@@ -89,8 +89,7 @@
         "advanced/parallel-execution",
         "advanced/context-sharing",
         "advanced/tool-calling",
-        "advanced/error-handling",
-        "advanced/caching"
+        "advanced/error-handling"
       ]
     },
     {

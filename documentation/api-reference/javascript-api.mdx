@@ -1,0 +1,105 @@
+---
+title: 'JavaScript API'
+description: 'Use Engine AI in JavaScript/TypeScript applications'
+---
+
+## Installation
+
+```bash
+npm install engine-ai
+```
+
+## Basic Usage
+
+```typescript
+import { Engine } from 'engine-ai';
+
+const engine = new Engine();
+const result = await engine.executeWorkflow('workflow.ai');
+console.log(result);
+```
+
+## Execute Workflow
+
+```typescript
+import { Engine } from 'engine-ai';
+
+const engine = new Engine();
+const result = await engine.executeWorkflow('path/to/workflow.ai');
+```
+
+## Execute from String
+
+```typescript
+import { Engine } from 'engine-ai';
+
+const workflowContent = `
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+<- agent task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Hello, world!"
+}
+`;
+
+const engine = new Engine();
+const result = await engine.executeWorkflowString(workflowContent);
+```
+
+## Configuration
+
+```typescript
+import { Engine, Config } from 'engine-ai';
+
+const config: Config = {
+  maxParallelAgents: 10,
+  timeoutSeconds: 300,
+};
+
+const engine = new Engine(config);
+```
+
+## TypeScript Types
+
+```typescript
+import { Engine, WorkflowResult, AgentOutput } from 'engine-ai';
+
+const engine = new Engine();
+const result: WorkflowResult = await engine.executeWorkflow('workflow.ai');
+
+result.agents.forEach((agent: AgentOutput) => {
+  console.log(`${agent.name}: ${agent.text}`);
+});
+```
+
+## Error Handling
+
+```typescript
+import { Engine, EngineError } from 'engine-ai';
+
+try {
+  const result = await engine.executeWorkflow('workflow.ai');
+  console.log('Success:', result);
+} catch (error) {
+  if (error instanceof EngineError) {
+    console.error('Engine error:', error.message);
+  } else {
+    console.error('Unknown error:', error);
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Rust API" icon="rust" href="/api-reference/rust-api">
+    Rust API reference
+  </Card>
+  <Card title="CLI" icon="terminal" href="/api-reference/cli">
+    Command-line interface
+  </Card>
+</CardGroup>

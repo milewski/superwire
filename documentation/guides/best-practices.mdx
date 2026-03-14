@@ -1,0 +1,291 @@
+---
+title: 'Best Practices'
+description: 'Guidelines for building effective workflows'
+---
+
+## Code Organization
+
+### Clear Structure
+
+Organize workflows with clear sections:
+
+```ai
+// ============================================
+// CONFIGURATION
+// ============================================
+
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+// ============================================
+// INPUT VARIABLES
+// ============================================
+
+input_data <- "data to process"
+
+// ============================================
+// PROCESSING
+// ============================================
+
+<- agent processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ input_data }}"
+}
+```
+
+### Descriptive Names
+
+Use clear, descriptive names:
+
+```ai
+// Good
+<- agent sentiment_analyzer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze sentiment"
+}
+
+// Avoid
+<- agent a {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze sentiment"
+}
+```
+
+## Performance
+
+### Maximize Parallelization
+
+Run independent agents in parallel:
+
+```ai
+// Good: Parallel execution
+<- agent task1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Task 1"
+}
+
+<- agent task2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Task 2"
+}
+
+// Avoid: Unnecessary sequential execution
+<- agent task1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Task 1"
+}
+
+<- agent task2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Task 2 using {{ task1.text }}"  // Creates dependency
+}
+```
+
+### Choose Appropriate Models
+
+Use the right model for each task:
+
+```ai
+// Fast local model for simple tasks
+agent simple_task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Simple classification"
+}
+
+// Powerful cloud model for complex tasks
+agent complex_task {
+    model <- "openai/gpt-4"
+    prompt <- "Complex reasoning"
+}
+```
+
+## Reliability
+
+### Error Handling
+
+Always include fallback paths:
+
+```ai
+<- agent primary {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Primary approach"
+}
+
+agent fallback {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Fallback approach"
+    when <- primary.text == null
+}
+```
+
+### Validation
+
+Validate outputs before proceeding:
+
+```ai
+<- agent generator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate data"
+}
+
+<- agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate: {{ generator.text }}"
+}
+
+agent processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ generator.text }}"
+    when <- validator.text == "valid"
+}
+```
+
+## Security
+
+### API Keys
+
+Never hardcode API keys:
+
+```ai
+// Avoid: Hardcoded key
+provider openai {
+    driver <- "openai"
+    config <- {
+        api_key <- "sk-proj-abc123..."  // Don't do this!
+        endpoint <- "https://api.openai.com/v1"
+    }
+    models <- ["gpt-4"]
+}
+
+// Good: Use secure configuration
+provider openai {
+    driver <- "openai"
+    config <- {
+        api_key <- "sk-proj-..."  // Placeholder only
+        endpoint <- "https://api.openai.com/v1"
+    }
+    models <- ["gpt-4"]
+}
+```
+
+### Input Validation
+
+Validate user inputs:
+
+```ai
+user_input <- "untrusted input"
+
+<- agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate this input is safe: {{ user_input }}"
+}
+
+agent processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ user_input }}"
+    when <- validator.text == "safe"
+}
+```
+
+## Maintainability
+
+### Comments
+
+Document complex logic:
+
+```ai
+// Multi-stage content pipeline
+// 1. Generate initial draft
+// 2. Review for quality
+// 3. Format for publication
+
+<- agent drafter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Create draft"
+}
+
+<- agent reviewer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Review: {{ drafter.text }}"
+}
+
+<- agent formatter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Format: {{ reviewer.text }}"
+}
+```
+
+### Modularity
+
+Break complex workflows into smaller pieces:
+
+```ai
+// Reusable validation component
+<- agent validate_input {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate input"
+}
+
+// Reusable processing component
+agent process_data {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process data"
+    when <- validate_input.text == "valid"
+}
+```
+
+## Testing
+
+### Test Locally First
+
+Use local providers for development:
+
+```ai
+// Development
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+// Production (switch when ready)
+// provider openai {
+//     driver <- "openai"
+//     config <- {
+//         api_key <- "sk-proj-..."
+//         endpoint <- "https://api.openai.com/v1"
+//     }
+//     models <- ["gpt-4"]
+// }
+```
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Clear Structure" icon="sitemap">
+    Organize code with clear sections and descriptive names
+  </Card>
+  <Card title="Parallel Execution" icon="arrows-split-up-and-left">
+    Maximize parallelization for better performance
+  </Card>
+  <Card title="Error Handling" icon="shield">
+    Always include fallback paths and validation
+  </Card>
+  <Card title="Security" icon="lock">
+    Never hardcode secrets, validate inputs
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building Workflows" icon="diagram-project" href="/guides/building-workflows">
+    Learn workflow patterns
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test your workflows
+  </Card>
+</CardGroup>

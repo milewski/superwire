@@ -1,0 +1,246 @@
+---
+title: 'String Interpolation'
+description: 'Embed variables and expressions in strings'
+---
+
+## Basic Interpolation
+
+Use `{{ }}` to embed variables in strings:
+
+```ai
+name <- "Alice"
+age <- 30
+
+agent greeter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Hello, {{ name }}! You are {{ age }} years old."
+}
+```
+
+## Interpolating Expressions
+
+Embed calculations and expressions:
+
+```ai
+price <- 100
+tax_rate <- 0.08
+total <- price * (1 + tax_rate)
+
+agent calculator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Price: ${{ price }}, Tax: {{ tax_rate * 100 }}%, Total: ${{ total }}"
+}
+```
+
+## Agent Output Interpolation
+
+Reference previous agent outputs:
+
+```ai
+<- agent analyzer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze this data"
+}
+
+agent summarizer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize the analysis: {{ analyzer.text }}"
+}
+```
+
+## Object Property Access
+
+Access nested object properties:
+
+```ai
+user <- {
+    name <- "Alice"
+    profile <- {
+        email <- "alice@example.com"
+        role <- "admin"
+    }
+}
+
+agent notifier {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Send notification to {{ user.name }} at {{ user.profile.email }}"
+}
+```
+
+## Array Element Access
+
+Access array elements by index:
+
+```ai
+items <- ["apple", "banana", "cherry"]
+
+agent selector {
+    model <- "ollama/qwen3:8b"
+    prompt <- "First item: {{ items[0] }}, Second: {{ items[1] }}"
+}
+```
+
+## Complex Expressions
+
+Combine multiple operations:
+
+```ai
+count <- 5
+total <- 10
+percentage <- (count / total) * 100
+
+agent reporter {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Progress: {{ count }}/{{ total }} ({{ percentage }}% complete)"
+}
+```
+
+## Conditional Interpolation
+
+Use boolean expressions:
+
+```ai
+is_premium <- true
+credits <- 100
+
+agent status {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Premium: {{ is_premium }}, Credits: {{ credits }}, Can use: {{ is_premium && credits > 0 }}"
+}
+```
+
+## Multi-Line Strings
+
+Interpolation works in multi-line strings:
+
+```ai
+name <- "Alice"
+role <- "Developer"
+
+agent emailer {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Dear {{ name }},
+
+Welcome to the team! Your role is {{ role }}.
+
+Best regards,
+The Team"
+}
+```
+
+## Escaping Braces
+
+To use literal `{{` or `}}`, escape them:
+
+```ai
+agent example {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Use \{{ and \}} for literal braces"
+}
+```
+
+## Examples
+
+### User Profile Message
+
+```ai
+user <- {
+    name <- "Bob"
+    email <- "bob@example.com"
+    joined <- "2024-01-15"
+}
+
+agent welcome {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Welcome {{ user.name }}! Your account ({{ user.email }}) was created on {{ user.joined }}."
+}
+```
+
+### Progress Report
+
+```ai
+completed_tasks <- 7
+total_tasks <- 10
+remaining <- total_tasks - completed_tasks
+
+agent progress {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Completed: {{ completed_tasks }}/{{ total_tasks }}
+Remaining: {{ remaining }}
+Progress: {{ (completed_tasks / total_tasks) * 100 }}%"
+}
+```
+
+### Chained Agent Outputs
+
+```ai
+<- agent step1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate a topic"
+}
+
+<- agent step2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Write about: {{ step1.text }}"
+}
+
+<- agent step3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Summarize this article: {{ step2.text }}"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Use descriptive variable names in interpolations to make prompts self-documenting.
+</Tip>
+
+<Warning>
+  Avoid deeply nested property access - it can make prompts hard to read and debug.
+</Warning>
+
+<Info>
+  Interpolation happens at runtime, so you can use dynamic values from previous agents.
+</Info>
+
+## Common Patterns
+
+### Template Prompts
+
+```ai
+template <- "Analyze the following {{ data_type }}: {{ content }}"
+data_type <- "text"
+content <- "Sample content here"
+
+agent analyzer {
+    model <- "ollama/qwen3:8b"
+    prompt <- template
+}
+```
+
+### Dynamic Configuration
+
+```ai
+config <- {
+    model_name <- "ollama/qwen3:8b"
+    temperature <- 0.7
+    max_tokens <- 1000
+}
+
+agent task {
+    model <- config.model_name
+    prompt <- "Process with temp={{ config.temperature }}, max_tokens={{ config.max_tokens }}"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Variables" icon="code" href="/syntax/variables">
+    Learn about variables
+  </Card>
+  <Card title="Agents" icon="robot" href="/core-concepts/agents">
+    Understand agents
+  </Card>
+</CardGroup>

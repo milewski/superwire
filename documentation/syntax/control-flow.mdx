@@ -1,0 +1,218 @@
+---
+title: 'Control Flow'
+description: 'Conditional execution and loops in Engine AI'
+---
+
+## Conditional Agents
+
+Execute agents based on conditions:
+
+```ai
+score <- 85
+
+agent pass_message {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Congratulations! You passed with {{ score }}%"
+    when <- score >= 60
+}
+
+agent fail_message {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Sorry, you need at least 60% to pass. You got {{ score }}%"
+    when <- score < 60
+}
+```
+
+## The `when` Clause
+
+Control agent execution with boolean expressions:
+
+```ai
+is_premium <- true
+credits <- 100
+
+agent premium_feature {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Access premium features"
+    when <- is_premium && credits > 0
+}
+```
+
+## Dependent Execution
+
+Agents execute in dependency order:
+
+```ai
+<- agent step1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "First step"
+}
+
+<- agent step2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Second step, after: {{ step1.text }}"
+}
+
+<- agent step3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Third step, after: {{ step2.text }}"
+}
+```
+
+## Parallel Execution
+
+Agents without dependencies run in parallel:
+
+```ai
+// These run simultaneously
+<- agent task1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Independent task 1"
+}
+
+<- agent task2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Independent task 2"
+}
+
+<- agent task3 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Independent task 3"
+}
+```
+
+## Complex Conditions
+
+Combine multiple conditions:
+
+```ai
+user_role <- "admin"
+is_active <- true
+has_permission <- true
+
+agent admin_action {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Perform admin action"
+    when <- user_role == "admin" && is_active && has_permission
+}
+```
+
+## Conditional Workflows
+
+Create branching workflows:
+
+```ai
+input_type <- "text"
+
+<- agent text_processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process text input"
+    when <- input_type == "text"
+}
+
+<- agent image_processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process image input"
+    when <- input_type == "image"
+}
+
+<- agent video_processor {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process video input"
+    when <- input_type == "video"
+}
+```
+
+## Error Handling
+
+Handle different scenarios:
+
+```ai
+<- agent primary_task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Try primary approach"
+}
+
+agent fallback_task {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Use fallback approach"
+    when <- primary_task.text == null || primary_task.text == ""
+}
+```
+
+## Examples
+
+### Multi-Stage Pipeline
+
+```ai
+<- agent analyze {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Analyze the input data"
+}
+
+<- agent validate {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate: {{ analyze.text }}"
+}
+
+agent process_valid {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process valid data: {{ validate.text }}"
+    when <- validate.text != "invalid"
+}
+
+agent handle_invalid {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Handle invalid data: {{ validate.text }}"
+    when <- validate.text == "invalid"
+}
+```
+
+### Role-Based Execution
+
+```ai
+user_role <- "editor"
+
+agent admin_dashboard {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Show admin dashboard"
+    when <- user_role == "admin"
+}
+
+agent editor_dashboard {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Show editor dashboard"
+    when <- user_role == "editor"
+}
+
+agent viewer_dashboard {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Show viewer dashboard"
+    when <- user_role == "viewer"
+}
+```
+
+## Best Practices
+
+<Tip>
+  Use clear, descriptive conditions that make the workflow logic easy to understand.
+</Tip>
+
+<Warning>
+  Avoid circular dependencies between agents - they will cause execution errors.
+</Warning>
+
+<Info>
+  Agents with `when <- false` are skipped entirely and don't consume API calls.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Parallel Execution" icon="arrows-split-up-and-left" href="/advanced/parallel-execution">
+    Learn about parallel execution
+  </Card>
+  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
+    Understand agent dependencies
+  </Card>
+</CardGroup>

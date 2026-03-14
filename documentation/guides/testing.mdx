@@ -1,0 +1,162 @@
+---
+title: 'Testing Workflows'
+description: 'Test and validate your workflows'
+---
+
+## Testing Strategies
+
+### Unit Testing
+
+Test individual agents:
+
+```ai
+// test_agent.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+test_input <- "test data"
+
+<- agent under_test {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Process: {{ test_input }}"
+}
+```
+
+### Integration Testing
+
+Test agent interactions:
+
+```ai
+// test_workflow.ai
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+<- agent step1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Step 1"
+}
+
+<- agent step2 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Step 2: {{ step1.text }}"
+}
+
+// Verify step2 receives step1 output
+```
+
+### Validation Testing
+
+Test output validation:
+
+```ai
+<- agent generator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate data"
+}
+
+<- agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Validate: {{ generator.text }}. Respond 'valid' or 'invalid'"
+}
+
+// Check validator output
+```
+
+## Test Patterns
+
+### Mock Providers
+
+Use local providers for testing:
+
+```ai
+// Use Ollama for fast, free testing
+provider ollama {
+    driver <- "ollama"
+    config <- { endpoint <- "http://localhost:11434" }
+    models <- ["qwen3:8b"]
+}
+
+<- agent test {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Test prompt"
+}
+```
+
+### Test Data
+
+Use consistent test data:
+
+```ai
+test_cases <- [
+    "test case 1",
+    "test case 2",
+    "test case 3"
+]
+
+<- agent test1 {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Test: {{ test_cases[0] }}"
+}
+```
+
+### Expected Outputs
+
+Validate against expected results:
+
+```ai
+expected <- "expected output"
+
+<- agent under_test {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Generate output"
+}
+
+agent validator {
+    model <- "ollama/qwen3:8b"
+    prompt <- "Does '{{ under_test.text }}' match '{{ expected }}'?"
+}
+```
+
+## Running Tests
+
+```bash
+# Run test workflow
+engine-ai run test_workflow.ai
+
+# Check syntax
+engine-ai check test_workflow.ai
+
+# Verbose output
+engine-ai run test_workflow.ai --verbose
+```
+
+## Best Practices
+
+<Tip>
+  Test workflows with local providers first before using paid APIs.
+</Tip>
+
+<Info>
+  Create separate test workflows for different scenarios.
+</Info>
+
+<Warning>
+  LLM outputs are non-deterministic - test for patterns, not exact matches.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deployment" icon="rocket" href="/guides/deployment">
+    Deploy your workflows
+  </Card>
+  <Card title="Best Practices" icon="star" href="/guides/best-practices">
+    Workflow best practices
+  </Card>
+</CardGroup>
