@@ -376,17 +376,29 @@ impl Provider for OllamaProvider {
                 .collect()
         });
 
+        let mut updated_context = Vec::with_capacity(context.len() + 2);
+        updated_context.extend_from_slice(&context);
+
         if output_content.is_empty() && tool_calls.is_none() {
-            log::error!("Ollama returned empty response with no content and no tool calls");
-            return Err(ProviderError::ApiError {
-                message: "Ollama returned empty response. This may indicate a problem with the conversation format or model compatibility.".to_string(),
-                status_code: None,
-                suggestion: Some("Try using a different model or check Ollama logs".to_string()),
+            log::warn!("Ollama returned empty response with no content and no tool calls");
+
+            updated_context.push(Message::Assistant {
+                content: String::new(),
+                tool_calls: None,
+            });
+
+            updated_context.push(Message::User {
+                content: "You returned an empty response. Please provide a response with either text content or tool calls. Remember to use the available tools to complete your task, and call the done tool when finished.".to_string(),
+            });
+
+            log::info!("OllamaProvider added feedback for empty response");
+
+            return Ok(AgentOutput {
+                output: Value::String(String::new()),
+                context: updated_context,
             });
         }
 
-        let mut updated_context = Vec::with_capacity(context.len() + 1);
-        updated_context.extend_from_slice(&context);
         updated_context.push(Message::Assistant {
             content: output_content.clone(),
             tool_calls,
