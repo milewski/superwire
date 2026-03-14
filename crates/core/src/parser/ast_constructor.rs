@@ -188,10 +188,44 @@ impl AstConstructor {
 
         if text.starts_with("\"\"\"") && text.ends_with("\"\"\"") && text.len() >= 6 {
             let content = &text[3..text.len() - 3];
-            let normalized = content
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            if lines.is_empty() {
+                return Ok(String::new());
+            }
+
+            let start_index = usize::from(lines[0].trim().is_empty());
+            let end_index = if lines.len() > 1 && lines[lines.len() - 1].trim().is_empty() {
+                lines.len() - 1
+            } else {
+                lines.len()
+            };
+
+            if start_index >= end_index {
+                return Ok(String::new());
+            }
+
+            let content_lines = &lines[start_index..end_index];
+
+            let min_indent = content_lines
+                .iter()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.len() - line.trim_start().len())
+                .min()
+                .unwrap_or(0);
+
+            let normalized = content_lines
+                .iter()
+                .map(|line| {
+                    if line.trim().is_empty() {
+                        ""
+                    } else if line.len() >= min_indent {
+                        &line[min_indent..]
+                    } else {
+                        line
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
 

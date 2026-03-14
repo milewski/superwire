@@ -407,12 +407,14 @@ impl Writer {
 
         let mut output = String::from("\"\"\"\n");
 
-        // Add the content with proper indentation
-        output.push_str(&content_indent);
-        output.push_str(content.trim());
+        for line in content.lines() {
+            output.push_str(&content_indent);
+            output.push_str(line);
+            output.push('\n');
+        }
 
-        // Close the multiline string with proper base indentation
-        write!(output, "\n{base_indent}\"\"\"").unwrap();
+        output.push_str(&base_indent);
+        output.push_str("\"\"\"");
         output
     }
 
@@ -474,7 +476,7 @@ impl Writer {
     fn write_reference(&self, reference: &Reference) -> String {
         match reference {
             Reference::Agent { agent, field } => format!("agent.{agent}.{field}"),
-            Reference::AgentOutput { agent } => format!("agent.{agent}.output"),
+            Reference::AgentOutput { agent } => format!("agent.{agent}"),
             Reference::AgentContext { agent } => format!("agent.{agent}.context"),
             Reference::Input { field } => format!("input.{field}"),
             Reference::Schema { name } => name.clone(),

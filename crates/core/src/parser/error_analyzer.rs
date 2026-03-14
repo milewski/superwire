@@ -180,15 +180,7 @@ impl ErrorAnalyzer {
         }
 
         let valid_properties = [
-            "model",
-            "tools",
-            "context",
-            "output",
-            "prompt",
-            "for_each",
-            "driver",
-            "api_endpoint",
-            "models",
+            "model", "tools", "context", "output", "prompt", "for_each", "driver", "models", "config",
         ];
 
         if valid_properties.contains(&property_name) {
