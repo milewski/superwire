@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "8436ea6740fb85c4",
+  "workflow_hash": "c30f0ad053990e59",
   "agents": {
     "simple_test": [
       {
@@ -20,7 +20,23 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":\"Hello! How can I assist you today?\",\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : \"Hello! How can I assist you today?\" is not of type \"object\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Hello! How can I assist you today?\"},\"status\":\"success\"}"
               }
             ]
           }
@@ -29,6 +45,6 @@
     ]
   },
   "output": {
-    "result": "Hello!"
+    "result": "Hello! How can I assist you today?"
   }
 }

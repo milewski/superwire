@@ -1,32 +1,6 @@
 {
-  "workflow_hash": "ae3050da6fb63cda",
+  "workflow_hash": "97cef2c4a1d32d91",
   "agents": {
-    "one": [
-      {
-        "model": "ollama/qwen3:8b",
-        "messages": [
-          {
-            "type": "system",
-            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
-          },
-          {
-            "type": "user",
-            "content": "Say hello"
-          },
-          {
-            "type": "assistant",
-            "content": "",
-            "tool_calls": [
-              {
-                "id": "call_0",
-                "name": "done",
-                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
-              }
-            ]
-          }
-        ]
-      }
-    ],
     "compact": [
       {
         "model": "ollama/qwen3:8b",
@@ -46,6 +20,22 @@
               {
                 "id": "call_0",
                 "name": "done",
+                "arguments": "{\"output\":\"Hello!\",\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : \"Hello!\" is not of type \"object\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
                 "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
               }
             ]
@@ -56,7 +46,7 @@
           },
           {
             "type": "assistant",
-            "content": "{\"name\": \"done\", \"arguments\": {\"output\":{\"message\":\"The conversation involved a user requesting a greeting, which was responded to with 'Hello!' using the done tool. The key topic was the exchange of a greeting.\"},\"status\":\"success\"}}",
+            "content": "The conversation involved an initial request to \"Say hello,\" followed by an error due to schema validation failure (the response \"Hello!\" wasn't an object). The assistant corrected this by formatting the response as an object {\"message\": \"Hello!\"}, which succeeded. Key points: schema validation, error handling, and format adjustment.",
             "tool_calls": null
           }
         ]
@@ -87,19 +77,61 @@
           }
         ]
       }
+    ],
+    "one": [
+      {
+        "model": "ollama/qwen3:8b",
+        "messages": [
+          {
+            "type": "system",
+            "content": "You are an AI agent executing a task.CRITICAL: You have access to a done tool\nthat you MUST use to return your final result.IMPORTANT INSTRUCTIONS: 1. Do\nNOT respond with plain text - you MUST call the done tool 2. The done tool is\nhow you return your result to the system 3. After completing your task,\nimmediately call the done tool with your output 4. Your response will NOT be\nprocessed unless you call the done tool 5. Think of the done tool as your ONLY\nway to communicate your final answer Example: If asked to generate a number,\ncall done with output 42 and status success instead of just saying 42.\nRemember: ALWAYS call the done tool when you have your answer ready."
+          },
+          {
+            "type": "user",
+            "content": "Say hello"
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":\"Hello!\",\"status\":\"success\"}"
+              }
+            ]
+          },
+          {
+            "type": "tool",
+            "tool_call_id": "call_0",
+            "content": "Schema validation failed: Schema validation error: : \"Hello!\" is not of type \"object\". Please fix the output and call done again."
+          },
+          {
+            "type": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "name": "done",
+                "arguments": "{\"output\":{\"message\":\"Hello!\"},\"status\":\"success\"}"
+              }
+            ]
+          }
+        ]
+      }
     ]
   },
   "output": {
     "multi_context_summary": [
       {
-        "content": "{\"name\": \"done\", \"arguments\": {\"output\":{\"message\":\"The conversation involved a user requesting a greeting, which was responded to with 'Hello!' using the done tool. The key topic was the exchange of a greeting.\"},\"status\":\"success\"}}",
+        "content": "The conversation involved an initial request to \"Say hello,\" followed by an error due to schema validation failure (the response \"Hello!\" wasn't an object). The assistant corrected this by formatting the response as an object {\"message\": \"Hello!\"}, which succeeded. Key points: schema validation, error handling, and format adjustment.",
         "tool_calls": null,
         "type": "assistant"
       }
     ],
     "single_context_summary": [
       {
-        "content": "{\"name\": \"done\", \"arguments\": {\"output\":{\"message\":\"The conversation involved a user requesting a greeting, which was responded to with 'Hello!' using the done tool. The key topic was the exchange of a greeting.\"},\"status\":\"success\"}}",
+        "content": "The conversation involved an initial request to \"Say hello,\" followed by an error due to schema validation failure (the response \"Hello!\" wasn't an object). The assistant corrected this by formatting the response as an object {\"message\": \"Hello!\"}, which succeeded. Key points: schema validation, error handling, and format adjustment.",
         "tool_calls": null,
         "type": "assistant"
       }

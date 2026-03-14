@@ -1,5 +1,5 @@
 {
-  "workflow_hash": "eb4282d3259fe945",
+  "workflow_hash": "1dc42f883d32a614",
   "agents": {
     "person": [
       {
@@ -20,7 +20,7 @@
               {
                 "id": "call_0",
                 "name": "done",
-                "arguments": "{\"output\":{\"age\":30,\"email\":null,\"name\":\"Emma Wilson\",\"nickname\":\"Em\"},\"status\":\"success\"}"
+                "arguments": "{\"output\":{\"age\":28,\"email\":\"emilysmith@example.com\",\"name\":\"Emily Smith\",\"nickname\":null},\"status\":\"success\"}"
               }
             ]
           }
@@ -30,10 +30,10 @@
   },
   "output": {
     "person": {
-      "age": 30,
-      "email": null,
-      "name": "Emma Wilson",
-      "nickname": "Em"
+      "age": 28,
+      "email": "emilysmith@example.com",
+      "name": "Emily Smith",
+      "nickname": null
     }
   }
 }
