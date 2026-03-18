@@ -20,7 +20,7 @@ pub struct ToolCall {
 #[derive(Debug, Clone)]
 pub struct ToolResult {
     pub tool_call_id: String,
-    pub content: String,
+    pub content: serde_json::Value,
     pub is_error: bool,
 }
 
@@ -70,9 +70,11 @@ impl Message {
 
     #[must_use]
     pub fn tool_result(tool_result: ToolResult) -> Self {
+        let content = serde_json::to_string(&tool_result.content).unwrap_or_else(|_| tool_result.content.to_string());
+
         Self {
             role: MessageRole::ToolResult,
-            content: tool_result.content.clone(),
+            content,
             tool_call: None,
             tool_result: Some(tool_result),
             metadata: std::collections::HashMap::new(),
@@ -126,13 +128,13 @@ mod tests {
 
         let tool_result = ToolResult {
             tool_call_id: "call_123".to_string(),
-            content: "Result data".to_string(),
+            content: serde_json::Value::String("Result data".to_string()),
             is_error: false,
         };
         let result_msg = Message::tool_result(tool_result.clone());
         assert!(matches!(result_msg.role, MessageRole::ToolResult));
         assert!(result_msg.tool_result.is_some());
-        assert_eq!(result_msg.content, "Result data");
+        assert!(result_msg.content.contains("Result data"));
 
         let system_msg = Message::system("System notice".to_string());
         assert!(matches!(system_msg.role, MessageRole::System));

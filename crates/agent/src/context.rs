@@ -1,16 +1,15 @@
-use super::error::ValidationError;
-use super::message::{Message, MessageRole};
-use super::traits::Tool;
-use crate::agent::{ToolCall, ToolResult};
+use crate::error::ValidationError;
+use crate::message::{Message, MessageRole, ToolCall, ToolResult};
+use crate::traits::Tool;
 use std::sync::Arc;
 
 /// Context object that carries state throughout the agent execution
 #[derive(Clone)]
-pub struct Context<I, T>
+pub struct Context<P, T>
 where
     T: Tool + Clone,
 {
-    pub input: I,
+    pub prompt: P,
     pub messages: Vec<Message>,
     pub tools: Vec<Arc<T>>,
     pub attempt: usize,
@@ -19,13 +18,13 @@ where
     pub output_tokens: usize,
 }
 
-impl<I, T> Context<I, T>
+impl<P, T> Context<P, T>
 where
     T: Tool + Clone,
 {
-    pub fn new(input: I) -> Self {
+    pub fn new(prompt: P) -> Self {
         Self {
-            input,
+            prompt,
             messages: Vec::new(),
             tools: Vec::new(),
             attempt: 0,
@@ -35,6 +34,7 @@ where
         }
     }
 
+    #[must_use]
     pub fn with_tools(mut self, tools: Vec<Arc<T>>) -> Self {
         self.tools = tools;
         self
@@ -101,7 +101,10 @@ mod tests {
         name: String,
     }
 
+    #[async_trait::async_trait]
     impl Tool for MockTool {
+        type Input = serde_json::Value;
+
         fn name(&self) -> &str {
             &self.name
         }
@@ -110,8 +113,8 @@ mod tests {
             "Mock tool"
         }
 
-        fn parameters_schema(&self) -> schemars::Schema {
-            schemars::Schema::default()
+        async fn execute(&self, _input: Self::Input) -> Result<serde_json::Value, crate::ToolError> {
+            Ok(serde_json::Value::String(format!("Result for {}", self.name)))
         }
     }
 

@@ -1,12 +1,8 @@
-use super::context::Context;
-use super::message::ToolCall;
+use crate::context::Context;
+use crate::error::ValidationError;
+use crate::message::ToolCall;
 
-/// Trait for tools that can be used by the agent
-pub trait Tool: Clone {
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn parameters_schema(&self) -> schemars::Schema;
-}
+pub use crate::tool::Tool;
 
 /// Reason why the provider stopped generating
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,14 +41,14 @@ pub trait Provider {
 /// Trait for operations that can be executed by the agent
 #[async_trait::async_trait]
 pub trait Executable {
-    type Input;
+    type Prompt;
     type Output;
     type Provider: Provider<Tool = Self::Tool>;
     type Tool: Tool;
 
     async fn execute(
         &self,
-        context: &Context<Self::Input, Self::Tool>,
+        context: &Context<Self::Prompt, Self::Tool>,
         provider: &Self::Provider,
     ) -> Result<Self::Output, String>;
 }
@@ -62,5 +58,5 @@ pub trait Executable {
 pub trait Validator {
     type Output;
 
-    async fn validate(&self, output: &Self::Output) -> Result<(), super::error::ValidationError>;
+    async fn validate(&self, output: &Self::Output) -> Result<(), ValidationError>;
 }
