@@ -596,6 +596,7 @@ dependencies = [
  "async-trait",
  "backoff",
  "engine-ai-macros",
+ "futures",
  "inventory",
  "jsonschema",
  "log",

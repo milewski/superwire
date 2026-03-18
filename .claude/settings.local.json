@@ -20,7 +20,14 @@
       "mcp__github__sub_issue_write",
       "mcp__github__search_pull_requests",
       "mcp__github__update_pull_request",
-      "mcp__plugin_mintlify_Mintlify__search_mintlify"
+      "mcp__plugin_mintlify_Mintlify__search_mintlify",
+      "mcp__plugin_figma_figma__generate_diagram",
+      "mcp__plugin_figma_figma__generate_figma_design",
+      "mcp__plugin_playwright_playwright__browser_run_code",
+      "mcp__plugin_playwright_playwright__browser_install",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__playwright__browser_run_code",
+      "mcp__playwright__browser_navigate"
     ]
   }
 }

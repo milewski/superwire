@@ -30,14 +30,14 @@
     "version": "napi version"
   },
   "dependencies": {
-    "zod": "^3.22.4",
-    "zod-to-json-schema": "^3.22.4"
+    "zod": "^4.3.6",
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0",
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.3",
-    "tsx": "^4.7.0"
+    "@napi-rs/cli": "^3.5.1",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">= 16"

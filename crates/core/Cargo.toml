@@ -25,6 +25,7 @@ engine-ai-macros = { path = "../macros" }
 inventory = "0.3"
 async-openai = { workspace = true }
 backoff = "0.4.0"
+futures = "0.3"
 
 [dev-dependencies]
 stdext = "0.3"
