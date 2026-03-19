@@ -43,9 +43,18 @@ pub enum AgentError {
     ExecutionFailed { message: String },
 }
 
+impl From<crate::tool::ToolError> for AgentError {
+    fn from(error: crate::tool::ToolError) -> Self {
+        Self::ExecutionFailed {
+            message: error.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tool::ToolError;
     use serde_json::json;
 
     #[test]
@@ -64,5 +73,15 @@ mod tests {
     fn test_validation_error_display() {
         let error = ValidationError::new("Display test".to_string());
         assert_eq!(format!("{}", error), "Display test");
+    }
+
+    #[test]
+    fn test_tool_error_converts_to_execution_failed_agent_error() {
+        let agent_error: AgentError = ToolError::new("Tool failed".to_string()).into();
+
+        match agent_error {
+            AgentError::ExecutionFailed { message } => assert_eq!(message, "Tool failed"),
+            _ => panic!("expected execution failed error"),
+        }
     }
 }
