@@ -6,7 +6,6 @@ use crate::message::{Message, MessageRole, ToolCall, ToolResult};
 pub struct Context {
     pub prompt: String,
     pub messages: Vec<Message>,
-    pub done_tool_schema: Option<serde_json::Value>,
     pub attempt: usize,
     pub total_tokens: usize,
     pub input_tokens: usize,
@@ -18,7 +17,6 @@ impl Context {
         Self {
             prompt,
             messages: Vec::new(),
-            done_tool_schema: None,
             attempt: 0,
             total_tokens: 0,
             input_tokens: 0,

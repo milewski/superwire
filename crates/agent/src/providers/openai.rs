@@ -1,6 +1,6 @@
 use crate::context::Context;
 use crate::message::{Message, MessageRole, ToolCall};
-use crate::traits::{Provider, ProviderResponse, StopReason, Tool};
+use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_openai::types::{
     ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
     ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
@@ -20,10 +20,7 @@ impl OpenAIProvider {
         let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(config);
 
-        Self {
-            client,
-            model,
-        }
+        Self { client, model }
     }
 
     #[must_use]
@@ -76,27 +73,27 @@ impl OpenAIProvider {
         }
     }
 
-    fn convert_tools_to_openai(
-        &self,
-        done_tool_schema: Option<serde_json::Value>,
-    ) -> Result<Vec<ChatCompletionTool>, String> {
+    fn convert_tools_to_openai(&self, tools: &[ToolDefinition]) -> Result<Vec<ChatCompletionTool>, String> {
         let mut openai_tools: Vec<ChatCompletionTool> = Vec::new();
 
-        if let Some(schema) = done_tool_schema {
-            let done_function = FunctionObjectArgs::default()
-                .name("done")
-                .description("Call this tool when you have completed the task.")
-                .parameters(schema)
-                .build()
-                .map_err(|error| format!("Failed to build done function object: {error}"))?;
+        for tool in tools {
+            let parameters = serde_json::to_value(&tool.parameters_schema)
+                .map_err(|error| format!("Failed to serialize schema for '{}': {error}", tool.name))?;
 
-            let done_tool = ChatCompletionToolArgs::default()
+            let function = FunctionObjectArgs::default()
+                .name(&tool.name)
+                .description(&tool.description)
+                .parameters(parameters)
+                .build()
+                .map_err(|error| format!("Failed to build function object for '{}': {error}", tool.name))?;
+
+            let openai_tool = ChatCompletionToolArgs::default()
                 .r#type(ChatCompletionToolType::Function)
-                .function(done_function)
+                .function(function)
                 .build()
-                .map_err(|error| format!("Failed to build done tool: {error}"))?;
+                .map_err(|error| format!("Failed to build tool '{}': {error}", tool.name))?;
 
-            openai_tools.push(done_tool);
+            openai_tools.push(openai_tool);
         }
 
         Ok(openai_tools)
@@ -116,7 +113,7 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-    async fn generate(&self, context: &Context) -> Result<ProviderResponse, String> {
+    async fn generate(&self, context: &Context, tools: &[ToolDefinition]) -> Result<ProviderResponse, String> {
         let messages: Result<Vec<ChatCompletionRequestMessage>, String> = context
             .messages
             .iter()
@@ -128,9 +125,9 @@ impl Provider for OpenAIProvider {
         let mut request_builder = CreateChatCompletionRequestArgs::default();
         request_builder.model(&self.model).messages(messages);
 
-        if context.done_tool_schema.is_some() {
-            let tools = self.convert_tools_to_openai(context.done_tool_schema.clone())?;
-            request_builder.tools(tools);
+        if !tools.is_empty() {
+            let openai_tools = self.convert_tools_to_openai(tools)?;
+            request_builder.tools(openai_tools);
         }
 
         let request = request_builder

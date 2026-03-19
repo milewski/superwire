@@ -1,8 +1,17 @@
 use crate::context::Context;
 use crate::error::ValidationError;
 use crate::message::ToolCall;
+use crate::tool::RuntimeTool;
+use schemars::Schema;
+use std::sync::Arc;
 
-pub use crate::tool::Tool;
+/// Provider-facing tool definition
+#[derive(Debug, Clone)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters_schema: Schema,
+}
 
 /// Reason why the provider stopped generating
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +41,7 @@ pub struct ProviderResponse {
 /// Trait for LLM providers that can generate responses
 #[async_trait::async_trait]
 pub trait Provider {
-    async fn generate(&self, context: &Context) -> Result<ProviderResponse, String>;
+    async fn generate(&self, context: &Context, tools: &[ToolDefinition]) -> Result<ProviderResponse, String>;
 }
 
 /// Trait for operations that can be executed by the agent
@@ -46,6 +55,7 @@ pub trait Executable {
         &self,
         context: &Context,
         provider: &Self::Provider,
+        tools: &[Arc<dyn RuntimeTool>],
     ) -> Result<Self::Output, String>;
 }
 

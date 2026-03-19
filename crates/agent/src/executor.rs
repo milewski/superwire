@@ -1,10 +1,10 @@
 use crate::context::Context;
 use crate::message::ToolResult;
 use crate::tool::ToolError;
-use crate::traits::{Executable, Provider, ProviderResponse, StopReason};
+use crate::tool::{DoneTool, RuntimeTool};
+use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
-use schemars::schema_for;
-use serde_json::json;
+use std::sync::Arc;
 
 /// Executor that loops until a "done" tool is called with valid output
 pub struct LoopExecutor<P, O>
@@ -13,7 +13,8 @@ where
     O: Send + Sync + 'static,
 {
     max_iterations: usize,
-    phantom: std::marker::PhantomData<(P, O)>,
+    done_tool: DoneTool<O>,
+    phantom: std::marker::PhantomData<P>,
 }
 
 impl<P, O> LoopExecutor<P, O>
@@ -21,17 +22,30 @@ where
     P: Provider + Send + Sync,
     O: Send + Sync + serde::Serialize + serde::de::DeserializeOwned + schemars::JsonSchema + 'static,
 {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self, ToolError> {
+        Ok(Self {
             max_iterations: 5,
+            done_tool: DoneTool::new()?,
             phantom: std::marker::PhantomData,
-        }
+        })
     }
 
     #[must_use]
     pub fn with_max_iterations(mut self, max_iterations: usize) -> Self {
         self.max_iterations = max_iterations;
         self
+    }
+
+    fn build_tools(&self, tools: &[Arc<dyn RuntimeTool>]) -> Result<Vec<ToolDefinition>, String> {
+        let mut tool_definitions = Vec::with_capacity(tools.len() + 1);
+
+        for tool in tools {
+            tool_definitions.push(tool.definition().map_err(|error| error.to_string())?);
+        }
+
+        tool_definitions.push(self.done_tool.as_definition());
+
+        Ok(tool_definitions)
     }
 
     async fn try_process_done_tool(
@@ -50,9 +64,8 @@ where
 
         match input_result {
             Ok(input) => {
-                let value = serde_json::to_value(&input).map_err(|error| {
-                    format!("Failed to serialize done tool output: {error}")
-                })?;
+                let value = serde_json::to_value(&input)
+                    .map_err(|error| format!("Failed to serialize done tool output: {error}"))?;
 
                 context.add_tool_result(ToolResult {
                     tool_call_id: tool_call.id.clone(),
@@ -95,11 +108,10 @@ where
         &self,
         context: &Context,
         provider: &Self::Provider,
+        tools: &[Arc<dyn RuntimeTool>],
     ) -> Result<Self::Output, String> {
         let mut local_context = context.clone();
-
-        let root_schema = schema_for!(O);
-        local_context.done_tool_schema = Some(serde_json::to_value(&root_schema).unwrap_or_else(|_| json!({})));
+        let tool_definitions = self.build_tools(tools)?;
 
         let mut iteration = 0;
 
@@ -112,7 +124,7 @@ where
             }
 
             let response = provider
-                .generate(&local_context)
+                .generate(&local_context, &tool_definitions)
                 .await
                 .map_err(|error| format!("Provider error at iteration {iteration}: {error}"))?;
 
@@ -140,8 +152,44 @@ where
                 return Ok(result);
             }
 
+            for tool_call in &response.tool_calls {
+                if tool_call.name == "done" {
+                    continue;
+                }
+
+                let Some(tool) = tools.iter().find(|tool| {
+                    tool.definition()
+                        .map(|definition| definition.name == tool_call.name)
+                        .unwrap_or(false)
+                }) else {
+                    let error_message = format!("Unknown tool '{}'", tool_call.name);
+
+                    local_context.add_tool_result(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        content: serde_json::Value::String(error_message),
+                        is_error: true,
+                    });
+
+                    continue;
+                };
+
+                let (is_error, tool_call_id, content) = match tool.execute_json(tool_call.arguments.clone()).await {
+                    Ok(result) => (false, tool_call.id.clone(), result),
+                    Err(error) => (
+                        true,
+                        tool_call.id.clone(),
+                        serde_json::Value::String(error.to_agent_message()),
+                    ),
+                };
+
+                local_context.add_tool_result(ToolResult {
+                    tool_call_id,
+                    content,
+                    is_error,
+                });
+            }
+
             iteration += 1;
         }
     }
 }
-

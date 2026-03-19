@@ -1,6 +1,8 @@
 use super::error::ToolError;
 use super::traits::Tool;
+use crate::traits::ToolDefinition;
 use async_trait::async_trait;
+use schemars::Schema;
 use serde::Serialize;
 use std::marker::PhantomData;
 
@@ -8,16 +10,29 @@ pub struct DoneTool<O>
 where
     O: Send + Sync,
 {
+    parameters_schema: Schema,
     phantom: PhantomData<O>,
 }
 
 impl<O> DoneTool<O>
 where
-    O: Send + Sync,
+    O: Send + Sync + Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self, ToolError> {
+        let parameters_schema = schemars::schema_for!(O);
+
+        Ok(Self {
+            parameters_schema,
             phantom: PhantomData,
+        })
+    }
+
+    #[must_use]
+    pub fn as_definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters_schema: self.parameters_schema.clone(),
         }
     }
 }
@@ -28,6 +43,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
+            parameters_schema: self.parameters_schema.clone(),
             phantom: PhantomData,
         }
     }

@@ -7,4 +7,4 @@ mod traits;
 
 pub use done::DoneTool;
 pub use error::ToolError;
-pub use traits::Tool;
+pub use traits::{RuntimeTool, Tool};

@@ -1,6 +1,8 @@
 use crate::context::Context;
 use crate::error::AgentError;
+use crate::tool::RuntimeTool;
 use crate::traits::{Executable, Provider};
+use std::sync::Arc;
 
 /// Configuration for the agent
 #[derive(Default)]
@@ -21,6 +23,32 @@ impl AgentConfig {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct ToolRegistry {
+    tools: Vec<Arc<dyn RuntimeTool>>,
+}
+
+impl ToolRegistry {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn register<T>(mut self) -> Self
+    where
+        T: RuntimeTool + Default + 'static,
+    {
+        self.tools.push(Arc::new(T::default()));
+        self
+    }
+
+    #[must_use]
+    pub fn tools(&self) -> &[Arc<dyn RuntimeTool>] {
+        &self.tools
+    }
+}
+
 /// The main agent that executes once without retry logic
 pub struct Agent<E, P>
 where
@@ -29,6 +57,7 @@ where
 {
     executor: E,
     provider: P,
+    tools: Vec<Arc<dyn RuntimeTool>>,
     config: AgentConfig,
 }
 
@@ -41,12 +70,14 @@ where
         Self {
             executor,
             provider,
+            tools: Vec::new(),
             config: AgentConfig { max_tokens: None },
         }
     }
 
     #[must_use]
-    pub fn with_tools(self) -> Self {
+    pub fn with_tools(mut self, tool_registry: ToolRegistry) -> Self {
+        self.tools = tool_registry.tools().to_vec();
         self
     }
 
@@ -73,7 +104,7 @@ where
         }
 
         self.executor
-            .execute(&context, &self.provider)
+            .execute(&context, &self.provider, &self.tools)
             .await
             .map_err(|message| AgentError::ExecutionFailed { message })
     }

@@ -1,6 +1,6 @@
 use crate::context::Context;
 use crate::message::{Message, MessageRole, ToolCall};
-use crate::traits::{Provider, ProviderResponse, StopReason};
+use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
 use ollama_rs::generation::chat::request::ChatMessageRequest;
 use ollama_rs::generation::chat::ChatMessage;
@@ -15,10 +15,7 @@ impl OllamaProvider {
     pub fn new(host: String, port: u16, model: String) -> Self {
         let client = Ollama::new(host, port);
 
-        Self {
-            client,
-            model,
-        }
+        Self { client, model }
     }
 
     fn convert_message_to_ollama(&self, message: &Message) -> Result<ChatMessage, String> {
@@ -33,7 +30,7 @@ impl OllamaProvider {
 
 #[async_trait]
 impl Provider for OllamaProvider {
-    async fn generate(&self, context: &Context) -> Result<ProviderResponse, String> {
+    async fn generate(&self, context: &Context, _tools: &[ToolDefinition]) -> Result<ProviderResponse, String> {
         let messages: Result<Vec<ChatMessage>, String> = context
             .messages
             .iter()
