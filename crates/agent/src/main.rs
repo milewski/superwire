@@ -82,7 +82,6 @@ impl Tool for RandomNumberTool {
 
 #[tokio::main]
 async fn main() -> Result<(), AgentError> {
-    
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -93,18 +92,18 @@ async fn main() -> Result<(), AgentError> {
 
     println!("Testing with OpenAI-compatible endpoint...");
 
-    let executor = LoopExecutor::<OpenAIProvider, TaskOutput>::new()
-        .map_err(|error| AgentError::ExecutionFailed {
-            message: error.to_string(),
-        })?
-        .with_max_iterations(10);
-
-    let provider = OpenAIProvider::new("".to_string(), "qwen/qwen3.5-35b-a3b".to_string())
+    let provider = OpenAIProvider::new("".to_string(), "qwen3.5-9b".to_string())
         .with_base_url("http://169.254.83.107:1234/v1".to_string(), "".to_string());
 
     let tool_registry = ToolRegistry::new()
         .register::<QuoteTool>()
         .register::<RandomNumberTool>();
+
+    let executor = LoopExecutor::<OpenAIProvider, TaskOutput>::new()
+        .map_err(|error| AgentError::ExecutionFailed {
+            message: error.to_string(),
+        })?
+        .with_max_iterations(10);
 
     let agent = Agent::new(executor, provider)
         .with_tools(tool_registry)
@@ -113,10 +112,7 @@ async fn main() -> Result<(), AgentError> {
     println!("Running agent...");
 
     let result = agent
-        .run(
-            "Give me a random quote and a random number between 1 and 10."
-                .to_string(),
-        )
+        .run("Give me a random quote and a random number between 1 and 10.".to_string())
         .await?;
 
     println!("\n=== RESULT ===");

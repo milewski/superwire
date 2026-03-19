@@ -52,7 +52,7 @@ where
         &self,
         context: &mut Context,
         response: &ProviderResponse,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<O>, String> {
         let is_done_only = response.tool_calls.len() == 1 && response.tool_calls[0].name == "done";
 
         if !is_done_only {
@@ -63,18 +63,17 @@ where
         let input_result: Result<O, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
-            Ok(input) => {
-                let value = serde_json::to_value(&input)
+            Ok(output) => {
+                let value = serde_json::to_value(&output)
                     .map_err(|error| format!("Failed to serialize done tool output: {error}"))?;
 
                 context.add_tool_result(ToolResult {
                     tool_call_id: tool_call.id.clone(),
-                    content: value.clone(),
+                    content: value,
                     is_error: false,
                 });
 
-                let content = serde_json::to_string(&value).unwrap_or_else(|_| value.to_string());
-                Ok(Some(content))
+                Ok(Some(output))
             }
             Err(error) => {
                 let tool_error = ToolError::new(format!("Failed to deserialize done tool arguments: {error}"))
@@ -101,7 +100,7 @@ where
     O: Send + Sync + serde::Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
     type Prompt = String;
-    type Output = String;
+    type Output = O;
     type Provider = P;
 
     async fn execute(
