@@ -9,15 +9,13 @@ use async_openai::types::{
 use async_openai::Client;
 use async_trait::async_trait;
 use serde_json::json;
-use std::sync::Arc;
 
-pub struct OpenAIProvider<T: Tool> {
+pub struct OpenAIProvider {
     client: Client<async_openai::config::OpenAIConfig>,
     model: String,
-    phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Tool> OpenAIProvider<T> {
+impl OpenAIProvider {
     pub fn new(api_key: String, model: String) -> Self {
         let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(config);
@@ -25,7 +23,6 @@ impl<T: Tool> OpenAIProvider<T> {
         Self {
             client,
             model,
-            phantom: std::marker::PhantomData,
         }
     }
 
@@ -38,7 +35,6 @@ impl<T: Tool> OpenAIProvider<T> {
         Self {
             client,
             model: self.model,
-            phantom: std::marker::PhantomData,
         }
     }
 
@@ -80,28 +76,30 @@ impl<T: Tool> OpenAIProvider<T> {
         }
     }
 
-    fn convert_tools_to_openai(&self, tools: &[Arc<T>]) -> Result<Vec<ChatCompletionTool>, String> {
-        tools
-            .iter()
-            .map(|tool| {
-                let function = FunctionObjectArgs::default()
-                    .name(tool.name())
-                    .description(tool.description())
-                    .parameters(json!({
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }))
-                    .build()
-                    .map_err(|error| format!("Failed to build function object: {error}"))?;
+    fn convert_tools_to_openai(
+        &self,
+        done_tool_schema: Option<serde_json::Value>,
+    ) -> Result<Vec<ChatCompletionTool>, String> {
+        let mut openai_tools: Vec<ChatCompletionTool> = Vec::new();
 
-                ChatCompletionToolArgs::default()
-                    .r#type(ChatCompletionToolType::Function)
-                    .function(function)
-                    .build()
-                    .map_err(|error| format!("Failed to build tool: {error}"))
-            })
-            .collect()
+        if let Some(schema) = done_tool_schema {
+            let done_function = FunctionObjectArgs::default()
+                .name("done")
+                .description("Call this tool when you have completed the task.")
+                .parameters(schema)
+                .build()
+                .map_err(|error| format!("Failed to build done function object: {error}"))?;
+
+            let done_tool = ChatCompletionToolArgs::default()
+                .r#type(ChatCompletionToolType::Function)
+                .function(done_function)
+                .build()
+                .map_err(|error| format!("Failed to build done tool: {error}"))?;
+
+            openai_tools.push(done_tool);
+        }
+
+        Ok(openai_tools)
     }
 
     fn convert_stop_reason(finish_reason: Option<async_openai::types::FinishReason>) -> StopReason {
@@ -117,11 +115,8 @@ impl<T: Tool> OpenAIProvider<T> {
 }
 
 #[async_trait]
-impl<T: Tool + Send + Sync> Provider for OpenAIProvider<T> {
-    type Input = String;
-    type Tool = T;
-
-    async fn generate(&self, context: &Context<Self::Input, Self::Tool>) -> Result<ProviderResponse, String> {
+impl Provider for OpenAIProvider {
+    async fn generate(&self, context: &Context) -> Result<ProviderResponse, String> {
         let messages: Result<Vec<ChatCompletionRequestMessage>, String> = context
             .messages
             .iter()
@@ -133,8 +128,8 @@ impl<T: Tool + Send + Sync> Provider for OpenAIProvider<T> {
         let mut request_builder = CreateChatCompletionRequestArgs::default();
         request_builder.model(&self.model).messages(messages);
 
-        if !context.tools.is_empty() {
-            let tools = self.convert_tools_to_openai(&context.tools)?;
+        if context.done_tool_schema.is_some() {
+            let tools = self.convert_tools_to_openai(context.done_tool_schema.clone())?;
             request_builder.tools(tools);
         }
 

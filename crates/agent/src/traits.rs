@@ -32,10 +32,7 @@ pub struct ProviderResponse {
 /// Trait for LLM providers that can generate responses
 #[async_trait::async_trait]
 pub trait Provider {
-    type Input;
-    type Tool: Tool;
-
-    async fn generate(&self, context: &Context<Self::Input, Self::Tool>) -> Result<ProviderResponse, String>;
+    async fn generate(&self, context: &Context) -> Result<ProviderResponse, String>;
 }
 
 /// Trait for operations that can be executed by the agent
@@ -43,12 +40,11 @@ pub trait Provider {
 pub trait Executable {
     type Prompt;
     type Output;
-    type Provider: Provider<Tool = Self::Tool>;
-    type Tool: Tool;
+    type Provider: Provider;
 
     async fn execute(
         &self,
-        context: &Context<Self::Prompt, Self::Tool>,
+        context: &Context,
         provider: &Self::Provider,
     ) -> Result<Self::Output, String>;
 }
