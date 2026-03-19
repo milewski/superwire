@@ -60,7 +60,7 @@ impl Message {
     #[must_use]
     pub fn tool_call(tool_call: ToolCall) -> Self {
         Self {
-            role: MessageRole::Tool,
+            role: MessageRole::Assistant,
             content: String::new(),
             tool_call: Some(tool_call),
             tool_result: None,

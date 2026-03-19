@@ -2,9 +2,10 @@ use crate::context::Context;
 use crate::message::{Message, MessageRole, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_openai::types::{
-    ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-    ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
-    ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionObjectArgs,
+    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+    ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs,
+    ChatCompletionTool, ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
+    FunctionObjectArgs,
 };
 use async_openai::Client;
 use async_trait::async_trait;
@@ -45,8 +46,23 @@ impl OpenAIProvider {
                 Ok(ChatCompletionRequestMessage::User(user_message))
             }
             MessageRole::Assistant => {
-                let assistant_message = ChatCompletionRequestAssistantMessageArgs::default()
-                    .content(message.content.clone())
+                let mut assistant_message_builder = ChatCompletionRequestAssistantMessageArgs::default();
+                assistant_message_builder.content(message.content.clone());
+
+                if let Some(tool_call) = &message.tool_call {
+                    let openai_tool_call = ChatCompletionMessageToolCall {
+                        id: tool_call.id.clone(),
+                        r#type: ChatCompletionToolType::Function,
+                        function: FunctionCall {
+                            name: tool_call.name.clone(),
+                            arguments: tool_call.arguments.to_string(),
+                        },
+                    };
+
+                    assistant_message_builder.tool_calls(vec![openai_tool_call]);
+                }
+
+                let assistant_message = assistant_message_builder
                     .build()
                     .map_err(|error| format!("Failed to build assistant message: {error}"))?;
                 Ok(ChatCompletionRequestMessage::Assistant(assistant_message))
