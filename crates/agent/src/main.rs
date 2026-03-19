@@ -92,17 +92,15 @@ async fn main() -> Result<(), AgentError> {
 
     println!("Testing with OpenAI-compatible endpoint...");
 
-    let provider = OpenAIProvider::new("".to_string(), "qwen3.5-9b".to_string())
-        .with_base_url("http://169.254.83.107:1234/v1".to_string(), "".to_string());
+    let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen3.5-9b");
 
     let registry = ToolRegistry::new()
         .register::<QuoteTool>()
         .register::<RandomNumberTool>();
 
-    let executor = LoopExecutor::<OpenAIProvider, TaskOutput>::new()?.with_max_iterations(10);
-
     println!("Running agent...");
 
+    let executor = LoopExecutor::<OpenAIProvider, TaskOutput>::new()?;
     let result = Agent::new(executor, provider)
         .with_tools(registry)
         .with_config(AgentConfig::new().with_max_tokens(10000))

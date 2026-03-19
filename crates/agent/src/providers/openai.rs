@@ -17,23 +17,34 @@ pub struct OpenAIProvider {
 }
 
 impl OpenAIProvider {
-    pub fn new(api_key: String, model: String) -> Self {
-        let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key);
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+        let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key.into());
         let client = Client::with_config(config);
 
-        Self { client, model }
-    }
-
-    #[must_use]
-    pub fn with_base_url(self, base_url: String, api_key: String) -> Self {
-        let config = async_openai::config::OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base(base_url);
-        let client = Client::with_config(config);
         Self {
             client,
-            model: self.model,
+            model: model.into(),
         }
+    }
+
+    pub fn new_with_base_url(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
+        let config = async_openai::config::OpenAIConfig::new()
+            .with_api_key(api_key.into())
+            .with_api_base(base_url.into());
+        let client = Client::with_config(config);
+
+        Self {
+            client,
+            model: model.into(),
+        }
+    }
+
+    pub fn new_local(base_url: impl Into<String>, model: impl Into<String>) -> Self {
+        Self::new_with_base_url(base_url, String::new(), model)
     }
 
     fn convert_message_to_openai(&self, message: &Message) -> Result<ChatCompletionRequestMessage, String> {
