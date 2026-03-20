@@ -38,6 +38,7 @@ where
 impl<E, P> Agent<E, P>
 where
     E: Executable<Provider = P>,
+    E::Error: Into<AgentError>,
     P: Provider,
 {
     pub fn new(executor: E, provider: P) -> Self {
@@ -61,10 +62,7 @@ where
         self
     }
 
-    pub async fn run(&self, prompt: impl Into<String>) -> Result<E::Output, AgentError>
-    where
-        E::Error: Into<AgentError>,
-    {
+    pub async fn run(&self, prompt: impl Into<String>) -> Result<E::Output, AgentError> {
         let mut context = Context::new();
         context.add_user_message(prompt);
 
@@ -80,6 +78,6 @@ where
         self.executor
             .execute(&context, &self.provider, &self.tools)
             .await
-            .map_err(Into::into)
+            .map_err(|error| error.into())
     }
 }

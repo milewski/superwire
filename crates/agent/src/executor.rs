@@ -130,7 +130,7 @@ where
                 .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
 
             if let Some(text) = &response.text {
-                local_context.add_assistant_message(text.clone());
+                local_context.add_assistant_message(text);
             }
 
             if response.tool_calls.is_empty() {
