@@ -1,5 +1,4 @@
 use crate::context::Context;
-use crate::error::ValidationError;
 use crate::message::ToolCall;
 use crate::tool::RuntimeTool;
 use schemars::Schema;
@@ -58,12 +57,4 @@ pub trait Executable {
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
     ) -> Result<Self::Output, Self::Error>;
-}
-
-/// Trait for validating output against a schema
-#[async_trait::async_trait]
-pub trait Validator {
-    type Output;
-
-    async fn validate(&self, output: &Self::Output) -> Result<(), ValidationError>;
 }
