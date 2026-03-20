@@ -1,9 +1,9 @@
-use std::fmt::{Debug, Display};
 use crate::context::Context;
 use crate::error::ValidationError;
 use crate::message::ToolCall;
 use crate::tool::RuntimeTool;
 use schemars::Schema;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 /// Provider-facing tool definition
@@ -49,7 +49,7 @@ pub trait Provider {
 #[async_trait::async_trait]
 pub trait Executable {
     type Output;
-    type Error: Debug + Display + Send + 'static;
+    type Error;
     type Provider: Provider;
 
     async fn execute(
