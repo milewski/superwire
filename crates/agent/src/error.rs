@@ -43,6 +43,54 @@ pub enum AgentError {
     ExecutionFailed { message: String },
 }
 
+/// Executor error with structured details
+#[derive(Debug, Clone)]
+pub struct ExecutorError {
+    pub error: String,
+    pub details: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl ExecutorError {
+    #[must_use]
+    pub fn new(error: impl Into<String>) -> Self {
+        Self {
+            error: error.into(),
+            details: std::collections::HashMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_detail(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
+        self.details.insert(key.into(), value);
+        self
+    }
+}
+
+impl std::fmt::Display for ExecutorError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.error)
+    }
+}
+
+impl std::error::Error for ExecutorError {}
+
+impl From<crate::tool::ToolError> for ExecutorError {
+    fn from(error: crate::tool::ToolError) -> Self {
+        Self {
+            error: error.error,
+            details: error.context,
+        }
+    }
+}
+
+impl From<ExecutorError> for AgentError {
+    fn from(error: ExecutorError) -> Self {
+        Self::ExecutionFailed {
+            message: error.to_string(),
+        }
+    }
+}
+
 impl From<crate::tool::ToolError> for AgentError {
     fn from(error: crate::tool::ToolError) -> Self {
         Self::ExecutionFailed {

@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display};
 use crate::context::Context;
 use crate::error::ValidationError;
 use crate::message::ToolCall;
@@ -48,6 +49,7 @@ pub trait Provider {
 #[async_trait::async_trait]
 pub trait Executable {
     type Output;
+    type Error: Debug + Display + Send + 'static;
     type Provider: Provider;
 
     async fn execute(
@@ -55,7 +57,7 @@ pub trait Executable {
         context: &Context,
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
-    ) -> Result<Self::Output, String>;
+    ) -> Result<Self::Output, Self::Error>;
 }
 
 /// Trait for validating output against a schema

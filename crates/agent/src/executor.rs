@@ -1,4 +1,5 @@
 use crate::context::Context;
+use crate::error::ExecutorError;
 use crate::message::ToolResult;
 use crate::tool::ToolError;
 use crate::tool::{DoneArguments, DoneTool, RuntimeTool};
@@ -36,11 +37,11 @@ where
         self
     }
 
-    fn build_tools(&self, tools: &[Arc<dyn RuntimeTool>]) -> Result<Vec<ToolDefinition>, String> {
+    fn build_tools(&self, tools: &[Arc<dyn RuntimeTool>]) -> Result<Vec<ToolDefinition>, ExecutorError> {
         let mut tool_definitions = Vec::with_capacity(tools.len() + 1);
 
         for tool in tools {
-            tool_definitions.push(tool.definition().map_err(|error| error.to_string())?);
+            tool_definitions.push(tool.definition()?);
         }
 
         tool_definitions.push(self.done_tool.as_definition());
@@ -52,7 +53,7 @@ where
         &self,
         context: &mut Context,
         response: &ProviderResponse,
-    ) -> Result<Option<O>, String> {
+    ) -> Result<Option<O>, ExecutorError> {
         let is_done_only = response.tool_calls.len() == 1 && response.tool_calls[0].name == "done";
 
         if !is_done_only {
@@ -66,7 +67,7 @@ where
             Ok(done_arguments) => {
                 let output = done_arguments.output;
                 let value = serde_json::to_value(&output)
-                    .map_err(|error| format!("Failed to serialize done tool output: {error}"))?;
+                    .map_err(|error| ExecutorError::new(format!("Failed to serialize done tool output: {error}")))?;
 
                 context.add_tool_result(ToolResult {
                     tool_call_id: tool_call.id.clone(),
@@ -101,6 +102,7 @@ where
     O: Send + Sync + serde::Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
     type Output = O;
+    type Error = ExecutorError;
     type Provider = P;
 
     async fn execute(
@@ -108,7 +110,7 @@ where
         context: &Context,
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
-    ) -> Result<Self::Output, String> {
+    ) -> Result<Self::Output, ExecutorError> {
         let mut local_context = context.clone();
         let tool_definitions = self.build_tools(tools)?;
 
@@ -116,16 +118,16 @@ where
 
         loop {
             if iteration >= self.max_iterations {
-                return Err(format!(
+                return Err(ExecutorError::new(format!(
                     "Maximum iterations ({}) reached without calling done tool",
                     self.max_iterations
-                ));
+                )));
             }
 
             let response = provider
                 .generate(&local_context, &tool_definitions)
                 .await
-                .map_err(|error| format!("Provider error at iteration {iteration}: {error}"))?;
+                .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
 
             if let Some(text) = &response.text {
                 local_context.add_assistant_message(text.clone());

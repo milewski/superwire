@@ -1,6 +1,5 @@
 use crate::error::ValidationError;
 use crate::message::{Message, MessageRole, ToolCall, ToolResult};
-use async_openai::types::ServiceTier::Default;
 
 /// Context object that carries state throughout the agent execution
 #[derive(Clone, Default)]

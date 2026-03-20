@@ -87,7 +87,10 @@ where
         self
     }
 
-    pub async fn run(&self, prompt: impl Into<String>) -> Result<E::Output, AgentError> {
+    pub async fn run(&self, prompt: impl Into<String>) -> Result<E::Output, AgentError>
+    where
+        E::Error: Into<AgentError>,
+    {
         let mut context = Context::new();
         context.add_user_message(prompt);
 
@@ -103,6 +106,6 @@ where
         self.executor
             .execute(&context, &self.provider, &self.tools)
             .await
-            .map_err(|message| AgentError::ExecutionFailed { message })
+            .map_err(Into::into)
     }
 }
