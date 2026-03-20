@@ -7,7 +7,7 @@ pub mod providers;
 pub mod tool;
 mod traits;
 
-pub use agent::{Agent, AgentConfig, ToolRegistry};
+pub use agent::{Agent, AgentConfig};
 pub use context::Context;
 pub use error::{AgentError, ValidationError};
 pub use executor::LoopExecutor;

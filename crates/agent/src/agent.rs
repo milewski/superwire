@@ -23,32 +23,6 @@ impl AgentConfig {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct ToolRegistry {
-    tools: Vec<Arc<dyn RuntimeTool>>,
-}
-
-impl ToolRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
-    pub fn register<T>(mut self) -> Self
-    where
-        T: RuntimeTool + Default + 'static,
-    {
-        self.tools.push(Arc::new(T::default()));
-        self
-    }
-
-    #[must_use]
-    pub fn tools(&self) -> &[Arc<dyn RuntimeTool>] {
-        &self.tools
-    }
-}
-
 /// The main agent that executes once without retry logic
 pub struct Agent<E, P>
 where
