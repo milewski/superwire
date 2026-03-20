@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use crate::tool::ToolError;
 use crate::traits::ToolDefinition;
 use serde_json::Value;
@@ -18,7 +19,7 @@ pub trait Tool: Clone + Send + Sync {
 }
 
 #[async_trait::async_trait]
-pub trait RuntimeTool: Send + Sync {
+pub trait RuntimeTool: Send + Sync + Debug {
     fn definition(&self) -> Result<ToolDefinition, ToolError>;
 
     async fn execute(&self, input: Value) -> Result<Value, ToolError>;
@@ -27,7 +28,7 @@ pub trait RuntimeTool: Send + Sync {
 #[async_trait::async_trait]
 impl<T> RuntimeTool for T
 where
-    T: Tool + Send + Sync,
+    T: Tool + Send + Sync + Debug,
 {
     fn definition(&self) -> Result<ToolDefinition, ToolError> {
         Ok(ToolDefinition {

@@ -7,6 +7,7 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
@@ -18,8 +19,7 @@ where
     O: Send + Sync + 'static,
 {
     max_iterations: usize,
-    done_tool: DoneTool<O>,
-    phantom: std::marker::PhantomData<P>,
+    phantom: PhantomData<(P, O)>,
 }
 
 impl<P, O> LoopExecutor<P, O>
@@ -30,8 +30,7 @@ where
     pub fn new() -> Result<Self, ToolError> {
         Ok(Self {
             max_iterations: 5,
-            done_tool: DoneTool::new()?,
-            phantom: std::marker::PhantomData,
+            phantom: PhantomData,
         })
     }
 
@@ -42,7 +41,6 @@ where
     }
 
     fn prepare_tools<'a>(
-        &self,
         tools: &'a [Arc<dyn RuntimeTool>],
     ) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
         let mut definitions = Vec::with_capacity(tools.len() + 1);
@@ -54,13 +52,13 @@ where
             definitions.push(definition);
         }
 
-        definitions.push(self.done_tool.as_definition());
+        // Inject done tool
+        definitions.push(DoneTool::<O>::new()?.as_definition());
 
         Ok((definitions, registry))
     }
 
     async fn try_process_done_tool(
-        &self,
         context: &mut Context,
         response: &ProviderResponse,
     ) -> Result<Option<O>, ExecutorError> {
@@ -123,7 +121,7 @@ where
         tools: &[Arc<dyn RuntimeTool>],
     ) -> Result<Self::Output, ExecutorError> {
         let mut local_context = context.clone();
-        let (tool_definitions, registry) = self.prepare_tools(tools)?;
+        let (tool_definitions, registry) = Self::prepare_tools(tools)?;
 
         let mut iteration = 0;
 
@@ -167,27 +165,27 @@ where
             }
 
             // If the only tool call is done and its arguments are valid, return the result
-            if let Some(result) = self.try_process_done_tool(&mut local_context, &response).await? {
+            if let Some(result) = Self::try_process_done_tool(&mut local_context, &response).await? {
                 return Ok(result);
             }
 
             // Execute every non-done tool call and record its result in the context
-            for tool in &response.tool_calls {
-                if tool.name == "done" {
+            for tool_call in &response.tool_calls {
+                if tool_call.name == "done" {
                     continue;
                 }
 
-                let runtime = registry
-                    .get(&tool.name)
+                let tool = registry
+                    .get(&tool_call.name)
                     .expect("tool registry should contain every non-done tool");
 
-                let (is_error, content) = match runtime.execute(tool.arguments.clone()).await {
+                let (is_error, content) = match tool.execute(tool_call.arguments.clone()).await {
                     Ok(response) => (false, response),
                     Err(error) => (true, error.to_agent_message().into()),
                 };
 
                 local_context.add_tool_result(ToolResult {
-                    tool_call_id: tool.id.clone(),
+                    tool_call_id: tool_call.id.clone(),
                     content,
                     is_error,
                 });

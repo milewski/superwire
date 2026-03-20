@@ -8,7 +8,7 @@ struct QuoteToolInput {
     topic: Option<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 struct QuoteTool;
 
 #[async_trait]
@@ -46,7 +46,7 @@ struct RandomNumberToolInput {
     maximum: Option<i64>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 struct RandomNumberTool;
 
 #[async_trait]
