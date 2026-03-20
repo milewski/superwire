@@ -76,8 +76,9 @@ where
     }
 
     #[must_use]
-    pub fn with_tools(mut self, tool_registry: ToolRegistry) -> Self {
-        self.tools = tool_registry.tools().to_vec();
+    pub fn with_tool<T: RuntimeTool + Default + 'static>(mut self) -> Self
+    {
+        self.tools.push(Arc::new(T::default()));
         self
     }
 

@@ -25,9 +25,9 @@ impl Tool for QuoteTool {
 
     async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {
         let quotes = [
-            "The only way to do great work is to love what you do.",
-            "Success is the sum of small efforts, repeated day in and day out.",
-            "Simplicity is the ultimate sophistication.",
+            "The winter is coming.",
+            "The best of nobody-knows+.",
+            "Android > iPhone.",
         ];
         let random_index = rand::thread_rng().gen_range(0..quotes.len());
         let selected_quote = quotes[random_index];
@@ -92,17 +92,14 @@ async fn main() -> Result<(), AgentError> {
 
     println!("Testing with OpenAI-compatible endpoint...");
 
-    let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen3.5-9b");
-
-    let registry = ToolRegistry::new()
-        .register::<QuoteTool>()
-        .register::<RandomNumberTool>();
+    let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen/qwen3.5-35b-a3b");
 
     println!("Running agent...");
 
     let executor = LoopExecutor::<OpenAIProvider, TaskOutput>::new()?;
     let result = Agent::new(executor, provider)
-        .with_tools(registry)
+        .with_tool::<QuoteTool>()
+        .with_tool::<RandomNumberTool>()
         .with_config(AgentConfig::new().with_max_tokens(10000))
         .run("Give me a random quote and a random number between 1 and 10.".to_string())
         .await?;
