@@ -9,7 +9,7 @@ pub enum MessageRole {
 }
 
 /// Tool call information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -17,7 +17,7 @@ pub struct ToolCall {
 }
 
 /// Tool result information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToolResult {
     pub tool_call_id: String,
     pub content: serde_json::Value,
@@ -25,7 +25,7 @@ pub struct ToolResult {
 }
 
 /// A message in the conversation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub role: MessageRole,
     pub content: String,

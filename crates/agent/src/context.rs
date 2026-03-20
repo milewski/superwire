@@ -65,4 +65,16 @@ impl Context {
     pub fn get_messages_by_role(&self, role: MessageRole) -> Vec<&Message> {
         self.messages.iter().filter(|m| m.role == role).collect()
     }
+
+    /// Detects if the agent is stuck by checking if the last `window` messages are all identical
+    pub fn is_stuck(&self, window: usize) -> bool {
+        if self.messages.len() < window {
+            return false;
+        }
+
+        let start = self.messages.len() - window;
+        let recent = &self.messages[start..];
+
+        recent.iter().all(|message| message == &recent[0])
+    }
 }

@@ -59,6 +59,7 @@ where
     }
 
     async fn try_process_done_tool(
+        &self,
         context: &mut Context,
         response: &ProviderResponse,
     ) -> Result<Option<O>, ExecutorError> {
@@ -145,6 +146,11 @@ where
                 local_context.add_assistant_message(text);
             }
 
+            // Break if the agent is stuck in a loop
+            if local_context.is_stuck(5) {
+                break Err(ExecutorError::new("Agent is stuck in a repeated loop"))?;
+            }
+
             // If the provider did not request any tool calls
             if response.tool_calls.is_empty() {
                 // Prompt the model to use the done tool if it tried to end the conversation
@@ -165,8 +171,8 @@ where
             }
 
             // If the only tool call is done and its arguments are valid, return the result
-            if let Some(result) = Self::try_process_done_tool(&mut local_context, &response).await? {
-                return Ok(result);
+            if let Some(result) = self.try_process_done_tool(&mut local_context, &response).await? {
+                break Ok(result);
             }
 
             // Execute every non-done tool call and record its result in the context
@@ -177,7 +183,7 @@ where
 
                 let tool = registry
                     .get(&tool_call.name)
-                    .expect("tool registry should contain every non-done tool");
+                    .expect("tool registry should contain every tool");
 
                 let (is_error, content) = match tool.execute(tool_call.arguments.clone()).await {
                     Ok(response) => (false, response),

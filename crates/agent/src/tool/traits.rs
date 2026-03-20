@@ -1,7 +1,7 @@
-use std::fmt::Debug;
 use crate::tool::ToolError;
 use crate::traits::ToolDefinition;
 use serde_json::Value;
+use std::fmt::Debug;
 
 /// Trait for tools that can be used by the agent
 #[async_trait::async_trait]
