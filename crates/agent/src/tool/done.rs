@@ -3,8 +3,14 @@ use super::traits::Tool;
 use crate::traits::ToolDefinition;
 use async_trait::async_trait;
 use schemars::Schema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
+use schemars::_private::NoSerialize;
+
+#[derive(Deserialize, Serialize, schemars::JsonSchema)]
+pub struct DoneArguments<O> {
+    pub(crate) output: O,
+}
 
 pub struct DoneTool<O>
 where
@@ -19,7 +25,7 @@ where
     O: Send + Sync + Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
     pub fn new() -> Result<Self, ToolError> {
-        let parameters_schema = schemars::schema_for!(O);
+        let parameters_schema = schemars::schema_for!(DoneArguments<O>);
 
         Ok(Self {
             parameters_schema,
@@ -54,7 +60,7 @@ impl<O> Tool for DoneTool<O>
 where
     O: Send + Sync + serde::de::DeserializeOwned + Serialize + schemars::JsonSchema,
 {
-    type Input = O;
+    type Input = DoneArguments<O>;
 
     fn name(&self) -> &'static str {
         "done"
@@ -65,8 +71,8 @@ where
     }
 
     async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {
-        serde_json::to_value(&input).map_err(|error| {
-            ToolError::new(format!("Failed to serialize output: {error}"))
+        input.output.maybe_to_value().ok_or_else(|| {
+            ToolError::new("Failed to serialize output".to_string())
                 .with_suggestion("Ensure the output type implements Serialize correctly".to_string())
         })
     }

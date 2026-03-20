@@ -5,6 +5,7 @@ mod macros;
 mod macros_test;
 mod traits;
 
+pub use done::DoneArguments;
 pub use done::DoneTool;
 pub use error::ToolError;
 pub use traits::{RuntimeTool, Tool};

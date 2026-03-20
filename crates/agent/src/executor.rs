@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::message::ToolResult;
 use crate::tool::ToolError;
-use crate::tool::{DoneTool, RuntimeTool};
+use crate::tool::{DoneArguments, DoneTool, RuntimeTool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -60,10 +60,11 @@ where
         }
 
         let tool_call = &response.tool_calls[0];
-        let input_result: Result<O, _> = serde_json::from_value(tool_call.arguments.clone());
+        let input_result: Result<DoneArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
-            Ok(output) => {
+            Ok(done_arguments) => {
+                let output = done_arguments.output;
                 let value = serde_json::to_value(&output)
                     .map_err(|error| format!("Failed to serialize done tool output: {error}"))?;
 
