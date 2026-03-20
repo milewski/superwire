@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
-use schemars::_private::NoSerialize;
 
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
 pub struct DoneArguments<O> {
@@ -71,9 +70,9 @@ where
     }
 
     async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {
-        input.output.maybe_to_value().ok_or_else(|| {
-            ToolError::new("Failed to serialize output".to_string())
-                .with_suggestion("Ensure the output type implements Serialize correctly".to_string())
+        serde_json::to_value(&input.output).map_err(|error| {
+            ToolError::new(format!("Failed to serialize output: {error}"))
+                .with_suggestion("Ensure the output type implements Serialize correctly")
         })
     }
 }

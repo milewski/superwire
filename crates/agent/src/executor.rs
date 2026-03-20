@@ -78,8 +78,8 @@ where
             }
             Err(error) => {
                 let tool_error = ToolError::new(format!("Failed to deserialize done tool arguments: {error}"))
-                    .with_suggestion("Check that the arguments match the expected schema".to_string())
-                    .with_context("error".to_string(), serde_json::Value::String(error.to_string()));
+                    .with_suggestion("Check that the arguments match the expected schema")
+                    .with_context("error", serde_json::Value::String(error.to_string()));
 
                 context.add_tool_result(ToolResult {
                     tool_call_id: tool_call.id.clone(),

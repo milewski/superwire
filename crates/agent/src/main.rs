@@ -66,7 +66,7 @@ impl Tool for RandomNumberTool {
         let maximum = input.maximum.unwrap_or(100);
 
         if minimum > maximum {
-            return Err(ToolError::new("minimum cannot be greater than maximum".to_string()));
+            return Err(ToolError::new("minimum cannot be greater than maximum"));
         }
 
         let generated_number = rand::thread_rng().gen_range(minimum..=maximum);

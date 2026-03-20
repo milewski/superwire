@@ -11,23 +11,23 @@ pub struct ToolError {
 
 impl ToolError {
     #[must_use]
-    pub fn new(error: String) -> Self {
+    pub fn new(error: impl Into<String>) -> Self {
         Self {
-            error,
+            error: error.into(),
             suggestions: Vec::new(),
             context: std::collections::HashMap::new(),
         }
     }
 
     #[must_use]
-    pub fn with_suggestion(mut self, suggestion: String) -> Self {
-        self.suggestions.push(suggestion);
+    pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
+        self.suggestions.push(suggestion.into());
         self
     }
 
     #[must_use]
-    pub fn with_context(mut self, key: String, value: serde_json::Value) -> Self {
-        self.context.insert(key, value);
+    pub fn with_context(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
+        self.context.insert(key.into(), value);
         self
     }
 
@@ -84,11 +84,11 @@ mod tests {
 
     #[test]
     fn test_tool_error_creation() {
-        let error = ToolError::new("Invalid input".to_string())
-            .with_suggestion("Check the parameter format".to_string())
-            .with_suggestion("Ensure all required fields are present".to_string())
-            .with_context("expected_format".to_string(), json!("YYYY-MM-DD"))
-            .with_context("received".to_string(), json!("2024-13-45"));
+        let error = ToolError::new("Invalid input")
+            .with_suggestion("Check the parameter format")
+            .with_suggestion("Ensure all required fields are present")
+            .with_context("expected_format", json!("YYYY-MM-DD"))
+            .with_context("received", json!("2024-13-45"));
 
         assert_eq!(error.error, "Invalid input");
         assert_eq!(error.suggestions.len(), 2);
@@ -97,9 +97,9 @@ mod tests {
 
     #[test]
     fn test_tool_error_to_agent_message() {
-        let error = ToolError::new("File not found".to_string())
-            .with_suggestion("Check if the file path is correct".to_string())
-            .with_context("path".to_string(), json!("/tmp/missing.txt"));
+        let error = ToolError::new("File not found")
+            .with_suggestion("Check if the file path is correct")
+            .with_context("path", json!("/tmp/missing.txt"));
 
         let message = error.to_agent_message();
         assert!(message.contains("Error: File not found"));

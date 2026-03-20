@@ -42,7 +42,7 @@ where
                 "Failed to deserialize tool input for '{}': {error}",
                 self.name()
             ))
-            .with_suggestion("Check that the arguments match the expected schema".to_string())
+            .with_suggestion("Check that the arguments match the expected schema")
         })?;
 
         self.execute(parsed_input).await
