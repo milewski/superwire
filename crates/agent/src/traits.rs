@@ -47,7 +47,6 @@ pub trait Provider {
 /// Trait for operations that can be executed by the agent
 #[async_trait::async_trait]
 pub trait Executable {
-    type Prompt;
     type Output;
     type Provider: Provider;
 

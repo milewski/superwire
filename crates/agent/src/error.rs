@@ -7,16 +7,16 @@ pub struct ValidationError {
 
 impl ValidationError {
     #[must_use]
-    pub fn new(message: String) -> Self {
+    pub fn new(message: impl Into<String>) -> Self {
         Self {
-            message,
+            message: message.into(),
             details: std::collections::HashMap::new(),
         }
     }
 
     #[must_use]
-    pub fn with_detail(mut self, key: String, value: serde_json::Value) -> Self {
-        self.details.insert(key, value);
+    pub fn with_detail(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
+        self.details.insert(key.into(), value);
         self
     }
 
@@ -59,9 +59,9 @@ mod tests {
 
     #[test]
     fn test_validation_error_creation() {
-        let error = ValidationError::new("Test error".to_string())
-            .with_detail("field".to_string(), json!("value"))
-            .with_detail("code".to_string(), json!(42));
+        let error = ValidationError::new("Test error")
+            .with_detail("field", json!("value"))
+            .with_detail("code", json!(42));
 
         assert_eq!(error.message, "Test error");
         assert_eq!(error.get_detail("field"), Some(&json!("value")));
@@ -71,13 +71,13 @@ mod tests {
 
     #[test]
     fn test_validation_error_display() {
-        let error = ValidationError::new("Display test".to_string());
+        let error = ValidationError::new("Display test");
         assert_eq!(format!("{}", error), "Display test");
     }
 
     #[test]
     fn test_tool_error_converts_to_execution_failed_agent_error() {
-        let agent_error: AgentError = ToolError::new("Tool failed".to_string()).into();
+        let agent_error: AgentError = ToolError::new("Tool failed").into();
 
         match agent_error {
             AgentError::ExecutionFailed { message } => assert_eq!(message, "Tool failed"),

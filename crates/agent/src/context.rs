@@ -1,10 +1,10 @@
 use crate::error::ValidationError;
 use crate::message::{Message, MessageRole, ToolCall, ToolResult};
+use async_openai::types::ServiceTier::Default;
 
 /// Context object that carries state throughout the agent execution
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Context {
-    pub prompt: String,
     pub messages: Vec<Message>,
     pub attempt: usize,
     pub total_tokens: usize,
@@ -13,22 +13,15 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(prompt: String) -> Self {
-        Self {
-            prompt,
-            messages: Vec::new(),
-            attempt: 0,
-            total_tokens: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);
     }
 
-    pub fn add_user_message(&mut self, content: String) {
+    pub fn add_user_message(&mut self, content: impl Into<String>) {
         self.add_message(Message::user(content));
     }
 
@@ -40,11 +33,11 @@ impl Context {
         self.add_message(Message::tool_result(result));
     }
 
-    pub fn add_assistant_message(&mut self, content: String) {
+    pub fn add_assistant_message(&mut self, content: impl Into<String>) {
         self.add_message(Message::assistant(content));
     }
 
-    pub fn add_system_message(&mut self, content: String) {
+    pub fn add_system_message(&mut self, content: impl Into<String>) {
         self.add_message(Message::system(content));
     }
 

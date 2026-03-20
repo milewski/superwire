@@ -36,10 +36,10 @@ pub struct Message {
 
 impl Message {
     #[must_use]
-    pub fn user(content: String) -> Self {
+    pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::User,
-            content,
+            content: content.into(),
             tool_call: None,
             tool_result: None,
             metadata: std::collections::HashMap::new(),
@@ -47,10 +47,10 @@ impl Message {
     }
 
     #[must_use]
-    pub fn assistant(content: String) -> Self {
+    pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::Assistant,
-            content,
+            content: content.into(),
             tool_call: None,
             tool_result: None,
             metadata: std::collections::HashMap::new(),
@@ -82,10 +82,10 @@ impl Message {
     }
 
     #[must_use]
-    pub fn system(content: String) -> Self {
+    pub fn system(content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::System,
-            content,
+            content: content.into(),
             tool_call: None,
             tool_result: None,
             metadata: std::collections::HashMap::new(),
@@ -93,8 +93,8 @@ impl Message {
     }
 
     #[must_use]
-    pub fn with_metadata(mut self, key: String, value: serde_json::Value) -> Self {
-        self.metadata.insert(key, value);
+    pub fn with_metadata(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
+        self.metadata.insert(key.into(), value);
         self
     }
 }
@@ -106,13 +106,13 @@ mod tests {
 
     #[test]
     fn test_message_constructors() {
-        let user_msg = Message::user("Hello".to_string());
+        let user_msg = Message::user("Hello");
         assert!(matches!(user_msg.role, MessageRole::User));
         assert_eq!(user_msg.content, "Hello");
         assert!(user_msg.tool_call.is_none());
         assert!(user_msg.tool_result.is_none());
 
-        let assistant_msg = Message::assistant("Hi there".to_string());
+        let assistant_msg = Message::assistant("Hi there");
         assert!(matches!(assistant_msg.role, MessageRole::Assistant));
         assert_eq!(assistant_msg.content, "Hi there");
 
@@ -136,16 +136,16 @@ mod tests {
         assert!(result_msg.tool_result.is_some());
         assert!(result_msg.content.contains("Result data"));
 
-        let system_msg = Message::system("System notice".to_string());
+        let system_msg = Message::system("System notice");
         assert!(matches!(system_msg.role, MessageRole::System));
         assert_eq!(system_msg.content, "System notice");
     }
 
     #[test]
     fn test_message_with_metadata() {
-        let message = Message::user("Test".to_string())
-            .with_metadata("key1".to_string(), json!("value1"))
-            .with_metadata("key2".to_string(), json!(123));
+        let message = Message::user("Test")
+            .with_metadata("key1", json!("value1"))
+            .with_metadata("key2", json!(123));
 
         assert_eq!(message.metadata.get("key1"), Some(&json!("value1")));
         assert_eq!(message.metadata.get("key2"), Some(&json!(123)));

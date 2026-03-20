@@ -100,7 +100,6 @@ where
     P: Provider + Send + Sync,
     O: Send + Sync + serde::Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
-    type Prompt = String;
     type Output = O;
     type Provider = P;
 
@@ -135,7 +134,7 @@ where
             if response.tool_calls.is_empty() {
                 if response.stop_reason == StopReason::EndOfSequence {
                     local_context.add_system_message(
-                        "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool.".to_string()
+                        "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool."
                     );
                 }
 

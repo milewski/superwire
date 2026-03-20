@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use engine_ai_agent::{Agent, AgentConfig, AgentError, LoopExecutor, OpenAIProvider, Tool, ToolError, ToolRegistry};
+use engine_ai_agent::{Agent, AgentConfig, AgentError, LoopExecutor, OpenAIProvider, Tool, ToolError};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -101,10 +101,10 @@ async fn main() -> Result<(), AgentError> {
         .with_tool::<QuoteTool>()
         .with_tool::<RandomNumberTool>()
         .with_config(AgentConfig::new().with_max_tokens(10000))
-        .run("Give me a random quote and a random number between 1 and 10.".to_string())
+        .run("Give me a random quote and a random number between 1 and 10.")
         .await?;
 
-    println!("\n=== RESULT ===");
+    println!("---------");
     println!("{:#?}", result);
 
     Ok(())

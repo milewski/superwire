@@ -12,10 +12,13 @@ pub struct OllamaProvider {
 }
 
 impl OllamaProvider {
-    pub fn new(host: String, port: u16, model: String) -> Self {
-        let client = Ollama::new(host, port);
+    pub fn new(host: impl Into<String>, port: u16, model: impl Into<String>) -> Self {
+        let client = Ollama::new(host.into(), port);
 
-        Self { client, model }
+        Self {
+            client,
+            model: model.into(),
+        }
     }
 
     fn convert_message_to_ollama(&self, message: &Message) -> Result<ChatMessage, String> {

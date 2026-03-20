@@ -76,8 +76,7 @@ where
     }
 
     #[must_use]
-    pub fn with_tool<T: RuntimeTool + Default + 'static>(mut self) -> Self
-    {
+    pub fn with_tool<T: RuntimeTool + Default + 'static>(mut self) -> Self {
         self.tools.push(Arc::new(T::default()));
         self
     }
@@ -88,12 +87,9 @@ where
         self
     }
 
-    pub async fn run(&self, prompt: E::Prompt) -> Result<E::Output, AgentError>
-    where
-        E::Prompt: Clone + ToString,
-    {
-        let mut context = Context::new(prompt.to_string());
-        context.add_user_message(prompt.to_string());
+    pub async fn run(&self, prompt: impl Into<String>) -> Result<E::Output, AgentError> {
+        let mut context = Context::new();
+        context.add_user_message(prompt);
 
         if let Some(max_tokens) = self.config.max_tokens {
             if context.total_tokens >= max_tokens {
