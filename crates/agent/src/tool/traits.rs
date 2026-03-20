@@ -1,5 +1,6 @@
 use crate::tool::ToolError;
 use crate::traits::ToolDefinition;
+use serde_json::Value;
 
 /// Trait for tools that can be used by the agent
 #[async_trait::async_trait]
@@ -13,14 +14,14 @@ pub trait Tool: Clone + Send + Sync {
         schemars::schema_for!(Self::Input)
     }
 
-    async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError>;
+    async fn execute(&self, input: Self::Input) -> Result<Value, ToolError>;
 }
 
 #[async_trait::async_trait]
 pub trait RuntimeTool: Send + Sync {
     fn definition(&self) -> Result<ToolDefinition, ToolError>;
 
-    async fn execute_json(&self, input: serde_json::Value) -> Result<serde_json::Value, ToolError>;
+    async fn execute(&self, input: Value) -> Result<Value, ToolError>;
 }
 
 #[async_trait::async_trait]
@@ -36,8 +37,8 @@ where
         })
     }
 
-    async fn execute_json(&self, input: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-        let parsed_input = serde_json::from_value(input).map_err(|error| {
+    async fn execute(&self, input: Value) -> Result<Value, ToolError> {
+        let input = serde_json::from_value(input).map_err(|error| {
             ToolError::new(format!(
                 "Failed to deserialize tool input for '{}': {error}",
                 self.name()
@@ -45,6 +46,6 @@ where
             .with_suggestion("Check that the arguments match the expected schema")
         })?;
 
-        self.execute(parsed_input).await
+        self.execute(input).await
     }
 }

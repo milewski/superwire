@@ -5,7 +5,11 @@ use crate::tool::ToolError;
 use crate::tool::{DoneArguments, DoneTool, RuntimeTool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
 
 /// Executor that loops until a "done" tool is called with valid output
 pub struct LoopExecutor<P, O>
@@ -37,16 +41,22 @@ where
         self
     }
 
-    fn build_tools(&self, tools: &[Arc<dyn RuntimeTool>]) -> Result<Vec<ToolDefinition>, ExecutorError> {
-        let mut tool_definitions = Vec::with_capacity(tools.len() + 1);
+    fn prepare_tools<'a>(
+        &self,
+        tools: &'a [Arc<dyn RuntimeTool>],
+    ) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
+        let mut definitions = Vec::with_capacity(tools.len() + 1);
+        let mut registry = HashMap::with_capacity(tools.len());
 
         for tool in tools {
-            tool_definitions.push(tool.definition()?);
+            let definition = tool.definition()?;
+            registry.insert(definition.name.clone(), tool);
+            definitions.push(definition);
         }
 
-        tool_definitions.push(self.done_tool.as_definition());
+        definitions.push(self.done_tool.as_definition());
 
-        Ok(tool_definitions)
+        Ok((definitions, registry))
     }
 
     async fn try_process_done_tool(
@@ -80,13 +90,14 @@ where
             Err(error) => {
                 let tool_error = ToolError::new(format!("Failed to deserialize done tool arguments: {error}"))
                     .with_suggestion("Check that the arguments match the expected schema")
-                    .with_context("error", serde_json::Value::String(error.to_string()));
+                    .with_context("error", Value::String(error.to_string()));
 
                 context.add_tool_result(ToolResult {
                     tool_call_id: tool_call.id.clone(),
-                    content: serde_json::Value::String(tool_error.to_agent_message()),
+                    content: Value::String(tool_error.to_agent_message()),
                     is_error: true,
                 });
+
                 context.increment_attempt();
 
                 Ok(None)
@@ -112,11 +123,12 @@ where
         tools: &[Arc<dyn RuntimeTool>],
     ) -> Result<Self::Output, ExecutorError> {
         let mut local_context = context.clone();
-        let tool_definitions = self.build_tools(tools)?;
+        let (tool_definitions, registry) = self.prepare_tools(tools)?;
 
         let mut iteration = 0;
 
         loop {
+            // Fail fast if the agent exceeded its allowed iterations
             if iteration >= self.max_iterations {
                 return Err(ExecutorError::new(format!(
                     "Maximum iterations ({}) reached without calling done tool",
@@ -124,16 +136,20 @@ where
                 )));
             }
 
+            // Ask the provider to generate a response given the current context and tools
             let response = provider
                 .generate(&local_context, &tool_definitions)
                 .await
                 .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
 
+            // If the provider returned plain text, append it as an assistant message
             if let Some(text) = &response.text {
                 local_context.add_assistant_message(text);
             }
 
+            // If the provider did not request any tool calls
             if response.tool_calls.is_empty() {
+                // Prompt the model to use the done tool if it tried to end the conversation
                 if response.stop_reason == StopReason::EndOfSequence {
                     local_context.add_system_message(
                         "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool."
@@ -145,52 +161,37 @@ where
                 continue;
             }
 
+            // Record every tool call in the context so the conversation history is complete
             for tool_call in &response.tool_calls {
                 local_context.add_tool_call(tool_call.clone());
             }
 
+            // If the only tool call is done and its arguments are valid, return the result
             if let Some(result) = self.try_process_done_tool(&mut local_context, &response).await? {
                 return Ok(result);
             }
 
-            for tool_call in &response.tool_calls {
-                if tool_call.name == "done" {
+            // Execute every non-done tool call and record its result in the context
+            for tool in &response.tool_calls {
+                if tool.name == "done" {
                     continue;
                 }
 
-                let Some(tool) = tools.iter().find(|tool| {
-                    tool.definition()
-                        .map(|definition| definition.name == tool_call.name)
-                        .unwrap_or(false)
-                }) else {
-                    let error_message = format!("Unknown tool '{}'", tool_call.name);
+                let runtime = registry
+                    .get(&tool.name)
+                    .expect("tool registry should contain every non-done tool");
 
-                    local_context.add_tool_result(ToolResult {
-                        tool_call_id: tool_call.id.clone(),
-                        content: serde_json::Value::String(error_message),
-                        is_error: true,
-                    });
-
-                    continue;
-                };
-
-                let (is_error, tool_call_id, content) = match tool.execute_json(tool_call.arguments.clone()).await {
-                    Ok(result) => (false, tool_call.id.clone(), result),
-                    Err(error) => (
-                        true,
-                        tool_call.id.clone(),
-                        serde_json::Value::String(error.to_agent_message()),
-                    ),
+                let (is_error, content) = match runtime.execute(tool.arguments.clone()).await {
+                    Ok(response) => (false, response),
+                    Err(error) => (true, error.to_agent_message().into()),
                 };
 
                 local_context.add_tool_result(ToolResult {
-                    tool_call_id,
+                    tool_call_id: tool.id.clone(),
                     content,
                     is_error,
                 });
             }
-
-            iteration += 1;
         }
     }
 }
