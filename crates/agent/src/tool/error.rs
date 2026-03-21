@@ -39,17 +39,21 @@ impl ToolError {
     /// Format the error as a message suitable for the AI agent
     #[must_use]
     pub fn to_agent_message(&self) -> String {
-        let mut message = format!("Error: {}", self.error);
+        let mut message = format!("Error: ({})", self.error);
 
         if !self.suggestions.is_empty() {
-            message.push_str("\n\nSuggestions:");
+            message.push_str("\n\n");
+            message.push_str("Suggestions:");
+
             for suggestion in &self.suggestions {
                 message.push_str(&format!("\n- {}", suggestion));
             }
         }
 
         if !self.context.is_empty() {
-            message.push_str("\n\nContext:");
+            message.push_str("\n\n");
+            message.push_str("Context:");
+
             for (key, value) in &self.context {
                 message.push_str(&format!("\n- {}: {}", key, value));
             }

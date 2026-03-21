@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use thiserror::Error;
 
-
-
 /// Agent execution error
 #[derive(Debug, Clone, Error)]
 pub enum AgentError {

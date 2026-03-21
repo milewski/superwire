@@ -3,7 +3,7 @@ use crate::error::ExecutorError;
 use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
 use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
-use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::traits::{Executable, ExecutionResult, Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
@@ -97,19 +97,17 @@ where
                         message: error.to_string(),
                     })?;
 
-                    context.add_tool_result(ToolResult {
+                    context.add_tool_result(ToolResult::Success {
                         tool_call_id: tool_call.id.clone(),
                         content: value,
-                        is_error: false,
                     });
 
                     Ok(Some(output))
                 }
                 FinalizeOutput::Failure { reason } => {
-                    context.add_tool_result(ToolResult {
+                    context.add_tool_result(ToolResult::Failure {
                         tool_call_id: tool_call.id.clone(),
                         content: Value::String(format!("Agent failed to complete the task: {reason}")),
-                        is_error: true,
                     });
 
                     Err(ExecutorError::FinalizeFailure { reason })
@@ -120,10 +118,9 @@ where
                     .with_suggestion("Check that the arguments match the expected schema")
                     .with_context("error", Value::String(error.to_string()));
 
-                context.add_tool_result(ToolResult {
+                context.add_tool_result(ToolResult::Failure {
                     tool_call_id: tool_call.id.clone(),
                     content: Value::String(tool_error.to_agent_message()),
-                    is_error: true,
                 });
 
                 context.increment_attempt();
@@ -150,7 +147,7 @@ where
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
         config: &AgentConfig,
-    ) -> Result<Self::Output, ExecutorError> {
+    ) -> Result<ExecutionResult<Self::Output>, ExecutorError> {
         let mut local_context = context.clone();
         let (tools, registry) = self.prepare_tools(tools)?;
         let finalize_tool_name = self.finalize_tool.name().to_string();
@@ -186,11 +183,15 @@ where
             let response = provider
                 .generate(&local_context, &tools, config)
                 .await
-                .map_err(|error| ExecutorError::ProviderFailed { iteration, message: error })?;
+                .map_err(|message| ExecutorError::ProviderFailed { iteration, message })?;
 
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
-                local_context.add_assistant_message(text);
+                let trimmed = text.trim_matches(|char| char == '\n' || char == '\r' || char == '\t' || char == ' ');
+
+                if !trimmed.is_empty() {
+                    local_context.add_assistant_message(trimmed);
+                }
             }
 
             // Abort if the model repeats itself to avoid infinite loops
@@ -219,7 +220,10 @@ where
             match self.classify_tool_calls(&response) {
                 ToolCallExecution::Complete(finalize_tool_call) => {
                     if let Some(result) = self.process_finalize_tool_call(&mut local_context, finalize_tool_call).await? {
-                        break Ok(result);
+                        break Ok(ExecutionResult {
+                            output: result,
+                            context: local_context,
+                        });
                     }
                 }
                 ToolCallExecution::Continue(tool_calls_to_execute) => {
@@ -231,16 +235,18 @@ where
                     });
 
                     for (tool_call, tool_execution_result) in join_all(tool_execution_futures).await {
-                        let (is_error, content) = match tool_execution_result {
-                            Ok(response) => (false, response),
-                            Err(error) => (true, error.to_agent_message().into()),
+                        let tool_result = match tool_execution_result {
+                            Ok(response) => ToolResult::Success {
+                                tool_call_id: tool_call.id.clone(),
+                                content: response,
+                            },
+                            Err(error) => ToolResult::Failure {
+                                tool_call_id: tool_call.id.clone(),
+                                content: error.to_agent_message().into(),
+                            },
                         };
 
-                        local_context.add_tool_result(ToolResult {
-                            tool_call_id: tool_call.id.clone(),
-                            content,
-                            is_error,
-                        });
+                        local_context.add_tool_result(tool_result);
                     }
                 }
             }

@@ -10,10 +10,25 @@ pub struct ToolCall {
 
 /// Tool result information
 #[derive(Debug, Clone, PartialEq)]
-pub struct ToolResult {
-    pub tool_call_id: String,
-    pub content: Value,
-    pub is_error: bool,
+pub enum ToolResult {
+    Success { tool_call_id: String, content: Value },
+    Failure { tool_call_id: String, content: Value },
+}
+
+impl ToolResult {
+    #[must_use]
+    pub fn tool_call_id(&self) -> &str {
+        match self {
+            Self::Success { tool_call_id, content: _ } | Self::Failure { tool_call_id, content: _ } => tool_call_id,
+        }
+    }
+
+    #[must_use]
+    pub fn content(&self) -> &Value {
+        match self {
+            Self::Success { tool_call_id: _, content } | Self::Failure { tool_call_id: _, content } => content,
+        }
+    }
 }
 
 /// A message in the conversation

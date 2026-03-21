@@ -27,7 +27,7 @@ impl OllamaProvider {
             Message::User { content } => Ok(ChatMessage::user(content.clone())),
             Message::Assistant { content } => Ok(ChatMessage::assistant(content.clone())),
             Message::AssistantToolCall { tool: _ } => Ok(ChatMessage::assistant(String::new())),
-            Message::ToolResult { result } => Ok(ChatMessage::assistant(result.content.to_string())),
+            Message::ToolResult { result } => Ok(ChatMessage::assistant(result.content().to_string())),
             Message::System { content } => Ok(ChatMessage::system(content.clone())),
         }
     }

@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::error::AgentError;
+use crate::message::Message;
 use crate::tool::RuntimeTool;
 use crate::traits::{Executable, Provider};
 use std::sync::Arc;
@@ -28,6 +29,98 @@ impl AgentConfig {
         self.temperature = Some(temperature);
         self
     }
+}
+
+/// Aggregated execution statistics derived from context
+#[derive(Debug, Clone)]
+pub struct AgentRunStatistics {
+    pub attempts: usize,
+    pub total_messages: usize,
+    pub user_messages: usize,
+    pub assistant_messages: usize,
+    pub assistant_tool_call_messages: usize,
+    pub tool_result_messages: usize,
+    pub successful_tool_results: usize,
+    pub failed_tool_results: usize,
+    pub system_messages: usize,
+    pub total_tokens: usize,
+    pub input_tokens: usize,
+    pub output_tokens: usize,
+}
+
+impl AgentRunStatistics {
+    fn from_context(context: &Context) -> Self {
+        let mut user_messages = 0;
+        let mut assistant_messages = 0;
+        let mut assistant_tool_call_messages = 0;
+        let mut tool_result_messages = 0;
+        let mut successful_tool_results = 0;
+        let mut failed_tool_results = 0;
+        let mut system_messages = 0;
+
+        for message in &context.messages {
+            match message {
+                Message::User { content: _ } => {
+                    user_messages += 1;
+                }
+
+                Message::Assistant { content: _ } => {
+                    assistant_messages += 1;
+                }
+
+                Message::AssistantToolCall { tool: _ } => {
+                    assistant_tool_call_messages += 1;
+                }
+
+                Message::ToolResult { result } => {
+                    tool_result_messages += 1;
+
+                    match result {
+                        crate::message::ToolResult::Success {
+                            tool_call_id: _,
+                            content: _,
+                        } => {
+                            successful_tool_results += 1;
+                        }
+
+                        crate::message::ToolResult::Failure {
+                            tool_call_id: _,
+                            content: _,
+                        } => {
+                            failed_tool_results += 1;
+                        }
+                    }
+                }
+
+                Message::System { content: _ } => {
+                    system_messages += 1;
+                }
+            }
+        }
+
+        Self {
+            attempts: context.attempt,
+            total_messages: context.messages.len(),
+            user_messages,
+            assistant_messages,
+            assistant_tool_call_messages,
+            tool_result_messages,
+            successful_tool_results,
+            failed_tool_results,
+            system_messages,
+            total_tokens: context.total_tokens,
+            input_tokens: context.input_tokens,
+            output_tokens: context.output_tokens,
+        }
+    }
+}
+
+/// Result payload returned from agent execution
+#[derive(Debug, Clone)]
+pub struct AgentRunResult<TOutput> {
+    pub output: TOutput,
+    pub context: Context,
+    pub statistics: AgentRunStatistics,
 }
 
 /// The main agent that executes once without retry logic
@@ -72,7 +165,7 @@ where
         self
     }
 
-    pub async fn run(&self, prompt: impl Into<String>) -> Result<E::Output, AgentError> {
+    pub async fn run(&self, prompt: impl Into<String>) -> Result<AgentRunResult<E::Output>, AgentError> {
         let mut context = Context::new();
         context.add_user_message(prompt);
 
@@ -85,9 +178,18 @@ where
             }
         }
 
-        self.executor
+        let execution_result = self
+            .executor
             .execute(&context, &self.provider, &self.tools, &self.config)
             .await
-            .map_err(|error| error.into())
+            .map_err(|error| error.into())?;
+
+        let statistics = AgentRunStatistics::from_context(&execution_result.context);
+
+        Ok(AgentRunResult {
+            output: execution_result.output,
+            context: execution_result.context,
+            statistics,
+        })
     }
 }

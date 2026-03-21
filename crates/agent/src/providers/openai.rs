@@ -73,11 +73,11 @@ impl OpenAIProvider {
                 "content": content,
             })),
             Message::ToolResult { result: tool_result } => {
-                let content = serde_json::to_string(&tool_result.content).unwrap_or_else(|_| tool_result.content.to_string());
+                let content = serde_json::to_string(tool_result.content()).unwrap_or_else(|_| tool_result.content().to_string());
 
                 Ok(json!({
                     "role": "tool",
-                    "tool_call_id": tool_result.tool_call_id,
+                    "tool_call_id": tool_result.tool_call_id(),
                     "content": content,
                 }))
             }
@@ -146,11 +146,11 @@ impl OpenAIProvider {
                 }));
             }
             Message::ToolResult { result: tool_result } => {
-                let content = serde_json::to_string(&tool_result.content).unwrap_or_else(|_| tool_result.content.to_string());
+                let content = serde_json::to_string(tool_result.content()).unwrap_or_else(|_| tool_result.content().to_string());
 
                 response_items.push(json!({
                     "type": "function_call_output",
-                    "call_id": tool_result.tool_call_id,
+                    "call_id": tool_result.tool_call_id(),
                     "output": content,
                 }));
             }

@@ -1,7 +1,7 @@
 use crate::message::{Message, ToolCall, ToolResult};
 
 /// Context object that carries state throughout the agent execution
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Context {
     pub messages: Vec<Message>,
     pub attempt: usize,

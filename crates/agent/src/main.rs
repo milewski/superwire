@@ -30,11 +30,7 @@ impl Tool for QuoteTool {
 
         println!("{}", selected_quote);
 
-        Ok(serde_json::json!({
-            "tool": self.name(),
-            "topic": input.topic,
-            "quote": selected_quote,
-        }))
+        Ok(serde_json::json!(selected_quote))
     }
 }
 
@@ -72,7 +68,6 @@ impl Tool for RandomNumberTool {
         println!("{}", generated_number);
 
         Ok(serde_json::json!({
-            "tool": self.name(),
             "minimum": minimum,
             "maximum": maximum,
             "number": generated_number,
@@ -108,7 +103,7 @@ async fn main() -> Result<(), AgentError> {
     let result = Agent::new(executor, provider)
         .with_tool::<QuoteTool>()
         .with_tool::<RandomNumberTool>()
-        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(1.8))
+        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(0.0))
         .run("Please give me a random person name, a quote, and a random age between 20 and 30")
         .await?;
 
