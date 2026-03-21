@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::error::ExecutorError;
 use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
-use crate::tool::{DoneArguments, DoneTool, RuntimeTool};
+use crate::tool::{DoneArguments, DoneTool, RuntimeTool, Tool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -24,6 +24,7 @@ where
     O: Send + Sync + 'static,
 {
     max_iterations: usize,
+    done_tool: DoneTool<O>,
     phantom: PhantomData<(P, O)>,
 }
 
@@ -35,6 +36,7 @@ where
     pub fn new() -> Result<Self, ToolError> {
         Ok(Self {
             max_iterations: 5,
+            done_tool: DoneTool::<O>::new()?,
             phantom: PhantomData,
         })
     }
@@ -46,6 +48,7 @@ where
     }
 
     fn prepare_tools<'a>(
+        &self,
         tools: &'a [Arc<dyn RuntimeTool>],
     ) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
         let mut definitions = Vec::with_capacity(tools.len() + 1);
@@ -57,18 +60,18 @@ where
             definitions.push(definition);
         }
 
-        // Inject done tool
-        definitions.push(DoneTool::<O>::new()?.as_definition());
+        definitions.push(self.done_tool.as_definition());
 
         Ok((definitions, registry))
     }
 
-    fn classify_tool_calls(response: &ProviderResponse) -> ToolCallExecution<'_> {
+    fn classify_tool_calls<'a>(&self, response: &'a ProviderResponse) -> ToolCallExecution<'a> {
+        let done_name = self.done_tool.name();
         let mut done_tool_call = None;
         let mut non_done_tool_calls = Vec::new();
 
         for tool_call in &response.tool_calls {
-            if tool_call.name == DoneTool::<O>::NAME {
+            if tool_call.name == done_name {
                 done_tool_call = Some(tool_call);
                 continue;
             }
@@ -142,7 +145,7 @@ where
         tools: &[Arc<dyn RuntimeTool>],
     ) -> Result<Self::Output, ExecutorError> {
         let mut local_context = context.clone();
-        let (tool_definitions, registry) = Self::prepare_tools(tools)?;
+        let (tools, registry) = self.prepare_tools(tools)?;
 
         let mut iteration = 0;
 
@@ -157,7 +160,7 @@ where
 
             // Ask the provider to generate a response given the current context and tools
             let response = provider
-                .generate(&local_context, &tool_definitions)
+                .generate(&local_context, &tools)
                 .await
                 .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
 
@@ -190,7 +193,7 @@ where
                 local_context.add_tool_call(tool_call.clone());
             }
 
-            match Self::classify_tool_calls(&response) {
+            match self.classify_tool_calls(&response) {
                 ToolCallExecution::Complete(done_tool_call) => {
                     if let Some(result) = self.process_done_tool_call(&mut local_context, done_tool_call).await? {
                         break Ok(result);
