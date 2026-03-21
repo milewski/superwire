@@ -6,9 +6,16 @@ use schemars::Schema;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FinalizeOutput<O> {
+    Success { output: O },
+    Failure { reason: String },
+}
+
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
 pub struct FinalizeArguments<O> {
-    pub output: O,
+    pub output: FinalizeOutput<O>,
 }
 
 pub struct FinalizeTool<O>
@@ -60,7 +67,7 @@ where
     type Input = FinalizeArguments<O>;
 
     fn name(&self) -> &'static str {
-        "done"
+        "finalize"
     }
 
     fn description(&self) -> &'static str {

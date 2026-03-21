@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::error::ExecutorError;
 use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
-use crate::tool::{FinalizeArguments, FinalizeTool, RuntimeTool, Tool};
+use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -96,20 +96,32 @@ where
         let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
-            Ok(finalize_arguments) => {
-                let output = finalize_arguments.output;
-                let value = serde_json::to_value(&output).map_err(|error| {
-                    ExecutorError::new(format!("Failed to serialize finalize tool output: {error}"))
-                })?;
+            Ok(finalize_arguments) => match finalize_arguments.output {
+                FinalizeOutput::Success { output } => {
+                    let value = serde_json::to_value(&output).map_err(|error| {
+                        ExecutorError::new(format!("Failed to serialize finalize tool output: {error}"))
+                    })?;
 
-                context.add_tool_result(ToolResult {
-                    tool_call_id: tool_call.id.clone(),
-                    content: value,
-                    is_error: false,
-                });
+                    context.add_tool_result(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        content: value,
+                        is_error: false,
+                    });
 
-                Ok(Some(output))
-            }
+                    Ok(Some(output))
+                }
+                FinalizeOutput::Failure { reason } => {
+                    context.add_tool_result(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        content: Value::String(format!("Agent failed to complete the task: {reason}")),
+                        is_error: true,
+                    });
+
+                    Err(ExecutorError::new(format!(
+                        "Agent failed to complete the task: {reason}"
+                    )))
+                }
+            },
             Err(error) => {
                 let tool_error = ToolError::new(format!("Failed to deserialize finalize tool arguments: {error}"))
                     .with_suggestion("Check that the arguments match the expected schema")

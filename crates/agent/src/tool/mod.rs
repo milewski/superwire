@@ -7,5 +7,6 @@ mod traits;
 
 pub use error::ToolError;
 pub use finalize::FinalizeArguments;
+pub use finalize::FinalizeOutput;
 pub use finalize::FinalizeTool;
 pub use traits::{RuntimeTool, Tool};
