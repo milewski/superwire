@@ -5,6 +5,7 @@ use crate::tool::ToolError;
 use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
+use futures::future::join_all;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -216,12 +217,18 @@ where
                     }
                 }
                 ToolCallExecution::Continue(tool_calls_to_execute) => {
-                    for tool_call in tool_calls_to_execute {
+                    let tool_execution_futures = tool_calls_to_execute.into_iter().map(|tool_call| {
                         let tool = registry
                             .get(&tool_call.name)
                             .expect("tool registry should contain every tool");
 
-                        let (is_error, content) = match tool.execute(tool_call.arguments.clone()).await {
+                        async move {
+                            (tool_call, tool.execute(tool_call.arguments.clone()).await)
+                        }
+                    });
+
+                    for (tool_call, tool_execution_result) in join_all(tool_execution_futures).await {
+                        let (is_error, content) = match tool_execution_result {
                             Ok(response) => (false, response),
                             Err(error) => (true, error.to_agent_message().into()),
                         };
