@@ -24,11 +24,7 @@ impl Tool for QuoteTool {
     }
 
     async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {
-        let quotes = [
-            "The winter is coming.",
-            "The best of nobody-knows+.",
-            "Android > iPhone.",
-        ];
+        let quotes = ["The winter is coming.", "The best of nobody-knows+.", "Android > iPhone."];
         let random_index = rand::thread_rng().gen_range(0..quotes.len());
         let selected_quote = quotes[random_index];
 

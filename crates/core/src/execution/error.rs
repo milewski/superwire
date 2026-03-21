@@ -40,8 +40,5 @@ pub enum ExecutionError {
     },
 
     #[error("Context operation error: {message}")]
-    ContextError {
-        message: String,
-        suggestion: Option<String>,
-    },
+    ContextError { message: String, suggestion: Option<String> },
 }

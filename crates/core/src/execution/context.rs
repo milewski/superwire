@@ -82,8 +82,7 @@ impl RuntimeContext {
             Value::Boolean(boolean) => Ok(JsonValue::Bool(*boolean)),
             Value::Null => Ok(JsonValue::Null),
             Value::Array(values) => {
-                let resolved: Result<Vec<JsonValue>, ExecutionError> =
-                    values.iter().map(|v| self.resolve_value(v)).collect();
+                let resolved: Result<Vec<JsonValue>, ExecutionError> = values.iter().map(|v| self.resolve_value(v)).collect();
                 Ok(JsonValue::Array(resolved?))
             }
             Value::Object(map) => {
@@ -102,14 +101,11 @@ impl RuntimeContext {
     fn resolve_function_call(&self, function_call: &crate::ast::FunctionCall) -> Result<JsonValue, ExecutionError> {
         match function_call.name.as_str() {
             "file" => {
-                let path = function_call
-                    .arguments
-                    .get("path")
-                    .ok_or_else(|| ExecutionError::RuntimeError {
-                        agent: "function".to_string(),
-                        message: "file function requires 'path' argument".to_string(),
-                        suggestion: Some("Provide a file path as the first argument".to_string()),
-                    })?;
+                let path = function_call.arguments.get("path").ok_or_else(|| ExecutionError::RuntimeError {
+                    agent: "function".to_string(),
+                    message: "file function requires 'path' argument".to_string(),
+                    suggestion: Some("Provide a file path as the first argument".to_string()),
+                })?;
 
                 let path_str = if let Value::String(string) = path {
                     string.clone()
@@ -307,9 +303,7 @@ impl RuntimeContext {
         Err(ExecutionError::RuntimeError {
             agent: "parser".to_string(),
             message: format!("Invalid reference: {text}"),
-            suggestion: Some(
-                "Use format 'agent.name', 'agent.name.field', 'input.field', or 'schema.name'".to_string(),
-            ),
+            suggestion: Some("Use format 'agent.name', 'agent.name.field', 'input.field', or 'schema.name'".to_string()),
         })
     }
 }

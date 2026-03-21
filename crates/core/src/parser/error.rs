@@ -46,13 +46,7 @@ pub enum ParserError {
 }
 
 /// Base formatter for simple parser errors
-fn format_parser_error(
-    error_message: &str,
-    file_path: &str,
-    line: usize,
-    column: usize,
-    suggestion: Option<&String>,
-) -> String {
+fn format_parser_error(error_message: &str, file_path: &str, line: usize, column: usize, suggestion: Option<&String>) -> String {
     let mut result = format!("Error: {error_message}\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
@@ -92,29 +86,11 @@ fn format_syntax_error(
     result
 }
 
-fn format_undefined_reference(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    reference: &str,
-    suggestion: Option<&String>,
-) -> String {
-    format_parser_error(
-        &format!("undefined reference '{reference}'"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
+fn format_undefined_reference(file_path: &str, line: usize, column: usize, reference: &str, suggestion: Option<&String>) -> String {
+    format_parser_error(&format!("undefined reference '{reference}'"), file_path, line, column, suggestion)
 }
 
-fn format_template_variable_mismatch(
-    file_path: &str,
-    line: usize,
-    column: usize,
-    message: &str,
-    suggestion: Option<&String>,
-) -> String {
+fn format_template_variable_mismatch(file_path: &str, line: usize, column: usize, message: &str, suggestion: Option<&String>) -> String {
     format_parser_error(
         &format!("template variable mismatch: {message}"),
         file_path,
@@ -132,24 +108,12 @@ fn format_file_read_error(
     source: &std::io::Error,
     suggestion: Option<&String>,
 ) -> String {
-    format_parser_error(
-        &format!("file read error: {path} ({source})"),
-        file_path,
-        line,
-        column,
-        suggestion,
-    )
+    format_parser_error(&format!("file read error: {path} ({source})"), file_path, line, column, suggestion)
 }
 
 impl ParserError {
     #[must_use]
-    pub const fn syntax_error(
-        file_path: String,
-        line: usize,
-        column: usize,
-        message: String,
-        suggestion: Option<String>,
-    ) -> Self {
+    pub const fn syntax_error(file_path: String, line: usize, column: usize, message: String, suggestion: Option<String>) -> Self {
         Self::SyntaxError {
             file_path,
             line,
@@ -180,13 +144,7 @@ impl ParserError {
     }
 
     #[must_use]
-    pub const fn undefined_reference(
-        file_path: String,
-        line: usize,
-        column: usize,
-        reference: String,
-        suggestion: Option<String>,
-    ) -> Self {
+    pub const fn undefined_reference(file_path: String, line: usize, column: usize, reference: String, suggestion: Option<String>) -> Self {
         Self::UndefinedReference {
             file_path,
             line,

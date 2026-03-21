@@ -16,13 +16,13 @@ pub async fn execute_cached_workflow_from_content(
     let workflow_hash = hash_workflow_content(workflow_content);
 
     let builder = AstBuilder::new(workflow_path.to_string());
-    let workflow = builder.parse(workflow_content).map_err(|error| {
-        engine_ai_core::execution::error::ExecutionError::RuntimeError {
+    let workflow = builder
+        .parse(workflow_content)
+        .map_err(|error| engine_ai_core::execution::error::ExecutionError::RuntimeError {
             agent: "workflow".to_string(),
             message: format!("Failed to parse workflow: {error}"),
             suggestion: Some("Check workflow syntax".to_string()),
-        }
-    })?;
+        })?;
 
     let engine = ExecutionEngine::new();
     execute_with_cached_providers(&engine, &workflow, inputs, test_name, &workflow_hash).await

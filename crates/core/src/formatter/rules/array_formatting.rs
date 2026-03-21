@@ -161,8 +161,7 @@ mod tests {
         // Array with long content should break (make it longer to exceed 80 chars)
         let long_content_array = vec![
             Value::String(
-                "this is a very long string that definitely exceeds the eighty character threshold for breaking arrays"
-                    .to_string(),
+                "this is a very long string that definitely exceeds the eighty character threshold for breaking arrays".to_string(),
             ),
             Value::String("another very long string that also exceeds the threshold".to_string()),
         ];
@@ -171,10 +170,7 @@ mod tests {
 
     #[test]
     fn test_estimate_value_length() {
-        assert_eq!(
-            ArrayFormattingRule::estimate_value_length(&Value::String("hello".to_string())),
-            7
-        ); // 5 + 2 quotes
+        assert_eq!(ArrayFormattingRule::estimate_value_length(&Value::String("hello".to_string())), 7); // 5 + 2 quotes
         assert_eq!(ArrayFormattingRule::estimate_value_length(&Value::Boolean(true)), 4);
         assert_eq!(ArrayFormattingRule::estimate_value_length(&Value::Null), 4);
     }
@@ -188,10 +184,7 @@ mod tests {
                 name: "test".to_string(),
                 is_terminal: false,
                 properties: vec![AgentProperty::Tools {
-                    value: Value::Array(vec![
-                        Value::String("bash".to_string()),
-                        Value::String("grep".to_string()),
-                    ]),
+                    value: Value::Array(vec![Value::String("bash".to_string()), Value::String("grep".to_string())]),
                     span: Span::new(0, 0, 0, 0),
                 }],
                 span: Span::new(0, 0, 0, 0),

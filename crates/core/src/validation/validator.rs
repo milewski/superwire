@@ -40,23 +40,11 @@ impl WorkflowValidator {
     }
 
     fn check_duplicate_agent_names(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        Self::check_duplicates(
-            &workflow.agents,
-            |agent| &agent.name,
-            |agent| &agent.span,
-            "agent",
-            errors,
-        );
+        Self::check_duplicates(&workflow.agents, |agent| &agent.name, |agent| &agent.span, "agent", errors);
     }
 
     fn check_duplicate_schema_names(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        Self::check_duplicates(
-            &workflow.schemas,
-            |schema| &schema.name,
-            |schema| &schema.span,
-            "schema",
-            errors,
-        );
+        Self::check_duplicates(&workflow.schemas, |schema| &schema.name, |schema| &schema.span, "schema", errors);
     }
 
     fn check_duplicate_provider_names(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
@@ -99,18 +87,9 @@ impl WorkflowValidator {
 
     fn check_required_agent_properties(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
         for agent in &workflow.agents {
-            let has_model = agent
-                .properties
-                .iter()
-                .any(|p| matches!(p, AgentProperty::Model { .. }));
-            let has_prompt = agent
-                .properties
-                .iter()
-                .any(|p| matches!(p, AgentProperty::Prompt { .. }));
-            let _has_output = agent
-                .properties
-                .iter()
-                .any(|p| matches!(p, AgentProperty::Output { .. }));
+            let has_model = agent.properties.iter().any(|p| matches!(p, AgentProperty::Model { .. }));
+            let has_prompt = agent.properties.iter().any(|p| matches!(p, AgentProperty::Prompt { .. }));
+            let _has_output = agent.properties.iter().any(|p| matches!(p, AgentProperty::Output { .. }));
 
             if !has_model {
                 errors.push(ValidationError::MissingRequiredProperty {
@@ -145,12 +124,7 @@ impl WorkflowValidator {
         }
     }
 
-    fn check_agent_references(
-        agent: &Agent,
-        agent_names: &HashSet<&str>,
-        schema_names: &HashSet<&str>,
-        errors: &mut Vec<ValidationError>,
-    ) {
+    fn check_agent_references(agent: &Agent, agent_names: &HashSet<&str>, schema_names: &HashSet<&str>, errors: &mut Vec<ValidationError>) {
         for property in &agent.properties {
             match property {
                 AgentProperty::Model { value, span } => {
@@ -299,11 +273,7 @@ impl WorkflowValidator {
     }
 
     fn check_provider_model_references(workflow: &Workflow, errors: &mut Vec<ValidationError>) {
-        let provider_models: HashMap<&str, &Vec<String>> = workflow
-            .providers
-            .iter()
-            .map(|p| (p.name.as_str(), &p.models))
-            .collect();
+        let provider_models: HashMap<&str, &Vec<String>> = workflow.providers.iter().map(|p| (p.name.as_str(), &p.models)).collect();
 
         for agent in &workflow.agents {
             for property in &agent.properties {
@@ -339,9 +309,7 @@ impl WorkflowValidator {
                     if let AgentProperty::Output { value, .. } = prop {
                         match value {
                             crate::ast::SchemaReference::Inline(schema) => Some(AgentOutputType::InlineSchema(schema)),
-                            crate::ast::SchemaReference::InlineType { schema_type, .. } => {
-                                Some(AgentOutputType::InlineType(schema_type))
-                            }
+                            crate::ast::SchemaReference::InlineType { schema_type, .. } => Some(AgentOutputType::InlineType(schema_type)),
                             crate::ast::SchemaReference::Named(name) => Some(AgentOutputType::Named(name)),
                         }
                     } else {
@@ -356,31 +324,13 @@ impl WorkflowValidator {
             for property in &agent.properties {
                 match property {
                     AgentProperty::Prompt { value, span } => {
-                        Self::check_field_references_in_value(
-                            value,
-                            &agent_output_types,
-                            span.line,
-                            span.column,
-                            errors,
-                        );
+                        Self::check_field_references_in_value(value, &agent_output_types, span.line, span.column, errors);
                     }
                     AgentProperty::Context { value, span } => {
-                        Self::check_field_references_in_value(
-                            value,
-                            &agent_output_types,
-                            span.line,
-                            span.column,
-                            errors,
-                        );
+                        Self::check_field_references_in_value(value, &agent_output_types, span.line, span.column, errors);
                     }
                     AgentProperty::ForEach { collection, span, .. } => {
-                        Self::check_field_references_in_value(
-                            collection,
-                            &agent_output_types,
-                            span.line,
-                            span.column,
-                            errors,
-                        );
+                        Self::check_field_references_in_value(collection, &agent_output_types, span.line, span.column, errors);
                     }
                     _ => {}
                 }
@@ -423,12 +373,7 @@ impl WorkflowValidator {
                                         "Agent '{}' has an output schema, but field '{}' does not exist. Available fields: {}",
                                         agent,
                                         field,
-                                        schema
-                                            .fields
-                                            .iter()
-                                            .map(|f| f.name.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join(", ")
+                                        schema.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
                                     )),
                                 });
                             }
@@ -592,8 +537,7 @@ impl WorkflowValidator {
                 if func_call.name == "file" {
                     if let Some(Value::String(path)) = func_call.arguments.get("path") {
                         if let Ok(content) = std::fs::read_to_string(path) {
-                            let Ok(template_pattern) = regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
-                            else {
+                            let Ok(template_pattern) = regex::Regex::new(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}") else {
                                 return; // Skip template validation if regex compilation fails
                             };
 
@@ -616,9 +560,7 @@ impl WorkflowValidator {
                                         line: func_call.span.line,
                                         column: func_call.span.column,
                                         variable: template_var.clone(),
-                                        suggestion: Some(format!(
-                                            "Add binding for '{template_var}' in the file function call"
-                                        )),
+                                        suggestion: Some(format!("Add binding for '{template_var}' in the file function call")),
                                     });
                                 }
                             }
@@ -699,9 +641,7 @@ impl WorkflowValidator {
                     });
                 }
 
-                if let Some(Value::String(model_ref) | Value::Interpolated(model_ref)) =
-                    function_call.arguments.get("model")
-                {
+                if let Some(Value::String(model_ref) | Value::Interpolated(model_ref)) = function_call.arguments.get("model") {
                     if let Some((provider_name, model_name)) = model_ref.split_once('/') {
                         let provider_exists = providers.iter().any(|p| p.name == provider_name);
                         if provider_exists {
@@ -711,9 +651,7 @@ impl WorkflowValidator {
                                         file_path: WORKFLOW_FILE_PATH.to_string(),
                                         line: function_call.span.line,
                                         column: function_call.span.column,
-                                        message: format!(
-                                            "Model '{model_name}' not found in provider '{provider_name}'"
-                                        ),
+                                        message: format!("Model '{model_name}' not found in provider '{provider_name}'"),
                                         suggestion: Some(format!("Available models: {}", provider.models.join(", "))),
                                     });
                                 }
@@ -752,9 +690,7 @@ impl WorkflowValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{
-        Agent, AgentProperty, OutputBlock, OutputField, SchemaReference, SchemaType, Span, Value, Workflow,
-    };
+    use crate::ast::{Agent, AgentProperty, OutputBlock, OutputField, SchemaReference, SchemaType, Span, Value, Workflow};
 
     fn create_test_span() -> Span {
         Span {
@@ -804,16 +740,16 @@ mod tests {
         eprintln!("Errors: {:#?}", errors);
 
         // Find the specific error we're looking for
-        let field_access_error = errors.iter().find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "file_explorer.example"));
+        let field_access_error = errors
+            .iter()
+            .find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "file_explorer.example"));
         assert!(
             field_access_error.is_some(),
             "Expected UndefinedReference error for file_explorer.example"
         );
 
         match field_access_error.unwrap() {
-            ValidationError::UndefinedReference {
-                reference, suggestion, ..
-            } => {
+            ValidationError::UndefinedReference { reference, suggestion, .. } => {
                 assert_eq!(reference, "file_explorer.example");
                 assert!(suggestion.as_ref().unwrap().contains("[string]"));
                 assert!(suggestion.as_ref().unwrap().contains("does not support field access"));
@@ -857,16 +793,16 @@ mod tests {
         let errors = result.unwrap_err();
 
         // Find the specific error we're looking for
-        let field_access_error = errors.iter().find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "agent.calculator.value"));
+        let field_access_error = errors
+            .iter()
+            .find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "agent.calculator.value"));
         assert!(
             field_access_error.is_some(),
             "Expected UndefinedReference error for agent.calculator.value"
         );
 
         match field_access_error.unwrap() {
-            ValidationError::UndefinedReference {
-                reference, suggestion, ..
-            } => {
+            ValidationError::UndefinedReference { reference, suggestion, .. } => {
                 assert_eq!(reference, "agent.calculator.value");
                 assert!(suggestion.as_ref().unwrap().contains("number"));
                 assert!(suggestion.as_ref().unwrap().contains("does not support field access"));
@@ -907,16 +843,16 @@ mod tests {
         let errors = result.unwrap_err();
 
         // Find the specific error we're looking for
-        let field_access_error = errors.iter().find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "simple_agent.result"));
+        let field_access_error = errors
+            .iter()
+            .find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "simple_agent.result"));
         assert!(
             field_access_error.is_some(),
             "Expected UndefinedReference error for simple_agent.result"
         );
 
         match field_access_error.unwrap() {
-            ValidationError::UndefinedReference {
-                reference, suggestion, ..
-            } => {
+            ValidationError::UndefinedReference { reference, suggestion, .. } => {
                 assert_eq!(reference, "simple_agent.result");
                 assert!(suggestion.as_ref().unwrap().contains("does not have an output schema"));
             }
@@ -1032,16 +968,16 @@ mod tests {
         let errors = result.unwrap_err();
 
         // Find the specific error we're looking for
-        let field_access_error = errors.iter().find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "data_agent.nonexistent"));
+        let field_access_error = errors
+            .iter()
+            .find(|e| matches!(e, ValidationError::UndefinedReference { reference, .. } if reference == "data_agent.nonexistent"));
         assert!(
             field_access_error.is_some(),
             "Expected UndefinedReference error for data_agent.nonexistent"
         );
 
         match field_access_error.unwrap() {
-            ValidationError::UndefinedReference {
-                reference, suggestion, ..
-            } => {
+            ValidationError::UndefinedReference { reference, suggestion, .. } => {
                 assert_eq!(reference, "data_agent.nonexistent");
                 assert!(suggestion.as_ref().unwrap().contains("Available fields: result"));
             }

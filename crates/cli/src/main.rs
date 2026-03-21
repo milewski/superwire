@@ -112,10 +112,7 @@ async fn run() -> Result<(), CliError> {
         }
         Command::Fmt { path, check } => {
             if !path.exists() {
-                return Err(CliError::InvalidArguments(format!(
-                    "Path '{}' does not exist",
-                    path.display()
-                )));
+                return Err(CliError::InvalidArguments(format!("Path '{}' does not exist", path.display())));
             }
 
             let formatter = Formatter::new();
@@ -189,9 +186,8 @@ async fn run() -> Result<(), CliError> {
 }
 
 fn create_new_project(name: Option<String>) -> Result<(), CliError> {
-    let project_name = name.ok_or_else(|| {
-        CliError::InvalidArguments("Project name is required. Usage: cli new <project-name>".to_string())
-    })?;
+    let project_name =
+        name.ok_or_else(|| CliError::InvalidArguments("Project name is required. Usage: cli new <project-name>".to_string()))?;
 
     let project_directory = PathBuf::from(&project_name);
 
@@ -233,8 +229,7 @@ fn create_new_project(name: Option<String>) -> Result<(), CliError> {
     std::fs::write(&cargo_file, cargo_content)
         .map_err(|error| CliError::InvalidArguments(format!("Failed to write Cargo.toml: {error}")))?;
 
-    std::fs::write(&main_file, main_template)
-        .map_err(|error| CliError::InvalidArguments(format!("Failed to write main.rs: {error}")))?;
+    std::fs::write(&main_file, main_template).map_err(|error| CliError::InvalidArguments(format!("Failed to write main.rs: {error}")))?;
 
     std::fs::write(&tools_mod_file, tools_mod_template)
         .map_err(|error| CliError::InvalidArguments(format!("Failed to write tools.rs: {error}")))?;

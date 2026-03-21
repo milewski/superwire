@@ -71,12 +71,7 @@ struct AnthropicUsage {
 impl AnthropicProvider {
     #[must_use]
     pub fn new(name: String, api_key: String, models: Vec<String>) -> Self {
-        Self::with_endpoint(
-            name,
-            api_key,
-            "https://api.anthropic.com/v1/messages".to_string(),
-            models,
-        )
+        Self::with_endpoint(name, api_key, "https://api.anthropic.com/v1/messages".to_string(), models)
     }
 
     #[must_use]
@@ -121,18 +116,15 @@ impl AnthropicProvider {
                             if let Some(delta) = event.get("delta") {
                                 if let Some(partial_json) = delta.get("partial_json").and_then(|p| p.as_str()) {
                                     if let Some(ref mut tool_use) = current_tool_use {
-                                        let existing_input =
-                                            tool_use.get("input").and_then(|i| i.as_object()).map_or_else(
-                                                || "{}".to_string(),
-                                                |o| serde_json::to_string(o).unwrap_or_default(),
-                                            );
+                                        let existing_input = tool_use
+                                            .get("input")
+                                            .and_then(|i| i.as_object())
+                                            .map_or_else(|| "{}".to_string(), |o| serde_json::to_string(o).unwrap_or_default());
 
                                         let combined = if existing_input == "{}" {
                                             partial_json.to_string()
                                         } else {
-                                            existing_input.trim_end_matches('}').to_string()
-                                                + ","
-                                                + partial_json.trim_start_matches('{')
+                                            existing_input.trim_end_matches('}').to_string() + "," + partial_json.trim_start_matches('{')
                                         };
 
                                         if let Ok(parsed_input) = serde_json::from_str::<Value>(&combined) {
@@ -181,9 +173,7 @@ impl AnthropicProvider {
         }
     }
 
-    fn convert_messages_to_anthropic_format(
-        messages: &[Message],
-    ) -> Result<(Option<String>, Vec<AnthropicMessage>), ProviderError> {
+    fn convert_messages_to_anthropic_format(messages: &[Message]) -> Result<(Option<String>, Vec<AnthropicMessage>), ProviderError> {
         let mut system_prompt = None;
         let mut anthropic_messages = Vec::new();
 
@@ -207,10 +197,9 @@ impl AnthropicProvider {
 
                     if let Some(calls) = tool_calls {
                         for call in calls {
-                            let input: Value =
-                                serde_json::from_str(&call.arguments).map_err(|error| ProviderError::InvalidInput {
-                                    message: format!("Failed to parse tool call arguments: {error}"),
-                                })?;
+                            let input: Value = serde_json::from_str(&call.arguments).map_err(|error| ProviderError::InvalidInput {
+                                message: format!("Failed to parse tool call arguments: {error}"),
+                            })?;
 
                             content_blocks.push(AnthropicContent::ToolUse {
                                 id: call.id.clone(),
@@ -262,12 +251,7 @@ impl Provider for AnthropicProvider {
         &self.models
     }
 
-    async fn execute_agent(
-        &self,
-        agent: &Agent,
-        context: Vec<Message>,
-        tools: Vec<ToolDefinition>,
-    ) -> Result<AgentOutput, ProviderError> {
+    async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         log::debug!("AnthropicProvider executing agent: {}", agent.name);
 
         let (system_prompt, anthropic_messages) = Self::convert_messages_to_anthropic_format(&context)?;
@@ -299,11 +283,7 @@ impl Provider for AnthropicProvider {
             max_tokens: 4096,
             system: system_prompt,
             messages: anthropic_messages,
-            tools: if anthropic_tools.is_empty() {
-                None
-            } else {
-                Some(anthropic_tools)
-            },
+            tools: if anthropic_tools.is_empty() { None } else { Some(anthropic_tools) },
             stream: false,
         };
 
@@ -365,9 +345,7 @@ impl Provider for AnthropicProvider {
 
                         if is_rate_limit && retry_count < max_retries {
                             retry_count += 1;
-                            log::warn!(
-                                "Rate limit hit. Waiting {wait_time:?} before retry {retry_count}/{max_retries}"
-                            );
+                            log::warn!("Rate limit hit. Waiting {wait_time:?} before retry {retry_count}/{max_retries}");
                             tokio::time::sleep(wait_time).await;
                             wait_time *= 2;
                             continue;

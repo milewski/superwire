@@ -18,7 +18,7 @@ enum ToolCallExecution<'a> {
     Continue(Vec<&'a ToolCall>),
 }
 
-/// Executor that loops until a "finalize" tool is called with valid output
+/// Drives a provider until the finalize tool returns a validated result
 pub struct LoopExecutor<P, O>
 where
     P: Provider,
@@ -154,7 +154,7 @@ where
         let mut iteration = 0;
 
         loop {
-            // Fail fast if the agent exceeded its allowed iterations
+            // Stop runaway conversations once the iteration budget is exhausted
             if iteration >= self.max_iterations {
                 return Err(ExecutorError::new(format!(
                     "Maximum iterations ({}) reached without calling finalize tool",
@@ -162,25 +162,25 @@ where
                 )));
             }
 
-            // Ask the provider to generate a response given the current context and tools
+            // Ask the provider to extend the conversation using the current context and tools
             let response = provider
                 .generate(&local_context, &tools)
                 .await
                 .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
 
-            // If the provider returned plain text, append it as an assistant message
+            // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
                 local_context.add_assistant_message(text);
             }
 
-            // Break if the agent is stuck in a loop
+            // Abort if the model repeats itself to avoid infinite loops
             if local_context.is_stuck(5) {
                 break Err(ExecutorError::new("Agent is stuck in a repeated loop"))?;
             }
 
             // If the provider did not request any tool calls
             if response.tool_calls.is_empty() {
-                // Prompt the model to use the finalize tool if it tried to end the conversation
+                // Nudge the model toward the finalize tool when it tries to stop without completing
                 if response.stop_reason == StopReason::EndOfSequence {
                     local_context.add_system_message(
                         "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool.",
@@ -192,7 +192,7 @@ where
                 continue;
             }
 
-            // Record every tool call in the context so the conversation history is complete
+            // Persist every requested tool call before executing so the history remains authoritative
             for tool_call in &response.tool_calls {
                 local_context.add_tool_call(tool_call.clone());
             }
@@ -204,6 +204,7 @@ where
                     }
                 }
                 ToolCallExecution::Continue(tool_calls_to_execute) => {
+                    // Run non-finalize tools concurrently to reduce overall latency
                     let tool_execution_futures = tool_calls_to_execute.into_iter().map(|tool_call| {
                         let tool = registry.get(&tool_call.name).expect("tool registry should contain every tool");
 

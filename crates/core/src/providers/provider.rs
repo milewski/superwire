@@ -50,12 +50,7 @@ pub trait Provider: Send + Sync {
 
     fn models(&self) -> &[String];
 
-    async fn execute_agent(
-        &self,
-        agent: &Agent,
-        context: Vec<Message>,
-        tools: Vec<ToolDefinition>,
-    ) -> Result<AgentOutput, ProviderError>;
+    async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError>;
 }
 
 pub type ProviderRef = Arc<dyn Provider>;

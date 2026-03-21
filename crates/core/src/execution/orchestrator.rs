@@ -68,30 +68,24 @@ impl AgentOrchestrator {
                 suggestion: Some("This is an internal error".to_string()),
             })?
         } else {
-            self.tool_registry
-                .get(tool_name)
-                .ok_or_else(|| ExecutionError::RuntimeError {
-                    agent: "tool_execution".to_string(),
-                    message: format!("Unknown tool: {tool_name}"),
-                    suggestion: Some("Check that the tool is registered".to_string()),
-                })?
+            self.tool_registry.get(tool_name).ok_or_else(|| ExecutionError::RuntimeError {
+                agent: "tool_execution".to_string(),
+                message: format!("Unknown tool: {tool_name}"),
+                suggestion: Some("Check that the tool is registered".to_string()),
+            })?
         };
 
-        let arguments: JsonValue =
-            serde_json::from_str(arguments_json).map_err(|error| ExecutionError::RuntimeError {
-                agent: "tool_execution".to_string(),
-                message: format!("Failed to parse tool arguments: {error}"),
-                suggestion: Some("Ensure tool arguments are valid JSON".to_string()),
-            })?;
+        let arguments: JsonValue = serde_json::from_str(arguments_json).map_err(|error| ExecutionError::RuntimeError {
+            agent: "tool_execution".to_string(),
+            message: format!("Failed to parse tool arguments: {error}"),
+            suggestion: Some("Ensure tool arguments are valid JSON".to_string()),
+        })?;
 
-        let result = tool
-            .execute(arguments)
-            .await
-            .map_err(|error| ExecutionError::RuntimeError {
-                agent: "tool_execution".to_string(),
-                message: format!("Tool execution failed: {error}"),
-                suggestion: None,
-            })?;
+        let result = tool.execute(arguments).await.map_err(|error| ExecutionError::RuntimeError {
+            agent: "tool_execution".to_string(),
+            message: format!("Tool execution failed: {error}"),
+            suggestion: None,
+        })?;
 
         Ok(serde_json::to_string(&result).unwrap_or_else(|_| result.to_string()))
     }
@@ -106,11 +100,7 @@ impl AgentOrchestrator {
         Ok(String::new())
     }
 
-    pub fn extract_tools(
-        &self,
-        agent: &Agent,
-        runtime_context: &RuntimeContext,
-    ) -> Result<Option<Vec<String>>, ExecutionError> {
+    pub fn extract_tools(&self, agent: &Agent, runtime_context: &RuntimeContext) -> Result<Option<Vec<String>>, ExecutionError> {
         for property in &agent.properties {
             if let AgentProperty::Tools { value, .. } = property {
                 let resolved = runtime_context.resolve_value(value)?;
@@ -125,9 +115,7 @@ impl AgentOrchestrator {
                                 } else {
                                     Err(ExecutionError::RuntimeError {
                                         agent: agent.name.clone(),
-                                        message: format!(
-                                            "Invalid tool reference: {tool_ref}. Expected format: tool.name"
-                                        ),
+                                        message: format!("Invalid tool reference: {tool_ref}. Expected format: tool.name"),
                                         suggestion: Some("Use format like tool.calculator".to_string()),
                                     })
                                 }
@@ -168,46 +156,41 @@ impl AgentOrchestrator {
                     SchemaReference::Named(_name) => {
                         let schema_name = _name.strip_prefix("schema.").unwrap_or(_name);
 
-                        let named_schema = self.schemas.iter().find(|s| s.name == schema_name).ok_or_else(|| {
-                            ExecutionError::RuntimeError {
-                                agent: agent.name.clone(),
-                                message: format!("Schema '{schema_name}' not found"),
-                                suggestion: Some("Check that the schema is defined in the workflow".to_string()),
-                            }
-                        })?;
+                        let named_schema =
+                            self.schemas
+                                .iter()
+                                .find(|s| s.name == schema_name)
+                                .ok_or_else(|| ExecutionError::RuntimeError {
+                                    agent: agent.name.clone(),
+                                    message: format!("Schema '{schema_name}' not found"),
+                                    suggestion: Some("Check that the schema is defined in the workflow".to_string()),
+                                })?;
 
-                        let compiled = SchemaCompiler::compile(&named_schema.schema).map_err(|error| {
-                            ExecutionError::RuntimeError {
-                                agent: agent.name.clone(),
-                                message: format!("Failed to compile schema '{schema_name}': {error}"),
-                                suggestion: Some("Check schema definition".to_string()),
-                            }
+                        let compiled = SchemaCompiler::compile(&named_schema.schema).map_err(|error| ExecutionError::RuntimeError {
+                            agent: agent.name.clone(),
+                            message: format!("Failed to compile schema '{schema_name}': {error}"),
+                            suggestion: Some("Check schema definition".to_string()),
                         })?;
 
                         return Ok(Some(compiled));
                     }
                     SchemaReference::Inline(schema) => {
-                        let compiled =
-                            SchemaCompiler::compile(schema).map_err(|error| ExecutionError::RuntimeError {
-                                agent: agent.name.clone(),
-                                message: format!("Failed to compile schema: {error}"),
-                                suggestion: Some("Check schema definition".to_string()),
-                            })?;
+                        let compiled = SchemaCompiler::compile(schema).map_err(|error| ExecutionError::RuntimeError {
+                            agent: agent.name.clone(),
+                            message: format!("Failed to compile schema: {error}"),
+                            suggestion: Some("Check schema definition".to_string()),
+                        })?;
 
                         return Ok(Some(compiled));
                     }
-                    SchemaReference::InlineType {
-                        schema_type,
-                        description,
-                    } => {
-                        let compiled =
-                            SchemaCompiler::compile_type(schema_type, description.as_deref()).map_err(|error| {
-                                ExecutionError::RuntimeError {
-                                    agent: agent.name.clone(),
-                                    message: format!("Failed to compile schema type: {error}"),
-                                    suggestion: Some("Check schema type definition".to_string()),
-                                }
-                            })?;
+                    SchemaReference::InlineType { schema_type, description } => {
+                        let compiled = SchemaCompiler::compile_type(schema_type, description.as_deref()).map_err(|error| {
+                            ExecutionError::RuntimeError {
+                                agent: agent.name.clone(),
+                                message: format!("Failed to compile schema type: {error}"),
+                                suggestion: Some("Check schema type definition".to_string()),
+                            }
+                        })?;
 
                         log::debug!(
                             "Compiled inline type schema: {}",
@@ -254,11 +237,7 @@ impl AgentOrchestrator {
             .collect()
     }
 
-    pub fn build_tool_definitions_with_done(
-        &self,
-        done_tool: Arc<dyn Tool>,
-        allowed_tools: Option<&[String]>,
-    ) -> Vec<ToolDefinition> {
+    pub fn build_tool_definitions_with_done(&self, done_tool: Arc<dyn Tool>, allowed_tools: Option<&[String]>) -> Vec<ToolDefinition> {
         let mut tools = self.build_tool_definitions(allowed_tools);
 
         tools.push(ToolDefinition {

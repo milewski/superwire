@@ -1,7 +1,7 @@
 use super::rules::{ArrayFormattingRule, IndentationRule};
 use crate::ast::{
-    Agent, AgentProperty, FunctionCall, InputBlock, NamedSchema, OutputBlock, Provider, Reference, SchemaField,
-    SchemaReference, SchemaType, Value, Workflow,
+    Agent, AgentProperty, FunctionCall, InputBlock, NamedSchema, OutputBlock, Provider, Reference, SchemaField, SchemaReference,
+    SchemaType, Value, Workflow,
 };
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -26,8 +26,7 @@ impl Writer {
     }
 
     pub fn write_workflow(&self, workflow: &Workflow) -> String {
-        let estimated_size =
-            workflow.providers.len() * 200 + workflow.schemas.len() * 300 + workflow.agents.len() * 400 + 200;
+        let estimated_size = workflow.providers.len() * 200 + workflow.schemas.len() * 300 + workflow.agents.len() * 400 + 200;
         let mut output = String::with_capacity(estimated_size);
         let mut sections = Vec::new();
 
@@ -209,11 +208,7 @@ impl Writer {
             SchemaType::Enum(variants) => {
                 format!(
                     "enum({})",
-                    variants
-                        .iter()
-                        .map(|v| format!("\"{v}\""))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    variants.iter().map(|v| format!("\"{v}\"")).collect::<Vec<_>>().join(", ")
                 )
             }
             SchemaType::Object(fields) => {
@@ -364,10 +359,7 @@ impl Writer {
                     "{}".to_string()
                 }
             }
-            SchemaReference::InlineType {
-                schema_type,
-                description,
-            } => {
+            SchemaReference::InlineType { schema_type, description } => {
                 let mut output = self.write_schema_type_with_indent(schema_type, indent_level);
                 if let Some(desc) = description {
                     write!(output, " // {desc}").unwrap();
@@ -421,10 +413,7 @@ impl Writer {
 
     fn write_array_with_indent(&self, items: &[Value], indent_level: usize) -> String {
         // Calculate total content length to decide if we should break
-        let items_str: Vec<String> = items
-            .iter()
-            .map(|item| self.write_value_with_indent(item, indent_level))
-            .collect();
+        let items_str: Vec<String> = items.iter().map(|item| self.write_value_with_indent(item, indent_level)).collect();
 
         if self.array_rule.should_break_array(items) {
             let mut output = String::from("[\n");
@@ -462,13 +451,7 @@ impl Writer {
             sorted_keys.sort();
             let pairs: Vec<String> = sorted_keys
                 .iter()
-                .map(|k| {
-                    format!(
-                        "{} <- {}",
-                        k,
-                        self.write_value_with_indent(&obj[k.as_str()], indent_level)
-                    )
-                })
+                .map(|k| format!("{} <- {}", k, self.write_value_with_indent(&obj[k.as_str()], indent_level)))
                 .collect();
             format!("{{ {} }}", pairs.join(", "))
         }
@@ -512,13 +495,7 @@ impl Writer {
             sorted_keys.sort();
             let args: Vec<String> = sorted_keys
                 .iter()
-                .map(|k| {
-                    format!(
-                        "{}: {}",
-                        k,
-                        self.write_value_with_indent(&func.arguments[k.as_str()], indent_level)
-                    )
-                })
+                .map(|k| format!("{}: {}", k, self.write_value_with_indent(&func.arguments[k.as_str()], indent_level)))
                 .collect();
             output.push_str(&args.join(", "));
             output.push(')');

@@ -3,10 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ProviderError {
     #[error("Connection error: {message}")]
-    ConnectionError {
-        message: String,
-        suggestion: Option<String>,
-    },
+    ConnectionError { message: String, suggestion: Option<String> },
 
     #[error("Model not found: {model}")]
     ModelNotFound {
@@ -23,16 +20,10 @@ pub enum ProviderError {
     },
 
     #[error("Response parsing error: {message}")]
-    ResponseParsingError {
-        message: String,
-        suggestion: Option<String>,
-    },
+    ResponseParsingError { message: String, suggestion: Option<String> },
 
     #[error("Tool call error: {message}")]
-    ToolCallError {
-        message: String,
-        suggestion: Option<String>,
-    },
+    ToolCallError { message: String, suggestion: Option<String> },
 
     #[error("Execution error: {message}")]
     ExecutionError { message: String },

@@ -3,9 +3,8 @@ use crate::message::{Message, MessageRole, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs,
-    ChatCompletionTool, ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall,
-    FunctionObjectArgs,
+    ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
+    ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionCall, FunctionObjectArgs,
 };
 use async_openai::Client;
 use async_trait::async_trait;
@@ -27,11 +26,7 @@ impl OpenAIProvider {
         }
     }
 
-    pub fn new_with_base_url(
-        base_url: impl Into<String>,
-        api_key: impl Into<String>,
-        model: impl Into<String>,
-    ) -> Self {
+    pub fn new_with_base_url(base_url: impl Into<String>, api_key: impl Into<String>, model: impl Into<String>) -> Self {
         let config = async_openai::config::OpenAIConfig::new()
             .with_api_key(api_key.into())
             .with_api_base(base_url.into());
@@ -168,10 +163,7 @@ impl Provider for OpenAIProvider {
             .await
             .map_err(|error| format!("OpenAI API error: {error}"))?;
 
-        let choice = response
-            .choices
-            .first()
-            .ok_or_else(|| "No choices in response".to_string())?;
+        let choice = response.choices.first().ok_or_else(|| "No choices in response".to_string())?;
 
         let stop_reason = Self::convert_stop_reason(choice.finish_reason);
         let text = choice.message.content.clone();
@@ -180,8 +172,7 @@ impl Provider for OpenAIProvider {
             openai_tool_calls
                 .iter()
                 .map(|tool_call| {
-                    let arguments: serde_json::Value =
-                        serde_json::from_str(&tool_call.function.arguments).unwrap_or_else(|_| json!({}));
+                    let arguments: serde_json::Value = serde_json::from_str(&tool_call.function.arguments).unwrap_or_else(|_| json!({}));
 
                     ToolCall {
                         id: tool_call.id.clone(),

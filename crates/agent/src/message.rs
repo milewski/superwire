@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Message role in the conversation
 #[derive(Debug, Clone, PartialEq)]

@@ -125,12 +125,7 @@ impl Provider for CachedProvider {
         &self.models
     }
 
-    async fn execute_agent(
-        &self,
-        agent: &Agent,
-        context: Vec<Message>,
-        tools: Vec<ToolDefinition>,
-    ) -> Result<AgentOutput, ProviderError> {
+    async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         let agent_name = agent.name.clone();
         let model = Self::get_model_from_agent(agent);
 
@@ -139,12 +134,9 @@ impl Provider for CachedProvider {
             let cache = self.cache.lock().map_err(|_| ProviderError::ExecutionError {
                 message: "Failed to acquire cache lock".to_string(),
             })?;
-            let mut replay_indices = self
-                .agent_replay_indices
-                .lock()
-                .map_err(|_| ProviderError::ExecutionError {
-                    message: "Failed to acquire replay indices lock".to_string(),
-                })?;
+            let mut replay_indices = self.agent_replay_indices.lock().map_err(|_| ProviderError::ExecutionError {
+                message: "Failed to acquire replay indices lock".to_string(),
+            })?;
 
             let replay_index = replay_indices.entry(agent_name.clone()).or_insert(0);
 
@@ -191,8 +183,7 @@ impl Provider for CachedProvider {
                 let is_continuation = if let Some(last_conv) = agent_conversations.last() {
                     // If the output context starts with the last conversation's messages,
                     // it's a continuation (iteration)
-                    output.context.len() > last_conv.messages.len()
-                        && output.context[..last_conv.messages.len()] == last_conv.messages[..]
+                    output.context.len() > last_conv.messages.len() && output.context[..last_conv.messages.len()] == last_conv.messages[..]
                 } else {
                     false
                 };

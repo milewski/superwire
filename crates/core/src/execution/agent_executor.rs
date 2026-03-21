@@ -46,12 +46,7 @@ impl<'a> AgentExecutor<'a> {
         self.execute_loop(context, tools, done_tool, schema).await
     }
 
-    fn build_initial_context(
-        &self,
-        mut initial_context: Vec<Message>,
-        prompt: &str,
-        schema: Option<&JsonValue>,
-    ) -> Vec<Message> {
+    fn build_initial_context(&self, mut initial_context: Vec<Message>, prompt: &str, schema: Option<&JsonValue>) -> Vec<Message> {
         let mut system_message = String::from(
             "You are an AI agent executing a task. CRITICAL: You have access to a done tool that you MUST use to return your final result.\n\n\
             IMPORTANT INSTRUCTIONS:\n\
@@ -70,9 +65,7 @@ impl<'a> AgentExecutor<'a> {
             system_message.push_str(&schema_instructions);
         }
 
-        initial_context.push(Message::System {
-            content: system_message,
-        });
+        initial_context.push(Message::System { content: system_message });
 
         initial_context.push(Message::User {
             content: prompt.to_string(),
@@ -125,11 +118,7 @@ impl<'a> AgentExecutor<'a> {
         }
     }
 
-    async fn execute_iteration(
-        &self,
-        context: Vec<Message>,
-        tools: &[ToolDefinition],
-    ) -> Result<Vec<Message>, ExecutionError> {
+    async fn execute_iteration(&self, context: Vec<Message>, tools: &[ToolDefinition]) -> Result<Vec<Message>, ExecutionError> {
         log::debug!("Agent '{}' calling provider", self.agent.name);
 
         let output = self
@@ -205,8 +194,7 @@ impl<'a> AgentExecutor<'a> {
                 }
                 Err(error) => {
                     log::warn!("Tool '{}' execution failed: {}", tool_call.name, error);
-                    let error_message =
-                        format!("Tool execution error: {error}. Please fix the tool call and try again.");
+                    let error_message = format!("Tool execution error: {error}. Please fix the tool call and try again.");
 
                     context.push(Message::Tool {
                         tool_call_id: tool_call.id.clone(),
@@ -256,14 +244,9 @@ impl<'a> AgentExecutor<'a> {
         let done_params: serde_json::Map<String, JsonValue> = match serde_json::from_str(&tool_call.arguments) {
             Ok(params) => params,
             Err(error) => {
-                log::warn!(
-                    "Agent '{}' done tool parameters parse failed: {}",
-                    self.agent.name,
-                    error
-                );
-                let error_message = format!(
-                        "Failed to parse done tool parameters: {error}. Please ensure you provide 'status' and 'output' fields."
-                    );
+                log::warn!("Agent '{}' done tool parameters parse failed: {}", self.agent.name, error);
+                let error_message =
+                    format!("Failed to parse done tool parameters: {error}. Please ensure you provide 'status' and 'output' fields.");
 
                 context.push(Message::Tool {
                     tool_call_id: tool_call.id.clone(),
@@ -307,14 +290,8 @@ impl<'a> AgentExecutor<'a> {
                     Ok(Some(output_value))
                 }
                 Err(validation_error) => {
-                    log::warn!(
-                        "Agent '{}' schema validation failed: {}",
-                        self.agent.name,
-                        validation_error
-                    );
-                    let error_message = format!(
-                        "Schema validation failed: {validation_error}. Please fix the output and call done again."
-                    );
+                    log::warn!("Agent '{}' schema validation failed: {}", self.agent.name, validation_error);
+                    let error_message = format!("Schema validation failed: {validation_error}. Please fix the output and call done again.");
 
                     context.push(Message::Tool {
                         tool_call_id: tool_call.id.clone(),
@@ -330,10 +307,7 @@ impl<'a> AgentExecutor<'a> {
     }
 
     fn coerce_type_if_needed(schema: &JsonValue, value: JsonValue) -> JsonValue {
-        let schema_type = schema
-            .as_object()
-            .and_then(|obj| obj.get("type"))
-            .and_then(|t| t.as_str());
+        let schema_type = schema.as_object().and_then(|obj| obj.get("type")).and_then(|t| t.as_str());
 
         match schema_type {
             Some("integer") => {
@@ -407,11 +381,7 @@ impl<'a> AgentExecutor<'a> {
     }
 
     fn max_iterations_error(&self) -> Result<(JsonValue, Vec<Message>), ExecutionError> {
-        log::error!(
-            "Agent '{}' exceeded maximum iterations ({})",
-            self.agent.name,
-            MAX_ITERATIONS
-        );
+        log::error!("Agent '{}' exceeded maximum iterations ({})", self.agent.name, MAX_ITERATIONS);
         Err(ExecutionError::RuntimeError {
             agent: self.agent.name.clone(),
             message: format!("Agent exceeded maximum iterations ({MAX_ITERATIONS}). Agent may be stuck in a loop."),

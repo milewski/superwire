@@ -8,8 +8,7 @@ use crate::tools::ToolRegistry;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
-type AgentTaskHandle =
-    tokio::task::JoinHandle<Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>>;
+type AgentTaskHandle = tokio::task::JoinHandle<Result<(String, JsonValue, Vec<crate::providers::provider::Message>), ExecutionError>>;
 
 pub struct WorkflowExecutor<'a> {
     workflow: &'a Workflow,
@@ -19,11 +18,7 @@ pub struct WorkflowExecutor<'a> {
 
 impl<'a> WorkflowExecutor<'a> {
     #[must_use]
-    pub fn new(
-        workflow: &'a Workflow,
-        provider_registry: &'a ProviderRegistry,
-        tool_registry: &'a ToolRegistry,
-    ) -> Self {
+    pub fn new(workflow: &'a Workflow, provider_registry: &'a ProviderRegistry, tool_registry: &'a ToolRegistry) -> Self {
         Self {
             workflow,
             provider_registry,
@@ -56,11 +51,7 @@ impl<'a> WorkflowExecutor<'a> {
         self.build_final_output(&runtime_context)
     }
 
-    async fn execute_levels(
-        &self,
-        execution_levels: &[Vec<String>],
-        runtime_context: &mut RuntimeContext,
-    ) -> Result<(), ExecutionError> {
+    async fn execute_levels(&self, execution_levels: &[Vec<String>], runtime_context: &mut RuntimeContext) -> Result<(), ExecutionError> {
         for level in execution_levels {
             log::info!("Executing level with {} agent(s): {:?}", level.len(), level);
 
@@ -90,22 +81,14 @@ impl<'a> WorkflowExecutor<'a> {
             })
     }
 
-    fn spawn_agent_task(
-        &self,
-        agent: &Agent,
-        runtime_context: &RuntimeContext,
-    ) -> Result<AgentTaskHandle, ExecutionError> {
+    fn spawn_agent_task(&self, agent: &Agent, runtime_context: &RuntimeContext) -> Result<AgentTaskHandle, ExecutionError> {
         let agent_clone = agent.clone();
         let provider_registry_clone = self.provider_registry.clone();
         let runtime_context_clone = runtime_context.clone();
         let tool_registry_clone = self.tool_registry.clone();
         let schemas_clone = self.workflow.schemas.clone();
 
-        log::debug!(
-            "Spawning task for agent '{}', schemas count: {}",
-            agent.name,
-            schemas_clone.len()
-        );
+        log::debug!("Spawning task for agent '{}', schemas count: {}", agent.name, schemas_clone.len());
 
         let task = tokio::task::spawn(async move {
             let provider = Self::get_provider_for_agent(&agent_clone, &provider_registry_clone)?;
@@ -127,8 +110,7 @@ impl<'a> WorkflowExecutor<'a> {
                 )
                 .await
             } else {
-                let orchestrator =
-                    AgentOrchestrator::with_schemas(provider, tool_registry_clone.clone(), schemas_clone);
+                let orchestrator = AgentOrchestrator::with_schemas(provider, tool_registry_clone.clone(), schemas_clone);
                 let (output, context) = orchestrator
                     .execute_agent(&agent_clone, initial_context, &runtime_context_clone)
                     .await?;
@@ -140,10 +122,7 @@ impl<'a> WorkflowExecutor<'a> {
         Ok(task)
     }
 
-    fn get_provider_for_agent(
-        agent: &Agent,
-        provider_registry: &ProviderRegistry,
-    ) -> Result<ProviderRef, ExecutionError> {
+    fn get_provider_for_agent(agent: &Agent, provider_registry: &ProviderRegistry) -> Result<ProviderRef, ExecutionError> {
         let model_property = agent.properties.iter().find_map(|prop| {
             if let AgentProperty::Model { value, .. } = prop {
                 Some(value)
@@ -177,13 +156,11 @@ impl<'a> WorkflowExecutor<'a> {
 
         let provider_name = parts[0];
 
-        provider_registry
-            .get(provider_name)
-            .map_err(|error| ExecutionError::ProviderError {
-                agent: agent.name.clone(),
-                message: format!("Provider '{provider_name}' not found: {error}"),
-                suggestion: Some("Check that the provider is defined in the workflow".to_string()),
-            })
+        provider_registry.get(provider_name).map_err(|error| ExecutionError::ProviderError {
+            agent: agent.name.clone(),
+            message: format!("Provider '{provider_name}' not found: {error}"),
+            suggestion: Some("Check that the provider is defined in the workflow".to_string()),
+        })
     }
 
     fn extract_initial_context(
@@ -202,10 +179,7 @@ impl<'a> WorkflowExecutor<'a> {
             let resolved = runtime_context.resolve_value(context_value)?;
 
             if let JsonValue::Array(messages) = resolved {
-                Ok(messages
-                    .into_iter()
-                    .filter_map(|msg| serde_json::from_value(msg).ok())
-                    .collect())
+                Ok(messages.into_iter().filter_map(|msg| serde_json::from_value(msg).ok()).collect())
             } else {
                 Ok(Vec::new())
             }
@@ -259,11 +233,8 @@ impl<'a> WorkflowExecutor<'a> {
             let schemas_for_iteration = schemas.to_vec();
 
             let iteration_task = tokio::task::spawn(async move {
-                let orchestrator_inner = AgentOrchestrator::with_schemas(
-                    provider_for_iteration,
-                    tool_registry_for_iteration,
-                    schemas_for_iteration,
-                );
+                let orchestrator_inner =
+                    AgentOrchestrator::with_schemas(provider_for_iteration, tool_registry_for_iteration, schemas_for_iteration);
                 let result = orchestrator_inner
                     .execute_agent(&agent_clone, initial_context_clone, &iteration_context)
                     .await;
@@ -298,11 +269,7 @@ impl<'a> WorkflowExecutor<'a> {
         Ok((agent.name.clone(), JsonValue::Array(results), all_contexts))
     }
 
-    async fn collect_task_results(
-        &self,
-        tasks: Vec<AgentTaskHandle>,
-        runtime_context: &mut RuntimeContext,
-    ) -> Result<(), ExecutionError> {
+    async fn collect_task_results(&self, tasks: Vec<AgentTaskHandle>, runtime_context: &mut RuntimeContext) -> Result<(), ExecutionError> {
         for task in tasks {
             let (agent_name, output, context) = task.await.map_err(|error| ExecutionError::RuntimeError {
                 agent: "parallel_execution".to_string(),

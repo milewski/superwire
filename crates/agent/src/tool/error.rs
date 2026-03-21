@@ -111,8 +111,7 @@ mod tests {
 
     #[test]
     fn test_validation_error_to_tool_error() {
-        let validation_error =
-            crate::error::ValidationError::new("Validation failed").with_detail("field", json!("username"));
+        let validation_error = crate::error::ValidationError::new("Validation failed").with_detail("field", json!("username"));
 
         let tool_error: ToolError = validation_error.into();
         assert_eq!(tool_error.error, "Validation failed");

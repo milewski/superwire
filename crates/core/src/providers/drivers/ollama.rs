@@ -109,10 +109,7 @@ impl OllamaProvider {
                         tool_calls: ollama_tool_calls,
                     }
                 }
-                Message::Tool {
-                    tool_call_id: _,
-                    content,
-                } => OllamaMessage {
+                Message::Tool { tool_call_id: _, content } => OllamaMessage {
                     role: Cow::Borrowed("tool"),
                     content: content.clone(),
                     tool_calls: None,
@@ -268,12 +265,7 @@ impl Provider for OllamaProvider {
         &self.models
     }
 
-    async fn execute_agent(
-        &self,
-        agent: &Agent,
-        context: Vec<Message>,
-        tools: Vec<ToolDefinition>,
-    ) -> Result<AgentOutput, ProviderError> {
+    async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         log::debug!("OllamaProvider executing agent: {}", agent.name);
         log::debug!("Context has {} messages", context.len());
 
@@ -318,10 +310,7 @@ impl Provider for OllamaProvider {
             stream: false,
         };
 
-        log::trace!(
-            "Ollama request: {:?}",
-            serde_json::to_string_pretty(&request).unwrap_or_default()
-        );
+        log::trace!("Ollama request: {:?}", serde_json::to_string_pretty(&request).unwrap_or_default());
 
         let url = format!("{}/api/chat", self.api_endpoint);
         log::debug!("Sending request to Ollama: {url}");

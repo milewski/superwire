@@ -17,11 +17,7 @@ pub fn compile_workflow(workflow_path: &Path, output_path: &Path) -> Result<(), 
     WorkflowValidator::validate(&workflow).map_err(|errors| {
         CliError::CompilationError(format!(
             "Validation failed: {}",
-            errors
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
+            errors.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", ")
         ))
     })?;
 
@@ -87,9 +83,8 @@ fn collect_value_file_references(
             if let Some(Value::String(file_path)) = call.arguments.get("path") {
                 let full_path = workflow_dir.join(file_path);
                 if !embedded_files.contains_key(file_path) {
-                    let content = fs::read(&full_path).map_err(|error| {
-                        CliError::CompilationError(format!("Failed to read file {}: {}", full_path.display(), error))
-                    })?;
+                    let content = fs::read(&full_path)
+                        .map_err(|error| CliError::CompilationError(format!("Failed to read file {}: {}", full_path.display(), error)))?;
                     embedded_files.insert(file_path.clone(), content);
                     log::debug!("Embedded file: {file_path}");
                 }
@@ -175,10 +170,7 @@ fn generate_embedded_files_code(embedded_files: &HashMap<String, Vec<u8>>) -> St
         entries.push(format!("    (\"{path}\", &{bytes})"));
     }
 
-    format!(
-        "const EMBEDDED_FILES: &[(&str, &[u8])] = &[\n{}\n];",
-        entries.join(",\n")
-    )
+    format!("const EMBEDDED_FILES: &[(&str, &[u8])] = &[\n{}\n];", entries.join(",\n"))
 }
 
 fn generate_cli_parser(workflow: &Workflow) -> Result<String, CliError> {

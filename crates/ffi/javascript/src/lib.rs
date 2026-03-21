@@ -76,11 +76,7 @@ impl ExecutionEngine {
     }
 
     #[napi]
-    pub async fn execute_workflow_content_with_inputs(
-        &self,
-        workflow_content: String,
-        inputs: String,
-    ) -> Result<String> {
+    pub async fn execute_workflow_content_with_inputs(&self, workflow_content: String, inputs: String) -> Result<String> {
         let inputs_map: std::collections::HashMap<String, Value> =
             serde_json::from_str(&inputs).map_err(|error| Error::from_reason(error.to_string()))?;
 
@@ -102,12 +98,7 @@ struct ToolWrapper {
 }
 
 impl ToolWrapper {
-    fn new(
-        name: String,
-        description: String,
-        parameters_schema: Value,
-        execute_fn: ThreadsafeFunction<String, String>,
-    ) -> Self {
+    fn new(name: String, description: String, parameters_schema: Value, execute_fn: ThreadsafeFunction<String, String>) -> Self {
         Self {
             name,
             description,
@@ -138,15 +129,15 @@ impl CoreTool for ToolWrapper {
             suggestion: None,
         })?;
 
-        let result_string =
-            self.execute_fn
-                .call_async(Ok(params_string))
-                .await
-                .map_err(|error| ToolError::ExecutionError {
-                    tool_name: self.name.clone(),
-                    message: format!("Tool execution failed: {error}"),
-                    suggestion: None,
-                })?;
+        let result_string = self
+            .execute_fn
+            .call_async(Ok(params_string))
+            .await
+            .map_err(|error| ToolError::ExecutionError {
+                tool_name: self.name.clone(),
+                message: format!("Tool execution failed: {error}"),
+                suggestion: None,
+            })?;
 
         serde_json::from_str(&result_string).map_err(|error| ToolError::ExecutionError {
             tool_name: self.name.clone(),
@@ -170,14 +161,11 @@ impl Tool {
         parameters_schema: String,
         execute_fn: ThreadsafeFunction<String, String>,
     ) -> Result<Self> {
-        let schema: Value =
-            serde_json::from_str(&parameters_schema).map_err(|error| Error::from_reason(error.to_string()))?;
+        let schema: Value = serde_json::from_str(&parameters_schema).map_err(|error| Error::from_reason(error.to_string()))?;
 
         let wrapper = ToolWrapper::new(name, description, schema, execute_fn);
 
-        Ok(Self {
-            inner: Arc::new(wrapper),
-        })
+        Ok(Self { inner: Arc::new(wrapper) })
     }
 
     #[must_use]

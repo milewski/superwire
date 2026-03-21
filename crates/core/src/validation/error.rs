@@ -3,13 +3,7 @@ use std::fmt::Write;
 use thiserror::Error;
 
 /// Generic error formatter that all specific formatters delegate to
-fn format_validation_error(
-    error_message: &str,
-    file_path: &str,
-    line: usize,
-    column: usize,
-    suggestion: Option<&String>,
-) -> String {
+fn format_validation_error(error_message: &str, file_path: &str, line: usize, column: usize, suggestion: Option<&String>) -> String {
     let mut result = format!("Error: {error_message}\n  --> {file_path}:{line}:{column}\n   |");
 
     if let Some(suggestion_text) = suggestion {
@@ -43,8 +37,7 @@ fn format_missing_required_property(
     property_name: &str,
     suggestion: Option<&String>,
 ) -> String {
-    let mut result =
-        format!("Error: missing required property '{property_name}'\n  --> {file_path}:{line}:{column}\n   |");
+    let mut result = format!("Error: missing required property '{property_name}'\n  --> {file_path}:{line}:{column}\n   |");
 
     write!(result, "\n   = note: agent '{agent_name}' requires this property").unwrap();
 

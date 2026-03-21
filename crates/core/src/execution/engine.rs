@@ -9,8 +9,7 @@ use crate::validation::WorkflowValidator;
 use serde_json::Value;
 use std::collections::HashMap;
 
-type AgentTaskHandle =
-    tokio::task::JoinHandle<Result<(String, Value, Vec<crate::providers::provider::Message>), ExecutionError>>;
+type AgentTaskHandle = tokio::task::JoinHandle<Result<(String, Value, Vec<crate::providers::provider::Message>), ExecutionError>>;
 
 /// Handler for compact function execution
 struct CompactFunctionHandler<'a> {
@@ -22,28 +21,20 @@ impl<'a> CompactFunctionHandler<'a> {
         Self { provider_registry }
     }
 
-    async fn execute(
-        &self,
-        function_call: &crate::ast::FunctionCall,
-        runtime_context: &RuntimeContext,
-    ) -> Result<Value, ExecutionError> {
+    async fn execute(&self, function_call: &crate::ast::FunctionCall, runtime_context: &RuntimeContext) -> Result<Value, ExecutionError> {
         let model_ref = self.extract_model_reference(function_call)?;
         let provider = self.get_provider_for_model(&model_ref)?;
         let combined_messages = self.extract_and_combine_messages(function_call, runtime_context)?;
 
-        self.execute_compact_operation(provider, combined_messages, &model_ref)
-            .await
+        self.execute_compact_operation(provider, combined_messages, &model_ref).await
     }
 
     fn extract_model_reference(&self, function_call: &crate::ast::FunctionCall) -> Result<String, ExecutionError> {
-        let model_value = function_call
-            .arguments
-            .get("model")
-            .ok_or_else(|| ExecutionError::RuntimeError {
-                agent: "compact".to_string(),
-                message: "compact function requires 'model' argument".to_string(),
-                suggestion: Some("Provide a model like 'ollama1/qwen3:8b'".to_string()),
-            })?;
+        let model_value = function_call.arguments.get("model").ok_or_else(|| ExecutionError::RuntimeError {
+            agent: "compact".to_string(),
+            message: "compact function requires 'model' argument".to_string(),
+            suggestion: Some("Provide a model like 'ollama1/qwen3:8b'".to_string()),
+        })?;
 
         match model_value {
             crate::ast::Value::String(string) => Ok(string.clone()),
@@ -57,14 +48,14 @@ impl<'a> CompactFunctionHandler<'a> {
     }
 
     fn get_provider_for_model(&self, model_ref: &str) -> Result<ProviderRef, ExecutionError> {
-        let (provider, _model) =
-            self.provider_registry
-                .get_model_provider(model_ref)
-                .map_err(|error| ExecutionError::ProviderError {
-                    agent: "compact".to_string(),
-                    message: error.to_string(),
-                    suggestion: Some("Check provider and model configuration".to_string()),
-                })?;
+        let (provider, _model) = self
+            .provider_registry
+            .get_model_provider(model_ref)
+            .map_err(|error| ExecutionError::ProviderError {
+                agent: "compact".to_string(),
+                message: error.to_string(),
+                suggestion: Some("Check provider and model configuration".to_string()),
+            })?;
 
         Ok(provider)
     }
@@ -74,14 +65,11 @@ impl<'a> CompactFunctionHandler<'a> {
         function_call: &crate::ast::FunctionCall,
         runtime_context: &RuntimeContext,
     ) -> Result<Vec<crate::providers::provider::Message>, ExecutionError> {
-        let context_value = function_call
-            .arguments
-            .get("context")
-            .ok_or_else(|| ExecutionError::RuntimeError {
-                agent: "compact".to_string(),
-                message: "compact function requires 'context' argument".to_string(),
-                suggestion: Some("Provide agent context like 'agent.name.context'".to_string()),
-            })?;
+        let context_value = function_call.arguments.get("context").ok_or_else(|| ExecutionError::RuntimeError {
+            agent: "compact".to_string(),
+            message: "compact function requires 'context' argument".to_string(),
+            suggestion: Some("Provide agent context like 'agent.name.context'".to_string()),
+        })?;
 
         let resolved_context = runtime_context.resolve_value(context_value)?;
         let mut combined_messages = Vec::new();
@@ -108,7 +96,8 @@ impl<'a> CompactFunctionHandler<'a> {
 
         // Add summary prompt
         combined_messages.push(crate::providers::provider::Message::User {
-            content: "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed.".to_string(),
+            content: "Please provide a concise summary of the above conversation, capturing the key points and main topics discussed."
+                .to_string(),
         });
 
         Ok(combined_messages)
@@ -203,11 +192,7 @@ impl ExecutionEngine {
         self.execute_workflow_from_content(workflow_content, "workflow").await
     }
 
-    pub async fn execute_workflow_from_content(
-        &self,
-        workflow_content: &str,
-        workflow_name: &str,
-    ) -> Result<Value, ExecutionError> {
+    pub async fn execute_workflow_from_content(&self, workflow_content: &str, workflow_name: &str) -> Result<Value, ExecutionError> {
         self.execute_workflow_from_content_with_inputs(workflow_content, workflow_name, HashMap::new())
             .await
     }
@@ -223,13 +208,11 @@ impl ExecutionEngine {
 
         let builder = AstBuilder::new(workflow_name.to_string());
 
-        let workflow = builder
-            .parse(workflow_content)
-            .map_err(|error| ExecutionError::RuntimeError {
-                agent: "workflow".to_string(),
-                message: format!("Failed to parse workflow: {error}"),
-                suggestion: Some("Check workflow syntax".to_string()),
-            })?;
+        let workflow = builder.parse(workflow_content).map_err(|error| ExecutionError::RuntimeError {
+            agent: "workflow".to_string(),
+            message: format!("Failed to parse workflow: {error}"),
+            suggestion: Some("Check workflow syntax".to_string()),
+        })?;
 
         log::info!("Workflow parsed successfully");
         log::debug!(
@@ -241,20 +224,15 @@ impl ExecutionEngine {
         self.execute_parsed_workflow_with_inputs(&workflow, inputs).await
     }
 
-    pub async fn execute_workflow_with_inputs(
-        &self,
-        workflow_path: &str,
-        inputs: HashMap<String, Value>,
-    ) -> Result<Value, ExecutionError> {
+    pub async fn execute_workflow_with_inputs(&self, workflow_path: &str, inputs: HashMap<String, Value>) -> Result<Value, ExecutionError> {
         log::info!("Starting workflow execution: {workflow_path}");
         log::debug!("Workflow inputs: {inputs:?}");
 
-        let workflow_content =
-            std::fs::read_to_string(workflow_path).map_err(|error| ExecutionError::RuntimeError {
-                agent: "workflow".to_string(),
-                message: format!("Failed to read workflow file: {error}"),
-                suggestion: Some("Check that the file exists and is readable".to_string()),
-            })?;
+        let workflow_content = std::fs::read_to_string(workflow_path).map_err(|error| ExecutionError::RuntimeError {
+            agent: "workflow".to_string(),
+            message: format!("Failed to read workflow file: {error}"),
+            suggestion: Some("Check that the file exists and is readable".to_string()),
+        })?;
 
         log::debug!("Workflow file read successfully");
 
@@ -278,12 +256,11 @@ impl ExecutionEngine {
             log::info!("Initializing provider: {}", provider.name);
             log::debug!("Provider models: {:?}", provider.models);
 
-            let provider_instance =
-                ProviderFactory::create_provider(provider).map_err(|error| ExecutionError::ProviderError {
-                    agent: "workflow".to_string(),
-                    message: format!("Failed to create provider '{}': {}", provider.name, error),
-                    suggestion: Some("Check provider configuration".to_string()),
-                })?;
+            let provider_instance = ProviderFactory::create_provider(provider).map_err(|error| ExecutionError::ProviderError {
+                agent: "workflow".to_string(),
+                message: format!("Failed to create provider '{}': {}", provider.name, error),
+                suggestion: Some("Check provider configuration".to_string()),
+            })?;
 
             provider_registry.register(provider.name.clone(), provider_instance);
             log::info!("Provider '{}' initialized successfully", provider.name);
@@ -314,8 +291,7 @@ impl ExecutionEngine {
             .await?;
 
         // Build and return final output
-        self.build_final_output(workflow, &runtime_context, &provider_registry)
-            .await
+        self.build_final_output(workflow, &runtime_context, &provider_registry).await
     }
 
     fn validate_workflow(&self, workflow: &Workflow) -> Result<(), ExecutionError> {
@@ -438,8 +414,7 @@ impl ExecutionEngine {
                 )
                 .await
             } else {
-                let orchestrator =
-                    AgentOrchestrator::with_schemas(provider, tool_registry_clone.clone(), schemas_clone);
+                let orchestrator = AgentOrchestrator::with_schemas(provider, tool_registry_clone.clone(), schemas_clone);
                 let (output, context) = orchestrator
                     .execute_agent(&agent_clone, initial_context, &runtime_context_clone)
                     .await?;
@@ -451,11 +426,7 @@ impl ExecutionEngine {
         Ok(task)
     }
 
-    async fn collect_agent_results(
-        &self,
-        tasks: Vec<AgentTaskHandle>,
-        runtime_context: &mut RuntimeContext,
-    ) -> Result<(), ExecutionError> {
+    async fn collect_agent_results(&self, tasks: Vec<AgentTaskHandle>, runtime_context: &mut RuntimeContext) -> Result<(), ExecutionError> {
         for task in tasks {
             let (agent_name, output, context) = task.await.map_err(|error| ExecutionError::RuntimeError {
                 agent: "parallel_execution".to_string(),
@@ -486,10 +457,7 @@ impl ExecutionEngine {
             let resolved = runtime_context.resolve_value(context_value)?;
 
             if let Value::Array(messages) = resolved {
-                Ok(messages
-                    .into_iter()
-                    .filter_map(|msg| serde_json::from_value(msg).ok())
-                    .collect())
+                Ok(messages.into_iter().filter_map(|msg| serde_json::from_value(msg).ok()).collect())
             } else {
                 Ok(Vec::new())
             }
@@ -543,11 +511,8 @@ impl ExecutionEngine {
             let schemas_for_iteration = schemas.clone();
 
             let iteration_task = tokio::task::spawn(async move {
-                let orchestrator = AgentOrchestrator::with_schemas(
-                    provider_for_iteration,
-                    tool_registry_for_iteration,
-                    schemas_for_iteration,
-                );
+                let orchestrator =
+                    AgentOrchestrator::with_schemas(provider_for_iteration, tool_registry_for_iteration, schemas_for_iteration);
                 let result = orchestrator
                     .execute_agent(&agent_clone, initial_context_clone, &iteration_context)
                     .await;
@@ -621,12 +586,10 @@ impl ExecutionEngine {
         result: &mut serde_json::Map<String, Value>,
     ) -> Result<(), ExecutionError> {
         for terminal_agent in terminal_agents {
-            if let Ok(output) =
-                runtime_context.resolve_value(&crate::ast::Value::Reference(crate::ast::Reference::Agent {
-                    agent: terminal_agent.name.clone(),
-                    field: "_output".to_string(),
-                }))
-            {
+            if let Ok(output) = runtime_context.resolve_value(&crate::ast::Value::Reference(crate::ast::Reference::Agent {
+                agent: terminal_agent.name.clone(),
+                field: "_output".to_string(),
+            })) {
                 result.insert(terminal_agent.name.clone(), output);
             }
         }
@@ -659,10 +622,7 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    fn get_provider_for_agent(
-        agent: &crate::ast::Agent,
-        provider_registry: &ProviderRegistry,
-    ) -> Result<ProviderRef, ExecutionError> {
+    fn get_provider_for_agent(agent: &crate::ast::Agent, provider_registry: &ProviderRegistry) -> Result<ProviderRef, ExecutionError> {
         for property in &agent.properties {
             if let crate::ast::AgentProperty::Model { value, .. } = property {
                 let model_ref = match value {
@@ -671,13 +631,14 @@ impl ExecutionEngine {
                     _ => continue,
                 };
 
-                let (provider, _model) = provider_registry.get_model_provider(&model_ref).map_err(|error| {
-                    ExecutionError::ProviderError {
-                        agent: agent.name.clone(),
-                        message: error.to_string(),
-                        suggestion: Some("Check provider and model configuration".to_string()),
-                    }
-                })?;
+                let (provider, _model) =
+                    provider_registry
+                        .get_model_provider(&model_ref)
+                        .map_err(|error| ExecutionError::ProviderError {
+                            agent: agent.name.clone(),
+                            message: error.to_string(),
+                            suggestion: Some("Check provider and model configuration".to_string()),
+                        })?;
 
                 return Ok(provider);
             }

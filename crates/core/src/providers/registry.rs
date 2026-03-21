@@ -30,16 +30,13 @@ impl ProviderRegistry {
             suggestion: Some("This may indicate a deadlock or poisoned lock".to_string()),
         })?;
 
-        providers
-            .get(name)
-            .cloned()
-            .ok_or_else(|| ProviderError::ConnectionError {
-                message: format!("Provider '{name}' not found"),
-                suggestion: Some(format!(
-                    "Available providers: {}",
-                    providers.keys().cloned().collect::<Vec<_>>().join(", ")
-                )),
-            })
+        providers.get(name).cloned().ok_or_else(|| ProviderError::ConnectionError {
+            message: format!("Provider '{name}' not found"),
+            suggestion: Some(format!(
+                "Available providers: {}",
+                providers.keys().cloned().collect::<Vec<_>>().join(", ")
+            )),
+        })
     }
 
     pub fn get_model_provider(&self, model_ref: &str) -> Result<(ProviderRef, String), ProviderError> {

@@ -13,12 +13,7 @@ pub struct Span {
 impl Span {
     #[must_use]
     pub const fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
-        Self {
-            start,
-            end,
-            line,
-            column,
-        }
+        Self { start, end, line, column }
     }
 }
 
@@ -84,31 +79,12 @@ pub struct Agent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentProperty {
-    Model {
-        value: Value,
-        span: Span,
-    },
-    Tools {
-        value: Value,
-        span: Span,
-    },
-    Context {
-        value: Value,
-        span: Span,
-    },
-    Output {
-        value: SchemaReference,
-        span: Span,
-    },
-    Prompt {
-        value: Value,
-        span: Span,
-    },
-    ForEach {
-        collection: Value,
-        identifier: String,
-        span: Span,
-    },
+    Model { value: Value, span: Span },
+    Tools { value: Value, span: Span },
+    Context { value: Value, span: Span },
+    Output { value: SchemaReference, span: Span },
+    Prompt { value: Value, span: Span },
+    ForEach { collection: Value, identifier: String, span: Span },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

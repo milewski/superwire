@@ -69,12 +69,7 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_inputs() {
-        let raw = vec![
-            "--name".to_string(),
-            "Alice".to_string(),
-            "--age".to_string(),
-            "30".to_string(),
-        ];
+        let raw = vec!["--name".to_string(), "Alice".to_string(), "--age".to_string(), "30".to_string()];
         let result = parse_inputs(raw).unwrap();
         assert_eq!(result.get("name"), Some(&Value::String("Alice".to_string())));
         assert_eq!(result.get("age"), Some(&Value::Number(30.into())));

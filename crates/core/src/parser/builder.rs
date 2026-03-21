@@ -1,6 +1,6 @@
 use crate::ast::{
-    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField, Reference,
-    Schema, SchemaField, SchemaReference, SchemaType, Span, Value, Workflow,
+    Agent, AgentProperty, FunctionCall, InputBlock, InputField, NamedSchema, OutputBlock, OutputField, Reference, Schema, SchemaField,
+    SchemaReference, SchemaType, Span, Value, Workflow,
 };
 use crate::parser::ast_constructor::AstConstructor;
 use crate::parser::error::ParserError;
@@ -20,8 +20,7 @@ impl AstBuilder {
     }
 
     pub fn parse(&self, input_str: &str) -> Result<Workflow, ParserError> {
-        let pairs = WorkflowParser::parse(Rule::workflow, input_str)
-            .map_err(|error| self.enhance_pest_error(error, input_str))?;
+        let pairs = WorkflowParser::parse(Rule::workflow, input_str).map_err(|error| self.enhance_pest_error(error, input_str))?;
 
         let constructor = AstConstructor::new(self.file_path.clone());
         let mut providers = Vec::new();
@@ -605,10 +604,7 @@ impl AstBuilder {
             }
         }
 
-        Ok(SchemaReference::Inline(Schema {
-            fields: Vec::new(),
-            span,
-        }))
+        Ok(SchemaReference::Inline(Schema { fields: Vec::new(), span }))
     }
 
     fn parse_input_block(&self, pair: pest::iterators::Pair<Rule>) -> Result<InputBlock, ParserError> {

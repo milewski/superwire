@@ -98,8 +98,7 @@ impl SchemaCompiler {
                         "type": types
                     }))
                 } else {
-                    let enum_values: Vec<Value> =
-                        variants.iter().map(|variant| Value::String(variant.clone())).collect();
+                    let enum_values: Vec<Value> = variants.iter().map(|variant| Value::String(variant.clone())).collect();
 
                     Ok(serde_json::json!({
                         "enum": enum_values
@@ -183,10 +182,7 @@ mod tests {
         assert_eq!(files_schema.get("type").unwrap().as_str().unwrap(), "array");
         assert_eq!(files_schema.get("minItems").unwrap().as_u64().unwrap(), 4);
         assert_eq!(files_schema.get("maxItems").unwrap().as_u64().unwrap(), 4);
-        assert_eq!(
-            files_schema.get("description").unwrap().as_str().unwrap(),
-            "exactly 4 files"
-        );
+        assert_eq!(files_schema.get("description").unwrap().as_str().unwrap(), "exactly 4 files");
     }
 
     #[test]
@@ -212,10 +208,7 @@ mod tests {
 
     #[test]
     fn test_nested_array_with_quantity() {
-        let schema_type = SchemaType::Array(
-            Box::new(SchemaType::Array(Box::new(SchemaType::Number), Some(3))),
-            Some(2),
-        );
+        let schema_type = SchemaType::Array(Box::new(SchemaType::Array(Box::new(SchemaType::Number), Some(3))), Some(2));
 
         let compiled = SchemaCompiler::compile_type(&schema_type, None).unwrap();
         let obj = compiled.as_object().unwrap();

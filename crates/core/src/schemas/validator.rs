@@ -51,12 +51,8 @@ impl SchemaValidator {
                                         return Err(SchemaError::ValidationError {
                                             schema_name: None,
                                             field_path: Some(format!("/{field_name}")),
-                                            message: format!(
-                                                "/{field_name}: Required field '{field_name}' cannot be an empty string"
-                                            ),
-                                            suggestion: Some(
-                                                "Provide a non-empty value for this required field".to_string(),
-                                            ),
+                                            message: format!("/{field_name}: Required field '{field_name}' cannot be an empty string"),
+                                            suggestion: Some("Provide a non-empty value for this required field".to_string()),
                                         });
                                     }
                                 }

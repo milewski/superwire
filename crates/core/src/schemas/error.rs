@@ -18,8 +18,5 @@ pub enum SchemaError {
     },
 
     #[error("Unsupported schema type: {type_name}")]
-    UnsupportedType {
-        type_name: String,
-        suggestion: Option<String>,
-    },
+    UnsupportedType { type_name: String, suggestion: Option<String> },
 }

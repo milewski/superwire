@@ -248,11 +248,7 @@ impl ErrorAnalyzer {
 
         let value_part = parts[1].trim();
 
-        if value_part.is_empty()
-            || value_part.starts_with('"')
-            || value_part.starts_with('[')
-            || value_part.starts_with('{')
-        {
+        if value_part.is_empty() || value_part.starts_with('"') || value_part.starts_with('[') || value_part.starts_with('{') {
             return None;
         }
 
@@ -345,13 +341,7 @@ impl ErrorAnalyzer {
         best_match
     }
 
-    fn create_generic_error(
-        &self,
-        line: usize,
-        column: usize,
-        error: &PestError<Rule>,
-        source_line: Option<&str>,
-    ) -> AnalyzedError {
+    fn create_generic_error(&self, line: usize, column: usize, error: &PestError<Rule>, source_line: Option<&str>) -> AnalyzedError {
         let expected_description = self.format_expected_rules(error);
 
         AnalyzedError {

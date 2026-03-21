@@ -74,11 +74,7 @@ impl DependencyGraph {
                     .filter_map(|dep_index| self.graph.node_weight(dep_index))
                     .collect();
 
-                let max_dep_level = dependencies
-                    .iter()
-                    .filter_map(|dep| level_map.get(*dep))
-                    .max()
-                    .unwrap_or(&0);
+                let max_dep_level = dependencies.iter().filter_map(|dep| level_map.get(*dep)).max().unwrap_or(&0);
 
                 let agent_level = if dependencies.is_empty() { 0 } else { max_dep_level + 1 };
 

@@ -3,10 +3,10 @@ use crate::providers::error::ProviderError;
 use crate::providers::provider::{AgentOutput, Message, Provider, ToolCall, ToolDefinition};
 use async_openai::config::OpenAIConfig;
 use async_openai::types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs,
-    ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-    ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
-    ChatCompletionToolArgs, ChatCompletionToolType, CreateChatCompletionRequestArgs, FunctionObjectArgs,
+    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs,
+    ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionToolArgs, ChatCompletionToolType,
+    CreateChatCompletionRequestArgs, FunctionObjectArgs,
 };
 use async_openai::Client;
 use serde_json::Value;
@@ -27,13 +27,12 @@ impl OpenAiProvider {
             .expect("Failed to build HTTP client");
 
         let config = OpenAIConfig::new().with_api_key(api_key);
-        let client =
-            Client::with_config(config)
-                .with_http_client(http_client)
-                .with_backoff(backoff::ExponentialBackoff {
-                    max_elapsed_time: Some(std::time::Duration::from_millis(1)),
-                    ..Default::default()
-                });
+        let client = Client::with_config(config)
+            .with_http_client(http_client)
+            .with_backoff(backoff::ExponentialBackoff {
+                max_elapsed_time: Some(std::time::Duration::from_millis(1)),
+                ..Default::default()
+            });
 
         Self { name, models, client }
     }
@@ -47,20 +46,17 @@ impl OpenAiProvider {
             .expect("Failed to build HTTP client");
 
         let config = OpenAIConfig::new().with_api_key(api_key).with_api_base(endpoint);
-        let client =
-            Client::with_config(config)
-                .with_http_client(http_client)
-                .with_backoff(backoff::ExponentialBackoff {
-                    max_elapsed_time: Some(std::time::Duration::from_millis(1)),
-                    ..Default::default()
-                });
+        let client = Client::with_config(config)
+            .with_http_client(http_client)
+            .with_backoff(backoff::ExponentialBackoff {
+                max_elapsed_time: Some(std::time::Duration::from_millis(1)),
+                ..Default::default()
+            });
 
         Self { name, models, client }
     }
 
-    fn convert_messages_to_openai_format(
-        messages: &[Message],
-    ) -> Result<Vec<ChatCompletionRequestMessage>, ProviderError> {
+    fn convert_messages_to_openai_format(messages: &[Message]) -> Result<Vec<ChatCompletionRequestMessage>, ProviderError> {
         messages
             .iter()
             .map(|message| match message {
@@ -153,12 +149,7 @@ impl Provider for OpenAiProvider {
         &self.models
     }
 
-    async fn execute_agent(
-        &self,
-        agent: &Agent,
-        context: Vec<Message>,
-        tools: Vec<ToolDefinition>,
-    ) -> Result<AgentOutput, ProviderError> {
+    async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         log::debug!("OpenAiProvider executing agent: {}", agent.name);
 
         let openai_messages = Self::convert_messages_to_openai_format(&context)?;
@@ -206,11 +197,8 @@ impl Provider for OpenAiProvider {
         let mut wait_time = std::time::Duration::from_secs(30);
 
         let response = loop {
-            let response_result = tokio::time::timeout(
-                std::time::Duration::from_secs(35),
-                self.client.chat().create(request.clone()),
-            )
-            .await;
+            let response_result =
+                tokio::time::timeout(std::time::Duration::from_secs(35), self.client.chat().create(request.clone())).await;
 
             match response_result {
                 Ok(Ok(response)) => break Ok(response),
@@ -244,10 +232,9 @@ impl Provider for OpenAiProvider {
 
                     let suggestion = match status_code {
                         Some(401) => Some("Invalid API key. Check your config { api_key: \"...\" }".to_string()),
-                        Some(404) => Some(
-                            "Model or endpoint not found. Check your config { endpoint: \"...\" } and model name"
-                                .to_string(),
-                        ),
+                        Some(404) => {
+                            Some("Model or endpoint not found. Check your config { endpoint: \"...\" } and model name".to_string())
+                        }
                         Some(429) => Some("Rate limit exceeded after retries. Wait longer and try again".to_string()),
                         Some(500) => Some("Server error. Try again later".to_string()),
                         _ => Some("Check your API configuration and network connection".to_string()),
@@ -264,7 +251,10 @@ impl Provider for OpenAiProvider {
                     break Err(ProviderError::ApiError {
                         message: "OpenAI API request timed out. This often indicates a rate limit or server issue.".to_string(),
                         status_code: Some(408),
-                        suggestion: Some("If you're hitting rate limits, wait a few minutes and try again. Otherwise, check your network connection.".to_string()),
+                        suggestion: Some(
+                            "If you're hitting rate limits, wait a few minutes and try again. Otherwise, check your network connection."
+                                .to_string(),
+                        ),
                     });
                 }
             }
