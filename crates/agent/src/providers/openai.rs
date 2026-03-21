@@ -553,6 +553,30 @@ impl OpenAIProvider {
             request_body["temperature"] = json!(temperature);
         }
 
+        if let Some(top_p) = config.top_p {
+            request_body["top_p"] = json!(top_p);
+        }
+
+        if let Some(max_tokens) = config.max_tokens {
+            request_body["max_tokens"] = json!(max_tokens);
+        }
+
+        if let Some(frequency_penalty) = config.frequency_penalty {
+            request_body["frequency_penalty"] = json!(frequency_penalty);
+        }
+
+        if let Some(presence_penalty) = config.presence_penalty {
+            request_body["presence_penalty"] = json!(presence_penalty);
+        }
+
+        if let Some(seed) = config.seed {
+            request_body["seed"] = json!(seed);
+        }
+
+        if let Some(stop_sequences) = &config.stop_sequences {
+            request_body["stop"] = json!(stop_sequences);
+        }
+
         if !tools.is_empty() {
             request_body["tools"] = json!(self.convert_tools_to_chat_json(tools)?);
         }
@@ -578,6 +602,30 @@ impl OpenAIProvider {
 
         if let Some(temperature) = config.temperature {
             request_body["temperature"] = json!(temperature);
+        }
+
+        if let Some(top_p) = config.top_p {
+            request_body["top_p"] = json!(top_p);
+        }
+
+        if let Some(max_tokens) = config.max_tokens {
+            request_body["max_output_tokens"] = json!(max_tokens);
+        }
+
+        if let Some(frequency_penalty) = config.frequency_penalty {
+            request_body["frequency_penalty"] = json!(frequency_penalty);
+        }
+
+        if let Some(presence_penalty) = config.presence_penalty {
+            request_body["presence_penalty"] = json!(presence_penalty);
+        }
+
+        if let Some(seed) = config.seed {
+            request_body["seed"] = json!(seed);
+        }
+
+        if let Some(stop_sequences) = &config.stop_sequences {
+            request_body["stop"] = json!(stop_sequences);
         }
 
         if !tools.is_empty() {

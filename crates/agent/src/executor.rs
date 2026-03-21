@@ -175,6 +175,8 @@ where
                 return Err(ExecutorError::StuckLoopDetected);
             }
 
+            println!("{:?}", response.stop_reason);
+
             // If the provider did not request any tool calls
             if response.tool_calls.is_empty() {
                 // Nudge the model toward the finalize tool when it tries to stop without completing

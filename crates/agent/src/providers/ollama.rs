@@ -5,6 +5,7 @@ use crate::AgentConfig;
 use async_trait::async_trait;
 use ollama_rs::generation::chat::request::ChatMessageRequest;
 use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::generation::options::GenerationOptions;
 use ollama_rs::Ollama;
 
 pub struct OllamaProvider {
@@ -31,11 +32,60 @@ impl OllamaProvider {
             Message::System { content } => Ok(ChatMessage::system(content.clone())),
         }
     }
+
+    fn build_generation_options(config: &AgentConfig) -> Result<Option<GenerationOptions>, String> {
+        let mut generation_options = GenerationOptions::default();
+        let mut has_options = false;
+
+        if let Some(temperature) = config.temperature {
+            generation_options = generation_options.temperature(temperature);
+            has_options = true;
+        }
+
+        if let Some(top_p) = config.top_p {
+            generation_options = generation_options.top_p(top_p);
+            has_options = true;
+        }
+
+        if let Some(top_k) = config.top_k {
+            generation_options = generation_options.top_k(top_k);
+            has_options = true;
+        }
+
+        if let Some(repeat_penalty) = config.repeat_penalty {
+            generation_options = generation_options.repeat_penalty(repeat_penalty);
+            has_options = true;
+        }
+
+        if let Some(seed) = config.seed {
+            generation_options = generation_options.seed(seed);
+            has_options = true;
+        }
+
+        if let Some(max_tokens) = config.max_tokens {
+            let max_predictions =
+                i32::try_from(max_tokens).map_err(|_| format!("max_tokens value {max_tokens} exceeds i32::MAX for Ollama num_predict"))?;
+
+            generation_options = generation_options.num_predict(max_predictions);
+            has_options = true;
+        }
+
+        if let Some(stop_sequences) = &config.stop_sequences {
+            generation_options = generation_options.stop(stop_sequences.clone());
+            has_options = true;
+        }
+
+        if has_options {
+            Ok(Some(generation_options))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[async_trait]
 impl Provider for OllamaProvider {
-    async fn generate(&self, context: &Context, _tools: &[ToolDefinition], _config: &AgentConfig) -> Result<ProviderResponse, String> {
+    async fn generate(&self, context: &Context, _tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, String> {
         let messages: Result<Vec<ChatMessage>, String> = context
             .messages
             .iter()
@@ -44,7 +94,11 @@ impl Provider for OllamaProvider {
 
         let messages = messages?;
 
-        let request = ChatMessageRequest::new(self.model.clone(), messages);
+        let mut request = ChatMessageRequest::new(self.model.clone(), messages);
+
+        if let Some(generation_options) = Self::build_generation_options(config)? {
+            request = request.options(generation_options);
+        }
 
         let response = self
             .client

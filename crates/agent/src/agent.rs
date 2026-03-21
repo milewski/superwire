@@ -7,10 +7,48 @@ use crate::traits::{Executable, Provider};
 use std::sync::Arc;
 
 /// Configuration for the agent
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct AgentConfig {
+    /// Maximum number of tokens to generate for the model response.
+    ///
+    /// Mapped to provider-specific limits (for example `max_tokens`,
+    /// `max_output_tokens`, or Ollama `num_predict`).
     pub max_tokens: Option<usize>,
+
+    /// Sampling temperature.
+    ///
+    /// Higher values increase randomness; lower values make outputs more deterministic.
     pub temperature: Option<f32>,
+
+    /// Nucleus sampling parameter.
+    ///
+    /// The model samples from the smallest token set whose cumulative probability
+    /// reaches `top_p`.
+    pub top_p: Option<f32>,
+
+    /// Limits sampling to the `top_k` most likely next tokens.
+    pub top_k: Option<u32>,
+
+    /// Penalizes tokens based on how frequently they already appeared.
+    ///
+    /// Higher values reduce repetition frequency.
+    pub frequency_penalty: Option<f32>,
+
+    /// Penalizes tokens that already appeared at least once.
+    ///
+    /// Higher values encourage introducing new topics or terms.
+    pub presence_penalty: Option<f32>,
+
+    /// Penalizes repeating recent token sequences.
+    ///
+    /// Primarily used by Ollama-style generation options.
+    pub repeat_penalty: Option<f32>,
+
+    /// Random seed for reproducible sampling when supported by the provider.
+    pub seed: Option<i32>,
+
+    /// Stop sequences that terminate generation when matched.
+    pub stop_sequences: Option<Vec<String>>,
 }
 
 impl AgentConfig {
@@ -20,14 +58,101 @@ impl AgentConfig {
     }
 
     #[must_use]
+    /// Limits how long the model response is allowed to be.
+    ///
+    /// Use this when you want shorter answers, lower cost, or to avoid very long outputs.
+    /// Increase it if responses are getting cut off too early.
     pub fn with_max_tokens(mut self, max_tokens: usize) -> Self {
         self.max_tokens = Some(max_tokens);
         self
     }
 
     #[must_use]
+    /// Controls randomness in the model output.
+    ///
+    /// - Lower values (for example `0.0` to `0.3`): more predictable, stable answers.
+    /// - Medium values (for example `0.5` to `0.8`): balanced creativity.
+    /// - Higher values (for example `1.0+`): more varied but potentially less reliable.
+    ///
+    /// Use low values for structured tasks and high values for brainstorming.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
+        self
+    }
+
+    #[must_use]
+    /// Enables nucleus sampling (`top_p`) to limit token choices by probability mass.
+    ///
+    /// The model only samples from the smallest set of tokens whose combined
+    /// probability reaches `top_p`.
+    ///
+    /// - Lower values: safer, more focused outputs.
+    /// - Higher values: broader, more creative outputs.
+    ///
+    /// Use this as an alternative to high temperature when you want controlled variety.
+    pub fn with_top_p(mut self, top_p: f32) -> Self {
+        self.top_p = Some(top_p);
+        self
+    }
+
+    #[must_use]
+    /// Limits sampling to the `top_k` most likely next tokens.
+    ///
+    /// Smaller values constrain the model to safer choices.
+    /// Larger values allow more diversity.
+    ///
+    /// Mostly useful with providers that support top-k directly (for example Ollama).
+    pub fn with_top_k(mut self, top_k: u32) -> Self {
+        self.top_k = Some(top_k);
+        self
+    }
+
+    #[must_use]
+    /// Reduces repeated wording by penalizing tokens that appear frequently.
+    ///
+    /// Use this when the model keeps repeating phrases or sentence patterns.
+    /// Increase gradually to avoid making text unnatural.
+    pub fn with_frequency_penalty(mut self, frequency_penalty: f32) -> Self {
+        self.frequency_penalty = Some(frequency_penalty);
+        self
+    }
+
+    #[must_use]
+    /// Encourages the model to introduce new words and topics.
+    ///
+    /// Use this when answers feel too narrow or keep circling the same ideas.
+    /// This is often helpful in ideation and exploratory writing.
+    pub fn with_presence_penalty(mut self, presence_penalty: f32) -> Self {
+        self.presence_penalty = Some(presence_penalty);
+        self
+    }
+
+    #[must_use]
+    /// Penalizes immediate local repetition (mostly for Ollama-style backends).
+    ///
+    /// Use this when generated text loops or repeats recent fragments.
+    /// Keep values moderate to avoid hurting fluency.
+    pub fn with_repeat_penalty(mut self, repeat_penalty: f32) -> Self {
+        self.repeat_penalty = Some(repeat_penalty);
+        self
+    }
+
+    #[must_use]
+    /// Sets a random seed for reproducible outputs when the provider supports it.
+    ///
+    /// Use this for debugging, tests, and experiments where you want repeatable runs.
+    pub fn with_seed(mut self, seed: i32) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    #[must_use]
+    /// Stops generation when any of the given text sequences appears.
+    ///
+    /// Useful for structured protocols or custom delimiters (for example `"\nEND"`).
+    /// Pick unique stop strings to avoid cutting off normal content by accident.
+    pub fn with_stop_sequences(mut self, stop_sequences: Vec<String>) -> Self {
+        self.stop_sequences = Some(stop_sequences);
         self
     }
 }
@@ -145,10 +270,7 @@ where
             executor,
             provider,
             tools: Vec::new(),
-            config: AgentConfig {
-                max_tokens: None,
-                temperature: None,
-            },
+            config: AgentConfig::default(),
         }
     }
 
