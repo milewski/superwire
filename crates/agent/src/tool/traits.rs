@@ -40,11 +40,8 @@ where
 
     async fn execute(&self, input: Value) -> Result<Value, ToolError> {
         let input = serde_json::from_value(input).map_err(|error| {
-            ToolError::new(format!(
-                "Failed to deserialize tool input for '{}': {error}",
-                self.name()
-            ))
-            .with_suggestion("Check that the arguments match the expected schema")
+            ToolError::new(format!("Failed to deserialize tool input for '{}': {error}", self.name()))
+                .with_suggestion("Check that the arguments match the expected schema")
         })?;
 
         self.execute(input).await

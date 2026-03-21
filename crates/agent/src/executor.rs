@@ -48,10 +48,7 @@ where
         self
     }
 
-    fn prepare_tools<'a>(
-        &self,
-        tools: &'a [Arc<dyn RuntimeTool>],
-    ) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
+    fn prepare_tools<'a>(&self, tools: &'a [Arc<dyn RuntimeTool>]) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
         let mut definitions = Vec::with_capacity(tools.len() + 1);
         let mut registry = HashMap::with_capacity(tools.len());
 
@@ -89,19 +86,14 @@ where
         ToolCallExecution::Continue(non_finalize_tool_calls)
     }
 
-    async fn process_finalize_tool_call(
-        &self,
-        context: &mut Context,
-        tool_call: &ToolCall,
-    ) -> Result<Option<O>, ExecutorError> {
+    async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
         let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
             Ok(finalize_arguments) => match finalize_arguments.output {
                 FinalizeOutput::Success { output } => {
-                    let value = serde_json::to_value(&output).map_err(|error| {
-                        ExecutorError::new(format!("Failed to serialize finalize tool output: {error}"))
-                    })?;
+                    let value = serde_json::to_value(&output)
+                        .map_err(|error| ExecutorError::new(format!("Failed to serialize finalize tool output: {error}")))?;
 
                     context.add_tool_result(ToolResult {
                         tool_call_id: tool_call.id.clone(),
@@ -118,9 +110,7 @@ where
                         is_error: true,
                     });
 
-                    Err(ExecutorError::new(format!(
-                        "Agent failed to complete the task: {reason}"
-                    )))
+                    Err(ExecutorError::new(format!("Agent failed to complete the task: {reason}")))
                 }
             },
             Err(error) => {
@@ -193,7 +183,7 @@ where
                 // Prompt the model to use the finalize tool if it tried to end the conversation
                 if response.stop_reason == StopReason::EndOfSequence {
                     local_context.add_system_message(
-                        "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool."
+                        "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool.",
                     );
                 }
 
@@ -209,22 +199,15 @@ where
 
             match self.classify_tool_calls(&response) {
                 ToolCallExecution::Complete(finalize_tool_call) => {
-                    if let Some(result) = self
-                        .process_finalize_tool_call(&mut local_context, finalize_tool_call)
-                        .await?
-                    {
+                    if let Some(result) = self.process_finalize_tool_call(&mut local_context, finalize_tool_call).await? {
                         break Ok(result);
                     }
                 }
                 ToolCallExecution::Continue(tool_calls_to_execute) => {
                     let tool_execution_futures = tool_calls_to_execute.into_iter().map(|tool_call| {
-                        let tool = registry
-                            .get(&tool_call.name)
-                            .expect("tool registry should contain every tool");
+                        let tool = registry.get(&tool_call.name).expect("tool registry should contain every tool");
 
-                        async move {
-                            (tool_call, tool.execute(tool_call.arguments.clone()).await)
-                        }
+                        async move { (tool_call, tool.execute(tool_call.arguments.clone()).await) }
                     });
 
                     for (tool_call, tool_execution_result) in join_all(tool_execution_futures).await {
