@@ -3,7 +3,7 @@ use crate::error::ExecutorError;
 use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
 use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
-use crate::traits::{Executable, ExecutionFailure, ExecutionResult, Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
@@ -107,7 +107,7 @@ where
                 FinalizeOutput::Failure { reason } => {
                     context.add_tool_result(ToolResult::Failure {
                         tool_call_id: tool_call.id.clone(),
-                        content: Value::String(format!("Agent failed to complete the task: {reason}")),
+                        content: Value::String(reason.to_string()),
                     });
 
                     Err(ExecutorError::FinalizeFailure { reason })
@@ -141,11 +141,8 @@ where
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
         config: &AgentConfig,
-    ) -> Result<ExecutionResult<Self::Output>, ExecutionFailure<ExecutorError>> {
-        let (tools, registry) = self.prepare_tools(tools).map_err(|error| ExecutionFailure {
-            error,
-            context: context.clone(),
-        })?;
+    ) -> Result<Self::Output, ExecutorError> {
+        let (tools, registry) = self.prepare_tools(tools)?;
 
         let finalize_tool_name = self.finalize_tool.name().to_string();
         let finalize_completion_messages = [
@@ -171,11 +168,8 @@ where
         loop {
             // Stop runaway conversations once the iteration budget is exhausted
             if iteration >= self.max_iterations {
-                return Err(ExecutionFailure {
-                    error: ExecutorError::MaxIterationsReached {
-                        max_iterations: self.max_iterations,
-                    },
-                    context: context.clone(),
+                return Err(ExecutorError::MaxIterationsReached {
+                    max_iterations: self.max_iterations,
                 });
             }
 
@@ -183,10 +177,7 @@ where
             let response = provider
                 .generate(context, &tools, config)
                 .await
-                .map_err(|message| ExecutionFailure {
-                    error: ExecutorError::ProviderFailed { iteration, message },
-                    context: context.clone(),
-                })?;
+                .map_err(|message| ExecutorError::ProviderFailed { iteration, message })?;
 
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
@@ -199,10 +190,7 @@ where
 
             // Abort if the model repeats itself to avoid infinite loops
             if context.is_stuck(5) {
-                return Err(ExecutionFailure {
-                    error: ExecutorError::StuckLoopDetected,
-                    context: context.clone(),
-                });
+                return Err(ExecutorError::StuckLoopDetected);
             }
 
             // If the provider did not request any tool calls
@@ -225,15 +213,13 @@ where
 
             match self.classify_tool_calls(&response) {
                 ToolCallExecution::Complete(finalize_tool_call) => {
-                    if let Some(result) = self
-                        .process_finalize_tool_call(context, finalize_tool_call)
-                        .await
-                        .map_err(|error| ExecutionFailure {
-                            error,
-                            context: context.clone(),
-                        })?
-                    {
-                        break Ok(ExecutionResult { output: result });
+                    let output = match self.process_finalize_tool_call(context, finalize_tool_call).await {
+                        Ok(output) => output,
+                        Err(error) => return Err(error),
+                    };
+
+                    if let Some(result) = output {
+                        break Ok(result);
                     }
                 }
                 ToolCallExecution::Continue(tool_calls_to_execute) => {

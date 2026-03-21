@@ -14,4 +14,4 @@ pub use executor::LoopExecutor;
 pub use message::{Message, ToolCall, ToolResult};
 pub use providers::{OllamaProvider, OpenAIProvider};
 pub use tool::{FinalizeOutput, FinalizeTool, RuntimeTool, Tool, ToolError};
-pub use traits::{Executable, ExecutionFailure, ExecutionResult, Provider, ProviderResponse, StopReason, ToolDefinition};
+pub use traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};

@@ -39,19 +39,6 @@ pub struct ProviderResponse {
     pub stop_reason: StopReason,
 }
 
-/// Execution result containing final output
-#[derive(Debug, Clone)]
-pub struct ExecutionResult<Output> {
-    pub output: Output,
-}
-
-/// Execution failure containing error and context snapshot
-#[derive(Debug, Clone)]
-pub struct ExecutionFailure<Error> {
-    pub error: Error,
-    pub context: Context,
-}
-
 /// Trait for LLM providers that can generate responses
 #[async_trait::async_trait]
 pub trait Provider {
@@ -71,5 +58,5 @@ pub trait Executable {
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
         config: &AgentConfig,
-    ) -> Result<ExecutionResult<Self::Output>, ExecutionFailure<Self::Error>>;
+    ) -> Result<Self::Output, Self::Error>;
 }

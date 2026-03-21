@@ -177,19 +177,20 @@ where
             }
         }
 
-        let execution_result = self
-            .executor
-            .execute(&mut context, &self.provider, &self.tools, &self.config)
-            .await
-            .map_err(|execution_failure| AgentError::ExecutionFailed {
-                error: execution_failure.error.into(),
-                context: execution_failure.context,
-            })?;
+        let output = match self.executor.execute(&mut context, &self.provider, &self.tools, &self.config).await {
+            Ok(result) => result,
+            Err(error) => {
+                return Err(AgentError::ExecutionFailed {
+                    error: error.into(),
+                    context,
+                });
+            }
+        };
 
         let statistics = AgentRunStatistics::from_context(&context);
 
         Ok(AgentRunResult {
-            output: execution_result.output,
+            output,
             context,
             statistics,
         })
