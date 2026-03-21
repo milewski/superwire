@@ -93,8 +93,9 @@ where
         match input_result {
             Ok(finalize_arguments) => match finalize_arguments.output {
                 FinalizeOutput::Success { output } => {
-                    let value = serde_json::to_value(&output)
-                        .map_err(|error| ExecutorError::new(format!("Failed to serialize finalize tool output: {error}")))?;
+                    let value = serde_json::to_value(&output).map_err(|error| ExecutorError::FinalizeOutputSerializationFailed {
+                        message: error.to_string(),
+                    })?;
 
                     context.add_tool_result(ToolResult {
                         tool_call_id: tool_call.id.clone(),
@@ -111,7 +112,7 @@ where
                         is_error: true,
                     });
 
-                    Err(ExecutorError::new(format!("Agent failed to complete the task: {reason}")))
+                    Err(ExecutorError::FinalizeFailure { reason })
                 }
             },
             Err(error) => {
@@ -176,17 +177,16 @@ where
         loop {
             // Stop runaway conversations once the iteration budget is exhausted
             if iteration >= self.max_iterations {
-                return Err(ExecutorError::new(format!(
-                    "Maximum iterations ({}) reached without calling finalize tool",
-                    self.max_iterations
-                )));
+                return Err(ExecutorError::MaxIterationsReached {
+                    max_iterations: self.max_iterations,
+                });
             }
 
             // Ask the provider to extend the conversation using the current context and tools
             let response = provider
                 .generate(&local_context, &tools, config)
                 .await
-                .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
+                .map_err(|error| ExecutorError::ProviderFailed { iteration, message: error })?;
 
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
@@ -195,7 +195,7 @@ where
 
             // Abort if the model repeats itself to avoid infinite loops
             if local_context.is_stuck(5) {
-                break Err(ExecutorError::new("Agent is stuck in a repeated loop"))?;
+                break Err(ExecutorError::StuckLoopDetected)?;
             }
 
             // If the provider did not request any tool calls

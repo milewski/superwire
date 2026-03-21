@@ -86,16 +86,22 @@ async fn main() -> Result<(), AgentError> {
         quote: String,
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+    struct User {
+        /// Username, only the name nothing else
+        name: String,
+    }
+
     println!("Testing with OpenAI-compatible endpoint...");
 
     let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen/qwen3.5-35b-a3b");
 
     println!("Running agent...");
 
-    let executor = LoopExecutor::<OpenAIProvider, String>::new()?;
+    let executor = LoopExecutor::<OpenAIProvider, User>::new()?;
     let result = Agent::new(executor, provider)
-        .with_tool::<QuoteTool>()
-        .with_tool::<RandomNumberTool>()
+        // .with_tool::<QuoteTool>()
+        // .with_tool::<RandomNumberTool>()
         .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(2.0))
         .run("Please give me a random person name")
         .await?;
