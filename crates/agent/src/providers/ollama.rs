@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::message::{Message, MessageRole, ToolCall};
+use crate::message::{Message, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
@@ -23,11 +23,12 @@ impl OllamaProvider {
     }
 
     fn convert_message_to_ollama(&self, message: &Message) -> Result<ChatMessage, String> {
-        match message.role {
-            MessageRole::User => Ok(ChatMessage::user(message.content.clone())),
-            MessageRole::Assistant => Ok(ChatMessage::assistant(message.content.clone())),
-            MessageRole::System => Ok(ChatMessage::system(message.content.clone())),
-            MessageRole::Tool | MessageRole::ToolResult => Ok(ChatMessage::assistant(message.content.clone())),
+        match message {
+            Message::User { content } => Ok(ChatMessage::user(content.clone())),
+            Message::Assistant { content } => Ok(ChatMessage::assistant(content.clone())),
+            Message::AssistantToolCall { tool: _ } => Ok(ChatMessage::assistant(String::new())),
+            Message::ToolResult { result } => Ok(ChatMessage::assistant(result.content.to_string())),
+            Message::System { content } => Ok(ChatMessage::system(content.clone())),
         }
     }
 }

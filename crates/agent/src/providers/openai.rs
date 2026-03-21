@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::message::{Message, MessageRole, ToolCall};
+use crate::message::{Message, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
@@ -40,46 +40,45 @@ impl OpenAIProvider {
     }
 
     fn convert_message_to_chat_json(&self, message: &Message) -> Result<Value, String> {
-        match message.role {
-            MessageRole::User => Ok(json!({
+        match message {
+            Message::User { content } => Ok(json!({
                 "role": "user",
-                "content": message.content,
+                "content": content,
             })),
-            MessageRole::Assistant => {
+            Message::Assistant { content } => Ok(json!({
+                "role": "assistant",
+                "content": content,
+            })),
+            Message::AssistantToolCall { tool: tool_call } => {
                 let mut assistant_message = json!({
                     "role": "assistant",
-                    "content": message.content,
+                    "content": "",
                 });
 
-                if let Some(tool_call) = &message.tool_call {
-                    assistant_message["tool_calls"] = json!([
-                        {
-                            "id": tool_call.id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_call.name,
-                                "arguments": tool_call.arguments.to_string(),
-                            }
+                assistant_message["tool_calls"] = json!([
+                    {
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.name,
+                            "arguments": tool_call.arguments.to_string(),
                         }
-                    ]);
-                }
+                    }
+                ]);
 
                 Ok(assistant_message)
             }
-            MessageRole::System => Ok(json!({
+            Message::System { content } => Ok(json!({
                 "role": "system",
-                "content": message.content,
+                "content": content,
             })),
-            MessageRole::Tool | MessageRole::ToolResult => {
-                let tool_result = message
-                    .tool_result
-                    .as_ref()
-                    .ok_or_else(|| "Tool message missing tool_result".to_string())?;
+            Message::ToolResult { result: tool_result } => {
+                let content = serde_json::to_string(&tool_result.content).unwrap_or_else(|_| tool_result.content.to_string());
 
                 Ok(json!({
                     "role": "tool",
                     "tool_call_id": tool_result.tool_call_id,
-                    "content": message.content,
+                    "content": content,
                 }))
             }
         }
@@ -108,57 +107,51 @@ impl OpenAIProvider {
     fn convert_message_to_responses_items(&self, message: &Message) -> Result<Vec<Value>, String> {
         let mut response_items = Vec::new();
 
-        match message.role {
-            MessageRole::User => {
+        match message {
+            Message::User { content } => {
                 response_items.push(json!({
                     "type": "message",
                     "role": "user",
-                    "content": message.content,
+                    "content": content,
                 }));
             }
-            MessageRole::Assistant => {
-                if !message.content.is_empty() {
-                    response_items.push(json!({
-                        "type": "message",
-                        "role": "assistant",
-                        "content": message.content,
-                    }));
-                }
-
-                if let Some(tool_call) = &message.tool_call {
-                    let function_call_item_id = if tool_call.id.starts_with("fc") {
-                        tool_call.id.clone()
-                    } else {
-                        format!("fc_{}", tool_call.id)
-                    };
-
-                    response_items.push(json!({
-                        "type": "function_call",
-                        "id": function_call_item_id,
-                        "call_id": tool_call.id,
-                        "name": tool_call.name,
-                        "arguments": tool_call.arguments.to_string(),
-                        "status": "completed",
-                    }));
-                }
+            Message::Assistant { content } => {
+                response_items.push(json!({
+                    "type": "message",
+                    "role": "assistant",
+                    "content": content,
+                }));
             }
-            MessageRole::System => {
+            Message::AssistantToolCall { tool: tool_call } => {
+                let function_call_item_id = if tool_call.id.starts_with("fc") {
+                    tool_call.id.clone()
+                } else {
+                    format!("fc_{}", tool_call.id)
+                };
+
+                response_items.push(json!({
+                    "type": "function_call",
+                    "id": function_call_item_id,
+                    "call_id": tool_call.id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments.to_string(),
+                    "status": "completed",
+                }));
+            }
+            Message::System { content } => {
                 response_items.push(json!({
                     "type": "message",
                     "role": "system",
-                    "content": message.content,
+                    "content": content,
                 }));
             }
-            MessageRole::Tool | MessageRole::ToolResult => {
-                let tool_result = message
-                    .tool_result
-                    .as_ref()
-                    .ok_or_else(|| "Tool message missing tool_result".to_string())?;
+            Message::ToolResult { result: tool_result } => {
+                let content = serde_json::to_string(&tool_result.content).unwrap_or_else(|_| tool_result.content.to_string());
 
                 response_items.push(json!({
                     "type": "function_call_output",
                     "call_id": tool_result.tool_call_id,
-                    "output": message.content,
+                    "output": content,
                 }));
             }
         }

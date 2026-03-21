@@ -9,9 +9,9 @@ mod traits;
 
 pub use agent::{Agent, AgentConfig};
 pub use context::Context;
-pub use error::{AgentError, ValidationError};
+pub use error::AgentError;
 pub use executor::LoopExecutor;
-pub use message::{Message, MessageRole, ToolCall, ToolResult};
+pub use message::{Message, ToolCall, ToolResult};
 pub use providers::{OllamaProvider, OpenAIProvider};
 pub use tool::{FinalizeOutput, FinalizeTool, RuntimeTool, Tool, ToolError};
 pub use traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
