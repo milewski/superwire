@@ -8,6 +8,7 @@ use std::sync::Arc;
 #[derive(Default)]
 pub struct AgentConfig {
     pub max_tokens: Option<usize>,
+    pub temperature: Option<f32>,
 }
 
 impl AgentConfig {
@@ -19,6 +20,12 @@ impl AgentConfig {
     #[must_use]
     pub fn with_max_tokens(mut self, max_tokens: usize) -> Self {
         self.max_tokens = Some(max_tokens);
+        self
+    }
+
+    #[must_use]
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
         self
     }
 }
@@ -46,7 +53,10 @@ where
             executor,
             provider,
             tools: Vec::new(),
-            config: AgentConfig { max_tokens: None },
+            config: AgentConfig {
+                max_tokens: None,
+                temperature: None,
+            },
         }
     }
 
@@ -76,7 +86,7 @@ where
         }
 
         self.executor
-            .execute(&context, &self.provider, &self.tools)
+            .execute(&context, &self.provider, &self.tools, &self.config)
             .await
             .map_err(|error| error.into())
     }

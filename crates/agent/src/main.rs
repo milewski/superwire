@@ -92,12 +92,12 @@ async fn main() -> Result<(), AgentError> {
 
     println!("Running agent...");
 
-    let executor = LoopExecutor::<OpenAIProvider, TaskOutput>::new()?;
+    let executor = LoopExecutor::<OpenAIProvider, String>::new()?;
     let result = Agent::new(executor, provider)
         .with_tool::<QuoteTool>()
         .with_tool::<RandomNumberTool>()
-        .with_config(AgentConfig::new().with_max_tokens(10000))
-        .run("Give me a random quote and a random number between 1 and 10.")
+        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(2.0))
+        .run("Please give me a random person name")
         .await?;
 
     println!("---------");

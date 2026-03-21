@@ -4,6 +4,7 @@ use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
 use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
 use serde_json::Value;
@@ -147,9 +148,28 @@ where
         context: &Context,
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
+        config: &AgentConfig,
     ) -> Result<Self::Output, ExecutorError> {
         let mut local_context = context.clone();
         let (tools, registry) = self.prepare_tools(tools)?;
+        let finalize_tool_name = self.finalize_tool.name().to_string();
+        let finalize_completion_messages = [
+            format!(
+                "You must finish by calling '{finalize_tool_name}'. Critical rule: DO NOT return success unless you have a definitive, confident answer that fully satisfies the user's request. If you are missing information, unsure, blocked, or unable to complete any requirement, call '{finalize_tool_name}' with failure and include a clear reason describing what prevented completion."
+            ),
+            format!(
+                "Quality gate: treat success as 'ready to ship'. If your answer is uncertain, partial, or speculative, it is not success. In that case call '{finalize_tool_name}' with failure and explain the uncertainty or blocker."
+            ),
+            format!(
+                "Reliability rule: false-positive success is worse than failure. When confidence is not high enough to stand behind the final result, call '{finalize_tool_name}' with failure and provide the exact limitation."
+            ),
+            format!(
+                "Decision rule: choose success only if every required part is completed correctly and you are confident it is accurate. Otherwise choose failure and call '{finalize_tool_name}' with a concrete reason."
+            ),
+            format!(
+                "Final instruction for this turn: call '{finalize_tool_name}' now. If there is any doubt, incompleteness, or blocker, return failure. Return success only with a definitive answer."
+            ),
+        ];
 
         let mut iteration = 0;
 
@@ -164,7 +184,7 @@ where
 
             // Ask the provider to extend the conversation using the current context and tools
             let response = provider
-                .generate(&local_context, &tools)
+                .generate(&local_context, &tools, config)
                 .await
                 .map_err(|error| ExecutorError::new(format!("Provider error at iteration {iteration}: {error}")))?;
 
@@ -182,9 +202,8 @@ where
             if response.tool_calls.is_empty() {
                 // Nudge the model toward the finalize tool when it tries to stop without completing
                 if response.stop_reason == StopReason::EndOfSequence {
-                    local_context.add_system_message(
-                        "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool.",
-                    );
+                    let message_index = usize::min(iteration, finalize_completion_messages.len() - 1);
+                    local_context.add_user_message(finalize_completion_messages[message_index].clone());
                 }
 
                 iteration += 1;

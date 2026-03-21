@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::message::{Message, MessageRole, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::AgentConfig;
 use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
     ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
@@ -135,7 +136,7 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-    async fn generate(&self, context: &Context, tools: &[ToolDefinition]) -> Result<ProviderResponse, String> {
+    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, String> {
         let messages: Result<Vec<ChatCompletionRequestMessage>, String> = context
             .messages
             .iter()
@@ -145,11 +146,16 @@ impl Provider for OpenAIProvider {
         let messages = messages?;
 
         let mut request_builder = CreateChatCompletionRequestArgs::default();
-        request_builder.model(&self.model).messages(messages);
+        request_builder.model(&self.model);
+        request_builder.messages(messages);
+        request_builder.parallel_tool_calls(true);
+
+        if let Some(temperature) = config.temperature {
+            request_builder.temperature(temperature);
+        }
 
         if !tools.is_empty() {
-            let openai_tools = self.convert_tools_to_openai(tools)?;
-            request_builder.tools(openai_tools);
+            request_builder.tools(self.convert_tools_to_openai(tools)?);
         }
 
         let request = request_builder

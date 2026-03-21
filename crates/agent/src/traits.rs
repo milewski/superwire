@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::message::ToolCall;
 use crate::tool::RuntimeTool;
+use crate::AgentConfig;
 use schemars::Schema;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -41,7 +42,7 @@ pub struct ProviderResponse {
 /// Trait for LLM providers that can generate responses
 #[async_trait::async_trait]
 pub trait Provider {
-    async fn generate(&self, context: &Context, tools: &[ToolDefinition]) -> Result<ProviderResponse, String>;
+    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, String>;
 }
 
 /// Trait for operations that can be executed by the agent
@@ -56,5 +57,6 @@ pub trait Executable {
         context: &Context,
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
+        config: &AgentConfig,
     ) -> Result<Self::Output, Self::Error>;
 }
