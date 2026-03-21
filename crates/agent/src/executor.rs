@@ -175,10 +175,12 @@ where
                 return Err(ExecutorError::StuckLoopDetected);
             }
 
-            println!("{:?}", response.stop_reason);
-
             // If the provider did not request any tool calls
             if response.tool_calls.is_empty() {
+                if response.stop_reason == StopReason::MaxTokens {
+                    return Err(ExecutorError::MaxTokensReached { iteration });
+                }
+
                 // Nudge the model toward the finalize tool when it tries to stop without completing
                 if response.stop_reason == StopReason::EndOfSequence {
                     context.add_user_message(RecoveryInstruction::MustExitByCallingTool {

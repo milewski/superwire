@@ -31,6 +31,10 @@ pub enum ExecutorError {
     #[error("Agent is stuck in a repeated loop")]
     StuckLoopDetected,
 
+    /// Returned when the provider stops due to token limit.
+    #[error("Provider reached maximum token limit at iteration {iteration}")]
+    MaxTokensReached { iteration: usize },
+
     /// Returned when a successful finalize payload cannot be serialized to JSON.
     #[error("Failed to serialize finalize tool output: {message}")]
     FinalizeOutputSerializationFailed { message: String },
