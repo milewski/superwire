@@ -101,11 +101,6 @@ async fn main() -> Result<(), AgentError> {
     println!("Testing with OpenAI-compatible endpoint...");
 
     let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen/qwen3.5-35b-a3b");
-    // let provider = OpenAIProvider::new_with_base_url(
-    //     "https://www.leishen-ai.cn/openai/v1",
-    //     "cr_6768afb88327976d116bfe91cacedd9c6f78804e2fe9f61324adc732ad5ba824",
-    //     "gpt-5.3-codex",
-    // );
 
     println!("Running agent...");
 
