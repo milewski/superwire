@@ -91,7 +91,7 @@ async fn main() -> Result<(), AgentError> {
 
     println!("Testing with OpenAI-compatible endpoint...");
 
-    let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen/qwen3.5-35b-a3b");
+    let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen3.5-9b");
 
     println!("Running agent...");
 
@@ -100,8 +100,8 @@ async fn main() -> Result<(), AgentError> {
         .with_tool::<QuoteTool>()
         .with_tool::<RandomNumberTool>()
         .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(2.0))
-        .run("Please give me a random person name, a quote, and a random age between 20 and 30")
-        .await?;
+        .run("please give me the weather for sao paulo")
+        .await;
 
     println!("---------");
     println!("{:#?}", result);

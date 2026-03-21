@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FinalizeOutput<O> {
-    /// Successful completion payload. 
+    /// Successful completion payload.
     /// The final structured output must be nested under this `output` field.
     Success { output: O },
 
@@ -23,13 +23,13 @@ pub struct FinalizeArguments<O> {
     /// Required wrapper object.
     ///
     /// Valid success shape:
-    /// 
+    ///
     /// ```json
     /// { "output": { "type": "success", "output": {...final object...} } }
     /// ```
     ///
     /// Valid failure shape:
-    /// 
+    ///
     /// ```json
     /// { "output": { "type": "failure", "reason": "..." } }
     /// ```

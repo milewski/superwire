@@ -3,7 +3,7 @@ use crate::error::ExecutorError;
 use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
 use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
-use crate::traits::{Executable, ExecutionResult, Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::traits::{Executable, ExecutionFailure, ExecutionResult, Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
@@ -137,13 +137,16 @@ where
 
     async fn execute(
         &self,
-        context: &Context,
+        context: &mut Context,
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
         config: &AgentConfig,
-    ) -> Result<ExecutionResult<Self::Output>, ExecutorError> {
-        let mut local_context = context.clone();
-        let (tools, registry) = self.prepare_tools(tools)?;
+    ) -> Result<ExecutionResult<Self::Output>, ExecutionFailure<ExecutorError>> {
+        let (tools, registry) = self.prepare_tools(tools).map_err(|error| ExecutionFailure {
+            error,
+            context: context.clone(),
+        })?;
+
         let finalize_tool_name = self.finalize_tool.name().to_string();
         let finalize_completion_messages = [
             format!(
@@ -168,29 +171,38 @@ where
         loop {
             // Stop runaway conversations once the iteration budget is exhausted
             if iteration >= self.max_iterations {
-                return Err(ExecutorError::MaxIterationsReached {
-                    max_iterations: self.max_iterations,
+                return Err(ExecutionFailure {
+                    error: ExecutorError::MaxIterationsReached {
+                        max_iterations: self.max_iterations,
+                    },
+                    context: context.clone(),
                 });
             }
 
             // Ask the provider to extend the conversation using the current context and tools
             let response = provider
-                .generate(&local_context, &tools, config)
+                .generate(context, &tools, config)
                 .await
-                .map_err(|message| ExecutorError::ProviderFailed { iteration, message })?;
+                .map_err(|message| ExecutionFailure {
+                    error: ExecutorError::ProviderFailed { iteration, message },
+                    context: context.clone(),
+                })?;
 
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
                 let trimmed = text.trim_matches(|char| char == '\n' || char == '\r' || char == '\t' || char == ' ');
 
                 if !trimmed.is_empty() {
-                    local_context.add_assistant_message(trimmed);
+                    context.add_assistant_message(trimmed);
                 }
             }
 
             // Abort if the model repeats itself to avoid infinite loops
-            if local_context.is_stuck(5) {
-                break Err(ExecutorError::StuckLoopDetected)?;
+            if context.is_stuck(5) {
+                return Err(ExecutionFailure {
+                    error: ExecutorError::StuckLoopDetected,
+                    context: context.clone(),
+                });
             }
 
             // If the provider did not request any tool calls
@@ -198,7 +210,7 @@ where
                 // Nudge the model toward the finalize tool when it tries to stop without completing
                 if response.stop_reason == StopReason::EndOfSequence {
                     let message_index = usize::min(iteration, finalize_completion_messages.len() - 1);
-                    local_context.add_user_message(finalize_completion_messages[message_index].clone());
+                    context.add_user_message(finalize_completion_messages[message_index].clone());
                 }
 
                 iteration += 1;
@@ -208,16 +220,20 @@ where
 
             // Persist every requested tool call before executing so the history remains authoritative
             for tool_call in &response.tool_calls {
-                local_context.add_tool_call(tool_call.clone());
+                context.add_tool_call(tool_call.clone());
             }
 
             match self.classify_tool_calls(&response) {
                 ToolCallExecution::Complete(finalize_tool_call) => {
-                    if let Some(result) = self.process_finalize_tool_call(&mut local_context, finalize_tool_call).await? {
-                        break Ok(ExecutionResult {
-                            output: result,
-                            context: local_context,
-                        });
+                    if let Some(result) = self
+                        .process_finalize_tool_call(context, finalize_tool_call)
+                        .await
+                        .map_err(|error| ExecutionFailure {
+                            error,
+                            context: context.clone(),
+                        })?
+                    {
+                        break Ok(ExecutionResult { output: result });
                     }
                 }
                 ToolCallExecution::Continue(tool_calls_to_execute) => {
@@ -240,7 +256,7 @@ where
                             },
                         };
 
-                        local_context.add_tool_result(tool_result);
+                        context.add_tool_result(tool_result);
                     }
                 }
             }

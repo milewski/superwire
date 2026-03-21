@@ -1,3 +1,4 @@
+use crate::context::Context;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -10,8 +11,8 @@ pub enum AgentError {
     #[error("Maximum tokens ({max_tokens}) exceeded; used {used_tokens}")]
     MaxTokensExceeded { max_tokens: usize, used_tokens: usize },
 
-    #[error(transparent)]
-    ExecutionFailed(#[from] ExecutorError),
+    #[error("{error}. Context: {context:?}")]
+    ExecutionFailed { error: ExecutorError, context: Context },
 }
 
 /// Executor error with structured details
@@ -57,6 +58,9 @@ impl From<crate::tool::ToolError> for ExecutorError {
 
 impl From<crate::tool::ToolError> for AgentError {
     fn from(error: crate::tool::ToolError) -> Self {
-        Self::ExecutionFailed(ExecutorError::from(error))
+        Self::ExecutionFailed {
+            error: ExecutorError::from(error),
+            context: Context::default(),
+        }
     }
 }

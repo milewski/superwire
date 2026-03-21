@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::error::AgentError;
+use crate::error::ExecutorError;
 use crate::message::Message;
 use crate::tool::RuntimeTool;
 use crate::traits::{Executable, Provider};
@@ -136,7 +137,7 @@ where
 impl<E, P> Agent<E, P>
 where
     E: Executable<Provider = P>,
-    E::Error: Into<AgentError>,
+    E::Error: Into<ExecutorError>,
     P: Provider,
 {
     pub fn new(executor: E, provider: P) -> Self {
@@ -178,15 +179,18 @@ where
 
         let execution_result = self
             .executor
-            .execute(&context, &self.provider, &self.tools, &self.config)
+            .execute(&mut context, &self.provider, &self.tools, &self.config)
             .await
-            .map_err(|error| error.into())?;
+            .map_err(|execution_failure| AgentError::ExecutionFailed {
+                error: execution_failure.error.into(),
+                context: execution_failure.context,
+            })?;
 
-        let statistics = AgentRunStatistics::from_context(&execution_result.context);
+        let statistics = AgentRunStatistics::from_context(&context);
 
         Ok(AgentRunResult {
             output: execution_result.output,
-            context: execution_result.context,
+            context,
             statistics,
         })
     }

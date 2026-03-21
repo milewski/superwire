@@ -39,10 +39,16 @@ pub struct ProviderResponse {
     pub stop_reason: StopReason,
 }
 
-/// Execution result containing final output and context
+/// Execution result containing final output
 #[derive(Debug, Clone)]
 pub struct ExecutionResult<Output> {
     pub output: Output,
+}
+
+/// Execution failure containing error and context snapshot
+#[derive(Debug, Clone)]
+pub struct ExecutionFailure<Error> {
+    pub error: Error,
     pub context: Context,
 }
 
@@ -61,9 +67,9 @@ pub trait Executable {
 
     async fn execute(
         &self,
-        context: &Context,
+        context: &mut Context,
         provider: &Self::Provider,
         tools: &[Arc<dyn RuntimeTool>],
         config: &AgentConfig,
-    ) -> Result<ExecutionResult<Self::Output>, Self::Error>;
+    ) -> Result<ExecutionResult<Self::Output>, ExecutionFailure<Self::Error>>;
 }
