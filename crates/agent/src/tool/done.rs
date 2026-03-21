@@ -23,6 +23,8 @@ impl<O> DoneTool<O>
 where
     O: Send + Sync + Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
+    pub const NAME: &'static str = "done";
+
     pub fn new() -> Result<Self, ToolError> {
         let parameters_schema = schemars::schema_for!(DoneArguments<O>);
 
@@ -62,7 +64,7 @@ where
     type Input = DoneArguments<O>;
 
     fn name(&self) -> &'static str {
-        "done"
+        Self::NAME
     }
 
     fn description(&self) -> &'static str {

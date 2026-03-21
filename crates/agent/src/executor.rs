@@ -1,6 +1,6 @@
 use crate::context::Context;
 use crate::error::ExecutorError;
-use crate::message::ToolResult;
+use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
 use crate::tool::{DoneArguments, DoneTool, RuntimeTool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
@@ -11,6 +11,11 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
+
+enum ToolCallExecution<'a> {
+    Complete(&'a ToolCall),
+    Continue(Vec<&'a ToolCall>),
+}
 
 /// Executor that loops until a "done" tool is called with valid output
 pub struct LoopExecutor<P, O>
@@ -58,18 +63,33 @@ where
         Ok((definitions, registry))
     }
 
-    async fn try_process_done_tool(
-        &self,
-        context: &mut Context,
-        response: &ProviderResponse,
-    ) -> Result<Option<O>, ExecutorError> {
-        let is_done_only = response.tool_calls.len() == 1 && response.tool_calls[0].name == "done";
+    fn classify_tool_calls(response: &ProviderResponse) -> ToolCallExecution<'_> {
+        let mut done_tool_call = None;
+        let mut non_done_tool_calls = Vec::new();
 
-        if !is_done_only {
-            return Ok(None);
+        for tool_call in &response.tool_calls {
+            if tool_call.name == DoneTool::<O>::NAME {
+                done_tool_call = Some(tool_call);
+                continue;
+            }
+
+            non_done_tool_calls.push(tool_call);
         }
 
-        let tool_call = &response.tool_calls[0];
+        if non_done_tool_calls.is_empty() {
+            if let Some(done_tool_call) = done_tool_call {
+                return ToolCallExecution::Complete(done_tool_call);
+            }
+        }
+
+        ToolCallExecution::Continue(non_done_tool_calls)
+    }
+
+    async fn process_done_tool_call(
+        &self,
+        context: &mut Context,
+        tool_call: &ToolCall,
+    ) -> Result<Option<O>, ExecutorError> {
         let input_result: Result<DoneArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
@@ -170,31 +190,30 @@ where
                 local_context.add_tool_call(tool_call.clone());
             }
 
-            // If the only tool call is done and its arguments are valid, return the result
-            if let Some(result) = self.try_process_done_tool(&mut local_context, &response).await? {
-                break Ok(result);
-            }
-
-            // Execute every non-done tool call and record its result in the context
-            for tool_call in &response.tool_calls {
-                if tool_call.name == "done" {
-                    continue;
+            match Self::classify_tool_calls(&response) {
+                ToolCallExecution::Complete(done_tool_call) => {
+                    if let Some(result) = self.process_done_tool_call(&mut local_context, done_tool_call).await? {
+                        break Ok(result);
+                    }
                 }
+                ToolCallExecution::Continue(tool_calls_to_execute) => {
+                    for tool_call in tool_calls_to_execute {
+                        let tool = registry
+                            .get(&tool_call.name)
+                            .expect("tool registry should contain every tool");
 
-                let tool = registry
-                    .get(&tool_call.name)
-                    .expect("tool registry should contain every tool");
+                        let (is_error, content) = match tool.execute(tool_call.arguments.clone()).await {
+                            Ok(response) => (false, response),
+                            Err(error) => (true, error.to_agent_message().into()),
+                        };
 
-                let (is_error, content) = match tool.execute(tool_call.arguments.clone()).await {
-                    Ok(response) => (false, response),
-                    Err(error) => (true, error.to_agent_message().into()),
-                };
-
-                local_context.add_tool_result(ToolResult {
-                    tool_call_id: tool_call.id.clone(),
-                    content,
-                    is_error,
-                });
+                        local_context.add_tool_result(ToolResult {
+                            tool_call_id: tool_call.id.clone(),
+                            content,
+                            is_error,
+                        });
+                    }
+                }
             }
         }
     }
