@@ -28,6 +28,8 @@ impl Tool for QuoteTool {
         let random_index = rand::thread_rng().gen_range(0..quotes.len());
         let selected_quote = quotes[random_index];
 
+        println!("{}", selected_quote);
+
         Ok(serde_json::json!({
             "tool": self.name(),
             "topic": input.topic,
@@ -67,6 +69,8 @@ impl Tool for RandomNumberTool {
 
         let generated_number = rand::thread_rng().gen_range(minimum..=maximum);
 
+        println!("{}", generated_number);
+
         Ok(serde_json::json!({
             "tool": self.name(),
             "minimum": minimum,
@@ -89,21 +93,28 @@ async fn main() -> Result<(), AgentError> {
     #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
     struct User {
         /// Username, only the name nothing else
-        name: String,
+        name: Option<String>,
+        quote: String,
+        age: usize,
     }
 
     println!("Testing with OpenAI-compatible endpoint...");
 
     let provider = OpenAIProvider::new_local("http://169.254.83.107:1234/v1", "qwen/qwen3.5-35b-a3b");
+    // let provider = OpenAIProvider::new_with_base_url(
+    //     "https://www.leishen-ai.cn/openai/v1",
+    //     "cr_6768afb88327976d116bfe91cacedd9c6f78804e2fe9f61324adc732ad5ba824",
+    //     "gpt-5.3-codex",
+    // );
 
     println!("Running agent...");
 
     let executor = LoopExecutor::<OpenAIProvider, User>::new()?;
     let result = Agent::new(executor, provider)
-        // .with_tool::<QuoteTool>()
-        // .with_tool::<RandomNumberTool>()
-        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(2.0))
-        .run("Please give me a random person name")
+        .with_tool::<QuoteTool>()
+        .with_tool::<RandomNumberTool>()
+        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(1.8))
+        .run("Please give me a random person name, a quote, and a random age between 20 and 30")
         .await?;
 
     println!("---------");
