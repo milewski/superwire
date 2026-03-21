@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::error::ExecutorError;
 use crate::message::{ToolCall, ToolResult};
 use crate::tool::ToolError;
-use crate::tool::{DoneArguments, DoneTool, RuntimeTool, Tool};
+use crate::tool::{FinalizeArguments, FinalizeTool, RuntimeTool, Tool};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -17,14 +17,14 @@ enum ToolCallExecution<'a> {
     Continue(Vec<&'a ToolCall>),
 }
 
-/// Executor that loops until a "done" tool is called with valid output
+/// Executor that loops until a "finalize" tool is called with valid output
 pub struct LoopExecutor<P, O>
 where
     P: Provider,
     O: Send + Sync + 'static,
 {
     max_iterations: usize,
-    done_tool: DoneTool<O>,
+    finalize_tool: FinalizeTool<O>,
     phantom: PhantomData<(P, O)>,
 }
 
@@ -36,7 +36,7 @@ where
     pub fn new() -> Result<Self, ToolError> {
         Ok(Self {
             max_iterations: 5,
-            done_tool: DoneTool::<O>::new()?,
+            finalize_tool: FinalizeTool::<O>::new()?,
             phantom: PhantomData,
         })
     }
@@ -60,46 +60,47 @@ where
             definitions.push(definition);
         }
 
-        definitions.push(self.done_tool.as_definition());
+        definitions.push(self.finalize_tool.as_definition());
 
         Ok((definitions, registry))
     }
 
     fn classify_tool_calls<'a>(&self, response: &'a ProviderResponse) -> ToolCallExecution<'a> {
-        let done_name = self.done_tool.name();
-        let mut done_tool_call = None;
-        let mut non_done_tool_calls = Vec::new();
+        let finalize_name = self.finalize_tool.name();
+        let mut finalize_tool_call = None;
+        let mut non_finalize_tool_calls = Vec::new();
 
         for tool_call in &response.tool_calls {
-            if tool_call.name == done_name {
-                done_tool_call = Some(tool_call);
+            if tool_call.name == finalize_name {
+                finalize_tool_call = Some(tool_call);
                 continue;
             }
 
-            non_done_tool_calls.push(tool_call);
+            non_finalize_tool_calls.push(tool_call);
         }
 
-        if non_done_tool_calls.is_empty() {
-            if let Some(done_tool_call) = done_tool_call {
-                return ToolCallExecution::Complete(done_tool_call);
+        if non_finalize_tool_calls.is_empty() {
+            if let Some(finalize_tool_call) = finalize_tool_call {
+                return ToolCallExecution::Complete(finalize_tool_call);
             }
         }
 
-        ToolCallExecution::Continue(non_done_tool_calls)
+        ToolCallExecution::Continue(non_finalize_tool_calls)
     }
 
-    async fn process_done_tool_call(
+    async fn process_finalize_tool_call(
         &self,
         context: &mut Context,
         tool_call: &ToolCall,
     ) -> Result<Option<O>, ExecutorError> {
-        let input_result: Result<DoneArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
+        let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
-            Ok(done_arguments) => {
-                let output = done_arguments.output;
-                let value = serde_json::to_value(&output)
-                    .map_err(|error| ExecutorError::new(format!("Failed to serialize done tool output: {error}")))?;
+            Ok(finalize_arguments) => {
+                let output = finalize_arguments.output;
+                let value = serde_json::to_value(&output).map_err(|error| {
+                    ExecutorError::new(format!("Failed to serialize finalize tool output: {error}"))
+                })?;
 
                 context.add_tool_result(ToolResult {
                     tool_call_id: tool_call.id.clone(),
@@ -110,7 +111,7 @@ where
                 Ok(Some(output))
             }
             Err(error) => {
-                let tool_error = ToolError::new(format!("Failed to deserialize done tool arguments: {error}"))
+                let tool_error = ToolError::new(format!("Failed to deserialize finalize tool arguments: {error}"))
                     .with_suggestion("Check that the arguments match the expected schema")
                     .with_context("error", Value::String(error.to_string()));
 
@@ -153,7 +154,7 @@ where
             // Fail fast if the agent exceeded its allowed iterations
             if iteration >= self.max_iterations {
                 return Err(ExecutorError::new(format!(
-                    "Maximum iterations ({}) reached without calling done tool",
+                    "Maximum iterations ({}) reached without calling finalize tool",
                     self.max_iterations
                 )));
             }
@@ -176,7 +177,7 @@ where
 
             // If the provider did not request any tool calls
             if response.tool_calls.is_empty() {
-                // Prompt the model to use the done tool if it tried to end the conversation
+                // Prompt the model to use the finalize tool if it tried to end the conversation
                 if response.stop_reason == StopReason::EndOfSequence {
                     local_context.add_system_message(
                         "You must call the 'done' tool to complete the task. Do not end the conversation without calling this tool."
@@ -194,8 +195,11 @@ where
             }
 
             match self.classify_tool_calls(&response) {
-                ToolCallExecution::Complete(done_tool_call) => {
-                    if let Some(result) = self.process_done_tool_call(&mut local_context, done_tool_call).await? {
+                ToolCallExecution::Complete(finalize_tool_call) => {
+                    if let Some(result) = self
+                        .process_finalize_tool_call(&mut local_context, finalize_tool_call)
+                        .await?
+                    {
                         break Ok(result);
                     }
                 }

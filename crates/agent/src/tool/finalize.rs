@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
-pub struct DoneArguments<O> {
-    pub(crate) output: O,
+pub struct FinalizeArguments<O> {
+    pub output: O,
 }
 
-pub struct DoneTool<O>
+pub struct FinalizeTool<O>
 where
     O: Send + Sync,
 {
@@ -19,15 +19,13 @@ where
     phantom: PhantomData<O>,
 }
 
-impl<O> DoneTool<O>
+impl<O> FinalizeTool<O>
 where
     O: Send + Sync + Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
 {
     pub fn new() -> Result<Self, ToolError> {
-        let parameters_schema = schemars::schema_for!(DoneArguments<O>);
-
         Ok(Self {
-            parameters_schema,
+            parameters_schema: schemars::schema_for!(FinalizeArguments<O>),
             phantom: PhantomData,
         })
     }
@@ -42,7 +40,7 @@ where
     }
 }
 
-impl<O> Clone for DoneTool<O>
+impl<O> Clone for FinalizeTool<O>
 where
     O: Send + Sync,
 {
@@ -55,18 +53,18 @@ where
 }
 
 #[async_trait]
-impl<O> Tool for DoneTool<O>
+impl<O> Tool for FinalizeTool<O>
 where
     O: Send + Sync + serde::de::DeserializeOwned + Serialize + schemars::JsonSchema,
 {
-    type Input = DoneArguments<O>;
+    type Input = FinalizeArguments<O>;
 
     fn name(&self) -> &'static str {
         "done"
     }
 
     fn description(&self) -> &'static str {
-        "Call this tool when you have completed the task."
+        "Call this tool when you have finalized the task."
     }
 
     async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {
