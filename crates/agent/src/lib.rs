@@ -4,6 +4,7 @@ mod error;
 mod executor;
 mod message;
 pub mod providers;
+mod recovery_instruction;
 pub mod tool;
 mod traits;
 
