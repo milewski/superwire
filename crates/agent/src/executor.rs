@@ -7,6 +7,7 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
+use indoc::formatdoc;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -87,6 +88,47 @@ where
         ToolCallExecution::Continue(non_finalize_tool_calls)
     }
 
+    fn build_finalize_completion_message(iteration: usize, tool_name: &str) -> String {
+        match iteration {
+            0 => formatdoc! {"
+                You must finish by calling '{tool_name}'.
+
+                Critical rule: do not return success unless you have a definitive,
+                confident answer that fully satisfies the user's request.
+
+                If you are missing information, unsure, blocked, or unable to complete
+                any requirement, call '{tool_name}' with failure and include
+                a clear reason describing what prevented completion.
+            "},
+            1 => formatdoc! {"
+                Quality gate: treat success as ready to ship.
+
+                If your answer is uncertain, partial, or speculative, it is not success.
+                In that case call '{tool_name}' with failure and explain the
+                uncertainty or blocker.
+            "},
+            2 => formatdoc! {"
+                Reliability rule: false-positive success is worse than failure.
+
+                When confidence is not high enough to stand behind the final result,
+                call '{tool_name}' with failure and provide the exact limitation.
+            "},
+            3 => formatdoc! {"
+                Decision rule: choose success only if every required part is completed
+                correctly and you are confident it is accurate.
+
+                Otherwise choose failure and call '{tool_name}' with a concrete
+                reason.
+            "},
+            _ => formatdoc! {"
+                Final instruction for this turn: call '{tool_name}' now.
+
+                If there is any doubt, incompleteness, or blocker, return `failure`.
+                Return `success` only with a definitive answer.
+            "},
+        }
+    }
+
     async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
         let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
@@ -144,24 +186,7 @@ where
     ) -> Result<Self::Output, ExecutorError> {
         let (tools, registry) = self.prepare_tools(tools)?;
 
-        let finalize_tool_name = self.finalize_tool.name().to_string();
-        let finalize_completion_messages = [
-            format!(
-                "You must finish by calling '{finalize_tool_name}'. Critical rule: DO NOT return success unless you have a definitive, confident answer that fully satisfies the user's request. If you are missing information, unsure, blocked, or unable to complete any requirement, call '{finalize_tool_name}' with failure and include a clear reason describing what prevented completion."
-            ),
-            format!(
-                "Quality gate: treat success as 'ready to ship'. If your answer is uncertain, partial, or speculative, it is not success. In that case call '{finalize_tool_name}' with failure and explain the uncertainty or blocker."
-            ),
-            format!(
-                "Reliability rule: false-positive success is worse than failure. When confidence is not high enough to stand behind the final result, call '{finalize_tool_name}' with failure and provide the exact limitation."
-            ),
-            format!(
-                "Decision rule: choose success only if every required part is completed correctly and you are confident it is accurate. Otherwise choose failure and call '{finalize_tool_name}' with a concrete reason."
-            ),
-            format!(
-                "Final instruction for this turn: call '{finalize_tool_name}' now. If there is any doubt, incompleteness, or blocker, return failure. Return success only with a definitive answer."
-            ),
-        ];
+        let finalize_tool_name = self.finalize_tool.name();
 
         let mut iteration = 0;
 
@@ -197,8 +222,7 @@ where
             if response.tool_calls.is_empty() {
                 // Nudge the model toward the finalize tool when it tries to stop without completing
                 if response.stop_reason == StopReason::EndOfSequence {
-                    let message_index = usize::min(iteration, finalize_completion_messages.len() - 1);
-                    context.add_user_message(finalize_completion_messages[message_index].clone());
+                    context.add_user_message(Self::build_finalize_completion_message(iteration, finalize_tool_name));
                 }
 
                 iteration += 1;
