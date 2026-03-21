@@ -114,16 +114,10 @@ where
                 }
             },
             Err(error) => {
-                let tool_error = ToolError::new(format!("Failed to deserialize finalize tool arguments: {error}"))
-                    .with_suggestion("Check that the arguments match the expected schema")
-                    .with_context("error", Value::String(error.to_string()));
-
                 context.add_tool_result(ToolResult::Failure {
                     tool_call_id: tool_call.id.clone(),
-                    content: Value::String(tool_error.to_agent_message()),
+                    content: Value::String(error.to_string()),
                 });
-
-                context.increment_attempt();
 
                 Ok(None)
             }

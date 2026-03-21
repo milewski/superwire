@@ -2,19 +2,37 @@ use super::error::ToolError;
 use super::traits::Tool;
 use crate::traits::ToolDefinition;
 use async_trait::async_trait;
-use schemars::Schema;
+use schemars::{schema_for, JsonSchema, Schema};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FinalizeOutput<O> {
+    /// Successful completion payload. 
+    /// The final structured output must be nested under this `output` field.
     Success { output: O },
+
+    /// Failed completion payload with a concrete reason.
     Failure { reason: String },
 }
 
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
 pub struct FinalizeArguments<O> {
+    /// Required wrapper object.
+    ///
+    /// Valid success shape:
+    /// 
+    /// ```json
+    /// { "output": { "type": "success", "output": {...final object...} } }
+    /// ```
+    ///
+    /// Valid failure shape:
+    /// 
+    /// ```json
+    /// { "output": { "type": "failure", "reason": "..." } }
+    /// ```
     pub output: FinalizeOutput<O>,
 }
 
@@ -28,11 +46,11 @@ where
 
 impl<O> FinalizeTool<O>
 where
-    O: Send + Sync + Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
+    O: Send + Sync + Serialize + DeserializeOwned + JsonSchema,
 {
     pub fn new() -> Result<Self, ToolError> {
         Ok(Self {
-            parameters_schema: schemars::schema_for!(FinalizeArguments<O>),
+            parameters_schema: schema_for!(FinalizeArguments<O>),
             phantom: PhantomData,
         })
     }
@@ -62,7 +80,7 @@ where
 #[async_trait]
 impl<O> Tool for FinalizeTool<O>
 where
-    O: Send + Sync + serde::de::DeserializeOwned + Serialize + schemars::JsonSchema,
+    O: Send + Sync + DeserializeOwned + Serialize + JsonSchema,
 {
     type Input = FinalizeArguments<O>;
 
@@ -71,7 +89,14 @@ where
     }
 
     fn description(&self) -> &'static str {
-        "Call this tool when you have finalized the task."
+        r#"
+            Call this tool only when you are done.
+            Arguments MUST be exactly one of:
+                { "output" : { "type": "success", "output": <final_json_object> } }
+                { "output" : { "type": "failure", "reason": "<why you could not complete>" } }
+
+            Important: `type` is nested inside `output`, never at the top level.
+        "#
     }
 
     async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {

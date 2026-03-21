@@ -23,7 +23,7 @@ impl Tool for QuoteTool {
         "Return one random quote from a small hardcoded list."
     }
 
-    async fn execute(&self, input: Self::Input) -> Result<serde_json::Value, ToolError> {
+    async fn execute(&self, _input: Self::Input) -> Result<serde_json::Value, ToolError> {
         let quotes = ["The winter is coming.", "The best of nobody-knows+.", "Android > iPhone."];
         let random_index = rand::thread_rng().gen_range(0..quotes.len());
         let selected_quote = quotes[random_index];
@@ -67,11 +67,7 @@ impl Tool for RandomNumberTool {
 
         println!("{}", generated_number);
 
-        Ok(serde_json::json!({
-            "minimum": minimum,
-            "maximum": maximum,
-            "number": generated_number,
-        }))
+        Ok(serde_json::json!(generated_number))
     }
 }
 
@@ -103,7 +99,7 @@ async fn main() -> Result<(), AgentError> {
     let result = Agent::new(executor, provider)
         .with_tool::<QuoteTool>()
         .with_tool::<RandomNumberTool>()
-        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(0.0))
+        .with_config(AgentConfig::new().with_max_tokens(10000).with_temperature(2.0))
         .run("Please give me a random person name, a quote, and a random age between 20 and 30")
         .await?;
 

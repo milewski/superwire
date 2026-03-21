@@ -4,7 +4,6 @@ use crate::message::{Message, ToolCall, ToolResult};
 #[derive(Debug, Clone, Default)]
 pub struct Context {
     pub messages: Vec<Message>,
-    pub attempt: usize,
     pub total_tokens: usize,
     pub input_tokens: usize,
     pub output_tokens: usize,
@@ -37,10 +36,6 @@ impl Context {
 
     pub fn add_system_message(&mut self, content: impl Into<String>) {
         self.add_message(Message::system(content));
-    }
-
-    pub fn increment_attempt(&mut self) {
-        self.attempt += 1;
     }
 
     /// Detects if the agent is stuck by checking if the last `window` messages are all identical

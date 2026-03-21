@@ -34,7 +34,6 @@ impl AgentConfig {
 /// Aggregated execution statistics derived from context
 #[derive(Debug, Clone)]
 pub struct AgentRunStatistics {
-    pub attempts: usize,
     pub total_messages: usize,
     pub user_messages: usize,
     pub assistant_messages: usize,
@@ -99,7 +98,6 @@ impl AgentRunStatistics {
         }
 
         Self {
-            attempts: context.attempt,
             total_messages: context.messages.len(),
             user_messages,
             assistant_messages,
