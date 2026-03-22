@@ -1,4 +1,5 @@
 use crate::message::{Message, ToolCall, ToolResult};
+use crate::traits::TokenUsage;
 
 /// Context object that carries state throughout the agent execution
 #[derive(Debug, Clone, Default)]
@@ -36,6 +37,12 @@ impl Context {
 
     pub fn add_system_message(&mut self, content: impl Into<String>) {
         self.add_message(Message::system(content));
+    }
+
+    pub fn add_token_usage(&mut self, usage: TokenUsage) {
+        self.total_tokens += usage.total_tokens;
+        self.input_tokens += usage.input_tokens;
+        self.output_tokens += usage.output_tokens;
     }
 
     /// Detects if the agent is stuck by checking if the last `window` messages are all identical
