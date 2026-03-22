@@ -314,17 +314,13 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    macro_rules! tool_call_json {
-        (id = $identifier:expr, name = $tool_name:expr, output = $arguments:tt $(,)?) => {
-            ToolCall {
-                id: $identifier.to_string(),
-                name: $tool_name.to_string(),
-                arguments: serde_json::json!($arguments),
-            }
-        };
-    }
-
     macro_rules! tool_call {
+        ($tool_type:ty, failure = $reason:expr) => {
+            build_tool_failure_call::<$tool_type>(format!("{}-{}", stringify!($tool_type), line!()), $reason.to_string())
+        };
+        ($tool_type:ty, id = $identifier:expr, failure = $reason:expr) => {
+            build_tool_failure_call::<$tool_type>($identifier.to_string(), $reason.to_string())
+        };
         ($tool_type:ty, $arguments:tt) => {
             build_tool_call::<$tool_type>(
                 format!("{}-{}", stringify!($tool_type), line!()),
@@ -337,26 +333,38 @@ mod tests {
     }
 
     trait ToolCallFactory {
-        fn build_tool_call(identifier: String, arguments: Value) -> ToolCall;
+        fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall;
+        fn build_failure_tool_call(identifier: String, reason: String) -> ToolCall;
     }
 
     fn build_tool_call<ToolType>(identifier: String, arguments: Value) -> ToolCall
     where
         ToolType: ToolCallFactory,
     {
-        ToolType::build_tool_call(identifier, arguments)
+        ToolType::build_success_tool_call(identifier, arguments)
+    }
+
+    fn build_tool_failure_call<ToolType>(identifier: String, reason: String) -> ToolCall
+    where
+        ToolType: ToolCallFactory,
+    {
+        ToolType::build_failure_tool_call(identifier, reason)
     }
 
     impl<ToolType> ToolCallFactory for ToolType
     where
         ToolType: Tool + Default,
     {
-        fn build_tool_call(identifier: String, arguments: Value) -> ToolCall {
+        fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall {
             ToolCall {
                 id: identifier,
                 name: ToolType::default().name().to_string(),
                 arguments,
             }
+        }
+
+        fn build_failure_tool_call(_identifier: String, _reason: String) -> ToolCall {
+            panic!("failure tool calls are only supported for finalize tool")
         }
     }
 
@@ -364,7 +372,7 @@ mod tests {
     where
         O: Send + Sync + Serialize + DeserializeOwned + JsonSchema,
     {
-        fn build_tool_call(identifier: String, arguments: Value) -> ToolCall {
+        fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall {
             let finalize_tool = FinalizeTool::<O>::new().expect("finalize tool should build");
 
             ToolCall {
@@ -378,24 +386,21 @@ mod tests {
                 }),
             }
         }
-    }
 
-    macro_rules! finalize_failure_call {
-        ($reason:expr) => {
-            finalize_failure_call!("finalize", $reason)
-        };
-        ($identifier:expr, $reason:expr) => {
-            tool_call_json!(
-                id = $identifier,
-                name = "finalize",
-                output = {
+        fn build_failure_tool_call(identifier: String, reason: String) -> ToolCall {
+            let finalize_tool = FinalizeTool::<O>::new().expect("finalize tool should build");
+
+            ToolCall {
+                id: identifier,
+                name: finalize_tool.name().to_string(),
+                arguments: json!({
                     "output": {
                         "type": "failure",
-                        "reason": $reason,
+                        "reason": reason,
                     }
-                }
-            )
-        };
+                }),
+            }
+        }
     }
 
     macro_rules! provider_response {
@@ -809,7 +814,11 @@ mod tests {
             age: usize,
         }
 
-        let provider = provider!([finalize_failure_call!("Not enough information")]);
+        #[rustfmt::skip]
+        let provider = provider!([
+            tool_call!(FinalizeTool::<Person>, id = "finalize", failure = "Not enough information")
+        ]);
+
         let (context, response) = run_executor!(provider => Person);
 
         match response.expect_err("execution should fail") {
