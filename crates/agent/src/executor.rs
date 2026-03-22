@@ -3,8 +3,7 @@ use crate::error::{ExecutorError, ProviderError};
 use crate::json_validation::validate_json_against_schema_with_context;
 use crate::message::{ToolCall, ToolResult};
 use crate::recovery_instruction::RecoveryInstruction;
-use crate::tool::ToolError;
-use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool};
+use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool, ToolError};
 use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
@@ -994,131 +993,46 @@ mod tests {
             };
         }
 
-        struct InvalidCase {
-            id: &'static str,
-            patch: Value,
-            remove: Vec<&'static str>,
-            expected_substrings: Vec<&'static str>,
+        type InvalidCase = (&'static str, Value, Vec<&'static str>, Vec<&'static str>);
+
+        macro_rules! invalid_case {
+            ($id:expr, $patch:tt, [$($expected:expr),+ $(,)?]) => {
+                ($id, json!($patch), vec![], vec![$($expected),+])
+            };
+            ($id:expr, $patch:tt, remove = [$($key_to_remove:expr),* $(,)?], [$($expected:expr),+ $(,)?]) => {
+                ($id, json!($patch), vec![$($key_to_remove),*], vec![$($expected),+])
+            };
         }
 
-        let invalid_cases = vec![
-            InvalidCase {
-                id: "u8_type",
-                patch: json!({ "u8": "30" }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.u8", "integer"],
-            },
-            InvalidCase {
-                id: "u16_max",
-                patch: json!({ "u16": 70000 }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.u16", "maximum"],
-            },
-            InvalidCase {
-                id: "u32_max",
-                patch: json!({ "u32": 5000000000u64 }),
-                remove: vec![],
-                expected_substrings: vec!["expected u32"],
-            },
-            InvalidCase {
-                id: "u64_type",
-                patch: json!({ "u64": "500" }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.u64", "integer"],
-            },
-            InvalidCase {
-                id: "usize_min",
-                patch: json!({ "usize": -1 }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.usize", "minimum"],
-            },
-            InvalidCase {
-                id: "i8_max",
-                patch: json!({ "i8": 200 }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.i8", "maximum"],
-            },
-            InvalidCase {
-                id: "i16_max",
-                patch: json!({ "i16": 40000 }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.i16", "maximum"],
-            },
-            InvalidCase {
-                id: "i32_max",
-                patch: json!({ "i32": 3000000000i64 }),
-                remove: vec![],
-                expected_substrings: vec!["expected i32"],
-            },
-            InvalidCase {
-                id: "i64_type",
-                patch: json!({ "i64": "10" }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.i64", "integer"],
-            },
-            InvalidCase {
-                id: "isize_max",
-                patch: json!({ "isize": 9223372036854775808u64 }),
-                remove: vec![],
-                expected_substrings: vec!["expected isize"],
-            },
-            InvalidCase {
-                id: "boolean_type",
-                patch: json!({ "boolean": "true" }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.boolean", "boolean"],
-            },
-            InvalidCase {
-                id: "nullable_type",
-                patch: json!({ "nullable": 123 }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.nullable", "string"],
-            },
-            InvalidCase {
-                id: "vec_string_type",
-                patch: json!({ "vec_string": ["a", 1] }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.vec_string", "string"],
-            },
-            InvalidCase {
-                id: "vec_string_array_type",
-                patch: json!({ "vec_string": "a" }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.vec_string", "array"],
-            },
-            InvalidCase {
-                id: "vec_u16_max",
-                patch: json!({ "vec_u16": [1, 70000] }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.vec_u16", "maximum"],
-            },
-            InvalidCase {
-                id: "fixed_u8_3_len",
-                patch: json!({ "fixed_u8_3": [1, 2, 3, 4] }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.fixed_u8_3", "more than"],
-            },
-            InvalidCase {
-                id: "mixed_tuple_type",
-                patch: json!({ "mixed_tuple": ["hello", "7", 1.5, true, null] }),
-                remove: vec![],
-                expected_substrings: vec!["output.answer.mixed_tuple", "integer"],
-            },
-            InvalidCase {
-                id: "string_required",
-                patch: json!({}),
-                remove: vec!["string"],
-                expected_substrings: vec!["output.answer.string is required"],
-            },
+        #[rustfmt::skip]
+        let invalid_cases: Vec<InvalidCase> = vec![
+            invalid_case!("u8_type", { "u8": "30" }, ["output.answer.u8", "integer"]),
+            invalid_case!("u16_max", { "u16": 70000 }, ["output.answer.u16", "maximum"]),
+            invalid_case!("u32_max", { "u32": 5000000000u64 }, ["expected u32"]),
+            invalid_case!("u64_type", { "u64": "500" }, ["output.answer.u64", "integer"]),
+            invalid_case!("usize_min", { "usize": -1 }, ["output.answer.usize", "minimum"]),
+            invalid_case!("i8_max", { "i8": 200 }, ["output.answer.i8", "maximum"]),
+            invalid_case!("i16_max", { "i16": 40000 }, ["output.answer.i16", "maximum"]),
+            invalid_case!("i32_max", { "i32": 3000000000i64 }, ["expected i32"]),
+            invalid_case!("i64_type", { "i64": "10" }, ["output.answer.i64", "integer"]),
+            invalid_case!("isize_max", { "isize": 9223372036854775808u64 }, ["expected isize"]),
+            invalid_case!("boolean_type", { "boolean": "true" }, ["output.answer.boolean", "boolean"]),
+            invalid_case!("nullable_type", { "nullable": 123 }, ["output.answer.nullable", "string"]),
+            invalid_case!("vec_string_type", { "vec_string": ["a", 1] }, ["output.answer.vec_string", "string"]),
+            invalid_case!("vec_string_array_type", { "vec_string": "a" }, ["output.answer.vec_string", "array"]),
+            invalid_case!("vec_u16_max", { "vec_u16": [1, 70000] }, ["output.answer.vec_u16", "maximum"]),
+            invalid_case!("fixed_u8_3_len", { "fixed_u8_3": [1, 2, 3, 4] }, ["output.answer.fixed_u8_3", "more than"]),
+            invalid_case!("mixed_tuple_type", { "mixed_tuple": ["hello", "7", 1.5, true, null] }, ["output.answer.mixed_tuple", "integer"]),
+            invalid_case!("string_required", {}, remove = ["string"], ["output.answer.string is required"]),
         ];
 
         let mut provider_results = invalid_cases
             .iter()
-            .map(|invalid_case| {
+            .map(|(id, patch, remove, _expected_substrings)| {
                 Ok(build_provider_response(vec![finalize_success_case_with_defaults(
-                    invalid_case.id,
-                    invalid_case.patch.clone(),
-                    &invalid_case.remove,
+                    id,
+                    patch.clone(),
+                    remove,
                 )]))
             })
             .collect::<Vec<Result<ProviderResponse, ProviderError>>>();
@@ -1153,15 +1067,15 @@ mod tests {
             }
         );
 
-        for invalid_case in &invalid_cases {
-            let failure_message = crate::tests::executor_support::failure_message_for_tool_call(&context, invalid_case.id)
-                .expect("expected tool failure message");
+        for (id, _, _, expected_substrings) in &invalid_cases {
+            let failure_message =
+                crate::tests::executor_support::failure_message_for_tool_call(&context, id).expect("expected tool failure message");
 
-            for expected_substring in &invalid_case.expected_substrings {
+            for expected_substring in expected_substrings {
                 assert!(
                     failure_message.contains(expected_substring),
                     "expected failure message for '{}' to contain '{}', got: {}",
-                    invalid_case.id,
+                    id,
                     expected_substring,
                     failure_message
                 );
