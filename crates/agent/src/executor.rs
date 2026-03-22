@@ -9,6 +9,7 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
+use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -16,7 +17,6 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
-use schemars::JsonSchema;
 use tokio::time::sleep;
 
 type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
@@ -307,17 +307,27 @@ mod tests {
     use super::*;
     use crate::message::Message;
     use crate::tool::ToolError;
+    use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex;
-    use schemars::JsonSchema;
 
     macro_rules! tool_call_json {
         (id = $identifier:expr, name = $tool_name:expr, output = $arguments:tt $(,)?) => {
             ToolCall {
                 id: $identifier.to_string(),
                 name: $tool_name.to_string(),
+                arguments: serde_json::json!($arguments),
+            }
+        };
+    }
+
+    macro_rules! tool_call {
+        ($tool_type:ty, $arguments:tt) => {
+            ToolCall {
+                id: format!("{}-{}", stringify!($tool_type), line!()),
+                name: <$tool_type>::default().name().to_string(),
                 arguments: serde_json::json!($arguments),
             }
         };
@@ -450,6 +460,16 @@ mod tests {
         }};
     }
 
+    macro_rules! assert_has_tool_success_content {
+        ($context:expr, $expected_content:tt) => {
+            assert!(
+                has_tool_success_content(&$context, &serde_json::json!($expected_content)),
+                "expected tool success content: {}",
+                serde_json::json!($expected_content)
+            );
+        };
+    }
+
     #[derive(Debug)]
     struct MockProvider {
         queued_results: Mutex<VecDeque<Result<ProviderResponse, ProviderError>>>,
@@ -529,6 +549,21 @@ mod tests {
         for message in &context.messages {
             if let Message::ToolResult { result } = message {
                 if result.tool_call_id() == tool_call_id {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn has_tool_success_content(context: &Context, expected_content: &Value) -> bool {
+        for message in &context.messages {
+            if let Message::ToolResult {
+                result: ToolResult::Success { content, .. },
+            } = message
+            {
+                if content == expected_content {
                     return true;
                 }
             }
@@ -715,7 +750,7 @@ mod tests {
         let provider = provider!(
             [
                 finalize_success_call!({ "name": "Ignored User", "age": 99 }),
-                tool_call_json!(id = "echo-1", name = "echo", output = { "value": "hello" }),
+                tool_call!(EchoTool, { "value": "hello" }),
             ],
             [
                 finalize_success_call!("finalize-final", { "name": "Maria", "age": 40 })
@@ -733,7 +768,7 @@ mod tests {
         );
 
         assert_no_tool_result!(context, "finalize");
-        assert_tool_result!(context, "echo-1");
+        assert_has_tool_success_content!(context, { "echo": "hello" });
         assert_tool_result!(context, "finalize-final");
     }
 
