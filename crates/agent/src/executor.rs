@@ -305,7 +305,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::executor_support::EchoTool;
+    use crate::message::Message;
+    use crate::tests::executor_support::{EchoTool, MockProvider};
     use crate::{
         assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, provider, run_executor,
         tool_call,
@@ -332,6 +333,51 @@ mod tests {
                 age: 25,
             }
         );
+    }
+
+    #[tokio::test]
+    async fn stores_only_trimmed_non_empty_assistant_text() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = MockProvider::from_results(vec![
+            Ok(ProviderResponse {
+                tool_calls: Vec::new(),
+                text: Some("\n\r\t   ".to_string()),
+                stop_reason: StopReason::ToolCalls,
+                usage: None,
+            }),
+            Ok(ProviderResponse {
+                tool_calls: vec![tool_call!(FinalizeTool::<Person>, { "name": "John Snow", "age": 25 })],
+                text: Some("\n  done with output  \t".to_string()),
+                stop_reason: StopReason::ToolCalls,
+                usage: None,
+            }),
+        ]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "John Snow".to_string(),
+                age: 25,
+            }
+        );
+
+        let assistant_messages = context
+            .messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::Assistant { content } => Some(content.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(assistant_messages, vec!["done with output".to_string()]);
     }
 
     #[tokio::test]
