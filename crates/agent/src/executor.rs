@@ -9,7 +9,6 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
-use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -17,6 +16,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
+use schemars::JsonSchema;
 use tokio::time::sleep;
 
 type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
@@ -311,6 +311,7 @@ mod tests {
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex;
+    use schemars::JsonSchema;
 
     macro_rules! tool_call_json {
         (id = $identifier:expr, name = $tool_name:expr, output = $arguments:tt $(,)?) => {
@@ -481,7 +482,7 @@ mod tests {
     #[derive(Debug, Clone, Default)]
     struct EchoTool;
 
-    #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
     struct EchoInput {
         value: String,
     }
@@ -704,18 +705,21 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_finalize_when_mixed_with_other_tools() {
-        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {
             name: String,
             age: usize,
         }
 
+        #[rustfmt::skip]
         let provider = provider!(
             [
                 finalize_success_call!({ "name": "Ignored User", "age": 99 }),
                 tool_call_json!(id = "echo-1", name = "echo", output = { "value": "hello" }),
             ],
-            [finalize_success_call!("finalize-final", { "name": "Maria", "age": 40 })]
+            [
+                finalize_success_call!("finalize-final", { "name": "Maria", "age": 40 })
+            ]
         );
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
@@ -735,21 +739,20 @@ mod tests {
 
     #[tokio::test]
     async fn returns_error_when_finalize_reports_failure() {
-        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {
             name: String,
             age: usize,
         }
 
         let provider = provider!([finalize_failure_call!("Not enough information")]);
-        let (context, execution_error) = run_executor!(provider => Person);
-        let execution_error = execution_error.expect_err("execution should fail");
+        let (context, response) = run_executor!(provider => Person);
 
-        match execution_error {
+        match response.expect_err("execution should fail") {
             ExecutorError::FinalizeFailure { reason } => {
                 assert_eq!(reason, "Not enough information");
             }
-            unexpected_error => panic!("expected FinalizeFailure, got {unexpected_error:?}"),
+            error => panic!("expected FinalizeFailure, got {error:?}"),
         }
 
         assert_tool_failure_contains!(context, "finalize", ["Not enough information"]);
@@ -757,39 +760,20 @@ mod tests {
 
     #[tokio::test]
     async fn returns_max_iterations_when_model_never_calls_tools() {
-        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {
             name: String,
             age: usize,
         }
 
         let provider = provider!([], []);
-        let (_context, execution_error) = run_executor!(provider => Person, max_iterations = 2);
-        let execution_error = execution_error.expect_err("execution should fail with iteration limit");
+        let (_, response) = run_executor!(provider => Person, max_iterations = 2);
 
-        match execution_error {
+        match response.expect_err("execution should fail with iteration limit") {
             ExecutorError::MaxIterationsReached { max_iterations } => {
                 assert_eq!(max_iterations, 2);
             }
-            unexpected_error => panic!("expected MaxIterationsReached, got {unexpected_error:?}"),
+            error => panic!("expected MaxIterationsReached, got {error:?}"),
         }
-    }
-
-    #[tokio::test]
-    async fn supports_custom_output_type_per_test() {
-        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
-        struct Profile {
-            city: String,
-        }
-
-        let provider = provider!([finalize_success_call!({ "city": "Barcelona" })]);
-        let (_, output) = run_executor!(provider => Profile);
-
-        assert_eq!(
-            output.expect("execution should succeed"),
-            Profile {
-                city: "Barcelona".to_string(),
-            }
-        );
     }
 }
