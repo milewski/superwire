@@ -59,9 +59,19 @@ where
     fn prepare_tools<'a>(&self, tools: &'a [Arc<dyn RuntimeTool>]) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
         let mut definitions = Vec::with_capacity(tools.len() + 1);
         let mut registry = HashMap::with_capacity(tools.len());
+        let finalize_tool_name = self.finalize_tool.name();
 
         for tool in tools {
             let definition = tool.definition()?;
+
+            if definition.name == finalize_tool_name {
+                return Err(ToolError::new(format!("Tool name '{}' is reserved for finalize tool", definition.name)).into());
+            }
+
+            if registry.contains_key(&definition.name) {
+                return Err(ToolError::new(format!("Duplicate tool name detected: '{}'", definition.name)).into());
+            }
+
             registry.insert(definition.name.clone(), tool);
             definitions.push(definition);
         }
@@ -276,11 +286,21 @@ where
                 }
                 ToolCallExecution::Continue(tool_calls) => {
                     // Run non-finalize tools concurrently to reduce overall latency
-                    let tool_execution_futures = tool_calls.into_iter().map(|tool_call| {
-                        let tool = registry.get(&tool_call.name).expect("tool registry should contain every tool");
+                    let mut tool_execution_futures = Vec::new();
 
-                        async move { (tool_call, tool.execute(tool_call.arguments.clone()).await) }
-                    });
+                    for tool_call in tool_calls {
+                        match registry.get(&tool_call.name) {
+                            Some(tool) => {
+                                tool_execution_futures.push(async move { (tool_call, tool.execute(tool_call.arguments.clone()).await) });
+                            }
+                            None => {
+                                context.add_tool_result(ToolResult::Failure {
+                                    tool_call_id: tool_call.id.clone(),
+                                    content: Value::String(format!("Unknown tool '{}'", tool_call.name)),
+                                });
+                            }
+                        }
+                    }
 
                     for (tool_call, tool_execution_result) in join_all(tool_execution_futures).await {
                         let tool_result = match tool_execution_result {
@@ -306,12 +326,12 @@ where
 mod tests {
     use super::*;
     use crate::message::Message;
-    use crate::tests::executor_support::{EchoTool, MockProvider};
+    use crate::tests::executor_support::{build_provider_response, provider_from_results, EchoTool};
     use crate::traits::TokenUsage;
     use crate::ProviderError;
     use crate::{
         assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, assistant_message,
-        provider, provider_error, run_executor, tool_call,
+        provider, provider_error, run_executor, run_executor_with_config, tool_call,
     };
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
@@ -392,15 +412,8 @@ mod tests {
             assistant_message!(text = "same message", stop = StopReason::ToolCalls)
         ]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new()
-            .expect("executor should build")
-            .with_max_iterations(10);
-
         let config = AgentConfig::default().with_stuck_threshold(2);
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
-
-        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+        let (_, response) = run_executor_with_config!(provider => Person, config = config, max_iterations = 10);
 
         assert!(matches!(response, Err(ExecutorError::StuckLoopDetected)));
     }
@@ -418,13 +431,7 @@ mod tests {
             assistant_message!(text = "partial output", stop = StopReason::MaxTokens)
         ]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
-
-        let response = executor
-            .execute(&mut context, &provider, &runtime_tools, &AgentConfig::default())
-            .await;
+        let (_, response) = run_executor!(provider => Person);
 
         assert!(matches!(response, Err(ExecutorError::MaxTokensReached)));
     }
@@ -447,13 +454,7 @@ mod tests {
             }
         )]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
-
-        let response = executor
-            .execute(&mut context, &provider, &runtime_tools, &AgentConfig::default())
-            .await;
+        let (context, response) = run_executor!(provider => Person);
 
         assert!(matches!(response, Err(ExecutorError::MaxTokensReached)));
         assert_eq!(context.total_tokens, 12);
@@ -482,14 +483,11 @@ mod tests {
             )
         ]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
         let config = AgentConfig::default()
             .with_provider_max_retries(1)
             .with_provider_retry_base_delay_ms(0);
 
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
-        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+        let (_, response) = run_executor_with_config!(provider => Person, config = config);
 
         assert_eq!(
             response.expect("execution should succeed after provider retry"),
@@ -519,14 +517,11 @@ mod tests {
             )
         ]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
         let config = AgentConfig::default()
             .with_provider_max_retries(1)
             .with_provider_retry_base_delay_ms(0);
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
 
-        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+        let (_, response) = run_executor_with_config!(provider => Person, config = config);
 
         assert_eq!(
             response.expect("execution should succeed after rate limit retry"),
@@ -552,14 +547,11 @@ mod tests {
             })
         ]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
         let config = AgentConfig::default()
             .with_provider_max_retries(5)
             .with_provider_retry_base_delay_ms(0);
 
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
-        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+        let (_, response) = run_executor_with_config!(provider => Person, config = config);
 
         assert!(matches!(
             response,
@@ -586,14 +578,11 @@ mod tests {
             })
         ]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
         let config = AgentConfig::default()
             .with_provider_max_retries(1)
             .with_provider_retry_base_delay_ms(0);
 
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
-        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+        let (_, response) = run_executor_with_config!(provider => Person, config = config);
 
         assert!(matches!(
             response,
@@ -655,10 +644,10 @@ mod tests {
             age: usize,
         }
 
-        let provider = provider!(
-            [tool_call!(EchoTool, id = "echo-invalid", { "value": 123 })],
-            [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
-        );
+        let provider = provider!([
+            tool_call!(EchoTool, id = "echo-invalid", { "value": 123 }),
+            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+        ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
 
@@ -698,13 +687,7 @@ mod tests {
 
         let provider = provider!([assistant_message!(text = "unused", stop = StopReason::ToolCalls)]);
 
-        let mut context = Context::default();
-        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
-        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = vec![Arc::new(BrokenDefinitionTool)];
-
-        let response = executor
-            .execute(&mut context, &provider, &runtime_tools, &AgentConfig::default())
-            .await;
+        let (_, response) = run_executor!(provider => Person, tools = [BrokenDefinitionTool]);
 
         assert!(matches!(
             response,
@@ -748,10 +731,10 @@ mod tests {
             }
         }
 
-        let provider = provider!(
-            [tool_call!(AlwaysFailTool, id = "fail", { "value": "x" })],
-            [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
-        );
+        let provider = provider!([
+            tool_call!(AlwaysFailTool, id = "fail", { "value": "x" }),
+            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+        ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [AlwaysFailTool]);
 
@@ -765,6 +748,105 @@ mod tests {
 
         assert_tool_failure_contains!(context, "fail", ["boom"]);
         assert_tool_result!(context, "final");
+    }
+
+    #[tokio::test]
+    async fn records_unknown_tool_call_as_failure_and_continues() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            assistant_message!(
+                stop = StopReason::ToolCalls,
+                tools = [ToolCall {
+                    id: "unknown-tool".to_string(),
+                    name: "not_registered".to_string(),
+                    arguments: json!({ "value": 1 }),
+                }]
+            ),
+            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+        ]);
+
+        let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_tool_failure_contains!(context, "unknown-tool", ["Unknown tool 'not_registered'"]);
+        assert_tool_result!(context, "final");
+    }
+
+    #[tokio::test]
+    async fn returns_tool_error_when_runtime_tools_have_duplicate_names() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[derive(Debug, Default, Clone)]
+        struct DuplicateToolA;
+
+        #[derive(Debug, Default, Clone)]
+        struct DuplicateToolB;
+
+        #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+        struct DuplicateInput {
+            value: String,
+        }
+
+        #[async_trait]
+        impl Tool for DuplicateToolA {
+            type Input = DuplicateInput;
+
+            fn name(&self) -> &str {
+                "duplicate_tool"
+            }
+
+            fn description(&self) -> &str {
+                "Duplicate tool A"
+            }
+
+            async fn execute(&self, _input: Self::Input) -> Result<Value, ToolError> {
+                Ok(json!({ "ok": true }))
+            }
+        }
+
+        #[async_trait]
+        impl Tool for DuplicateToolB {
+            type Input = DuplicateInput;
+
+            fn name(&self) -> &str {
+                "duplicate_tool"
+            }
+
+            fn description(&self) -> &str {
+                "Duplicate tool B"
+            }
+
+            async fn execute(&self, _input: Self::Input) -> Result<Value, ToolError> {
+                Ok(json!({ "ok": true }))
+            }
+        }
+
+        let provider = provider!([assistant_message!(text = "unused", stop = StopReason::ToolCalls)]);
+        let (_, response) = run_executor!(provider => Person, tools = [DuplicateToolA, DuplicateToolB]);
+
+        assert!(matches!(
+            response,
+            Err(ExecutorError::ToolError {
+                message,
+                details: _
+            }) if message == "Duplicate tool name detected: 'duplicate_tool'"
+        ));
     }
 
     #[tokio::test]
@@ -912,28 +994,138 @@ mod tests {
             };
         }
 
-        #[rustfmt::skip]
-        let provider = provider!(
-            [case_with_defaults!("u8_type", { "u8": "30" })],
-            [case_with_defaults!("u16_max", { "u16": 70000 })],
-            [case_with_defaults!("u32_max", { "u32": 5000000000u64 })],
-            [case_with_defaults!("u64_type", { "u64": "500" })],
-            [case_with_defaults!("usize_min", { "usize": -1 })],
-            [case_with_defaults!("i8_max", { "i8": 200 })],
-            [case_with_defaults!("i16_max", { "i16": 40000 })],
-            [case_with_defaults!("i32_max", { "i32": 3000000000i64 })],
-            [case_with_defaults!("i64_type", { "i64": "10" })],
-            [case_with_defaults!("isize_max", { "isize": 9223372036854775808u64 })],
-            [case_with_defaults!("boolean_type", { "boolean": "true" })],
-            [case_with_defaults!("nullable_type", { "nullable": 123 })],
-            [case_with_defaults!("vec_string_type", { "vec_string": ["a", 1] })],
-            [case_with_defaults!("vec_string_array_type", { "vec_string": "a" })],
-            [case_with_defaults!("vec_u16_max", { "vec_u16": [1, 70000] })],
-            [case_with_defaults!("fixed_u8_3_len", { "fixed_u8_3": [1, 2, 3, 4] })],
-            [case_with_defaults!("mixed_tuple_type", { "mixed_tuple": ["hello", "7", 1.5, true, null] })],
-            [case_with_defaults!("string_required", {}, remove = ["string"])],
-            [case_with_defaults!("valid", {})]
-        );
+        struct InvalidCase {
+            id: &'static str,
+            patch: Value,
+            remove: Vec<&'static str>,
+            expected_substrings: Vec<&'static str>,
+        }
+
+        let invalid_cases = vec![
+            InvalidCase {
+                id: "u8_type",
+                patch: json!({ "u8": "30" }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.u8", "integer"],
+            },
+            InvalidCase {
+                id: "u16_max",
+                patch: json!({ "u16": 70000 }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.u16", "maximum"],
+            },
+            InvalidCase {
+                id: "u32_max",
+                patch: json!({ "u32": 5000000000u64 }),
+                remove: vec![],
+                expected_substrings: vec!["expected u32"],
+            },
+            InvalidCase {
+                id: "u64_type",
+                patch: json!({ "u64": "500" }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.u64", "integer"],
+            },
+            InvalidCase {
+                id: "usize_min",
+                patch: json!({ "usize": -1 }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.usize", "minimum"],
+            },
+            InvalidCase {
+                id: "i8_max",
+                patch: json!({ "i8": 200 }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.i8", "maximum"],
+            },
+            InvalidCase {
+                id: "i16_max",
+                patch: json!({ "i16": 40000 }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.i16", "maximum"],
+            },
+            InvalidCase {
+                id: "i32_max",
+                patch: json!({ "i32": 3000000000i64 }),
+                remove: vec![],
+                expected_substrings: vec!["expected i32"],
+            },
+            InvalidCase {
+                id: "i64_type",
+                patch: json!({ "i64": "10" }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.i64", "integer"],
+            },
+            InvalidCase {
+                id: "isize_max",
+                patch: json!({ "isize": 9223372036854775808u64 }),
+                remove: vec![],
+                expected_substrings: vec!["expected isize"],
+            },
+            InvalidCase {
+                id: "boolean_type",
+                patch: json!({ "boolean": "true" }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.boolean", "boolean"],
+            },
+            InvalidCase {
+                id: "nullable_type",
+                patch: json!({ "nullable": 123 }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.nullable", "string"],
+            },
+            InvalidCase {
+                id: "vec_string_type",
+                patch: json!({ "vec_string": ["a", 1] }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.vec_string", "string"],
+            },
+            InvalidCase {
+                id: "vec_string_array_type",
+                patch: json!({ "vec_string": "a" }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.vec_string", "array"],
+            },
+            InvalidCase {
+                id: "vec_u16_max",
+                patch: json!({ "vec_u16": [1, 70000] }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.vec_u16", "maximum"],
+            },
+            InvalidCase {
+                id: "fixed_u8_3_len",
+                patch: json!({ "fixed_u8_3": [1, 2, 3, 4] }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.fixed_u8_3", "more than"],
+            },
+            InvalidCase {
+                id: "mixed_tuple_type",
+                patch: json!({ "mixed_tuple": ["hello", "7", 1.5, true, null] }),
+                remove: vec![],
+                expected_substrings: vec!["output.answer.mixed_tuple", "integer"],
+            },
+            InvalidCase {
+                id: "string_required",
+                patch: json!({}),
+                remove: vec!["string"],
+                expected_substrings: vec!["output.answer.string is required"],
+            },
+        ];
+
+        let mut provider_results = invalid_cases
+            .iter()
+            .map(|invalid_case| {
+                Ok(build_provider_response(vec![finalize_success_case_with_defaults(
+                    invalid_case.id,
+                    invalid_case.patch.clone(),
+                    &invalid_case.remove,
+                )]))
+            })
+            .collect::<Vec<Result<ProviderResponse, ProviderError>>>();
+
+        provider_results.push(Ok(build_provider_response(vec![case_with_defaults!("valid", {})])));
+
+        let provider = provider_from_results(provider_results);
 
         let (context, output) = run_executor!(provider => ValidationPayload);
 
@@ -961,24 +1153,20 @@ mod tests {
             }
         );
 
-        assert_tool_failure_contains!(context, "u8_type", ["output.answer.u8", "integer"]);
-        assert_tool_failure_contains!(context, "u16_max", ["output.answer.u16", "maximum"]);
-        assert_tool_failure_contains!(context, "u32_max", ["expected u32"]);
-        assert_tool_failure_contains!(context, "u64_type", ["output.answer.u64", "integer"]);
-        assert_tool_failure_contains!(context, "usize_min", ["output.answer.usize", "minimum"]);
-        assert_tool_failure_contains!(context, "i8_max", ["output.answer.i8", "maximum"]);
-        assert_tool_failure_contains!(context, "i16_max", ["output.answer.i16", "maximum"]);
-        assert_tool_failure_contains!(context, "i32_max", ["expected i32"]);
-        assert_tool_failure_contains!(context, "i64_type", ["output.answer.i64", "integer"]);
-        assert_tool_failure_contains!(context, "isize_max", ["expected isize"]);
-        assert_tool_failure_contains!(context, "boolean_type", ["output.answer.boolean", "boolean"]);
-        assert_tool_failure_contains!(context, "nullable_type", ["output.answer.nullable", "string"]);
-        assert_tool_failure_contains!(context, "vec_string_type", ["output.answer.vec_string", "string"]);
-        assert_tool_failure_contains!(context, "vec_string_array_type", ["output.answer.vec_string", "array"]);
-        assert_tool_failure_contains!(context, "vec_u16_max", ["output.answer.vec_u16", "maximum"]);
-        assert_tool_failure_contains!(context, "fixed_u8_3_len", ["output.answer.fixed_u8_3", "more than"]);
-        assert_tool_failure_contains!(context, "mixed_tuple_type", ["output.answer.mixed_tuple", "integer"]);
-        assert_tool_failure_contains!(context, "string_required", ["output.answer.string is required"]);
+        for invalid_case in &invalid_cases {
+            let failure_message = crate::tests::executor_support::failure_message_for_tool_call(&context, invalid_case.id)
+                .expect("expected tool failure message");
+
+            for expected_substring in &invalid_case.expected_substrings {
+                assert!(
+                    failure_message.contains(expected_substring),
+                    "expected failure message for '{}' to contain '{}', got: {}",
+                    invalid_case.id,
+                    expected_substring,
+                    failure_message
+                );
+            }
+        }
     }
 
     #[tokio::test]
@@ -990,15 +1178,15 @@ mod tests {
         }
 
         #[rustfmt::skip]
-        let provider = provider!(
-            [
-                tool_call!(FinalizeTool<Person>, id = "a", { "name": "Ignored User", "age": 99 }),
-                tool_call!(EchoTool, { "value": "hello" }),
-            ],
-            [
-                tool_call!(FinalizeTool<Person>, id = "b", { "name": "Maria", "age": 40 })
-            ]
-        );
+        let provider = provider!([
+            assistant_message!(
+                tools = [
+                    tool_call!(FinalizeTool<Person>, id = "a", { "name": "Ignored User", "age": 99 }),
+                    tool_call!(EchoTool, { "value": "hello" })
+                ]
+            ),
+            tool_call!(FinalizeTool<Person>, id = "b", { "name": "Maria", "age": 40 })
+        ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
 
@@ -1048,7 +1236,7 @@ mod tests {
             age: usize,
         }
 
-        let provider = provider!([], []);
+        let provider = provider!([assistant_message!(tools = []), assistant_message!(tools = [])]);
         let (_, response) = run_executor!(provider => Person, max_iterations = 2);
 
         match response.expect_err("execution should fail with iteration limit") {

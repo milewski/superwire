@@ -149,6 +149,10 @@ impl MockProvider {
     }
 }
 
+pub fn provider_from_results(results: Vec<Result<ProviderResponse, ProviderError>>) -> MockProvider {
+    MockProvider::from_results(results)
+}
+
 #[async_trait]
 impl Provider for MockProvider {
     async fn generate(
@@ -245,6 +249,18 @@ pub async fn run_executor<OutputType>(
 where
     OutputType: Send + Sync + Serialize + DeserializeOwned + JsonSchema + 'static,
 {
+    run_executor_with_config(provider, runtime_tools, AgentConfig::default(), max_iterations).await
+}
+
+pub async fn run_executor_with_config<OutputType>(
+    provider: &MockProvider,
+    runtime_tools: Vec<Arc<dyn RuntimeTool>>,
+    config: AgentConfig,
+    max_iterations: Option<usize>,
+) -> (Context, Result<OutputType, ExecutorError>)
+where
+    OutputType: Send + Sync + Serialize + DeserializeOwned + JsonSchema + 'static,
+{
     let mut context = Context::default();
     let mut executor = crate::LoopExecutor::<MockProvider, OutputType>::new().expect("executor should build");
 
@@ -252,9 +268,7 @@ where
         executor = executor.with_max_iterations(max_iterations);
     }
 
-    let output = executor
-        .execute(&mut context, provider, &runtime_tools, &AgentConfig::default())
-        .await;
+    let output = executor.execute(&mut context, provider, &runtime_tools, &config).await;
 
     (context, output)
 }
@@ -286,16 +300,6 @@ macro_rules! provider {
     ([$($item:expr),+ $(,)?]) => {
         $crate::tests::executor_support::MockProvider::from_results(vec![
             $($crate::tests::executor_support::IntoProviderResult::into_provider_result($item)),+
-        ])
-    };
-    ($([$($tool_call:expr),* $(,)?]),+ $(,)?) => {
-        $crate::tests::executor_support::MockProvider::from_results(vec![
-            $(Ok($crate::tests::executor_support::build_provider_response(vec![$($tool_call),*]))),+
-        ])
-    };
-    ($($response:expr),+ $(,)?) => {
-        $crate::tests::executor_support::MockProvider::from_results(vec![
-            $(Ok($response)),+
         ])
     };
 }
@@ -350,6 +354,20 @@ macro_rules! run_executor {
     }};
     ($provider:expr => $output_type:ty, max_iterations = $max_iterations:expr) => {{
         $crate::tests::executor_support::run_executor::<$output_type>(&$provider, Vec::new(), Some($max_iterations)).await
+    }};
+}
+
+#[macro_export]
+macro_rules! run_executor_with_config {
+    ($provider:expr => $output_type:ty, config = $config:expr) => {{
+        $crate::tests::executor_support::run_executor_with_config::<$output_type>(&$provider, Vec::new(), $config, None).await
+    }};
+    ($provider:expr => $output_type:ty, config = $config:expr, tools = [$($tool:expr),* $(,)?]) => {{
+        let runtime_tools: Vec<std::sync::Arc<dyn $crate::RuntimeTool>> = vec![$(std::sync::Arc::new($tool) as std::sync::Arc<dyn $crate::RuntimeTool>),*];
+        $crate::tests::executor_support::run_executor_with_config::<$output_type>(&$provider, runtime_tools, $config, None).await
+    }};
+    ($provider:expr => $output_type:ty, config = $config:expr, max_iterations = $max_iterations:expr) => {{
+        $crate::tests::executor_support::run_executor_with_config::<$output_type>(&$provider, Vec::new(), $config, Some($max_iterations)).await
     }};
 }
 
