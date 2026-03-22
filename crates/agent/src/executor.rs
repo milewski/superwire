@@ -308,6 +308,7 @@ mod tests {
     use crate::message::Message;
     use crate::tool::ToolError;
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
@@ -498,7 +499,7 @@ mod tests {
         }
 
         async fn execute(&self, input: Self::Input) -> Result<Value, ToolError> {
-            Ok(serde_json::json!({ "echo": input.value }))
+            Ok(json!({ "echo": input.value }))
         }
     }
 
@@ -562,7 +563,14 @@ mod tests {
             string: String,
             u8: u8,
             u16: u16,
+            u32: u32,
+            u64: u64,
+            usize: usize,
             i8: i8,
+            i16: i16,
+            i32: i32,
+            i64: i64,
+            isize: isize,
             nullable: Option<String>,
             boolean: bool,
             float: f32,
@@ -571,19 +579,78 @@ mod tests {
             fixed_u8_3: [u8; 3],
         }
 
+        fn finalize_success_case_with_defaults(case_id: &str, answer_patch: Value, keys_to_remove: &[&str]) -> ToolCall {
+            let mut answer = json!({
+                "string": "Alice",
+                "u8": 30,
+                "u16": 500,
+                "u32": 500,
+                "u64": 500,
+                "usize": 500,
+                "i8": 10,
+                "i16": 10,
+                "i32": 10,
+                "i64": 10,
+                "isize": 10,
+                "nullable": null,
+                "boolean": true,
+                "float": 8.5,
+                "vec_string": ["a", "b"],
+                "vec_u16": [1, 2],
+                "fixed_u8_3": [1, 2, 3]
+            });
+
+            if let (Some(answer_object), Some(answer_patch_object)) = (answer.as_object_mut(), answer_patch.as_object()) {
+                for (key, value) in answer_patch_object {
+                    answer_object.insert(key.clone(), value.clone());
+                }
+
+                for key_to_remove in keys_to_remove {
+                    answer_object.remove(*key_to_remove);
+                }
+            }
+
+            ToolCall {
+                id: case_id.to_string(),
+                name: "finalize".to_string(),
+                arguments: json!({
+                    "output": {
+                        "type": "success",
+                        "answer": answer,
+                    }
+                }),
+            }
+        }
+
+        macro_rules! case_with_defaults {
+            ($case_id:expr, $answer_patch:tt) => {
+                finalize_success_case_with_defaults($case_id, json!($answer_patch), &[])
+            };
+            ($case_id:expr, $answer_patch:tt, remove = [$($key_to_remove:expr),* $(,)?]) => {
+                finalize_success_case_with_defaults($case_id, json!($answer_patch), &[$($key_to_remove),*])
+            };
+        }
+
         #[rustfmt::skip]
         let provider = provider!(
-            [finalize_success_call!("u8_type", { "string": "Alice", "u8": "30", "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("u16_max", { "string": "Alice", "u8": 30, "u16": 70000, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("i8_max", { "string": "Alice", "u8": 30, "u16": 500, "i8": 200, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("boolean_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": "true", "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("nullable_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": 123, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("vec_string_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", 1], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("vec_string_array_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": "a", "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("vec_u16_max", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 70000], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("fixed_u8_3_len", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3, 4] })],
-            [finalize_success_call!("string_required", { "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
-            [finalize_success_call!("valid", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })]
+            [case_with_defaults!("u8_type", { "u8": "30" })],
+            [case_with_defaults!("u16_max", { "u16": 70000 })],
+            [case_with_defaults!("u32_max", { "u32": 5000000000u64 })],
+            [case_with_defaults!("u64_type", { "u64": "500" })],
+            [case_with_defaults!("usize_min", { "usize": -1 })],
+            [case_with_defaults!("i8_max", { "i8": 200 })],
+            [case_with_defaults!("i16_max", { "i16": 40000 })],
+            [case_with_defaults!("i32_max", { "i32": 3000000000i64 })],
+            [case_with_defaults!("i64_type", { "i64": "10" })],
+            [case_with_defaults!("isize_max", { "isize": 9223372036854775808u64 })],
+            [case_with_defaults!("boolean_type", { "boolean": "true" })],
+            [case_with_defaults!("nullable_type", { "nullable": 123 })],
+            [case_with_defaults!("vec_string_type", { "vec_string": ["a", 1] })],
+            [case_with_defaults!("vec_string_array_type", { "vec_string": "a" })],
+            [case_with_defaults!("vec_u16_max", { "vec_u16": [1, 70000] })],
+            [case_with_defaults!("fixed_u8_3_len", { "fixed_u8_3": [1, 2, 3, 4] })],
+            [case_with_defaults!("string_required", {}, remove = ["string"])],
+            [case_with_defaults!("valid", {})]
         );
 
         let (context, output) = run_executor!(provider => ValidationPayload);
@@ -594,19 +661,33 @@ mod tests {
                 string: "Alice".to_string(),
                 u8: 30,
                 u16: 500,
+                u32: 500,
+                u64: 500,
+                usize: 500,
                 i8: 10,
+                i16: 10,
+                i32: 10,
+                i64: 10,
+                isize: 10,
                 nullable: None,
                 boolean: true,
                 float: 8.5,
                 vec_string: vec!["a".to_string(), "b".to_string()],
-                vec_u16: vec![1, 2],
-                fixed_u8_3: [1, 2, 3],
+                vec_u16: vec![1u16, 2],
+                fixed_u8_3: [1u8, 2, 3],
             }
         );
 
         assert_tool_failure_contains!(context, "u8_type", ["output.answer.u8", "integer"]);
         assert_tool_failure_contains!(context, "u16_max", ["output.answer.u16", "maximum"]);
+        assert_tool_failure_contains!(context, "u32_max", ["expected u32"]);
+        assert_tool_failure_contains!(context, "u64_type", ["output.answer.u64", "integer"]);
+        assert_tool_failure_contains!(context, "usize_min", ["output.answer.usize", "minimum"]);
         assert_tool_failure_contains!(context, "i8_max", ["output.answer.i8", "maximum"]);
+        assert_tool_failure_contains!(context, "i16_max", ["output.answer.i16", "maximum"]);
+        assert_tool_failure_contains!(context, "i32_max", ["expected i32"]);
+        assert_tool_failure_contains!(context, "i64_type", ["output.answer.i64", "integer"]);
+        assert_tool_failure_contains!(context, "isize_max", ["expected isize"]);
         assert_tool_failure_contains!(context, "boolean_type", ["output.answer.boolean", "boolean"]);
         assert_tool_failure_contains!(context, "nullable_type", ["output.answer.nullable", "string"]);
         assert_tool_failure_contains!(context, "vec_string_type", ["output.answer.vec_string", "string"]);
@@ -626,10 +707,10 @@ mod tests {
 
         let provider = provider!(
             [
-                finalize_success_call!({"name": "Ignored User", "age": 99}),
-                tool_call_json!(id = "echo-1", name = "echo", output = {"value": "hello"}),
+                finalize_success_call!({ "name": "Ignored User", "age": 99 }),
+                tool_call_json!(id = "echo-1", name = "echo", output = { "value": "hello" }),
             ],
-            [finalize_success_call!("finalize-final", {"name": "Maria", "age": 40})]
+            [finalize_success_call!("finalize-final", { "name": "Maria", "age": 40 })]
         );
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
@@ -656,9 +737,7 @@ mod tests {
         }
 
         let provider = provider!([finalize_failure_call!("Not enough information")]);
-
         let (context, execution_error) = run_executor!(provider => Person);
-
         let execution_error = execution_error.expect_err("execution should fail");
 
         match execution_error {
@@ -680,9 +759,7 @@ mod tests {
         }
 
         let provider = provider!([], []);
-
         let (_context, execution_error) = run_executor!(provider => Person, max_iterations = 2);
-
         let execution_error = execution_error.expect_err("execution should fail with iteration limit");
 
         match execution_error {
@@ -700,8 +777,7 @@ mod tests {
             city: String,
         }
 
-        let provider = provider!([finalize_success_call!({"city": "Barcelona"})]);
-
+        let provider = provider!([finalize_success_call!({ "city": "Barcelona" })]);
         let (_, output) = run_executor!(provider => Profile);
 
         assert_eq!(
