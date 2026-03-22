@@ -308,8 +308,8 @@ mod tests {
     use crate::message::Message;
     use crate::tests::executor_support::{EchoTool, MockProvider};
     use crate::{
-        assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, assistant_reply,
-        assistant_response, provider, run_executor, tool_call,
+        assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, assistant_message,
+        provider, run_executor, tool_call,
     };
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
@@ -345,8 +345,8 @@ mod tests {
 
         #[rustfmt::skip]
         let provider = provider!([
-            assistant_response!(text = "\n\r\t   ", stop = StopReason::ToolCalls),
-            assistant_response!(
+            assistant_message!(text = "\n\r\t   ", stop = StopReason::ToolCalls),
+            assistant_message!(
                 text = "\n  done with output  \t",
                 stop = StopReason::ToolCalls,
                 tools = [
@@ -386,8 +386,8 @@ mod tests {
         }
 
         let provider = provider!([
-            assistant_response!(text = "same message", stop = StopReason::ToolCalls),
-            assistant_response!(text = "same message", stop = StopReason::ToolCalls)
+            assistant_message!(text = "same message", stop = StopReason::ToolCalls),
+            assistant_message!(text = "same message", stop = StopReason::ToolCalls)
         ]);
 
         let mut context = Context::default();
@@ -413,7 +413,7 @@ mod tests {
 
         #[rustfmt::skip]
         let provider = provider!([
-            assistant_response!(text = "partial output", stop = StopReason::MaxTokens)
+            assistant_message!(text = "partial output", stop = StopReason::MaxTokens)
         ]);
 
         let mut context = Context::default();
@@ -437,7 +437,7 @@ mod tests {
 
         #[rustfmt::skip]
         let provider = provider!([
-            assistant_response!(text = "stopping early", stop = StopReason::EndOfSequence),
+            assistant_message!(text = "stopping early", stop = StopReason::EndOfSequence),
             tool_call!(FinalizeTool::<Person>, { "name": "Maria", "age": 40 })
         ]);
 
@@ -469,7 +469,7 @@ mod tests {
 
         #[rustfmt::skip]
         let provider = provider!([
-            assistant_reply!("   preparing final answer   ", stop_reason = StopReason::ToolCalls),
+            assistant_message!(text = "   preparing final answer   ", stop = StopReason::ToolCalls),
             tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 

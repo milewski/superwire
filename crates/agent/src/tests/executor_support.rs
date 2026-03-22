@@ -281,7 +281,7 @@ macro_rules! provider {
 }
 
 #[macro_export]
-macro_rules! assistant_response {
+macro_rules! assistant_message {
     (tools = [$($tool_call:expr),* $(,)?]) => {
         $crate::tests::executor_support::build_assistant_response(None, $crate::StopReason::ToolCalls, vec![$($tool_call),*])
     };
@@ -293,13 +293,6 @@ macro_rules! assistant_response {
     };
     (text = $text:expr, stop = $stop_reason:expr, tools = [$($tool_call:expr),* $(,)?]) => {
         $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, vec![$($tool_call),*])
-    };
-}
-
-#[macro_export]
-macro_rules! assistant_reply {
-    ($text:expr, stop_reason = $stop_reason:expr) => {
-        $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, Vec::new())
     };
 }
 
