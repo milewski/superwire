@@ -23,17 +23,17 @@ pub enum ExecutorError {
     #[error("Maximum iterations ({max_iterations}) reached without calling finalize tool")]
     MaxIterationsReached { max_iterations: usize },
 
-    /// Returned when the provider call fails during a specific loop iteration.
-    #[error("Provider error at iteration {iteration}: {message}")]
-    ProviderFailed { iteration: usize, message: String },
+    /// Returned when the provider call fails.
+    #[error("Provider error: {message}")]
+    ProviderFailed { message: String },
 
     /// Returned when repeated conversation content indicates the agent is stuck.
     #[error("Agent is stuck in a repeated loop")]
     StuckLoopDetected,
 
     /// Returned when the provider stops due to token limit.
-    #[error("Provider reached maximum token limit at iteration {iteration}")]
-    MaxTokensReached { iteration: usize },
+    #[error("Provider reached maximum token limit")]
+    MaxTokensReached,
 
     /// Returned when a successful finalize payload cannot be serialized to JSON.
     #[error("Failed to serialize finalize tool output: {message}")]

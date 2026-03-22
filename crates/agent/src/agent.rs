@@ -7,7 +7,7 @@ use crate::traits::{Executable, Provider};
 use std::sync::Arc;
 
 /// Configuration for the agent
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AgentConfig {
     /// Maximum number of tokens to generate for the model response.
     ///
@@ -49,6 +49,29 @@ pub struct AgentConfig {
 
     /// Stop sequences that terminate generation when matched.
     pub stop_sequences: Option<Vec<String>>,
+
+    /// Number of recent messages used for repeated-loop detection.
+    ///
+    /// Lower values make loop detection more aggressive.
+    /// Higher values allow more iterative back-and-forth.
+    pub stuck_threshold: usize,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            max_tokens: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            repeat_penalty: None,
+            seed: None,
+            stop_sequences: None,
+            stuck_threshold: 5,
+        }
+    }
 }
 
 impl AgentConfig {
@@ -153,6 +176,16 @@ impl AgentConfig {
     /// Pick unique stop strings to avoid cutting off normal content by accident.
     pub fn with_stop_sequences(mut self, stop_sequences: Vec<String>) -> Self {
         self.stop_sequences = Some(stop_sequences);
+        self
+    }
+
+    #[must_use]
+    /// Sets how many recent messages are checked for repetition loops.
+    ///
+    /// Use a lower value to fail fast when the model repeats itself.
+    /// Use a higher value if your workflow needs longer iterative cycles.
+    pub fn with_stuck_threshold(mut self, stuck_threshold: usize) -> Self {
+        self.stuck_threshold = stuck_threshold;
         self
     }
 }
@@ -289,15 +322,6 @@ where
     pub async fn run(&self, prompt: impl Into<String>) -> Result<AgentRunResult<E::Output>, AgentError> {
         let mut context = Context::new();
         context.add_user_message(prompt);
-
-        if let Some(max_tokens) = self.config.max_tokens {
-            if context.total_tokens >= max_tokens {
-                return Err(AgentError::MaxTokensExceeded {
-                    max_tokens,
-                    used_tokens: context.total_tokens,
-                });
-            }
-        }
 
         let output = match self.executor.execute(&mut context, &self.provider, &self.tools, &self.config).await {
             Ok(result) => result,

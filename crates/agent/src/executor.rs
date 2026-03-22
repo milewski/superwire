@@ -8,6 +8,9 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
+use schemars::JsonSchema;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -34,7 +37,7 @@ where
 impl<P, O> LoopExecutor<P, O>
 where
     P: Provider + Send + Sync,
-    O: Send + Sync + serde::Serialize + serde::de::DeserializeOwned + schemars::JsonSchema + 'static,
+    O: Send + Sync + Serialize + DeserializeOwned + JsonSchema + 'static,
 {
     pub fn new() -> Result<Self, ToolError> {
         Ok(Self {
@@ -68,7 +71,7 @@ where
     fn classify_tool_calls<'a>(&self, response: &'a ProviderResponse) -> ToolCallExecution<'a> {
         let finalize_name = self.finalize_tool.name();
         let mut finalize_tool_call = None;
-        let mut non_finalize_tool_calls = Vec::new();
+        let mut other_tool_calls = Vec::new();
 
         for tool_call in &response.tool_calls {
             if tool_call.name == finalize_name {
@@ -76,23 +79,23 @@ where
                 continue;
             }
 
-            non_finalize_tool_calls.push(tool_call);
+            other_tool_calls.push(tool_call);
         }
 
-        if non_finalize_tool_calls.is_empty() {
+        if other_tool_calls.is_empty() {
             if let Some(finalize_tool_call) = finalize_tool_call {
                 return ToolCallExecution::Complete(finalize_tool_call);
             }
         }
 
-        ToolCallExecution::Continue(non_finalize_tool_calls)
+        ToolCallExecution::Continue(other_tool_calls)
     }
 
     async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
         let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
-            Ok(finalize_arguments) => match finalize_arguments.output {
+            Ok(arguments) => match arguments.output {
                 FinalizeOutput::Success { output } => {
                     let value = serde_json::to_value(&output).map_err(|error| ExecutorError::FinalizeOutputSerializationFailed {
                         message: error.to_string(),
@@ -130,7 +133,7 @@ where
 impl<P, O> Executable for LoopExecutor<P, O>
 where
     P: Provider + Send + Sync,
-    O: Send + Sync + serde::Serialize + serde::de::DeserializeOwned + schemars::JsonSchema,
+    O: Send + Sync + Serialize + DeserializeOwned + JsonSchema,
 {
     type Output = O;
     type Error = ExecutorError;
@@ -159,7 +162,7 @@ where
             let response = provider
                 .generate(context, &tools, config)
                 .await
-                .map_err(|message| ExecutorError::ProviderFailed { iteration, message })?;
+                .map_err(|message| ExecutorError::ProviderFailed { message })?;
 
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
@@ -171,26 +174,27 @@ where
             }
 
             // Abort if the model repeats itself to avoid infinite loops
-            if context.is_stuck(5) {
+            if context.is_stuck(config.stuck_threshold) {
                 return Err(ExecutorError::StuckLoopDetected);
             }
 
-            // If the provider did not request any tool calls
+            if response.stop_reason == StopReason::MaxTokens {
+                return Err(ExecutorError::MaxTokensReached);
+            }
+
+            // Nudge the model toward the finalize tool when it tries to stop without completing
+            if response.stop_reason == StopReason::EndOfSequence {
+                context.add_user_message(RecoveryInstruction::MustExitByCallingTool {
+                    tool_name: self.finalize_tool.name(),
+                });
+            }
+
+            // This executor is tool-driven: progress is only made through tool calls.
+            // If the model replies without calling a tool, it has not executed any
+            // actionable step toward completion, so the turn is treated as incomplete
+            // and retried on the next iteration.
             if response.tool_calls.is_empty() {
-                if response.stop_reason == StopReason::MaxTokens {
-                    return Err(ExecutorError::MaxTokensReached { iteration });
-                }
-
-                // Nudge the model toward the finalize tool when it tries to stop without completing
-                if response.stop_reason == StopReason::EndOfSequence {
-                    context.add_user_message(RecoveryInstruction::MustExitByCallingTool {
-                        iteration,
-                        tool_name: self.finalize_tool.name(),
-                    });
-                }
-
                 iteration += 1;
-
                 continue;
             }
 
@@ -199,20 +203,25 @@ where
                 context.add_tool_call(tool_call.clone());
             }
 
+            // Completion rule:
+            // - If the model returns ONLY the finalize tool call, execution is complete.
+            // - If finalize is mixed with other tool calls, finalize is ignored for this turn.
+            // - If only non-finalize tools are returned, execute them and continue looping.
+            // The loop ends only when finalize is requested by itself.
             match self.classify_tool_calls(&response) {
                 ToolCallExecution::Complete(finalize_tool_call) => {
                     let output = match self.process_finalize_tool_call(context, finalize_tool_call).await {
                         Ok(output) => output,
-                        Err(error) => return Err(error),
+                        Err(error) => break Err(error),
                     };
 
                     if let Some(result) = output {
                         break Ok(result);
                     }
                 }
-                ToolCallExecution::Continue(tool_calls_to_execute) => {
+                ToolCallExecution::Continue(tool_calls) => {
                     // Run non-finalize tools concurrently to reduce overall latency
-                    let tool_execution_futures = tool_calls_to_execute.into_iter().map(|tool_call| {
+                    let tool_execution_futures = tool_calls.into_iter().map(|tool_call| {
                         let tool = registry.get(&tool_call.name).expect("tool registry should contain every tool");
 
                         async move { (tool_call, tool.execute(tool_call.arguments.clone()).await) }
