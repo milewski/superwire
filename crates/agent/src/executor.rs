@@ -430,6 +430,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn records_token_usage_even_when_max_tokens_reached() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([assistant_message!(
+            text = "partial output",
+            stop = StopReason::MaxTokens,
+            usage = TokenUsage {
+                total_tokens: 12,
+                input_tokens: 5,
+                output_tokens: 7,
+            }
+        )]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+
+        let response = executor
+            .execute(&mut context, &provider, &runtime_tools, &AgentConfig::default())
+            .await;
+
+        assert!(matches!(response, Err(ExecutorError::MaxTokensReached)));
+        assert_eq!(context.total_tokens, 12);
+        assert_eq!(context.input_tokens, 5);
+        assert_eq!(context.output_tokens, 7);
+    }
+
+    #[tokio::test]
     async fn retries_retriable_provider_error_and_then_completes() {
         #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {
@@ -461,6 +493,43 @@ mod tests {
 
         assert_eq!(
             response.expect("execution should succeed after provider retry"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_rate_limited_provider_error_and_then_completes() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            provider_error!(ProviderError::RateLimited {
+                message: "rate limited".to_string(),
+                retry_after_seconds: Some(0),
+            }),
+            assistant_message!(
+                stop = StopReason::ToolCalls,
+                tools = [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
+            )
+        ]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let config = AgentConfig::default()
+            .with_provider_max_retries(1)
+            .with_provider_retry_base_delay_ms(0);
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+
+        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+
+        assert_eq!(
+            response.expect("execution should succeed after rate limit retry"),
             Person {
                 name: "Maria".to_string(),
                 age: 40,
@@ -576,6 +645,74 @@ mod tests {
         assert_eq!(context.total_tokens, 17);
         assert_eq!(context.input_tokens, 6);
         assert_eq!(context.output_tokens, 11);
+    }
+
+    #[tokio::test]
+    async fn records_runtime_tool_input_deserialization_failure_and_recovers() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!(
+            [tool_call!(EchoTool, id = "echo-invalid", { "value": 123 })],
+            [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
+        );
+
+        let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_tool_failure_contains!(context, "echo-invalid", ["Failed to deserialize tool input for 'echo'"]);
+        assert_tool_result!(context, "final");
+    }
+
+    #[tokio::test]
+    async fn returns_tool_error_when_runtime_tool_definition_fails() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[derive(Debug)]
+        struct BrokenDefinitionTool;
+
+        #[async_trait]
+        impl RuntimeTool for BrokenDefinitionTool {
+            fn definition(&self) -> Result<ToolDefinition, ToolError> {
+                Err(ToolError::new("broken tool definition"))
+            }
+
+            async fn execute(&self, _input: Value) -> Result<Value, ToolError> {
+                Ok(json!({ "unused": true }))
+            }
+        }
+
+        let provider = provider!([assistant_message!(text = "unused", stop = StopReason::ToolCalls)]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = vec![Arc::new(BrokenDefinitionTool)];
+
+        let response = executor
+            .execute(&mut context, &provider, &runtime_tools, &AgentConfig::default())
+            .await;
+
+        assert!(matches!(
+            response,
+            Err(ExecutorError::ToolError {
+                message,
+                details: _
+            }) if message == "broken tool definition"
+        ));
     }
 
     #[tokio::test]
