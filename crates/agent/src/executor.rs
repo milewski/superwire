@@ -308,6 +308,7 @@ mod tests {
     use crate::message::Message;
     use crate::tool::ToolError;
     use schemars::JsonSchema;
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::collections::VecDeque;
@@ -325,30 +326,58 @@ mod tests {
 
     macro_rules! tool_call {
         ($tool_type:ty, $arguments:tt) => {
-            ToolCall {
-                id: format!("{}-{}", stringify!($tool_type), line!()),
-                name: <$tool_type>::default().name().to_string(),
-                arguments: serde_json::json!($arguments),
-            }
+            build_tool_call::<$tool_type>(
+                format!("{}-{}", stringify!($tool_type), line!()),
+                serde_json::json!($arguments),
+            )
+        };
+        ($tool_type:ty, id = $identifier:expr, $arguments:tt) => {
+            build_tool_call::<$tool_type>($identifier.to_string(), serde_json::json!($arguments))
         };
     }
 
-    macro_rules! finalize_success_call {
-        ($answer:tt) => {
-            finalize_success_call!("finalize", $answer)
-        };
-        ($identifier:expr, $answer:tt) => {
-            tool_call_json!(
-                id = $identifier,
-                name = "finalize",
-                output = {
+    trait ToolCallFactory {
+        fn build_tool_call(identifier: String, arguments: Value) -> ToolCall;
+    }
+
+    fn build_tool_call<ToolType>(identifier: String, arguments: Value) -> ToolCall
+    where
+        ToolType: ToolCallFactory,
+    {
+        ToolType::build_tool_call(identifier, arguments)
+    }
+
+    impl<ToolType> ToolCallFactory for ToolType
+    where
+        ToolType: Tool + Default,
+    {
+        fn build_tool_call(identifier: String, arguments: Value) -> ToolCall {
+            ToolCall {
+                id: identifier,
+                name: ToolType::default().name().to_string(),
+                arguments,
+            }
+        }
+    }
+
+    impl<O> ToolCallFactory for FinalizeTool<O>
+    where
+        O: Send + Sync + Serialize + DeserializeOwned + JsonSchema,
+    {
+        fn build_tool_call(identifier: String, arguments: Value) -> ToolCall {
+            let finalize_tool = FinalizeTool::<O>::new().expect("finalize tool should build");
+
+            ToolCall {
+                id: identifier,
+                name: finalize_tool.name().to_string(),
+                arguments: json!({
                     "output": {
                         "type": "success",
-                        "answer": $answer,
+                        "answer": arguments,
                     }
-                }
-            )
-        };
+                }),
+            }
+        }
     }
 
     macro_rules! finalize_failure_call {
@@ -463,9 +492,9 @@ mod tests {
     macro_rules! assert_has_tool_success_content {
         ($context:expr, $expected_content:tt) => {
             assert!(
-                has_tool_success_content(&$context, &serde_json::json!($expected_content)),
+                has_tool_success_content(&$context, &json!($expected_content)),
                 "expected tool success content: {}",
-                serde_json::json!($expected_content)
+                json!($expected_content)
             );
         };
     }
@@ -580,7 +609,7 @@ mod tests {
             age: usize,
         }
 
-        let provider = provider!([finalize_success_call!({ "age": 25, "name": "John Snow" })]);
+        let provider = provider!([tool_call!(FinalizeTool::<Person>, { "age": 25, "name": "John Snow" })]);
         let (_, output) = run_executor!(provider => Person);
 
         assert_eq!(
@@ -743,17 +772,17 @@ mod tests {
         #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {
             name: String,
-            age: usize,
+            age: u8,
         }
 
         #[rustfmt::skip]
         let provider = provider!(
             [
-                finalize_success_call!({ "name": "Ignored User", "age": 99 }),
+                tool_call!(FinalizeTool<Person>, id = "a", { "name": "Ignored User", "age": 99 }),
                 tool_call!(EchoTool, { "value": "hello" }),
             ],
             [
-                finalize_success_call!("finalize-final", { "name": "Maria", "age": 40 })
+                tool_call!(FinalizeTool<Person>, id = "b", { "name": "Maria", "age": 40 })
             ]
         );
 
@@ -767,9 +796,9 @@ mod tests {
             }
         );
 
-        assert_no_tool_result!(context, "finalize");
+        assert_no_tool_result!(context, "a");
         assert_has_tool_success_content!(context, { "echo": "hello" });
-        assert_tool_result!(context, "finalize-final");
+        assert_tool_result!(context, "b");
     }
 
     #[tokio::test]
