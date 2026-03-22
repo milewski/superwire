@@ -21,6 +21,31 @@ pub fn build_provider_response(tool_calls: Vec<ToolCall>) -> ProviderResponse {
     }
 }
 
+pub fn build_assistant_response(text: Option<String>, stop_reason: StopReason, tool_calls: Vec<ToolCall>) -> ProviderResponse {
+    ProviderResponse {
+        tool_calls,
+        text,
+        stop_reason,
+        usage: None,
+    }
+}
+
+pub trait IntoProviderResponse {
+    fn into_provider_response(self) -> ProviderResponse;
+}
+
+impl IntoProviderResponse for ProviderResponse {
+    fn into_provider_response(self) -> ProviderResponse {
+        self
+    }
+}
+
+impl IntoProviderResponse for ToolCall {
+    fn into_provider_response(self) -> ProviderResponse {
+        build_provider_response(vec![self])
+    }
+}
+
 pub trait ToolCallFactory {
     fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall;
 
@@ -238,10 +263,40 @@ macro_rules! tool_call {
 
 #[macro_export]
 macro_rules! provider {
+    ([$($item:expr),+ $(,)?]) => {
+        $crate::tests::executor_support::MockProvider::from_results(vec![
+            $(Ok($crate::tests::executor_support::IntoProviderResponse::into_provider_response($item))),+
+        ])
+    };
     ($([$($tool_call:expr),* $(,)?]),+ $(,)?) => {
         $crate::tests::executor_support::MockProvider::from_results(vec![
             $(Ok($crate::tests::executor_support::build_provider_response(vec![$($tool_call),*]))),+
         ])
+    };
+    ($($response:expr),+ $(,)?) => {
+        $crate::tests::executor_support::MockProvider::from_results(vec![
+            $(Ok($response)),+
+        ])
+    };
+}
+
+#[macro_export]
+macro_rules! assistant_response {
+    (tools = [$($tool_call:expr),* $(,)?]) => {
+        $crate::tests::executor_support::build_assistant_response(None, $crate::StopReason::ToolCalls, vec![$($tool_call),*])
+    };
+    (text = $text:expr, stop = $stop_reason:expr) => {
+        $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, Vec::new())
+    };
+    (text = $text:expr, stop = $stop_reason:expr, tools = [$($tool_call:expr),* $(,)?]) => {
+        $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, vec![$($tool_call),*])
+    };
+}
+
+#[macro_export]
+macro_rules! assistant_reply {
+    ($text:expr, stop_reason = $stop_reason:expr) => {
+        $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, Vec::new())
     };
 }
 

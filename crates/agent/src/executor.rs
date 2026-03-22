@@ -308,8 +308,8 @@ mod tests {
     use crate::message::Message;
     use crate::tests::executor_support::{EchoTool, MockProvider};
     use crate::{
-        assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, provider, run_executor,
-        tool_call,
+        assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, assistant_reply,
+        assistant_response, provider, run_executor, tool_call,
     };
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
@@ -343,19 +343,16 @@ mod tests {
             age: usize,
         }
 
-        let provider = MockProvider::from_results(vec![
-            Ok(ProviderResponse {
-                tool_calls: Vec::new(),
-                text: Some("\n\r\t   ".to_string()),
-                stop_reason: StopReason::ToolCalls,
-                usage: None,
-            }),
-            Ok(ProviderResponse {
-                tool_calls: vec![tool_call!(FinalizeTool::<Person>, { "name": "John Snow", "age": 25 })],
-                text: Some("\n  done with output  \t".to_string()),
-                stop_reason: StopReason::ToolCalls,
-                usage: None,
-            }),
+        #[rustfmt::skip]
+        let provider = provider!([
+            assistant_response!(text = "\n\r\t   ", stop = StopReason::ToolCalls),
+            assistant_response!(
+                text = "\n  done with output  \t",
+                stop = StopReason::ToolCalls,
+                tools = [
+                    tool_call!(FinalizeTool::<Person>, { "name": "John Snow", "age": 25 })
+                ]
+            )
         ]);
 
         let (context, output) = run_executor!(provider => Person);
@@ -388,34 +385,82 @@ mod tests {
             age: usize,
         }
 
-        let provider = MockProvider::from_results(vec![
-            Ok(ProviderResponse {
-                tool_calls: Vec::new(),
-                text: Some("same message".to_string()),
-                stop_reason: StopReason::ToolCalls,
-                usage: None,
-            }),
-            Ok(ProviderResponse {
-                tool_calls: Vec::new(),
-                text: Some("same message".to_string()),
-                stop_reason: StopReason::ToolCalls,
-                usage: None,
-            }),
+        let provider = provider!([
+            assistant_response!(text = "same message", stop = StopReason::ToolCalls),
+            assistant_response!(text = "same message", stop = StopReason::ToolCalls)
         ]);
 
         let mut context = Context::default();
         let executor = LoopExecutor::<MockProvider, Person>::new()
             .expect("executor should build")
             .with_max_iterations(10);
-        
+
         let config = AgentConfig::default().with_stuck_threshold(2);
         let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
 
-        let response = executor
-            .execute(&mut context, &provider, &runtime_tools, &config)
-            .await;
+        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
 
         assert!(matches!(response, Err(ExecutorError::StuckLoopDetected)));
+    }
+
+    #[tokio::test]
+    async fn returns_max_tokens_reached_when_provider_hits_token_limit() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[rustfmt::skip]
+        let provider = provider!([
+            assistant_response!(text = "partial output", stop = StopReason::MaxTokens)
+        ]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+
+        let response = executor
+            .execute(&mut context, &provider, &runtime_tools, &AgentConfig::default())
+            .await;
+
+        assert!(matches!(response, Err(ExecutorError::MaxTokensReached)));
+    }
+
+    #[tokio::test]
+    async fn supports_script_style_provider_sequence_with_mixed_response_types() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[rustfmt::skip]
+        let provider = provider!([
+            assistant_reply!("   preparing final answer   ", stop_reason = StopReason::ToolCalls),
+            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+        ]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        let assistant_messages = context
+            .messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::Assistant { content } => Some(content.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(assistant_messages, vec!["preparing final answer".to_string()]);
     }
 
     #[tokio::test]
