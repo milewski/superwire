@@ -381,6 +381,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn returns_stuck_loop_detected_for_repeated_assistant_messages() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = MockProvider::from_results(vec![
+            Ok(ProviderResponse {
+                tool_calls: Vec::new(),
+                text: Some("same message".to_string()),
+                stop_reason: StopReason::ToolCalls,
+                usage: None,
+            }),
+            Ok(ProviderResponse {
+                tool_calls: Vec::new(),
+                text: Some("same message".to_string()),
+                stop_reason: StopReason::ToolCalls,
+                usage: None,
+            }),
+        ]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new()
+            .expect("executor should build")
+            .with_max_iterations(10);
+        
+        let config = AgentConfig::default().with_stuck_threshold(2);
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+
+        let response = executor
+            .execute(&mut context, &provider, &runtime_tools, &config)
+            .await;
+
+        assert!(matches!(response, Err(ExecutorError::StuckLoopDetected)));
+    }
+
+    #[tokio::test]
     async fn retries_after_multiple_invalid_mixed_types_then_succeeds() {
         #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct ValidationPayload {
