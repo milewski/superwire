@@ -577,6 +577,7 @@ mod tests {
             vec_string: Vec<String>,
             vec_u16: Vec<u16>,
             fixed_u8_3: [u8; 3],
+            mixed_tuple: (String, u8, f32, bool, Option<String>),
         }
 
         fn finalize_success_case_with_defaults(case_id: &str, answer_patch: Value, keys_to_remove: &[&str]) -> ToolCall {
@@ -597,7 +598,8 @@ mod tests {
                 "float": 8.5,
                 "vec_string": ["a", "b"],
                 "vec_u16": [1, 2],
-                "fixed_u8_3": [1, 2, 3]
+                "fixed_u8_3": [1, 2, 3],
+                "mixed_tuple": ["hello", 7, 1.5, true, null]
             });
 
             if let (Some(answer_object), Some(answer_patch_object)) = (answer.as_object_mut(), answer_patch.as_object()) {
@@ -649,6 +651,7 @@ mod tests {
             [case_with_defaults!("vec_string_array_type", { "vec_string": "a" })],
             [case_with_defaults!("vec_u16_max", { "vec_u16": [1, 70000] })],
             [case_with_defaults!("fixed_u8_3_len", { "fixed_u8_3": [1, 2, 3, 4] })],
+            [case_with_defaults!("mixed_tuple_type", { "mixed_tuple": ["hello", "7", 1.5, true, null] })],
             [case_with_defaults!("string_required", {}, remove = ["string"])],
             [case_with_defaults!("valid", {})]
         );
@@ -675,6 +678,7 @@ mod tests {
                 vec_string: vec!["a".to_string(), "b".to_string()],
                 vec_u16: vec![1u16, 2],
                 fixed_u8_3: [1u8, 2, 3],
+                mixed_tuple: ("hello".to_string(), 7, 1.5, true, None),
             }
         );
 
@@ -694,6 +698,7 @@ mod tests {
         assert_tool_failure_contains!(context, "vec_string_array_type", ["output.answer.vec_string", "array"]);
         assert_tool_failure_contains!(context, "vec_u16_max", ["output.answer.vec_u16", "maximum"]);
         assert_tool_failure_contains!(context, "fixed_u8_3_len", ["output.answer.fixed_u8_3", "more than"]);
+        assert_tool_failure_contains!(context, "mixed_tuple_type", ["output.answer.mixed_tuple", "integer"]);
         assert_tool_failure_contains!(context, "string_required", ["output.answer.string is required"]);
     }
 
