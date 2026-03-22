@@ -202,6 +202,10 @@ where
             // Ask the provider to extend the conversation using the current context and tools
             let response = self.generate_with_retry(context, provider, &tools, config).await?;
 
+            if let Some(usage) = response.usage {
+                context.add_token_usage(usage);
+            }
+
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {
                 let trimmed = text.trim_matches(|char| char == '\n' || char == '\r' || char == '\t' || char == ' ');

@@ -38,6 +38,15 @@ pub struct ProviderResponse {
     pub tool_calls: Vec<ToolCall>,
     pub text: Option<String>,
     pub stop_reason: StopReason,
+    pub usage: Option<TokenUsage>,
+}
+
+/// Token usage metrics returned by providers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TokenUsage {
+    pub total_tokens: usize,
+    pub input_tokens: usize,
+    pub output_tokens: usize,
 }
 
 /// Trait for LLM providers that can generate responses

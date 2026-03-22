@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::error::ProviderError;
 use crate::message::{Message, ToolCall};
-use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::traits::{Provider, ProviderResponse, StopReason, TokenUsage, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use reqwest::StatusCode;
@@ -363,11 +363,32 @@ impl OpenAIProvider {
             }
         }
 
+        let usage = Self::parse_chat_usage(&response_json);
+
         Ok(ProviderResponse {
             tool_calls,
             text,
             stop_reason,
+            usage,
         })
+    }
+
+    fn parse_chat_usage(response_json: &Value) -> Option<TokenUsage> {
+        let usage = response_json.get("usage")?;
+
+        let total_tokens = usage.get("total_tokens").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let input_tokens = usage.get("prompt_tokens").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let output_tokens = usage.get("completion_tokens").and_then(Value::as_u64).unwrap_or(0) as usize;
+
+        if total_tokens == 0 && input_tokens == 0 && output_tokens == 0 {
+            None
+        } else {
+            Some(TokenUsage {
+                total_tokens,
+                input_tokens,
+                output_tokens,
+            })
+        }
     }
 
     fn convert_responses_status_to_stop_reason(status: Option<&str>, has_tool_calls: bool) -> StopReason {
@@ -457,12 +478,36 @@ impl OpenAIProvider {
 
         let status = response_json.get("status").and_then(Value::as_str);
         let stop_reason = Self::convert_responses_status_to_stop_reason(status, !tool_calls.is_empty());
+        let usage = Self::parse_responses_usage(&response_json);
 
         Ok(ProviderResponse {
             tool_calls,
             text,
             stop_reason,
+            usage,
         })
+    }
+
+    fn parse_responses_usage(response_json: &Value) -> Option<TokenUsage> {
+        let usage = response_json.get("usage")?;
+
+        let input_tokens = usage.get("input_tokens").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let output_tokens = usage.get("output_tokens").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let total_tokens = usage
+            .get("total_tokens")
+            .and_then(Value::as_u64)
+            .map(|tokens| tokens as usize)
+            .unwrap_or(input_tokens + output_tokens);
+
+        if total_tokens == 0 && input_tokens == 0 && output_tokens == 0 {
+            None
+        } else {
+            Some(TokenUsage {
+                total_tokens,
+                input_tokens,
+                output_tokens,
+            })
+        }
     }
 
     fn parse_tool_call_from_responses_item(&self, item: &Value) -> Result<Option<ToolCall>, ProviderError> {
@@ -585,6 +630,7 @@ impl OpenAIProvider {
                 tool_calls,
                 text,
                 stop_reason,
+                usage: None,
             });
         }
 

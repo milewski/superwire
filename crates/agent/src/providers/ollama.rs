@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::error::ProviderError;
 use crate::message::{Message, ToolCall};
-use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::traits::{Provider, ProviderResponse, StopReason, TokenUsage, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use ollama_rs::generation::chat::request::ChatMessageRequest;
@@ -144,10 +144,22 @@ impl Provider for OllamaProvider {
             StopReason::Other("Unknown".to_string())
         };
 
+        let usage = response.final_data.as_ref().map(|final_data| {
+            let input_tokens = usize::from(final_data.prompt_eval_count);
+            let output_tokens = usize::from(final_data.eval_count);
+
+            TokenUsage {
+                total_tokens: input_tokens + output_tokens,
+                input_tokens,
+                output_tokens,
+            }
+        });
+
         Ok(ProviderResponse {
             tool_calls,
             text,
             stop_reason,
+            usage,
         })
     }
 }
