@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod error;
 mod executor;
+mod json_validation;
 mod message;
 pub mod providers;
 mod recovery_instruction;

@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::error::{ExecutorError, ProviderError};
+use crate::json_validation::validate_json_against_schema_with_context;
 use crate::message::{ToolCall, ToolResult};
 use crate::recovery_instruction::RecoveryInstruction;
 use crate::tool::ToolError;
@@ -94,21 +95,32 @@ where
     }
 
     async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
+        if let Err(error) = validate_json_against_schema_with_context(
+            &tool_call.arguments,
+            self.finalize_tool.parameters_schema(),
+            "Finalize tool arguments do not match schema",
+        ) {
+            context.add_tool_result(ToolResult::Failure {
+                tool_call_id: tool_call.id.clone(),
+                content: Value::String(error.to_string()),
+            });
+
+            return Ok(None);
+        }
+
         let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
             Ok(arguments) => match arguments.output {
-                FinalizeOutput::Success { output } => {
-                    let value = serde_json::to_value(&output).map_err(|error| ExecutorError::FinalizeOutputSerializationFailed {
-                        message: error.to_string(),
-                    })?;
-
+                FinalizeOutput::Success { answer } => {
                     context.add_tool_result(ToolResult::Success {
                         tool_call_id: tool_call.id.clone(),
-                        content: value,
+                        content: serde_json::to_value(&answer).map_err(|error| ExecutorError::FinalizeOutputSerializationFailed {
+                            message: error.to_string(),
+                        })?,
                     });
 
-                    Ok(Some(output))
+                    Ok(Some(answer))
                 }
                 FinalizeOutput::Failure { reason } => {
                     context.add_tool_result(ToolResult::Failure {

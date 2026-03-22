@@ -11,8 +11,8 @@ use std::marker::PhantomData;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FinalizeOutput<O> {
     /// Successful completion payload.
-    /// The final structured output must be nested under this `output` field.
-    Success { output: O },
+    /// The final structured output must be nested under this `answer` field.
+    Success { answer: O },
 
     /// Failed completion payload with a concrete reason.
     Failure { reason: String },
@@ -20,12 +20,12 @@ pub enum FinalizeOutput<O> {
 
 #[derive(Deserialize, Serialize, schemars::JsonSchema)]
 pub struct FinalizeArguments<O> {
-    /// Required wrapper object.
+    /// Required wrapper object (top-level).
     ///
     /// Valid success shape:
     ///
     /// ```json
-    /// { "output": { "type": "success", "output": {...final object...} } }
+    /// { "output": { "type": "success", "answer": { ...final object... } } }
     /// ```
     ///
     /// Valid failure shape:
@@ -63,6 +63,11 @@ where
             parameters_schema: self.parameters_schema.clone(),
         }
     }
+
+    #[must_use]
+    pub fn parameters_schema(&self) -> &Schema {
+        &self.parameters_schema
+    }
 }
 
 impl<O> Clone for FinalizeTool<O>
@@ -92,10 +97,17 @@ where
         r#"
             Call this tool only when you are done.
             Arguments MUST be exactly one of:
-                { "output" : { "type": "success", "output": <final_json_object> } }
+                { "output" : { "type": "success", "answer": <final_json_object> } }
                 { "output" : { "type": "failure", "reason": "<why you could not complete>" } }
 
-            Important: `type` is nested inside `output`, never at the top level.
+            Required success keys: output.type and output.answer
+            Required failure keys: output.type and output.reason
+
+            Important:
+            - `type` is nested inside `output`, never at the top level.
+            - There is only one `output` object.
+            - DO NOT send output.output.answer.
+            - Correct path is output.answer.
         "#
     }
 

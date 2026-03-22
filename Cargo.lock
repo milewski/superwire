@@ -618,6 +618,7 @@ dependencies = [
  "async-trait",
  "futures",
  "indoc",
+ "jsonschema",
  "ollama-rs",
  "paste",
  "rand 0.8.5",
