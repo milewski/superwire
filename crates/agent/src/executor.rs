@@ -428,6 +428,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn adds_recovery_instruction_after_end_of_sequence_without_finalize() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[rustfmt::skip]
+        let provider = provider!([
+            assistant_response!(text = "stopping early", stop = StopReason::EndOfSequence),
+            tool_call!(FinalizeTool::<Person>, { "name": "Maria", "age": 40 })
+        ]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert!(context.messages.iter().any(|message| {
+            matches!(
+                message,
+                Message::User { content } if content.contains("You must finish by calling 'finalize'.")
+            )
+        }));
+    }
+
+    #[tokio::test]
     async fn supports_script_style_provider_sequence_with_mixed_response_types() {
         #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {

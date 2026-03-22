@@ -285,6 +285,9 @@ macro_rules! assistant_response {
     (tools = [$($tool_call:expr),* $(,)?]) => {
         $crate::tests::executor_support::build_assistant_response(None, $crate::StopReason::ToolCalls, vec![$($tool_call),*])
     };
+    (stop = $stop_reason:expr, tools = [$($tool_call:expr),* $(,)?]) => {
+        $crate::tests::executor_support::build_assistant_response(None, $stop_reason, vec![$($tool_call),*])
+    };
     (text = $text:expr, stop = $stop_reason:expr) => {
         $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, Vec::new())
     };
