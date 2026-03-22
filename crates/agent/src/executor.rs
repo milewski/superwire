@@ -301,3 +301,414 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::Message;
+    use crate::tool::ToolError;
+    use serde::{Deserialize, Serialize};
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    macro_rules! tool_call_json {
+        (id = $identifier:expr, name = $tool_name:expr, output = $arguments:tt $(,)?) => {
+            ToolCall {
+                id: $identifier.to_string(),
+                name: $tool_name.to_string(),
+                arguments: serde_json::json!($arguments),
+            }
+        };
+    }
+
+    macro_rules! finalize_success_call {
+        ($answer:tt) => {
+            finalize_success_call!("finalize", $answer)
+        };
+        ($identifier:expr, $answer:tt) => {
+            tool_call_json!(
+                id = $identifier,
+                name = "finalize",
+                output = {
+                    "output": {
+                        "type": "success",
+                        "answer": $answer,
+                    }
+                }
+            )
+        };
+    }
+
+    macro_rules! finalize_failure_call {
+        ($reason:expr) => {
+            finalize_failure_call!("finalize", $reason)
+        };
+        ($identifier:expr, $reason:expr) => {
+            tool_call_json!(
+                id = $identifier,
+                name = "finalize",
+                output = {
+                    "output": {
+                        "type": "failure",
+                        "reason": $reason,
+                    }
+                }
+            )
+        };
+    }
+
+    macro_rules! provider_response {
+        ($stop_reason:expr, [$($tool_call:expr),* $(,)?]) => {
+            ProviderResponse {
+                tool_calls: vec![$($tool_call),*],
+                text: None,
+                stop_reason: $stop_reason,
+                usage: None,
+            }
+        };
+    }
+
+    macro_rules! provider {
+        ($([$($tool_call:expr),* $(,)?]),+ $(,)?) => {
+            MockProvider::from_results(vec![
+                $(Ok(provider_response!(StopReason::ToolCalls, [$($tool_call),*]))),+
+            ])
+        };
+    }
+
+    macro_rules! run_executor {
+        ($provider:expr => $output_type:ty) => {{
+            let mut context = Context::default();
+            let executor = LoopExecutor::<MockProvider, $output_type>::new().expect("executor should build");
+            let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+            let output = executor
+                .execute(&mut context, &$provider, &runtime_tools, &AgentConfig::default())
+                .await;
+
+            (context, output)
+        }};
+        ($provider:expr => $output_type:ty, tools = [$($tool:expr),* $(,)?]) => {{
+            let mut context = Context::default();
+            let executor = LoopExecutor::<MockProvider, $output_type>::new().expect("executor should build");
+            let runtime_tools: Vec<Arc<dyn RuntimeTool>> = vec![$(Arc::new($tool) as Arc<dyn RuntimeTool>),*];
+            let output = executor
+                .execute(&mut context, &$provider, &runtime_tools, &AgentConfig::default())
+                .await;
+
+            (context, output)
+        }};
+        ($provider:expr => $output_type:ty, max_iterations = $max_iterations:expr) => {{
+            let mut context = Context::default();
+            let executor = LoopExecutor::<MockProvider, $output_type>::new()
+                .expect("executor should build")
+                .with_max_iterations($max_iterations);
+            let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+            let output = executor
+                .execute(&mut context, &$provider, &runtime_tools, &AgentConfig::default())
+                .await;
+
+            (context, output)
+        }};
+    }
+
+    macro_rules! assert_tool_result {
+        ($context:expr, $tool_call_id:expr) => {
+            assert!(
+                has_tool_result_for_call(&$context, $tool_call_id),
+                "expected tool result for '{}'",
+                $tool_call_id
+            );
+        };
+    }
+
+    macro_rules! assert_no_tool_result {
+        ($context:expr, $tool_call_id:expr) => {
+            assert!(
+                !has_tool_result_for_call(&$context, $tool_call_id),
+                "did not expect tool result for '{}'",
+                $tool_call_id
+            );
+        };
+    }
+
+    macro_rules! assert_tool_failure_contains {
+        ($context:expr, $tool_call_id:expr, [$($expected:expr),+ $(,)?]) => {{
+            let failure_message = failure_message_for_tool_call(&$context, $tool_call_id)
+                .expect("expected tool failure message");
+
+            $(
+                assert!(
+                    failure_message.contains($expected),
+                    "expected tool failure for '{}' to contain '{}'. got: {}",
+                    $tool_call_id,
+                    $expected,
+                    failure_message
+                );
+            )+
+        }};
+    }
+
+    #[derive(Debug)]
+    struct MockProvider {
+        queued_results: Mutex<VecDeque<Result<ProviderResponse, ProviderError>>>,
+    }
+
+    impl MockProvider {
+        fn from_results(results: Vec<Result<ProviderResponse, ProviderError>>) -> Self {
+            Self {
+                queued_results: Mutex::new(VecDeque::from(results)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Provider for MockProvider {
+        async fn generate(
+            &self,
+            _context: &Context,
+            _tools: &[ToolDefinition],
+            _config: &AgentConfig,
+        ) -> Result<ProviderResponse, ProviderError> {
+            let mut queued_results = self.queued_results.lock().expect("mock provider queue lock should not be poisoned");
+
+            queued_results
+                .pop_front()
+                .expect("mock provider should contain enough queued responses")
+        }
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct EchoTool;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+    struct EchoInput {
+        value: String,
+    }
+
+    #[async_trait]
+    impl Tool for EchoTool {
+        type Input = EchoInput;
+
+        fn name(&self) -> &str {
+            "echo"
+        }
+
+        fn description(&self) -> &str {
+            "Echoes a string back"
+        }
+
+        async fn execute(&self, input: Self::Input) -> Result<Value, ToolError> {
+            Ok(serde_json::json!({ "echo": input.value }))
+        }
+    }
+
+    fn failure_message_for_tool_call(context: &Context, tool_call_id: &str) -> Option<String> {
+        for message in &context.messages {
+            if let Message::ToolResult {
+                result:
+                    ToolResult::Failure {
+                        tool_call_id: failure_tool_call_id,
+                        content,
+                    },
+            } = message
+            {
+                if failure_tool_call_id == tool_call_id {
+                    if let Some(content_text) = content.as_str() {
+                        return Some(content_text.to_string());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn has_tool_result_for_call(context: &Context, tool_call_id: &str) -> bool {
+        for message in &context.messages {
+            if let Message::ToolResult { result } = message {
+                if result.tool_call_id() == tool_call_id {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    #[tokio::test]
+    async fn returns_output_when_finalize_success_is_valid() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([finalize_success_call!({ "age": 25, "name": "John Snow" })]);
+        let (_, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "John Snow".to_string(),
+                age: 25,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_after_multiple_invalid_mixed_types_then_succeeds() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct ValidationPayload {
+            string: String,
+            u8: u8,
+            u16: u16,
+            i8: i8,
+            nullable: Option<String>,
+            boolean: bool,
+            float: f32,
+            vec_string: Vec<String>,
+            vec_u16: Vec<u16>,
+            fixed_u8_3: [u8; 3],
+        }
+
+        #[rustfmt::skip]
+        let provider = provider!(
+            [finalize_success_call!("u8_type", { "string": "Alice", "u8": "30", "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("u16_max", { "string": "Alice", "u8": 30, "u16": 70000, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("i8_max", { "string": "Alice", "u8": 30, "u16": 500, "i8": 200, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("boolean_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": "true", "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("nullable_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": 123, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("vec_string_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", 1], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("vec_string_array_type", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": "a", "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("vec_u16_max", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 70000], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("fixed_u8_3_len", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3, 4] })],
+            [finalize_success_call!("string_required", { "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })],
+            [finalize_success_call!("valid", { "string": "Alice", "u8": 30, "u16": 500, "i8": 10, "nullable": null, "boolean": true, "float": 8.5, "vec_string": ["a", "b"], "vec_u16": [1, 2], "fixed_u8_3": [1, 2, 3] })]
+        );
+
+        let (context, output) = run_executor!(provider => ValidationPayload);
+
+        assert_eq!(
+            output.expect("execution should succeed after retry"),
+            ValidationPayload {
+                string: "Alice".to_string(),
+                u8: 30,
+                u16: 500,
+                i8: 10,
+                nullable: None,
+                boolean: true,
+                float: 8.5,
+                vec_string: vec!["a".to_string(), "b".to_string()],
+                vec_u16: vec![1, 2],
+                fixed_u8_3: [1, 2, 3],
+            }
+        );
+
+        assert_tool_failure_contains!(context, "u8_type", ["output.answer.u8", "integer"]);
+        assert_tool_failure_contains!(context, "u16_max", ["output.answer.u16", "maximum"]);
+        assert_tool_failure_contains!(context, "i8_max", ["output.answer.i8", "maximum"]);
+        assert_tool_failure_contains!(context, "boolean_type", ["output.answer.boolean", "boolean"]);
+        assert_tool_failure_contains!(context, "nullable_type", ["output.answer.nullable", "string"]);
+        assert_tool_failure_contains!(context, "vec_string_type", ["output.answer.vec_string", "string"]);
+        assert_tool_failure_contains!(context, "vec_string_array_type", ["output.answer.vec_string", "array"]);
+        assert_tool_failure_contains!(context, "vec_u16_max", ["output.answer.vec_u16", "maximum"]);
+        assert_tool_failure_contains!(context, "fixed_u8_3_len", ["output.answer.fixed_u8_3", "more than"]);
+        assert_tool_failure_contains!(context, "string_required", ["output.answer.string is required"]);
+    }
+
+    #[tokio::test]
+    async fn ignores_finalize_when_mixed_with_other_tools() {
+        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!(
+            [
+                finalize_success_call!({"name": "Ignored User", "age": 99}),
+                tool_call_json!(id = "echo-1", name = "echo", output = {"value": "hello"}),
+            ],
+            [finalize_success_call!("finalize-final", {"name": "Maria", "age": 40})]
+        );
+
+        let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_no_tool_result!(context, "finalize");
+        assert_tool_result!(context, "echo-1");
+        assert_tool_result!(context, "finalize-final");
+    }
+
+    #[tokio::test]
+    async fn returns_error_when_finalize_reports_failure() {
+        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([finalize_failure_call!("Not enough information")]);
+
+        let (context, execution_error) = run_executor!(provider => Person);
+
+        let execution_error = execution_error.expect_err("execution should fail");
+
+        match execution_error {
+            ExecutorError::FinalizeFailure { reason } => {
+                assert_eq!(reason, "Not enough information");
+            }
+            unexpected_error => panic!("expected FinalizeFailure, got {unexpected_error:?}"),
+        }
+
+        assert_tool_failure_contains!(context, "finalize", ["Not enough information"]);
+    }
+
+    #[tokio::test]
+    async fn returns_max_iterations_when_model_never_calls_tools() {
+        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([], []);
+
+        let (_context, execution_error) = run_executor!(provider => Person, max_iterations = 2);
+
+        let execution_error = execution_error.expect_err("execution should fail with iteration limit");
+
+        match execution_error {
+            ExecutorError::MaxIterationsReached { max_iterations } => {
+                assert_eq!(max_iterations, 2);
+            }
+            unexpected_error => panic!("expected MaxIterationsReached, got {unexpected_error:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn supports_custom_output_type_per_test() {
+        #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
+        struct Profile {
+            city: String,
+        }
+
+        let provider = provider!([finalize_success_call!({"city": "Barcelona"})]);
+
+        let (_, output) = run_executor!(provider => Profile);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Profile {
+                city: "Barcelona".to_string(),
+            }
+        );
+    }
+}
