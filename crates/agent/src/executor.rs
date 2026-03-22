@@ -178,6 +178,7 @@ where
                 return Err(ExecutorError::StuckLoopDetected);
             }
 
+            // Hard stop: token budget is exhausted, so retrying this loop cannot recover.
             if response.stop_reason == StopReason::MaxTokens {
                 return Err(ExecutorError::MaxTokensReached);
             }
@@ -229,13 +230,13 @@ where
 
                     for (tool_call, tool_execution_result) in join_all(tool_execution_futures).await {
                         let tool_result = match tool_execution_result {
-                            Ok(response) => ToolResult::Success {
+                            Ok(content) => ToolResult::Success {
                                 tool_call_id: tool_call.id.clone(),
-                                content: response,
+                                content,
                             },
                             Err(error) => ToolResult::Failure {
                                 tool_call_id: tool_call.id.clone(),
-                                content: error.to_agent_message().into(),
+                                content: Value::String(error.to_string()),
                             },
                         };
 
