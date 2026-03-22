@@ -307,9 +307,11 @@ mod tests {
     use super::*;
     use crate::message::Message;
     use crate::tests::executor_support::{EchoTool, MockProvider};
+    use crate::traits::TokenUsage;
+    use crate::ProviderError;
     use crate::{
         assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, assistant_message,
-        provider, run_executor, tool_call,
+        provider, provider_error, run_executor, tool_call,
     };
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
@@ -425,6 +427,207 @@ mod tests {
             .await;
 
         assert!(matches!(response, Err(ExecutorError::MaxTokensReached)));
+    }
+
+    #[tokio::test]
+    async fn retries_retriable_provider_error_and_then_completes() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[rustfmt::skip]
+        let provider = provider!([
+            provider_error!(ProviderError::Network {
+                message: "temporary network issue".to_string(),
+            }),
+            assistant_message!(
+                stop = StopReason::ToolCalls,
+                tools = [
+                    tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+                ]
+            )
+        ]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let config = AgentConfig::default()
+            .with_provider_max_retries(1)
+            .with_provider_retry_base_delay_ms(0);
+
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+
+        assert_eq!(
+            response.expect("execution should succeed after provider retry"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_provider_failed_immediately_for_non_retriable_error() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[rustfmt::skip]
+        let provider = provider!([
+            provider_error!(ProviderError::AuthenticationFailed {
+                message: "invalid api key".to_string(),
+            })
+        ]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let config = AgentConfig::default()
+            .with_provider_max_retries(5)
+            .with_provider_retry_base_delay_ms(0);
+
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+
+        assert!(matches!(
+            response,
+            Err(ExecutorError::ProviderFailed {
+                error: ProviderError::AuthenticationFailed { .. }
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn returns_provider_failed_when_retries_are_exhausted() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            provider_error!(ProviderError::ServiceUnavailable {
+                message: "provider down".to_string(),
+            }),
+            provider_error!(ProviderError::ServiceUnavailable {
+                message: "provider still down".to_string(),
+            })
+        ]);
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+        let config = AgentConfig::default()
+            .with_provider_max_retries(1)
+            .with_provider_retry_base_delay_ms(0);
+
+        let runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+        let response = executor.execute(&mut context, &provider, &runtime_tools, &config).await;
+
+        assert!(matches!(
+            response,
+            Err(ExecutorError::ProviderFailed {
+                error: ProviderError::ServiceUnavailable { .. }
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn accumulates_provider_token_usage_across_iterations() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            assistant_message!(
+                text = "thinking",
+                stop = StopReason::ToolCalls,
+                usage = TokenUsage {
+                    total_tokens: 10,
+                    input_tokens: 4,
+                    output_tokens: 6,
+                }
+            ),
+            assistant_message!(
+                stop = StopReason::ToolCalls,
+                tools = [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })],
+                usage = TokenUsage {
+                    total_tokens: 7,
+                    input_tokens: 2,
+                    output_tokens: 5,
+                }
+            )
+        ]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_eq!(context.total_tokens, 17);
+        assert_eq!(context.input_tokens, 6);
+        assert_eq!(context.output_tokens, 11);
+    }
+
+    #[tokio::test]
+    async fn records_runtime_tool_failure_and_then_recovers_with_finalize() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        #[derive(Debug, Default, Clone)]
+        struct AlwaysFailTool;
+
+        #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+        struct AlwaysFailInput {
+            value: String,
+        }
+
+        #[async_trait]
+        impl Tool for AlwaysFailTool {
+            type Input = AlwaysFailInput;
+
+            fn name(&self) -> &str {
+                "always_fail"
+            }
+
+            fn description(&self) -> &str {
+                "Always fails for testing"
+            }
+
+            async fn execute(&self, _input: Self::Input) -> Result<Value, ToolError> {
+                Err(ToolError::new("boom"))
+            }
+        }
+
+        let provider = provider!(
+            [tool_call!(AlwaysFailTool, id = "fail", { "value": "x" })],
+            [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
+        );
+
+        let (context, output) = run_executor!(provider => Person, tools = [AlwaysFailTool]);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_tool_failure_contains!(context, "fail", ["boom"]);
+        assert_tool_result!(context, "final");
     }
 
     #[tokio::test]

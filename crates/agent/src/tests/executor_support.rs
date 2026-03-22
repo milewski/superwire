@@ -3,7 +3,7 @@ use crate::context::Context;
 use crate::error::{ExecutorError, ProviderError};
 use crate::message::{Message, ToolCall, ToolResult};
 use crate::tool::{FinalizeTool, RuntimeTool, Tool, ToolError};
-use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::traits::{Executable, Provider, ProviderResponse, StopReason, TokenUsage, ToolDefinition};
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -30,19 +30,39 @@ pub fn build_assistant_response(text: Option<String>, stop_reason: StopReason, t
     }
 }
 
-pub trait IntoProviderResponse {
-    fn into_provider_response(self) -> ProviderResponse;
-}
-
-impl IntoProviderResponse for ProviderResponse {
-    fn into_provider_response(self) -> ProviderResponse {
-        self
+pub fn build_assistant_response_with_usage(
+    text: Option<String>,
+    stop_reason: StopReason,
+    tool_calls: Vec<ToolCall>,
+    usage: Option<TokenUsage>,
+) -> ProviderResponse {
+    ProviderResponse {
+        tool_calls,
+        text,
+        stop_reason,
+        usage,
     }
 }
 
-impl IntoProviderResponse for ToolCall {
-    fn into_provider_response(self) -> ProviderResponse {
-        build_provider_response(vec![self])
+pub trait IntoProviderResult {
+    fn into_provider_result(self) -> Result<ProviderResponse, ProviderError>;
+}
+
+impl IntoProviderResult for ProviderResponse {
+    fn into_provider_result(self) -> Result<ProviderResponse, ProviderError> {
+        Ok(self)
+    }
+}
+
+impl IntoProviderResult for ToolCall {
+    fn into_provider_result(self) -> Result<ProviderResponse, ProviderError> {
+        Ok(build_provider_response(vec![self]))
+    }
+}
+
+impl IntoProviderResult for Result<ProviderResponse, ProviderError> {
+    fn into_provider_result(self) -> Result<ProviderResponse, ProviderError> {
+        self
     }
 }
 
@@ -265,7 +285,7 @@ macro_rules! tool_call {
 macro_rules! provider {
     ([$($item:expr),+ $(,)?]) => {
         $crate::tests::executor_support::MockProvider::from_results(vec![
-            $(Ok($crate::tests::executor_support::IntoProviderResponse::into_provider_response($item))),+
+            $($crate::tests::executor_support::IntoProviderResult::into_provider_result($item)),+
         ])
     };
     ($([$($tool_call:expr),* $(,)?]),+ $(,)?) => {
@@ -293,6 +313,29 @@ macro_rules! assistant_message {
     };
     (text = $text:expr, stop = $stop_reason:expr, tools = [$($tool_call:expr),* $(,)?]) => {
         $crate::tests::executor_support::build_assistant_response(Some($text.to_string()), $stop_reason, vec![$($tool_call),*])
+    };
+    (text = $text:expr, stop = $stop_reason:expr, usage = $usage:expr) => {
+        $crate::tests::executor_support::build_assistant_response_with_usage(
+            Some($text.to_string()),
+            $stop_reason,
+            Vec::new(),
+            Some($usage),
+        )
+    };
+    (stop = $stop_reason:expr, tools = [$($tool_call:expr),* $(,)?], usage = $usage:expr) => {
+        $crate::tests::executor_support::build_assistant_response_with_usage(
+            None,
+            $stop_reason,
+            vec![$($tool_call),*],
+            Some($usage),
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! provider_error {
+    ($error:expr) => {
+        Err($error)
     };
 }
 
