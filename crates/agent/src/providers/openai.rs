@@ -1,10 +1,17 @@
 use crate::context::Context;
+use crate::error::ProviderError;
 use crate::message::{Message, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
+
+struct HttpResponseData {
+    status_code: StatusCode,
+    response_body: String,
+    retry_after_seconds: Option<u64>,
+}
 
 const DEFAULT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 
@@ -178,7 +185,7 @@ impl OpenAIProvider {
         Ok(converted_tools)
     }
 
-    async fn send_request(&self, endpoint_path: &str, request_body: &Value) -> Result<(StatusCode, String), String> {
+    async fn send_request(&self, endpoint_path: &str, request_body: &Value) -> Result<HttpResponseData, ProviderError> {
         let endpoint_url = self.build_endpoint_url(endpoint_path);
 
         let mut request_builder = self
@@ -191,18 +198,58 @@ impl OpenAIProvider {
             request_builder = request_builder.bearer_auth(&self.api_key);
         }
 
-        let response = request_builder
-            .send()
-            .await
-            .map_err(|error| format!("Failed to send request to '{endpoint_path}': {error}"))?;
+        let response = request_builder.send().await.map_err(|error| ProviderError::Network {
+            message: format!("Failed to send request to '{endpoint_path}': {error}"),
+        })?;
 
         let status_code = response.status();
-        let response_body = response
-            .text()
-            .await
-            .map_err(|error| format!("Failed reading response body from '{endpoint_path}': {error}"))?;
+        let retry_after_seconds = response
+            .headers()
+            .get("retry-after")
+            .and_then(|header_value| header_value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
 
-        Ok((status_code, response_body))
+        let response_body = response.text().await.map_err(|error| ProviderError::Network {
+            message: format!("Failed reading response body from '{endpoint_path}': {error}"),
+        })?;
+
+        Ok(HttpResponseData {
+            status_code,
+            response_body,
+            retry_after_seconds,
+        })
+    }
+
+    fn map_http_error(
+        &self,
+        endpoint_path: &str,
+        status_code: StatusCode,
+        response_body: String,
+        retry_after_seconds: Option<u64>,
+    ) -> ProviderError {
+        let message = format!("endpoint={endpoint_path} status={} body={response_body}", status_code.as_u16(),);
+
+        match status_code {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => ProviderError::AuthenticationFailed { message },
+            StatusCode::TOO_MANY_REQUESTS => ProviderError::RateLimited {
+                message,
+                retry_after_seconds,
+            },
+            StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => ProviderError::InvalidRequest { message },
+            StatusCode::REQUEST_TIMEOUT
+            | StatusCode::TOO_EARLY
+            | StatusCode::INTERNAL_SERVER_ERROR
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT => ProviderError::ServiceUnavailable { message },
+            _ => {
+                if status_code.is_server_error() {
+                    ProviderError::ServiceUnavailable { message }
+                } else {
+                    ProviderError::Other { message }
+                }
+            }
+        }
     }
 
     fn parse_chat_content(content: Option<&Value>) -> Option<String> {
@@ -257,22 +304,25 @@ impl OpenAIProvider {
         }
     }
 
-    fn parse_chat_response(&self, response_body: &str) -> Result<ProviderResponse, String> {
-        let response_json: Value = serde_json::from_str(response_body)
-            .map_err(|error| format!("Failed to parse /chat/completions response JSON: {error}. Body: {response_body}"))?;
+    fn parse_chat_response(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
+        let response_json: Value = serde_json::from_str(response_body).map_err(|error| ProviderError::ResponseParseFailed {
+            message: format!("Failed to parse /chat/completions response JSON: {error}. Body: {response_body}"),
+        })?;
 
         let choices = response_json
             .get("choices")
             .and_then(Value::as_array)
-            .ok_or_else(|| format!("Missing or invalid 'choices' in /chat/completions response. Body: {response_body}"))?;
+            .ok_or_else(|| ProviderError::ResponseParseFailed {
+                message: format!("Missing or invalid 'choices' in /chat/completions response. Body: {response_body}"),
+            })?;
 
-        let first_choice = choices
-            .first()
-            .ok_or_else(|| format!("No choices in /chat/completions response. Body: {response_body}"))?;
+        let first_choice = choices.first().ok_or_else(|| ProviderError::ResponseParseFailed {
+            message: format!("No choices in /chat/completions response. Body: {response_body}"),
+        })?;
 
-        let message = first_choice
-            .get("message")
-            .ok_or_else(|| format!("Missing 'message' in first choice. Body: {response_body}"))?;
+        let message = first_choice.get("message").ok_or_else(|| ProviderError::ResponseParseFailed {
+            message: format!("Missing 'message' in first choice. Body: {response_body}"),
+        })?;
 
         let text = Self::parse_chat_content(message.get("content"));
 
@@ -286,17 +336,21 @@ impl OpenAIProvider {
                 let tool_call_id = tool_call_item
                     .get("id")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| format!("Tool call missing 'id' in /chat/completions response. Body: {response_body}"))?
+                    .ok_or_else(|| ProviderError::ResponseParseFailed {
+                        message: format!("Tool call missing 'id' in /chat/completions response. Body: {response_body}"),
+                    })?
                     .to_string();
 
-                let function = tool_call_item
-                    .get("function")
-                    .ok_or_else(|| format!("Tool call missing 'function' in /chat/completions response. Body: {response_body}"))?;
+                let function = tool_call_item.get("function").ok_or_else(|| ProviderError::ResponseParseFailed {
+                    message: format!("Tool call missing 'function' in /chat/completions response. Body: {response_body}"),
+                })?;
 
                 let function_name = function
                     .get("name")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| format!("Tool call function missing 'name' in /chat/completions response. Body: {response_body}"))?
+                    .ok_or_else(|| ProviderError::ResponseParseFailed {
+                        message: format!("Tool call function missing 'name' in /chat/completions response. Body: {response_body}"),
+                    })?
                     .to_string();
 
                 let function_arguments = Self::parse_tool_call_arguments(function.get("arguments"));
@@ -348,9 +402,10 @@ impl OpenAIProvider {
         }
     }
 
-    fn parse_responses_response(&self, response_body: &str) -> Result<ProviderResponse, String> {
-        let response_json: Value = serde_json::from_str(response_body)
-            .map_err(|error| format!("Failed to parse /responses response JSON: {error}. Body: {response_body}"))?;
+    fn parse_responses_response(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
+        let response_json: Value = serde_json::from_str(response_body).map_err(|error| ProviderError::ResponseParseFailed {
+            message: format!("Failed to parse /responses response JSON: {error}. Body: {response_body}"),
+        })?;
 
         let mut text_parts = Vec::new();
         let mut tool_calls = Vec::new();
@@ -368,13 +423,17 @@ impl OpenAIProvider {
                         .get("call_id")
                         .or_else(|| output_item.get("id"))
                         .and_then(Value::as_str)
-                        .ok_or_else(|| format!("Function call missing id/call_id in /responses output. Body: {response_body}"))?
+                        .ok_or_else(|| ProviderError::ResponseParseFailed {
+                            message: format!("Function call missing id/call_id in /responses output. Body: {response_body}"),
+                        })?
                         .to_string();
 
                     let function_name = output_item
                         .get("name")
                         .and_then(Value::as_str)
-                        .ok_or_else(|| format!("Function call missing name in /responses output. Body: {response_body}"))?
+                        .ok_or_else(|| ProviderError::ResponseParseFailed {
+                            message: format!("Function call missing name in /responses output. Body: {response_body}"),
+                        })?
                         .to_string();
 
                     let function_arguments = Self::parse_tool_call_arguments(output_item.get("arguments"));
@@ -406,7 +465,7 @@ impl OpenAIProvider {
         })
     }
 
-    fn parse_tool_call_from_responses_item(&self, item: &Value) -> Result<Option<ToolCall>, String> {
+    fn parse_tool_call_from_responses_item(&self, item: &Value) -> Result<Option<ToolCall>, ProviderError> {
         let item_type = item.get("type").and_then(Value::as_str).unwrap_or("");
 
         if item_type != "function_call" {
@@ -417,13 +476,17 @@ impl OpenAIProvider {
             .get("call_id")
             .or_else(|| item.get("id"))
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("Function call item missing id/call_id in /responses stream item: {item}"))?
+            .ok_or_else(|| ProviderError::ResponseParseFailed {
+                message: format!("Function call item missing id/call_id in /responses stream item: {item}"),
+            })?
             .to_string();
 
         let function_name = item
             .get("name")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("Function call item missing name in /responses stream item: {item}"))?
+            .ok_or_else(|| ProviderError::ResponseParseFailed {
+                message: format!("Function call item missing name in /responses stream item: {item}"),
+            })?
             .to_string();
 
         let function_arguments = Self::parse_tool_call_arguments(item.get("arguments"));
@@ -435,7 +498,7 @@ impl OpenAIProvider {
         }))
     }
 
-    fn parse_responses_sse_response(&self, response_body: &str) -> Result<ProviderResponse, String> {
+    fn parse_responses_sse_response(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
         let mut text_parts = Vec::new();
         let mut tool_calls = Vec::new();
         let mut completed_response_payload: Option<Value> = None;
@@ -469,7 +532,9 @@ impl OpenAIProvider {
             }
 
             if event_type == "response.failed" {
-                return Err(format!("OpenAI responses stream failure event: {event_json}"));
+                return Err(ProviderError::Other {
+                    message: format!("OpenAI responses stream failure event: {event_json}"),
+                });
             }
 
             if event_type == "response.output_text.delta" {
@@ -523,12 +588,12 @@ impl OpenAIProvider {
             });
         }
 
-        Err(format!(
-            "Failed to parse streamed /responses payload. Body did not contain parsable data events: {response_body}"
-        ))
+        Err(ProviderError::ResponseParseFailed {
+            message: format!("Failed to parse streamed /responses payload. Body did not contain parsable data events: {response_body}"),
+        })
     }
 
-    fn parse_responses_response_or_stream(&self, response_body: &str) -> Result<ProviderResponse, String> {
+    fn parse_responses_response_or_stream(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
         if response_body.trim_start().starts_with('{') {
             return self.parse_responses_response(response_body);
         }
@@ -638,33 +703,39 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, String> {
-        let chat_request_body = self.build_chat_request_body(context, tools, config)?;
-        let (chat_status_code, chat_response_body) = self.send_request("/chat/completions", &chat_request_body).await?;
+    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, ProviderError> {
+        let chat_request_body = self
+            .build_chat_request_body(context, tools, config)
+            .map_err(|message| ProviderError::InvalidRequest { message })?;
+        let chat_response = self.send_request("/chat/completions", &chat_request_body).await?;
 
-        if chat_status_code.is_success() {
-            return self.parse_chat_response(&chat_response_body);
+        if chat_response.status_code.is_success() {
+            return self.parse_chat_response(&chat_response.response_body);
         }
 
-        if chat_status_code != StatusCode::NOT_FOUND {
-            return Err(format!(
-                "OpenAI chat API error: endpoint=/chat/completions status={} body={}",
-                chat_status_code.as_u16(),
-                chat_response_body
+        if chat_response.status_code != StatusCode::NOT_FOUND {
+            return Err(self.map_http_error(
+                "/chat/completions",
+                chat_response.status_code,
+                chat_response.response_body,
+                chat_response.retry_after_seconds,
             ));
         }
 
-        let responses_request_body = self.build_responses_request_body(context, tools, config)?;
-        let (responses_status_code, responses_response_body) = self.send_request("/responses", &responses_request_body).await?;
+        let responses_request_body = self
+            .build_responses_request_body(context, tools, config)
+            .map_err(|message| ProviderError::InvalidRequest { message })?;
+        let responses_response = self.send_request("/responses", &responses_request_body).await?;
 
-        if responses_status_code.is_success() {
-            return self.parse_responses_response_or_stream(&responses_response_body);
+        if responses_response.status_code.is_success() {
+            return self.parse_responses_response_or_stream(&responses_response.response_body);
         }
 
-        Err(format!(
-            "OpenAI responses API error: endpoint=/responses status={} body={}",
-            responses_status_code.as_u16(),
-            responses_response_body
+        Err(self.map_http_error(
+            "/responses",
+            responses_response.status_code,
+            responses_response.response_body,
+            responses_response.retry_after_seconds,
         ))
     }
 }

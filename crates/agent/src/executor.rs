@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::error::ExecutorError;
+use crate::error::{ExecutorError, ProviderError};
 use crate::message::{ToolCall, ToolResult};
 use crate::recovery_instruction::RecoveryInstruction;
 use crate::tool::ToolError;
@@ -15,6 +15,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 
 type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
 
@@ -127,6 +129,45 @@ where
             }
         }
     }
+
+    fn retry_delay_for_provider_error(&self, error: &ProviderError, attempt: usize, base_delay_ms: u64) -> Duration {
+        if let ProviderError::RateLimited {
+            message: _,
+            retry_after_seconds: Some(retry_after_seconds),
+        } = error
+        {
+            return Duration::from_secs(*retry_after_seconds);
+        }
+
+        let growth_factor = 2_u64.saturating_pow(attempt as u32);
+        let delay_ms = base_delay_ms.saturating_mul(growth_factor);
+        let capped_delay_ms = delay_ms.min(30_000);
+
+        Duration::from_millis(capped_delay_ms)
+    }
+
+    async fn generate_with_retry(
+        &self,
+        context: &Context,
+        provider: &P,
+        tools: &[ToolDefinition],
+        config: &AgentConfig,
+    ) -> Result<ProviderResponse, ExecutorError> {
+        let mut attempt = 0;
+
+        loop {
+            match provider.generate(context, tools, config).await {
+                Ok(response) => break Ok(response),
+                Err(error) if error.is_retriable() && attempt < config.provider_max_retries => {
+                    sleep(self.retry_delay_for_provider_error(&error, attempt, config.provider_retry_base_delay_ms)).await;
+                    attempt += 1;
+                }
+                Err(error) => {
+                    break Err(ExecutorError::ProviderFailed { error });
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -159,10 +200,7 @@ where
             }
 
             // Ask the provider to extend the conversation using the current context and tools
-            let response = provider
-                .generate(context, &tools, config)
-                .await
-                .map_err(|message| ExecutorError::ProviderFailed { message })?;
+            let response = self.generate_with_retry(context, provider, &tools, config).await?;
 
             // Preserve plain text replies alongside tool calls so the transcript stays coherent
             if let Some(text) = &response.text {

@@ -1,4 +1,5 @@
 use crate::context::Context;
+use crate::error::ProviderError;
 use crate::message::{Message, ToolCall};
 use crate::traits::{Provider, ProviderResponse, StopReason, ToolDefinition};
 use crate::AgentConfig;
@@ -85,18 +86,25 @@ impl OllamaProvider {
 
 #[async_trait]
 impl Provider for OllamaProvider {
-    async fn generate(&self, context: &Context, _tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, String> {
+    async fn generate(
+        &self,
+        context: &Context,
+        _tools: &[ToolDefinition],
+        config: &AgentConfig,
+    ) -> Result<ProviderResponse, ProviderError> {
         let messages: Result<Vec<ChatMessage>, String> = context
             .messages
             .iter()
             .map(|message| self.convert_message_to_ollama(message))
             .collect();
 
-        let messages = messages?;
+        let messages = messages.map_err(|message| ProviderError::InvalidRequest { message })?;
 
         let mut request = ChatMessageRequest::new(self.model.clone(), messages);
 
-        if let Some(generation_options) = Self::build_generation_options(config)? {
+        if let Some(generation_options) =
+            Self::build_generation_options(config).map_err(|message| ProviderError::InvalidRequest { message })?
+        {
             request = request.options(generation_options);
         }
 
@@ -104,7 +112,9 @@ impl Provider for OllamaProvider {
             .client
             .send_chat_messages(request)
             .await
-            .map_err(|error| format!("Ollama API error: {error}"))?;
+            .map_err(|error| ProviderError::Network {
+                message: format!("Ollama API error: {error}"),
+            })?;
 
         let text = Some(response.message.content.clone());
 

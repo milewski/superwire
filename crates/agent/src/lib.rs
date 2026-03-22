@@ -10,7 +10,7 @@ mod traits;
 
 pub use agent::{Agent, AgentConfig, AgentRunResult, AgentRunStatistics};
 pub use context::Context;
-pub use error::AgentError;
+pub use error::{AgentError, ProviderError};
 pub use executor::LoopExecutor;
 pub use message::{Message, ToolCall, ToolResult};
 pub use providers::{OllamaProvider, OpenAIProvider};

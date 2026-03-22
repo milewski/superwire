@@ -55,6 +55,16 @@ pub struct AgentConfig {
     /// Lower values make loop detection more aggressive.
     /// Higher values allow more iterative back-and-forth.
     pub stuck_threshold: usize,
+
+    /// Maximum number of automatic retries for retriable provider failures.
+    ///
+    /// Applies to transient issues like rate limits and temporary network problems.
+    pub provider_max_retries: usize,
+
+    /// Base delay (milliseconds) for exponential retry backoff.
+    ///
+    /// Effective delay grows per retry attempt (for example 500ms, 1000ms, 2000ms).
+    pub provider_retry_base_delay_ms: u64,
 }
 
 impl Default for AgentConfig {
@@ -70,6 +80,8 @@ impl Default for AgentConfig {
             seed: None,
             stop_sequences: None,
             stuck_threshold: 5,
+            provider_max_retries: 3,
+            provider_retry_base_delay_ms: 500,
         }
     }
 }
@@ -186,6 +198,24 @@ impl AgentConfig {
     /// Use a higher value if your workflow needs longer iterative cycles.
     pub fn with_stuck_threshold(mut self, stuck_threshold: usize) -> Self {
         self.stuck_threshold = stuck_threshold;
+        self
+    }
+
+    #[must_use]
+    /// Sets maximum retries for transient provider failures.
+    ///
+    /// Increase when operating under frequent rate limits or flaky networks.
+    pub fn with_provider_max_retries(mut self, provider_max_retries: usize) -> Self {
+        self.provider_max_retries = provider_max_retries;
+        self
+    }
+
+    #[must_use]
+    /// Sets base retry delay in milliseconds for provider backoff.
+    ///
+    /// Higher values reduce pressure on provider APIs when rate limited.
+    pub fn with_provider_retry_base_delay_ms(mut self, provider_retry_base_delay_ms: u64) -> Self {
+        self.provider_retry_base_delay_ms = provider_retry_base_delay_ms;
         self
     }
 }

@@ -1,4 +1,5 @@
 use crate::context::Context;
+use crate::error::ProviderError;
 use crate::message::ToolCall;
 use crate::tool::RuntimeTool;
 use crate::AgentConfig;
@@ -42,7 +43,7 @@ pub struct ProviderResponse {
 /// Trait for LLM providers that can generate responses
 #[async_trait::async_trait]
 pub trait Provider {
-    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, String>;
+    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, ProviderError>;
 }
 
 /// Trait for operations that can be executed by the agent

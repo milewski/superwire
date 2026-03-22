@@ -99,7 +99,7 @@ async fn main() -> Result<(), AgentError> {
     let result = Agent::new(executor, provider)
         .with_tool::<QuoteTool>()
         .with_tool::<RandomNumberTool>()
-        .with_config(AgentConfig::new().with_max_tokens(200).with_temperature(2.0))
+        .with_config(AgentConfig::new().with_max_tokens(1000).with_temperature(2.0))
         .run("generate a random quote")
         .await;
 
