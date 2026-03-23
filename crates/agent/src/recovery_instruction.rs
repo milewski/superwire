@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug, Clone, Copy)]
 pub enum RecoveryInstruction<'a> {
     MustExitByCallingTool { tool_name: &'a str },
+    MustCallToolAloneToFinish { tool_name: &'a str },
 }
 
 impl<'a> From<RecoveryInstruction<'a>> for String {
@@ -26,6 +27,20 @@ impl Display for RecoveryInstruction<'_> {
                     If you are missing information, unsure, blocked, or unable to complete
                     any requirement, call '{tool_name}' with failure and include a clear
                     reason describing what prevented completion.
+                    ",
+                    tool_name = tool_name,
+                };
+
+                write!(formatter, "{message}")
+            }
+
+            Self::MustCallToolAloneToFinish { tool_name } => {
+                let message = formatdoc! {
+                    "
+                    Ignored '{tool_name}' tool call because it was returned together
+                    with other tool calls.
+
+                    Call '{tool_name}' alone to finish.
                     ",
                     tool_name = tool_name,
                 };
