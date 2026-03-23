@@ -22,7 +22,10 @@ type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
 
 enum ToolCallExecution<'a> {
     Complete(&'a ToolCall),
-    Continue(Vec<&'a ToolCall>),
+    Continue {
+        tool_calls: Vec<&'a ToolCall>,
+        ignored_finalize_calls: Vec<&'a ToolCall>,
+    },
 }
 
 /// Drives a provider until the finalize tool returns a validated result
@@ -82,12 +85,12 @@ where
 
     fn classify_tool_calls<'a>(&self, response: &'a ProviderResponse) -> ToolCallExecution<'a> {
         let finalize_name = self.finalize_tool.name();
-        let mut finalize_tool_call = None;
+        let mut finalize_tool_calls = Vec::new();
         let mut other_tool_calls = Vec::new();
 
         for tool_call in &response.tool_calls {
             if tool_call.name == finalize_name {
-                finalize_tool_call = Some(tool_call);
+                finalize_tool_calls.push(tool_call);
                 continue;
             }
 
@@ -95,12 +98,15 @@ where
         }
 
         if other_tool_calls.is_empty() {
-            if let Some(finalize_tool_call) = finalize_tool_call {
+            if let Some(finalize_tool_call) = finalize_tool_calls.last() {
                 return ToolCallExecution::Complete(finalize_tool_call);
             }
         }
 
-        ToolCallExecution::Continue(other_tool_calls)
+        ToolCallExecution::Continue {
+            tool_calls: other_tool_calls,
+            ignored_finalize_calls: finalize_tool_calls,
+        }
     }
 
     async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
@@ -283,7 +289,22 @@ where
                         break Ok(result);
                     }
                 }
-                ToolCallExecution::Continue(tool_calls) => {
+                ToolCallExecution::Continue {
+                    tool_calls,
+                    ignored_finalize_calls,
+                } => {
+                    for ignored_finalize_call in ignored_finalize_calls {
+                        context.add_tool_result(ToolResult::Failure {
+                            tool_call_id: ignored_finalize_call.id.clone(),
+                            content: Value::String(
+                                RecoveryInstruction::MustCallToolAloneToFinish {
+                                    tool_name: self.finalize_tool.name(),
+                                }
+                                .to_string(),
+                            ),
+                        });
+                    }
+
                     // Run non-finalize tools concurrently to reduce overall latency
                     let mut tool_execution_futures = Vec::new();
 
@@ -329,7 +350,7 @@ mod tests {
     use crate::traits::TokenUsage;
     use crate::ProviderError;
     use crate::{
-        assert_has_tool_success_content, assert_no_tool_result, assert_tool_failure_contains, assert_tool_result, assistant_message,
+        assert_has_tool_success_content, assert_tool_failure_contains, assert_tool_result, assistant_message,
         provider, provider_error, run_executor, run_executor_with_config, tool_call,
     };
     use schemars::JsonSchema;
@@ -1112,7 +1133,7 @@ mod tests {
             }
         );
 
-        assert_no_tool_result!(context, "a");
+        assert_tool_failure_contains!(context, "a", ["Call 'finalize' alone to finish."]);
         assert_has_tool_success_content!(context, { "echo": "hello" });
         assert_tool_result!(context, "b");
     }
