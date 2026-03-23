@@ -201,6 +201,7 @@ impl<'a> WorkflowExecutor<'a> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_for_each(
         agent: &Agent,
         collection_value: &Value,

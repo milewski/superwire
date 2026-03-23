@@ -350,6 +350,7 @@ impl WorkflowValidator {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_field_references_in_value(
         value: &Value,
         agent_output_types: &HashMap<&str, AgentOutputType<'_>>,
@@ -737,7 +738,7 @@ mod tests {
         assert!(result.is_err());
 
         let errors = result.unwrap_err();
-        eprintln!("Errors: {:#?}", errors);
+        eprintln!("Errors: {errors:#?}");
 
         // Find the specific error we're looking for
         let field_access_error = errors
@@ -909,8 +910,8 @@ mod tests {
 
         let result = WorkflowValidator::validate(&workflow);
         // The workflow should be valid since we're accessing a field that exists
-        if result.is_err() {
-            eprintln!("Unexpected errors: {:#?}", result.unwrap_err());
+        if let Err(errors) = result {
+            eprintln!("Unexpected errors: {errors:#?}");
             panic!("Expected validation to pass");
         }
     }

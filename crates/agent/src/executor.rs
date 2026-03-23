@@ -1095,10 +1095,7 @@ mod tests {
             for expected_substring in expected_substrings {
                 assert!(
                     failure_message.contains(expected_substring),
-                    "expected failure message for '{}' to contain '{}', got: {}",
-                    id,
-                    expected_substring,
-                    failure_message
+                    "expected failure message for '{id}' to contain '{expected_substring}', got: {failure_message}"
                 );
             }
         }

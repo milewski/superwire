@@ -4,6 +4,8 @@ use crate::providers::provider::{AgentOutput, Message, Provider, ToolCall, ToolD
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const HTTP_REQUEST_TIMEOUT_SECONDS: u64 = 60;
+
 pub struct AnthropicProvider {
     name: String,
     models: Vec<String>,
@@ -77,7 +79,7 @@ impl AnthropicProvider {
     #[must_use]
     pub fn with_endpoint(name: String, api_key: String, endpoint: String, models: Vec<String>) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(std::time::Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECONDS))
             .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .expect("Failed to build HTTP client");
@@ -251,6 +253,7 @@ impl Provider for AnthropicProvider {
         &self.models
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         log::debug!("AnthropicProvider executing agent: {}", agent.name);
 
@@ -336,35 +339,35 @@ impl Provider for AnthropicProvider {
                         };
 
                         break Ok(parsed);
-                    } else {
-                        let status_code = status.as_u16();
-                        let error_text = response.text().await.unwrap_or_default();
-                        log::error!("Anthropic API error {status_code}: {error_text}");
-
-                        let is_rate_limit = status_code == 429;
-
-                        if is_rate_limit && retry_count < max_retries {
-                            retry_count += 1;
-                            log::warn!("Rate limit hit. Waiting {wait_time:?} before retry {retry_count}/{max_retries}");
-                            tokio::time::sleep(wait_time).await;
-                            wait_time *= 2;
-                            continue;
-                        }
-
-                        let suggestion = match status_code {
-                            401 => Some("Invalid API key. Check your config { api_key: \"...\" }".to_string()),
-                            404 => Some("Model not found. Check your model name".to_string()),
-                            429 => Some("Rate limit exceeded after retries. Wait longer and try again".to_string()),
-                            500 => Some("Server error. Try again later".to_string()),
-                            _ => Some("Check your API configuration and network connection".to_string()),
-                        };
-
-                        break Err(ProviderError::ApiError {
-                            message: format!("Anthropic API error {status_code}: {error_text}"),
-                            status_code: Some(status_code),
-                            suggestion,
-                        });
                     }
+
+                    let status_code = status.as_u16();
+                    let error_text = response.text().await.unwrap_or_default();
+                    log::error!("Anthropic API error {status_code}: {error_text}");
+
+                    let is_rate_limit = status_code == 429;
+
+                    if is_rate_limit && retry_count < max_retries {
+                        retry_count += 1;
+                        log::warn!("Rate limit hit. Waiting {wait_time:?} before retry {retry_count}/{max_retries}");
+                        tokio::time::sleep(wait_time).await;
+                        wait_time *= 2;
+                        continue;
+                    }
+
+                    let suggestion = match status_code {
+                        401 => Some("Invalid API key. Check your config { api_key: \"...\" }".to_string()),
+                        404 => Some("Model not found. Check your model name".to_string()),
+                        429 => Some("Rate limit exceeded after retries. Wait longer and try again".to_string()),
+                        500 => Some("Server error. Try again later".to_string()),
+                        _ => Some("Check your API configuration and network connection".to_string()),
+                    };
+
+                    break Err(ProviderError::ApiError {
+                        message: format!("Anthropic API error {status_code}: {error_text}"),
+                        status_code: Some(status_code),
+                        suggestion,
+                    });
                 }
                 Err(error) => {
                     log::error!("Anthropic API request failed: {error}");

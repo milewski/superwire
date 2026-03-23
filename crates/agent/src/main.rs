@@ -28,7 +28,7 @@ impl Tool for QuoteTool {
         let random_index = rand::thread_rng().gen_range(0..quotes.len());
         let selected_quote = quotes[random_index];
 
-        println!("{}", selected_quote);
+        println!("{selected_quote}");
 
         Ok(serde_json::json!(selected_quote))
     }
@@ -65,7 +65,7 @@ impl Tool for RandomNumberTool {
 
         let generated_number = rand::thread_rng().gen_range(minimum..=maximum);
 
-        println!("{}", generated_number);
+        println!("{generated_number}");
 
         Ok(serde_json::json!(generated_number))
     }
@@ -74,12 +74,6 @@ impl Tool for RandomNumberTool {
 #[tokio::main]
 async fn main() -> Result<(), AgentError> {
     use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-    struct TaskOutput {
-        number: isize,
-        quote: String,
-    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
     struct User {
@@ -104,7 +98,7 @@ async fn main() -> Result<(), AgentError> {
         .await;
 
     println!("---------");
-    println!("{:#?}", result);
+    println!("{result:#?}");
 
     Ok(())
 }

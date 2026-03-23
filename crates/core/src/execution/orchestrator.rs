@@ -153,8 +153,8 @@ impl AgentOrchestrator {
         for property in &agent.properties {
             if let AgentProperty::Output { value, .. } = property {
                 match value {
-                    SchemaReference::Named(_name) => {
-                        let schema_name = _name.strip_prefix("schema.").unwrap_or(_name);
+                    SchemaReference::Named(name) => {
+                        let schema_name = name.strip_prefix("schema.").unwrap_or(name);
 
                         let named_schema =
                             self.schemas

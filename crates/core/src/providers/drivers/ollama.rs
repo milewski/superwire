@@ -265,6 +265,7 @@ impl Provider for OllamaProvider {
         &self.models
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         log::debug!("OllamaProvider executing agent: {}", agent.name);
         log::debug!("Context has {} messages", context.len());
