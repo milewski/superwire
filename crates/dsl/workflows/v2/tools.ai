@@ -1,0 +1,51 @@
+// This example demonstrates agent tool usage.
+// Tools are not defined in this DSL file.
+// They must be created and injected by the runtime before execution.
+// Once available, pass them to an agent with `tools: [tool.name, ...]`.
+// Tool entries can also receive arguments: `tool.name(arg: value)`.
+// This file shows three patterns:
+// 1) tool with no arguments
+// 2) tool with one argument
+// 3) tool with multiple arguments
+
+secrets {
+    knowledge_base_password:: string
+    issue_tracker_token:: string
+}
+
+provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    question:: string
+}
+
+agent assistant_with_tools {
+    model: openai("gpt-4.1-mini")
+
+    // The agent can decide when to call these tools.
+    // Tool arguments can use literals, references, and secrets.
+    tools: [
+        // No arguments.
+        tool.web_search,
+
+        // One argument.
+        tool.knowledge_base_search(password: secrets.knowledge_base_password),
+
+        // Multiple arguments.
+        tool.issue_tracker_lookup(project: "engine-ai", status: "open", token: secrets.issue_tracker_token)
+    ]
+
+    prompt: "Answer the question using tools when needed: {{ input.question }}"
+    output: schema {
+        answer:: string
+        sources:: [string]
+    }
+}
+
+output {
+    answer <- agent.assistant_with_tools.answer
+    sources <- agent.assistant_with_tools.sources
+}

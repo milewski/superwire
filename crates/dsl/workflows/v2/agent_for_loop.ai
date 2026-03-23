@@ -1,0 +1,78 @@
+// This example demonstrates `for` syntax on agents.
+// Each iteration runs as an independent agent execution in parallel.
+// You can iterate over:
+// 1) a dynamic list (from another agent)
+// 2) a list from input
+// 3) a manual inline list like [1,2,3,4]
+
+// Shared provider for all agents in this tutorial.
+provider ollama {
+    driver: "ollama"
+    models: ["qwen3:8b"]
+}
+
+// Input source used to build a dynamic list.
+input {
+    findings_text:: string
+    numbers:: [number]
+}
+
+// Step 1: convert raw text into a structured list.
+agent findings {
+    model: ollama("qwen3:8b")
+    prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
+    output: schema {
+        items:: [string]
+    }
+}
+
+// Step 2: run one agent per finding.
+// Iterations of this `for` run in parallel.
+agent remediation_plan for finding in agent.findings.items {
+    model: ollama("qwen3:8b")
+    prompt: "Create a remediation plan for finding: {{ finding }}"
+    output: schema {
+        title:: string
+        steps:: [string]
+        owner_team:: string
+        priority:: "p0" | "p1" | "p2" | "p3"
+    }
+}
+
+// You can also provide a manual inline list directly.
+// This creates 4 parallel runs with number=1, number=2, number=3, number=4.
+agent number_note for number in [1, 2, 3, 4] {
+    model: ollama("qwen3:8b")
+    prompt: "Write a short note for number {{ number }}"
+    output: schema {
+        number:: number
+        note:: string
+    }
+}
+
+// `for` can iterate over input lists too.
+// This creates one run per value in `input.numbers`.
+agent input_number_note for n in input.numbers {
+    model: ollama("qwen3:8b")
+    prompt: "Write a short note for input number {{ n }}"
+    output: schema {
+        number:: number
+        note:: string
+    }
+}
+
+output {
+    findings <- agent.findings.items
+    remediation_plans <- agent.remediation_plan
+    remediation_context <- agent.remediation_plan.context
+
+    manual_numbers <- agent.number_note
+
+    // Referencing a looped agent returns an array of outputs.
+    // Example shape:
+    // [
+    //   { "number": 1, "note": "..." },
+    //   { "number": 2, "note": "..." }
+    // ]
+    input_numbers <- agent.input_number_note
+}

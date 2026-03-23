@@ -1,0 +1,35 @@
+// This example demonstrates using the template function for large prompts.
+// Template placeholders are replaced by bindings passed to template(...).
+// Every binding key must exist in the template.
+// If a template variable is missing (or an extra binding is provided), build fails.
+
+provider openai {
+    driver: "openai"
+    models: ["qwen3.5-27b"]
+}
+
+input {
+    study_name:: string
+    audience:: string
+    findings:: [string]
+}
+
+agent research_brief {
+    model: openai("qwen3.5-27b")
+
+    prompt: template("prompts/research_brief.md", {
+        study_name: input.study_name
+        audience: input.audience
+        findings: input.findings
+    })
+
+    output: schema {
+        summary:: string
+        top_actions:: [string;3]
+    }
+}
+
+output {
+    summary <- agent.research_brief.summary
+    top_actions <- agent.research_brief.top_actions
+}

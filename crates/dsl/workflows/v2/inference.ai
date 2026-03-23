@@ -1,0 +1,23 @@
+// This example demonstrates the `inference` attribute on an agent.
+// Use `inference` to control generation settings like temperature and max tokens.
+
+provider openai {
+    driver: "openai"
+    models: ["qwen3.5-27b"]
+}
+
+agent release_analyst {
+    model: openai("qwen3.5-27b")
+
+    inference: {
+        temperature: 0.2
+        max_tokens: 12_000
+    }
+
+    prompt: "Write a short release readiness note."
+    output: schema::string
+}
+
+output {
+    note <- agent.release_analyst
+}

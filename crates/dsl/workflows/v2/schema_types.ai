@@ -1,0 +1,112 @@
+// This file demonstrates schema field types, nullable fields (`| null`),
+// field descriptions, and schema references inside other schemas.
+
+provider ollama {
+    driver: "ollama"
+    models: ["qwen3.5:32b"]
+}
+
+// Named schema that includes every supported type.
+schema AllTypes {
+    string:: string "A basic string value"
+    number:: number "A numeric value"
+    float:: float "A floating-point value"
+    boolean:: boolean "A true/false value"
+    null_value?:: "A field that must be null"
+
+    nullable_string?:: string "A nullable string"
+    nullable_number?:: number "A nullable number"
+
+    array:: [string] "An array of strings"
+    fixed_array:: [string;3] "Exactly three strings"
+
+    // Field descriptions can also appear before inline object blocks in arrays.
+    array_of_objects:: [
+        "Array of inline objects" schema {
+            id:: string "Object item ID"
+            score:: number "Object item score"
+        }
+    ]
+
+    enum:: "draft" | "ready" | "published" "A fixed set of values"
+    nullable_enum?:: "draft" | "ready" | "published" "A nullable enum"
+
+    tuple:: (string, number, [string;3]) "Tuple with mixed item types"
+    nullable_tuple?:: (string, number, [string;3]) "A nullable tuple"
+
+    // Field descriptions can appear before object type blocks.
+    object:: "Nested object type" schema {
+        string:: string "Nested string field"
+        number:: number "Nested number field"
+    }
+
+    nullable_object?:: "Nullable nested object type" schema {
+        string:: string "Nested string field"
+        number:: number "Nested number field"
+    }
+}
+
+// A schema can be referenced inside another schema.
+schema Participant {
+    name:: string "Participant name"
+    role:: string "Participant role"
+}
+
+schema ResearchSummary {
+    title:: string "Research summary title"
+    lead:: schema.Participant "Reference to another named schema"
+    participants:: [schema.Participant] "Array of schema references"
+}
+
+// Input can also use named schemas.
+input {
+    lead_participant:: schema.Participant
+    participant_list:: [schema.Participant]
+    previous_summary:: schema.ResearchSummary
+}
+
+agent typed_example {
+    model: ollama("qwen3.5:32b")
+    prompt: """
+        Generate a JSON object that matches the AllTypes schema exactly.
+        - Lead={{ input.lead_participant }},
+        - participants={{ input.participant_list }},
+        - previous_title={{ input.previous_summary.title }}
+    """
+
+    // Reference the named schema.
+    output: schema.AllTypes
+}
+
+output {
+    // Full object output.
+    result <- agent.typed_example
+
+    // Field selection with dot access.
+    string <- agent.typed_example.string
+    number <- agent.typed_example.number
+    float <- agent.typed_example.float
+    boolean <- agent.typed_example.boolean
+    null_value <- agent.typed_example.null_value
+
+    nullable_string <- agent.typed_example.nullable_string
+    nullable_number <- agent.typed_example.nullable_number
+
+    array <- agent.typed_example.array
+    fixed_array <- agent.typed_example.fixed_array
+    array_of_objects <- agent.typed_example.array_of_objects
+
+    enum <- agent.typed_example.enum
+    nullable_enum <- agent.typed_example.nullable_enum
+    tuple <- agent.typed_example.tuple
+    nullable_tuple <- agent.typed_example.nullable_tuple
+
+    object <- agent.typed_example.object
+    nested_string <- agent.typed_example.object.string
+    nested_number <- agent.typed_example.object.number
+
+    nullable_object <- agent.typed_example.nullable_object
+
+    // Accessing a nullable property without `?.` causes a parse-time error.
+    nullable_object_string <- agent.typed_example.nullable_object?.string
+}

@@ -1,0 +1,27 @@
+// This file shows the smallest useful workflow shape:
+// provider -> agent -> output
+
+// Provider defines where models come from.
+provider ollama {
+    driver: "ollama"
+    models: ["qwen3.5:32b"]
+}
+
+// Create one agent named `greeting`.
+agent greeting {
+    // Select a model from the `ollama` provider.
+    model: ollama("qwen3.5:32b")
+
+    // Provide the instruction sent to the model.
+    prompt: "Write a short welcome message."
+
+    // Define the expected output type for this agent.
+    output: schema::string
+}
+
+// Define the workflow's final output object.
+output {
+    greeting <- agent.greeting
+}
+
+// Result shape: { "greeting": "..." }

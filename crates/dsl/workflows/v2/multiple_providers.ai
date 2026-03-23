@@ -1,0 +1,56 @@
+// This example demonstrates using multiple providers in one workflow.
+// Use case: process user research notes with privacy and quality in mind.
+// 1) Run redaction locally.
+// 2) Generate polished insights with a cloud model.
+
+// Local provider for privacy-sensitive preprocessing.
+provider ollama {
+    driver: "ollama"
+    models: ["qwen3.5:8b"]
+}
+
+// Cloud provider for higher quality synthesis.
+provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    study_name:: string
+    interview_notes:: [string]
+}
+
+// Agent 1 uses the local provider to remove personal identifiers.
+agent redact_notes {
+    model: ollama("qwen3.5:8b")
+    prompt: "Redact names, emails, and phone numbers from these interview notes: {{ input.interview_notes }}"
+    output: schema {
+        redacted_notes:: [string]
+        redaction_summary:: string
+    }
+}
+
+// Agent 2 uses the cloud provider for final analysis.
+// This agent runs after `redact_notes` because it references its output.
+agent synthesize_insights {
+    model: openai("gpt-4.1-mini")
+    prompt: """
+        Study={{ input.study_name }}.
+        Using these redacted notes, produce concise research
+        insights and top recommendations: {{ agent.redact_notes.redacted_notes }}
+    """
+    output: schema {
+        insights:: [string]
+        recommendations:: [string]
+    }
+}
+
+output {
+    study_name <- input.study_name
+
+    redacted_notes <- agent.redact_notes.redacted_notes
+    redaction_summary <- agent.redact_notes.redaction_summary
+
+    insights <- agent.synthesize_insights.insights
+    recommendations <- agent.synthesize_insights.recommendations
+}
