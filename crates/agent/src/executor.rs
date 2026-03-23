@@ -350,8 +350,8 @@ mod tests {
     use crate::traits::TokenUsage;
     use crate::ProviderError;
     use crate::{
-        assert_has_tool_success_content, assert_tool_failure_contains, assert_tool_result, assistant_message,
-        provider, provider_error, run_executor, run_executor_with_config, tool_call,
+        assert_has_tool_success_content, assert_tool_failure_contains, assert_tool_result, assistant_message, provider, provider_error,
+        run_executor, run_executor_with_config, tool_call,
     };
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
