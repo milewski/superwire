@@ -76,12 +76,6 @@ async fn main() -> Result<(), AgentError> {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-    struct TaskOutput {
-        number: isize,
-        quote: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
     struct User {
         /// Username, only the name nothing else
         name: Option<String>,
