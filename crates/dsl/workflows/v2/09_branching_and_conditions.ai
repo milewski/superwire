@@ -1,0 +1,58 @@
+// Real use case: region-specific privacy notice generation.
+
+// Provider for all agents in this branching example.
+provider openai {
+    driver: "openai"
+    endpoint: env("OPENAI_BASE_URL", default: "http://127.0.0.1:1234/v1")
+    models: ["qwen3.5-27b"]
+}
+
+// Input determines regulatory branch and writing content.
+input {
+    feature_name:: string
+    data_categories:: [string]
+    region:: "eu" | "us"
+}
+
+// EU branch: stricter compliance language (GDPR style).
+when input.region == "eu" {
+    agent policy_writer_eu {
+        model: openai("qwen3.5-27b")
+
+        prompt: "Write an EU privacy notice section for feature {{ input.feature_name }} handling {{ input.data_categories }}"
+        output: schema {
+            text:: string
+        }
+    }
+
+    // Branch-local variable with shared name for deterministic merge.
+    let draft <- agent.policy_writer_eu.output.text
+} else {
+    // US branch: CCPA-style language.
+    agent policy_writer_us {
+        model: openai("qwen3.5-27b")
+
+        prompt: "Write a US privacy notice section for feature {{ input.feature_name }} handling {{ input.data_categories }}"
+        output: schema {
+            text:: string
+        }
+    }
+
+    let draft <- agent.policy_writer_us.output.text
+}
+
+// Final legal polish step reuses merged branch output.
+agent legal_editor {
+    model: openai("qwen3.5-27b")
+
+    prompt: "Legal-edit this privacy notice while preserving meaning: {{ draft }}"
+    output: schema {
+        final:: string
+    }
+}
+
+// Final output mapping.
+output {
+    region <- input.region
+    final_notice <- agent.legal_editor.output.final
+}

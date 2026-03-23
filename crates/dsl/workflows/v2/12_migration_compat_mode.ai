@@ -1,0 +1,34 @@
+// Real use case: migrating an existing v1 workflow without rewriting everything at once.
+
+// Enables legacy v1 syntax in this file.
+compat "v1"
+
+// v1-style provider declaration with arrow assignments.
+provider openai {
+    driver <- "openai"
+    endpoint <- env("OPENAI_BASE_URL", default: "http://127.0.0.1:1234/v1")
+    models <- ["qwen3.5-27b"]
+}
+
+// v1-style input declaration kept intact during migration.
+input {
+    service: string
+    sprint_changes: [string]
+}
+
+// v1-style agent definition still works under compat mode.
+agent sprint_summary {
+    model <- "openai/qwen3.5-27b"
+    prompt <- "Summarize sprint changes for {{ input.service }}: {{ input.sprint_changes }}"
+    output <- {
+        summary: string
+        risks: [string]
+    }
+}
+
+// v1-style output projection.
+output {
+    service <- input.service
+    summary <- agent.sprint_summary.output.summary
+    risks <- agent.sprint_summary.output.risks
+}
