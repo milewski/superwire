@@ -46,7 +46,7 @@ impl ToolError {
             message.push_str("Suggestions:");
 
             for suggestion in &self.suggestions {
-                message.push_str(&format!("\n- {}", suggestion));
+                message.push_str(&format!("\n- {suggestion}"));
             }
         }
 
@@ -55,7 +55,7 @@ impl ToolError {
             message.push_str("Context:");
 
             for (key, value) in &self.context {
-                message.push_str(&format!("\n- {}: {}", key, value));
+                message.push_str(&format!("\n- {key}: {value}"));
             }
         }
 

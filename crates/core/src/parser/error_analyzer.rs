@@ -334,7 +334,7 @@ impl ErrorAnalyzer {
             let distance = levenshtein_distance(&input_lower, &candidate.to_lowercase());
             if distance < best_distance && distance <= 2 {
                 best_distance = distance;
-                best_match = Some(candidate.to_string());
+                best_match = Some((*candidate).to_string());
             }
         }
 

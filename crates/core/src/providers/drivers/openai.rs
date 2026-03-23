@@ -149,6 +149,7 @@ impl Provider for OpenAiProvider {
         &self.models
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn execute_agent(&self, agent: &Agent, context: Vec<Message>, tools: Vec<ToolDefinition>) -> Result<AgentOutput, ProviderError> {
         log::debug!("OpenAiProvider executing agent: {}", agent.name);
 

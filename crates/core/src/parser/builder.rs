@@ -692,15 +692,15 @@ impl AstBuilder {
 
     fn enhance_pest_error(&self, error: pest::error::Error<Rule>, input_str: &str) -> ParserError {
         let analyzer = ErrorAnalyzer::new(self.file_path.clone());
-        let analyzed = analyzer.analyze(&error, input_str);
+        let analyzed_error = analyzer.analyze(&error, input_str);
 
         ParserError::syntax_error_with_source(
             self.file_path.clone(),
-            analyzed.line,
-            analyzed.column,
-            analyzed.message,
-            analyzed.suggestion,
-            analyzed.source_line,
+            analyzed_error.line,
+            analyzed_error.column,
+            analyzed_error.message,
+            analyzed_error.suggestion,
+            analyzed_error.source_line,
         )
     }
 }

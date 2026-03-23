@@ -479,6 +479,7 @@ impl ExecutionEngine {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_for_each_agent(
         agent: crate::ast::Agent,
         collection_value: &crate::ast::Value,
