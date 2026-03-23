@@ -910,8 +910,8 @@ mod tests {
 
         let result = WorkflowValidator::validate(&workflow);
         // The workflow should be valid since we're accessing a field that exists
-        if result.is_err() {
-            eprintln!("Unexpected errors: {:#?}", result.unwrap_err());
+        if let Err(errors) = result {
+            eprintln!("Unexpected errors: {errors:#?}");
             panic!("Expected validation to pass");
         }
     }
