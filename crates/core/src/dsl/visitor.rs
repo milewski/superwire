@@ -1,7 +1,7 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, CallArgument, Declaration, Expression, FunctionCall, InputDeclaration, NamedArgument,
-    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, SchemaDeclaration, SecretsDeclaration, TypeExpression,
-    TypedField, Workflow,
+    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, SchemaDeclaration, SecretsDeclaration, StringTemplate,
+    StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -281,7 +281,7 @@ impl AstVisitor {
                 let fields = self.visit_typed_block(type_term_pair)?;
                 Ok(TypeExpression::Object(fields))
             }
-            Rule::quoted_string | Rule::multiline_string => {
+            Rule::plain_quoted_string | Rule::plain_multiline_string => {
                 let enum_value = self.parse_string_literal(type_term_pair)?;
                 Ok(TypeExpression::StringEnum(enum_value))
             }
@@ -297,7 +297,9 @@ impl AstVisitor {
             Rule::boolean_literal => Ok(Expression::BooleanLiteral(expression_pair.as_str() == "true")),
             Rule::null_literal => Ok(Expression::NullLiteral),
             Rule::number_literal => Ok(Expression::NumberLiteral(expression_pair.as_str().to_owned())),
-            Rule::quoted_string | Rule::multiline_string => Ok(Expression::StringLiteral(self.parse_string_literal(expression_pair)?)),
+            Rule::string_expression | Rule::quoted_string_expression | Rule::multiline_string_expression => {
+                self.visit_string_expression(expression_pair)
+            }
             Rule::reference => Ok(Expression::Reference(self.visit_reference(expression_pair)?)),
             _ => Err(DslParseError::unexpected(expression_pair.as_rule(), "expression")),
         }
@@ -384,8 +386,9 @@ impl AstVisitor {
             | Rule::boolean_literal
             | Rule::null_literal
             | Rule::number_literal
-            | Rule::quoted_string
-            | Rule::multiline_string
+            | Rule::string_expression
+            | Rule::quoted_string_expression
+            | Rule::multiline_string_expression
             | Rule::reference => Ok(CallArgument::Positional(self.visit_expression(argument_value_pair)?)),
             _ => Err(DslParseError::unexpected(argument_value_pair.as_rule(), "call argument value")),
         }
@@ -422,10 +425,79 @@ impl AstVisitor {
         })
     }
 
+    fn visit_string_expression(&self, string_expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
+        let string_container_pair = match string_expression_pair.as_rule() {
+            Rule::string_expression => self.first_inner_pair(string_expression_pair, "string expression")?,
+            Rule::quoted_string_expression | Rule::multiline_string_expression => string_expression_pair,
+            _ => return Err(DslParseError::unexpected(string_expression_pair.as_rule(), "string expression")),
+        };
+
+        let mut string_template_parts = Vec::new();
+
+        for string_part_pair in string_container_pair.into_inner() {
+            match string_part_pair.as_rule() {
+                Rule::quoted_string_part | Rule::multiline_string_part => {
+                    let nested_part_pair = self.first_inner_pair(string_part_pair, "string part")?;
+                    self.push_string_template_part(nested_part_pair, &mut string_template_parts)?;
+                }
+                Rule::quoted_string_text | Rule::multiline_string_text | Rule::escaped_character | Rule::interpolation => {
+                    self.push_string_template_part(string_part_pair, &mut string_template_parts)?;
+                }
+                _ => return Err(DslParseError::unexpected(string_part_pair.as_rule(), "string part")),
+            }
+        }
+
+        if string_template_parts.is_empty() {
+            return Ok(Expression::StringLiteral(String::new()));
+        }
+
+        if string_template_parts.iter().all(|part| matches!(part, StringTemplatePart::Text(_))) {
+            let mut concatenated_string = String::new();
+
+            for string_template_part in string_template_parts {
+                let StringTemplatePart::Text(string_text) = string_template_part else {
+                    unreachable!("all string template parts should be text after guard");
+                };
+
+                concatenated_string.push_str(&string_text);
+            }
+
+            return Ok(Expression::StringLiteral(concatenated_string));
+        }
+
+        Ok(Expression::StringTemplate(StringTemplate {
+            parts: string_template_parts,
+        }))
+    }
+
+    fn push_string_template_part(
+        &self,
+        string_part_pair: Pair<'_, Rule>,
+        string_template_parts: &mut Vec<StringTemplatePart>,
+    ) -> Result<(), DslParseError> {
+        match string_part_pair.as_rule() {
+            Rule::quoted_string_text | Rule::multiline_string_text => {
+                string_template_parts.push(StringTemplatePart::Text(string_part_pair.as_str().to_owned()));
+            }
+            Rule::escaped_character => {
+                string_template_parts.push(StringTemplatePart::Text(self.unescape_character(string_part_pair.as_str())));
+            }
+            Rule::interpolation => {
+                let interpolation_expression_pair = self.first_inner_pair(string_part_pair, "interpolation")?;
+                let interpolation_expression = self.visit_expression(interpolation_expression_pair)?;
+
+                string_template_parts.push(StringTemplatePart::Interpolation(interpolation_expression));
+            }
+            _ => return Err(DslParseError::unexpected(string_part_pair.as_rule(), "string template part")),
+        }
+
+        Ok(())
+    }
+
     fn parse_string_literal(&self, string_pair: Pair<'_, Rule>) -> Result<String, DslParseError> {
         match string_pair.as_rule() {
-            Rule::quoted_string => Ok(self.unescape_quoted_string(string_pair.as_str())),
-            Rule::multiline_string => {
+            Rule::plain_quoted_string => Ok(self.unescape_quoted_string(string_pair.as_str())),
+            Rule::plain_multiline_string => {
                 let raw_string = string_pair.as_str();
 
                 if raw_string.len() < 6 {
@@ -470,6 +542,19 @@ impl AstVisitor {
         }
 
         parsed_string
+    }
+
+    fn unescape_character(&self, escaped_character: &str) -> String {
+        match escaped_character {
+            "\\n" => "\n".to_owned(),
+            "\\r" => "\r".to_owned(),
+            "\\t" => "\t".to_owned(),
+            "\\\\" => "\\".to_owned(),
+            "\\\"" => "\"".to_owned(),
+            "\\{" => "{".to_owned(),
+            "\\}" => "}".to_owned(),
+            _ => escaped_character.to_owned(),
+        }
     }
 
     fn parse_unsigned_integer(&self, integer_pair: Pair<'_, Rule>, context: &'static str) -> Result<u64, DslParseError> {

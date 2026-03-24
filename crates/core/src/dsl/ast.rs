@@ -147,6 +147,7 @@ pub enum TypeExpression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     StringLiteral(String),
+    StringTemplate(StringTemplate),
     NumberLiteral(String),
     BooleanLiteral(bool),
     NullLiteral,
@@ -154,6 +155,17 @@ pub enum Expression {
     FunctionCall(FunctionCall),
     ArrayLiteral(Vec<Expression>),
     ObjectLiteral(Vec<ObjectField>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StringTemplate {
+    pub parts: Vec<StringTemplatePart>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StringTemplatePart {
+    Text(String),
+    Interpolation(Expression),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

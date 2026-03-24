@@ -61,16 +61,10 @@ pub fn parse_workflow(source: &str) -> Result<Workflow, DslParseError> {
 #[cfg(test)]
 mod tests {
     use super::parse_workflow;
-    use crate::dsl::{AgentProperty, CallArgument, Declaration, Expression, Reference, TypeExpression};
+    use crate::dsl::macros::parse_inline_workflow;
+    use crate::dsl::{AgentProperty, CallArgument, Declaration, Expression, Reference, StringTemplatePart, TypeExpression};
     use std::fs;
     use std::path::{Path, PathBuf};
-
-    macro_rules! parse_inline_workflow {
-        ($($workflow_tokens:tt)*) => {{
-            parse_workflow(stringify!($($workflow_tokens)*))
-                .unwrap_or_else(|parse_error| panic!("inline workflow failed to parse: {parse_error}"))
-        }};
-    }
 
     #[test]
     fn parses_all_workflow_samples() {
@@ -278,6 +272,78 @@ mod tests {
             }
             _ => panic!("nullable_object_string should be a reference expression"),
         }
+    }
+
+    #[test]
+    fn parses_string_interpolation_as_structured_template_parts() {
+        let workflow = parse_inline_workflow! {
+            agent interpolation_test {
+                prompt: "A {{ agent.alpha.summary }} B {{ input.topic }} C"
+                output: string
+            }
+        };
+
+        let interpolation_agent = workflow
+            .find_agent("interpolation_test")
+            .expect("missing agent declaration: interpolation_test");
+
+        let prompt_property = interpolation_agent
+            .properties
+            .iter()
+            .find(|agent_property| matches!(agent_property, AgentProperty::Prompt(_)))
+            .expect("prompt property should exist");
+
+        let prompt_expression = match prompt_property {
+            AgentProperty::Prompt(prompt_expression) => prompt_expression,
+            _ => unreachable!("prompt property matcher should guarantee variant"),
+        };
+
+        let Expression::StringTemplate(prompt_template) = prompt_expression else {
+            panic!("prompt should parse as string template");
+        };
+
+        assert_eq!(prompt_template.parts.len(), 5);
+
+        assert!(matches!(
+            &prompt_template.parts[0],
+            StringTemplatePart::Text(text) if text == "A "
+        ));
+
+        assert!(matches!(
+            &prompt_template.parts[1],
+            StringTemplatePart::Interpolation(Expression::Reference(reference))
+                if reference.root == "agent" && reference.accesses[0].field == "alpha"
+        ));
+
+        assert!(matches!(
+            &prompt_template.parts[2],
+            StringTemplatePart::Text(text) if text == " B "
+        ));
+
+        assert!(matches!(
+            &prompt_template.parts[3],
+            StringTemplatePart::Interpolation(Expression::Reference(reference))
+                if reference.root == "input" && reference.accesses[0].field == "topic"
+        ));
+
+        assert!(matches!(
+            &prompt_template.parts[4],
+            StringTemplatePart::Text(text) if text == " C"
+        ));
+    }
+
+    #[test]
+    fn rejects_single_brace_interpolation_in_string_literals() {
+        let parse_result = parse_workflow(
+            r#"
+            agent interpolation_test {
+                prompt: "A { agent.alpha.summary }"
+                output: string
+            }
+            "#,
+        );
+
+        assert!(parse_result.is_err());
     }
 
     fn discover_workflow_examples() -> Vec<(String, String)> {
