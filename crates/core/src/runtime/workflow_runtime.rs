@@ -50,23 +50,23 @@ struct CompiledWorkflow {
     agent_iteration_output_types: HashMap<String, WorkflowType>,
 }
 
-pub struct WorkflowRuntime<TInput, TOutput>
+pub struct WorkflowRuntime<Input, Output>
 where
-    TInput: Serialize + JsonSchema,
-    TOutput: DeserializeOwned + JsonSchema,
+    Input: Serialize + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
 {
     workflow: Workflow,
     compiled_workflow: CompiledWorkflow,
-    phantom: PhantomData<(TInput, TOutput)>,
+    phantom: PhantomData<(Input, Output)>,
 }
 
-impl<TInput, TOutput> WorkflowRuntime<TInput, TOutput>
+impl<Input, Output> WorkflowRuntime<Input, Output>
 where
-    TInput: Serialize + JsonSchema,
-    TOutput: DeserializeOwned + JsonSchema,
+    Input: Serialize + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
 {
     pub fn new(workflow: Workflow) -> Result<Self, WorkflowRuntimeError> {
-        let compiled_workflow = compile_workflow::<TInput, TOutput>(&workflow)?;
+        let compiled_workflow = compile_workflow::<Input, Output>(&workflow)?;
 
         Ok(Self {
             workflow,
@@ -80,11 +80,11 @@ where
         &self.workflow
     }
 
-    pub async fn run(&self, input: TInput) -> Result<TOutput, WorkflowRuntimeError> {
+    pub async fn run(&self, input: Input) -> Result<Output, WorkflowRuntimeError> {
         self.run_with_runner(input, &LoopAgentRunner).await
     }
 
-    pub async fn run_with_runner<RunnerType>(&self, input: TInput, runner: &RunnerType) -> Result<TOutput, WorkflowRuntimeError>
+    pub async fn run_with_runner<RunnerType>(&self, input: Input, runner: &RunnerType) -> Result<Output, WorkflowRuntimeError>
     where
         RunnerType: AgentRunner,
     {
@@ -118,7 +118,7 @@ where
             }
         })?;
 
-        serde_json::from_value::<TOutput>(workflow_output_value)
+        serde_json::from_value::<Output>(workflow_output_value)
             .map_err(|source| WorkflowRuntimeError::OutputDeserializationFailed { source })
     }
 
@@ -381,25 +381,25 @@ where
     }
 }
 
-pub async fn execute_workflow<TInput, TOutput>(workflow: &Workflow, input: TInput) -> Result<TOutput, WorkflowRuntimeError>
+pub async fn execute_workflow<Input, Output>(workflow: &Workflow, input: Input) -> Result<Output, WorkflowRuntimeError>
 where
-    TInput: Serialize + JsonSchema,
-    TOutput: DeserializeOwned + JsonSchema,
+    Input: Serialize + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
 {
-    WorkflowRuntime::<TInput, TOutput>::new(workflow.clone())?.run(input).await
+    WorkflowRuntime::<Input, Output>::new(workflow.clone())?.run(input).await
 }
 
-pub async fn execute_workflow_without_input<TOutput>(workflow: &Workflow) -> Result<TOutput, WorkflowRuntimeError>
+pub async fn execute_workflow_without_input<Output>(workflow: &Workflow) -> Result<Output, WorkflowRuntimeError>
 where
-    TOutput: DeserializeOwned + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
 {
     execute_workflow(workflow, ()).await
 }
 
-fn compile_workflow<TInput, TOutput>(workflow: &Workflow) -> Result<CompiledWorkflow, WorkflowRuntimeError>
+fn compile_workflow<Input, Output>(workflow: &Workflow) -> Result<CompiledWorkflow, WorkflowRuntimeError>
 where
-    TInput: Serialize + JsonSchema,
-    TOutput: DeserializeOwned + JsonSchema,
+    Input: Serialize + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
 {
     let validation_report = validate_workflow(workflow);
 
@@ -430,8 +430,8 @@ where
         &agent_final_output_types,
     )?;
 
-    validate_input_type_compatibility::<TInput>(input_type.as_ref())?;
-    validate_output_type_compatibility::<TOutput>(&workflow_output_type)?;
+    validate_input_type_compatibility::<Input>(input_type.as_ref())?;
+    validate_output_type_compatibility::<Output>(&workflow_output_type)?;
 
     Ok(CompiledWorkflow {
         provider_index,
@@ -566,11 +566,11 @@ fn infer_workflow_output_type(
     Ok(WorkflowType::Object(output_fields).normalize())
 }
 
-fn validate_input_type_compatibility<TInput>(input_type: Option<&WorkflowType>) -> Result<(), WorkflowRuntimeError>
+fn validate_input_type_compatibility<Input>(input_type: Option<&WorkflowType>) -> Result<(), WorkflowRuntimeError>
 where
-    TInput: Serialize + JsonSchema,
+    Input: Serialize + JsonSchema,
 {
-    let rust_input_type = workflow_type_from_rust_schema::<TInput>()?;
+    let rust_input_type = workflow_type_from_rust_schema::<Input>()?;
 
     if let Some(expected_input_type) = input_type {
         if ensure_type_matches(expected_input_type, &rust_input_type) {
@@ -593,11 +593,11 @@ where
     }
 }
 
-fn validate_output_type_compatibility<TOutput>(workflow_output_type: &WorkflowType) -> Result<(), WorkflowRuntimeError>
+fn validate_output_type_compatibility<Output>(workflow_output_type: &WorkflowType) -> Result<(), WorkflowRuntimeError>
 where
-    TOutput: DeserializeOwned + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
 {
-    let rust_output_type = workflow_type_from_rust_schema::<TOutput>()?;
+    let rust_output_type = workflow_type_from_rust_schema::<Output>()?;
 
     if ensure_type_matches(workflow_output_type, &rust_output_type) {
         return Ok(());
