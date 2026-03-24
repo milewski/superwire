@@ -1,7 +1,7 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, CallArgument, Declaration, Expression, FunctionCall, InputDeclaration, NamedArgument,
-    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, SchemaDeclaration, SecretsDeclaration, StringTemplate,
-    StringTemplatePart, TypeExpression, TypedField, Workflow,
+    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration,
+    StringTemplate, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -420,7 +420,7 @@ impl AstVisitor {
         }
 
         Ok(Reference {
-            root: root_identifier,
+            root: ReferenceRoot::from_identifier(root_identifier),
             accesses,
         })
     }

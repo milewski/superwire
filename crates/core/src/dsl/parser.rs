@@ -62,7 +62,10 @@ pub fn parse_workflow(source: &str) -> Result<Workflow, DslParseError> {
 mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
-    use crate::dsl::{AgentProperty, CallArgument, Declaration, Expression, Reference, StringTemplatePart, TypeExpression};
+    use crate::dsl::{
+        AgentProperty, CallArgument, Declaration, Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
+        TypeExpression,
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -153,7 +156,7 @@ mod tests {
                 assert_eq!(
                     reference,
                     &Reference {
-                        root: "agent".to_owned(),
+                        root: ReferenceRoot::Keyword(ReferenceKeyword::Agent),
                         accesses: vec![
                             crate::dsl::ReferenceAccess {
                                 field: "findings".to_owned(),
@@ -207,7 +210,7 @@ mod tests {
 
         match &tools_entries[1] {
             Expression::FunctionCall(function_call) => {
-                assert_eq!(function_call.callee.root, "tool");
+                assert_eq!(function_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Tool));
                 assert_eq!(function_call.callee.accesses[0].field, "knowledge_base_search");
                 assert_eq!(function_call.arguments.len(), 1);
 
@@ -312,7 +315,7 @@ mod tests {
         assert!(matches!(
             &prompt_template.parts[1],
             StringTemplatePart::Interpolation(Expression::Reference(reference))
-                if reference.root == "agent" && reference.accesses[0].field == "alpha"
+                if reference.root == ReferenceRoot::Keyword(ReferenceKeyword::Agent) && reference.accesses[0].field == "alpha"
         ));
 
         assert!(matches!(
@@ -323,7 +326,7 @@ mod tests {
         assert!(matches!(
             &prompt_template.parts[3],
             StringTemplatePart::Interpolation(Expression::Reference(reference))
-                if reference.root == "input" && reference.accesses[0].field == "topic"
+                if reference.root == ReferenceRoot::Keyword(ReferenceKeyword::Input) && reference.accesses[0].field == "topic"
         ));
 
         assert!(matches!(

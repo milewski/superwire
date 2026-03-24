@@ -194,8 +194,72 @@ pub struct NamedArgument {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reference {
-    pub root: String,
+    pub root: ReferenceRoot,
     pub accesses: Vec<ReferenceAccess>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ReferenceRoot {
+    Keyword(ReferenceKeyword),
+    Identifier(String),
+}
+
+impl ReferenceRoot {
+    #[must_use]
+    pub fn from_identifier(identifier: String) -> Self {
+        if let Some(keyword) = ReferenceKeyword::from_identifier(identifier.as_str()) {
+            Self::Keyword(keyword)
+        } else {
+            Self::Identifier(identifier)
+        }
+    }
+
+    #[must_use]
+    pub fn as_identifier(&self) -> Option<&str> {
+        match self {
+            Self::Identifier(identifier) => Some(identifier),
+            Self::Keyword(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn keyword(&self) -> Option<ReferenceKeyword> {
+        match self {
+            Self::Keyword(keyword) => Some(*keyword),
+            Self::Identifier(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReferenceKeyword {
+    Agent,
+    Input,
+    Secrets,
+    Tool,
+}
+
+impl ReferenceKeyword {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "agent" => Some(Self::Agent),
+            "input" => Some(Self::Input),
+            "secrets" => Some(Self::Secrets),
+            "tool" => Some(Self::Tool),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Agent => "agent",
+            Self::Input => "input",
+            Self::Secrets => "secrets",
+            Self::Tool => "tool",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

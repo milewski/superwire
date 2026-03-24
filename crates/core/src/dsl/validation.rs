@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField, Reference, StringTemplatePart, TypeExpression,
-    Workflow,
+    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, StringTemplatePart,
+    TypeExpression, Workflow,
 };
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -367,7 +367,28 @@ fn validate_model_expression(
         return;
     }
 
-    let provider_name = model_call.callee.root.clone();
+    if model_call.callee.root.as_identifier().is_none() {
+        let provider_root_keyword = model_call
+            .callee
+            .root
+            .keyword()
+            .expect("non-identifier reference root should be a keyword");
+
+        validation_report.push_issue(ValidationIssue::UnknownProviderInModel {
+            agent_name: agent_name.to_owned(),
+            provider_name: provider_root_keyword.as_str().to_owned(),
+        });
+
+        return;
+    }
+
+    let provider_name = model_call
+        .callee
+        .root
+        .as_identifier()
+        .expect("provider root should be identifier after early return")
+        .to_owned();
+
     let Some(provider_info) = validation_index.provider_infos.get(&provider_name) else {
         validation_report.push_issue(ValidationIssue::UnknownProviderInModel {
             agent_name: agent_name.to_owned(),
@@ -579,7 +600,7 @@ fn validate_reference_for_agent(
     validation_report: &mut ValidationReport,
     unknown_agent_references: &mut HashSet<(ValidationContext, String)>,
 ) {
-    if reference.root != "agent" {
+    if reference.root.keyword() != Some(ReferenceKeyword::Agent) {
         return;
     }
 
@@ -738,7 +759,7 @@ fn collect_agent_dependencies_from_expression(expression: &Expression, reference
 }
 
 fn collect_agent_dependency_from_reference(reference: &Reference, referenced_agents: &mut HashSet<String>) {
-    if reference.root != "agent" {
+    if reference.root.keyword() != Some(ReferenceKeyword::Agent) {
         return;
     }
 
