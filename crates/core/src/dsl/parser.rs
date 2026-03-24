@@ -67,9 +67,7 @@ mod tests {
 
     macro_rules! parse_inline_workflow {
         ($($workflow_tokens:tt)*) => {{
-            let workflow_source = stringify!($($workflow_tokens)*);
-
-            parse_workflow(workflow_source)
+            parse_workflow(stringify!($($workflow_tokens)*))
                 .unwrap_or_else(|parse_error| panic!("inline workflow failed to parse: {parse_error}"))
         }};
     }
