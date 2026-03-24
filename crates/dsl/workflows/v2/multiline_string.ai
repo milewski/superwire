@@ -18,9 +18,9 @@ agent greeting {
         Keep it to one sentence.
     """
 
-    output: schema::string
+    output: string
 }
 
 output {
-    greeting <- agent.greeting
+    greeting: agent.greeting
 }

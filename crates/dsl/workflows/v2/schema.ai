@@ -10,11 +10,11 @@ provider ollama {
 }
 
 // Named schema: define once, reuse across agents.
-schema Person {
-    name:: string
-    age:: number
-    role:: string
-    hobbies:: [string;3]
+schema Person "Research participant profile" {
+    name: string "Participant full name"
+    age: number "Participant age in years"
+    role: string "Participant role in the study"
+    hobbies: [string; 3] "Exactly three hobbies for the participant"
 }
 
 // Agent A uses the named schema.
@@ -24,7 +24,7 @@ agent named_profile {
     prompt: "Generate a fictional user research participant profile."
 
     // Reference a previously defined schema.
-    output: schema Person
+    output: schema.Person
 }
 
 // Agent B uses an inline schema.
@@ -34,20 +34,20 @@ agent inline_profile {
     prompt: "Generate a fictional user research participant profile."
 
     // Inline schema is local to this agent only.
-    output: schema {
-        name:: string
-        age:: number
-        role:: string
-        hobbies:: [string;3]
+    output: {
+        name: string "Participant full name"
+        age: number "Participant age in years"
+        role: string "Participant role in the study"
+        hobbies: [string; 3] "Exactly three hobbies for the participant"
     }
 }
 
-// Final output maps values from both agents.
-// You can map the full object, or select individual fields with dot access.
+// Final output builds values from both agents.
+// You can expose the full object, or select individual fields with dot access.
 output {
-    named_profile <- agent.named_profile
-    inline_profile <- agent.inline_profile
+    named_profile: agent.named_profile
+    inline_profile: agent.inline_profile
 
-    named_name <- agent.named_profile.name
-    inline_role <- agent.inline_profile.role
+    named_name: agent.named_profile.name
+    inline_role: agent.inline_profile.role
 }

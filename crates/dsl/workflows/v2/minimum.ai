@@ -16,12 +16,12 @@ agent greeting {
     prompt: "Write a short welcome message."
 
     // Define the expected output type for this agent.
-    output: schema::string
+    output: string
 }
 
 // Define the workflow's final output object.
 output {
-    greeting <- agent.greeting
+    greeting: agent.greeting
 }
 
 // Result shape: { "greeting": "..." }

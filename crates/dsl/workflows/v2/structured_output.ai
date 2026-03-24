@@ -1,6 +1,6 @@
-// This example demonstrates structured (nested) output mapping.
-// You can build nested objects in `output`, map agent values,
-// and assign hardcoded values like `workflow_version <- "v2"`.
+// This example demonstrates structured (nested) output construction.
+// You can build nested objects in `output`, reference agent values,
+// and assign hardcoded values like `workflow_version: "v2"`.
 
 provider ollama {
     driver: "ollama"
@@ -10,23 +10,23 @@ provider ollama {
 agent summary {
     model: ollama("qwen3.5:8b")
     prompt: "Write a short project status summary and a confidence score."
-    output: schema {
-        text:: string
-        confidence:: number
+    output: {
+        text: string
+        confidence: number
     }
 }
 
 output {
-    version <- 2
-    generated_by <- "status_summary_workflow"
-    report <- {
-        source <- "workflow"
-        overview <- {
-            text <- agent.summary.text
+    version: 2
+    generated_by: "status_summary_workflow"
+    report: {
+        source: "workflow"
+        overview: {
+            text: agent.summary.text
         }
-        metrics <- {
-            confidence <- agent.summary.confidence
-            status <- "ok"
+        metrics: {
+            confidence: agent.summary.confidence
+            status: "ok"
         }
     }
 }

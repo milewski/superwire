@@ -3,11 +3,11 @@
 
 provider openai {
     driver: "openai"
-    models: ["qwen3.5-27b"]
+    models: ["gpt-4.1-mini"]
 }
 
 agent release_analyst {
-    model: openai("qwen3.5-27b")
+    model: openai("gpt-4.1-mini")
 
     inference: {
         temperature: 0.2
@@ -15,9 +15,9 @@ agent release_analyst {
     }
 
     prompt: "Write a short release readiness note."
-    output: schema::string
+    output: string
 }
 
 output {
-    note <- agent.release_analyst
+    note: agent.release_analyst
 }

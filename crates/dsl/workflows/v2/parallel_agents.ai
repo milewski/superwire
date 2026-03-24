@@ -5,39 +5,39 @@
 // Shared provider for all agents in this workflow.
 provider openai {
     driver: "openai"
-    models: ["qwen3.5-27b"]
+    models: ["gpt-4.1-mini"]
 }
 
 input {
-    product_name:: string
-    release_highlights:: [string]
+    product_name: string
+    release_highlights: [string]
 }
 
 // Parallel agent 1: changelog entry.
 agent changelog {
-    model: openai("qwen3.5-27b")
+    model: openai("gpt-4.1-mini")
     prompt: "Write release notes for {{ input.product_name }} based on highlights: {{ input.release_highlights }}"
-    output: schema {
-        markdown:: string
+    output: {
+        markdown: string
     }
 }
 
 // Parallel agent 2: social post thread.
 agent social_thread {
-    model: openai("qwen3.5-27b")
+    model: openai("gpt-4.1-mini")
     prompt: "Create a 5-post launch thread for {{ input.product_name }} using: {{ input.release_highlights }}"
-    output: schema {
-        posts:: [string;5]
+    output: {
+        posts: [string; 5]
     }
 }
 
 // Parallel agent 3: customer email.
 agent customer_email {
-    model: openai("qwen3.5-27b")
+    model: openai("gpt-4.1-mini")
     prompt: "Write a customer announcement email for {{ input.product_name }} with these highlights: {{ input.release_highlights }}"
-    output: schema {
-        subject:: string
-        body:: string
+    output: {
+        subject: string
+        body: string
     }
 }
 
@@ -45,7 +45,7 @@ agent customer_email {
 // This agent runs after `changelog`, `social_thread`, and `customer_email`
 // because its prompt reads values produced by those agents.
 agent consistency_review {
-    model: openai("qwen3.5-27b")
+    model: openai("gpt-4.1-mini")
 
     prompt: """
         Ensure these assets are consistent in claims, tone, and terminology.
@@ -55,17 +55,17 @@ agent consistency_review {
         email_body={{ agent.customer_email.body }}
     """
 
-    output: schema {
-        approved:: boolean
-        issues:: [string]
+    output: {
+        approved: boolean
+        issues: [string]
     }
 }
 
 output {
-    changelog_markdown <- agent.changelog.markdown
-    social_posts <- agent.social_thread.posts
-    email_subject <- agent.customer_email.subject
-    email_body <- agent.customer_email.body
-    approved <- agent.consistency_review.approved
-    consistency_issues <- agent.consistency_review.issues
+    changelog_markdown: agent.changelog.markdown
+    social_posts: agent.social_thread.posts
+    email_subject: agent.customer_email.subject
+    email_body: agent.customer_email.body
+    approved: agent.consistency_review.approved
+    consistency_issues: agent.consistency_review.issues
 }

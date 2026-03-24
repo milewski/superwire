@@ -16,17 +16,17 @@ provider openai {
 }
 
 input {
-    study_name:: string
-    interview_notes:: [string]
+    study_name: string
+    interview_notes: [string]
 }
 
 // Agent 1 uses the local provider to remove personal identifiers.
 agent redact_notes {
     model: ollama("qwen3.5:8b")
     prompt: "Redact names, emails, and phone numbers from these interview notes: {{ input.interview_notes }}"
-    output: schema {
-        redacted_notes:: [string]
-        redaction_summary:: string
+    output: {
+        redacted_notes: [string]
+        redaction_summary: string
     }
 }
 
@@ -39,18 +39,18 @@ agent synthesize_insights {
         Using these redacted notes, produce concise research
         insights and top recommendations: {{ agent.redact_notes.redacted_notes }}
     """
-    output: schema {
-        insights:: [string]
-        recommendations:: [string]
+    output: {
+        insights: [string]
+        recommendations: [string]
     }
 }
 
 output {
-    study_name <- input.study_name
+    study_name: input.study_name
 
-    redacted_notes <- agent.redact_notes.redacted_notes
-    redaction_summary <- agent.redact_notes.redaction_summary
+    redacted_notes: agent.redact_notes.redacted_notes
+    redaction_summary: agent.redact_notes.redaction_summary
 
-    insights <- agent.synthesize_insights.insights
-    recommendations <- agent.synthesize_insights.recommendations
+    insights: agent.synthesize_insights.insights
+    recommendations: agent.synthesize_insights.recommendations
 }

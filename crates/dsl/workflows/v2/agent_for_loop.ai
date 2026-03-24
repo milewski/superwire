@@ -13,16 +13,16 @@ provider ollama {
 
 // Input source used to build a dynamic list.
 input {
-    findings_text:: string
-    numbers:: [number]
+    findings_text: string
+    numbers: [number]
 }
 
 // Step 1: convert raw text into a structured list.
 agent findings {
     model: ollama("qwen3:8b")
     prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
-    output: schema {
-        items:: [string]
+    output: {
+        items: [string]
     }
 }
 
@@ -31,11 +31,11 @@ agent findings {
 agent remediation_plan for finding in agent.findings.items {
     model: ollama("qwen3:8b")
     prompt: "Create a remediation plan for finding: {{ finding }}"
-    output: schema {
-        title:: string
-        steps:: [string]
-        owner_team:: string
-        priority:: "p0" | "p1" | "p2" | "p3"
+    output: {
+        title: string
+        steps: [string]
+        owner_team: string
+        priority: "p0" | "p1" | "p2" | "p3"
     }
 }
 
@@ -44,9 +44,9 @@ agent remediation_plan for finding in agent.findings.items {
 agent number_note for number in [1, 2, 3, 4] {
     model: ollama("qwen3:8b")
     prompt: "Write a short note for number {{ number }}"
-    output: schema {
-        number:: number
-        note:: string
+    output: {
+        number: number
+        note: string
     }
 }
 
@@ -55,18 +55,18 @@ agent number_note for number in [1, 2, 3, 4] {
 agent input_number_note for n in input.numbers {
     model: ollama("qwen3:8b")
     prompt: "Write a short note for input number {{ n }}"
-    output: schema {
-        number:: number
-        note:: string
+    output: {
+        number: number
+        note: string
     }
 }
 
 output {
-    findings <- agent.findings.items
-    remediation_plans <- agent.remediation_plan
-    remediation_context <- agent.remediation_plan.context
+    findings: agent.findings.items
+    remediation_plans: agent.remediation_plan
+    remediation_context: context(agent.remediation_plan)
 
-    manual_numbers <- agent.number_note
+    manual_numbers: agent.number_note
 
     // Referencing a looped agent returns an array of outputs.
     // Example shape:
@@ -74,5 +74,5 @@ output {
     //   { "number": 1, "note": "..." },
     //   { "number": 2, "note": "..." }
     // ]
-    input_numbers <- agent.input_number_note
+    input_numbers: agent.input_number_note
 }

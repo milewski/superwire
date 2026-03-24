@@ -9,8 +9,8 @@
 // 3) tool with multiple arguments
 
 secrets {
-    knowledge_base_password:: string
-    issue_tracker_token:: string
+    knowledge_base_password: string
+    issue_tracker_token: string
 }
 
 provider openai {
@@ -19,7 +19,7 @@ provider openai {
 }
 
 input {
-    question:: string
+    question: string
 }
 
 agent assistant_with_tools {
@@ -39,13 +39,14 @@ agent assistant_with_tools {
     ]
 
     prompt: "Answer the question using tools when needed: {{ input.question }}"
-    output: schema {
-        answer:: string
-        sources:: [string]
+
+    output: {
+        answer: string
+        sources: [string]
     }
 }
 
 output {
-    answer <- agent.assistant_with_tools.answer
-    sources <- agent.assistant_with_tools.sources
+    answer: agent.assistant_with_tools.answer
+    sources: agent.assistant_with_tools.sources
 }

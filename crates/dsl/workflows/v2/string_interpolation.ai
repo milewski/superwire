@@ -1,0 +1,94 @@
+// This example demonstrates inline string interpolation.
+//
+// Use `{{ ... }}` inside strings to inject values from workflow state.
+// The most common sources are:
+// - `input.some_field`
+// - `agent.some_agent`
+// - `agent.some_agent.some_field`
+//
+// Referencing `input` does not create an agent dependency.
+// Referencing `agent...` does create a dependency:
+// - the downstream agent waits for the referenced agent to finish
+// - the two agents no longer run in parallel
+//
+// Interpolation works in:
+// 1) single-line strings
+// 2) multiline strings
+
+provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    product_name: string
+    audience: string
+    release_highlights: [string]
+}
+
+// Step 1: single-line string interpolation.
+// This prompt reads directly from `input`.
+agent release_summary {
+    model: openai("gpt-4.1-mini")
+
+    prompt: "Write a short release summary for {{ input.product_name }} based on these highlights: {{ input.release_highlights }}"
+
+    output: {
+        summary: string "Short release summary"
+        key_points: [string; 3] "Exactly three key points from the release"
+    }
+}
+
+// Step 2: multiline string interpolation.
+// This prompt uses both `input` values and values produced by another agent.
+// Because it references `agent.release_summary...`, this agent depends on
+// `release_summary` and starts only after that agent finishes.
+agent launch_message {
+    model: openai("gpt-4.1-mini")
+
+    prompt: """
+        Write a launch message for {{ input.audience }}.
+
+        Product: {{ input.product_name }}
+        Summary: {{ agent.release_summary.summary }}
+        Key points: {{ agent.release_summary.key_points }}
+
+        Keep the tone clear, confident, and concise.
+    """
+
+    output: {
+        title: string "Short title for the launch message"
+        body: string "Final message body"
+    }
+}
+
+// Step 3: interpolation can also reference a whole agent output object.
+// This is useful when the downstream step wants the complete structured result.
+// Because this prompt references both `agent.release_summary` and
+// `agent.launch_message.body`, `qa_check` waits for both agents to complete.
+agent qa_check {
+    model: openai("gpt-4.1-mini")
+
+    prompt: """
+        Review this generated launch content for clarity and consistency.
+
+        Release summary object: {{ agent.release_summary }}
+        Launch message body: {{ agent.launch_message.body }}
+    """
+
+    output: {
+        approved: boolean "Whether the content is ready to use"
+        issues: [string] "List of issues to fix before sending"
+    }
+}
+
+output {
+    release_summary: agent.release_summary.summary
+    key_points: agent.release_summary.key_points
+
+    launch_title: agent.launch_message.title
+    launch_body: agent.launch_message.body
+
+    approved: agent.qa_check.approved
+    issues: agent.qa_check.issues
+}

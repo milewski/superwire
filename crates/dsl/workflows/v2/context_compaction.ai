@@ -1,0 +1,151 @@
+// This example demonstrates using context as an agent property.
+//
+// The `context:` property can receive:
+// 1) `context(agent.name)` for explicit full context
+// 2) `compact(agent.name)` for compacted context
+//
+// `compact(...)` can also accept named arguments to customize how the
+// compaction step is performed, including model, inference settings,
+// and an override prompt.
+//
+// If `model:` is omitted inside `compact(...)`, the compaction step uses
+// the same model as the agent being compacted.
+
+provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    product_name: string
+    customer_feedback: [string]
+}
+
+// Step 1: run a detailed analysis pass.
+agent research_analysis {
+    model: openai("gpt-4.1-mini")
+
+    inference: {
+        temperature: 0.7
+        max_tokens: 8_000
+    }
+
+    prompt: """
+        Analyze this customer feedback for {{ input.product_name }}.
+        Identify themes, risks, opportunities, and notable quotes.
+        Feedback={{ input.customer_feedback }}
+    """
+
+    output: {
+        themes: [string] "Key themes found across the feedback"
+        risks: [string] "Main risks or pain points mentioned by customers"
+        opportunities: [string] "Product opportunities suggested by the feedback"
+        notable_quotes: [string] "Short quotes worth preserving for later synthesis"
+    }
+}
+
+// Step 2a: use explicit full context.
+// Wrapping the agent reference in `context(...)` makes it obvious that
+// this agent starts with the complete context from `research_analysis`.
+agent summary_from_full_context {
+    model: openai("gpt-4.1-mini")
+    context: context(agent.research_analysis)
+
+    inference: {
+        temperature: 0.2
+        max_tokens: 2_000
+    }
+
+    prompt: "Write a short executive summary from the available context."
+
+    output: string
+}
+
+// Step 2b: use compacted context with the default compaction behavior.
+// Here `model:` is omitted inside `compact(...)`, so the compaction step
+// uses the same model as `research_analysis`.
+agent summary_from_default_compact_context {
+    model: openai("gpt-4.1-mini")
+    context: compact(agent.research_analysis)
+
+    inference: {
+        temperature: 0.2
+        max_tokens: 2_000
+    }
+
+    prompt: "Write a short executive summary from the compacted prior context."
+
+    output: string
+}
+
+// Step 2c: use compacted context with an explicit compaction model.
+// This is useful when the next step should see a reduced version of the
+// previous context, and you want to choose a different model for the
+// compaction step itself.
+agent summary_from_compact_context_with_model {
+    model: openai("gpt-4.1-mini")
+    context: compact(agent.research_analysis, model: openai("gpt-4.1-mini"))
+
+    inference: {
+        temperature: 0.2
+        max_tokens: 2_000
+    }
+
+    prompt: "Write a short executive summary from the compacted prior context."
+
+    output: string
+}
+
+// Step 2d: use compacted context with custom compaction settings.
+// This demonstrates a possible function-call shape with named arguments.
+//
+// In this form:
+// - `agent:` selects which prior agent context to compact
+// - `model:` selects which model performs the compaction step
+// - `inference:` controls that compaction call
+// - `prompt:` overrides the default compaction prompt
+agent summary_from_custom_compact_context {
+    model: openai("gpt-4.1-mini")
+    context: compact(
+        agent: agent.research_analysis,
+        model: openai("gpt-4.1-mini"),
+        inference: {
+            temperature: 0.1
+            max_tokens: 1_500
+        },
+        prompt: """
+            Compact this prior agent context for an executive summary step.
+            Keep only the highest-signal themes, risks, opportunities,
+            and essential quotes. Remove repetition and low-value details.
+        """
+    )
+
+    inference: {
+        temperature: 0.2
+        max_tokens: 2_000
+    }
+
+    prompt: "Write a short executive summary from the customized compacted context."
+
+    output: {
+        summary: string "Executive-ready summary of the research"
+        top_actions: [string; 3] "Exactly three recommended next actions"
+    }
+}
+
+output {
+    analysis: agent.research_analysis
+
+    // Full reusable context from the source agent.
+    full_context: context(agent.research_analysis)
+
+    // Default compacted version of that same context.
+    compacted_context: compact(agent.research_analysis)
+
+    summary_from_full_context: agent.summary_from_full_context
+    summary_from_default_compact_context: agent.summary_from_default_compact_context
+    summary_from_compact_context_with_model: agent.summary_from_compact_context_with_model
+
+    customized_summary: agent.summary_from_custom_compact_context.summary
+    customized_top_actions: agent.summary_from_custom_compact_context.top_actions
+}

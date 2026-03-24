@@ -5,17 +5,17 @@
 
 provider openai {
     driver: "openai"
-    models: ["qwen3.5-27b"]
+    models: ["gpt-4.1-mini"]
 }
 
 input {
-    study_name:: string
-    audience:: string
-    findings:: [string]
+    study_name: string
+    audience: string
+    findings: [string]
 }
 
 agent research_brief {
-    model: openai("qwen3.5-27b")
+    model: openai("gpt-4.1-mini")
 
     prompt: template("prompts/research_brief.md", {
         study_name: input.study_name
@@ -23,13 +23,13 @@ agent research_brief {
         findings: input.findings
     })
 
-    output: schema {
-        summary:: string
-        top_actions:: [string;3]
+    output: {
+        summary: string
+        top_actions: [string;3]
     }
 }
 
 output {
-    summary <- agent.research_brief.summary
-    top_actions <- agent.research_brief.top_actions
+    summary: agent.research_brief.summary
+    top_actions: agent.research_brief.top_actions
 }

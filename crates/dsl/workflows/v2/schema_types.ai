@@ -1,68 +1,65 @@
-// This file demonstrates schema field types, nullable fields (`| null`),
-// field descriptions, and schema references inside other schemas.
+// This file demonstrates schema field types, inline property descriptions,
+// nullable fields (`| null`), and named schema references.
 
 provider ollama {
     driver: "ollama"
     models: ["qwen3.5:32b"]
 }
 
-// Named schema that includes every supported type.
-schema AllTypes {
-    string:: string "A basic string value"
-    number:: number "A numeric value"
-    float:: float "A floating-point value"
-    boolean:: boolean "A true/false value"
-    null_value?:: "A field that must be null"
+// Schema and field descriptions are preserved into JSON Schema
+// descriptions to help the LLM produce better structured output.
+schema AllTypes "Schema covering the supported type shapes" {
+    string_value: string "A basic string value"
+    number_value: number "A numeric value"
+    float_value: float "A floating-point value"
+    boolean_value: boolean "A true/false value"
+    explicit_null: null "A field that must be null"
 
-    nullable_string?:: string "A nullable string"
-    nullable_number?:: number "A nullable number"
+    nullable_string: string | null "A nullable string; the field must exist, but may be null"
+    nullable_number: number | null "A nullable number; the field must exist, but may be null"
 
-    array:: [string] "An array of strings"
-    fixed_array:: [string;3] "Exactly three strings"
+    array: [string] "An array of strings"
+    fixed_array: [string; 3] "Exactly three strings"
 
-    // Field descriptions can also appear before inline object blocks in arrays.
-    array_of_objects:: [
-        "Array of inline objects" schema {
-            id:: string "Object item ID"
-            score:: number "Object item score"
-        }
-    ]
+    array_of_objects: [{
+        id: string "Stable identifier for the item"
+        score: number "Numeric score for the item"
+    }] "An array of inline objects"
 
-    enum:: "draft" | "ready" | "published" "A fixed set of values"
-    nullable_enum?:: "draft" | "ready" | "published" "A nullable enum"
+    enum_value: "draft" | "ready" | "published" "A fixed set of string values"
+    nullable_enum: "draft" | "ready" | "published" | null "A nullable enum value"
 
-    tuple:: (string, number, [string;3]) "Tuple with mixed item types"
-    nullable_tuple?:: (string, number, [string;3]) "A nullable tuple"
+    tuple_value: (string, number, [string; 3]) "A tuple with mixed item types"
+    nullable_tuple: (string, number, [string; 3]) | null "A nullable tuple"
 
-    // Field descriptions can appear before object type blocks.
-    object:: "Nested object type" schema {
-        string:: string "Nested string field"
-        number:: number "Nested number field"
-    }
+    object_value: {
+        string_value: string "Nested string field"
+        number_value: number "Nested number field"
+    } "A nested object value"
 
-    nullable_object?:: "Nullable nested object type" schema {
-        string:: string "Nested string field"
-        number:: number "Nested number field"
-    }
+    nullable_object: {
+        string_value: string "Nested string field"
+        number_value: number "Nested number field"
+    } | null "A nullable nested object value"
 }
 
 // A schema can be referenced inside another schema.
-schema Participant {
-    name:: string "Participant name"
-    role:: string "Participant role"
+schema Participant "A participant referenced by research artifacts" {
+    name: string "Participant name"
+    role: string "Participant role"
 }
 
-schema ResearchSummary {
-    title:: string "Research summary title"
-    lead:: schema.Participant "Reference to another named schema"
-    participants:: [schema.Participant] "Array of schema references"
+schema ResearchSummary "A reusable research summary object" {
+    title: string "Research summary title"
+    lead: schema.Participant "Primary participant for the summary"
+    participants: [schema.Participant] "All participants included in the summary"
 }
 
 // Input can also use named schemas.
 input {
-    lead_participant:: schema.Participant
-    participant_list:: [schema.Participant]
-    previous_summary:: schema.ResearchSummary
+    lead_participant: schema.Participant
+    participant_list: [schema.Participant]
+    previous_summary: schema.ResearchSummary
 }
 
 agent typed_example {
@@ -74,39 +71,39 @@ agent typed_example {
         - previous_title={{ input.previous_summary.title }}
     """
 
-    // Reference the named schema.
+    // Reference the named schema explicitly.
     output: schema.AllTypes
 }
 
 output {
     // Full object output.
-    result <- agent.typed_example
+    result: agent.typed_example
 
     // Field selection with dot access.
-    string <- agent.typed_example.string
-    number <- agent.typed_example.number
-    float <- agent.typed_example.float
-    boolean <- agent.typed_example.boolean
-    null_value <- agent.typed_example.null_value
+    string_value: agent.typed_example.string_value
+    number_value: agent.typed_example.number_value
+    float_value: agent.typed_example.float_value
+    boolean_value: agent.typed_example.boolean_value
+    explicit_null: agent.typed_example.explicit_null
 
-    nullable_string <- agent.typed_example.nullable_string
-    nullable_number <- agent.typed_example.nullable_number
+    nullable_string: agent.typed_example.nullable_string
+    nullable_number: agent.typed_example.nullable_number
 
-    array <- agent.typed_example.array
-    fixed_array <- agent.typed_example.fixed_array
-    array_of_objects <- agent.typed_example.array_of_objects
+    array: agent.typed_example.array
+    fixed_array: agent.typed_example.fixed_array
+    array_of_objects: agent.typed_example.array_of_objects
 
-    enum <- agent.typed_example.enum
-    nullable_enum <- agent.typed_example.nullable_enum
-    tuple <- agent.typed_example.tuple
-    nullable_tuple <- agent.typed_example.nullable_tuple
+    enum_value: agent.typed_example.enum_value
+    nullable_enum: agent.typed_example.nullable_enum
+    tuple_value: agent.typed_example.tuple_value
+    nullable_tuple: agent.typed_example.nullable_tuple
 
-    object <- agent.typed_example.object
-    nested_string <- agent.typed_example.object.string
-    nested_number <- agent.typed_example.object.number
+    object_value: agent.typed_example.object_value
+    nested_string: agent.typed_example.object_value.string_value
+    nested_number: agent.typed_example.object_value.number_value
 
-    nullable_object <- agent.typed_example.nullable_object
+    nullable_object: agent.typed_example.nullable_object
 
-    // Accessing a nullable property without `?.` causes a parse-time error.
-    nullable_object_string <- agent.typed_example.nullable_object?.string
+    // Accessing a nullable property requires `?.`.
+    nullable_object_string: agent.typed_example.nullable_object?.string_value
 }
