@@ -1,6 +1,6 @@
 use super::ast::{
     AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, StringTemplatePart,
-    TypeExpression, Workflow,
+    TypeExpression, TypedField, Workflow,
 };
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -97,6 +97,15 @@ pub enum ValidationIssue {
         field_name: String,
         context: ValidationContext,
     },
+    MissingAgentOutputTypeForFieldReference {
+        agent_name: String,
+        context: ValidationContext,
+    },
+    InvalidReferencePath {
+        reference_path: String,
+        invalid_field: String,
+        context: ValidationContext,
+    },
     UnknownSchemaReference {
         referenced_schema: String,
         context: ValidationContext,
@@ -116,8 +125,10 @@ struct ValidationIndex {
     provider_infos: HashMap<String, ProviderInfo>,
     agent_names: HashSet<String>,
     schema_names: HashSet<String>,
-    input_field_names: Option<HashSet<String>>,
-    secrets_field_names: Option<HashSet<String>>,
+    schema_field_types: HashMap<String, HashMap<String, TypeExpression>>,
+    input_field_types: Option<HashMap<String, TypeExpression>>,
+    secrets_field_types: Option<HashMap<String, TypeExpression>>,
+    agent_output_types: HashMap<String, Option<TypeExpression>>,
 }
 
 #[must_use]
@@ -160,6 +171,11 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             Declaration::Schema(schema_declaration) => {
                 let inserted_schema = validation_index.schema_names.insert(schema_declaration.name.clone());
 
+                let schema_field_types = collect_field_types(schema_declaration.fields.as_slice());
+                validation_index
+                    .schema_field_types
+                    .insert(schema_declaration.name.clone(), schema_field_types);
+
                 if !inserted_schema {
                     validation_report.push_issue(ValidationIssue::DuplicateSchema {
                         schema_name: schema_declaration.name.clone(),
@@ -168,6 +184,11 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             }
             Declaration::Agent(agent_declaration) => {
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
+
+                let agent_output_type = extract_agent_output_type(agent_declaration.properties.as_slice());
+                validation_index
+                    .agent_output_types
+                    .insert(agent_declaration.name.clone(), agent_output_type);
 
                 if !inserted_agent {
                     validation_report.push_issue(ValidationIssue::DuplicateAgent {
@@ -184,14 +205,8 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
 
                 has_input_declaration = true;
 
-                if validation_index.input_field_names.is_none() {
-                    validation_index.input_field_names = Some(
-                        input_declaration
-                            .fields
-                            .iter()
-                            .map(|typed_field| typed_field.name.clone())
-                            .collect(),
-                    );
+                if validation_index.input_field_types.is_none() {
+                    validation_index.input_field_types = Some(collect_field_types(input_declaration.fields.as_slice()));
                 }
             }
             Declaration::Secrets(secrets_declaration) => {
@@ -203,14 +218,8 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
 
                 has_secrets_declaration = true;
 
-                if validation_index.secrets_field_names.is_none() {
-                    validation_index.secrets_field_names = Some(
-                        secrets_declaration
-                            .fields
-                            .iter()
-                            .map(|typed_field| typed_field.name.clone())
-                            .collect(),
-                    );
+                if validation_index.secrets_field_types.is_none() {
+                    validation_index.secrets_field_types = Some(collect_field_types(secrets_declaration.fields.as_slice()));
                 }
             }
             Declaration::Output(_) => {
@@ -226,6 +235,23 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
     }
 
     validation_index
+}
+
+fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpression> {
+    typed_fields
+        .iter()
+        .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
+        .collect()
+}
+
+fn extract_agent_output_type(agent_properties: &[AgentProperty]) -> Option<TypeExpression> {
+    agent_properties.iter().find_map(|agent_property| {
+        if let AgentProperty::Output(type_expression) = agent_property {
+            Some(type_expression.clone())
+        } else {
+            None
+        }
+    })
 }
 
 fn extract_declared_provider_models(provider_properties: &[ObjectField]) -> Option<HashSet<String>> {
@@ -532,6 +558,8 @@ struct KeywordReferenceValidationState<'validation> {
     validation_report: &'validation mut ValidationReport,
     unknown_agent_references: HashSet<(ValidationContext, String)>,
     invalid_keyword_reference_roots: HashSet<(ValidationContext, ReferenceKeyword)>,
+    missing_agent_output_type_references: HashSet<(ValidationContext, String)>,
+    invalid_reference_paths: HashSet<(ValidationContext, String, String)>,
     missing_input_declaration_contexts: HashSet<ValidationContext>,
     missing_secrets_declaration_contexts: HashSet<ValidationContext>,
     unknown_input_field_references: HashSet<(ValidationContext, String)>,
@@ -545,6 +573,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             validation_report,
             unknown_agent_references: HashSet::new(),
             invalid_keyword_reference_roots: HashSet::new(),
+            missing_agent_output_type_references: HashSet::new(),
+            invalid_reference_paths: HashSet::new(),
             missing_input_declaration_contexts: HashSet::new(),
             missing_secrets_declaration_contexts: HashSet::new(),
             unknown_input_field_references: HashSet::new(),
@@ -597,7 +627,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         };
 
-        let Some(first_access) = reference.accesses.first() else {
+        let Some(_) = reference.accesses.first() else {
             let issue_key = (context.clone(), reference_root_keyword);
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
@@ -612,21 +642,229 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
         match reference_root_keyword {
             ReferenceKeyword::Agent => {
-                self.validate_agent_reference_name(first_access.field.as_str(), context);
+                self.validate_agent_reference(reference, context);
             }
             ReferenceKeyword::Input => {
-                self.validate_input_reference_name(first_access.field.as_str(), context);
+                self.validate_input_reference(reference, context);
             }
             ReferenceKeyword::Secrets => {
-                self.validate_secrets_reference_name(first_access.field.as_str(), context);
+                self.validate_secrets_reference(reference, context);
             }
             ReferenceKeyword::Tool => {}
         }
     }
 
-    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext) {
-        if self.validation_index.agent_names.contains(referenced_agent_name) {
+    fn validate_agent_reference(&mut self, reference: &Reference, context: ValidationContext) {
+        let referenced_agent_name = reference
+            .accesses
+            .first()
+            .expect("agent reference should include first field after root")
+            .field
+            .as_str();
+
+        if !self.validate_agent_reference_name(referenced_agent_name, context.clone()) {
             return;
+        }
+
+        if reference.accesses.len() == 1 {
+            return;
+        }
+
+        let Some(agent_output_type) = self
+            .validation_index
+            .agent_output_types
+            .get(referenced_agent_name)
+            .and_then(Clone::clone)
+        else {
+            let issue_key = (context.clone(), referenced_agent_name.to_owned());
+
+            if self.missing_agent_output_type_references.insert(issue_key) {
+                self.validation_report
+                    .push_issue(ValidationIssue::MissingAgentOutputTypeForFieldReference {
+                        agent_name: referenced_agent_name.to_owned(),
+                        context,
+                    });
+            }
+
+            return;
+        };
+
+        self.validate_reference_path(reference, 1, agent_output_type, context);
+    }
+
+    fn validate_input_reference(&mut self, reference: &Reference, context: ValidationContext) {
+        let referenced_field_name = reference
+            .accesses
+            .first()
+            .expect("input reference should include first field after root")
+            .field
+            .as_str();
+
+        let Some(input_field_types) = self.validation_index.input_field_types.as_ref() else {
+            if self.missing_input_declaration_contexts.insert(context.clone()) {
+                self.validation_report
+                    .push_issue(ValidationIssue::MissingInputDeclaration { context });
+            }
+
+            return;
+        };
+
+        let Some(input_field_type) = input_field_types.get(referenced_field_name) else {
+            let issue_key = (context.clone(), referenced_field_name.to_owned());
+
+            if self.unknown_input_field_references.insert(issue_key) {
+                self.validation_report.push_issue(ValidationIssue::UnknownInputFieldReference {
+                    field_name: referenced_field_name.to_owned(),
+                    context,
+                });
+            }
+
+            return;
+        };
+
+        if reference.accesses.len() == 1 {
+            return;
+        }
+
+        self.validate_reference_path(reference, 1, input_field_type.clone(), context);
+    }
+
+    fn validate_secrets_reference(&mut self, reference: &Reference, context: ValidationContext) {
+        let referenced_field_name = reference
+            .accesses
+            .first()
+            .expect("secrets reference should include first field after root")
+            .field
+            .as_str();
+
+        let Some(secrets_field_types) = self.validation_index.secrets_field_types.as_ref() else {
+            if self.missing_secrets_declaration_contexts.insert(context.clone()) {
+                self.validation_report
+                    .push_issue(ValidationIssue::MissingSecretsDeclaration { context });
+            }
+
+            return;
+        };
+
+        let Some(secrets_field_type) = secrets_field_types.get(referenced_field_name) else {
+            let issue_key = (context.clone(), referenced_field_name.to_owned());
+
+            if self.unknown_secrets_field_references.insert(issue_key) {
+                self.validation_report.push_issue(ValidationIssue::UnknownSecretsFieldReference {
+                    field_name: referenced_field_name.to_owned(),
+                    context,
+                });
+            }
+
+            return;
+        };
+
+        if reference.accesses.len() == 1 {
+            return;
+        }
+
+        self.validate_reference_path(reference, 1, secrets_field_type.clone(), context);
+    }
+
+    fn validate_reference_path(
+        &mut self,
+        reference: &Reference,
+        path_start_index: usize,
+        start_type: TypeExpression,
+        context: ValidationContext,
+    ) {
+        let mut candidate_types = vec![start_type];
+
+        for reference_access in reference.accesses.iter().skip(path_start_index) {
+            let mut next_candidate_types = Vec::new();
+
+            for candidate_type in &candidate_types {
+                self.collect_next_types_for_field(candidate_type, reference_access.field.as_str(), &mut next_candidate_types);
+            }
+
+            if next_candidate_types.is_empty() {
+                let reference_path = self.reference_to_string(reference);
+                let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
+
+                if self.invalid_reference_paths.insert(issue_key) {
+                    self.validation_report.push_issue(ValidationIssue::InvalidReferencePath {
+                        reference_path,
+                        invalid_field: reference_access.field.clone(),
+                        context,
+                    });
+                }
+
+                return;
+            }
+
+            candidate_types = next_candidate_types;
+        }
+    }
+
+    fn collect_next_types_for_field(
+        &self,
+        candidate_type: &TypeExpression,
+        field_name: &str,
+        next_candidate_types: &mut Vec<TypeExpression>,
+    ) {
+        match candidate_type {
+            TypeExpression::Object(typed_fields) => {
+                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
+                    next_candidate_types.push(typed_field.field_type.clone());
+                }
+            }
+            TypeExpression::SchemaReference(schema_name) => {
+                let Some(schema_field_types) = self.validation_index.schema_field_types.get(schema_name) else {
+                    return;
+                };
+
+                if let Some(field_type) = schema_field_types.get(field_name) {
+                    next_candidate_types.push(field_type.clone());
+                }
+            }
+            TypeExpression::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    self.collect_next_types_for_field(type_expression, field_name, next_candidate_types);
+                }
+            }
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_) => {}
+        }
+    }
+
+    fn reference_to_string(&self, reference: &Reference) -> String {
+        let mut rendered_reference = if let Some(reference_root_keyword) = reference.root.keyword() {
+            reference_root_keyword.as_str().to_owned()
+        } else {
+            reference
+                .root
+                .as_identifier()
+                .expect("non-keyword reference root should be identifier")
+                .to_owned()
+        };
+
+        for reference_access in &reference.accesses {
+            let access_operator = if reference_access.optional { "?." } else { "." };
+
+            rendered_reference.push_str(access_operator);
+            rendered_reference.push_str(reference_access.field.as_str());
+        }
+
+        rendered_reference
+    }
+
+    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext) -> bool {
+        if self.validation_index.agent_names.contains(referenced_agent_name) {
+            return true;
         }
 
         let issue_key = (context.clone(), referenced_agent_name.to_owned());
@@ -637,54 +875,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 context,
             });
         }
-    }
 
-    fn validate_input_reference_name(&mut self, referenced_field_name: &str, context: ValidationContext) {
-        let Some(input_field_names) = self.validation_index.input_field_names.as_ref() else {
-            if self.missing_input_declaration_contexts.insert(context.clone()) {
-                self.validation_report
-                    .push_issue(ValidationIssue::MissingInputDeclaration { context });
-            }
-
-            return;
-        };
-
-        if input_field_names.contains(referenced_field_name) {
-            return;
-        }
-
-        let issue_key = (context.clone(), referenced_field_name.to_owned());
-
-        if self.unknown_input_field_references.insert(issue_key) {
-            self.validation_report.push_issue(ValidationIssue::UnknownInputFieldReference {
-                field_name: referenced_field_name.to_owned(),
-                context,
-            });
-        }
-    }
-
-    fn validate_secrets_reference_name(&mut self, referenced_field_name: &str, context: ValidationContext) {
-        let Some(secrets_field_names) = self.validation_index.secrets_field_names.as_ref() else {
-            if self.missing_secrets_declaration_contexts.insert(context.clone()) {
-                self.validation_report
-                    .push_issue(ValidationIssue::MissingSecretsDeclaration { context });
-            }
-
-            return;
-        };
-
-        if secrets_field_names.contains(referenced_field_name) {
-            return;
-        }
-
-        let issue_key = (context.clone(), referenced_field_name.to_owned());
-
-        if self.unknown_secrets_field_references.insert(issue_key) {
-            self.validation_report.push_issue(ValidationIssue::UnknownSecretsFieldReference {
-                field_name: referenced_field_name.to_owned(),
-                context,
-            });
-        }
+        false
     }
 }
 
@@ -905,6 +1097,32 @@ mod tests {
     }
 
     #[test]
+    fn reports_invalid_nested_input_field_reference_path() {
+        let workflow = parse_inline_workflow! {
+            input {
+                profile: {
+                    name: string
+                }
+            }
+
+            agent researcher {
+                prompt: input.profile.age
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidReferencePath {
+                reference_path,
+                invalid_field,
+                context
+            } if reference_path == "input.profile.age"
+                && invalid_field == "age"
+                && *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
     fn reports_missing_secrets_declaration_for_secrets_reference() {
         let workflow = parse_inline_workflow! {
             agent researcher {
@@ -935,6 +1153,32 @@ mod tests {
             workflow,
             ValidationIssue::UnknownSecretsFieldReference { field_name, context }
                 if field_name == "api_key" && *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_invalid_nested_secrets_field_reference_path() {
+        let workflow = parse_inline_workflow! {
+            secrets {
+                credentials: {
+                    token: string
+                }
+            }
+
+            agent researcher {
+                prompt: secrets.credentials.key
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidReferencePath {
+                reference_path,
+                invalid_field,
+                context
+            } if reference_path == "secrets.credentials.key"
+                && invalid_field == "key"
+                && *context == ValidationContext::Agent("researcher".to_owned())
         );
     }
 
@@ -1022,6 +1266,79 @@ mod tests {
                 context
             } if referenced_agent == "missing_agent" && *context == ValidationContext::Output
         );
+    }
+
+    #[test]
+    fn reports_missing_agent_output_type_for_nested_agent_field_reference() {
+        let workflow = parse_inline_workflow! {
+            agent producer {
+                prompt: "produce"
+            }
+
+            agent consumer {
+                prompt: agent.producer.summary
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::MissingAgentOutputTypeForFieldReference {
+                agent_name,
+                context
+            } if agent_name == "producer" && *context == ValidationContext::Agent("consumer".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_invalid_nested_agent_output_reference_path() {
+        let workflow = parse_inline_workflow! {
+            agent producer {
+                output: {
+                    summary: string
+                }
+            }
+
+            output {
+                result: agent.producer.score
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidReferencePath {
+                reference_path,
+                invalid_field,
+                context
+            } if reference_path == "agent.producer.score"
+                && invalid_field == "score"
+                && *context == ValidationContext::Output
+        );
+    }
+
+    #[test]
+    fn accepts_valid_nested_agent_output_reference_path() {
+        let workflow = parse_inline_workflow! {
+            schema Report {
+                payload: {
+                    score: number
+                }
+            }
+
+            agent producer {
+                output: schema.Report
+            }
+
+            output {
+                result: agent.producer.payload.score
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+
+        assert!(!validation_report
+            .issues()
+            .iter()
+            .any(|validation_issue| matches!(validation_issue, ValidationIssue::InvalidReferencePath { .. })));
     }
 
     #[test]
