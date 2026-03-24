@@ -852,6 +852,26 @@ mod tests {
         }};
     }
 
+    macro_rules! assert_workflow_issues_contain {
+        ($workflow:expr, $($issue_pattern:pat $(if $guard:expr)?),+ $(,)?) => {{
+            let validation_report = validate_workflow(&$workflow);
+            let validation_issues = validation_report.issues();
+
+            $(
+                assert_issues_contain!(validation_issues, $issue_pattern $(if $guard)?);
+            )+
+        }};
+    }
+
+    macro_rules! assert_workflow_issues_contain_agent_cycle {
+        ($workflow:expr, [$($agent_name:expr),+ $(,)?]) => {{
+            let validation_report = validate_workflow(&$workflow);
+            let validation_issues = validation_report.issues();
+
+            assert_issues_contain_agent_cycle!(validation_issues, [$($agent_name),+]);
+        }};
+    }
+
     #[test]
     fn reports_no_issues_for_valid_workflow() {
         let workflow = parse_inline_workflow! {
@@ -882,11 +902,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::MissingInputDeclaration { context }
                 if *context == ValidationContext::Agent("researcher".to_owned())
         );
@@ -904,11 +921,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::UnknownInputFieldReference { field_name, context }
                 if field_name == "topic" && *context == ValidationContext::Agent("researcher".to_owned())
         );
@@ -922,11 +936,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::MissingSecretsDeclaration { context }
                 if *context == ValidationContext::Agent("researcher".to_owned())
         );
@@ -944,11 +955,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::UnknownSecretsFieldReference { field_name, context }
                 if field_name == "api_key" && *context == ValidationContext::Agent("researcher".to_owned())
         );
@@ -970,25 +978,14 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
                 if *keyword == ReferenceKeyword::Input
-                    && *context == ValidationContext::Agent("researcher".to_owned())
-        );
-
-        assert_issues_contain!(
-            validation_issues,
+                    && *context == ValidationContext::Agent("researcher".to_owned()),
             ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
                 if *keyword == ReferenceKeyword::Tool
-                    && *context == ValidationContext::Agent("tooling".to_owned())
-        );
-
-        assert_issues_contain!(
-            validation_issues,
+                    && *context == ValidationContext::Agent("tooling".to_owned()),
             ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
                 if *keyword == ReferenceKeyword::Agent && *context == ValidationContext::Output
         );
@@ -1002,11 +999,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::UnknownProviderInModel {
                 agent_name,
                 provider_name
@@ -1027,11 +1021,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::UnknownModelForProvider {
                 agent_name,
                 provider_name,
@@ -1048,11 +1039,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::UnknownAgentReference {
                 referenced_agent,
                 context
@@ -1068,11 +1056,8 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain!(
-            validation_issues,
+        assert_workflow_issues_contain!(
+            workflow,
             ValidationIssue::UnknownSchemaReference {
                 referenced_schema,
                 context
@@ -1093,10 +1078,7 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain_agent_cycle!(validation_issues, ["alpha", "beta"]);
+        assert_workflow_issues_contain_agent_cycle!(workflow, ["alpha", "beta"]);
     }
 
     #[test]
@@ -1111,9 +1093,6 @@ mod tests {
             }
         };
 
-        let validation_report = validate_workflow(&workflow);
-        let validation_issues = validation_report.issues();
-
-        assert_issues_contain_agent_cycle!(validation_issues, ["alpha", "beta"]);
+        assert_workflow_issues_contain_agent_cycle!(workflow, ["alpha", "beta"]);
     }
 }
