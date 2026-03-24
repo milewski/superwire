@@ -10,6 +10,9 @@
       "include": "#provider"
     },
     {
+      "include": "#secrets-block"
+    },
+    {
       "include": "#schema"
     },
     {
@@ -20,6 +23,9 @@
     },
     {
       "include": "#agent"
+    },
+    {
+      "include": "#expressions"
     }
   ],
   "repository": {
@@ -32,7 +38,7 @@
       ]
     },
     "provider": {
-      "begin": "\\b(provider)\\s+(\\w+)\\s*\\{",
+      "begin": "\\b(provider)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.ai"
@@ -44,33 +50,32 @@
       "end": "\\}",
       "patterns": [
         {
-          "include": "#provider-properties"
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
         }
       ]
     },
-    "provider-properties": {
+    "secrets-block": {
+      "begin": "\\b(secrets)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.ai"
+        }
+      },
+      "end": "\\}",
       "patterns": [
         {
-          "match": "\\b(driver|api_endpoint|models)\\s*(<-)\\s*",
-          "captures": {
-            "1": {
-              "name": "variable.parameter.ai"
-            },
-            "2": {
-              "name": "keyword.operator.assignment.ai"
-            }
-          }
+          "include": "#property-assignment"
         },
         {
-          "include": "#strings"
-        },
-        {
-          "include": "#arrays"
+          "include": "#expressions"
         }
       ]
     },
     "schema": {
-      "begin": "\\b(schema)\\s+(\\w+)\\s*\\{",
+      "begin": "\\b(schema)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.ai"
@@ -82,28 +87,10 @@
       "end": "\\}",
       "patterns": [
         {
-          "include": "#schema-fields"
-        }
-      ]
-    },
-    "schema-fields": {
-      "patterns": [
-        {
-          "match": "(\\w+)\\s*(:)\\s*([\\w\\[\\]|\"]+)",
-          "captures": {
-            "1": {
-              "name": "variable.other.property.ai"
-            },
-            "2": {
-              "name": "punctuation.separator.ai"
-            },
-            "3": {
-              "name": "entity.name.type.ai"
-            }
-          }
+          "include": "#property-assignment"
         },
         {
-          "include": "#strings"
+          "include": "#expressions"
         }
       ]
     },
@@ -117,7 +104,10 @@
       "end": "\\}",
       "patterns": [
         {
-          "include": "#schema-fields"
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
         }
       ]
     },
@@ -131,160 +121,335 @@
       "end": "\\}",
       "patterns": [
         {
-          "match": "(\\w+)\\s*(<-)\\s*",
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "agent": {
+      "begin": "\\b(agent)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(in)\\s+([^\\{]+?))?\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.ai"
+        },
+        "2": {
+          "name": "entity.name.function.agent.ai"
+        },
+        "3": {
+          "name": "keyword.control.ai"
+        },
+        "4": {
+          "name": "variable.other.ai"
+        },
+        "5": {
+          "name": "keyword.control.ai"
+        },
+        "6": {
+          "name": "variable.other.reference.ai"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "property-assignment": {
+      "patterns": [
+        {
+          "match": "\\b(driver|endpoint|api_key|models|model|tools|context|output|prompt|inference)\\b(?=\\s*:)",
+          "name": "variable.parameter.ai"
+        },
+        {
+          "match": "\\b(provider|schema|agent|input|output|secrets|for|in)\\b",
+          "name": "keyword.control.ai"
+        },
+        {
+          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
               "name": "variable.other.property.ai"
             },
             "2": {
-              "name": "keyword.operator.assignment.ai"
+              "name": "punctuation.separator.ai"
             }
           }
-        },
-        {
-          "include": "#references"
-        },
-        {
-          "include": "#strings"
-        },
-        {
-          "include": "#function-calls"
         }
       ]
     },
-    "agent": {
-      "begin": "(<-)?\\s*\\b(agent)\\s+(\\w+)\\s*\\{",
-      "beginCaptures": {
-        "1": {
-          "name": "keyword.operator.terminal.ai"
-        },
-        "2": {
-          "name": "keyword.control.ai"
-        },
-        "3": {
-          "name": "entity.name.function.agent.ai"
-        }
-      },
-      "end": "\\}",
+    "expressions": {
       "patterns": [
         {
-          "include": "#agent-properties"
-        }
-      ]
-    },
-    "agent-properties": {
-      "patterns": [
-        {
-          "match": "\\b(model|tools|context|output|prompt|for_each)\\s*(<-)\\s*",
-          "captures": {
-            "1": {
-              "name": "variable.parameter.ai"
-            },
-            "2": {
-              "name": "keyword.operator.assignment.ai"
-            }
-          }
-        },
-        {
-          "match": "\\b(as)\\s+(\\w+)",
-          "captures": {
-            "1": {
-              "name": "keyword.control.ai"
-            },
-            "2": {
-              "name": "variable.other.ai"
-            }
-          }
-        },
-        {
-          "include": "#strings"
+          "include": "#comments"
         },
         {
           "include": "#multiline-strings"
         },
         {
-          "include": "#references"
+          "include": "#strings"
+        },
+        {
+          "include": "#tool-calls"
+        },
+        {
+          "include": "#namespaced-function-calls"
         },
         {
           "include": "#function-calls"
         },
         {
-          "include": "#inline-schema"
+          "include": "#tool-references"
         },
         {
-          "include": "#inline-type"
+          "include": "#references"
+        },
+        {
+          "include": "#arrays"
+        },
+        {
+          "include": "#object-literal"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#booleans"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "name": "punctuation.separator.ai",
+          "match": ","
         }
       ]
     },
-    "inline-type": {
-      "match": "\\b(string|number|float|boolean|null)\\b(?:\\s+(\"[^\"]*\"))?",
-      "captures": {
-        "1": {
-          "name": "storage.type.ai"
-        },
-        "2": {
-          "name": "string.quoted.double.ai"
-        }
-      }
-    },
-    "inline-schema": {
-      "begin": "\\{",
-      "end": "\\}",
+    "types": {
       "patterns": [
         {
-          "include": "#schema-fields"
+          "name": "storage.type.ai",
+          "match": "\\b(string|number|float|boolean|null)\\b"
+        },
+        {
+          "match": "\\b(agent|input|schema|tool|secrets)\\b",
+          "name": "keyword.other.ai"
+        },
+        {
+          "name": "entity.name.type.schema-reference.ai",
+          "match": "\\bschema\\.[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.ai",
+          "match": "\\b\\d(?:[\\d_]*\\d)?(?:\\.\\d(?:[\\d_]*\\d)?)?\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.ai",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.ai",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.ai",
+          "match": "\\?\\."
+        },
+        {
+          "name": "punctuation.separator.ai",
+          "match": ";"
+        }
+      ]
+    },
+    "object-literal": {
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.block.begin.ai"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.ai"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool-calls": {
+      "begin": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.ai"
+        },
+        "2": {
+          "name": "punctuation.accessor.ai"
+        },
+        "3": {
+          "name": "entity.name.function.ai"
+        },
+        "4": {
+          "name": "punctuation.section.arguments.begin.ai"
+        }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.arguments.end.ai"
+        }
+      },
+      "patterns": [
+        {
+          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.ai"
+            },
+            "2": {
+              "name": "punctuation.separator.ai"
+            }
+          }
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "namespaced-function-calls": {
+      "begin": "\\b(?!tool\\b)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.namespace.ai"
+        },
+        "2": {
+          "name": "punctuation.accessor.ai"
+        },
+        "3": {
+          "name": "entity.name.function.ai"
+        },
+        "4": {
+          "name": "punctuation.section.arguments.begin.ai"
+        }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.arguments.end.ai"
+        }
+      },
+      "patterns": [
+        {
+          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.ai"
+            },
+            "2": {
+              "name": "punctuation.separator.ai"
+            }
+          }
+        },
+        {
+          "include": "#expressions"
         }
       ]
     },
     "function-calls": {
-      "begin": "\\b(file|compact)\\s+",
+      "begin": "\\b([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)\\s*(\\()",
       "beginCaptures": {
         "1": {
           "name": "entity.name.function.ai"
+        },
+        "2": {
+          "name": "punctuation.section.arguments.begin.ai"
         }
       },
-      "end": "(?=\\s*[,}\\]])",
+      "end": "\\)",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.arguments.end.ai"
+        }
+      },
       "patterns": [
         {
-          "include": "#strings"
+          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.ai"
+            },
+            "2": {
+              "name": "punctuation.separator.ai"
+            }
+          }
         },
         {
-          "begin": "\\{",
-          "end": "\\}",
-          "patterns": [
-            {
-              "match": "(\\w+)\\s*(<-)\\s*",
-              "captures": {
-                "1": {
-                  "name": "variable.parameter.ai"
-                },
-                "2": {
-                  "name": "keyword.operator.assignment.ai"
-                }
-              }
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool-references": {
+      "patterns": [
+        {
+          "match": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.ai"
             },
-            {
-              "include": "#strings"
+            "2": {
+              "name": "punctuation.accessor.ai"
             },
-            {
-              "include": "#references"
+            "3": {
+              "name": "entity.name.function.ai"
             }
-          ]
+          }
         }
       ]
     },
     "references": {
       "patterns": [
         {
-          "match": "\\b(agent|input|schema|tool)\\.(\\w+)(?:\\.(\\w+))?",
+          "match": "\\b(agent|input|schema|tool|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
           "captures": {
             "1": {
               "name": "keyword.other.ai"
             },
             "2": {
-              "name": "variable.other.ai"
+              "name": "punctuation.accessor.ai"
             },
             "3": {
+              "name": "variable.other.ai"
+            },
+            "4": {
+              "name": "punctuation.accessor.ai"
+            },
+            "5": {
               "name": "variable.other.property.ai"
             }
           }
@@ -341,7 +506,7 @@
           },
           "patterns": [
             {
-              "include": "#references"
+              "include": "#expressions"
             }
           ]
         }
@@ -349,17 +514,20 @@
     },
     "arrays": {
       "begin": "\\[",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.array.begin.ai"
+        }
+      },
       "end": "\\]",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.array.end.ai"
+        }
+      },
       "patterns": [
         {
-          "include": "#references"
-        },
-        {
-          "include": "#strings"
-        },
-        {
-          "name": "punctuation.separator.ai",
-          "match": ","
+          "include": "#expressions"
         }
       ]
     }

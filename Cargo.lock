@@ -659,6 +659,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-ai-dsl"
+version = "0.1.0"
+dependencies = [
+ "engine-ai-agent",
+ "pest",
+ "pest_derive",
+ "petgraph",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "engine-ai-js"
 version = "0.1.0"
 dependencies = [

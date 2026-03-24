@@ -6,17 +6,16 @@ This directory contains a TextMate grammar bundle for syntax highlighting of AI 
 
 The grammar provides syntax highlighting for:
 
-- **Keywords**: `provider`, `schema`, `agent`, `input`, `output`, `for_each`, `as`
-- **Operators**: `<-` (assignment), `:` (type annotation)
-- **Terminal marker**: `<-` prefix for terminal agents
-- **Data types**: `string`, `number`, `boolean`, `null`, arrays, enums
-- **String interpolation**: `{{ variable }}` syntax
+- **Keywords**: `provider`, `schema`, `agent`, `input`, `output`, `secrets`, `for`, `in`
+- **Assignments**: `:` in config, schema, and output blocks
+- **Data types**: `string`, `number`, `float`, `boolean`, `null`, arrays, tuples, unions
+- **String interpolation**: `{{ ... }}` syntax in single-line and multiline strings
 - **Multiline strings**: `"""..."""` syntax
-- **References**: `agent.name.field`, `input.field`, `schema.name`
-- **Function calls**: `file`, `compact`
+- **References**: `agent.name.field`, `input.field`, `schema.Name`, `secrets.key`, `tool.name`
+- **Function calls**: `context(...)`, `compact(...)`, `template(...)`, provider model calls like `openai(...)`
 - **Comments**: `//` line comments
-- **Provider properties**: `driver`, `api_endpoint`, `models`
-- **Agent properties**: `model`, `tools`, `context`, `output`, `prompt`, `for_each`
+- **Provider properties**: `driver`, `endpoint`, `api_key`, `models`
+- **Agent properties**: `model`, `tools`, `context`, `output`, `prompt`, `inference`
 
 ## Installation
 
@@ -47,52 +46,64 @@ For editors that support TextMate grammars (Sublime Text, Atom, etc.), refer to 
 The grammar uses standard TextMate scope names, so it will work with any color theme. The following scopes are used:
 
 - `keyword.control.ai` - Keywords like `provider`, `agent`, `schema`
-- `entity.name.type.ai` - Type names and schema names
+- `entity.name.type.schema.ai` - Declared schema names
+- `entity.name.type.schema-reference.ai` - Referenced schema types like `schema.Brief`
 - `entity.name.function.ai` - Function names and agent names
+- `entity.name.namespace.ai` - Function namespaces in calls like `foo.bar(...)`
 - `variable.parameter.ai` - Property names
 - `string.quoted.double.ai` - String literals
 - `comment.line.double-slash.ai` - Comments
-- `keyword.operator.assignment.ai` - Assignment operator `<-`
+- `keyword.operator.ai` - Operators like `|` and `?.`
+- `punctuation.section.arguments.begin.ai` / `punctuation.section.arguments.end.ai` - Function call parentheses
 
 ## Example
 
 ```ai
-provider ollama1 {
-    driver <- "ollama"
-    api_endpoint <- "http://localhost:11434"
-    models <- ["qwen3:8b"]
+provider ollama {
+    driver: "ollama"
+    endpoint: "http://127.0.0.1:11434"
+    models: ["qwen3:8b"]
+}
+
+schema Brief {
+    summary: string "Short release summary"
+    highlights: [string; 3] "Exactly three highlights"
 }
 
 input {
-    topic: string
+    product_name: string
     audience: string
+    release_highlights: [string]
 }
 
-agent research {
-    model <- "ollama1/qwen3:8b"
+agent release_summary {
+    model: ollama("qwen3:8b")
 
-    output <- {
-        summary: string
-        key_points: [string]
+    prompt: "Write a short release summary for {{ input.product_name }} using {{ input.release_highlights }}"
+
+    output: schema.Brief
+}
+
+agent audience_message {
+    model: ollama("qwen3:8b")
+    context: context(agent.release_summary)
+
+    inference: {
+        temperature: 0.2
     }
 
-    prompt <- "Research {{ input.topic }} for {{ input.audience }}"
-}
-
-<- agent report {
-    model <- "ollama1/qwen3:8b"
-
-    for_each <- agent.research.key_points as point
-
-    prompt <- """
-        Expand on this key point: {{ input.point }}
-        Write a detailed paragraph.
+    prompt: """
+        Write a launch message for {{ input.audience }}.
+        Summary: {{ agent.release_summary.summary }}
+        Highlights: {{ agent.release_summary.highlights }}
     """
+
+    output: string
 }
 
 output {
-    topic <- input.topic
-    summary <- agent.research.summary
+    brief: agent.release_summary
+    message: agent.audience_message
 }
 ```
 

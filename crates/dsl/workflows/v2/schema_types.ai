@@ -8,7 +8,7 @@ provider ollama {
 
 // Schema and field descriptions are preserved into JSON Schema
 // descriptions to help the LLM produce better structured output.
-schema AllTypes "Schema covering the supported type shapes" {
+schema AllTypes {
     string_value: string "A basic string value"
     number_value: number "A numeric value"
     float_value: float "A floating-point value"
@@ -44,12 +44,12 @@ schema AllTypes "Schema covering the supported type shapes" {
 }
 
 // A schema can be referenced inside another schema.
-schema Participant "A participant referenced by research artifacts" {
+schema Participant {
     name: string "Participant name"
     role: string "Participant role"
 }
 
-schema ResearchSummary "A reusable research summary object" {
+schema ResearchSummary {
     title: string "Research summary title"
     lead: schema.Participant "Primary participant for the summary"
     participants: [schema.Participant] "All participants included in the summary"

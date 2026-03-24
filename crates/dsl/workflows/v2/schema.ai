@@ -10,7 +10,7 @@ provider ollama {
 }
 
 // Named schema: define once, reuse across agents.
-schema Person "Research participant profile" {
+schema Person {
     name: string "Participant full name"
     age: number "Participant age in years"
     role: string "Participant role in the study"
