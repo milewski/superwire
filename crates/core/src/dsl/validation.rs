@@ -79,6 +79,24 @@ pub enum ValidationIssue {
         referenced_agent: String,
         context: ValidationContext,
     },
+    InvalidKeywordReferenceRoot {
+        keyword: ReferenceKeyword,
+        context: ValidationContext,
+    },
+    MissingInputDeclaration {
+        context: ValidationContext,
+    },
+    MissingSecretsDeclaration {
+        context: ValidationContext,
+    },
+    UnknownInputFieldReference {
+        field_name: String,
+        context: ValidationContext,
+    },
+    UnknownSecretsFieldReference {
+        field_name: String,
+        context: ValidationContext,
+    },
     UnknownSchemaReference {
         referenced_schema: String,
         context: ValidationContext,
@@ -98,6 +116,8 @@ struct ValidationIndex {
     provider_infos: HashMap<String, ProviderInfo>,
     agent_names: HashSet<String>,
     schema_names: HashSet<String>,
+    input_field_names: Option<HashSet<String>>,
+    secrets_field_names: Option<HashSet<String>>,
 }
 
 #[must_use]
@@ -155,7 +175,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     });
                 }
             }
-            Declaration::Input(_) => {
+            Declaration::Input(input_declaration) => {
                 if has_input_declaration {
                     validation_report.push_issue(ValidationIssue::DuplicateSingletonDeclaration {
                         declaration_kind: SingletonDeclarationKind::Input,
@@ -163,8 +183,18 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 }
 
                 has_input_declaration = true;
+
+                if validation_index.input_field_names.is_none() {
+                    validation_index.input_field_names = Some(
+                        input_declaration
+                            .fields
+                            .iter()
+                            .map(|typed_field| typed_field.name.clone())
+                            .collect(),
+                    );
+                }
             }
-            Declaration::Secrets(_) => {
+            Declaration::Secrets(secrets_declaration) => {
                 if has_secrets_declaration {
                     validation_report.push_issue(ValidationIssue::DuplicateSingletonDeclaration {
                         declaration_kind: SingletonDeclarationKind::Secrets,
@@ -172,6 +202,16 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 }
 
                 has_secrets_declaration = true;
+
+                if validation_index.secrets_field_names.is_none() {
+                    validation_index.secrets_field_names = Some(
+                        secrets_declaration
+                            .fields
+                            .iter()
+                            .map(|typed_field| typed_field.name.clone())
+                            .collect(),
+                    );
+                }
             }
             Declaration::Output(_) => {
                 if has_output_declaration {
@@ -442,7 +482,7 @@ fn extract_model_name(model_call: &FunctionCall) -> Option<String> {
 }
 
 fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
-    let mut unknown_agent_references = HashSet::new();
+    let mut keyword_reference_validation_state = KeywordReferenceValidationState::new(validation_index, validation_report);
 
     for declaration in workflow.declarations() {
         match declaration {
@@ -450,26 +490,14 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                 let provider_context = ValidationContext::Provider(provider_declaration.name.clone());
 
                 for provider_property in &provider_declaration.properties {
-                    validate_expression_for_agent_references(
-                        &provider_property.value,
-                        provider_context.clone(),
-                        validation_index,
-                        validation_report,
-                        &mut unknown_agent_references,
-                    );
+                    keyword_reference_validation_state.validate_expression(&provider_property.value, provider_context.clone());
                 }
             }
             Declaration::Agent(agent_declaration) => {
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
                 if let Some(agent_for_loop) = &agent_declaration.for_loop {
-                    validate_expression_for_agent_references(
-                        &agent_for_loop.iterable,
-                        agent_context.clone(),
-                        validation_index,
-                        validation_report,
-                        &mut unknown_agent_references,
-                    );
+                    keyword_reference_validation_state.validate_expression(&agent_for_loop.iterable, agent_context.clone());
                 }
 
                 for agent_property in &agent_declaration.properties {
@@ -483,13 +511,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                             name: _,
                             value: model_expression,
                         } => {
-                            validate_expression_for_agent_references(
-                                model_expression,
-                                agent_context.clone(),
-                                validation_index,
-                                validation_report,
-                                &mut unknown_agent_references,
-                            );
+                            keyword_reference_validation_state.validate_expression(model_expression, agent_context.clone());
                         }
                         AgentProperty::Output(_) => {}
                     }
@@ -497,13 +519,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
             }
             Declaration::Output(output_declaration) => {
                 for output_field in &output_declaration.fields {
-                    validate_expression_for_agent_references(
-                        &output_field.value,
-                        ValidationContext::Output,
-                        validation_index,
-                        validation_report,
-                        &mut unknown_agent_references,
-                    );
+                    keyword_reference_validation_state.validate_expression(&output_field.value, ValidationContext::Output);
                 }
             }
             Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) => {}
@@ -511,130 +527,164 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
     }
 }
 
-fn validate_expression_for_agent_references(
-    expression: &Expression,
-    context: ValidationContext,
-    validation_index: &ValidationIndex,
-    validation_report: &mut ValidationReport,
-    unknown_agent_references: &mut HashSet<(ValidationContext, String)>,
-) {
-    match expression {
-        Expression::Reference(reference) => {
-            validate_reference_for_agent(reference, context, validation_index, validation_report, unknown_agent_references);
-        }
-        Expression::FunctionCall(function_call) => {
-            validate_reference_for_agent(
-                &function_call.callee,
-                context.clone(),
-                validation_index,
-                validation_report,
-                unknown_agent_references,
-            );
+struct KeywordReferenceValidationState<'validation> {
+    validation_index: &'validation ValidationIndex,
+    validation_report: &'validation mut ValidationReport,
+    unknown_agent_references: HashSet<(ValidationContext, String)>,
+    invalid_keyword_reference_roots: HashSet<(ValidationContext, ReferenceKeyword)>,
+    missing_input_declaration_contexts: HashSet<ValidationContext>,
+    missing_secrets_declaration_contexts: HashSet<ValidationContext>,
+    unknown_input_field_references: HashSet<(ValidationContext, String)>,
+    unknown_secrets_field_references: HashSet<(ValidationContext, String)>,
+}
 
-            for call_argument in &function_call.arguments {
-                match call_argument {
-                    CallArgument::Positional(argument_expression) => {
-                        validate_expression_for_agent_references(
-                            argument_expression,
-                            context.clone(),
-                            validation_index,
-                            validation_report,
-                            unknown_agent_references,
-                        );
-                    }
-                    CallArgument::Named(named_argument) => {
-                        validate_expression_for_agent_references(
-                            &named_argument.value,
-                            context.clone(),
-                            validation_index,
-                            validation_report,
-                            unknown_agent_references,
-                        );
+impl<'validation> KeywordReferenceValidationState<'validation> {
+    fn new(validation_index: &'validation ValidationIndex, validation_report: &'validation mut ValidationReport) -> Self {
+        Self {
+            validation_index,
+            validation_report,
+            unknown_agent_references: HashSet::new(),
+            invalid_keyword_reference_roots: HashSet::new(),
+            missing_input_declaration_contexts: HashSet::new(),
+            missing_secrets_declaration_contexts: HashSet::new(),
+            unknown_input_field_references: HashSet::new(),
+            unknown_secrets_field_references: HashSet::new(),
+        }
+    }
+
+    fn validate_expression(&mut self, expression: &Expression, context: ValidationContext) {
+        match expression {
+            Expression::Reference(reference) => {
+                self.validate_reference(reference, context);
+            }
+            Expression::FunctionCall(function_call) => {
+                self.validate_reference(&function_call.callee, context.clone());
+
+                for call_argument in &function_call.arguments {
+                    match call_argument {
+                        CallArgument::Positional(argument_expression) => {
+                            self.validate_expression(argument_expression, context.clone());
+                        }
+                        CallArgument::Named(named_argument) => {
+                            self.validate_expression(&named_argument.value, context.clone());
+                        }
                     }
                 }
             }
-        }
-        Expression::ArrayLiteral(array_values) => {
-            for array_value in array_values {
-                validate_expression_for_agent_references(
-                    array_value,
-                    context.clone(),
-                    validation_index,
-                    validation_report,
-                    unknown_agent_references,
-                );
-            }
-        }
-        Expression::ObjectLiteral(object_fields) => {
-            for object_field in object_fields {
-                validate_expression_for_agent_references(
-                    &object_field.value,
-                    context.clone(),
-                    validation_index,
-                    validation_report,
-                    unknown_agent_references,
-                );
-            }
-        }
-        Expression::StringTemplate(string_template) => {
-            for string_template_part in &string_template.parts {
-                if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
-                    validate_expression_for_agent_references(
-                        interpolation_expression,
-                        context.clone(),
-                        validation_index,
-                        validation_report,
-                        unknown_agent_references,
-                    );
+            Expression::ArrayLiteral(array_values) => {
+                for array_value in array_values {
+                    self.validate_expression(array_value, context.clone());
                 }
             }
+            Expression::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    self.validate_expression(&object_field.value, context.clone());
+                }
+            }
+            Expression::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        self.validate_expression(interpolation_expression, context.clone());
+                    }
+                }
+            }
+            Expression::StringLiteral(_) | Expression::NumberLiteral(_) | Expression::BooleanLiteral(_) | Expression::NullLiteral => {}
         }
-        Expression::StringLiteral(_) | Expression::NumberLiteral(_) | Expression::BooleanLiteral(_) | Expression::NullLiteral => {}
-    }
-}
-
-fn validate_reference_for_agent(
-    reference: &Reference,
-    context: ValidationContext,
-    validation_index: &ValidationIndex,
-    validation_report: &mut ValidationReport,
-    unknown_agent_references: &mut HashSet<(ValidationContext, String)>,
-) {
-    if reference.root.keyword() != Some(ReferenceKeyword::Agent) {
-        return;
     }
 
-    let Some(first_access) = reference.accesses.first() else {
-        return;
-    };
+    fn validate_reference(&mut self, reference: &Reference, context: ValidationContext) {
+        let Some(reference_root_keyword) = reference.root.keyword() else {
+            return;
+        };
 
-    validate_agent_reference_name(
-        first_access.field.as_str(),
-        context,
-        validation_index,
-        validation_report,
-        unknown_agent_references,
-    );
-}
+        let Some(first_access) = reference.accesses.first() else {
+            let issue_key = (context.clone(), reference_root_keyword);
 
-fn validate_agent_reference_name(
-    referenced_agent_name: &str,
-    context: ValidationContext,
-    validation_index: &ValidationIndex,
-    validation_report: &mut ValidationReport,
-    unknown_agent_references: &mut HashSet<(ValidationContext, String)>,
-) {
-    if validation_index.agent_names.contains(referenced_agent_name) {
-        return;
+            if self.invalid_keyword_reference_roots.insert(issue_key) {
+                self.validation_report.push_issue(ValidationIssue::InvalidKeywordReferenceRoot {
+                    keyword: reference_root_keyword,
+                    context,
+                });
+            }
+
+            return;
+        };
+
+        match reference_root_keyword {
+            ReferenceKeyword::Agent => {
+                self.validate_agent_reference_name(first_access.field.as_str(), context);
+            }
+            ReferenceKeyword::Input => {
+                self.validate_input_reference_name(first_access.field.as_str(), context);
+            }
+            ReferenceKeyword::Secrets => {
+                self.validate_secrets_reference_name(first_access.field.as_str(), context);
+            }
+            ReferenceKeyword::Tool => {}
+        }
     }
 
-    let issue_key = (context.clone(), referenced_agent_name.to_owned());
+    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext) {
+        if self.validation_index.agent_names.contains(referenced_agent_name) {
+            return;
+        }
 
-    if unknown_agent_references.insert(issue_key) {
-        validation_report.push_issue(ValidationIssue::UnknownAgentReference {
-            referenced_agent: referenced_agent_name.to_owned(),
-            context,
-        });
+        let issue_key = (context.clone(), referenced_agent_name.to_owned());
+
+        if self.unknown_agent_references.insert(issue_key) {
+            self.validation_report.push_issue(ValidationIssue::UnknownAgentReference {
+                referenced_agent: referenced_agent_name.to_owned(),
+                context,
+            });
+        }
+    }
+
+    fn validate_input_reference_name(&mut self, referenced_field_name: &str, context: ValidationContext) {
+        let Some(input_field_names) = self.validation_index.input_field_names.as_ref() else {
+            if self.missing_input_declaration_contexts.insert(context.clone()) {
+                self.validation_report
+                    .push_issue(ValidationIssue::MissingInputDeclaration { context });
+            }
+
+            return;
+        };
+
+        if input_field_names.contains(referenced_field_name) {
+            return;
+        }
+
+        let issue_key = (context.clone(), referenced_field_name.to_owned());
+
+        if self.unknown_input_field_references.insert(issue_key) {
+            self.validation_report.push_issue(ValidationIssue::UnknownInputFieldReference {
+                field_name: referenced_field_name.to_owned(),
+                context,
+            });
+        }
+    }
+
+    fn validate_secrets_reference_name(&mut self, referenced_field_name: &str, context: ValidationContext) {
+        let Some(secrets_field_names) = self.validation_index.secrets_field_names.as_ref() else {
+            if self.missing_secrets_declaration_contexts.insert(context.clone()) {
+                self.validation_report
+                    .push_issue(ValidationIssue::MissingSecretsDeclaration { context });
+            }
+
+            return;
+        };
+
+        if secrets_field_names.contains(referenced_field_name) {
+            return;
+        }
+
+        let issue_key = (context.clone(), referenced_field_name.to_owned());
+
+        if self.unknown_secrets_field_references.insert(issue_key) {
+            self.validation_report.push_issue(ValidationIssue::UnknownSecretsFieldReference {
+                field_name: referenced_field_name.to_owned(),
+                context,
+            });
+        }
     }
 }
 
@@ -772,28 +822,27 @@ fn collect_agent_dependency_from_reference(reference: &Reference, referenced_age
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_workflow, ValidationContext, ValidationIssue};
+    use super::{validate_workflow, ReferenceKeyword, ValidationContext, ValidationIssue};
     use crate::dsl::macros::parse_inline_workflow;
 
-    macro_rules! assert_has_validation_issue {
-        ($validation_report:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
+    macro_rules! assert_issues_contain {
+        ($validation_issues:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
             assert!(
-                $validation_report
-                    .issues()
+                $validation_issues
                     .iter()
                     .any(|validation_issue| matches!(validation_issue, $issue_pattern $(if $guard)?)),
                 "expected matching validation issue; got {:?}",
-                $validation_report.issues()
+                $validation_issues
             );
         }};
     }
 
-    macro_rules! assert_has_agent_cycle_issue {
-        ($validation_report:expr, [$($agent_name:expr),+ $(,)?]) => {{
+    macro_rules! assert_issues_contain_agent_cycle {
+        ($validation_issues:expr, [$($agent_name:expr),+ $(,)?]) => {{
             let expected_agent_names = vec![$($agent_name.to_owned()),+];
 
-            assert_has_validation_issue!(
-                $validation_report,
+            assert_issues_contain!(
+                $validation_issues,
                 ValidationIssue::AgentDependencyCycle { agent_names }
                     if agent_names.len() == expected_agent_names.len()
                     && expected_agent_names
@@ -806,19 +855,12 @@ mod tests {
     #[test]
     fn reports_no_issues_for_valid_workflow() {
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
-
-            schema ResearchNote {
-                summary: string
+            input {
+                title: string
             }
 
             agent researcher {
-                model: openai("gpt-4.1-mini")
-                prompt: "Produce a short research note"
-                output: schema.ResearchNote
+                prompt: input.title
             }
 
             output {
@@ -833,19 +875,138 @@ mod tests {
     }
 
     #[test]
-    fn reports_unknown_provider_for_agent_model() {
+    fn reports_missing_input_declaration_for_input_reference() {
         let workflow = parse_inline_workflow! {
             agent researcher {
-                model: missing_provider("gpt-4.1-mini")
-                prompt: "Produce a short research note"
-                output: string
+                prompt: input.topic
             }
         };
 
         let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
 
-        assert_has_validation_issue!(
-            validation_report,
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::MissingInputDeclaration { context }
+                if *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_unknown_input_field_reference() {
+        let workflow = parse_inline_workflow! {
+            input {
+                title: string
+            }
+
+            agent researcher {
+                prompt: input.topic
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::UnknownInputFieldReference { field_name, context }
+                if field_name == "topic" && *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_missing_secrets_declaration_for_secrets_reference() {
+        let workflow = parse_inline_workflow! {
+            agent researcher {
+                prompt: secrets.api_key
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::MissingSecretsDeclaration { context }
+                if *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_unknown_secrets_field_reference() {
+        let workflow = parse_inline_workflow! {
+            secrets {
+                openai_key: string
+            }
+
+            agent researcher {
+                prompt: secrets.api_key
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::UnknownSecretsFieldReference { field_name, context }
+                if field_name == "api_key" && *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_invalid_bare_keyword_root_references() {
+        let workflow = parse_inline_workflow! {
+            agent researcher {
+                prompt: input
+            }
+
+            agent tooling {
+                tools: [tool]
+            }
+
+            output {
+                final: agent
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
+                if *keyword == ReferenceKeyword::Input
+                    && *context == ValidationContext::Agent("researcher".to_owned())
+        );
+
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
+                if *keyword == ReferenceKeyword::Tool
+                    && *context == ValidationContext::Agent("tooling".to_owned())
+        );
+
+        assert_issues_contain!(
+            validation_issues,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
+                if *keyword == ReferenceKeyword::Agent && *context == ValidationContext::Output
+        );
+    }
+
+    #[test]
+    fn reports_unknown_provider_for_agent_model() {
+        let workflow = parse_inline_workflow! {
+            agent researcher {
+                model: missing_provider("gpt-4.1-mini")
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain!(
+            validation_issues,
             ValidationIssue::UnknownProviderInModel {
                 agent_name,
                 provider_name
@@ -863,15 +1024,14 @@ mod tests {
 
             agent researcher {
                 model: openai("gpt-4.1")
-                prompt: "Produce a short research note"
-                output: string
             }
         };
 
         let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
 
-        assert_has_validation_issue!(
-            validation_report,
+        assert_issues_contain!(
+            validation_issues,
             ValidationIssue::UnknownModelForProvider {
                 agent_name,
                 provider_name,
@@ -883,26 +1043,16 @@ mod tests {
     #[test]
     fn reports_unknown_agent_references() {
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
-
-            agent researcher {
-                model: openai("gpt-4.1-mini")
-                prompt: "Produce a short research note"
-                output: string
-            }
-
             output {
                 note: agent.missing_agent
             }
         };
 
         let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
 
-        assert_has_validation_issue!(
-            validation_report,
+        assert_issues_contain!(
+            validation_issues,
             ValidationIssue::UnknownAgentReference {
                 referenced_agent,
                 context
@@ -919,9 +1069,10 @@ mod tests {
         };
 
         let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
 
-        assert_has_validation_issue!(
-            validation_report,
+        assert_issues_contain!(
+            validation_issues,
             ValidationIssue::UnknownSchemaReference {
                 referenced_schema,
                 context
@@ -933,48 +1084,36 @@ mod tests {
     #[test]
     fn reports_agent_dependency_cycles() {
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
-
             agent alpha {
-                model: openai("gpt-4.1-mini")
                 prompt: agent.beta
-                output: string
             }
 
             agent beta {
-                model: openai("gpt-4.1-mini")
                 prompt: agent.alpha
-                output: string
             }
         };
 
-        assert_has_agent_cycle_issue!(validate_workflow(&workflow), ["alpha", "beta"]);
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain_agent_cycle!(validation_issues, ["alpha", "beta"]);
     }
 
     #[test]
     fn reports_agent_dependency_cycles_from_interpolated_prompt_bindings() {
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
-
             agent alpha {
-                model: openai("gpt-4.1-mini")
                 prompt: "Something {{ agent.beta }}"
-                output: string
             }
 
             agent beta {
-                model: openai("gpt-4.1-mini")
                 prompt: "Something {{ agent.alpha }}"
-                output: string
             }
         };
 
-        assert_has_agent_cycle_issue!(validate_workflow(&workflow), ["alpha", "beta"]);
+        let validation_report = validate_workflow(&workflow);
+        let validation_issues = validation_report.issues();
+
+        assert_issues_contain_agent_cycle!(validation_issues, ["alpha", "beta"]);
     }
 }
