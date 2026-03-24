@@ -1,3 +1,15 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SourcePosition {
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SourceSpan {
+    pub start: SourcePosition,
+    pub end: SourcePosition,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workflow {
     pub declarations: Vec<Declaration>,
@@ -72,22 +84,26 @@ pub enum Declaration {
 pub struct ProviderDeclaration {
     pub name: String,
     pub properties: Vec<ObjectField>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SecretsDeclaration {
     pub fields: Vec<TypedField>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputDeclaration {
     pub fields: Vec<TypedField>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaDeclaration {
     pub name: String,
     pub fields: Vec<TypedField>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +111,7 @@ pub struct AgentDeclaration {
     pub name: String,
     pub for_loop: Option<AgentForLoop>,
     pub properties: Vec<AgentProperty>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +134,7 @@ pub enum AgentProperty {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputDeclaration {
     pub fields: Vec<ObjectField>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +142,7 @@ pub struct TypedField {
     pub name: String,
     pub field_type: TypeExpression,
     pub description: Option<String>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +215,7 @@ pub struct NamedArgument {
 pub struct Reference {
     pub root: ReferenceRoot,
     pub accesses: Vec<ReferenceAccess>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

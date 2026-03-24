@@ -1,5 +1,6 @@
-use super::ast::Workflow;
+use super::ast::{SourcePosition, SourceSpan, Workflow};
 use super::visitor::AstVisitor;
+use pest::error::LineColLocation;
 use pest_derive::Parser;
 use thiserror::Error;
 
@@ -9,41 +10,112 @@ pub struct Parser;
 
 #[derive(Debug, Error)]
 pub enum DslParseError {
-    #[error("failed to parse DSL: {message}")]
-    Pest { message: String },
+    #[error("failed to parse DSL: {message} at {span:?}")]
+    Pest { message: String, span: SourceSpan },
 
-    #[error("missing {expected} while parsing {context}")]
-    MissingNode { expected: &'static str, context: &'static str },
+    #[error("missing {expected} while parsing {context} at {span:?}")]
+    MissingNode {
+        expected: &'static str,
+        context: &'static str,
+        span: Option<SourceSpan>,
+    },
 
-    #[error("unexpected rule {rule:?} while parsing {context}")]
-    UnexpectedRule { rule: Rule, context: &'static str },
+    #[error("unexpected rule {rule:?} while parsing {context} at {span:?}")]
+    UnexpectedRule {
+        rule: Rule,
+        context: &'static str,
+        span: Option<SourceSpan>,
+    },
 
-    #[error("invalid integer literal `{literal}` while parsing {context}")]
-    InvalidIntegerLiteral { literal: String, context: &'static str },
+    #[error("invalid integer literal `{literal}` while parsing {context} at {span:?}")]
+    InvalidIntegerLiteral {
+        literal: String,
+        context: &'static str,
+        span: Option<SourceSpan>,
+    },
 }
 
 impl DslParseError {
     #[must_use]
     pub fn from_pest_error(parse_error: pest::error::Error<Rule>) -> Self {
+        let span = match parse_error.line_col {
+            LineColLocation::Pos((line, column)) => SourceSpan {
+                start: SourcePosition { line, column },
+                end: SourcePosition { line, column },
+            },
+            LineColLocation::Span((start_line, start_column), (end_line, end_column)) => SourceSpan {
+                start: SourcePosition {
+                    line: start_line,
+                    column: start_column,
+                },
+                end: SourcePosition {
+                    line: end_line,
+                    column: end_column,
+                },
+            },
+        };
+
         Self::Pest {
             message: parse_error.to_string(),
+            span,
         }
     }
 
     #[must_use]
     pub fn missing(expected: &'static str, context: &'static str) -> Self {
-        Self::MissingNode { expected, context }
+        Self::MissingNode {
+            expected,
+            context,
+            span: None,
+        }
+    }
+
+    #[must_use]
+    pub fn missing_with_span(expected: &'static str, context: &'static str, span: SourceSpan) -> Self {
+        Self::MissingNode {
+            expected,
+            context,
+            span: Some(span),
+        }
     }
 
     #[must_use]
     pub fn unexpected(rule: Rule, context: &'static str) -> Self {
-        Self::UnexpectedRule { rule, context }
+        Self::UnexpectedRule { rule, context, span: None }
+    }
+
+    #[must_use]
+    pub fn unexpected_with_span(rule: Rule, context: &'static str, span: SourceSpan) -> Self {
+        Self::UnexpectedRule {
+            rule,
+            context,
+            span: Some(span),
+        }
     }
 
     pub fn invalid_integer_literal(literal: impl Into<String>, context: &'static str) -> Self {
         Self::InvalidIntegerLiteral {
             literal: literal.into(),
             context,
+            span: None,
+        }
+    }
+
+    pub fn invalid_integer_literal_with_span(literal: impl Into<String>, context: &'static str, span: SourceSpan) -> Self {
+        Self::InvalidIntegerLiteral {
+            literal: literal.into(),
+            context,
+            span: Some(span),
+        }
+    }
+
+    #[must_use]
+    pub fn span(&self) -> Option<SourceSpan> {
+        match self {
+            Self::Pest { span, .. } => Some(*span),
+            Self::MissingNode { span, .. } => *span,
+            Self::UnexpectedRule { span, .. } => *span,
+            Self::InvalidIntegerLiteral { span, .. } => *span,
         }
     }
 }
@@ -63,7 +135,7 @@ mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
-        AgentProperty, CallArgument, Declaration, Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
+        AgentProperty, CallArgument, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
         TypeExpression,
     };
     use std::fs;
@@ -153,22 +225,12 @@ mod tests {
 
         match &loop_definition.iterable {
             Expression::Reference(reference) => {
-                assert_eq!(
-                    reference,
-                    &Reference {
-                        root: ReferenceRoot::Keyword(ReferenceKeyword::Agent),
-                        accesses: vec![
-                            crate::dsl::ReferenceAccess {
-                                field: "findings".to_owned(),
-                                optional: false,
-                            },
-                            crate::dsl::ReferenceAccess {
-                                field: "items".to_owned(),
-                                optional: false,
-                            },
-                        ],
-                    }
-                );
+                assert_eq!(reference.root, ReferenceRoot::Keyword(ReferenceKeyword::Agent));
+                assert_eq!(reference.accesses.len(), 2);
+                assert_eq!(reference.accesses[0].field, "findings");
+                assert!(!reference.accesses[0].optional);
+                assert_eq!(reference.accesses[1].field, "items");
+                assert!(!reference.accesses[1].optional);
             }
             _ => panic!("loop iterable should be a reference"),
         }
@@ -347,6 +409,36 @@ mod tests {
         );
 
         assert!(parse_result.is_err());
+    }
+
+    #[test]
+    fn parse_errors_include_span_for_invalid_token() {
+        let parse_result = parse_workflow("agent a {\n    prompt: \"hello\"\n}\n@\n");
+
+        let parse_error = parse_result.expect_err("workflow should fail to parse");
+        let parse_error_span = parse_error.span().expect("parse errors should include source span");
+
+        assert_eq!(parse_error_span.start.line, 4);
+        assert_eq!(parse_error_span.start.column, 1);
+    }
+
+    #[test]
+    fn parse_errors_include_span_for_invalid_integer_literal() {
+        let parse_result = parse_workflow("schema TooLarge {\n    ids: [string; 184467440737095516160]\n}\n");
+
+        let parse_error = parse_result.expect_err("workflow should fail to parse");
+
+        match parse_error {
+            DslParseError::InvalidIntegerLiteral { literal, context: _, span } => {
+                assert_eq!(literal, "184467440737095516160");
+
+                let integer_span = span.expect("invalid integer diagnostics should include source span");
+
+                assert_eq!(integer_span.start.line, 2);
+                assert_eq!(integer_span.start.column, 19);
+            }
+            _ => panic!("expected invalid integer literal error"),
+        }
     }
 
     fn discover_workflow_examples() -> Vec<(String, String)> {

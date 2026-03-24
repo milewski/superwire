@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, StringTemplatePart,
-    TypeExpression, TypedField, Workflow,
+    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, SourceSpan,
+    StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ValidationReport {
     issues: Vec<ValidationIssue>,
+    spans: Vec<Option<SourceSpan>>,
 }
 
 impl ValidationReport {
@@ -27,8 +28,17 @@ impl ValidationReport {
         &self.issues
     }
 
+    pub fn issues_with_spans(&self) -> impl Iterator<Item = (&ValidationIssue, Option<SourceSpan>)> + '_ {
+        self.issues.iter().zip(self.spans.iter().copied())
+    }
+
     fn push_issue(&mut self, issue: ValidationIssue) {
+        self.push_issue_with_span(issue, None);
+    }
+
+    fn push_issue_with_span(&mut self, issue: ValidationIssue, span: Option<SourceSpan>) {
         self.issues.push(issue);
+        self.spans.push(span);
     }
 }
 
@@ -161,7 +171,10 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 let provider_name = provider_declaration.name.clone();
 
                 if validation_index.provider_infos.contains_key(&provider_name) {
-                    validation_report.push_issue(ValidationIssue::DuplicateProvider { provider_name });
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateProvider { provider_name },
+                        Some(provider_declaration.span),
+                    );
 
                     continue;
                 }
@@ -176,9 +189,12 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 let inserted_schema = validation_index.schema_names.insert(schema_declaration.name.clone());
 
                 if !inserted_schema {
-                    validation_report.push_issue(ValidationIssue::DuplicateSchema {
-                        schema_name: schema_declaration.name.clone(),
-                    });
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateSchema {
+                            schema_name: schema_declaration.name.clone(),
+                        },
+                        Some(schema_declaration.span),
+                    );
 
                     continue;
                 }
@@ -192,9 +208,12 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
 
                 if !inserted_agent {
-                    validation_report.push_issue(ValidationIssue::DuplicateAgent {
-                        agent_name: agent_declaration.name.clone(),
-                    });
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateAgent {
+                            agent_name: agent_declaration.name.clone(),
+                        },
+                        Some(agent_declaration.span),
+                    );
 
                     continue;
                 }
@@ -206,9 +225,12 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             }
             Declaration::Input(input_declaration) => {
                 if has_input_declaration {
-                    validation_report.push_issue(ValidationIssue::DuplicateSingletonDeclaration {
-                        declaration_kind: SingletonDeclarationKind::Input,
-                    });
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateSingletonDeclaration {
+                            declaration_kind: SingletonDeclarationKind::Input,
+                        },
+                        Some(input_declaration.span),
+                    );
                 }
 
                 has_input_declaration = true;
@@ -219,9 +241,12 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             }
             Declaration::Secrets(secrets_declaration) => {
                 if has_secrets_declaration {
-                    validation_report.push_issue(ValidationIssue::DuplicateSingletonDeclaration {
-                        declaration_kind: SingletonDeclarationKind::Secrets,
-                    });
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateSingletonDeclaration {
+                            declaration_kind: SingletonDeclarationKind::Secrets,
+                        },
+                        Some(secrets_declaration.span),
+                    );
                 }
 
                 has_secrets_declaration = true;
@@ -230,11 +255,14 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     validation_index.secrets_field_types = Some(collect_field_types(secrets_declaration.fields.as_slice()));
                 }
             }
-            Declaration::Output(_) => {
+            Declaration::Output(output_declaration) => {
                 if has_output_declaration {
-                    validation_report.push_issue(ValidationIssue::DuplicateSingletonDeclaration {
-                        declaration_kind: SingletonDeclarationKind::Output,
-                    });
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateSingletonDeclaration {
+                            declaration_kind: SingletonDeclarationKind::Output,
+                        },
+                        Some(output_declaration.span),
+                    );
                 }
 
                 has_output_declaration = true;
@@ -294,6 +322,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     validate_type_expression_for_schemas(
                         &typed_field.field_type,
                         ValidationContext::Input,
+                        Some(typed_field.span),
                         validation_index,
                         validation_report,
                         &mut unknown_schema_references,
@@ -305,6 +334,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     validate_type_expression_for_schemas(
                         &typed_field.field_type,
                         ValidationContext::Secrets,
+                        Some(typed_field.span),
                         validation_index,
                         validation_report,
                         &mut unknown_schema_references,
@@ -318,6 +348,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     validate_type_expression_for_schemas(
                         &typed_field.field_type,
                         schema_context.clone(),
+                        Some(typed_field.span),
                         validation_index,
                         validation_report,
                         &mut unknown_schema_references,
@@ -332,6 +363,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                         validate_type_expression_for_schemas(
                             output_type,
                             agent_context.clone(),
+                            Some(agent_declaration.span),
                             validation_index,
                             validation_report,
                             &mut unknown_schema_references,
@@ -347,6 +379,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
 fn validate_type_expression_for_schemas(
     type_expression: &TypeExpression,
     context: ValidationContext,
+    span: Option<SourceSpan>,
     validation_index: &ValidationIndex,
     validation_report: &mut ValidationReport,
     unknown_schema_references: &mut HashSet<(ValidationContext, String)>,
@@ -360,23 +393,34 @@ fn validate_type_expression_for_schemas(
             let issue_key = (context.clone(), referenced_schema_name.clone());
 
             if unknown_schema_references.insert(issue_key) {
-                validation_report.push_issue(ValidationIssue::UnknownSchemaReference {
-                    referenced_schema: referenced_schema_name.clone(),
-                    context,
-                });
+                validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownSchemaReference {
+                        referenced_schema: referenced_schema_name.clone(),
+                        context,
+                    },
+                    span,
+                );
             }
         }
         TypeExpression::Array {
             item_type,
             fixed_length: _,
         } => {
-            validate_type_expression_for_schemas(item_type, context, validation_index, validation_report, unknown_schema_references);
+            validate_type_expression_for_schemas(
+                item_type,
+                context,
+                span,
+                validation_index,
+                validation_report,
+                unknown_schema_references,
+            );
         }
         TypeExpression::Tuple(type_expressions) | TypeExpression::Union(type_expressions) => {
             for nested_type_expression in type_expressions {
                 validate_type_expression_for_schemas(
                     nested_type_expression,
                     context.clone(),
+                    span,
                     validation_index,
                     validation_report,
                     unknown_schema_references,
@@ -388,6 +432,7 @@ fn validate_type_expression_for_schemas(
                 validate_type_expression_for_schemas(
                     &object_field.field_type,
                     context.clone(),
+                    span,
                     validation_index,
                     validation_report,
                     unknown_schema_references,
@@ -414,7 +459,13 @@ fn validate_agent_model_bindings(workflow: &Workflow, validation_index: &Validat
                 continue;
             };
 
-            validate_model_expression(&agent_declaration.name, model_expression, validation_index, validation_report);
+            validate_model_expression(
+                &agent_declaration.name,
+                model_expression,
+                Some(agent_declaration.span),
+                validation_index,
+                validation_report,
+            );
         }
     }
 }
@@ -422,21 +473,30 @@ fn validate_agent_model_bindings(workflow: &Workflow, validation_index: &Validat
 fn validate_model_expression(
     agent_name: &str,
     model_expression: &Expression,
+    declaration_span: Option<SourceSpan>,
     validation_index: &ValidationIndex,
     validation_report: &mut ValidationReport,
 ) {
     let Expression::FunctionCall(model_call) = model_expression else {
-        validation_report.push_issue(ValidationIssue::InvalidModelExpression {
-            agent_name: agent_name.to_owned(),
-        });
+        validation_report.push_issue_with_span(
+            ValidationIssue::InvalidModelExpression {
+                agent_name: agent_name.to_owned(),
+            },
+            declaration_span,
+        );
 
         return;
     };
 
+    let model_span = Some(model_call.callee.span);
+
     if !model_call.callee.accesses.is_empty() {
-        validation_report.push_issue(ValidationIssue::InvalidModelExpression {
-            agent_name: agent_name.to_owned(),
-        });
+        validation_report.push_issue_with_span(
+            ValidationIssue::InvalidModelExpression {
+                agent_name: agent_name.to_owned(),
+            },
+            model_span,
+        );
 
         return;
     }
@@ -448,10 +508,13 @@ fn validate_model_expression(
             .keyword()
             .expect("non-identifier reference root should be a keyword");
 
-        validation_report.push_issue(ValidationIssue::UnknownProviderInModel {
-            agent_name: agent_name.to_owned(),
-            provider_name: provider_root_keyword.as_str().to_owned(),
-        });
+        validation_report.push_issue_with_span(
+            ValidationIssue::UnknownProviderInModel {
+                agent_name: agent_name.to_owned(),
+                provider_name: provider_root_keyword.as_str().to_owned(),
+            },
+            model_span,
+        );
 
         return;
     }
@@ -464,18 +527,24 @@ fn validate_model_expression(
         .to_owned();
 
     let Some(provider_info) = validation_index.provider_infos.get(&provider_name) else {
-        validation_report.push_issue(ValidationIssue::UnknownProviderInModel {
-            agent_name: agent_name.to_owned(),
-            provider_name,
-        });
+        validation_report.push_issue_with_span(
+            ValidationIssue::UnknownProviderInModel {
+                agent_name: agent_name.to_owned(),
+                provider_name,
+            },
+            model_span,
+        );
 
         return;
     };
 
     let Some(model_name) = extract_model_name(model_call) else {
-        validation_report.push_issue(ValidationIssue::InvalidModelExpression {
-            agent_name: agent_name.to_owned(),
-        });
+        validation_report.push_issue_with_span(
+            ValidationIssue::InvalidModelExpression {
+                agent_name: agent_name.to_owned(),
+            },
+            model_span,
+        );
 
         return;
     };
@@ -488,11 +557,14 @@ fn validate_model_expression(
         return;
     }
 
-    validation_report.push_issue(ValidationIssue::UnknownModelForProvider {
-        agent_name: agent_name.to_owned(),
-        provider_name,
-        model_name,
-    });
+    validation_report.push_issue_with_span(
+        ValidationIssue::UnknownModelForProvider {
+            agent_name: agent_name.to_owned(),
+            provider_name,
+            model_name,
+        },
+        model_span,
+    );
 }
 
 fn extract_model_name(model_call: &FunctionCall) -> Option<String> {
@@ -672,10 +744,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let issue_key = (context.clone(), reference_root_keyword);
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
-                self.validation_report.push_issue(ValidationIssue::InvalidKeywordReferenceRoot {
-                    keyword: reference_root_keyword,
-                    context,
-                });
+                self.validation_report.push_issue_with_span(
+                    ValidationIssue::InvalidKeywordReferenceRoot {
+                        keyword: reference_root_keyword,
+                        context,
+                    },
+                    Some(reference.span),
+                );
             }
 
             return;
@@ -703,7 +778,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             .field
             .as_str();
 
-        if !self.validate_agent_reference_name(referenced_agent_name, context.clone()) {
+        if !self.validate_agent_reference_name(referenced_agent_name, context.clone(), Some(reference.span)) {
             return;
         }
 
@@ -720,11 +795,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let issue_key = (context.clone(), referenced_agent_name.to_owned());
 
             if self.missing_agent_output_type_references.insert(issue_key) {
-                self.validation_report
-                    .push_issue(ValidationIssue::MissingAgentOutputTypeForFieldReference {
+                self.validation_report.push_issue_with_span(
+                    ValidationIssue::MissingAgentOutputTypeForFieldReference {
                         agent_name: referenced_agent_name.to_owned(),
                         context,
-                    });
+                    },
+                    Some(reference.span),
+                );
             }
 
             return;
@@ -744,7 +821,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let Some(input_field_types) = self.validation_index.input_field_types.as_ref() else {
             if self.missing_input_declaration_contexts.insert(context.clone()) {
                 self.validation_report
-                    .push_issue(ValidationIssue::MissingInputDeclaration { context });
+                    .push_issue_with_span(ValidationIssue::MissingInputDeclaration { context }, Some(reference.span));
             }
 
             return;
@@ -754,10 +831,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let issue_key = (context.clone(), referenced_field_name.to_owned());
 
             if self.unknown_input_field_references.insert(issue_key) {
-                self.validation_report.push_issue(ValidationIssue::UnknownInputFieldReference {
-                    field_name: referenced_field_name.to_owned(),
-                    context,
-                });
+                self.validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownInputFieldReference {
+                        field_name: referenced_field_name.to_owned(),
+                        context,
+                    },
+                    Some(reference.span),
+                );
             }
 
             return;
@@ -781,7 +861,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let Some(secrets_field_types) = self.validation_index.secrets_field_types.as_ref() else {
             if self.missing_secrets_declaration_contexts.insert(context.clone()) {
                 self.validation_report
-                    .push_issue(ValidationIssue::MissingSecretsDeclaration { context });
+                    .push_issue_with_span(ValidationIssue::MissingSecretsDeclaration { context }, Some(reference.span));
             }
 
             return;
@@ -791,10 +871,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let issue_key = (context.clone(), referenced_field_name.to_owned());
 
             if self.unknown_secrets_field_references.insert(issue_key) {
-                self.validation_report.push_issue(ValidationIssue::UnknownSecretsFieldReference {
-                    field_name: referenced_field_name.to_owned(),
-                    context,
-                });
+                self.validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownSecretsFieldReference {
+                        field_name: referenced_field_name.to_owned(),
+                        context,
+                    },
+                    Some(reference.span),
+                );
             }
 
             return;
@@ -828,11 +911,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
                 if self.invalid_reference_paths.insert(issue_key) {
-                    self.validation_report.push_issue(ValidationIssue::InvalidReferencePath {
-                        reference_path,
-                        invalid_field: reference_access.field.clone(),
-                        context,
-                    });
+                    self.validation_report.push_issue_with_span(
+                        ValidationIssue::InvalidReferencePath {
+                            reference_path,
+                            invalid_field: reference_access.field.clone(),
+                            context,
+                        },
+                        Some(reference.span),
+                    );
                 }
 
                 return;
@@ -908,12 +994,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let issue_key = (context.clone(), reference_path.clone());
 
         if self.secret_reference_leaks.insert(issue_key) {
-            self.validation_report
-                .push_issue(ValidationIssue::SecretReferenceInLlmContext { reference_path, context });
+            self.validation_report.push_issue_with_span(
+                ValidationIssue::SecretReferenceInLlmContext { reference_path, context },
+                Some(reference.span),
+            );
         }
     }
 
-    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext) -> bool {
+    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext, span: Option<SourceSpan>) -> bool {
         if self.validation_index.agent_names.contains(referenced_agent_name) {
             return true;
         }
@@ -921,10 +1009,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let issue_key = (context.clone(), referenced_agent_name.to_owned());
 
         if self.unknown_agent_references.insert(issue_key) {
-            self.validation_report.push_issue(ValidationIssue::UnknownAgentReference {
-                referenced_agent: referenced_agent_name.to_owned(),
-                context,
-            });
+            self.validation_report.push_issue_with_span(
+                ValidationIssue::UnknownAgentReference {
+                    referenced_agent: referenced_agent_name.to_owned(),
+                    context,
+                },
+                span,
+            );
         }
 
         false
@@ -1067,6 +1158,7 @@ fn collect_agent_dependency_from_reference(reference: &Reference, referenced_age
 mod tests {
     use super::{validate_workflow, ReferenceKeyword, SingletonDeclarationKind, ValidationContext, ValidationIssue};
     use crate::dsl::macros::parse_inline_workflow;
+    use crate::dsl::parse_workflow;
 
     macro_rules! assert_issues_contain {
         ($validation_issues:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
@@ -1147,6 +1239,24 @@ mod tests {
             ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User",
             ValidationIssue::DuplicateAgent { agent_name } if agent_name == "researcher"
         );
+    }
+
+    #[test]
+    fn duplicate_schema_diagnostics_include_declaration_span() {
+        let workflow_source = "schema User { name: string }\nschema User { id: string }\n";
+        let workflow = parse_workflow(workflow_source).expect("workflow should parse");
+        let validation_report = validate_workflow(&workflow);
+
+        let duplicate_schema_span = validation_report
+            .issues_with_spans()
+            .find_map(|(validation_issue, issue_span)| match validation_issue {
+                ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User" => issue_span,
+                _ => None,
+            })
+            .expect("duplicate schema diagnostics should include span");
+
+        assert_eq!(duplicate_schema_span.start.line, 2);
+        assert_eq!(duplicate_schema_span.start.column, 1);
     }
 
     #[test]
@@ -1275,6 +1385,24 @@ mod tests {
             ValidationIssue::UnknownInputFieldReference { field_name, context }
                 if field_name == "topic" && *context == ValidationContext::Agent("researcher".to_owned())
         );
+    }
+
+    #[test]
+    fn reference_diagnostics_include_reference_span() {
+        let workflow_source = "input {\n    title: string\n}\n\nagent researcher {\n    prompt: input.topic\n}\n";
+        let workflow = parse_workflow(workflow_source).expect("workflow should parse");
+        let validation_report = validate_workflow(&workflow);
+
+        let unknown_input_field_span = validation_report
+            .issues_with_spans()
+            .find_map(|(validation_issue, issue_span)| match validation_issue {
+                ValidationIssue::UnknownInputFieldReference { field_name, .. } if field_name == "topic" => issue_span,
+                _ => None,
+            })
+            .expect("unknown input field diagnostics should include span");
+
+        assert_eq!(unknown_input_field_span.start.line, 6);
+        assert_eq!(unknown_input_field_span.start.column, 13);
     }
 
     #[test]
