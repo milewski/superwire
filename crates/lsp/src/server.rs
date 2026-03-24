@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use engine_ai_dsl::{builtin_symbols, lookup_symbol, SymbolCategory, SymbolDoc};
+use engine_ai_core::{builtin_symbols, lookup_symbol, SymbolCategory, SymbolDoc};
 use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};

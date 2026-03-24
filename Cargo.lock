@@ -659,10 +659,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-ai-dsl"
-version = "0.1.0"
-
-[[package]]
 name = "engine-ai-js"
 version = "0.1.0"
 dependencies = [
@@ -680,7 +676,7 @@ name = "engine-ai-lsp"
 version = "0.1.0"
 dependencies = [
  "colog",
- "engine-ai-dsl",
+ "engine-ai-core",
  "log",
  "regex",
  "serde",
