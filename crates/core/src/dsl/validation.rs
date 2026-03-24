@@ -837,21 +837,6 @@ mod tests {
         }};
     }
 
-    macro_rules! assert_issues_contain_agent_cycle {
-        ($validation_issues:expr, [$($agent_name:expr),+ $(,)?]) => {{
-            let expected_agent_names = vec![$($agent_name.to_owned()),+];
-
-            assert_issues_contain!(
-                $validation_issues,
-                ValidationIssue::AgentDependencyCycle { agent_names }
-                    if agent_names.len() == expected_agent_names.len()
-                    && expected_agent_names
-                        .iter()
-                        .all(|expected_agent_name| agent_names.contains(expected_agent_name))
-            );
-        }};
-    }
-
     macro_rules! assert_workflow_issues_contain {
         ($workflow:expr, $($issue_pattern:pat $(if $guard:expr)?),+ $(,)?) => {{
             let validation_report = validate_workflow(&$workflow);
@@ -860,15 +845,6 @@ mod tests {
             $(
                 assert_issues_contain!(validation_issues, $issue_pattern $(if $guard)?);
             )+
-        }};
-    }
-
-    macro_rules! assert_workflow_issues_contain_agent_cycle {
-        ($workflow:expr, [$($agent_name:expr),+ $(,)?]) => {{
-            let validation_report = validate_workflow(&$workflow);
-            let validation_issues = validation_report.issues();
-
-            assert_issues_contain_agent_cycle!(validation_issues, [$($agent_name),+]);
         }};
     }
 
@@ -1078,7 +1054,13 @@ mod tests {
             }
         };
 
-        assert_workflow_issues_contain_agent_cycle!(workflow, ["alpha", "beta"]);
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::AgentDependencyCycle { agent_names }
+                if agent_names.len() == 2
+                    && agent_names.contains(&"alpha".to_owned())
+                    && agent_names.contains(&"beta".to_owned())
+        );
     }
 
     #[test]
@@ -1093,6 +1075,12 @@ mod tests {
             }
         };
 
-        assert_workflow_issues_contain_agent_cycle!(workflow, ["alpha", "beta"]);
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::AgentDependencyCycle { agent_names }
+                if agent_names.len() == 2
+                    && agent_names.contains(&"alpha".to_owned())
+                    && agent_names.contains(&"beta".to_owned())
+        );
     }
 }
