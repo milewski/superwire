@@ -3,6 +3,61 @@ pub struct Workflow {
     pub declarations: Vec<Declaration>,
 }
 
+impl Workflow {
+    #[must_use]
+    pub fn declarations(&self) -> &[Declaration] {
+        &self.declarations
+    }
+
+    #[must_use]
+    pub fn find_provider(&self, provider_name: &str) -> Option<&ProviderDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Provider(provider_declaration) if provider_declaration.name == provider_name => Some(provider_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn find_secrets(&self) -> Option<&SecretsDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Secrets(secrets_declaration) => Some(secrets_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn find_input(&self) -> Option<&InputDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Input(input_declaration) => Some(input_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn find_schema(&self, schema_name: &str) -> Option<&SchemaDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Schema(schema_declaration) if schema_declaration.name == schema_name => Some(schema_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn find_agent(&self, agent_name: &str) -> Option<&AgentDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Agent(agent_declaration) if agent_declaration.name == agent_name => Some(agent_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn find_output(&self) -> Option<&OutputDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Output(output_declaration) => Some(output_declaration),
+            _ => None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Declaration {
     Provider(ProviderDeclaration),

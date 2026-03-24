@@ -145,7 +145,10 @@ mod tests {
             }
         };
 
-        let remediation_plan_agent = find_agent_declaration(&workflow.declarations, "remediation_plan");
+        let remediation_plan_agent = workflow
+            .find_agent("remediation_plan")
+            .expect("missing agent declaration: remediation_plan");
+
         let loop_definition = remediation_plan_agent
             .for_loop
             .as_ref()
@@ -188,7 +191,10 @@ mod tests {
             }
         };
 
-        let tools_agent = find_agent_declaration(&workflow.declarations, "assistant_with_tools");
+        let tools_agent = workflow
+            .find_agent("assistant_with_tools")
+            .expect("missing agent declaration: assistant_with_tools");
+
         let tools_property = tools_agent
             .properties
             .iter()
@@ -239,7 +245,8 @@ mod tests {
             }
         };
 
-        let all_types_schema = find_schema_declaration(&workflow.declarations, "AllTypes");
+        let all_types_schema = workflow.find_schema("AllTypes").expect("missing schema declaration: AllTypes");
+
         let nullable_object_field = all_types_schema
             .fields
             .iter()
@@ -259,14 +266,7 @@ mod tests {
             _ => panic!("nullable_object should be parsed as a union type"),
         }
 
-        let output_declaration = workflow
-            .declarations
-            .iter()
-            .find_map(|declaration| match declaration {
-                Declaration::Output(output_declaration) => Some(output_declaration),
-                _ => None,
-            })
-            .expect("output declaration should exist");
+        let output_declaration = workflow.find_output().expect("output declaration should exist");
 
         let nullable_object_string_field = output_declaration
             .fields
@@ -280,32 +280,6 @@ mod tests {
             }
             _ => panic!("nullable_object_string should be a reference expression"),
         }
-    }
-
-    fn find_agent_declaration<'declaration>(
-        declarations: &'declaration [Declaration],
-        agent_name: &str,
-    ) -> &'declaration crate::dsl::AgentDeclaration {
-        declarations
-            .iter()
-            .find_map(|declaration| match declaration {
-                Declaration::Agent(agent_declaration) if agent_declaration.name == agent_name => Some(agent_declaration),
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("missing agent declaration: {agent_name}"))
-    }
-
-    fn find_schema_declaration<'declaration>(
-        declarations: &'declaration [Declaration],
-        schema_name: &str,
-    ) -> &'declaration crate::dsl::SchemaDeclaration {
-        declarations
-            .iter()
-            .find_map(|declaration| match declaration {
-                Declaration::Schema(schema_declaration) if schema_declaration.name == schema_name => Some(schema_declaration),
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("missing schema declaration: {schema_name}"))
     }
 
     fn discover_workflow_examples() -> Vec<(String, String)> {
