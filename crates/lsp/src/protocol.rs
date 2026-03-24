@@ -80,3 +80,15 @@ pub fn error_response(id: Value, code: i64, message: &str) -> Value {
         }
     })
 }
+
+#[must_use]
+pub fn publish_diagnostics_notification(uri: &str, diagnostics: &[Value]) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/publishDiagnostics",
+        "params": {
+            "uri": uri,
+            "diagnostics": diagnostics,
+        }
+    })
+}
