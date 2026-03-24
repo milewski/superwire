@@ -661,16 +661,6 @@ dependencies = [
 [[package]]
 name = "engine-ai-dsl"
 version = "0.1.0"
-dependencies = [
- "engine-ai-agent",
- "pest",
- "pest_derive",
- "petgraph",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
 
 [[package]]
 name = "engine-ai-js"
@@ -682,6 +672,20 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "engine-ai-lsp"
+version = "0.1.0"
+dependencies = [
+ "colog",
+ "engine-ai-dsl",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "tokio",
 ]
 

@@ -1,0 +1,21 @@
+[package]
+name = "engine-ai-lsp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "engine-ai-lsp"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+engine-ai-dsl = { path = "../dsl" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+colog = { workspace = true }
+regex = { workspace = true }
