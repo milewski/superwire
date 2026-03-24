@@ -8,7 +8,7 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -36,6 +36,7 @@ where
 {
     max_iterations: usize,
     finalize_tool: FinalizeTool<O>,
+    finalize_parameters_schema_override: Option<Schema>,
     phantom: PhantomData<(P, O)>,
 }
 
@@ -48,6 +49,7 @@ where
         Ok(Self {
             max_iterations: 5,
             finalize_tool: FinalizeTool::<O>::new()?,
+            finalize_parameters_schema_override: None,
             phantom: PhantomData,
         })
     }
@@ -55,6 +57,12 @@ where
     #[must_use]
     pub fn with_max_iterations(mut self, max_iterations: usize) -> Self {
         self.max_iterations = max_iterations;
+        self
+    }
+
+    #[must_use]
+    pub fn with_finalize_parameters_schema(mut self, finalize_parameters_schema: Schema) -> Self {
+        self.finalize_parameters_schema_override = Some(finalize_parameters_schema);
         self
     }
 
@@ -78,7 +86,15 @@ where
             definitions.push(definition);
         }
 
-        definitions.push(self.finalize_tool.as_definition());
+        if let Some(finalize_parameters_schema) = &self.finalize_parameters_schema_override {
+            definitions.push(ToolDefinition {
+                name: self.finalize_tool.name().to_string(),
+                description: self.finalize_tool.description().to_string(),
+                parameters_schema: finalize_parameters_schema.clone(),
+            });
+        } else {
+            definitions.push(self.finalize_tool.as_definition());
+        }
 
         Ok((definitions, registry))
     }
@@ -110,9 +126,15 @@ where
     }
 
     async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
+        let finalize_parameters_schema = if let Some(finalize_parameters_schema_override) = &self.finalize_parameters_schema_override {
+            finalize_parameters_schema_override
+        } else {
+            self.finalize_tool.parameters_schema()
+        };
+
         if let Err(error) = validate_json_against_schema_with_context(
             &tool_call.arguments,
-            self.finalize_tool.parameters_schema(),
+            finalize_parameters_schema,
             "Finalize tool arguments do not match schema",
         ) {
             context.add_tool_result(ToolResult::Failure {
@@ -338,6 +360,8 @@ where
                     }
                 }
             }
+
+            iteration += 1;
         }
     }
 }
@@ -353,7 +377,7 @@ mod tests {
         assert_has_tool_success_content, assert_tool_failure_contains, assert_tool_result, assistant_message, provider, provider_error,
         run_executor, run_executor_with_config, tool_call,
     };
-    use schemars::JsonSchema;
+    use schemars::{JsonSchema, Schema};
     use serde::{Deserialize, Serialize};
     use serde_json::{json, Value};
 
@@ -375,6 +399,50 @@ mod tests {
                 age: 25,
             }
         );
+    }
+
+    #[tokio::test]
+    async fn enforces_custom_finalize_schema_for_value_output() {
+        let provider = provider!([
+            tool_call!(FinalizeTool::<Value>, id = "invalid", { "greeting": "Hello" }),
+            tool_call!(FinalizeTool::<Value>, id = "valid", "Hello")
+        ]);
+
+        let finalize_parameters_schema: Schema = serde_json::from_value(json!({
+            "type": "object",
+            "properties": {
+                "output": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "success"
+                        },
+                        "answer": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["type", "answer"],
+                    "additionalProperties": false
+                }
+            },
+            "required": ["output"],
+            "additionalProperties": false
+        }))
+        .expect("custom finalize schema should deserialize");
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<_, Value>::new()
+            .expect("executor should build")
+            .with_finalize_parameters_schema(finalize_parameters_schema);
+
+        let output = executor
+            .execute(&mut context, &provider, &Vec::new(), &AgentConfig::default())
+            .await
+            .expect("executor should reject invalid call and accept valid string output");
+
+        assert_eq!(output, Value::String("Hello".to_owned()));
+        assert_tool_failure_contains!(context, "invalid", ["output.answer", "string"]);
+        assert_tool_result!(context, "valid");
     }
 
     #[tokio::test]

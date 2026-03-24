@@ -25,7 +25,7 @@ pub struct FinalizeArguments<O> {
     /// Valid success shape:
     ///
     /// ```json
-    /// { "output": { "type": "success", "answer": { ...final object... } } }
+    /// { "output": { "type": "success", "answer": <final_json_value> } }
     /// ```
     ///
     /// Valid failure shape:
@@ -97,7 +97,7 @@ where
         r#"
             Call this tool only when you are done.
             Arguments MUST be exactly one of:
-                { "output" : { "type": "success", "answer": <final_json_object> } }
+                { "output" : { "type": "success", "answer": <final_json_value> } }
                 { "output" : { "type": "failure", "reason": "<why you could not complete>" } }
 
             Required success keys: output.type and output.answer

@@ -1,8 +1,9 @@
 use crate::dsl::{parse_workflow, validate_workflow, AgentDeclaration, Declaration, Workflow};
 use crate::runtime::error::{ValidationProblem, WorkflowRuntimeError};
 use crate::runtime::evaluation::{
-    evaluate_expression, evaluate_provider_settings, evaluate_workflow_output, extract_model_binding, find_output_type_expression,
-    find_prompt_expression, render_value_as_text, validate_value_against_type_expression,
+    build_finalize_parameters_schema_for_output_type, evaluate_expression, evaluate_provider_settings, evaluate_workflow_output,
+    extract_model_binding, find_output_type_expression, find_prompt_expression, render_value_as_text,
+    validate_value_against_type_expression,
 };
 use crate::runtime::graph::determine_agent_execution_order;
 use crate::runtime::provider::{DynamicProvider, WorkflowProviderFactory};
@@ -130,11 +131,23 @@ where
                 String::new()
             };
 
-            let loop_executor =
+            let output_type_expression = find_output_type_expression(agent_declaration.properties.as_slice());
+
+            let mut loop_executor =
                 LoopExecutor::<DynamicProvider, Value>::new().map_err(|error| WorkflowRuntimeError::LoopExecutorCreationFailed {
                     agent_name: agent_name.clone(),
                     message: error.to_string(),
                 })?;
+
+            if let Some(output_type_expression) = output_type_expression {
+                let finalize_parameters_schema = build_finalize_parameters_schema_for_output_type(output_type_expression, workflow)
+                    .map_err(|message| WorkflowRuntimeError::LoopExecutorCreationFailed {
+                        agent_name: agent_name.clone(),
+                        message,
+                    })?;
+
+                loop_executor = loop_executor.with_finalize_parameters_schema(finalize_parameters_schema);
+            }
 
             let run_result = Agent::new(loop_executor, provider)
                 .with_config(self.agent_config.clone())
@@ -145,7 +158,7 @@ where
                     message: error.to_string(),
                 })?;
 
-            if let Some(output_type_expression) = find_output_type_expression(agent_declaration.properties.as_slice()) {
+            if let Some(output_type_expression) = output_type_expression {
                 let type_validation_result =
                     validate_value_against_type_expression(&run_result.output, output_type_expression, workflow, "$output");
 

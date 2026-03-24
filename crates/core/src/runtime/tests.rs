@@ -108,7 +108,7 @@ async fn resolves_dependencies_and_interpolates_prompt_references() {
 }
 
 #[tokio::test]
-async fn reports_agent_output_type_mismatch() {
+async fn rejects_finalize_payload_that_does_not_match_declared_output_type() {
     let workflow_source = r#"
             provider scripted {
                 driver: "scripted"
@@ -141,11 +141,49 @@ async fn reports_agent_output_type_mismatch() {
 
     assert!(matches!(
         execution_error,
-        WorkflowRuntimeError::AgentOutputTypeMismatch {
+        WorkflowRuntimeError::AgentExecutionFailed {
             agent_name,
             message: _
         } if agent_name == "first"
     ));
+}
+
+#[tokio::test]
+async fn preserves_number_output_when_declared_as_number() {
+    let workflow_source = r#"
+            provider scripted {
+                driver: "scripted"
+                models: ["mock-model"]
+            }
+
+            agent greeting {
+                model: scripted("mock-model")
+                prompt: "Return me a random number"
+                output: number
+            }
+
+            output {
+                number: agent.greeting
+            }
+        "#;
+
+    let mut outputs_by_agent_name = HashMap::<String, Value>::new();
+
+    outputs_by_agent_name.insert("greeting".to_owned(), json!(42));
+
+    let workflow_runtime = WorkflowRuntime::new(ScriptedProviderFactory::new(outputs_by_agent_name));
+
+    let execution_result = workflow_runtime
+        .execute_source(workflow_source, json!({}), json!({}))
+        .await
+        .expect("runtime should preserve numeric output when declared as number");
+
+    assert_eq!(
+        execution_result.output,
+        json!({
+            "number": 42
+        })
+    );
 }
 
 #[derive(Debug, Clone)]

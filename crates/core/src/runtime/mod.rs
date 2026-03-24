@@ -15,4 +15,6 @@ pub use error::{ValidationProblem, WorkflowRuntimeError};
 pub use macros::try_workflow;
 pub use provider::{DefaultProviderFactory, DynamicProvider, ScriptedProviderFactory, WorkflowProviderFactory};
 pub use types::WorkflowExecutionResult;
-pub use workflow::{try_workflow_from_source, try_workflow_from_source_with_values};
+pub use workflow::{
+    try_workflow_from_source, try_workflow_from_source_with_values, try_workflow_from_workflow, try_workflow_from_workflow_with_values,
+};

@@ -4,7 +4,8 @@ use crate::dsl::{
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::types::{ExecutionScope, ModelBinding};
-use serde_json::{Map, Value};
+use schemars::Schema;
+use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
 pub(crate) fn evaluate_provider_settings(
@@ -240,6 +241,136 @@ pub(crate) fn validate_value_against_type_expression(
         TypeExpression::Object(object_fields) => validate_object_fields(candidate_value, object_fields.as_slice(), workflow, current_path),
         TypeExpression::Union(union_types) => validate_union_type(candidate_value, union_types, workflow, current_path),
     }
+}
+
+pub(crate) fn build_finalize_parameters_schema_for_output_type(
+    output_type_expression: &TypeExpression,
+    workflow: &Workflow,
+) -> Result<Schema, String> {
+    let success_answer_schema = build_json_schema_for_type_expression(output_type_expression, workflow)?;
+
+    let finalize_schema = json!({
+        "type": "object",
+        "properties": {
+            "output": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "const": "success"
+                            },
+                            "answer": success_answer_schema
+                        },
+                        "required": ["type", "answer"],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "const": "failure"
+                            },
+                            "reason": {
+                                "type": "string"
+                            }
+                        },
+                        "required": ["type", "reason"],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "required": ["output"],
+        "additionalProperties": false
+    });
+
+    serde_json::from_value(finalize_schema).map_err(|error| format!("failed to deserialize finalize schema: {error}"))
+}
+
+fn build_json_schema_for_type_expression(type_expression: &TypeExpression, workflow: &Workflow) -> Result<Value, String> {
+    match type_expression {
+        TypeExpression::String => Ok(json!({ "type": "string" })),
+        TypeExpression::Number | TypeExpression::Float => Ok(json!({ "type": "number" })),
+        TypeExpression::Boolean => Ok(json!({ "type": "boolean" })),
+        TypeExpression::Null => Ok(json!({ "type": "null" })),
+        TypeExpression::StringEnum(enum_value) => Ok(json!({ "const": enum_value })),
+        TypeExpression::SchemaReference(schema_name) => {
+            let schema_declaration = workflow
+                .find_schema(schema_name)
+                .ok_or_else(|| format!("unknown schema reference '{schema_name}' while building output schema"))?;
+
+            build_json_schema_for_object_fields(schema_declaration.fields.as_slice(), workflow)
+        }
+        TypeExpression::Array { item_type, fixed_length } => {
+            let item_schema = build_json_schema_for_type_expression(item_type, workflow)?;
+
+            let mut array_schema = json!({
+                "type": "array",
+                "items": item_schema
+            });
+
+            if let Some(fixed_length) = fixed_length {
+                let fixed_length_value = Value::Number(serde_json::Number::from(*fixed_length));
+
+                if let Some(array_schema_object) = array_schema.as_object_mut() {
+                    array_schema_object.insert("minItems".to_owned(), fixed_length_value.clone());
+                    array_schema_object.insert("maxItems".to_owned(), fixed_length_value);
+                }
+            }
+
+            Ok(array_schema)
+        }
+        TypeExpression::Tuple(tuple_types) => {
+            let mut prefix_items = Vec::new();
+
+            for tuple_type in tuple_types {
+                prefix_items.push(build_json_schema_for_type_expression(tuple_type, workflow)?);
+            }
+
+            Ok(json!({
+                "type": "array",
+                "prefixItems": prefix_items,
+                "minItems": tuple_types.len(),
+                "maxItems": tuple_types.len()
+            }))
+        }
+        TypeExpression::Object(object_fields) => build_json_schema_for_object_fields(object_fields.as_slice(), workflow),
+        TypeExpression::Union(union_types) => {
+            let mut one_of_schemas = Vec::new();
+
+            for union_type in union_types {
+                one_of_schemas.push(build_json_schema_for_type_expression(union_type, workflow)?);
+            }
+
+            Ok(json!({ "oneOf": one_of_schemas }))
+        }
+    }
+}
+
+fn build_json_schema_for_object_fields(object_fields: &[TypedField], workflow: &Workflow) -> Result<Value, String> {
+    let mut object_properties = Map::new();
+    let mut required_field_names = Vec::new();
+
+    for object_field in object_fields {
+        let mut field_schema = build_json_schema_for_type_expression(&object_field.field_type, workflow)?;
+
+        if let Some(field_description) = &object_field.description {
+            if let Some(field_schema_object) = field_schema.as_object_mut() {
+                field_schema_object.insert("description".to_owned(), Value::String(field_description.clone()));
+            }
+        }
+
+        object_properties.insert(object_field.name.clone(), field_schema);
+        required_field_names.push(Value::String(object_field.name.clone()));
+    }
+
+    Ok(json!({
+        "type": "object",
+        "properties": object_properties,
+        "required": required_field_names,
+        "additionalProperties": false
+    }))
 }
 
 fn validate_primitive_match(
