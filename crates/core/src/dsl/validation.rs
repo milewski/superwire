@@ -1018,7 +1018,7 @@ fn collect_agent_dependency_from_reference(reference: &Reference, referenced_age
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_workflow, ReferenceKeyword, ValidationContext, ValidationIssue};
+    use super::{validate_workflow, ReferenceKeyword, SingletonDeclarationKind, ValidationContext, ValidationIssue};
     use crate::dsl::macros::parse_inline_workflow;
 
     macro_rules! assert_issues_contain {
@@ -1084,6 +1084,44 @@ mod tests {
             ValidationIssue::DuplicateProvider { provider_name } if provider_name == "openai",
             ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User",
             ValidationIssue::DuplicateAgent { agent_name } if agent_name == "researcher"
+        );
+    }
+
+    #[test]
+    fn reports_duplicate_singleton_declarations() {
+        let workflow = parse_inline_workflow! {
+            input {}
+            input {}
+
+            secrets {}
+            secrets {}
+
+            output {}
+            output {}
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::DuplicateSingletonDeclaration { declaration_kind }
+                if *declaration_kind == SingletonDeclarationKind::Input,
+            ValidationIssue::DuplicateSingletonDeclaration { declaration_kind }
+                if *declaration_kind == SingletonDeclarationKind::Secrets,
+            ValidationIssue::DuplicateSingletonDeclaration { declaration_kind }
+                if *declaration_kind == SingletonDeclarationKind::Output
+        );
+    }
+
+    #[test]
+    fn reports_invalid_model_expression() {
+        let workflow = parse_inline_workflow! {
+            agent researcher {
+                model: "gpt-4.1-mini"
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidModelExpression { agent_name } if agent_name == "researcher"
         );
     }
 
