@@ -97,6 +97,10 @@ pub enum ValidationIssue {
         field_name: String,
         context: ValidationContext,
     },
+    SecretReferenceInLlmContext {
+        reference_path: String,
+        context: ValidationContext,
+    },
     MissingAgentOutputTypeForFieldReference {
         agent_name: String,
         context: ValidationContext,
@@ -520,28 +524,45 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                 let provider_context = ValidationContext::Provider(provider_declaration.name.clone());
 
                 for provider_property in &provider_declaration.properties {
-                    keyword_reference_validation_state.validate_expression(&provider_property.value, provider_context.clone());
+                    keyword_reference_validation_state.validate_expression(
+                        &provider_property.value,
+                        provider_context.clone(),
+                        SecretReferencePolicy::Allow,
+                    );
                 }
             }
             Declaration::Agent(agent_declaration) => {
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
                 if let Some(agent_for_loop) = &agent_declaration.for_loop {
-                    keyword_reference_validation_state.validate_expression(&agent_for_loop.iterable, agent_context.clone());
+                    keyword_reference_validation_state.validate_expression(
+                        &agent_for_loop.iterable,
+                        agent_context.clone(),
+                        SecretReferencePolicy::Allow,
+                    );
                 }
 
                 for agent_property in &agent_declaration.properties {
                     match agent_property {
+                        AgentProperty::Prompt(model_expression) | AgentProperty::Context(model_expression) => {
+                            keyword_reference_validation_state.validate_expression(
+                                model_expression,
+                                agent_context.clone(),
+                                SecretReferencePolicy::Forbid,
+                            );
+                        }
                         AgentProperty::Model(model_expression)
-                        | AgentProperty::Prompt(model_expression)
-                        | AgentProperty::Context(model_expression)
                         | AgentProperty::Inference(model_expression)
                         | AgentProperty::Tools(model_expression)
                         | AgentProperty::Custom {
                             name: _,
                             value: model_expression,
                         } => {
-                            keyword_reference_validation_state.validate_expression(model_expression, agent_context.clone());
+                            keyword_reference_validation_state.validate_expression(
+                                model_expression,
+                                agent_context.clone(),
+                                SecretReferencePolicy::Allow,
+                            );
                         }
                         AgentProperty::Output(_) => {}
                     }
@@ -549,7 +570,11 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
             }
             Declaration::Output(output_declaration) => {
                 for output_field in &output_declaration.fields {
-                    keyword_reference_validation_state.validate_expression(&output_field.value, ValidationContext::Output);
+                    keyword_reference_validation_state.validate_expression(
+                        &output_field.value,
+                        ValidationContext::Output,
+                        SecretReferencePolicy::Forbid,
+                    );
                 }
             }
             Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) => {}
@@ -557,11 +582,18 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SecretReferencePolicy {
+    Allow,
+    Forbid,
+}
+
 struct KeywordReferenceValidationState<'validation> {
     validation_index: &'validation ValidationIndex,
     validation_report: &'validation mut ValidationReport,
     unknown_agent_references: HashSet<(ValidationContext, String)>,
     invalid_keyword_reference_roots: HashSet<(ValidationContext, ReferenceKeyword)>,
+    secret_reference_leaks: HashSet<(ValidationContext, String)>,
     missing_agent_output_type_references: HashSet<(ValidationContext, String)>,
     invalid_reference_paths: HashSet<(ValidationContext, String, String)>,
     missing_input_declaration_contexts: HashSet<ValidationContext>,
@@ -577,6 +609,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             validation_report,
             unknown_agent_references: HashSet::new(),
             invalid_keyword_reference_roots: HashSet::new(),
+            secret_reference_leaks: HashSet::new(),
             missing_agent_output_type_references: HashSet::new(),
             invalid_reference_paths: HashSet::new(),
             missing_input_declaration_contexts: HashSet::new(),
@@ -586,39 +619,39 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn validate_expression(&mut self, expression: &Expression, context: ValidationContext) {
+    fn validate_expression(&mut self, expression: &Expression, context: ValidationContext, secret_reference_policy: SecretReferencePolicy) {
         match expression {
             Expression::Reference(reference) => {
-                self.validate_reference(reference, context);
+                self.validate_reference(reference, context, secret_reference_policy);
             }
             Expression::FunctionCall(function_call) => {
-                self.validate_reference(&function_call.callee, context.clone());
+                self.validate_reference(&function_call.callee, context.clone(), secret_reference_policy);
 
                 for call_argument in &function_call.arguments {
                     match call_argument {
                         CallArgument::Positional(argument_expression) => {
-                            self.validate_expression(argument_expression, context.clone());
+                            self.validate_expression(argument_expression, context.clone(), secret_reference_policy);
                         }
                         CallArgument::Named(named_argument) => {
-                            self.validate_expression(&named_argument.value, context.clone());
+                            self.validate_expression(&named_argument.value, context.clone(), secret_reference_policy);
                         }
                     }
                 }
             }
             Expression::ArrayLiteral(array_values) => {
                 for array_value in array_values {
-                    self.validate_expression(array_value, context.clone());
+                    self.validate_expression(array_value, context.clone(), secret_reference_policy);
                 }
             }
             Expression::ObjectLiteral(object_fields) => {
                 for object_field in object_fields {
-                    self.validate_expression(&object_field.value, context.clone());
+                    self.validate_expression(&object_field.value, context.clone(), secret_reference_policy);
                 }
             }
             Expression::StringTemplate(string_template) => {
                 for string_template_part in &string_template.parts {
                     if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
-                        self.validate_expression(interpolation_expression, context.clone());
+                        self.validate_expression(interpolation_expression, context.clone(), secret_reference_policy);
                     }
                 }
             }
@@ -626,10 +659,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn validate_reference(&mut self, reference: &Reference, context: ValidationContext) {
+    fn validate_reference(&mut self, reference: &Reference, context: ValidationContext, secret_reference_policy: SecretReferencePolicy) {
         let Some(reference_root_keyword) = reference.root.keyword() else {
             return;
         };
+
+        if reference_root_keyword == ReferenceKeyword::Secrets && secret_reference_policy == SecretReferencePolicy::Forbid {
+            self.push_secret_reference_leak(reference, context.clone());
+        }
 
         let Some(_) = reference.accesses.first() else {
             let issue_key = (context.clone(), reference_root_keyword);
@@ -866,6 +903,16 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         rendered_reference
     }
 
+    fn push_secret_reference_leak(&mut self, reference: &Reference, context: ValidationContext) {
+        let reference_path = self.reference_to_string(reference);
+        let issue_key = (context.clone(), reference_path.clone());
+
+        if self.secret_reference_leaks.insert(issue_key) {
+            self.validation_report
+                .push_issue(ValidationIssue::SecretReferenceInLlmContext { reference_path, context });
+        }
+    }
+
     fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext) -> bool {
         if self.validation_index.agent_names.contains(referenced_agent_name) {
             return true;
@@ -1044,6 +1091,21 @@ mod tests {
         }};
     }
 
+    macro_rules! assert_workflow_issues_do_not_contain {
+        ($workflow:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
+            let validation_report = validate_workflow(&$workflow);
+            let validation_issues = validation_report.issues();
+
+            assert!(
+                !validation_issues
+                    .iter()
+                    .any(|validation_issue| matches!(validation_issue, $issue_pattern $(if $guard)?)),
+                "did not expect matching validation issue; got {:?}",
+                validation_issues
+            );
+        }};
+    }
+
     #[test]
     fn reports_no_issues_for_valid_workflow() {
         let workflow = parse_inline_workflow! {
@@ -1123,6 +1185,62 @@ mod tests {
             workflow,
             ValidationIssue::InvalidModelExpression { agent_name } if agent_name == "researcher"
         );
+    }
+
+    #[test]
+    fn reports_secret_reference_leak_in_workflow_output() {
+        let workflow = parse_inline_workflow! {
+            secrets {
+                api_key: string
+            }
+
+            output {
+                leaked: secrets.api_key
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::SecretReferenceInLlmContext { reference_path, context }
+                if reference_path == "secrets.api_key" && *context == ValidationContext::Output
+        );
+    }
+
+    #[test]
+    fn reports_secret_reference_leak_in_prompt_interpolation() {
+        let workflow = parse_inline_workflow! {
+            secrets {
+                api_key: string
+            }
+
+            agent researcher {
+                prompt: "Use token {{ secrets.api_key }}"
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::SecretReferenceInLlmContext { reference_path, context }
+                if reference_path == "secrets.api_key"
+                    && *context == ValidationContext::Agent("researcher".to_owned())
+        );
+    }
+
+    #[test]
+    fn allows_secret_reference_in_provider_configuration() {
+        let workflow = parse_inline_workflow! {
+            secrets {
+                api_key: string
+            }
+
+            provider openai {
+                driver: "openai"
+                api_key: secrets.api_key
+                models: ["gpt-4.1-mini"]
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::SecretReferenceInLlmContext { .. });
     }
 
     #[test]
