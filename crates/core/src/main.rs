@@ -7,19 +7,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(dead_code)]
     #[derive(Debug, Deserialize, JsonSchema)]
     struct Output {
-        greeting: usize,
+        greeting: u16,
     }
 
     let inline = parse_inline_workflow! {
         provider openai {
             driver: "openai"
-            api_endpoint: "http://192.168.50.22:1234/v1"
+            api_endpoint: "http://169.254.83.107:1234/v1"
             models: ["qwen3.5-27b"]
         }
 
         agent greeting {
             model: openai("qwen3.5-27b")
-            prompt: "return a random non-negative integer"
+            prompt: "generate a random number"
             output: number
         }
 
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let workflow_result: Output = try_workflow!(inline).await?;
 
-    println!("{workflow_result:#?}");
+    println!("{:#?}", workflow_result);
 
     Ok(())
 }

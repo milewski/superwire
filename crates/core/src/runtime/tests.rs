@@ -150,6 +150,85 @@ async fn executes_string_workflow_and_returns_typed_output() {
 }
 
 #[tokio::test]
+async fn unwraps_single_nested_candidate_that_matches_declared_schema() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        greeting: String,
+    }
+
+    let workflow = crate::parse_inline_workflow! {
+        provider openai {
+            driver: "openai"
+            api_endpoint: "http://localhost:1234/v1"
+            models: ["model-a"]
+        }
+
+        agent greeting {
+            model: openai("model-a")
+            prompt: "generate message"
+            output: string
+        }
+
+        output {
+            greeting: agent.greeting
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = ScriptedRunner::from_outputs(vec![json!({ "message": "hello from nested shape" })]);
+    let output = runtime
+        .run_with_runner((), &runner)
+        .await
+        .expect("workflow should normalize and run successfully");
+
+    assert_eq!(
+        output,
+        Output {
+            greeting: "hello from nested shape".to_string(),
+        }
+    );
+}
+
+#[tokio::test]
+async fn rejects_ambiguous_nested_candidates_for_declared_schema() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        greeting: String,
+    }
+
+    let workflow = crate::parse_inline_workflow! {
+        provider openai {
+            driver: "openai"
+            api_endpoint: "http://localhost:1234/v1"
+            models: ["model-a"]
+        }
+
+        agent greeting {
+            model: openai("model-a")
+            prompt: "generate message"
+            output: string
+        }
+
+        output {
+            greeting: agent.greeting
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = ScriptedRunner::from_outputs(vec![json!({ "first": "hello", "second": "world" })]);
+
+    let execution_result = runtime.run_with_runner((), &runner).await;
+
+    assert!(matches!(
+        execution_result,
+        Err(WorkflowRuntimeError::AgentOutputTypeMismatch {
+            message,
+            ..
+        }) if message.contains("ambiguous")
+    ));
+}
+
+#[tokio::test]
 async fn executes_number_workflow_and_returns_typed_output() {
     #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
     struct Output {
