@@ -12,6 +12,7 @@ engine-ai-agent = { path = "../agent" }
 pest = { workspace = true }
 pest_derive = { workspace = true }
 petgraph = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
