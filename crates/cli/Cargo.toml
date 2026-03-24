@@ -1,0 +1,11 @@
+[package]
+name = "engine-ai-cli"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+engine-ai-core = { path = "../core" }
+thiserror = { workspace = true }

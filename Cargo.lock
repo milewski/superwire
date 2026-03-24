@@ -530,6 +530,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-ai-cli"
+version = "0.1.0"
+dependencies = [
+ "engine-ai-core",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "engine-ai-core"
 version = "0.1.0"
 dependencies = [
