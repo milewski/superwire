@@ -7,3 +7,6 @@ edition = "2021"
 workspace = true
 
 [dependencies]
+pest = { workspace = true }
+pest_derive = { workspace = true }
+thiserror = { workspace = true }
