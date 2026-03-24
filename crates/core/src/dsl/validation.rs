@@ -171,30 +171,34 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             Declaration::Schema(schema_declaration) => {
                 let inserted_schema = validation_index.schema_names.insert(schema_declaration.name.clone());
 
-                let schema_field_types = collect_field_types(schema_declaration.fields.as_slice());
-                validation_index
-                    .schema_field_types
-                    .insert(schema_declaration.name.clone(), schema_field_types);
-
                 if !inserted_schema {
                     validation_report.push_issue(ValidationIssue::DuplicateSchema {
                         schema_name: schema_declaration.name.clone(),
                     });
+
+                    continue;
                 }
+
+                let schema_field_types = collect_field_types(schema_declaration.fields.as_slice());
+                validation_index
+                    .schema_field_types
+                    .insert(schema_declaration.name.clone(), schema_field_types);
             }
             Declaration::Agent(agent_declaration) => {
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
-
-                let agent_output_type = extract_agent_output_type(agent_declaration.properties.as_slice());
-                validation_index
-                    .agent_output_types
-                    .insert(agent_declaration.name.clone(), agent_output_type);
 
                 if !inserted_agent {
                     validation_report.push_issue(ValidationIssue::DuplicateAgent {
                         agent_name: agent_declaration.name.clone(),
                     });
+
+                    continue;
                 }
+
+                let agent_output_type = extract_agent_output_type(agent_declaration.properties.as_slice());
+                validation_index
+                    .agent_output_types
+                    .insert(agent_declaration.name.clone(), agent_output_type);
             }
             Declaration::Input(input_declaration) => {
                 if has_input_declaration {
@@ -1060,6 +1064,27 @@ mod tests {
 
         assert!(validation_report.is_valid());
         assert!(validation_report.issues().is_empty());
+    }
+
+    #[test]
+    fn reports_duplicate_named_resource_names() {
+        let workflow = parse_inline_workflow! {
+            provider openai { driver: "openai" }
+            provider openai { driver: "anthropic" }
+
+            schema User { name: string }
+            schema User { id: string }
+
+            agent researcher {}
+            agent researcher {}
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::DuplicateProvider { provider_name } if provider_name == "openai",
+            ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User",
+            ValidationIssue::DuplicateAgent { agent_name } if agent_name == "researcher"
+        );
     }
 
     #[test]
