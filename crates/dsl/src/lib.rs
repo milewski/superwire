@@ -1,3 +1,101 @@
+pub mod ast;
+mod compiler;
+mod error;
+mod parser;
+mod runtime;
+
+use crate::compiler::{compile_workflow, CompiledWorkflow};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+
+pub use compiler::{build_object_schema, build_type_schema, CompiledAgent, CompiledProvider, DependencyGraph, ProviderDriver};
+pub use error::WorkflowError;
+pub use parser::parse_workflow;
+pub use runtime::{DefaultProviderFactory, ProviderFactory, WorkflowRunner};
+
+#[derive(Debug, Clone)]
+pub struct WorkflowDocument {
+    compiled_workflow: CompiledWorkflow,
+}
+
+impl WorkflowDocument {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
+        let workflow_path = path.as_ref();
+        let workflow_source = std::fs::read_to_string(workflow_path)?;
+        let base_path = workflow_path.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+
+        Self::from_source(&workflow_source, base_path)
+    }
+
+    pub fn from_source(source: &str, base_path: impl Into<PathBuf>) -> Result<Self, WorkflowError> {
+        let workflow = parse_workflow(source)?;
+        let compiled_workflow = compile_workflow(workflow, base_path.into())?;
+
+        Ok(Self { compiled_workflow })
+    }
+
+    #[must_use]
+    pub fn compiled(&self) -> &CompiledWorkflow {
+        &self.compiled_workflow
+    }
+
+    pub async fn run<OutputType, InputType>(&self, inputs: InputType) -> Result<OutputType, WorkflowError>
+    where
+        OutputType: DeserializeOwned,
+        InputType: Serialize,
+    {
+        WorkflowRunner::default().run(&self.compiled_workflow, inputs).await
+    }
+
+    pub async fn run_with<OutputType, InputType, Factory>(
+        &self,
+        runner: &WorkflowRunner<Factory>,
+        inputs: InputType,
+    ) -> Result<OutputType, WorkflowError>
+    where
+        OutputType: DeserializeOwned,
+        InputType: Serialize,
+        Factory: ProviderFactory,
+    {
+        runner.run(&self.compiled_workflow, inputs).await
+    }
+}
+
+#[macro_export]
+macro_rules! input {
+    ($($name:ident : $value:expr),* $(,)?) => {
+        serde_json::json!({
+            $(stringify!($name): $value),*
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! workflow {
+    ($inputs:expr => $path:expr => $output_type:ty) => {{
+        async {
+            let workflow_document = $crate::WorkflowDocument::from_file($path).expect("workflow file should parse and validate");
+            let runner = $crate::WorkflowRunner::default();
+
+            runner
+                .run::<$output_type, _>(workflow_document.compiled(), $inputs)
+                .await
+                .expect("workflow should execute")
+        }
+    }};
+    (runner = $runner:expr, $inputs:expr => $path:expr => $output_type:ty) => {{
+        async {
+            let workflow_document = $crate::WorkflowDocument::from_file($path).expect("workflow file should parse and validate");
+
+            $runner
+                .run::<$output_type, _>(workflow_document.compiled(), $inputs)
+                .await
+                .expect("workflow should execute")
+        }
+    }};
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolCategory {
     Keyword,

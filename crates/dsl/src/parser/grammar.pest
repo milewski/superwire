@@ -1,0 +1,135 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* }
+
+identifier_continue = _{ ASCII_ALPHANUMERIC | "_" }
+keyword = {
+    (
+        "false"
+        | "null"
+        | "true"
+    ) ~ !identifier_continue
+}
+identifier = @{ !keyword ~ (ASCII_ALPHA | "_") ~ identifier_continue* }
+
+workflow = { SOI ~ statement* ~ EOI }
+statement = _{ secrets_decl | provider_decl | schema_decl | input_decl | agent_decl | output_decl }
+
+secrets_decl = { "secrets" ~ typed_field_block }
+provider_decl = { "provider" ~ identifier ~ provider_block }
+schema_decl = { "schema" ~ identifier ~ typed_field_block }
+input_decl = { "input" ~ typed_field_block }
+agent_decl = { "agent" ~ identifier ~ for_clause? ~ agent_block }
+output_decl = { "output" ~ object_block }
+
+for_clause = { "for" ~ identifier ~ "in" ~ value_expression }
+
+provider_block = { "{" ~ provider_property* ~ "}" }
+provider_property = _{ provider_driver | provider_endpoint | provider_api_key | provider_models }
+provider_driver = { "driver" ~ ":" ~ string_literal }
+provider_endpoint = { "endpoint" ~ ":" ~ string_literal }
+provider_api_key = { "api_key" ~ ":" ~ secret_reference }
+provider_models = { "models" ~ ":" ~ string_array }
+
+agent_block = { "{" ~ agent_property* ~ "}" }
+agent_property = _{ agent_model | agent_prompt | agent_output | agent_context | agent_tools | agent_inference }
+agent_model = { "model" ~ ":" ~ model_selector }
+agent_prompt = { "prompt" ~ ":" ~ prompt_value }
+agent_output = { "output" ~ ":" ~ type_expression }
+agent_context = { "context" ~ ":" ~ function_expression }
+agent_tools = { "tools" ~ ":" ~ tool_array }
+agent_inference = { "inference" ~ ":" ~ inference_block }
+
+prompt_value = _{ template_call | multiline_string | string_literal }
+template_call = { "template" ~ "(" ~ string_literal ~ "," ~ binding_block ~ ")" }
+binding_block = { "{" ~ binding_entry* ~ "}" }
+binding_entry = { identifier ~ ":" ~ value_expression }
+
+model_selector = { identifier ~ "(" ~ string_literal ~ ")" }
+
+tool_array = { "[" ~ (tool_usage ~ ("," ~ tool_usage)* ~ ","?)? ~ "]" }
+tool_usage = { tool_reference ~ tool_arguments? }
+tool_reference = { "tool" ~ "." ~ identifier }
+tool_arguments = { "(" ~ (named_argument ~ ("," ~ named_argument)* ~ ","?)? ~ ")" }
+named_argument = { identifier ~ ":" ~ value_expression }
+
+inference_block = { "{" ~ inference_property* ~ "}" }
+inference_property = _{
+    inference_temperature
+    | inference_max_tokens
+    | inference_top_p
+    | inference_top_k
+    | inference_frequency_penalty
+    | inference_presence_penalty
+    | inference_repeat_penalty
+    | inference_seed
+    | inference_stop_sequences
+}
+inference_temperature = { "temperature" ~ ":" ~ number_literal }
+inference_max_tokens = { "max_tokens" ~ ":" ~ integer_literal }
+inference_top_p = { "top_p" ~ ":" ~ number_literal }
+inference_top_k = { "top_k" ~ ":" ~ integer_literal }
+inference_frequency_penalty = { "frequency_penalty" ~ ":" ~ number_literal }
+inference_presence_penalty = { "presence_penalty" ~ ":" ~ number_literal }
+inference_repeat_penalty = { "repeat_penalty" ~ ":" ~ number_literal }
+inference_seed = { "seed" ~ ":" ~ signed_integer_literal }
+inference_stop_sequences = { "stop_sequences" ~ ":" ~ string_array }
+
+function_expression = _{ compact_call | context_call }
+context_call = { "context" ~ "(" ~ agent_reference ~ ")" }
+compact_call = { "compact" ~ "(" ~ compact_arguments? ~ ")" }
+compact_arguments = { compact_named_arguments | compact_positional_arguments }
+compact_positional_arguments = { agent_reference ~ ("," ~ compact_named_argument)* ~ ","? }
+compact_named_arguments = { compact_named_argument ~ ("," ~ compact_named_argument)* ~ ","? }
+compact_named_argument = _{ compact_agent_argument | compact_model_argument | compact_inference_argument | compact_prompt_argument }
+compact_agent_argument = { "agent" ~ ":" ~ agent_reference }
+compact_model_argument = { "model" ~ ":" ~ model_selector }
+compact_inference_argument = { "inference" ~ ":" ~ inference_block }
+compact_prompt_argument = { "prompt" ~ ":" ~ (multiline_string | string_literal) }
+
+typed_field_block = { "{" ~ typed_field* ~ "}" }
+typed_field = { identifier ~ ":" ~ type_expression ~ description? }
+description = { string_literal }
+
+object_block = { "{" ~ object_field* ~ "}" }
+object_field = { identifier ~ ":" ~ value_expression }
+
+type_expression = { union_type }
+union_type = { type_atom ~ ("|" ~ type_atom)* }
+type_atom = _{ primitive_type | null_type | fixed_array_type | array_type | tuple_type | object_type | named_schema_ref | string_literal | parenthesized_type }
+primitive_type = { "string" | "number" | "float" | "boolean" }
+null_type = { "null" }
+array_type = { "[" ~ type_expression ~ "]" }
+fixed_array_type = { "[" ~ type_expression ~ ";" ~ integer_literal ~ "]" }
+tuple_type = { "(" ~ type_expression ~ "," ~ type_expression ~ ("," ~ type_expression)* ~ ","? ~ ")" }
+parenthesized_type = { "(" ~ type_expression ~ ")" }
+object_type = { typed_field_block }
+named_schema_ref = { "schema" ~ "." ~ identifier }
+
+value_expression = _{ object_expression | array_expression | function_expression | reference_expression | multiline_string | string_literal | boolean_literal | null_literal | number_literal }
+object_expression = { object_block }
+array_expression = { "[" ~ (value_expression ~ ("," ~ value_expression)* ~ ","?)? ~ "]" }
+
+reference_expression = { reference_root ~ path_segment* }
+reference_root = { agent_reference | input_reference | secret_reference | local_reference }
+agent_reference = { "agent" ~ "." ~ identifier }
+input_reference = { "input" ~ "." ~ identifier }
+secret_reference = { "secrets" ~ "." ~ identifier }
+local_reference = { identifier }
+path_segment = { safe_access_segment | direct_access_segment }
+safe_access_segment = { "?." ~ identifier }
+direct_access_segment = { "." ~ identifier }
+
+string_array = { "[" ~ (string_literal ~ ("," ~ string_literal)* ~ ","?)? ~ "]" }
+boolean_literal = { "true" | "false" }
+null_literal = { "null" }
+signed_integer_literal = @{ "-"? ~ integer_digits }
+integer_literal = @{ integer_digits }
+integer_digits = { ASCII_DIGIT ~ (ASCII_DIGIT | "_")* }
+number_literal = @{ "-"? ~ integer_digits ~ ("." ~ integer_digits)? }
+
+string_literal = @{ "\"" ~ string_character* ~ "\"" }
+string_character = _{ escaped_character | !("\"" | "\\") ~ ANY }
+escaped_character = _{ "\\" ~ ("\\" | "\"" | "n" | "r" | "t") }
+multiline_string = @{ "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\"" }
+
+interpolation_root = { SOI ~ reference_expression ~ EOI }

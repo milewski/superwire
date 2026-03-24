@@ -7,3 +7,16 @@ edition = "2021"
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
+engine-ai-agent = { path = "../agent" }
+futures = "0.3"
+pest = { workspace = true }
+pest_derive = { workspace = true }
+petgraph = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }

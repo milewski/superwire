@@ -19,10 +19,6 @@ agent greeting {
     output: string
 }
 
-agent somename {
-    con
-}
-
 // Define the workflow's final output object.
 output {
     greeting: agent.greeting
