@@ -1,96 +1,69 @@
 ---
-title: 'Context Sharing'
-description: 'Share data and context between agents'
+title: Context and Compaction
+description: Document the `context:` property and the current grammar for `context(...)` and `compact(...)`.
 ---
 
-## Agent Output Access
+The DSL supports a `context:` property on agents.
 
-Access outputs from previous agents:
+## Full-context syntax
 
-```rust
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze the data"
-}
-
-agent processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process this analysis: {{ analyzer.text }}"
+```txt
+agent summary_from_full_context {
+    model: openai("gpt-4.1-mini")
+    context: context(agent.research_analysis)
+    prompt: "Write a short executive summary from the available context."
+    output: string
 }
 ```
 
-## Multiple Agent References
+## Compacted-context syntax
 
-Reference multiple agent outputs:
-
-```rust
-<- agent source1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate data 1"
-}
-
-<- agent source2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate data 2"
-}
-
-<- agent combiner {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Combine: {{ source1.text }} and {{ source2.text }}"
+```txt
+agent summary_from_default_compact_context {
+    model: openai("gpt-4.1-mini")
+    context: compact(agent.research_analysis)
+    prompt: "Write a short executive summary from the compacted prior context."
+    output: string
 }
 ```
 
-## Shared Variables
+## Custom compaction call
 
-Use variables to share context:
-
-```rust
-config <- {
-    style <- "formal"
-    tone <- "professional"
-    max_length <- 500
-}
-
-agent writer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write in {{ config.style }} style with {{ config.tone }} tone, max {{ config.max_length }} words"
-}
-```
-
-## Context Accumulation
-
-Build context through agent chain:
-
-```rust
-<- agent step1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 1: Initial analysis"
-}
-
-<- agent step2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 2: Build on {{ step1.text }}"
-}
-
-<- agent step3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 3: Finalize based on {{ step1.text }} and {{ step2.text }}"
+```txt
+agent summary_from_custom_compact_context {
+    model: openai("gpt-4.1-mini")
+    context: compact(
+        agent: agent.research_analysis,
+        model: openai("gpt-4.1-mini"),
+        inference: {
+            temperature: 0.1
+            max_tokens: 1_500
+        },
+        prompt: """
+            Compact this prior context for an executive summary step.
+            Keep only the highest-signal themes and essential quotes.
+        """
+    )
+    prompt: "Write a short executive summary from the customized compacted context."
+    output: {
+        summary: string
+        top_actions: [string; 3]
+    }
 }
 ```
 
-## Best Practices
+## What the syntax expresses
 
-<Tip>
-  Keep shared context focused and relevant to avoid overwhelming agents with unnecessary information.
-</Tip>
+- `context(agent.name)` means reuse full prior context
+- `compact(agent.name)` means derive a reduced context view
+- named arguments allow the DSL to describe a custom compaction step
 
-## Next Steps
+<Warning>
+  The parser accepts these function calls and the validator traverses them for
+  references and dependency edges, but the current default runtime does not
+  evaluate generic function calls yet.
+</Warning>
 
-<CardGroup cols={2}>
-  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
-    Understand dependencies
-  </Card>
-  <Card title="Workflows" icon="diagram-project" href="/core-concepts/workflows">
-    Build workflows
-  </Card>
-</CardGroup>
+## When to use this page
+
+Use this page as the language reference for context-related syntax. If you are writing production workflows for the current default runtime, stay with plain `prompt`, `model`, and `output` until context execution support lands.

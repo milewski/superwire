@@ -1,96 +1,74 @@
 ---
-title: 'Rust API'
-description: 'Use Engine AI in Rust applications'
+title: Rust API
+description: Parse, validate, and execute Engine AI workflows from Rust.
 ---
 
-## Installation
+The public Rust surface is centered around two modules:
 
-Add to your `Cargo.toml`:
+- `engine_ai_core::dsl`
+- `engine_ai_core::runtime`
 
-```toml
-[dependencies]
-engine-ai = "0.1.0"
-tokio = { version = "1", features = ["full"] }
-```
-
-## Basic Usage
+## Parse and validate
 
 ```rust
-use engine_ai::Engine;
+use engine_ai_core::dsl::{parse_workflow, validate_workflow};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let engine = Engine::new();
-    let result = engine.execute_workflow("workflow.ai").await?;
-    println!("{:?}", result);
-    Ok(())
-}
+let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+let workflow = parse_workflow(workflow_source)?;
+let validation_report = validate_workflow(&workflow);
+
+assert!(validation_report.is_valid());
 ```
 
-## Execute Workflow
+## Execute with built-in providers
 
 ```rust
-use engine_ai::Engine;
+use engine_ai_core::runtime::try_workflow_from_source;
+use serde::Deserialize;
 
-let engine = Engine::new();
-let result = engine.execute_workflow("path/to/workflow.ai").await?;
-```
-
-## Execute from String
-
-```rust
-use engine_ai::Engine;
-
-let workflow_content = r#"
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
+#[derive(Debug, Deserialize)]
+struct Output {
+    greeting: String,
 }
 
-<- agent task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Hello, world!"
-}
-"#;
-
-let engine = Engine::new();
-let result = engine.execute_workflow_string(workflow_content).await?;
+let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+let workflow_result: Result<Output, _> = try_workflow_from_source(workflow_source).await?;
+let workflow_output = workflow_result?;
 ```
 
-## Configuration
+## Execute with explicit input and secrets
 
 ```rust
-use engine_ai::{Engine, Config};
+use engine_ai_core::runtime::try_workflow_from_source_with_values;
+use serde_json::json;
 
-let config = Config::builder()
-    .max_parallel_agents(10)
-    .timeout_seconds(300)
-    .build();
-
-let engine = Engine::with_config(config);
+let execution_result = try_workflow_from_source_with_values::<serde_json::Value>(
+    workflow_source,
+    json!({"topic": "agent workflows"}),
+    json!({"openai_api_key": "secret"}),
+)
+.await?;
 ```
 
-## Error Handling
+## Runtime types
+
+Useful runtime exports include:
+
+- `WorkflowRuntime`
+- `WorkflowExecutionResult`
+- `WorkflowRuntimeError`
+- `ValidationProblem`
+- `DefaultProviderFactory`
+- `ScriptedProviderFactory`
+- `WorkflowProviderFactory`
+- `DynamicProvider`
+- `try_workflow_from_source`
+- `try_workflow_from_source_with_values`
+
+## Macro helper
+
+The runtime also re-exports `try_workflow!` for source-included workflows.
 
 ```rust
-use engine_ai::{Engine, EngineError};
-
-match engine.execute_workflow("workflow.ai").await {
-    Ok(result) => println!("Success: {:?}", result),
-    Err(EngineError::ParseError(e)) => eprintln!("Parse error: {}", e),
-    Err(EngineError::ExecutionError(e)) => eprintln!("Execution error: {}", e),
-    Err(e) => eprintln!("Error: {}", e),
-}
+use engine_ai_core::runtime::try_workflow;
 ```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="JavaScript API" icon="js" href="/api-reference/javascript-api">
-    JavaScript/TypeScript API
-  </Card>
-  <Card title="CLI" icon="terminal" href="/api-reference/cli">
-    Command-line interface
-  </Card>
-</CardGroup>

@@ -1,246 +1,70 @@
 ---
-title: 'String Interpolation'
-description: 'Embed variables and expressions in strings'
+title: String Interpolation
+description: Build prompts and output strings with `{{ ... }}` expressions in quoted and multiline strings.
 ---
 
-## Basic Interpolation
+Strings come in two forms:
 
-Use `{{ }}` to embed variables in strings:
+- quoted strings: `"hello"`
+- multiline strings: `""" ... """`
 
-```rust
-name <- "Alice"
-age <- 30
+Both forms support interpolation.
 
-agent greeter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Hello, {{ name }}! You are {{ age }} years old."
-}
+## Basic interpolation
+
+```txt
+prompt: "Write a summary for {{ input.product_name }}"
 ```
 
-## Interpolating Expressions
+## Interpolating agent output
 
-Embed calculations and expressions:
-
-```rust
-price <- 100
-tax_rate <- 0.08
-total <- price * (1 + tax_rate)
-
-agent calculator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Price: ${{ price }}, Tax: {{ tax_rate * 100 }}%, Total: ${{ total }}"
-}
+```txt
+prompt: "Analyze this summary: {{ agent.release_summary.summary }}"
 ```
 
-## Agent Output Interpolation
+When a prompt references another agent, that reference also creates a dependency edge.
 
-Reference previous agent outputs:
+## Multiline interpolation
 
-```rust
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze this data"
-}
+```txt
+prompt: """
+    Write a launch message for {{ input.audience }}.
 
-agent summarizer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Summarize the analysis: {{ analyzer.text }}"
-}
+    Product: {{ input.product_name }}
+    Summary: {{ agent.release_summary.summary }}
+    Key points: {{ agent.release_summary.key_points }}
+"""
 ```
 
-## Object Property Access
+## Escapes
 
-Access nested object properties:
+Supported escapes include:
 
-```rust
-user <- {
-    name <- "Alice"
-    profile <- {
-        email <- "alice@example.com"
-        role <- "admin"
-    }
-}
+- `\\`
+- `\"`
+- `\n`
+- `\r`
+- `\t`
+- `\{`
+- `\}`
 
-agent notifier {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Send notification to {{ user.name }} at {{ user.profile.email }}"
-}
+## Important rule
+
+Interpolation requires double braces.
+
+```txt
+{{ input.topic }}
 ```
-
-## Array Element Access
-
-Access array elements by index:
-
-```rust
-items <- ["apple", "banana", "cherry"]
-
-agent selector {
-    model <- "ollama/qwen3:8b"
-    prompt <- "First item: {{ items[0] }}, Second: {{ items[1] }}"
-}
-```
-
-## Complex Expressions
-
-Combine multiple operations:
-
-```rust
-count <- 5
-total <- 10
-percentage <- (count / total) * 100
-
-agent reporter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Progress: {{ count }}/{{ total }} ({{ percentage }}% complete)"
-}
-```
-
-## Conditional Interpolation
-
-Use boolean expressions:
-
-```rust
-is_premium <- true
-credits <- 100
-
-agent status {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Premium: {{ is_premium }}, Credits: {{ credits }}, Can use: {{ is_premium && credits > 0 }}"
-}
-```
-
-## Multi-Line Strings
-
-Interpolation works in multi-line strings:
-
-```rust
-name <- "Alice"
-role <- "Developer"
-
-agent emailer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Dear {{ name }},
-
-Welcome to the team! Your role is {{ role }}.
-
-Best regards,
-The Team"
-}
-```
-
-## Escaping Braces
-
-To use literal `{{` or `}}`, escape them:
-
-```rust
-agent example {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Use \{{ and \}} for literal braces"
-}
-```
-
-## Examples
-
-### User Profile Message
-
-```rust
-user <- {
-    name <- "Bob"
-    email <- "bob@example.com"
-    joined <- "2024-01-15"
-}
-
-agent welcome {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Welcome {{ user.name }}! Your account ({{ user.email }}) was created on {{ user.joined }}."
-}
-```
-
-### Progress Report
-
-```rust
-completed_tasks <- 7
-total_tasks <- 10
-remaining <- total_tasks - completed_tasks
-
-agent progress {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Completed: {{ completed_tasks }}/{{ total_tasks }}
-Remaining: {{ remaining }}
-Progress: {{ (completed_tasks / total_tasks) * 100 }}%"
-}
-```
-
-### Chained Agent Outputs
-
-```rust
-<- agent step1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate a topic"
-}
-
-<- agent step2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write about: {{ step1.text }}"
-}
-
-<- agent step3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Summarize this article: {{ step2.text }}"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Use descriptive variable names in interpolations to make prompts self-documenting.
-</Tip>
 
 <Warning>
-  Avoid deeply nested property access - it can make prompts hard to read and debug.
+  Single-brace forms like `{ input.topic }` are rejected by the parser.
 </Warning>
 
-<Info>
-  Interpolation happens at runtime, so you can use dynamic values from previous agents.
-</Info>
+## How values are rendered
 
-## Common Patterns
+During evaluation:
 
-### Template Prompts
-
-```rust
-template <- "Analyze the following {{ data_type }}: {{ content }}"
-data_type <- "text"
-content <- "Sample content here"
-
-agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- template
-}
-```
-
-### Dynamic Configuration
-
-```rust
-config <- {
-    model_name <- "ollama/qwen3:8b"
-    temperature <- 0.7
-    max_tokens <- 1000
-}
-
-agent task {
-    model <- config.model_name
-    prompt <- "Process with temp={{ config.temperature }}, max_tokens={{ config.max_tokens }}"
-}
-```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Variables" icon="code" href="/syntax/variables">
-    Learn about variables
-  </Card>
-  <Card title="Agents" icon="robot" href="/core-concepts/agents">
-    Understand agents
-  </Card>
-</CardGroup>
+- strings stay strings
+- numbers and booleans are stringified
+- arrays and objects are rendered as JSON text
+- `null` renders as the literal text `null`

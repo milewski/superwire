@@ -1,0 +1,46 @@
+---
+title: Language Server
+description: Run the Engine AI language server over stdio for completion and hover support.
+---
+
+The repository includes a language server binary in `crates/lsp`.
+
+## Run it
+
+```bash
+cargo run -p engine-ai-lsp
+```
+
+## Transport
+
+The server speaks JSON-RPC over stdio and advertises:
+
+- text document sync
+- hover support
+- completion support
+
+## Current completion behavior
+
+The server offers completions for:
+
+- named schemas after `schema.`
+- declared agents after `agent.`
+- input fields after `input.`
+- secret fields after `secrets.`
+- built-in symbols in function-like contexts
+
+## Current hover behavior
+
+Hover text is available for:
+
+- declared `schema.Name` references
+- declared `agent.name` references
+- declared `input.field` references
+- provider model calls such as `openai(...)`
+
+## Trigger characters
+
+The server currently triggers completion on:
+
+- `.`
+- `:`

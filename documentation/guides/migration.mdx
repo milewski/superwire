@@ -1,0 +1,94 @@
+---
+title: Migration from Legacy Syntax
+description: Update older examples that used assignment arrows, terminal agents, and `for_each` loops.
+---
+
+Older examples in this repository's documentation used an earlier DSL shape. The current grammar is more explicit and uses `:` consistently.
+
+## Replace assignment arrows with colons
+
+Before:
+
+```txt
+model <- "ollama/qwen3:8b"
+prompt <- "Say hello"
+```
+
+Now:
+
+```txt
+model: ollama("qwen3.5:8b")
+prompt: "Say hello"
+```
+
+## Replace terminal-agent markers with an explicit output block
+
+Before:
+
+```txt
+<- agent greeting {
+    ...
+}
+```
+
+Now:
+
+```txt
+agent greeting {
+    ...
+}
+
+output {
+    greeting: agent.greeting
+}
+```
+
+## Replace `for_each` with `for ... in ...`
+
+Before:
+
+```txt
+agent process for_each item in input.items {
+    ...
+}
+```
+
+Now:
+
+```txt
+agent process for item in input.items {
+    ...
+}
+```
+
+## Use explicit provider calls for models
+
+Before:
+
+```txt
+model <- "ollama/qwen3:8b"
+```
+
+Now:
+
+```txt
+model: ollama("qwen3:8b")
+```
+
+## Add explicit keyword roots in references
+
+Prefer current forms such as:
+
+```txt
+input.topic
+agent.summary.text
+secrets.openai_api_key
+```
+
+## Final migration checklist
+
+- replace `<-` with `:`
+- add a top-level `output { ... }` block
+- switch old model strings to provider calls
+- replace `for_each` with `for ... in ...`
+- re-run parsing and validation after the update

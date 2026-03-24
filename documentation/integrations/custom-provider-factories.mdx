@@ -1,0 +1,58 @@
+---
+title: Custom Provider Factories
+description: Extend Engine AI by implementing `WorkflowProviderFactory` and translating DSL provider settings into concrete providers.
+---
+
+The DSL keeps provider declarations generic. The default runtime ships with OpenAI and Ollama support, but you can provide your own factory.
+
+## Trait to implement
+
+```rust
+use engine_ai_core::runtime::{DynamicProvider, WorkflowProviderFactory, WorkflowRuntimeError};
+use serde_json::{Map, Value};
+
+struct MyProviderFactory;
+
+impl WorkflowProviderFactory for MyProviderFactory {
+    fn build_provider(
+        &self,
+        agent_name: &str,
+        provider_name: &str,
+        provider_settings: &Map<String, Value>,
+        model_name: &str,
+    ) -> Result<DynamicProvider, WorkflowRuntimeError> {
+        todo!()
+    }
+}
+```
+
+## Why this abstraction matters
+
+The DSL provider block is just structured data:
+
+```txt
+provider my_backend {
+    driver: "internal"
+    region: "us-east-1"
+    api_key: secrets.internal_api_key
+    models: ["research-v1"]
+}
+```
+
+Your factory decides what those properties mean at execution time.
+
+## Common pattern
+
+1. evaluate provider settings from the workflow
+2. inspect `driver` and related keys
+3. construct a concrete provider instance
+4. wrap it with `DynamicProvider::new(...)`
+
+## Testing custom factories
+
+Use `WorkflowRuntime::new(MyProviderFactory)` in tests and drive it with small workflows that assert:
+
+- provider selection by name
+- setting translation
+- model selection
+- output wiring

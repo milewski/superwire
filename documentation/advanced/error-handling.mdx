@@ -1,146 +1,76 @@
 ---
-title: 'Error Handling'
-description: 'Handle errors and failures gracefully'
+title: Validation and Runtime Status
+description: Understand parser diagnostics, validation problems, and which DSL features the default runtime executes today.
 ---
 
-## Conditional Fallbacks
+Engine AI surfaces problems in three stages.
 
-Use conditional execution for fallback logic:
+## 1. Parse errors
 
-```rust
-<- agent primary {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Try primary approach"
-}
+Parse errors come from `DslParseError` and include source spans.
 
-agent fallback {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Use fallback approach"
-    when <- primary.text == null || primary.text == ""
-}
-```
+Common causes:
 
-## Provider Fallbacks
+- invalid tokens
+- missing nodes while building the AST
+- invalid fixed array lengths
+- malformed interpolation syntax
 
-Switch providers on failure:
+## 2. Validation problems
 
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
+Validation runs before execution and reports all discovered issues as a `ValidationReport`.
 
-provider openai {
-    driver <- "openai"
-    config <- {
-        api_key <- "sk-proj-..."
-        endpoint <- "https://api.openai.com/v1"
-    }
-    models <- ["gpt-4"]
-}
+Important validation checks include:
 
-<- agent primary {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process with local model"
-}
+- duplicate providers, schemas, agents, input blocks, secrets blocks, or output blocks
+- unknown schema references such as `schema.Missing`
+- invalid `model:` expressions
+- unknown providers or models
+- unknown `agent.*`, `input.*`, or `secrets.*` references
+- secret leaks into prompts, context, or workflow output
+- invalid nested reference paths
+- missing agent `output` types when field access is used
+- dependency cycles between agents
 
-agent backup {
-    model <- "openai/gpt-4"
-    prompt <- "Process with cloud model"
-    when <- primary.text == null
-}
-```
+## 3. Runtime errors
 
-## Validation Agents
+Runtime execution can still fail after validation, for example when:
 
-Validate outputs before proceeding:
+- a provider cannot be constructed
+- a live model call fails
+- agent output does not match its declared type
+- the workflow uses syntax that the default runtime does not yet execute
 
-```rust
-<- agent generator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate content"
-}
+## Current support matrix
 
-<- agent validator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate this content: {{ generator.text }}. Respond with 'valid' or 'invalid'"
-}
-
-agent processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process valid content: {{ generator.text }}"
-    when <- validator.text == "valid"
-}
-
-agent error_handler {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Handle invalid content: {{ generator.text }}"
-    when <- validator.text == "invalid"
-}
-```
-
-## Retry Logic
-
-Implement retry patterns:
-
-```rust
-<- agent attempt1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "First attempt"
-}
-
-agent attempt2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Second attempt"
-    when <- attempt1.text == null
-}
-
-agent attempt3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Third attempt"
-    when <- attempt2.text == null
-}
-```
-
-## Error Messages
-
-Provide helpful error context:
-
-```rust
-<- agent task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Perform task"
-}
-
-agent error_reporter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task failed. Please check: 1) Provider is running, 2) Model is available, 3) Input is valid"
-    when <- task.text == null
-}
-```
-
-## Best Practices
-
-<Tip>
-  Always provide fallback paths for critical workflows.
-</Tip>
-
-<Warning>
-  Avoid infinite retry loops - set maximum retry limits.
-</Warning>
+| Feature | Parser | Validator | Default runtime |
+| --- | --- | --- | --- |
+| Providers | yes | yes | yes |
+| Input and secrets | yes | yes | yes |
+| Named schemas | yes | yes | yes |
+| String interpolation | yes | yes | yes |
+| Agent dependency graph | yes | yes | yes |
+| Output object construction | yes | yes | yes |
+| Optional chaining `?.` | yes | yes | yes |
+| Agent `for` loops | yes | yes | no |
+| Generic function calls | yes | partially | no |
+| `context(...)` and `compact(...)` | yes | partially | no |
+| `template(...)` | yes | partially | no |
+| `tool.*` references | yes | partially | no |
+| `tools:` property execution | yes | partially | no |
+| `inference:` execution | yes | partially | no |
+| `context:` execution | yes | partially | no |
+| custom agent properties | yes | yes | preserved only |
 
 <Info>
-  Log errors and failures for debugging and monitoring.
+  "Partially" means the validator understands the syntax enough to walk
+  references, detect dependency edges, and enforce some safety rules, but it
+  does not guarantee runtime support.
 </Info>
 
-## Next Steps
+## Recommended workflow
 
-<CardGroup cols={2}>
-  <Card title="Control Flow" icon="code-branch" href="/syntax/control-flow">
-    Learn about control flow
-  </Card>
-  <Card title="Best Practices" icon="star" href="/guides/best-practices">
-    Workflow best practices
-  </Card>
-</CardGroup>
+1. Parse with `parse_workflow`
+2. Validate with `validate_workflow`
+3. Only execute features the runtime currently supports
+4. Declare `output` types so runtime mismatches fail fast

@@ -1,95 +1,58 @@
 ---
-title: 'Context Management'
-description: 'Manage and share context across agents'
+title: Context Management
+description: Express full-context and compacted-context flows in the current DSL.
 ---
 
-## Building Context
+This example is based on `crates/core/workflows/context_compaction.ai`.
 
-Accumulate context through agent chain:
-
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
+```txt
+provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
 }
 
-<- agent research {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Research the topic"
+input {
+    product_name: string
+    customer_feedback: [string]
 }
 
-<- agent outline {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Create outline based on: {{ research.text }}"
+agent research_analysis {
+    model: openai("gpt-4.1-mini")
+    prompt: "Analyze this customer feedback for {{ input.product_name }}: {{ input.customer_feedback }}"
+    output: {
+        themes: [string]
+        risks: [string]
+        opportunities: [string]
+    }
 }
 
-<- agent draft {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write draft using outline: {{ outline.text }} and research: {{ research.text }}"
+agent summary_from_full_context {
+    model: openai("gpt-4.1-mini")
+    context: context(agent.research_analysis)
+    prompt: "Write a short executive summary from the available context."
+    output: string
 }
 
-<- agent refine {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Refine draft: {{ draft.text }}"
-}
-```
-
-## Shared Configuration
-
-Use shared config across agents:
-
-```rust
-config <- {
-    style <- "professional"
-    tone <- "friendly"
-    max_length <- 500
-}
-
-agent writer1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write in {{ config.style }} style, {{ config.tone }} tone, max {{ config.max_length }} words"
-}
-
-agent writer2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write in {{ config.style }} style, {{ config.tone }} tone, max {{ config.max_length }} words"
+agent summary_from_custom_compact_context {
+    model: openai("gpt-4.1-mini")
+    context: compact(
+        agent: agent.research_analysis,
+        model: openai("gpt-4.1-mini"),
+        inference: {
+            temperature: 0.1
+            max_tokens: 1_500
+        },
+        prompt: "Keep only the highest-signal themes and risks."
+    )
+    prompt: "Write a short executive summary from the customized compacted context."
+    output: {
+        summary: string
+        top_actions: [string; 3]
+    }
 }
 ```
 
-## Context Filtering
-
-Select relevant context:
-
-```rust
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze and extract key points"
-}
-
-agent summarizer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Summarize only the key points: {{ analyzer.text }}"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Keep context focused and relevant to avoid overwhelming agents.
-</Tip>
-
-<Info>
-  Use variables to share configuration and reduce duplication.
-</Info>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Context Sharing" icon="share-nodes" href="/advanced/context-sharing">
-    Learn about context sharing
-  </Card>
-  <Card title="Variables" icon="code" href="/syntax/variables">
-    Understand variables
-  </Card>
-</CardGroup>
+<Warning>
+  `context(...)` and `compact(...)` are documented grammar features, but the
+  default runtime does not execute generic function calls yet.
+</Warning>

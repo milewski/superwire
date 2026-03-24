@@ -1,162 +1,81 @@
 ---
-title: 'Testing Workflows'
-description: 'Test and validate your workflows'
+title: Testing Workflows
+description: Parse, validate, and execute workflows in Rust tests with deterministic providers.
 ---
 
-## Testing Strategies
+The Rust API supports three useful testing layers.
 
-### Unit Testing
+## Parse-only tests
 
-Test individual agents:
-
-```rust
-// test_agent.ai
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-test_input <- "test data"
-
-<- agent under_test {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process: {{ test_input }}"
-}
-```
-
-### Integration Testing
-
-Test agent interactions:
+Use parse tests when you want fast syntax coverage.
 
 ```rust
-// test_workflow.ai
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
+use engine_ai_core::dsl::parse_workflow;
 
-<- agent step1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 1"
-}
+#[test]
+fn workflow_parses() {
+    let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+    let workflow = parse_workflow(workflow_source).expect("workflow should parse");
 
-<- agent step2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 2: {{ step1.text }}"
+    assert!(!workflow.declarations().is_empty());
 }
-
-// Verify step2 receives step1 output
 ```
 
-### Validation Testing
+## Validation tests
 
-Test output validation:
+Use validation tests when you want to check names, references, or secret-safety rules without calling a provider.
 
 ```rust
-<- agent generator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate data"
-}
+use engine_ai_core::dsl::{parse_workflow, validate_workflow};
 
-<- agent validator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate: {{ generator.text }}. Respond 'valid' or 'invalid'"
-}
+#[test]
+fn workflow_validates() {
+    let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+    let workflow = parse_workflow(workflow_source).expect("workflow should parse");
+    let report = validate_workflow(&workflow);
 
-// Check validator output
+    assert!(report.is_valid(), "{report:?}");
+}
 ```
 
-## Test Patterns
+## Runtime tests with scripted outputs
 
-### Mock Providers
-
-Use local providers for testing:
+The most practical execution test pattern uses `ScriptedProviderFactory` so you can assert output wiring without a live model.
 
 ```rust
-// Use Ollama for fast, free testing
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
+use engine_ai_core::runtime::{ScriptedProviderFactory, WorkflowRuntime};
+use serde_json::{json, Value};
+use std::collections::HashMap;
 
-<- agent test {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Test prompt"
-}
-```
+#[tokio::test]
+async fn workflow_executes_with_scripted_provider() {
+    let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+    let mut outputs_by_agent_name = HashMap::<String, Value>::new();
 
-### Test Data
+    outputs_by_agent_name.insert(
+        "greeting".to_owned(),
+        Value::String("Hello from scripted runtime".to_owned()),
+    );
 
-Use consistent test data:
+    let runtime = WorkflowRuntime::new(ScriptedProviderFactory::new(outputs_by_agent_name));
+    let execution_result = runtime
+        .execute_source(workflow_source, json!({}), json!({}))
+        .await
+        .expect("workflow should execute successfully");
 
-```rust
-test_cases <- [
-    "test case 1",
-    "test case 2",
-    "test case 3"
-]
-
-<- agent test1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Test: {{ test_cases[0] }}"
-}
-```
-
-### Expected Outputs
-
-Validate against expected results:
-
-```rust
-expected <- "expected output"
-
-<- agent under_test {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate output"
-}
-
-agent validator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Does '{{ under_test.text }}' match '{{ expected }}'?"
+    assert_eq!(
+        execution_result.output,
+        json!({
+            "greeting": "Hello from scripted runtime"
+        })
+    );
 }
 ```
 
-## Running Tests
+## What to test explicitly
 
-```bash
-# Run test workflow
-engine-ai run test_workflow.ai
-
-# Check syntax
-engine-ai check test_workflow.ai
-
-# Verbose output
-engine-ai run test_workflow.ai --verbose
-```
-
-## Best Practices
-
-<Tip>
-  Test workflows with local providers first before using paid APIs.
-</Tip>
-
-<Info>
-  Create separate test workflows for different scenarios.
-</Info>
-
-<Warning>
-  LLM outputs are non-deterministic - test for patterns, not exact matches.
-</Warning>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Deployment" icon="rocket" href="/guides/deployment">
-    Deploy your workflows
-  </Card>
-  <Card title="Best Practices" icon="star" href="/guides/best-practices">
-    Workflow best practices
-  </Card>
-</CardGroup>
+- parse success for representative samples
+- validation failures for known bad inputs
+- prompt interpolation behavior
+- output type mismatches
+- dependency ordering in multi-agent flows

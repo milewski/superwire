@@ -1,226 +1,114 @@
 ---
 title: Introduction
-description: 'Welcome to Engine AI - A powerful DSL for building AI agent workflows'
+description: A practical guide to the Engine AI workflow DSL, validation rules, and runtime behavior.
 ---
 
-<img
-  className="block dark:hidden"
-  src="/images/hero-light.svg"
-  alt="Hero Light"
-/>
-<img
-  className="hidden dark:block"
-  src="/images/hero-dark.svg"
-  alt="Hero Dark"
-/>
+Engine AI is a declarative language for describing agent workflows.
+A workflow is a plain text file made from a small set of declarations:
 
-## What is Engine AI?
+- providers, which define where models come from
+- input and secrets, which define typed external values
+- schemas, which define reusable output shapes
+- agents, which define model calls and dependencies
+- output, which defines the final JSON object returned by the workflow
 
-Engine AI is a domain-specific language (DSL) designed for building sophisticated AI agent workflows. It provides a declarative syntax for orchestrating multiple AI models, managing dependencies between agents, and producing structured outputs.
+```txt
+provider ollama {
+    driver: "ollama"
+    models: ["qwen3.5:32b"]
+}
+
+agent greeting {
+    model: ollama("qwen3.5:32b")
+    prompt: "Write a short welcome message."
+    output: string
+}
+
+output {
+    greeting: agent.greeting
+}
+```
 
 <CardGroup cols={2}>
-  <Card
-    title="Multi-Agent Orchestration"
-    icon="users"
-    href="/core-concepts/agents"
-  >
-    Coordinate multiple AI agents working together to solve complex tasks
+  <Card title="Core Concepts" icon="book" href="/core-concepts/overview">
+    Learn how declarations, schemas, agents, and outputs fit together.
   </Card>
-  <Card
-    title="Structured Outputs"
-    icon="table"
-    href="/core-concepts/schemas"
-  >
-    Define and validate structured data outputs using JSON Schema
+  <Card title="DSL Reference" icon="code" href="/syntax/overview">
+    See the exact grammar features, operators, and expression forms.
   </Card>
-  <Card
-    title="Parallel Execution"
-    icon="bolt"
-    href="/advanced/parallel-execution"
-  >
-    Execute independent agents in parallel for maximum performance
+  <Card title="Examples" icon="lightbulb" href="/examples/basic-agent">
+    Start from practical workflows based on the repository examples.
   </Card>
-  <Card
-    title="Multiple Providers"
-    icon="plug"
-    href="/core-concepts/providers"
-  >
-    Support for Ollama, OpenAI, Anthropic, and more
+  <Card title="Rust API" icon="terminal" href="/api-reference/rust-api">
+    Parse, validate, and execute workflows from Rust.
   </Card>
 </CardGroup>
 
-## Key Features
+## What the stack does today
 
-### 🎯 Declarative Workflow Definition
+Engine AI has three useful layers:
 
-Define complex AI workflows using a clean, readable syntax. No boilerplate code - just describe what you want to accomplish.
+1. **Parser**: converts workflow text into a typed AST.
+2. **Validator**: checks names, schema references, dependency cycles, secret leaks, and reference paths.
+3. **Runtime**: executes validated workflows with the default OpenAI and Ollama provider factory.
 
-```rust
-// Define a simple summarization agent
-agent summary {
-    model <- "ollama/qwen3:8b"
-    output <- { text: string }
-    prompt <- "Summarize the following text: {{ input.text }}"
+<Info>
+  The parser and validator currently understand more DSL surface area than the
+  default runtime executes. Pages that document `for` loops, `context(...)`,
+  `compact(...)`, `template(...)`, and `tool.*` references call out the current
+  runtime status explicitly.
+</Info>
+
+## Why this DSL is useful
+
+- **Readable**: workflows stay close to the business problem.
+- **Typed**: schemas, arrays, tuples, unions, and enums are first-class.
+- **Composable**: agent references form a dependency graph automatically.
+- **Safe**: validation blocks leaked secrets and invalid reference paths early.
+- **Embeddable**: the Rust API supports parse-only, validate-only, and execution flows.
+
+## A more complete example
+
+```txt
+provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    product_name: string
+    audience: string
+}
+
+agent release_summary {
+    model: openai("gpt-4.1-mini")
+    prompt: "Summarize {{ input.product_name }} for {{ input.audience }}."
+    output: {
+        summary: string
+        key_points: [string; 3]
+    }
+}
+
+output {
+    product_name: input.product_name
+    summary: agent.release_summary.summary
+    key_points: agent.release_summary.key_points
 }
 ```
 
-### 🔗 Dependency Management
-
-Agents can depend on outputs from other agents, creating sophisticated execution graphs that Engine AI automatically resolves.
-
-```rust
-agent analyze {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze this summary: {{ summary.text }}"
-}
-```
-
-### 📊 Type-Safe Schemas
-
-Define structured outputs with full JSON Schema validation, ensuring your AI agents produce reliable, predictable data.
-
-```rust
-schema person {
-    name: string
-    age: number
-    email: string
-    hobbies: [string]
-}
-```
-
-### ⚡ Parallel Processing
-
-Use `for_each` to process collections in parallel, dramatically reducing execution time for batch operations.
-
-```rust
-agent process_items for_each item in input.items {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process: {{ item }}"
-}
-```
-
-### 🧠 Context Sharing
-
-Share conversation history between agents for coherent multi-turn interactions.
-
-```rust
-agent first {
-    model <- "ollama/qwen3:8b"
-    context <- shared_context
-    prompt <- "Start the conversation"
-}
-
-agent second {
-    model <- "ollama/qwen3:8b"
-    context <- shared_context
-    prompt <- "Continue based on previous response"
-}
-```
-
-## Use Cases
-
-<AccordionGroup>
-  <Accordion icon="robot" title="AI-Powered Automation">
-    Build intelligent automation workflows that combine multiple AI models to handle complex business processes.
-  </Accordion>
-
-  <Accordion icon="brain" title="Multi-Step Reasoning">
-    Create pipelines where each agent builds on the previous one's output, enabling sophisticated reasoning chains.
-  </Accordion>
-
-  <Accordion icon="database" title="Structured Data Extraction">
-    Extract and validate structured information from unstructured text using schema-validated outputs.
-  </Accordion>
-
-  <Accordion icon="comments" title="Conversational AI">
-    Build multi-turn conversational systems with context management and state tracking.
-  </Accordion>
-
-  <Accordion icon="chart-line" title="Data Analysis Pipelines">
-    Orchestrate multiple AI models to analyze, summarize, and generate insights from data.
-  </Accordion>
-</AccordionGroup>
-
-## Why Engine AI?
-
-<CardGroup cols={3}>
-  <Card title="Simple" icon="sparkles">
-    Clean, intuitive syntax that's easy to learn and read
-  </Card>
-  <Card title="Powerful" icon="rocket">
-    Advanced features like parallel execution and dependency graphs
-  </Card>
-  <Card title="Flexible" icon="wrench">
-    Works with multiple LLM providers and supports custom tools
-  </Card>
-  <Card title="Type-Safe" icon="shield-check">
-    Schema validation ensures reliable outputs
-  </Card>
-  <Card title="Fast" icon="gauge-high">
-    Automatic parallelization and caching for optimal performance
-  </Card>
-  <Card title="Production-Ready" icon="check">
-    Battle-tested with comprehensive error handling
-  </Card>
-</CardGroup>
-
-## Language Bindings
-
-Engine AI provides native bindings for multiple programming languages:
-
-<Tabs>
-  <Tab title="Rust">
-    ```rust
-    use engine_ai::Engine;
-
-    let engine = Engine::new();
-    let result = engine.execute_workflow("workflow.ai").await?;
-    ```
-  </Tab>
-  <Tab title="JavaScript/TypeScript">
-    ```typescript
-    import { Engine } from 'engine-ai';
-
-    const engine = new Engine();
-    const result = await engine.executeWorkflow('workflow.ai');
-    ```
-  </Tab>
-  <Tab title="CLI">
-    ```bash
-    engine-ai run workflow.ai
-    ```
-  </Tab>
-</Tabs>
-
-## Next Steps
+## Next steps
 
 <CardGroup cols={2}>
-  <Card
-    title="Quickstart"
-    icon="play"
-    href="/quickstart"
-  >
-    Get up and running in 5 minutes
+  <Card title="Quickstart" icon="play" href="/quickstart">
+    Run a minimal workflow from Rust.
   </Card>
-  <Card
-    title="Core Concepts"
-    icon="book"
-    href="/core-concepts/overview"
-  >
-    Learn the fundamental concepts
+  <Card title="Workflow Anatomy" icon="diagram-project" href="/core-concepts/workflows">
+    Understand every declaration in one place.
   </Card>
-  <Card
-    title="Examples"
-    icon="code"
-    href="/examples/basic-agent"
-  >
-    Explore real-world examples
+  <Card title="Types" icon="table" href="/syntax/data-types">
+    Learn the full schema and output type system.
   </Card>
-  <Card
-    title="API Reference"
-    icon="terminal"
-    href="/api-reference/rust-api"
-  >
-    Dive into the API documentation
+  <Card title="Diagnostics" icon="shield-check" href="/advanced/error-handling">
+    See which errors come from parsing, validation, and execution.
   </Card>
 </CardGroup>

@@ -1,128 +1,49 @@
 ---
-title: 'Ollama Integration'
-description: 'Use Ollama for local LLM inference'
+title: Ollama
+description: Configure the built-in Ollama driver in the default Engine AI runtime.
 ---
 
-## Overview
+The default provider factory includes an Ollama driver.
 
-Ollama provides local LLM inference with no API costs, perfect for development and testing.
+## Minimal configuration
 
-## Installation
-
-<Tabs>
-  <Tab title="macOS">
-    ```bash
-    brew install ollama
-    ```
-  </Tab>
-  <Tab title="Linux">
-    ```bash
-    curl -fsSL https://ollama.com/install.sh | sh
-    ```
-  </Tab>
-  <Tab title="Windows">
-    Download from [ollama.com/download](https://ollama.com/download)
-  </Tab>
-</Tabs>
-
-## Start Ollama
-
-```bash
-ollama serve
-```
-
-## Pull Models
-
-```bash
-# Pull a model
-ollama pull qwen3:8b
-
-# List available models
-ollama list
-
-# Remove a model
-ollama rm qwen3:8b
-```
-
-## Configuration
-
-```rust
+```txt
 provider ollama {
-    driver <- "ollama"
-    config <- {
-        endpoint <- "http://localhost:11434"
-    }
-    models <- ["qwen3:8b", "llama2:7b", "mistral:7b"]
+    driver: "ollama"
+    models: ["qwen3.5:8b"]
 }
 ```
 
-## Popular Models
+## Explicit endpoint configuration
 
-- `qwen3:8b` - Fast, capable 8B parameter model
-- `llama2:7b` - Meta's Llama 2 7B
-- `llama2:13b` - Larger Llama 2 variant
-- `mistral:7b` - Mistral 7B
-- `codellama:13b` - Code-specialized model
-- `phi3:mini` - Small, efficient model
-
-## Using Ollama
-
-```rust
+```txt
 provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-<- agent task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Hello, world!"
+    driver: "ollama"
+    api_endpoint: "http://localhost:11434"
+    models: ["qwen3.5:8b", "qwen3.5:32b"]
 }
 ```
 
-## Custom Endpoint
+The built-in factory accepts any of these endpoint keys:
 
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- {
-        endpoint <- "http://custom-server:11434"
-    }
-    models <- ["qwen3:8b"]
+- `api_endpoint`
+- `base_url`
+- `host`
+
+If none are supplied, it defaults to `http://localhost:11434`.
+
+## Agent example
+
+```txt
+agent greeting {
+    model: ollama("qwen3.5:8b")
+    prompt: "Write a short welcome message."
+    output: string
 }
 ```
 
-## Troubleshooting
+## Operational notes
 
-<AccordionGroup>
-  <Accordion title="Connection refused">
-    Ensure Ollama is running:
-    ```bash
-    ollama serve
-    ```
-  </Accordion>
-
-  <Accordion title="Model not found">
-    Pull the model first:
-    ```bash
-    ollama pull qwen3:8b
-    ```
-  </Accordion>
-
-  <Accordion title="Slow performance">
-    - Use smaller models (7B instead of 13B)
-    - Ensure sufficient RAM
-    - Check CPU/GPU usage
-  </Accordion>
-</AccordionGroup>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Providers" icon="server" href="/core-concepts/providers">
-    Learn about providers
-  </Card>
-  <Card title="OpenAI" icon="openai" href="/integrations/openai">
-    OpenAI integration
-  </Card>
-</CardGroup>
+- keep `models` aligned with what you have pulled locally
+- if you change ports, prefer `api_endpoint` for clarity
+- declare only models you want workflow authors to use

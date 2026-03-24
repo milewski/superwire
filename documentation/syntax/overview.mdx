@@ -1,0 +1,69 @@
+---
+title: Syntax Overview
+description: A map of the current grammar, expression forms, and declaration shapes.
+---
+
+The Engine AI DSL is intentionally compact. At the top level, a workflow is just a sequence of declarations.
+
+## Top-level declarations
+
+```txt
+workflow = declaration*
+declaration =
+    provider
+  | secrets
+  | input
+  | schema
+  | agent
+  | output
+```
+
+## Declarations at a glance
+
+| Declaration | Shape | Purpose |
+| --- | --- | --- |
+| `provider` | `provider name { key: value }` | Configure a backend |
+| `secrets` | `secrets { field: type }` | Declare sensitive runtime values |
+| `input` | `input { field: type }` | Declare regular runtime values |
+| `schema` | `schema Name { field: type }` | Name a reusable type |
+| `agent` | `agent name { ... }` | Define model work |
+| `output` | `output { field: expression }` | Build the final result |
+
+## Expression forms
+
+Values inside providers, agents, and output fields can be:
+
+- function calls
+- object literals
+- array literals
+- booleans
+- `null`
+- numbers
+- strings and multiline strings
+- references such as `input.topic` or `agent.summary.title`
+
+## Type forms
+
+Type positions inside `input`, `secrets`, `schema`, and agent `output` can be:
+
+- scalars
+- schema references
+- arrays and fixed-length arrays
+- tuples
+- objects
+- unions
+- string enums
+
+## Comments and whitespace
+
+- whitespace is ignored between tokens
+- comments use `//` and run to the end of the line
+- multiline strings use triple quotes
+
+## Important distinction
+
+<Info>
+  The grammar accepts more surface area than the default runtime executes.
+  Use this reference for what the language can express, then check the runtime
+  notes on advanced pages when you need execution guarantees.
+</Info>

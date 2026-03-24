@@ -1,120 +1,51 @@
 ---
-title: 'OpenAI Integration'
-description: 'Use OpenAI GPT models via API'
+title: OpenAI-Compatible Endpoints
+description: Configure the built-in OpenAI driver with API keys, custom base URLs, and model allowlists.
 ---
 
-## Overview
+The default provider factory includes an OpenAI-compatible driver.
 
-OpenAI provides access to powerful GPT models including GPT-4, GPT-4 Turbo, and GPT-3.5 Turbo.
+## Minimal cloud configuration
 
-## Get API Key
-
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign up or log in
-3. Navigate to API Keys
-4. Create a new API key
-
-## Configuration
-
-```rust
+```txt
 provider openai {
-    driver <- "openai"
-    config <- {
-        api_key <- "sk-proj-..."
-        endpoint <- "https://api.openai.com/v1"
-    }
-    models <- ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
 }
 ```
 
-## Available Models
+With this configuration, the runtime falls back to `OPENAI_API_KEY`.
 
-- `gpt-4` - Most capable model
-- `gpt-4-turbo` - Faster GPT-4 variant
-- `gpt-3.5-turbo` - Fast and cost-effective
-- `gpt-4o` - Optimized GPT-4
+## Explicit API key and base URL
 
-## Using OpenAI
+```txt
+secrets {
+    openai_api_key: string
+}
 
-```rust
 provider openai {
-    driver <- "openai"
-    config <- {
-        api_key <- "sk-proj-..."
-        endpoint <- "https://api.openai.com/v1"
-    }
-    models <- ["gpt-4"]
-}
-
-<- agent task {
-    model <- "openai/gpt-4"
-    prompt <- "Explain quantum computing"
+    driver: "openai"
+    api_key: secrets.openai_api_key
+    base_url: "https://api.openai.com/v1"
+    models: ["gpt-4.1-mini", "gpt-4.1"]
 }
 ```
 
-## Custom Endpoints
+## Agent example
 
-Use OpenAI-compatible endpoints:
-
-```rust
-provider opencode {
-    driver <- "openai"
-    config <- {
-        api_key <- "your-api-key"
-        endpoint <- "https://opencode.ai/zen/v1"
+```txt
+agent analyst {
+    model: openai("gpt-4.1-mini")
+    prompt: "Analyze {{ input.notes }} and return the main risks."
+    output: {
+        risks: [string]
     }
-    models <- ["zen-bigpickle"]
-}
-
-<- agent task {
-    model <- "opencode/zen-bigpickle"
-    prompt <- "Your prompt here"
 }
 ```
 
-## Best Practices
+## Notes
 
-<Tip>
-  Use GPT-3.5 Turbo for simple tasks to reduce costs.
-</Tip>
-
-<Warning>
-  Keep your API key secure. Never commit it to version control.
-</Warning>
-
-<Info>
-  Monitor your usage at [platform.openai.com/usage](https://platform.openai.com/usage)
-</Info>
-
-## Troubleshooting
-
-<AccordionGroup>
-  <Accordion title="Invalid API key">
-    - Verify your API key is correct
-    - Check if the key has been revoked
-    - Ensure you have billing set up
-  </Accordion>
-
-  <Accordion title="Rate limits">
-    - Reduce parallel agent execution
-    - Upgrade your API tier
-    - Add delays between requests
-  </Accordion>
-
-  <Accordion title="Model not found">
-    - Check model name spelling
-    - Verify model is available in your region
-    - Ensure you have access to the model
-  </Accordion>
-</AccordionGroup>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Providers" icon="server" href="/core-concepts/providers">
-    Learn about providers
-  </Card>
-  <Card title="Anthropic" icon="robot" href="/integrations/anthropic">
-    Anthropic integration
-  </Card>
-</CardGroup>
+- `api_key` overrides the environment fallback
+- `base_url` and `api_endpoint` are interchangeable in the default factory
+- the current built-in drivers are `openai` and `ollama`
+- Anthropic is not built into the current default provider factory
