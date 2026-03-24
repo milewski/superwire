@@ -1,8 +1,9 @@
 use crate::message::{Message, ToolCall, ToolResult};
 use crate::traits::TokenUsage;
+use serde::{Deserialize, Serialize};
 
 /// Context object that carries state throughout the agent execution
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Context {
     pub messages: Vec<Message>,
     pub total_tokens: usize,

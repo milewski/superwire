@@ -1,0 +1,111 @@
+workflow = { SOI ~ declaration* ~ EOI }
+
+declaration = _{
+    provider_declaration
+    | secrets_declaration
+    | input_declaration
+    | schema_declaration
+    | agent_declaration
+    | output_declaration
+}
+
+provider_declaration = { "provider" ~ identifier ~ object_expression }
+secrets_declaration = { "secrets" ~ typed_block }
+input_declaration = { "input" ~ typed_block }
+schema_declaration = { "schema" ~ identifier ~ typed_block }
+
+agent_declaration = { "agent" ~ identifier ~ for_clause? ~ agent_block }
+for_clause = { "for" ~ identifier ~ "in" ~ expression }
+agent_block = { "{" ~ agent_property* ~ "}" }
+
+agent_property = _{
+    model_property
+    | prompt_property
+    | output_property
+    | context_property
+    | inference_property
+    | tools_property
+    | custom_property
+}
+
+model_property = { "model" ~ ":" ~ expression }
+prompt_property = { "prompt" ~ ":" ~ expression }
+output_property = { "output" ~ ":" ~ type_expression }
+context_property = { "context" ~ ":" ~ expression }
+inference_property = { "inference" ~ ":" ~ expression }
+tools_property = { "tools" ~ ":" ~ expression }
+custom_property = { identifier ~ ":" ~ expression }
+
+output_declaration = { "output" ~ object_expression }
+
+typed_block = { "{" ~ typed_field* ~ "}" }
+typed_field = { identifier ~ ":" ~ type_expression ~ plain_string_literal? }
+
+type_expression = { type_term ~ ("|" ~ type_term)* }
+
+type_term = _{
+    scalar_type
+    | schema_reference
+    | array_type
+    | tuple_type
+    | type_object
+    | plain_string_literal
+}
+
+scalar_type = { "string" | "number" | "float" | "boolean" | "null" }
+schema_reference = { "schema" ~ "." ~ identifier }
+array_type = { "[" ~ type_expression ~ (";" ~ unsigned_integer_literal)? ~ "]" }
+tuple_type = { "(" ~ type_expression ~ ("," ~ type_expression)* ~ ")" }
+type_object = { "{" ~ typed_field* ~ "}" }
+
+expression = _{
+    function_call
+    | object_expression
+    | array_expression
+    | boolean_literal
+    | null_literal
+    | number_literal
+    | string_expression
+    | reference
+}
+
+object_expression = { "{" ~ object_field* ~ "}" }
+object_field = { identifier ~ ":" ~ expression }
+
+array_expression = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
+
+function_call = { reference ~ "(" ~ call_arguments? ~ ")" }
+call_arguments = { call_argument ~ ("," ~ call_argument)* ~ ","? }
+call_argument = { named_argument | expression }
+named_argument = { identifier ~ ":" ~ expression }
+
+reference = { identifier ~ (reference_operator ~ identifier)* }
+reference_operator = { "?." | "." }
+
+boolean_literal = { "true" | "false" }
+null_literal = { "null" }
+number_literal = @{ "-"? ~ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* ~ ("." ~ ASCII_DIGIT ~ (ASCII_DIGIT | "_")*)? }
+unsigned_integer_literal = @{ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* }
+
+escaped_character = { "\\\\" | "\\\"" | "\\n" | "\\r" | "\\t" | "\\{" | "\\}" }
+
+string_expression = { multiline_string_expression | quoted_string_expression }
+
+quoted_string_expression = ${ "\"" ~ quoted_string_part* ~ "\"" }
+quoted_string_part = { interpolation | escaped_character | quoted_string_text }
+quoted_string_text = @{ (!("\"" | "\\" | "{" | "}" | NEWLINE) ~ ANY)+ }
+
+multiline_string_expression = ${ "\"\"\"" ~ multiline_string_part* ~ "\"\"\"" }
+multiline_string_part = { interpolation | escaped_character | multiline_string_text }
+multiline_string_text = @{ (!("\"\"\"" | "\\" | "{" | "}") ~ ANY)+ }
+
+interpolation = !{ "{{" ~ WHITESPACE* ~ expression ~ WHITESPACE* ~ "}}" }
+
+plain_string_literal = _{ plain_multiline_string | plain_quoted_string }
+plain_quoted_string = @{ "\"" ~ (escaped_character | !("\"" | NEWLINE) ~ ANY)* ~ "\"" }
+plain_multiline_string = @{ "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\"" }
+
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* }

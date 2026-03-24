@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Tool call information
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -9,7 +10,7 @@ pub struct ToolCall {
 }
 
 /// Tool result information
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum ToolResult {
     Success { tool_call_id: String, content: Value },
     Failure { tool_call_id: String, content: Value },
@@ -32,7 +33,7 @@ impl ToolResult {
 }
 
 /// A message in the conversation
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum Message {
     User { content: String },
     Assistant { content: String },

@@ -16,6 +16,7 @@ pub use agent::{Agent, AgentConfig, AgentRunResult, AgentRunStatistics};
 pub use context::Context;
 pub use error::{AgentError, ProviderError};
 pub use executor::LoopExecutor;
+pub use json_validation::{validate_json_against_schema_with_context, JsonValidationError, JsonValidationIssue};
 pub use message::{Message, ToolCall, ToolResult};
 pub use providers::{OllamaProvider, OpenAIProvider};
 pub use tool::{FinalizeOutput, FinalizeTool, RuntimeTool, Tool, ToolError};

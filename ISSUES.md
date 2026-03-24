@@ -1,0 +1,5 @@
+- [ ] Add agent property contract validation (required properties, duplicate properties, and property shape checks)
+- [ ] Add provider contract validation (`driver` type/required checks, `models` shape, duplicate model entries)
+- [ ] Tighten `model:` call validation semantics (single source of model name, disallow ambiguous argument combinations)
+- [ ] Add source spans (line/column) to parse and validation diagnostics for better LSP and CLI error reporting
+- [ ] Improve cycle diagnostics to include at least one concrete cycle path (not only node set)
