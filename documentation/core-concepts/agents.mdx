@@ -84,11 +84,6 @@ agent remediation_plan for finding in agent.findings.items {
 }
 ```
 
-<Warning>
-  The parser and validator understand `for` loops, but the current default
-  runtime returns `UnsupportedForLoop` when execution reaches a looped agent.
-</Warning>
-
 ## Current runtime behavior
 
 The default runtime currently consumes these agent fields directly:
@@ -96,5 +91,8 @@ The default runtime currently consumes these agent fields directly:
 - `model`
 - `prompt`
 - `output`
+- `context`
+- `inference`
+- optional `for` loop iteration
 
-It parses and validates the rest, but does not yet execute `context`, `inference`, `tools`, looped agents, or generic function calls.
+It parses and validates the rest, but does not yet execute `tools` / `tool.*` references.

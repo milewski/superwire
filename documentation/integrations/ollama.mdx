@@ -1,36 +1,28 @@
 ---
 title: Ollama
-description: Configure the built-in Ollama driver in the default Engine AI runtime.
+description: Configure the built-in Ollama driver in the Engine AI runtime.
 ---
 
-The default provider factory includes an Ollama driver.
+The runtime includes a built-in Ollama driver.
 
-## Minimal configuration
-
-```txt
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3.5:8b"]
-}
-```
-
-## Explicit endpoint configuration
+## Required configuration
 
 ```txt
 provider ollama {
     driver: "ollama"
-    api_endpoint: "http://localhost:11434"
+    endpoint: "http://localhost:11434"
     models: ["qwen3.5:8b", "qwen3.5:32b"]
 }
 ```
 
-The built-in factory accepts any of these endpoint keys:
+Required runtime settings:
 
-- `api_endpoint`
-- `base_url`
-- `host`
+- `driver`
+- `endpoint` (must include host and port)
 
-If none are supplied, it defaults to `http://localhost:11434`.
+Optional validation setting:
+
+- `models`
 
 ## Agent example
 
@@ -44,6 +36,6 @@ agent greeting {
 
 ## Operational notes
 
-- keep `models` aligned with what you have pulled locally
-- if you change ports, prefer `api_endpoint` for clarity
+- keep `models` aligned with models available in your Ollama instance
+- use explicit `endpoint` values for non-default hosts or ports
 - declare only models you want workflow authors to use

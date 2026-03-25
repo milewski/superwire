@@ -36,6 +36,8 @@ Declare model backends up front and list allowed models so validation can catch 
 ```txt
 provider openai {
     driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini"]
 }
 ```

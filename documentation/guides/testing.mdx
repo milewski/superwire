@@ -40,34 +40,65 @@ fn workflow_validates() {
 
 ## Runtime tests with scripted outputs
 
-The most practical execution test pattern uses `ScriptedProviderFactory` so you can assert output wiring without a live model.
+The most practical execution test pattern uses a custom `AgentRunner` so you can assert output wiring without a live model.
 
 ```rust
-use engine_ai_core::runtime::{ScriptedProviderFactory, WorkflowRuntime};
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use async_trait::async_trait;
+use engine_ai_core::parse_inline_workflow;
+use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntime, WorkflowRuntimeError};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::json;
+
+struct ScriptedRunner;
+
+#[async_trait]
+impl AgentRunner for ScriptedRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        Ok(AgentExecutionResult {
+            output: json!(format!("Hello from {}", request.agent_name)),
+            context: json!({"prompt": request.prompt}),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+struct Output {
+    greeting: String,
+}
 
 #[tokio::test]
-async fn workflow_executes_with_scripted_provider() {
-    let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
-    let mut outputs_by_agent_name = HashMap::<String, Value>::new();
+async fn workflow_executes_with_scripted_runner() {
+    let workflow = parse_inline_workflow! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["model-a"]
+        }
 
-    outputs_by_agent_name.insert(
-        "greeting".to_owned(),
-        Value::String("Hello from scripted runtime".to_owned()),
-    );
+        agent greeting {
+            model: openai("model-a")
+            prompt: "Say hello"
+            output: string
+        }
 
-    let runtime = WorkflowRuntime::new(ScriptedProviderFactory::new(outputs_by_agent_name));
+        output {
+            greeting: agent.greeting
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
     let execution_result = runtime
-        .execute_source(workflow_source, json!({}), json!({}))
+        .run_with_runner((), &ScriptedRunner)
         .await
         .expect("workflow should execute successfully");
 
     assert_eq!(
-        execution_result.output,
-        json!({
-            "greeting": "Hello from scripted runtime"
-        })
+        execution_result,
+        Output {
+            greeting: "Hello from greeting".to_string(),
+        }
     );
 }
 ```

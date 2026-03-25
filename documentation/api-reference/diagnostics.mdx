@@ -39,21 +39,25 @@ Execution returns `WorkflowRuntimeError`.
 
 Important variants include:
 
-- `ValidationFailed`
-- `MissingModelExpression`
-- `InvalidModelExpression`
-- `MissingProviderDeclaration`
-- `UnsupportedForLoop`
-- `UnsupportedToolKeywordReference`
-- `UnsupportedFunctionCall`
-- `InvalidReferencePath`
-- `ProviderFactoryFailed`
+- `ParseFailed`
+- `InvalidWorkflow`
+- `ExecutionPlanInvariant`
+- `MissingDeclaration`
+- `UnsupportedFeature`
+- `ProviderConfiguration`
+- `ExpressionEvaluation`
+- `InvalidAgentProperty`
+- `InputTypeMismatch`
+- `OutputTypeMismatch`
+- `InputValueMismatch`
 - `AgentExecutionFailed`
 - `AgentOutputTypeMismatch`
-- `DependencyCycle`
+- `SerializationFailed`
+- `OutputDeserializationFailed`
+- `Other`
 
 ## Practical advice
 
 - surface parse spans directly in editors or test failures
 - treat validation as a required preflight step
-- reserve runtime errors for provider failures, unsupported features, and output mismatches
+- reserve runtime errors for provider failures, unsupported features, input/output mismatches, and agent execution failures

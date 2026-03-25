@@ -1,35 +1,30 @@
 ---
 title: OpenAI-Compatible Endpoints
-description: Configure the built-in OpenAI driver with API keys, custom base URLs, and model allowlists.
+description: Configure the built-in OpenAI driver with explicit endpoint and API key settings.
 ---
 
-The default provider factory includes an OpenAI-compatible driver.
+The runtime includes a built-in OpenAI-compatible driver.
 
-## Minimal cloud configuration
+## Required configuration
 
 ```txt
 provider openai {
     driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini"]
 }
 ```
 
-With this configuration, the runtime falls back to `OPENAI_API_KEY`.
+Required runtime settings:
 
-## Explicit API key and base URL
+- `driver`
+- `endpoint`
+- `api_key`
 
-```txt
-secrets {
-    openai_api_key: string
-}
+Optional validation setting:
 
-provider openai {
-    driver: "openai"
-    api_key: secrets.openai_api_key
-    base_url: "https://api.openai.com/v1"
-    models: ["gpt-4.1-mini", "gpt-4.1"]
-}
-```
+- `models`
 
 ## Agent example
 
@@ -45,7 +40,6 @@ agent analyst {
 
 ## Notes
 
-- `api_key` overrides the environment fallback
-- `base_url` and `api_endpoint` are interchangeable in the default factory
-- the current built-in drivers are `openai` and `ollama`
-- Anthropic is not built into the current default provider factory
+- `endpoint` should include the API base path expected by your OpenAI-compatible service
+- `api_key` is parsed as a string literal by the current runtime provider parser
+- built-in drivers are currently `openai` and `ollama`

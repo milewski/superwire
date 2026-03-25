@@ -10,6 +10,8 @@ A workflow is the complete `.ai` file. The top-level grammar is intentionally sm
 ```txt
 provider openai {
     driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini"]
 }
 
@@ -63,14 +65,16 @@ output {
 }
 ```
 
-## Inputs and secrets are separate on purpose
+## Inputs and secrets
 
-The runtime receives normal input values and secret values separately:
+The language distinguishes normal input from secret declarations:
 
 - `input` is for regular business data
 - `secrets` is for sensitive configuration and credentials
 
 Validation prevents `secrets.*` references from being used in prompts, context, and workflow output.
+
+The current public runtime API accepts typed input values directly. Secret declaration support is available in the DSL and validator.
 
 ## Optional output declaration
 

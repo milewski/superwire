@@ -15,6 +15,7 @@ A workflow is a plain text file made from a small set of declarations:
 ```txt
 provider ollama {
     driver: "ollama"
+    endpoint: "http://localhost:11434"
     models: ["qwen3.5:32b"]
 }
 
@@ -50,13 +51,12 @@ Engine AI has three useful layers:
 
 1. **Parser**: converts workflow text into a typed AST.
 2. **Validator**: checks names, schema references, dependency cycles, secret leaks, and reference paths.
-3. **Runtime**: executes validated workflows with the default OpenAI and Ollama provider factory.
+3. **Runtime**: executes validated workflows with built-in OpenAI and Ollama drivers.
 
 <Info>
-  The parser and validator currently understand more DSL surface area than the
-  default runtime executes. Pages that document `for` loops, `context(...)`,
-  `compact(...)`, `template(...)`, and `tool.*` references call out the current
-  runtime status explicitly.
+  The runtime executes `for` loops, `context(...)`, `compact(...)`, and
+  `template(...)`. `tools` / `tool.*` references are still unsupported at
+  execution time.
 </Info>
 
 ## Why this DSL is useful
@@ -72,6 +72,8 @@ Engine AI has three useful layers:
 ```txt
 provider openai {
     driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini"]
 }
 

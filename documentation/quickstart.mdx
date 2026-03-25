@@ -20,6 +20,7 @@ Save this as `hello.ai`:
 ```txt
 provider ollama {
     driver: "ollama"
+    endpoint: "http://localhost:11434"
     models: ["qwen3.5:8b"]
 }
 
@@ -37,10 +38,12 @@ output {
 ## 3. Execute it from Rust
 
 ```rust
-use engine_ai_core::runtime::try_workflow_from_source;
+use engine_ai_core::dsl::parse_workflow;
+use engine_ai_core::runtime::execute_workflow_without_input;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 struct Output {
     greeting: String,
 }
@@ -48,8 +51,8 @@ struct Output {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workflow_source = include_str!("../hello.ai");
-    let workflow_result: Result<Output, _> = try_workflow_from_source(workflow_source).await?;
-    let workflow_output = workflow_result?;
+    let workflow = parse_workflow(workflow_source)?;
+    let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
 
     println!("{}", workflow_output.greeting);
 
@@ -64,6 +67,7 @@ Typed input makes workflows reusable:
 ```txt
 provider ollama {
     driver: "ollama"
+    endpoint: "http://localhost:11434"
     models: ["qwen3.5:8b"]
 }
 
@@ -88,11 +92,18 @@ output {
 ```
 
 ```rust
-use engine_ai_core::runtime::try_workflow_from_source_with_values;
-use serde::Deserialize;
-use serde_json::json;
+use engine_ai_core::dsl::parse_workflow;
+use engine_ai_core::runtime::execute_workflow;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, JsonSchema)]
+struct Input {
+    topic: String,
+    audience: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct Output {
     title: String,
     summary: String,
@@ -101,14 +112,16 @@ struct Output {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workflow_source = include_str!("../summary.ai");
-    let input_values = json!({
-        "topic": "agent workflows",
-        "audience": "Rust developers"
-    });
+    let workflow = parse_workflow(workflow_source)?;
 
-    let workflow_result: Result<Output, _> =
-        try_workflow_from_source_with_values(workflow_source, input_values, json!({})).await?;
-    let workflow_output = workflow_result?;
+    let workflow_output: Output = execute_workflow(
+        &workflow,
+        Input {
+            topic: "agent workflows".to_string(),
+            audience: "Rust developers".to_string(),
+        },
+    )
+    .await?;
 
     println!("{:?}", workflow_output);
 
@@ -118,25 +131,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 <Tip>
   If you want deterministic tests without a live model, use
-  `WorkflowRuntime::new(ScriptedProviderFactory::new(...))`. The testing guide
+  `WorkflowRuntime::run_with_runner(...)` with a custom `AgentRunner`. The testing guide
   shows the full pattern.
 </Tip>
 
 ## 5. Know the current runtime boundary
 
-The default runtime currently executes standard agents that use `model`, `prompt`, and optional `output` validation.
+The default runtime executes `model`, `prompt`, `output`, `context`, `inference`, and `for` loop agents.
 
 <Warning>
-  Syntax such as agent `for` loops, `context(...)`, `compact(...)`,
-  `template(...)`, and `tool.*` references is parsed and documented, but the
-  default runtime does not execute those features yet.
+  `tools` and `tool.*` references are still not executed by the runtime and
+  return `UnsupportedFeature` when reached.
 </Warning>
 
 ## Continue reading
 
 <CardGroup cols={2}>
   <Card title="Providers" icon="plug" href="/core-concepts/providers">
-    Configure OpenAI, Ollama, and custom provider factories.
+    Configure OpenAI and Ollama providers.
   </Card>
   <Card title="Agents" icon="robot" href="/core-concepts/agents">
     Learn every built-in agent property.

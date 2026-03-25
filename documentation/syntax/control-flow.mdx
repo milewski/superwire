@@ -48,9 +48,6 @@ output {
 
 ## Current runtime status
 
-<Warning>
-  The parser and validator support loop syntax, but the current default runtime
-  does not execute looped agents yet and returns `UnsupportedForLoop`.
-</Warning>
+Looped agents execute in the default runtime.
 
-Use this syntax when documenting or validating the language, but do not rely on it in the default runtime until execution support lands.
+Each loop iteration produces one output item, and referencing the looped agent returns the full output array.

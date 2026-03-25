@@ -30,28 +30,19 @@ ollama pull qwen3.5:8b
 The default Ollama integration reads these provider settings when present:
 
 - `driver: "ollama"`
-- `api_endpoint: "http://localhost:11434"`
-- `base_url: "http://localhost:11434"`
-- `host: "http://localhost"`
+- `endpoint: "http://localhost:11434"`
 - `models: ["..."]`
 
-If no endpoint setting is supplied, the runtime defaults to `http://localhost:11434`.
+`endpoint` should include host and port.
 
 ### OpenAI-compatible endpoints
 
 The default OpenAI integration reads:
 
 - `driver: "openai"`
-- `api_key: secrets.some_key` or `OPENAI_API_KEY`
-- `base_url: "https://..."`
-- `api_endpoint: "https://..."`
+- `endpoint: "https://..."`
+- `api_key: "..."`
 - `models: ["..."]`
-
-Example environment setup:
-
-```bash
-export OPENAI_API_KEY="your-api-key"
-```
 
 ## Documentation preview
 

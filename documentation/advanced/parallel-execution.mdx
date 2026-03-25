@@ -1,6 +1,6 @@
 ---
 title: Parallel Execution
-description: Understand how the dependency graph enables parallelism and where loop support stands today.
+description: Understand how dependency analysis shapes execution order and where true concurrency currently stands.
 ---
 
 Engine AI computes execution order from agent references.
@@ -23,7 +23,7 @@ agent topics {
 }
 ```
 
-Because both agents depend only on `input.text`, they can be scheduled independently.
+Because both agents depend only on `input.text`, they are independent in the dependency graph.
 
 ## Serial execution by reference
 
@@ -58,12 +58,13 @@ agent remediation_plan for finding in agent.findings.items {
 }
 ```
 
-This syntax is designed to produce one agent run per item and return an array of outputs.
+This syntax produces one run per item and returns an array of outputs.
 
-<Warning>
-  The current default runtime does not execute looped agents yet and returns
-  `UnsupportedForLoop`. The parser and validator still understand the syntax.
-</Warning>
+## Current runtime behavior
+
+The runtime currently executes agents in dependency order (a deterministic sequence), not concurrently.
+
+Dependency analysis still matters because it determines which agents must run first and which agents are independent.
 
 ## Performance guidance
 

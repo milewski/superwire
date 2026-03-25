@@ -8,7 +8,8 @@ Providers are named blocks that hold backend settings.
 ```txt
 provider openai {
     driver: "openai"
-    api_key: secrets.openai_api_key
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini", "gpt-4.1"]
 }
 ```
@@ -22,7 +23,7 @@ provider <provider_name> {
 }
 ```
 
-Every provider property is just a key/value expression pair in the DSL. The parser preserves all properties. The default runtime only consumes a known subset for the built-in provider factory.
+Every provider property is a key/value expression pair in the DSL. The parser preserves all properties.
 
 ## Binding an agent to a provider
 
@@ -52,45 +53,46 @@ Validation checks these provider-related conditions:
 - if a provider declares `models`, the chosen model must appear in that list
 - the `model:` property must be a provider call, not a string literal or object
 
-## Built-in provider settings in the default runtime
+## Built-in runtime provider settings
 
 ### OpenAI driver
 
 ```txt
 provider openai {
     driver: "openai"
-    api_key: secrets.openai_api_key
-    base_url: "https://api.openai.com/v1"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini"]
 }
 ```
 
-Supported settings:
+Required settings consumed by runtime:
 
 - `driver`
+- `endpoint`
 - `api_key`
-- `base_url`
-- `api_endpoint`
-- `models`
 
-If `api_key` is omitted, the runtime falls back to `OPENAI_API_KEY`.
+Optional setting used by validation:
+
+- `models`
 
 ### Ollama driver
 
 ```txt
 provider ollama {
     driver: "ollama"
-    api_endpoint: "http://localhost:11434"
+    endpoint: "http://localhost:11434"
     models: ["qwen3.5:8b"]
 }
 ```
 
-Supported settings:
+Required settings consumed by runtime:
 
 - `driver`
-- `api_endpoint`
-- `base_url`
-- `host`
+- `endpoint` (must include host and port)
+
+Optional setting used by validation:
+
 - `models`
 
 ## Practical pattern: local first, cloud second
@@ -98,12 +100,14 @@ Supported settings:
 ```txt
 provider ollama_local {
     driver: "ollama"
+    endpoint: "http://localhost:11434"
     models: ["qwen3.5:8b"]
 }
 
 provider openai_cloud {
     driver: "openai"
-    api_key: secrets.openai_api_key
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
     models: ["gpt-4.1-mini"]
 }
 
@@ -124,6 +128,7 @@ agent synthesize {
 ```
 
 <Info>
-  Additional provider properties are still useful with custom provider
-  factories because the DSL keeps the full object expression intact.
+  Provider configuration fields currently need string literals for runtime parsing.
+  Secret references inside provider blocks are validated by the DSL, but runtime
+  provider parsing expects literal `endpoint` and `api_key` values.
 </Info>

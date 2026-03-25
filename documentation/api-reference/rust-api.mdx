@@ -23,29 +23,47 @@ assert!(validation_report.is_valid());
 ## Execute with built-in providers
 
 ```rust
-use engine_ai_core::runtime::try_workflow_from_source;
+use engine_ai_core::dsl::parse_workflow;
+use engine_ai_core::runtime::execute_workflow_without_input;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 struct Output {
     greeting: String,
 }
 
 let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
-let workflow_result: Result<Output, _> = try_workflow_from_source(workflow_source).await?;
-let workflow_output = workflow_result?;
+let workflow = parse_workflow(workflow_source)?;
+let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
 ```
 
 ## Execute with explicit input and secrets
 
 ```rust
-use engine_ai_core::runtime::try_workflow_from_source_with_values;
-use serde_json::json;
+use engine_ai_core::dsl::parse_workflow;
+use engine_ai_core::runtime::execute_workflow;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
-let execution_result = try_workflow_from_source_with_values::<serde_json::Value>(
-    workflow_source,
-    json!({"topic": "agent workflows"}),
-    json!({"openai_api_key": "secret"}),
+#[derive(Debug, Serialize, JsonSchema)]
+struct Input {
+    topic: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct Output {
+    summary: String,
+}
+
+let workflow_source = include_str!("../../crates/core/workflows/structured_output.ai");
+let workflow = parse_workflow(workflow_source)?;
+
+let workflow_output: Output = execute_workflow(
+    &workflow,
+    Input {
+        topic: "agent workflows".to_string(),
+    },
 )
 .await?;
 ```
@@ -55,20 +73,19 @@ let execution_result = try_workflow_from_source_with_values::<serde_json::Value>
 Useful runtime exports include:
 
 - `WorkflowRuntime`
-- `WorkflowExecutionResult`
 - `WorkflowRuntimeError`
-- `ValidationProblem`
-- `DefaultProviderFactory`
-- `ScriptedProviderFactory`
-- `WorkflowProviderFactory`
-- `DynamicProvider`
-- `try_workflow_from_source`
-- `try_workflow_from_source_with_values`
+- `execute_workflow`
+- `execute_workflow_without_input`
+- `AgentRunner`
+- `AgentExecutionRequest`
+- `AgentExecutionResult`
+- `ProviderDriver`
+- `ProviderConfig`
 
 ## Macro helper
 
-The runtime also re-exports `try_workflow!` for source-included workflows.
+The crate exports `try_workflow!` for already-parsed workflows.
 
 ```rust
-use engine_ai_core::runtime::try_workflow;
+use engine_ai_core::try_workflow;
 ```

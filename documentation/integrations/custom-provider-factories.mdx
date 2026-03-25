@@ -1,58 +1,55 @@
 ---
-title: Custom Provider Factories
-description: Extend Engine AI by implementing `WorkflowProviderFactory` and translating DSL provider settings into concrete providers.
+title: Custom Agent Runners
+description: Extend runtime execution by implementing `AgentRunner` and passing it to `WorkflowRuntime::run_with_runner`.
 ---
 
-The DSL keeps provider declarations generic. The default runtime ships with OpenAI and Ollama support, but you can provide your own factory.
+The current runtime API does not expose `WorkflowProviderFactory` or dynamic provider registration.
 
-## Trait to implement
+For custom execution logic, implement `AgentRunner` and run workflows with `run_with_runner(...)`.
+
+## Extension point
 
 ```rust
-use engine_ai_core::runtime::{DynamicProvider, WorkflowProviderFactory, WorkflowRuntimeError};
-use serde_json::{Map, Value};
+use async_trait::async_trait;
+use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntimeError};
+use serde_json::json;
 
-struct MyProviderFactory;
+struct MyRunner;
 
-impl WorkflowProviderFactory for MyProviderFactory {
-    fn build_provider(
-        &self,
-        agent_name: &str,
-        provider_name: &str,
-        provider_settings: &Map<String, Value>,
-        model_name: &str,
-    ) -> Result<DynamicProvider, WorkflowRuntimeError> {
-        todo!()
+#[async_trait]
+impl AgentRunner for MyRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        let synthetic_output = json!({
+            "agent": request.agent_name,
+            "model": request.model_name,
+            "prompt": request.prompt,
+        });
+
+        Ok(AgentExecutionResult {
+            output: synthetic_output,
+            context: json!({"runner": "my-runner"}),
+        })
     }
 }
 ```
 
-## Why this abstraction matters
+## Running with a custom runner
 
-The DSL provider block is just structured data:
+```rust
+use engine_ai_core::runtime::WorkflowRuntime;
 
-```txt
-provider my_backend {
-    driver: "internal"
-    region: "us-east-1"
-    api_key: secrets.internal_api_key
-    models: ["research-v1"]
-}
+let runtime = WorkflowRuntime::<Input, Output>::new(workflow)?;
+let output = runtime.run_with_runner(input, &MyRunner).await?;
 ```
 
-Your factory decides what those properties mean at execution time.
+## Practical use cases
 
-## Common pattern
+1. deterministic integration tests without live model calls
+2. custom transport or queue-backed execution
+3. request/response tracing for observability
+4. policy checks before dispatching agent calls
 
-1. evaluate provider settings from the workflow
-2. inspect `driver` and related keys
-3. construct a concrete provider instance
-4. wrap it with `DynamicProvider::new(...)`
+## Current limitation
 
-## Testing custom factories
-
-Use `WorkflowRuntime::new(MyProviderFactory)` in tests and drive it with small workflows that assert:
-
-- provider selection by name
-- setting translation
-- model selection
-- output wiring
+Provider declarations still parse into the built-in `ProviderConfig` variants (`openai` and `ollama`).
+If you need new provider drivers, add them in `engine-ai-core` and wire them into runtime provider parsing.
