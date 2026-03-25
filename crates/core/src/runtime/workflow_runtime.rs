@@ -304,7 +304,7 @@ where
     let plan_stage_output = compile_workflow_pipeline::<Input, Output>(WorkflowPipelineInput::Workflow(workflow))?;
 
     Ok(CompiledWorkflow {
-        execution_plan: plan_stage_output.execution_plan,
+        execution_plan: plan_stage_output.into_execution_plan(),
     })
 }
 
