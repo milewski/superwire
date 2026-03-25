@@ -1157,7 +1157,7 @@ impl ReferenceCompletionPath {
         }
 
         let token_parts = normalized_token.split('.').collect::<Vec<_>>();
-        let root = token_parts.first()?.to_string();
+        let root = (*token_parts.first()?).to_string();
 
         if !is_identifier(root.as_str()) {
             return None;
@@ -1199,7 +1199,7 @@ impl ReferenceCompletionPath {
             complete_accesses.push((*token_part).to_string());
         }
 
-        let pending_prefix = token_parts.last()?.to_string();
+        let pending_prefix = (*token_parts.last()?).to_string();
 
         if !pending_prefix.is_empty() && !is_identifier(&pending_prefix) {
             return None;
