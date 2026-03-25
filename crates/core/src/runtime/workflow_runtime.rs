@@ -1,4 +1,4 @@
-use crate::dsl::{AgentDeclaration, AgentProperty, Expression, Workflow};
+use crate::dsl::{AgentDeclaration, AgentExpressionPropertyName, Expression, Workflow};
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
 use crate::runtime::inference::InferenceSetting;
@@ -169,10 +169,18 @@ where
             });
         };
 
-        let agent_prompt_expression = required_agent_property_expression(agent_declaration, "prompt")?;
-        let context_property_expression = optional_agent_property_expression(agent_declaration, "context");
+        let agent_prompt_expression =
+            agent_declaration
+                .required_expression_property(AgentExpressionPropertyName::Prompt)
+                .map_err(|missing_property| WorkflowRuntimeError::InvalidAgentProperty {
+                    agent_name: agent_declaration.name.clone(),
+                    property: missing_property.as_str().to_string(),
+                    message: "property is required".to_string(),
+                })?;
 
-        if optional_agent_property_expression(agent_declaration, "tools").is_some() {
+        let context_property_expression = agent_declaration.expression_property(AgentExpressionPropertyName::Context);
+
+        if agent_declaration.expression_property(AgentExpressionPropertyName::Tools).is_some() {
             return Err(WorkflowRuntimeError::UnsupportedFeature {
                 feature: format!("agent `{agent_name}` uses `tools`, which is not supported yet"),
             });
@@ -308,44 +316,8 @@ where
     })
 }
 
-fn required_agent_property_expression<'property>(
-    agent_declaration: &'property AgentDeclaration,
-    property_name: &str,
-) -> Result<&'property Expression, WorkflowRuntimeError> {
-    optional_agent_property_expression(agent_declaration, property_name).ok_or_else(|| WorkflowRuntimeError::InvalidAgentProperty {
-        agent_name: agent_declaration.name.clone(),
-        property: property_name.to_string(),
-        message: "property is required".to_string(),
-    })
-}
-
-fn optional_agent_property_expression<'property>(
-    agent_declaration: &'property AgentDeclaration,
-    property_name: &str,
-) -> Option<&'property Expression> {
-    for agent_property in &agent_declaration.properties {
-        match agent_property {
-            AgentProperty::Model(expression) if property_name == "model" => return Some(expression),
-            AgentProperty::Prompt(expression) if property_name == "prompt" => return Some(expression),
-            AgentProperty::Context(expression) if property_name == "context" => return Some(expression),
-            AgentProperty::Inference(expression) if property_name == "inference" => return Some(expression),
-            AgentProperty::Tools(expression) if property_name == "tools" => return Some(expression),
-            AgentProperty::Custom { name, value } if name == property_name => return Some(value),
-            AgentProperty::Model(_)
-            | AgentProperty::Prompt(_)
-            | AgentProperty::Output(_)
-            | AgentProperty::Context(_)
-            | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
-            | AgentProperty::Custom { name: _, value: _ } => {}
-        }
-    }
-
-    None
-}
-
 fn build_agent_config(agent_declaration: &AgentDeclaration, runtime_state: &RuntimeState) -> Result<AgentConfig, WorkflowRuntimeError> {
-    let Some(inference_expression) = optional_agent_property_expression(agent_declaration, "inference") else {
+    let Some(inference_expression) = agent_declaration.expression_property(AgentExpressionPropertyName::Inference) else {
         return Ok(AgentConfig::default());
     };
 
@@ -358,7 +330,7 @@ fn build_agent_config(agent_declaration: &AgentDeclaration, runtime_state: &Runt
     let Some(inference_fields) = inference_value.as_object() else {
         return Err(WorkflowRuntimeError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
-            property: "inference".to_string(),
+            property: AgentExpressionPropertyName::Inference.as_str().to_string(),
             message: "inference must evaluate to an object".to_string(),
         });
     };

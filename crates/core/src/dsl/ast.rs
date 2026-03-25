@@ -114,6 +114,37 @@ pub struct AgentDeclaration {
     pub span: SourceSpan,
 }
 
+impl AgentDeclaration {
+    #[must_use]
+    pub fn expression_property(&self, property_name: AgentExpressionPropertyName) -> Option<&Expression> {
+        for agent_property in &self.properties {
+            match agent_property {
+                AgentProperty::Model(expression) if property_name == AgentExpressionPropertyName::Model => return Some(expression),
+                AgentProperty::Prompt(expression) if property_name == AgentExpressionPropertyName::Prompt => return Some(expression),
+                AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => return Some(expression),
+                AgentProperty::Inference(expression) if property_name == AgentExpressionPropertyName::Inference => return Some(expression),
+                AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
+                AgentProperty::Model(_)
+                | AgentProperty::Prompt(_)
+                | AgentProperty::Output(_)
+                | AgentProperty::Context(_)
+                | AgentProperty::Inference(_)
+                | AgentProperty::Tools(_)
+                | AgentProperty::Custom { name: _, value: _ } => {}
+            }
+        }
+
+        None
+    }
+
+    pub fn required_expression_property(
+        &self,
+        property_name: AgentExpressionPropertyName,
+    ) -> Result<&Expression, AgentExpressionPropertyName> {
+        self.expression_property(property_name).ok_or(property_name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentForLoop {
     pub iterator_name: String,
@@ -129,6 +160,40 @@ pub enum AgentProperty {
     Inference(Expression),
     Tools(Expression),
     Custom { name: String, value: Expression },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentExpressionPropertyName {
+    Model,
+    Prompt,
+    Context,
+    Inference,
+    Tools,
+}
+
+impl AgentExpressionPropertyName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "model" => Some(Self::Model),
+            "prompt" => Some(Self::Prompt),
+            "context" => Some(Self::Context),
+            "inference" => Some(Self::Inference),
+            "tools" => Some(Self::Tools),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Prompt => "prompt",
+            Self::Context => "context",
+            Self::Inference => "inference",
+            Self::Tools => "tools",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

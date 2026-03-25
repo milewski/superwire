@@ -1,3 +1,22 @@
+# Agent Refactor Rules
+
+## Method Locality (Mandatory)
+
+- Always attach behavior to the struct/enum that owns the data.
+- Prefer inherent impl methods on the domain type over free helper functions.
+- Do not introduce one-off helper functions when the logic is only used once.
+- If a function operates on `FunctionCall`, `Reference`, `Expression`, `AgentDeclaration`, or similar AST/runtime types, implement it on that type first.
+- Only create free helper functions when the logic is truly cross-cutting and reused by multiple types/modules.
+
+## Anti-Pattern To Avoid
+
+- Avoid scattered file-level helpers like `do_x(value: &SomeStruct)` that are called from one place and mirror a natural method on `SomeStruct`.
+
+## Review Checklist
+
+- Before finishing a change, verify: “Can this helper become a method on the owning type?”
+- If yes, refactor it into the owning type before finalizing.
+
 # Code Style Guidelines
 
 ## Variable Naming
