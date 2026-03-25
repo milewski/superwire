@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let workflow_result: Output = try_workflow!(inline).await?;
 
-    println!("{:#?}", workflow_result);
+    println!("{workflow_result:#?}");
 
     Ok(())
 }
