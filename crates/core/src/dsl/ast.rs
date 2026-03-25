@@ -90,6 +90,31 @@ pub enum DeclarationKeyword {
     Output,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ForClauseKeyword {
+    For,
+    In,
+}
+
+impl ForClauseKeyword {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "for" => Some(Self::For),
+            "in" => Some(Self::In),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::For => "for",
+            Self::In => "in",
+        }
+    }
+}
+
 impl DeclarationKeyword {
     #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
@@ -589,4 +614,22 @@ impl ModelCallArgumentName {
 pub struct ReferenceAccess {
     pub field: String,
     pub optional: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ForClauseKeyword;
+
+    #[test]
+    fn parses_for_clause_keywords_from_identifier() {
+        assert_eq!(ForClauseKeyword::from_identifier("for"), Some(ForClauseKeyword::For));
+        assert_eq!(ForClauseKeyword::from_identifier("in"), Some(ForClauseKeyword::In));
+        assert_eq!(ForClauseKeyword::from_identifier("agent"), None);
+    }
+
+    #[test]
+    fn renders_for_clause_keywords_as_str() {
+        assert_eq!(ForClauseKeyword::For.as_str(), "for");
+        assert_eq!(ForClauseKeyword::In.as_str(), "in");
+    }
 }
