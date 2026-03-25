@@ -4,7 +4,8 @@ use engine_ai_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword
 
 use crate::protocol::Position;
 
-use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression, SemanticIndex};
+use super::semantic_index::SemanticIndex;
+use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
 pub(super) struct ReferenceCompletionPath {
