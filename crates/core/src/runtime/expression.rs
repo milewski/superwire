@@ -3,6 +3,7 @@ use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::types::parse_number_literal;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 
 #[derive(Debug, Clone)]
 pub struct EvaluationContext {
@@ -202,12 +203,15 @@ fn render_template_value(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
 }
 
-pub fn collect_agent_dependencies(expression: &Expression, agent_dependencies: &mut HashSet<String>) {
+pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(
+    expression: &Expression,
+    agent_dependencies: &mut HashSet<String, HashBuilder>,
+) {
     expression.collect_agent_dependencies(agent_dependencies);
 }
 
 impl Expression {
-    pub fn collect_agent_dependencies(&self, agent_dependencies: &mut HashSet<String>) {
+    pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
         match self {
             Self::Reference(reference) => {
                 collect_reference_dependency(reference, agent_dependencies);
@@ -241,7 +245,7 @@ impl Expression {
     }
 }
 
-fn collect_reference_dependency(reference: &Reference, agent_dependencies: &mut HashSet<String>) {
+fn collect_reference_dependency<HashBuilder: BuildHasher>(reference: &Reference, agent_dependencies: &mut HashSet<String, HashBuilder>) {
     if !reference.is_agent_root() {
         return;
     }

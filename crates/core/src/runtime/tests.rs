@@ -62,6 +62,143 @@ impl AgentRunner for ScriptedRunner {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum PublicationStatus {
+    Draft,
+    Ready,
+    Published,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+struct ScoredItem {
+    id: String,
+    score: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+struct NestedObject {
+    string_value: String,
+    number_value: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+struct WorkflowPayload {
+    string_value: String,
+    number_value: i64,
+    float_value: f64,
+    boolean_value: bool,
+    explicit_null: (),
+    nullable_string: Option<String>,
+    nullable_number: Option<i64>,
+    array: Vec<String>,
+    fixed_array: [String; 3],
+    array_of_objects: Vec<ScoredItem>,
+    enum_value: PublicationStatus,
+    nullable_enum: Option<PublicationStatus>,
+    tuple_value: (String, i64, [String; 3]),
+    nullable_tuple: Option<(String, i64, [String; 3])>,
+    object_value: NestedObject,
+    nullable_object: Option<NestedObject>,
+}
+
+fn static_types_workflow() -> crate::dsl::Workflow {
+    parse_inline_workflow! {
+        input {
+            string_value: string
+            number_value: number
+            float_value: float
+            boolean_value: boolean
+            explicit_null: null
+
+            nullable_string: string | null
+            nullable_number: number | null
+
+            array: [string]
+            fixed_array: [string; 3]
+            array_of_objects: [{
+                id: string
+                score: number
+            }]
+
+            enum_value: "draft" | "ready" | "published"
+            nullable_enum: "draft" | "ready" | "published" | null
+
+            tuple_value: (string, number, [string; 3])
+            nullable_tuple: (string, number, [string; 3]) | null
+
+            object_value: {
+                string_value: string
+                number_value: number
+            }
+
+            nullable_object: {
+                string_value: string
+                number_value: number
+            } | null
+        }
+
+        output {
+            string_value: input.string_value
+            number_value: input.number_value
+            float_value: input.float_value
+            boolean_value: input.boolean_value
+            explicit_null: input.explicit_null
+
+            nullable_string: input.nullable_string
+            nullable_number: input.nullable_number
+
+            array: input.array
+            fixed_array: input.fixed_array
+            array_of_objects: input.array_of_objects
+
+            enum_value: input.enum_value
+            nullable_enum: input.nullable_enum
+            tuple_value: input.tuple_value
+            nullable_tuple: input.nullable_tuple
+
+            object_value: input.object_value
+            nullable_object: input.nullable_object
+        }
+    }
+}
+
+fn static_types_payload() -> WorkflowPayload {
+    WorkflowPayload {
+        string_value: "hello".to_string(),
+        number_value: 42,
+        float_value: 8.5,
+        boolean_value: true,
+        explicit_null: (),
+        nullable_string: Some("optional text".to_string()),
+        nullable_number: Some(77),
+        array: vec!["one".to_string(), "two".to_string()],
+        fixed_array: ["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+        array_of_objects: vec![
+            ScoredItem {
+                id: "item-1".to_string(),
+                score: 9,
+            },
+            ScoredItem {
+                id: "item-2".to_string(),
+                score: 13,
+            },
+        ],
+        enum_value: PublicationStatus::Ready,
+        nullable_enum: Some(PublicationStatus::Draft),
+        tuple_value: ("tuple-label".to_string(), 3, ["x".to_string(), "y".to_string(), "z".to_string()]),
+        nullable_tuple: Some(("maybe-tuple".to_string(), 11, ["m".to_string(), "n".to_string(), "o".to_string()])),
+        object_value: NestedObject {
+            string_value: "nested".to_string(),
+            number_value: 100,
+        },
+        nullable_object: Some(NestedObject {
+            string_value: "optional nested".to_string(),
+            number_value: 200,
+        }),
+    }
+}
+
 #[test]
 fn fails_preflight_when_input_type_does_not_match_dsl() {
     #[derive(Debug, Serialize, JsonSchema)]
@@ -137,140 +274,10 @@ fn parse_inline_workflow_supports_composing_base_workflow_fragments() {
 
 #[tokio::test]
 async fn supports_all_static_input_and_output_types_in_preflight_and_execution() {
-    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-    #[serde(rename_all = "lowercase")]
-    enum PublicationStatus {
-        Draft,
-        Ready,
-        Published,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-    struct ScoredItem {
-        id: String,
-        score: i64,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-    struct NestedObject {
-        string_value: String,
-        number_value: i64,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-    struct WorkflowPayload {
-        string_value: String,
-        number_value: i64,
-        float_value: f64,
-        boolean_value: bool,
-        explicit_null: (),
-        nullable_string: Option<String>,
-        nullable_number: Option<i64>,
-        array: Vec<String>,
-        fixed_array: [String; 3],
-        array_of_objects: Vec<ScoredItem>,
-        enum_value: PublicationStatus,
-        nullable_enum: Option<PublicationStatus>,
-        tuple_value: (String, i64, [String; 3]),
-        nullable_tuple: Option<(String, i64, [String; 3])>,
-        object_value: NestedObject,
-        nullable_object: Option<NestedObject>,
-    }
-
-    let workflow = parse_inline_workflow! {
-        input {
-            string_value: string
-            number_value: number
-            float_value: float
-            boolean_value: boolean
-            explicit_null: null
-
-            nullable_string: string | null
-            nullable_number: number | null
-
-            array: [string]
-            fixed_array: [string; 3]
-            array_of_objects: [{
-                id: string
-                score: number
-            }]
-
-            enum_value: "draft" | "ready" | "published"
-            nullable_enum: "draft" | "ready" | "published" | null
-
-            tuple_value: (string, number, [string; 3])
-            nullable_tuple: (string, number, [string; 3]) | null
-
-            object_value: {
-                string_value: string
-                number_value: number
-            }
-
-            nullable_object: {
-                string_value: string
-                number_value: number
-            } | null
-        }
-
-        output {
-            string_value: input.string_value
-            number_value: input.number_value
-            float_value: input.float_value
-            boolean_value: input.boolean_value
-            explicit_null: input.explicit_null
-
-            nullable_string: input.nullable_string
-            nullable_number: input.nullable_number
-
-            array: input.array
-            fixed_array: input.fixed_array
-            array_of_objects: input.array_of_objects
-
-            enum_value: input.enum_value
-            nullable_enum: input.nullable_enum
-            tuple_value: input.tuple_value
-            nullable_tuple: input.nullable_tuple
-
-            object_value: input.object_value
-            nullable_object: input.nullable_object
-        }
-    };
+    let workflow = static_types_workflow();
 
     let runtime = WorkflowRuntime::<WorkflowPayload, WorkflowPayload>::new(workflow).unwrap();
-
-    let payload = WorkflowPayload {
-        string_value: "hello".to_string(),
-        number_value: 42,
-        float_value: 8.5,
-        boolean_value: true,
-        explicit_null: (),
-        nullable_string: Some("optional text".to_string()),
-        nullable_number: Some(77),
-        array: vec!["one".to_string(), "two".to_string()],
-        fixed_array: ["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
-        array_of_objects: vec![
-            ScoredItem {
-                id: "item-1".to_string(),
-                score: 9,
-            },
-            ScoredItem {
-                id: "item-2".to_string(),
-                score: 13,
-            },
-        ],
-        enum_value: PublicationStatus::Ready,
-        nullable_enum: Some(PublicationStatus::Draft),
-        tuple_value: ("tuple-label".to_string(), 3, ["x".to_string(), "y".to_string(), "z".to_string()]),
-        nullable_tuple: Some(("maybe-tuple".to_string(), 11, ["m".to_string(), "n".to_string(), "o".to_string()])),
-        object_value: NestedObject {
-            string_value: "nested".to_string(),
-            number_value: 100,
-        },
-        nullable_object: Some(NestedObject {
-            string_value: "optional nested".to_string(),
-            number_value: 200,
-        }),
-    };
+    let payload = static_types_payload();
 
     let result = runtime
         .run_with_runner(payload.clone(), &ScriptedRunner::from_outputs(Vec::new()))
