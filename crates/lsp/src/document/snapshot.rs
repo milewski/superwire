@@ -2,7 +2,8 @@ use engine_ai_core::dsl::{parse_workflow, validate_workflow, DslParseError, Vali
 
 use crate::protocol::DiagnosticCode;
 
-use super::{source_span_to_range, zero_range, DiagnosticSeverity, DocumentDiagnostic, SemanticIndex};
+use super::semantic_index::SemanticIndex;
+use super::{source_span_to_range, zero_range, DiagnosticSeverity, DocumentDiagnostic};
 
 #[derive(Debug)]
 pub(super) struct SemanticSnapshot {
