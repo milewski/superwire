@@ -1,10 +1,10 @@
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, CallArgument, Declaration, Expression, InputDeclaration, ModelCallArgumentName, OutputDeclaration,
+    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ModelCallArgumentName, OutputDeclaration,
     SchemaDeclaration, SecretsDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::collect_agent_dependencies;
-use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
+use crate::runtime::type_inference::TypeInferenceContext;
 use crate::runtime::types::{ensure_type_matches, workflow_type_from_dsl, workflow_type_from_rust_schema, WorkflowType};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -223,7 +223,9 @@ fn infer_workflow_output_type(
     let mut output_fields = BTreeMap::new();
 
     for output_field in &output_declaration.fields {
-        let field_type = infer_expression_type(&output_field.value, &inference_context, "workflow output type inference")?;
+        let field_type = output_field
+            .value
+            .infer_type(&inference_context, "workflow output type inference")?;
         output_fields.insert(output_field.name.clone(), field_type);
     }
 
@@ -310,40 +312,39 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
     }
 
     let provider_name = model_call
-        .callee
-        .root
-        .as_identifier()
+        .identifier_name()
         .ok_or_else(|| WorkflowRuntimeError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
             message: "model provider name must be an identifier".to_string(),
-        })?
-        .to_string();
+        })?;
+
+    let provider_name = provider_name.to_string();
 
     let mut detected_model_names = Vec::<String>::new();
 
     for call_argument in &model_call.arguments {
-        match call_argument {
-            CallArgument::Positional(expression) => {
-                if let Expression::StringLiteral(model_name) = expression {
-                    detected_model_names.push(model_name.clone());
-                }
-            }
-            CallArgument::Named(named_argument)
-                if ModelCallArgumentName::from_identifier(named_argument.name.as_str()) == Some(ModelCallArgumentName::Model) =>
-            {
-                let Expression::StringLiteral(model_name) = &named_argument.value else {
-                    return Err(WorkflowRuntimeError::InvalidAgentProperty {
-                        agent_name: agent_declaration.name.clone(),
-                        property: AgentPropertyName::Model.as_str().to_string(),
-                        message: "named `model` argument must be a string".to_string(),
-                    });
-                };
-
+        if call_argument.named_argument_name().is_none() {
+            if let Expression::StringLiteral(model_name) = call_argument.expression() {
                 detected_model_names.push(model_name.clone());
             }
-            CallArgument::Named(_) => {}
+
+            continue;
         }
+
+        if call_argument.named_argument_name() != Some(ModelCallArgumentName::Model.as_str()) {
+            continue;
+        }
+
+        let Expression::StringLiteral(model_name) = call_argument.expression() else {
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentPropertyName::Model.as_str().to_string(),
+                message: "named `model` argument must be a string".to_string(),
+            });
+        };
+
+        detected_model_names.push(model_name.clone());
     }
 
     if detected_model_names.is_empty() {

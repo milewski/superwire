@@ -199,10 +199,86 @@ pub struct FunctionCall {
     pub arguments: Vec<CallArgument>,
 }
 
+impl FunctionCall {
+    #[must_use]
+    pub fn identifier_name(&self) -> Option<&str> {
+        self.callee.root.as_identifier()
+    }
+
+    #[must_use]
+    pub fn builtin_function_name(&self) -> Option<BuiltinFunctionName> {
+        self.identifier_name().and_then(BuiltinFunctionName::from_identifier)
+    }
+
+    #[must_use]
+    pub fn argument_expression(&self, index: usize) -> Option<&Expression> {
+        self.arguments.get(index).map(CallArgument::expression)
+    }
+
+    #[must_use]
+    pub fn first_argument_expression(&self) -> Option<&Expression> {
+        self.argument_expression(0)
+    }
+
+    #[must_use]
+    pub fn named_argument_expression(&self, argument_name: &str) -> Option<&Expression> {
+        for call_argument in &self.arguments {
+            if call_argument.named_argument_name() == Some(argument_name) {
+                return Some(call_argument.expression());
+            }
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn builtin_named_argument_expression(&self, argument_name: BuiltinFunctionArgumentName) -> Option<&Expression> {
+        self.named_argument_expression(argument_name.as_str())
+    }
+
+    #[must_use]
+    pub fn model_named_argument_expression(&self, argument_name: ModelCallArgumentName) -> Option<&Expression> {
+        self.named_argument_expression(argument_name.as_str())
+    }
+
+    #[must_use]
+    pub fn agent_argument_expression(&self) -> Option<&Expression> {
+        for call_argument in &self.arguments {
+            if call_argument.named_argument_name().is_none() {
+                return Some(call_argument.expression());
+            }
+
+            if call_argument.named_argument_name() == Some(BuiltinFunctionArgumentName::Agent.as_str()) {
+                return Some(call_argument.expression());
+            }
+        }
+
+        None
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallArgument {
     Positional(Expression),
     Named(NamedArgument),
+}
+
+impl CallArgument {
+    #[must_use]
+    pub fn expression(&self) -> &Expression {
+        match self {
+            Self::Positional(expression) => expression,
+            Self::Named(named_argument) => &named_argument.value,
+        }
+    }
+
+    #[must_use]
+    pub fn named_argument_name(&self) -> Option<&str> {
+        match self {
+            Self::Positional(_) => None,
+            Self::Named(named_argument) => Some(named_argument.name.as_str()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,6 +292,59 @@ pub struct Reference {
     pub root: ReferenceRoot,
     pub accesses: Vec<ReferenceAccess>,
     pub span: SourceSpan,
+}
+
+impl Reference {
+    #[must_use]
+    pub fn root_keyword(&self) -> Option<ReferenceKeyword> {
+        self.root.keyword()
+    }
+
+    #[must_use]
+    pub fn is_keyword_root(&self, reference_keyword: ReferenceKeyword) -> bool {
+        self.root_keyword() == Some(reference_keyword)
+    }
+
+    #[must_use]
+    pub fn is_agent_root(&self) -> bool {
+        self.is_keyword_root(ReferenceKeyword::Agent)
+    }
+
+    #[must_use]
+    pub fn first_access(&self) -> Option<&ReferenceAccess> {
+        self.accesses.first()
+    }
+
+    #[must_use]
+    pub fn first_access_field(&self) -> Option<&str> {
+        self.first_access().map(|reference_access| reference_access.field.as_str())
+    }
+
+    #[must_use]
+    pub fn render_path(&self) -> String {
+        let mut rendered_reference = if let Some(reference_root_keyword) = self.root_keyword() {
+            reference_root_keyword.as_str().to_owned()
+        } else {
+            self.root
+                .as_identifier()
+                .expect("non-keyword reference root should be identifier")
+                .to_owned()
+        };
+
+        for reference_access in &self.accesses {
+            if reference_access.optional {
+                rendered_reference.push_str("?.");
+                rendered_reference.push_str(reference_access.field.as_str());
+
+                continue;
+            }
+
+            rendered_reference.push('.');
+            rendered_reference.push_str(reference_access.field.as_str());
+        }
+
+        rendered_reference
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

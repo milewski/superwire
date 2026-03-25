@@ -1,5 +1,4 @@
 use super::{BuiltinFunctionHandler, FunctionEvaluationRequest, FunctionTypeInferenceRequest};
-use crate::dsl::{CallArgument, Expression};
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::types::WorkflowType;
 use serde_json::{Map, Value};
@@ -19,16 +18,22 @@ impl BuiltinFunctionHandler for TemplateFunction {
         }
 
         let template_source_expression =
-            call_argument_expression(request.function_call, 0).ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
-                context: request.context.to_string(),
-                message: "template(...) first argument is missing".to_string(),
-            })?;
+            request
+                .function_call
+                .argument_expression(0)
+                .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
+                    context: request.context.to_string(),
+                    message: "template(...) first argument is missing".to_string(),
+                })?;
 
         let bindings_expression =
-            call_argument_expression(request.function_call, 1).ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
-                context: request.context.to_string(),
-                message: "template(...) second argument is missing".to_string(),
-            })?;
+            request
+                .function_call
+                .argument_expression(1)
+                .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
+                    context: request.context.to_string(),
+                    message: "template(...) second argument is missing".to_string(),
+                })?;
 
         let template_source_value = (request.evaluate_expression)(template_source_expression, request.evaluation_context, request.context)?;
 
@@ -63,30 +68,27 @@ impl BuiltinFunctionHandler for TemplateFunction {
         }
 
         let template_source_expression =
-            call_argument_expression(request.function_call, 0).ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
-                context: request.context.to_string(),
-                message: "template(...) first argument is missing".to_string(),
-            })?;
+            request
+                .function_call
+                .argument_expression(0)
+                .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
+                    context: request.context.to_string(),
+                    message: "template(...) first argument is missing".to_string(),
+                })?;
 
         let bindings_expression =
-            call_argument_expression(request.function_call, 1).ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
-                context: request.context.to_string(),
-                message: "template(...) second argument is missing".to_string(),
-            })?;
+            request
+                .function_call
+                .argument_expression(1)
+                .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
+                    context: request.context.to_string(),
+                    message: "template(...) second argument is missing".to_string(),
+                })?;
 
         let _ = (request.infer_expression_type)(template_source_expression, request.type_inference_context, request.context)?;
         let _ = (request.infer_expression_type)(bindings_expression, request.type_inference_context, request.context)?;
 
         Ok(WorkflowType::String)
-    }
-}
-
-fn call_argument_expression(function_call: &crate::dsl::FunctionCall, index: usize) -> Option<&Expression> {
-    let call_argument = function_call.arguments.get(index)?;
-
-    match call_argument {
-        CallArgument::Positional(expression) => Some(expression),
-        CallArgument::Named(named_argument) => Some(&named_argument.value),
     }
 }
 

@@ -1,6 +1,5 @@
 use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
 use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::functions::infer_builtin_function_type;
 use crate::runtime::types::WorkflowType;
 use std::collections::HashMap;
 
@@ -17,62 +16,70 @@ pub fn infer_expression_type(
     type_inference_context: &TypeInferenceContext,
     context: &str,
 ) -> Result<WorkflowType, WorkflowRuntimeError> {
-    match expression {
-        Expression::StringLiteral(_) => Ok(WorkflowType::String),
-        Expression::StringTemplate(string_template) => {
-            for template_part in &string_template.parts {
-                if let StringTemplatePart::Interpolation(interpolation_expression) = template_part {
-                    let _ = infer_expression_type(interpolation_expression, type_inference_context, context)?;
+    expression.infer_type(type_inference_context, context)
+}
+
+impl Expression {
+    pub fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowRuntimeError> {
+        match self {
+            Self::StringLiteral(_) => Ok(WorkflowType::String),
+            Self::StringTemplate(string_template) => {
+                for template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = template_part {
+                        let _ = interpolation_expression.infer_type(type_inference_context, context)?;
+                    }
                 }
+
+                Ok(WorkflowType::String)
             }
+            Self::NumberLiteral(number_literal) => {
+                let normalized_number_literal = number_literal.replace('_', "");
 
-            Ok(WorkflowType::String)
-        }
-        Expression::NumberLiteral(number_literal) => {
-            let normalized_number_literal = number_literal.replace('_', "");
+                if normalized_number_literal.contains('.') {
+                    return Ok(WorkflowType::Float);
+                }
 
-            if normalized_number_literal.contains('.') {
-                return Ok(WorkflowType::Float);
+                Ok(WorkflowType::Integer)
             }
-
-            Ok(WorkflowType::Integer)
-        }
-        Expression::BooleanLiteral(_) => Ok(WorkflowType::Boolean),
-        Expression::NullLiteral => Ok(WorkflowType::Null),
-        Expression::Reference(reference) => infer_reference_type(reference, type_inference_context, context),
-        Expression::FunctionCall(function_call) => {
-            infer_builtin_function_type(function_call, type_inference_context, context, &infer_expression_type)
-        }
-        Expression::ArrayLiteral(array_items) => {
-            if array_items.is_empty() {
-                return Err(WorkflowRuntimeError::ExpressionEvaluation {
-                    context: context.to_string(),
-                    message: "empty array literals are not supported in statically-typed workflow expressions".to_string(),
-                });
+            Self::BooleanLiteral(_) => Ok(WorkflowType::Boolean),
+            Self::NullLiteral => Ok(WorkflowType::Null),
+            Self::Reference(reference) => infer_reference_type(reference, type_inference_context, context),
+            Self::FunctionCall(function_call) => {
+                function_call.infer_builtin_type(type_inference_context, context, &|expression, type_inference_context, context| {
+                    expression.infer_type(type_inference_context, context)
+                })
             }
+            Self::ArrayLiteral(array_items) => {
+                if array_items.is_empty() {
+                    return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: "empty array literals are not supported in statically-typed workflow expressions".to_string(),
+                    });
+                }
 
-            let mut item_types = Vec::with_capacity(array_items.len());
+                let mut item_types = Vec::with_capacity(array_items.len());
 
-            for array_item in array_items {
-                item_types.push(infer_expression_type(array_item, type_inference_context, context)?);
+                for array_item in array_items {
+                    item_types.push(array_item.infer_type(type_inference_context, context)?);
+                }
+
+                let merged_item_type = merge_types(item_types);
+
+                Ok(WorkflowType::Array {
+                    item_type: Box::new(merged_item_type),
+                    fixed_length: None,
+                })
             }
+            Self::ObjectLiteral(object_fields) => {
+                let mut field_types = std::collections::BTreeMap::new();
 
-            let merged_item_type = merge_types(item_types);
+                for object_field in object_fields {
+                    let field_type = object_field.value.infer_type(type_inference_context, context)?;
+                    field_types.insert(object_field.name.clone(), field_type);
+                }
 
-            Ok(WorkflowType::Array {
-                item_type: Box::new(merged_item_type),
-                fixed_length: None,
-            })
-        }
-        Expression::ObjectLiteral(object_fields) => {
-            let mut field_types = std::collections::BTreeMap::new();
-
-            for object_field in object_fields {
-                let field_type = infer_expression_type(&object_field.value, type_inference_context, context)?;
-                field_types.insert(object_field.name.clone(), field_type);
+                Ok(WorkflowType::Object(field_types))
             }
-
-            Ok(WorkflowType::Object(field_types))
         }
     }
 }
@@ -104,17 +111,17 @@ fn infer_reference_type(
             (secrets_type.clone(), 0)
         }
         ReferenceRoot::Keyword(ReferenceKeyword::Agent) => {
-            let Some(agent_name_access) = reference.accesses.first() else {
+            let Some(agent_name) = reference.first_access_field() else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
                     message: "agent reference requires an agent name".to_string(),
                 });
             };
 
-            let Some(agent_output_type) = type_inference_context.agent_output_types.get(&agent_name_access.field) else {
+            let Some(agent_output_type) = type_inference_context.agent_output_types.get(agent_name) else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
-                    message: format!("unknown agent reference `{}`", agent_name_access.field),
+                    message: format!("unknown agent reference `{agent_name}`"),
                 });
             };
 

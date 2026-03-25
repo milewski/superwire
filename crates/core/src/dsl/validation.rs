@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference, ReferenceKeyword,
-    SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentProperty, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference, ReferenceKeyword, SourceSpan,
+    StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -569,23 +569,23 @@ fn validate_model_expression(
 
 fn extract_model_name(model_call: &FunctionCall) -> Option<String> {
     for call_argument in &model_call.arguments {
-        match call_argument {
-            CallArgument::Positional(Expression::StringLiteral(model_name)) => {
+        if call_argument.named_argument_name().is_none() {
+            if let Expression::StringLiteral(model_name) = call_argument.expression() {
                 return Some(model_name.clone());
             }
-            CallArgument::Named(named_argument) => {
-                if ModelCallArgumentName::from_identifier(named_argument.name.as_str()) != Some(ModelCallArgumentName::Model) {
-                    continue;
-                }
 
-                let Expression::StringLiteral(model_name) = &named_argument.value else {
-                    return None;
-                };
-
-                return Some(model_name.clone());
-            }
-            CallArgument::Positional(_) => {}
+            continue;
         }
+
+        if call_argument.named_argument_name() != Some(ModelCallArgumentName::Model.as_str()) {
+            continue;
+        }
+
+        let Expression::StringLiteral(model_name) = call_argument.expression() else {
+            return None;
+        };
+
+        return Some(model_name.clone());
     }
 
     None
@@ -704,14 +704,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 self.validate_reference(&function_call.callee, context.clone(), secret_reference_policy);
 
                 for call_argument in &function_call.arguments {
-                    match call_argument {
-                        CallArgument::Positional(argument_expression) => {
-                            self.validate_expression(argument_expression, context.clone(), secret_reference_policy);
-                        }
-                        CallArgument::Named(named_argument) => {
-                            self.validate_expression(&named_argument.value, context.clone(), secret_reference_policy);
-                        }
-                    }
+                    self.validate_expression(call_argument.expression(), context.clone(), secret_reference_policy);
                 }
             }
             Expression::ArrayLiteral(array_values) => {
@@ -736,7 +729,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn validate_reference(&mut self, reference: &Reference, context: ValidationContext, secret_reference_policy: SecretReferencePolicy) {
-        let Some(reference_root_keyword) = reference.root.keyword() else {
+        let Some(reference_root_keyword) = reference.root_keyword() else {
             return;
         };
 
@@ -744,7 +737,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             self.push_secret_reference_leak(reference, context.clone());
         }
 
-        let Some(_) = reference.accesses.first() else {
+        let Some(_) = reference.first_access() else {
             let issue_key = (context.clone(), reference_root_keyword);
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
@@ -973,24 +966,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn reference_to_string(&self, reference: &Reference) -> String {
-        let mut rendered_reference = if let Some(reference_root_keyword) = reference.root.keyword() {
-            reference_root_keyword.as_str().to_owned()
-        } else {
-            reference
-                .root
-                .as_identifier()
-                .expect("non-keyword reference root should be identifier")
-                .to_owned()
-        };
-
-        for reference_access in &reference.accesses {
-            let access_operator = if reference_access.optional { "?." } else { "." };
-
-            rendered_reference.push_str(access_operator);
-            rendered_reference.push_str(reference_access.field.as_str());
-        }
-
-        rendered_reference
+        reference.render_path()
     }
 
     fn push_secret_reference_leak(&mut self, reference: &Reference, context: ValidationContext) {
@@ -1115,14 +1091,7 @@ fn collect_agent_dependencies_from_expression(expression: &Expression, reference
             collect_agent_dependency_from_reference(&function_call.callee, referenced_agents);
 
             for call_argument in &function_call.arguments {
-                match call_argument {
-                    CallArgument::Positional(argument_expression) => {
-                        collect_agent_dependencies_from_expression(argument_expression, referenced_agents);
-                    }
-                    CallArgument::Named(named_argument) => {
-                        collect_agent_dependencies_from_expression(&named_argument.value, referenced_agents);
-                    }
-                }
+                collect_agent_dependencies_from_expression(call_argument.expression(), referenced_agents);
             }
         }
         Expression::ArrayLiteral(array_values) => {
@@ -1147,15 +1116,15 @@ fn collect_agent_dependencies_from_expression(expression: &Expression, reference
 }
 
 fn collect_agent_dependency_from_reference(reference: &Reference, referenced_agents: &mut HashSet<String>) {
-    if reference.root.keyword() != Some(ReferenceKeyword::Agent) {
+    if !reference.is_agent_root() {
         return;
     }
 
-    let Some(first_access) = reference.accesses.first() else {
+    let Some(agent_name) = reference.first_access_field() else {
         return;
     };
 
-    referenced_agents.insert(first_access.field.clone());
+    referenced_agents.insert(agent_name.to_string());
 }
 
 #[cfg(test)]

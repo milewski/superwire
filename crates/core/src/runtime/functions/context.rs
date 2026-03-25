@@ -1,5 +1,5 @@
 use super::{BuiltinFunctionHandler, FunctionEvaluationRequest, FunctionTypeInferenceRequest};
-use crate::dsl::{BuiltinFunctionArgumentName, CallArgument, Expression, ReferenceKeyword};
+use crate::dsl::Expression;
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::types::WorkflowType;
 use serde_json::Value;
@@ -8,7 +8,7 @@ pub struct ContextFunction;
 
 impl BuiltinFunctionHandler for ContextFunction {
     fn evaluate(&self, request: &FunctionEvaluationRequest<'_>) -> Result<Value, WorkflowRuntimeError> {
-        let Some(agent_reference_expression) = context_call_agent_argument(request.function_call) else {
+        let Some(agent_reference_expression) = request.function_call.agent_argument_expression() else {
             return Err(WorkflowRuntimeError::ExpressionEvaluation {
                 context: request.context.to_string(),
                 message: "context(...) requires one agent reference argument".to_string(),
@@ -22,24 +22,24 @@ impl BuiltinFunctionHandler for ContextFunction {
             });
         };
 
-        if agent_reference.root.keyword() != Some(ReferenceKeyword::Agent) {
+        if !agent_reference.is_agent_root() {
             return Err(WorkflowRuntimeError::ExpressionEvaluation {
                 context: request.context.to_string(),
                 message: "context(...) only supports `agent.<name>` references".to_string(),
             });
         }
 
-        let Some(agent_name_access) = agent_reference.accesses.first() else {
+        let Some(agent_name) = agent_reference.first_access_field() else {
             return Err(WorkflowRuntimeError::ExpressionEvaluation {
                 context: request.context.to_string(),
                 message: "context(...) requires `agent.<name>` with a concrete agent name".to_string(),
             });
         };
 
-        let Some(agent_context_value) = request.evaluation_context.agent_contexts.get(&agent_name_access.field) else {
+        let Some(agent_context_value) = request.evaluation_context.agent_contexts.get(agent_name) else {
             return Err(WorkflowRuntimeError::ExpressionEvaluation {
                 context: request.context.to_string(),
-                message: format!("context for agent `{}` is not available yet", agent_name_access.field),
+                message: format!("context for agent `{agent_name}` is not available yet"),
             });
         };
 
@@ -47,7 +47,9 @@ impl BuiltinFunctionHandler for ContextFunction {
     }
 
     fn infer_type(&self, request: &FunctionTypeInferenceRequest<'_>) -> Result<WorkflowType, WorkflowRuntimeError> {
-        let _ = context_call_agent_argument(request.function_call)
+        let _ = request
+            .function_call
+            .agent_argument_expression()
             .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
                 context: request.context.to_string(),
                 message: "context(...) requires an agent reference argument".to_string(),
@@ -60,23 +62,6 @@ impl BuiltinFunctionHandler for ContextFunction {
             feature: "context(...) is not supported in statically typed output values".to_string(),
         })
     }
-}
-
-fn context_call_agent_argument(function_call: &crate::dsl::FunctionCall) -> Option<&Expression> {
-    for call_argument in &function_call.arguments {
-        match call_argument {
-            CallArgument::Positional(expression) => {
-                return Some(expression);
-            }
-            CallArgument::Named(named_argument) => {
-                if BuiltinFunctionArgumentName::from_identifier(named_argument.name.as_str()) == Some(BuiltinFunctionArgumentName::Agent) {
-                    return Some(&named_argument.value);
-                }
-            }
-        }
-    }
-
-    None
 }
 
 #[cfg(test)]

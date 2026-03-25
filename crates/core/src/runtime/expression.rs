@@ -1,6 +1,5 @@
-use crate::dsl::{CallArgument, Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
+use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
 use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::functions::evaluate_builtin_function_call;
 use crate::runtime::types::parse_number_literal;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -19,51 +18,59 @@ pub fn evaluate_expression(
     evaluation_context: &EvaluationContext,
     context: &str,
 ) -> Result<Value, WorkflowRuntimeError> {
-    match expression {
-        Expression::StringLiteral(string_literal) => Ok(Value::String(string_literal.clone())),
-        Expression::StringTemplate(string_template) => {
-            let mut rendered_template = String::new();
+    expression.evaluate(evaluation_context, context)
+}
 
-            for string_template_part in &string_template.parts {
-                match string_template_part {
-                    StringTemplatePart::Text(template_text) => {
-                        rendered_template.push_str(template_text);
-                    }
-                    StringTemplatePart::Interpolation(interpolation_expression) => {
-                        let interpolation_value = evaluate_expression(interpolation_expression, evaluation_context, context)?;
+impl Expression {
+    pub fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowRuntimeError> {
+        match self {
+            Self::StringLiteral(string_literal) => Ok(Value::String(string_literal.clone())),
+            Self::StringTemplate(string_template) => {
+                let mut rendered_template = String::new();
 
-                        rendered_template.push_str(&render_template_value(&interpolation_value));
+                for string_template_part in &string_template.parts {
+                    match string_template_part {
+                        StringTemplatePart::Text(template_text) => {
+                            rendered_template.push_str(template_text);
+                        }
+                        StringTemplatePart::Interpolation(interpolation_expression) => {
+                            let interpolation_value = interpolation_expression.evaluate(evaluation_context, context)?;
+
+                            rendered_template.push_str(&render_template_value(&interpolation_value));
+                        }
                     }
                 }
+
+                Ok(Value::String(rendered_template))
             }
-
-            Ok(Value::String(rendered_template))
-        }
-        Expression::NumberLiteral(number_literal) => Ok(Value::Number(parse_number_literal(number_literal)?)),
-        Expression::BooleanLiteral(boolean_literal) => Ok(Value::Bool(*boolean_literal)),
-        Expression::NullLiteral => Ok(Value::Null),
-        Expression::Reference(reference) => evaluate_reference(reference, evaluation_context, context),
-        Expression::FunctionCall(function_call) => {
-            evaluate_builtin_function_call(function_call, evaluation_context, context, &evaluate_expression)
-        }
-        Expression::ArrayLiteral(array_items) => {
-            let mut evaluated_items = Vec::with_capacity(array_items.len());
-
-            for array_item in array_items {
-                evaluated_items.push(evaluate_expression(array_item, evaluation_context, context)?);
+            Self::NumberLiteral(number_literal) => Ok(Value::Number(parse_number_literal(number_literal)?)),
+            Self::BooleanLiteral(boolean_literal) => Ok(Value::Bool(*boolean_literal)),
+            Self::NullLiteral => Ok(Value::Null),
+            Self::Reference(reference) => evaluate_reference(reference, evaluation_context, context),
+            Self::FunctionCall(function_call) => {
+                function_call.evaluate_builtin(evaluation_context, context, &|expression, evaluation_context, context| {
+                    expression.evaluate(evaluation_context, context)
+                })
             }
+            Self::ArrayLiteral(array_items) => {
+                let mut evaluated_items = Vec::with_capacity(array_items.len());
 
-            Ok(Value::Array(evaluated_items))
-        }
-        Expression::ObjectLiteral(object_fields) => {
-            let mut evaluated_fields = Map::new();
+                for array_item in array_items {
+                    evaluated_items.push(array_item.evaluate(evaluation_context, context)?);
+                }
 
-            for object_field in object_fields {
-                let field_value = evaluate_expression(&object_field.value, evaluation_context, context)?;
-                evaluated_fields.insert(object_field.name.clone(), field_value);
+                Ok(Value::Array(evaluated_items))
             }
+            Self::ObjectLiteral(object_fields) => {
+                let mut evaluated_fields = Map::new();
 
-            Ok(Value::Object(evaluated_fields))
+                for object_field in object_fields {
+                    let field_value = object_field.value.evaluate(evaluation_context, context)?;
+                    evaluated_fields.insert(object_field.name.clone(), field_value);
+                }
+
+                Ok(Value::Object(evaluated_fields))
+            }
         }
     }
 }
@@ -81,7 +88,7 @@ fn evaluate_reference(reference: &Reference, evaluation_context: &EvaluationCont
                 context: context.to_string(),
                 message: format!(
                     "reference path `{}.{}` cannot access field on non-object value",
-                    render_reference(reference),
+                    reference.render_path(),
                     reference_access.field
                 ),
             });
@@ -96,7 +103,7 @@ fn evaluate_reference(reference: &Reference, evaluation_context: &EvaluationCont
                 context: context.to_string(),
                 message: format!(
                     "reference path `{}` is missing field `{}`",
-                    render_reference(reference),
+                    reference.render_path(),
                     reference_access.field
                 ),
             });
@@ -119,7 +126,9 @@ fn resolve_reference_root(
                 return Ok((Value::Object(evaluation_context.input_values.clone()), 0));
             }
 
-            let input_field_name = &reference.accesses[0].field;
+            let input_field_name = reference
+                .first_access_field()
+                .expect("input keyword reference must have first access when not empty");
             let Some(input_field_value) = evaluation_context.input_values.get(input_field_name) else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
@@ -134,7 +143,9 @@ fn resolve_reference_root(
                 return Ok((Value::Object(evaluation_context.secret_values.clone()), 0));
             }
 
-            let secret_field_name = &reference.accesses[0].field;
+            let secret_field_name = reference
+                .first_access_field()
+                .expect("secrets keyword reference must have first access when not empty");
             let Some(secret_field_value) = evaluation_context.secret_values.get(secret_field_name) else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
@@ -155,7 +166,9 @@ fn resolve_reference_root(
                 return Ok((Value::Object(all_agent_outputs), 0));
             }
 
-            let agent_name = &reference.accesses[0].field;
+            let agent_name = reference
+                .first_access_field()
+                .expect("agent keyword reference must have first access when not empty");
             let Some(agent_output_value) = evaluation_context.agent_outputs.get(agent_name) else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
@@ -189,75 +202,53 @@ fn render_template_value(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
 }
 
-fn render_reference(reference: &Reference) -> String {
-    let mut rendered = match &reference.root {
-        ReferenceRoot::Keyword(reference_keyword) => reference_keyword.as_str().to_string(),
-        ReferenceRoot::Identifier(identifier) => identifier.clone(),
-    };
-
-    for access in &reference.accesses {
-        if access.optional {
-            rendered.push_str("?.");
-            rendered.push_str(&access.field);
-
-            continue;
-        }
-
-        rendered.push('.');
-        rendered.push_str(&access.field);
-    }
-
-    rendered
+pub fn collect_agent_dependencies(expression: &Expression, agent_dependencies: &mut HashSet<String>) {
+    expression.collect_agent_dependencies(agent_dependencies);
 }
 
-pub fn collect_agent_dependencies(expression: &Expression, agent_dependencies: &mut HashSet<String>) {
-    match expression {
-        Expression::Reference(reference) => {
-            collect_reference_dependency(reference, agent_dependencies);
-        }
-        Expression::FunctionCall(function_call) => {
-            collect_reference_dependency(&function_call.callee, agent_dependencies);
+impl Expression {
+    pub fn collect_agent_dependencies(&self, agent_dependencies: &mut HashSet<String>) {
+        match self {
+            Self::Reference(reference) => {
+                collect_reference_dependency(reference, agent_dependencies);
+            }
+            Self::FunctionCall(function_call) => {
+                collect_reference_dependency(&function_call.callee, agent_dependencies);
 
-            for call_argument in &function_call.arguments {
-                match call_argument {
-                    CallArgument::Positional(argument_expression) => {
-                        collect_agent_dependencies(argument_expression, agent_dependencies);
-                    }
-                    CallArgument::Named(named_argument) => {
-                        collect_agent_dependencies(&named_argument.value, agent_dependencies);
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::ArrayLiteral(array_items) => {
+                for array_item in array_items {
+                    array_item.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = template_part {
+                        interpolation_expression.collect_agent_dependencies(agent_dependencies);
                     }
                 }
             }
+            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => {}
         }
-        Expression::ArrayLiteral(array_items) => {
-            for array_item in array_items {
-                collect_agent_dependencies(array_item, agent_dependencies);
-            }
-        }
-        Expression::ObjectLiteral(object_fields) => {
-            for object_field in object_fields {
-                collect_agent_dependencies(&object_field.value, agent_dependencies);
-            }
-        }
-        Expression::StringTemplate(string_template) => {
-            for template_part in &string_template.parts {
-                if let StringTemplatePart::Interpolation(interpolation_expression) = template_part {
-                    collect_agent_dependencies(interpolation_expression, agent_dependencies);
-                }
-            }
-        }
-        Expression::StringLiteral(_) | Expression::NumberLiteral(_) | Expression::BooleanLiteral(_) | Expression::NullLiteral => {}
     }
 }
 
 fn collect_reference_dependency(reference: &Reference, agent_dependencies: &mut HashSet<String>) {
-    if reference.root.keyword() != Some(ReferenceKeyword::Agent) {
+    if !reference.is_agent_root() {
         return;
     }
 
-    let Some(first_access) = reference.accesses.first() else {
+    let Some(agent_name) = reference.first_access_field() else {
         return;
     };
 
-    agent_dependencies.insert(first_access.field.clone());
+    agent_dependencies.insert(agent_name.to_string());
 }

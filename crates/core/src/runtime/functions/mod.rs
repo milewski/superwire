@@ -69,64 +69,58 @@ impl RegisteredBuiltinFunction {
     }
 }
 
-pub fn evaluate_builtin_function_call(
-    function_call: &FunctionCall,
-    evaluation_context: &EvaluationContext,
-    context: &str,
-    evaluate_expression: &ExpressionEvaluator,
-) -> Result<Value, WorkflowRuntimeError> {
-    let function_name = function_call
-        .callee
-        .root
-        .as_identifier()
-        .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
+impl FunctionCall {
+    pub fn evaluate_builtin(
+        &self,
+        evaluation_context: &EvaluationContext,
+        context: &str,
+        evaluate_expression: &ExpressionEvaluator,
+    ) -> Result<Value, WorkflowRuntimeError> {
+        let function_name = self.identifier_name().ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
             context: context.to_string(),
             message: "function call must use identifier root".to_string(),
         })?;
 
-    let Some(builtin_function_name) = BuiltinFunctionName::from_identifier(function_name) else {
-        return Err(WorkflowRuntimeError::UnsupportedFeature {
-            feature: format!("function `{function_name}` is not supported by runtime evaluator"),
-        });
-    };
+        let Some(builtin_function_name) = self.builtin_function_name() else {
+            return Err(WorkflowRuntimeError::UnsupportedFeature {
+                feature: format!("function `{function_name}` is not supported by runtime evaluator"),
+            });
+        };
 
-    let function_request = FunctionEvaluationRequest {
-        function_call,
-        evaluation_context,
-        context,
-        evaluate_expression,
-    };
+        let function_request = FunctionEvaluationRequest {
+            function_call: self,
+            evaluation_context,
+            context,
+            evaluate_expression,
+        };
 
-    RegisteredBuiltinFunction::from_name(builtin_function_name).evaluate(&function_request)
-}
+        RegisteredBuiltinFunction::from_name(builtin_function_name).evaluate(&function_request)
+    }
 
-pub fn infer_builtin_function_type(
-    function_call: &FunctionCall,
-    type_inference_context: &TypeInferenceContext,
-    context: &str,
-    infer_expression_type: &ExpressionTypeInferer,
-) -> Result<WorkflowType, WorkflowRuntimeError> {
-    let function_name = function_call
-        .callee
-        .root
-        .as_identifier()
-        .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
+    pub fn infer_builtin_type(
+        &self,
+        type_inference_context: &TypeInferenceContext,
+        context: &str,
+        infer_expression_type: &ExpressionTypeInferer,
+    ) -> Result<WorkflowType, WorkflowRuntimeError> {
+        let function_name = self.identifier_name().ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
             context: context.to_string(),
             message: "function call root must be an identifier".to_string(),
         })?;
 
-    let Some(builtin_function_name) = BuiltinFunctionName::from_identifier(function_name) else {
-        return Err(WorkflowRuntimeError::UnsupportedFeature {
-            feature: format!("cannot infer return type for function `{function_name}`"),
-        });
-    };
+        let Some(builtin_function_name) = self.builtin_function_name() else {
+            return Err(WorkflowRuntimeError::UnsupportedFeature {
+                feature: format!("cannot infer return type for function `{function_name}`"),
+            });
+        };
 
-    let function_request = FunctionTypeInferenceRequest {
-        function_call,
-        type_inference_context,
-        context,
-        infer_expression_type,
-    };
+        let function_request = FunctionTypeInferenceRequest {
+            function_call: self,
+            type_inference_context,
+            context,
+            infer_expression_type,
+        };
 
-    RegisteredBuiltinFunction::from_name(builtin_function_name).infer_type(&function_request)
+        RegisteredBuiltinFunction::from_name(builtin_function_name).infer_type(&function_request)
+    }
 }
