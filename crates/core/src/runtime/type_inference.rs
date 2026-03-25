@@ -1,5 +1,6 @@
-use crate::dsl::{CallArgument, Expression, FunctionCall, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
+use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
 use crate::runtime::error::WorkflowRuntimeError;
+use crate::runtime::functions::infer_builtin_function_type;
 use crate::runtime::types::WorkflowType;
 use std::collections::HashMap;
 
@@ -39,7 +40,9 @@ pub fn infer_expression_type(
         Expression::BooleanLiteral(_) => Ok(WorkflowType::Boolean),
         Expression::NullLiteral => Ok(WorkflowType::Null),
         Expression::Reference(reference) => infer_reference_type(reference, type_inference_context, context),
-        Expression::FunctionCall(function_call) => infer_function_call_type(function_call, type_inference_context, context),
+        Expression::FunctionCall(function_call) => {
+            infer_builtin_function_type(function_call, type_inference_context, context, &infer_expression_type)
+        }
         Expression::ArrayLiteral(array_items) => {
             if array_items.is_empty() {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
@@ -135,52 +138,6 @@ fn infer_reference_type(
     };
 
     resolve_reference_access_path(&root_type, &reference.accesses, access_start_index, context)
-}
-
-fn infer_function_call_type(
-    function_call: &FunctionCall,
-    type_inference_context: &TypeInferenceContext,
-    context: &str,
-) -> Result<WorkflowType, WorkflowRuntimeError> {
-    let Some(function_name) = function_call.callee.root.as_identifier() else {
-        return Err(WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: "function call root must be an identifier".to_string(),
-        });
-    };
-
-    if function_name == "context" {
-        let _ = context_call_argument(function_call)
-            .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: "context(...) requires an agent reference argument".to_string(),
-            })
-            .and_then(|argument_expression| infer_expression_type(argument_expression, type_inference_context, context))?;
-
-        return Err(WorkflowRuntimeError::UnsupportedFeature {
-            feature: "context(...) is not supported in statically typed output values".to_string(),
-        });
-    }
-
-    Err(WorkflowRuntimeError::UnsupportedFeature {
-        feature: format!("cannot infer return type for function `{function_name}`"),
-    })
-}
-
-fn context_call_argument(function_call: &FunctionCall) -> Option<&Expression> {
-    for call_argument in &function_call.arguments {
-        match call_argument {
-            CallArgument::Positional(expression) => {
-                return Some(expression);
-            }
-            CallArgument::Named(named_argument) if named_argument.name == "agent" => {
-                return Some(&named_argument.value);
-            }
-            CallArgument::Named(_) => {}
-        }
-    }
-
-    None
 }
 
 fn resolve_reference_access_path(

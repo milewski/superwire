@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, SourceSpan,
-    StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference, ReferenceKeyword,
+    SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -573,14 +573,18 @@ fn extract_model_name(model_call: &FunctionCall) -> Option<String> {
             CallArgument::Positional(Expression::StringLiteral(model_name)) => {
                 return Some(model_name.clone());
             }
-            CallArgument::Named(named_argument) if named_argument.name == "model" => {
+            CallArgument::Named(named_argument) => {
+                if ModelCallArgumentName::from_identifier(named_argument.name.as_str()) != Some(ModelCallArgumentName::Model) {
+                    continue;
+                }
+
                 let Expression::StringLiteral(model_name) = &named_argument.value else {
                     return None;
                 };
 
                 return Some(model_name.clone());
             }
-            CallArgument::Named(_) | CallArgument::Positional(_) => {}
+            CallArgument::Positional(_) => {}
         }
     }
 

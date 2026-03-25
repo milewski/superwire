@@ -1,10 +1,11 @@
-pub(crate) mod error;
-pub(crate) mod expression;
+pub mod error;
+pub mod expression;
+pub mod functions;
 mod inference;
-pub(crate) mod provider;
+pub mod provider;
 mod runner;
-pub(crate) mod type_inference;
-pub(crate) mod types;
+pub mod type_inference;
+pub mod types;
 mod workflow_runtime;
 
 #[cfg(test)]

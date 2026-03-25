@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::sync::{Arc, LazyLock, Mutex};
 
-static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
+pub static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
     parse_inline_workflow! {
         provider openai {
             driver: "openai"
@@ -19,20 +19,20 @@ static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(||
 });
 
 #[derive(Debug, Clone)]
-struct ScriptedRunner {
+pub struct ScriptedRunner {
     queued_outputs: Arc<Mutex<VecDeque<Value>>>,
     captured_prompts: Arc<Mutex<Vec<String>>>,
 }
 
 impl ScriptedRunner {
-    fn from_outputs(outputs: Vec<Value>) -> Self {
+    pub fn from_outputs(outputs: Vec<Value>) -> Self {
         Self {
             queued_outputs: Arc::new(Mutex::new(VecDeque::from(outputs))),
             captured_prompts: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    fn prompts(&self) -> Vec<String> {
+    pub fn prompts(&self) -> Vec<String> {
         self.captured_prompts.lock().expect("prompt lock should not be poisoned").clone()
     }
 }

@@ -1,5 +1,6 @@
-use crate::dsl::{CallArgument, Expression, FunctionCall, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
+use crate::dsl::{CallArgument, Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
 use crate::runtime::error::WorkflowRuntimeError;
+use crate::runtime::functions::evaluate_builtin_function_call;
 use crate::runtime::types::parse_number_literal;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -42,7 +43,9 @@ pub fn evaluate_expression(
         Expression::BooleanLiteral(boolean_literal) => Ok(Value::Bool(*boolean_literal)),
         Expression::NullLiteral => Ok(Value::Null),
         Expression::Reference(reference) => evaluate_reference(reference, evaluation_context, context),
-        Expression::FunctionCall(function_call) => evaluate_function_call(function_call, evaluation_context, context),
+        Expression::FunctionCall(function_call) => {
+            evaluate_builtin_function_call(function_call, evaluation_context, context, &evaluate_expression)
+        }
         Expression::ArrayLiteral(array_items) => {
             let mut evaluated_items = Vec::with_capacity(array_items.len());
 
@@ -103,88 +106,6 @@ fn evaluate_reference(reference: &Reference, evaluation_context: &EvaluationCont
     }
 
     Ok(current_value)
-}
-
-fn evaluate_function_call(
-    function_call: &FunctionCall,
-    evaluation_context: &EvaluationContext,
-    context: &str,
-) -> Result<Value, WorkflowRuntimeError> {
-    let function_name = function_call
-        .callee
-        .root
-        .as_identifier()
-        .ok_or_else(|| WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: "function call must use identifier root".to_string(),
-        })?;
-
-    if function_name == "context" {
-        return evaluate_context_call(function_call, evaluation_context, context);
-    }
-
-    Err(WorkflowRuntimeError::UnsupportedFeature {
-        feature: format!("function `{function_name}` is not supported by runtime evaluator"),
-    })
-}
-
-fn evaluate_context_call(
-    function_call: &FunctionCall,
-    evaluation_context: &EvaluationContext,
-    context: &str,
-) -> Result<Value, WorkflowRuntimeError> {
-    let Some(agent_reference_expression) = context_call_agent_argument(function_call) else {
-        return Err(WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: "context(...) requires one agent reference argument".to_string(),
-        });
-    };
-
-    let Expression::Reference(agent_reference) = agent_reference_expression else {
-        return Err(WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: "context(...) requires an `agent.<name>` reference".to_string(),
-        });
-    };
-
-    if agent_reference.root.keyword() != Some(ReferenceKeyword::Agent) {
-        return Err(WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: "context(...) only supports `agent.<name>` references".to_string(),
-        });
-    }
-
-    let Some(agent_name_access) = agent_reference.accesses.first() else {
-        return Err(WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: "context(...) requires `agent.<name>` with a concrete agent name".to_string(),
-        });
-    };
-
-    let Some(agent_context_value) = evaluation_context.agent_contexts.get(&agent_name_access.field) else {
-        return Err(WorkflowRuntimeError::ExpressionEvaluation {
-            context: context.to_string(),
-            message: format!("context for agent `{}` is not available yet", agent_name_access.field),
-        });
-    };
-
-    Ok(agent_context_value.clone())
-}
-
-fn context_call_agent_argument(function_call: &FunctionCall) -> Option<&Expression> {
-    for call_argument in &function_call.arguments {
-        match call_argument {
-            CallArgument::Positional(expression) => {
-                return Some(expression);
-            }
-            CallArgument::Named(named_argument) if named_argument.name == "agent" => {
-                return Some(&named_argument.value);
-            }
-            CallArgument::Named(_) => {}
-        }
-    }
-
-    None
 }
 
 fn resolve_reference_root(

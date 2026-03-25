@@ -1,6 +1,6 @@
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, CallArgument, Declaration, Expression, InputDeclaration, OutputDeclaration, SchemaDeclaration,
-    SecretsDeclaration, TypeExpression, Workflow,
+    AgentDeclaration, AgentProperty, CallArgument, Declaration, Expression, InputDeclaration, ModelCallArgumentName, OutputDeclaration,
+    SchemaDeclaration, SecretsDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::collect_agent_dependencies;
@@ -329,7 +329,9 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
                     detected_model_names.push(model_name.clone());
                 }
             }
-            CallArgument::Named(named_argument) if named_argument.name == AgentPropertyName::Model.as_str() => {
+            CallArgument::Named(named_argument)
+                if ModelCallArgumentName::from_identifier(named_argument.name.as_str()) == Some(ModelCallArgumentName::Model) =>
+            {
                 let Expression::StringLiteral(model_name) = &named_argument.value else {
                     return Err(WorkflowRuntimeError::InvalidAgentProperty {
                         agent_name: agent_declaration.name.clone(),
