@@ -293,7 +293,7 @@ async fn executes_string_workflow_and_returns_typed_output() {
 }
 
 #[tokio::test]
-async fn unwraps_single_nested_candidate_that_matches_declared_schema() {
+async fn rejects_nested_object_when_declared_output_is_string() {
     #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
     struct Output {
         greeting: String,
@@ -319,17 +319,12 @@ async fn unwraps_single_nested_candidate_that_matches_declared_schema() {
 
     let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
     let runner = ScriptedRunner::from_outputs(vec![json!({ "message": "hello from nested shape" })]);
-    let output = runtime
-        .run_with_runner((), &runner)
-        .await
-        .expect("workflow should normalize and run successfully");
+    let execution_result = runtime.run_with_runner((), &runner).await;
 
-    assert_eq!(
-        output,
-        Output {
-            greeting: "hello from nested shape".to_string(),
-        }
-    );
+    assert!(matches!(
+        execution_result,
+        Err(WorkflowRuntimeError::AgentOutputTypeMismatch { .. })
+    ));
 }
 
 #[tokio::test]
@@ -364,10 +359,7 @@ async fn rejects_ambiguous_nested_candidates_for_declared_schema() {
 
     assert!(matches!(
         execution_result,
-        Err(WorkflowRuntimeError::AgentOutputTypeMismatch {
-            message,
-            ..
-        }) if message.contains("ambiguous")
+        Err(WorkflowRuntimeError::AgentOutputTypeMismatch { .. })
     ));
 }
 

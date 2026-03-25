@@ -7,7 +7,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(dead_code)]
     #[derive(Debug, Deserialize, JsonSchema)]
     struct Output {
-        greeting: u16,
+        greeting: String,
     }
 
     let inline = parse_inline_workflow! {
@@ -19,12 +19,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         agent greeting {
             model: openai("qwen3.5-27b")
-            prompt: "generate a random number"
-            output: number
+            prompt: "generate a random message"
+            output: {
+                message: string
+            }
         }
 
         output {
-            greeting: agent.greeting
+            greeting: agent.greeting.message
         }
     };
 

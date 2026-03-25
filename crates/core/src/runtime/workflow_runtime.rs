@@ -8,8 +8,8 @@ use crate::runtime::provider::{build_provider_index, ProviderConfig};
 use crate::runtime::runner::{AgentExecutionRequest, AgentRunner, LoopAgentRunner};
 use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::runtime::types::{
-    ensure_type_matches, normalize_value_for_type, validate_value_against_type, value_kind_name, workflow_type_from_dsl,
-    workflow_type_from_rust_schema, WorkflowType,
+    ensure_type_matches, validate_value_against_type, value_kind_name, workflow_type_from_dsl, workflow_type_from_rust_schema,
+    workflow_type_to_schemars_schema, WorkflowType,
 };
 use engine_ai_agent::AgentConfig;
 use schemars::JsonSchema;
@@ -244,6 +244,7 @@ where
             .get(&agent_declaration.name)
             .expect("agent iteration output type should exist")
             .clone();
+        let iteration_output_schema = workflow_type_to_schemars_schema(&iteration_output_type)?;
 
         if let Some(for_loop) = &agent_declaration.for_loop {
             let iterable_value = evaluate_expression(
@@ -287,24 +288,18 @@ where
                     model_name: model_name.clone(),
                     prompt,
                     config: base_config.clone(),
+                    output_schema: iteration_output_schema.clone(),
                 };
 
                 let agent_result = runner.run_agent(&request).await?;
-                let normalized_output = normalize_value_for_type(&agent_result.output, &iteration_output_type).map_err(|message| {
+                validate_value_against_type(&agent_result.output, &iteration_output_type).map_err(|message| {
                     WorkflowRuntimeError::AgentOutputTypeMismatch {
                         agent_name: agent_declaration.name.clone(),
                         message,
                     }
                 })?;
 
-                validate_value_against_type(&normalized_output, &iteration_output_type).map_err(|message| {
-                    WorkflowRuntimeError::AgentOutputTypeMismatch {
-                        agent_name: agent_declaration.name.clone(),
-                        message,
-                    }
-                })?;
-
-                iteration_outputs.push(normalized_output);
+                iteration_outputs.push(agent_result.output);
                 iteration_contexts.push(agent_result.context);
             }
 
@@ -340,17 +335,11 @@ where
             model_name,
             prompt,
             config: base_config,
+            output_schema: iteration_output_schema,
         };
 
         let agent_result = runner.run_agent(&request).await?;
-        let normalized_output = normalize_value_for_type(&agent_result.output, &iteration_output_type).map_err(|message| {
-            WorkflowRuntimeError::AgentOutputTypeMismatch {
-                agent_name: agent_declaration.name.clone(),
-                message,
-            }
-        })?;
-
-        validate_value_against_type(&normalized_output, &iteration_output_type).map_err(|message| {
+        validate_value_against_type(&agent_result.output, &iteration_output_type).map_err(|message| {
             WorkflowRuntimeError::AgentOutputTypeMismatch {
                 agent_name: agent_declaration.name.clone(),
                 message,
@@ -359,7 +348,7 @@ where
 
         runtime_state
             .agent_outputs
-            .insert(agent_declaration.name.clone(), normalized_output);
+            .insert(agent_declaration.name.clone(), agent_result.output);
 
         runtime_state
             .agent_contexts

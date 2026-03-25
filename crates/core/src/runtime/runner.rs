@@ -2,6 +2,7 @@ use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::provider::{ProviderConfig, ProviderDriver};
 use async_trait::async_trait;
 use engine_ai_agent::{Agent, AgentConfig, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
+use schemars::Schema;
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
@@ -11,6 +12,7 @@ pub struct AgentExecutionRequest {
     pub model_name: String,
     pub prompt: String,
     pub config: AgentConfig,
+    pub output_schema: Schema,
 }
 
 #[derive(Debug, Clone)]
@@ -75,9 +77,14 @@ impl LoopAgentRunner {
     where
         ProviderType: Provider + Send + Sync,
     {
-        let executor = LoopExecutor::<ProviderType, Value>::new().map_err(|error| WorkflowRuntimeError::Other {
-            message: format!("failed to create loop executor for `{}`: {error}", request.agent_name),
-        })?;
+        let executor = LoopExecutor::<ProviderType, Value>::new()
+            .map_err(|error| WorkflowRuntimeError::Other {
+                message: format!("failed to create loop executor for `{}`: {error}", request.agent_name),
+            })?
+            .with_finalize_answer_schema(request.output_schema.clone())
+            .map_err(|error| WorkflowRuntimeError::Other {
+                message: format!("failed to configure finalize schema for agent `{}`: {error}", request.agent_name),
+            })?;
 
         let execution_result = Agent::new(executor, provider)
             .with_config(request.config.clone())

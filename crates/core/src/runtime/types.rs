@@ -1,7 +1,7 @@
 use crate::dsl::{TypeExpression, TypedField};
 use crate::runtime::error::WorkflowRuntimeError;
 use jsonschema::ValidationError;
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema};
 use serde_json::{json, Number, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -483,60 +483,6 @@ pub fn validate_value_against_type(value: &Value, expected_type: &WorkflowType) 
     Err(validation_issues.join("; "))
 }
 
-pub fn normalize_value_for_type(value: &Value, expected_type: &WorkflowType) -> Result<Value, String> {
-    if validate_value_against_type(value, expected_type).is_ok() {
-        return Ok(value.clone());
-    }
-
-    let mut matching_nested_values = Vec::<Value>::new();
-
-    collect_matching_nested_values(value, expected_type, &mut matching_nested_values);
-
-    deduplicate_values(&mut matching_nested_values);
-
-    if matching_nested_values.len() == 1 {
-        return Ok(matching_nested_values.remove(0));
-    }
-
-    if matching_nested_values.is_empty() {
-        return Err(validate_value_against_type(value, expected_type).unwrap_err());
-    }
-
-    Err(format!(
-        "value does not directly match declared type and contains {} matching nested candidates; output is ambiguous",
-        matching_nested_values.len()
-    ))
-}
-
-fn collect_matching_nested_values(value: &Value, expected_type: &WorkflowType, matching_values: &mut Vec<Value>) {
-    match value {
-        Value::Object(object_values) => {
-            for nested_value in object_values.values() {
-                if validate_value_against_type(nested_value, expected_type).is_ok() {
-                    matching_values.push(nested_value.clone());
-                }
-
-                collect_matching_nested_values(nested_value, expected_type, matching_values);
-            }
-        }
-        Value::Array(array_values) => {
-            for nested_value in array_values {
-                if validate_value_against_type(nested_value, expected_type).is_ok() {
-                    matching_values.push(nested_value.clone());
-                }
-
-                collect_matching_nested_values(nested_value, expected_type, matching_values);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-    }
-}
-
-fn deduplicate_values(values: &mut Vec<Value>) {
-    values.sort_by_key(|value| serde_json::to_string(value).unwrap_or_else(|_| value.to_string()));
-    values.dedup();
-}
-
 pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
     match workflow_type {
         WorkflowType::String => json!({ "type": "string" }),
@@ -589,6 +535,14 @@ pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
                 .collect::<Vec<_>>(),
         }),
     }
+}
+
+pub fn workflow_type_to_schemars_schema(workflow_type: &WorkflowType) -> Result<Schema, WorkflowRuntimeError> {
+    let json_schema_value = workflow_type_to_json_schema(workflow_type);
+
+    serde_json::from_value::<Schema>(json_schema_value).map_err(|error| WorkflowRuntimeError::Other {
+        message: format!("failed to convert workflow type into schemars schema: {error}"),
+    })
 }
 
 fn format_validation_issue(validation_error: ValidationError<'_>) -> String {

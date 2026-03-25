@@ -8,7 +8,7 @@ use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefi
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -36,6 +36,7 @@ where
 {
     max_iterations: usize,
     finalize_tool: FinalizeTool<O>,
+    finalize_parameters_schema: Schema,
     phantom: PhantomData<(P, O)>,
 }
 
@@ -45,9 +46,12 @@ where
     O: Send + Sync + Serialize + DeserializeOwned + JsonSchema + 'static,
 {
     pub fn new() -> Result<Self, ToolError> {
+        let finalize_tool = FinalizeTool::<O>::new()?;
+
         Ok(Self {
             max_iterations: 5,
-            finalize_tool: FinalizeTool::<O>::new()?,
+            finalize_parameters_schema: finalize_tool.parameters_schema().clone(),
+            finalize_tool,
             phantom: PhantomData,
         })
     }
@@ -56,6 +60,11 @@ where
     pub fn with_max_iterations(mut self, max_iterations: usize) -> Self {
         self.max_iterations = max_iterations;
         self
+    }
+
+    pub fn with_finalize_answer_schema(mut self, answer_schema: Schema) -> Result<Self, ToolError> {
+        self.finalize_parameters_schema = FinalizeTool::<O>::parameters_schema_for_answer_schema(&answer_schema)?;
+        Ok(self)
     }
 
     fn prepare_tools<'a>(&self, tools: &'a [Arc<dyn RuntimeTool>]) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
@@ -78,7 +87,11 @@ where
             definitions.push(definition);
         }
 
-        definitions.push(self.finalize_tool.as_definition());
+        definitions.push(ToolDefinition {
+            name: self.finalize_tool.name().to_string(),
+            description: self.finalize_tool.description().to_string(),
+            parameters_schema: self.finalize_parameters_schema.clone(),
+        });
 
         Ok((definitions, registry))
     }
@@ -112,7 +125,7 @@ where
     async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
         if let Err(error) = validate_json_against_schema_with_context(
             &tool_call.arguments,
-            self.finalize_tool.parameters_schema(),
+            &self.finalize_parameters_schema,
             "Finalize tool arguments do not match schema",
         ) {
             context.add_tool_result(ToolResult::Failure {
@@ -353,7 +366,7 @@ mod tests {
         assert_has_tool_success_content, assert_tool_failure_contains, assert_tool_result, assistant_message, provider, provider_error,
         run_executor, run_executor_with_config, tool_call,
     };
-    use schemars::JsonSchema;
+    use schemars::{JsonSchema, Schema};
     use serde::{Deserialize, Serialize};
     use serde_json::{json, Value};
 
@@ -1099,6 +1112,51 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn enforces_runtime_finalize_answer_schema_for_value_output() {
+        let provider = provider!([
+            ToolCall {
+                id: "invalid".to_string(),
+                name: "finalize".to_string(),
+                arguments: json!({
+                    "output": {
+                        "type": "success",
+                        "answer": {
+                            "random_number": 42
+                        }
+                    }
+                }),
+            },
+            ToolCall {
+                id: "valid".to_string(),
+                name: "finalize".to_string(),
+                arguments: json!({
+                    "output": {
+                        "type": "success",
+                        "answer": 42
+                    }
+                }),
+            }
+        ]);
+
+        let answer_schema: Schema = serde_json::from_value(json!({ "type": "integer" })).expect("answer schema should deserialize");
+
+        let mut context = Context::default();
+        let executor = LoopExecutor::<crate::tests::executor_support::MockProvider, Value>::new()
+            .expect("executor should build")
+            .with_finalize_answer_schema(answer_schema)
+            .expect("executor should accept runtime answer schema");
+
+        let output = executor
+            .execute(&mut context, &provider, &[], &AgentConfig::default())
+            .await
+            .expect("execution should succeed after invalid finalize is rejected");
+
+        assert_eq!(output, json!(42));
+        assert_tool_failure_contains!(context, "invalid", ["Finalize tool arguments do not match schema", "output.answer"]);
+        assert_tool_result!(context, "valid");
     }
 
     #[tokio::test]
