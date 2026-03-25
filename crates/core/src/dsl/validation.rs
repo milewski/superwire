@@ -2,6 +2,7 @@ use super::ast::{
     AgentProperty, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference, ReferenceKeyword, SourceSpan,
     StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
+use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet};
@@ -30,6 +31,13 @@ impl ValidationReport {
 
     pub fn issues_with_spans(&self) -> impl Iterator<Item = (&ValidationIssue, Option<SourceSpan>)> + '_ {
         self.issues.iter().zip(self.spans.iter().copied())
+    }
+
+    #[must_use]
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        self.issues_with_spans()
+            .map(|(validation_issue, primary_span)| validation_issue.diagnostic(primary_span))
+            .collect()
     }
 
     fn push_issue(&mut self, issue: ValidationIssue) {
@@ -261,6 +269,62 @@ impl ValidationIssue {
             Self::AgentDependencyCycle { agent_names } => {
                 format!("Circular agent dependency detected: {}.", agent_names.join(", "))
             }
+        }
+    }
+
+    #[must_use]
+    pub fn diagnostic(&self, primary_span: Option<SourceSpan>) -> Diagnostic {
+        Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span)
+    }
+}
+
+impl From<&ValidationIssue> for DiagnosticCode {
+    fn from(validation_issue: &ValidationIssue) -> Self {
+        match validation_issue {
+            ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
+            ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
+            ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
+            ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
+            ValidationIssue::UnknownAgentProperty {
+                agent_name: _,
+                property_name: _,
+            } => Self::UnknownAgentProperty,
+            ValidationIssue::InvalidModelExpression { agent_name: _ } => Self::InvalidModelExpression,
+            ValidationIssue::UnknownProviderInModel {
+                agent_name: _,
+                provider_name: _,
+            } => Self::UnknownProviderInModel,
+            ValidationIssue::UnknownModelForProvider {
+                agent_name: _,
+                provider_name: _,
+                model_name: _,
+            } => Self::UnknownModelForProvider,
+            ValidationIssue::UnknownAgentReference {
+                referenced_agent: _,
+                context: _,
+            } => Self::UnknownAgentReference,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword: _, context: _ } => Self::InvalidKeywordReferenceRoot,
+            ValidationIssue::MissingInputDeclaration { context: _ } => Self::MissingInputDeclaration,
+            ValidationIssue::MissingSecretsDeclaration { context: _ } => Self::MissingSecretsDeclaration,
+            ValidationIssue::UnknownInputFieldReference { field_name: _, context: _ } => Self::UnknownInputFieldReference,
+            ValidationIssue::UnknownSecretsFieldReference { field_name: _, context: _ } => Self::UnknownSecretsFieldReference,
+            ValidationIssue::SecretReferenceInLlmContext {
+                reference_path: _,
+                context: _,
+            } => Self::SecretReferenceInLlmContext,
+            ValidationIssue::MissingAgentOutputTypeForFieldReference { agent_name: _, context: _ } => {
+                Self::MissingAgentOutputTypeForFieldReference
+            }
+            ValidationIssue::InvalidReferencePath {
+                reference_path: _,
+                invalid_field: _,
+                context: _,
+            } => Self::InvalidReferencePath,
+            ValidationIssue::UnknownSchemaReference {
+                referenced_schema: _,
+                context: _,
+            } => Self::UnknownSchemaReference,
+            ValidationIssue::AgentDependencyCycle { agent_names: _ } => Self::AgentDependencyCycle,
         }
     }
 }
