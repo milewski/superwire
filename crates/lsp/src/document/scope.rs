@@ -1,7 +1,7 @@
 use engine_ai_core::dsl::{DeclarationKeyword, SingletonDeclarationKind};
 use engine_ai_core::runtime::InferenceSetting;
 
-use super::completion_context::trailing_identifier;
+use super::text_utils::trailing_identifier;
 use super::{CompletionKind, CompletionSuggestion};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
