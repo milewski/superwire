@@ -151,7 +151,7 @@ These decisions are intended to align with the long-term vision and reduce drift
     - context-aware lookup helpers
   - **Goal**: LSP consumes this API rather than rebuilding semantics.
 
-- [ ] **C2. Replace `SemanticIndex::from_text_fallback` with core-provided tolerant semantic API**
+- [x] **C2. Replace `SemanticIndex::from_text_fallback` with core-provided tolerant semantic API**
   - **Files**: `crates/lsp/src/document/*`, `crates/core/src/semantic/*`.
   - **Goal**: Remove or greatly reduce LSP-local fallback heuristics.
 
