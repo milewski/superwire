@@ -1,25 +1,20 @@
 use std::collections::HashSet;
 
+mod completion;
+mod completion_context;
 mod reference;
 mod scope;
 mod semantic_index;
 mod snapshot;
 mod types;
 
-use reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
-use scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
-use semantic_index::SemanticIndex;
 use snapshot::SemanticSnapshot;
 pub use types::{CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic};
 
-use engine_ai_core::dsl::{
-    parse_workflow, DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression,
-};
+use engine_ai_core::dsl::{DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression};
 use engine_ai_core::runtime::ProviderDriver;
 
 use crate::protocol::{Position, Range};
-
-const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
 #[derive(Debug)]
 pub struct DocumentState {
@@ -43,93 +38,6 @@ impl DocumentState {
     #[must_use]
     pub fn diagnostics(&self) -> Vec<DocumentDiagnostic> {
         self.semantic_snapshot.diagnostics(&self.text)
-    }
-
-    #[must_use]
-    pub fn completion_suggestions(&self, position: Position) -> Vec<CompletionSuggestion> {
-        let Some(line_prefix) = self.line_prefix(position) else {
-            return Vec::new();
-        };
-
-        let inside_interpolation_expression = is_inside_interpolation_expression(&line_prefix);
-
-        if self.is_inside_multiline_string_literal(position) && !inside_interpolation_expression {
-            return Vec::new();
-        }
-
-        let completion_scope = self.completion_scope(position);
-
-        if completion_scope == CompletionScope::TypedDeclarations {
-            if !line_prefix.contains(':') {
-                return Vec::new();
-            }
-
-            let semantic_index = self.semantic_index_for_completion(position);
-            let current_schema_name = semantic_index.schema_name_at_position(position);
-
-            return semantic_index.type_suggestions(&line_prefix, current_schema_name);
-        }
-
-        let semantic_index = self.semantic_index_for_completion(position);
-        let line_has_property_separator = line_prefix.trim_start().contains(':');
-        let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
-
-        if !line_has_property_separator && !inside_interpolation_expression {
-            match completion_scope {
-                CompletionScope::InferenceSettings => {
-                    return inference_setting_scope_suggestions(&line_prefix);
-                }
-                CompletionScope::AgentProperties => {
-                    return agent_property_scope_suggestions(&line_prefix);
-                }
-                CompletionScope::General | CompletionScope::TypedDeclarations => {}
-            }
-        }
-
-        if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {
-            let model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
-
-            if !model_suggestions.is_empty() {
-                return model_suggestions;
-            }
-        }
-
-        if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, &line_prefix) {
-            return provider_driver_suggestions;
-        }
-
-        if let Some(provider_property_suggestions) = semantic_index.provider_property_suggestions(position, &line_prefix) {
-            return provider_property_suggestions;
-        }
-
-        if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
-            let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(&line_prefix);
-            let reference_suggestions =
-                semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
-
-            if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
-                return reference_suggestions;
-            }
-
-            if reference_completion_path.root_keyword() == Some(ReferenceKeyword::Tool) {
-                return reference_suggestions;
-            }
-
-            if !reference_suggestions.is_empty() {
-                return reference_suggestions;
-            }
-        }
-
-        if semantic_index.is_type_position(position, &line_prefix) {
-            let current_schema_name = semantic_index.schema_name_at_position(position);
-            let type_suggestions = semantic_index.type_suggestions(&line_prefix, current_schema_name);
-
-            if !type_suggestions.is_empty() {
-                return type_suggestions;
-            }
-        }
-
-        semantic_index.default_suggestions(should_include_builtin_function_suggestions)
     }
 
     #[must_use]
@@ -183,101 +91,6 @@ impl DocumentState {
 
         Some(line_characters[start_index..end_index].iter().collect())
     }
-
-    fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
-        if self.semantic_snapshot.parse_error.is_none() {
-            return self.semantic_snapshot.semantic_index.clone();
-        }
-
-        self.recovered_semantic_index(position)
-            .unwrap_or_else(|| self.semantic_snapshot.semantic_index.clone())
-    }
-
-    fn recovered_semantic_index(&self, position: Position) -> Option<SemanticIndex> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
-
-        let mut recovered_source = String::with_capacity(self.text.len() + COMPLETION_RECOVERY_PLACEHOLDER.len());
-        recovered_source.push_str(&self.text[..cursor_offset]);
-        recovered_source.push_str(COMPLETION_RECOVERY_PLACEHOLDER);
-        recovered_source.push_str(&self.text[cursor_offset..]);
-
-        let workflow = parse_workflow(&recovered_source).ok()?;
-
-        Some(SemanticIndex::from_workflow(&workflow))
-    }
-
-    fn completion_scope(&self, position: Position) -> CompletionScope {
-        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
-            return CompletionScope::General;
-        };
-
-        completion_scope_at_offset(&self.text, cursor_offset)
-    }
-
-    fn is_inside_multiline_string_literal(&self, position: Position) -> bool {
-        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
-            return false;
-        };
-
-        is_inside_multiline_string_literal(&self.text, cursor_offset)
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ModelCallCompletionContext {
-    provider_name: String,
-    model_prefix: String,
-    inside_string_literal: bool,
-}
-
-impl ModelCallCompletionContext {
-    fn from_line_prefix(line_prefix: &str) -> Option<Self> {
-        let trimmed_prefix = line_prefix.trim_end();
-        let open_parenthesis_index = trimmed_prefix.rfind('(')?;
-
-        let callee_prefix = trimmed_prefix[..open_parenthesis_index].trim_end();
-        let provider_name = trailing_identifier(callee_prefix)?.to_string();
-        let argument_prefix = &trimmed_prefix[open_parenthesis_index + 1..];
-
-        if argument_prefix.contains(')') {
-            return None;
-        }
-
-        let value_completion_context = ValueCompletionContext::from_value_prefix(argument_prefix);
-
-        Some(Self {
-            provider_name,
-            model_prefix: value_completion_context.value_prefix,
-            inside_string_literal: value_completion_context.inside_string_literal,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ValueCompletionContext {
-    value_prefix: String,
-    inside_string_literal: bool,
-}
-
-impl ValueCompletionContext {
-    fn from_value_prefix(value_prefix: &str) -> Self {
-        let trimmed_value_prefix = value_prefix.trim_start();
-        let quotation_count = trimmed_value_prefix.chars().filter(|character| *character == '"').count();
-
-        if quotation_count % 2 == 1 {
-            let last_quote_index = trimmed_value_prefix.rfind('"').unwrap_or(0);
-
-            return Self {
-                value_prefix: trimmed_value_prefix[last_quote_index + 1..].to_string(),
-                inside_string_literal: true,
-            };
-        }
-
-        Self {
-            value_prefix: trimmed_value_prefix.to_string(),
-            inside_string_literal: false,
-        }
-    }
 }
 
 fn all_provider_property_names() -> Vec<&'static str> {
@@ -293,73 +106,6 @@ fn all_provider_property_names() -> Vec<&'static str> {
     property_names.sort_unstable();
 
     property_names
-}
-
-fn trailing_identifier(line_prefix: &str) -> Option<&str> {
-    let mut start_index = line_prefix.len();
-
-    for (character_index, character) in line_prefix.char_indices().rev() {
-        if character.is_ascii_alphanumeric() || character == '_' {
-            start_index = character_index;
-            continue;
-        }
-
-        break;
-    }
-
-    if start_index == line_prefix.len() {
-        return None;
-    }
-
-    Some(&line_prefix[start_index..])
-}
-
-fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
-    let open_count = line_prefix.match_indices("{{").count();
-    let close_count = line_prefix.match_indices("}}").count();
-
-    open_count > close_count
-}
-
-fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
-    let source_prefix = &source_text[..cursor_offset];
-    let triple_quote_count = source_prefix.match_indices("\"\"\"").count();
-
-    triple_quote_count % 2 == 1
-}
-
-fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
-    let target_line = position.line as usize;
-    let target_character = position.character as usize;
-
-    let mut current_line = 0_usize;
-    let mut current_character = 0_usize;
-
-    for (byte_offset, character) in source_text.char_indices() {
-        if current_line == target_line && current_character == target_character {
-            return Some(byte_offset);
-        }
-
-        if character == '\n' {
-            if current_line == target_line {
-                return Some(byte_offset);
-            }
-
-            current_line += 1;
-            current_character = 0;
-            continue;
-        }
-
-        if current_line == target_line {
-            current_character += 1;
-        }
-    }
-
-    if current_line == target_line {
-        return Some(source_text.len());
-    }
-
-    None
 }
 
 fn is_symbol_character(character: char) -> bool {

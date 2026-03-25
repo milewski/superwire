@@ -8,10 +8,11 @@ use engine_ai_core::runtime::ProviderDriver;
 
 use crate::protocol::Position;
 
+use super::completion_context::{trailing_identifier, ModelCallCompletionContext, ValueCompletionContext};
 use super::reference::ReferenceCompletionPath;
 use super::{
-    all_provider_property_names, builtin_symbol_suggestions, source_span_contains_position, trailing_identifier, type_symbol_suggestions,
-    CompletionKind, CompletionSuggestion, ModelCallCompletionContext, RenderTypeExpression,
+    all_provider_property_names, builtin_symbol_suggestions, source_span_contains_position, type_symbol_suggestions, CompletionKind,
+    CompletionSuggestion, RenderTypeExpression,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -532,33 +533,6 @@ impl SemanticIndex {
             .iter()
             .find(|agent_location| source_span_contains_position(agent_location.span, position))
             .map(|agent_location| agent_location.name.as_str())
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ValueCompletionContext {
-    value_prefix: String,
-    inside_string_literal: bool,
-}
-
-impl ValueCompletionContext {
-    fn from_value_prefix(value_prefix: &str) -> Self {
-        let trimmed_value_prefix = value_prefix.trim_start();
-        let quotation_count = trimmed_value_prefix.chars().filter(|character| *character == '"').count();
-
-        if quotation_count % 2 == 1 {
-            let last_quote_index = trimmed_value_prefix.rfind('"').unwrap_or(0);
-
-            return Self {
-                value_prefix: trimmed_value_prefix[last_quote_index + 1..].to_string(),
-                inside_string_literal: true,
-            };
-        }
-
-        Self {
-            value_prefix: trimmed_value_prefix.to_string(),
-            inside_string_literal: false,
-        }
     }
 }
 
