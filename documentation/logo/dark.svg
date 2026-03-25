@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="Engine AI logo dark">
+  <rect x="0" y="0" width="56" height="56" rx="12" fill="#0D9373" />
+  <path d="M16 14h24v7H23v9h16v7H23v13h-7z" fill="#ffffff" />
+  <text x="72" y="40" fill="#f9fafb" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="28" font-weight="700">Engine AI</text>
+</svg>
