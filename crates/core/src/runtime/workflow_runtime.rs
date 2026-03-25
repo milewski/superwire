@@ -1,12 +1,13 @@
-use crate::dsl::{AgentDeclaration, AgentExpressionPropertyName, Expression, Workflow};
+use crate::dsl::{AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, Expression, Workflow};
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
 use crate::runtime::inference::InferenceSetting;
-use crate::runtime::runner::{AgentExecutionRequest, AgentRunner, LoopAgentRunner};
+use crate::runtime::provider::ProviderConfig;
+use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner};
 use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
 use engine_ai_agent::AgentConfig;
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -36,6 +37,18 @@ impl RuntimeState {
 #[derive(Debug, Clone)]
 struct CompiledWorkflow {
     execution_plan: ExecutionPlan,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedAgentExecution<'workflow> {
+    agent_name: String,
+    provider_config: ProviderConfig,
+    model_name: String,
+    prompt_expression: &'workflow Expression,
+    context_expression: Option<&'workflow Expression>,
+    output_type: WorkflowType,
+    output_schema: Schema,
+    config: AgentConfig,
 }
 
 pub struct WorkflowRuntime<Input, Output>
@@ -154,8 +167,24 @@ where
     where
         RunnerType: AgentRunner,
     {
-        let agent_name = planned_agent.name.clone();
+        let prepared_agent_execution = self.prepare_agent_execution(planned_agent, runtime_state)?;
+
+        if let Some(agent_for_loop) = &planned_agent.declaration.for_loop {
+            return self
+                .execute_for_loop_agent(agent_for_loop, &prepared_agent_execution, runtime_state, runner)
+                .await;
+        }
+
+        self.execute_single_agent(&prepared_agent_execution, runtime_state, runner).await
+    }
+
+    fn prepare_agent_execution<'workflow>(
+        &self,
+        planned_agent: &'workflow PlannedAgent,
+        runtime_state: &RuntimeState,
+    ) -> Result<PreparedAgentExecution<'workflow>, WorkflowRuntimeError> {
         let agent_declaration = &planned_agent.declaration;
+        let agent_name = planned_agent.name.clone();
 
         let Some(provider_config) = self
             .compiled_workflow
@@ -169,16 +198,13 @@ where
             });
         };
 
-        let agent_prompt_expression =
-            agent_declaration
-                .required_expression_property(AgentExpressionPropertyName::Prompt)
-                .map_err(|missing_property| WorkflowRuntimeError::InvalidAgentProperty {
-                    agent_name: agent_declaration.name.clone(),
-                    property: missing_property.as_str().to_string(),
-                    message: "property is required".to_string(),
-                })?;
-
-        let context_property_expression = agent_declaration.expression_property(AgentExpressionPropertyName::Context);
+        let prompt_expression = agent_declaration
+            .required_expression_property(AgentExpressionPropertyName::Prompt)
+            .map_err(|missing_property| WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: missing_property.as_str().to_string(),
+                message: "property is required".to_string(),
+            })?;
 
         if agent_declaration.expression_property(AgentExpressionPropertyName::Tools).is_some() {
             return Err(WorkflowRuntimeError::UnsupportedFeature {
@@ -186,94 +212,147 @@ where
             });
         }
 
-        let base_config = build_agent_config(agent_declaration, runtime_state)?;
-        let iteration_output_type = planned_agent.iteration_output_type.clone();
-        let iteration_output_schema = workflow_type_to_schemars_schema(&iteration_output_type)?;
+        let output_type = planned_agent.iteration_output_type.clone();
+        let output_schema = workflow_type_to_schemars_schema(&output_type)?;
+        let config = build_agent_config(agent_declaration, runtime_state)?;
 
-        if let Some(for_loop) = &agent_declaration.for_loop {
-            let iterable_value = evaluate_expression(
-                &for_loop.iterable,
-                &runtime_state_to_evaluation_context(runtime_state, HashMap::new()),
-                &format!("for-loop iterable for agent `{agent_name}`"),
+        Ok(PreparedAgentExecution {
+            agent_name,
+            provider_config: provider_config.clone(),
+            model_name: planned_agent.model_name.clone(),
+            prompt_expression,
+            context_expression: agent_declaration.expression_property(AgentExpressionPropertyName::Context),
+            output_type,
+            output_schema,
+            config,
+        })
+    }
+
+    async fn execute_for_loop_agent<RunnerType>(
+        &self,
+        agent_for_loop: &AgentForLoop,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &mut RuntimeState,
+        runner: &RunnerType,
+    ) -> Result<(), WorkflowRuntimeError>
+    where
+        RunnerType: AgentRunner,
+    {
+        let iterable_value = evaluate_expression(
+            &agent_for_loop.iterable,
+            &runtime_state_to_evaluation_context(runtime_state, HashMap::new()),
+            &format!("for-loop iterable for agent `{}`", prepared_agent_execution.agent_name),
+        )?;
+
+        let Some(iterable_items) = iterable_value.as_array() else {
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: format!("for-loop iterable for agent `{}`", prepared_agent_execution.agent_name),
+                message: format!("expected array iterable, found {}", value_kind_name(&iterable_value)),
+            });
+        };
+
+        let mut iteration_outputs = Vec::new();
+        let mut iteration_contexts = Vec::new();
+
+        for iterable_item in iterable_items {
+            let mut local_bindings = HashMap::new();
+            local_bindings.insert(agent_for_loop.iterator_name.clone(), iterable_item.clone());
+
+            let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings)?;
+            let agent_result = self.run_agent_request(prepared_agent_execution, prompt, runner).await?;
+
+            validate_agent_output_value(
+                &agent_result.output,
+                &prepared_agent_execution.output_type,
+                &prepared_agent_execution.agent_name,
             )?;
 
-            let Some(iterable_items) = iterable_value.as_array() else {
-                return Err(WorkflowRuntimeError::ExpressionEvaluation {
-                    context: format!("for-loop iterable for agent `{agent_name}`"),
-                    message: format!("expected array iterable, found {}", value_kind_name(&iterable_value)),
-                });
-            };
-
-            let mut iteration_outputs = Vec::new();
-            let mut iteration_contexts = Vec::new();
-
-            for iterable_item in iterable_items {
-                let mut local_bindings = HashMap::new();
-                local_bindings.insert(for_loop.iterator_name.clone(), iterable_item.clone());
-
-                let prompt_value = evaluate_expression(
-                    agent_prompt_expression,
-                    &runtime_state_to_evaluation_context(runtime_state, local_bindings.clone()),
-                    &format!("prompt for agent `{agent_name}`"),
-                )?;
-
-                let prompt = normalize_prompt(prompt_value);
-                let prompt =
-                    apply_optional_context_prefix(prompt, context_property_expression, runtime_state, local_bindings, &agent_name)?;
-
-                let request = AgentExecutionRequest {
-                    agent_name: agent_name.clone(),
-                    provider_config: provider_config.clone(),
-                    model_name: planned_agent.model_name.clone(),
-                    prompt,
-                    config: base_config.clone(),
-                    output_schema: iteration_output_schema.clone(),
-                };
-
-                let agent_result = runner.run_agent(&request).await?;
-                validate_agent_output_value(&agent_result.output, &iteration_output_type, &agent_name)?;
-
-                iteration_outputs.push(agent_result.output);
-                iteration_contexts.push(agent_result.context);
-            }
-
-            runtime_state
-                .agent_outputs
-                .insert(agent_name.clone(), Value::Array(iteration_outputs));
-
-            runtime_state
-                .agent_contexts
-                .insert(agent_name.clone(), Value::Array(iteration_contexts));
-
-            return Ok(());
+            iteration_outputs.push(agent_result.output);
+            iteration_contexts.push(agent_result.context);
         }
 
+        runtime_state
+            .agent_outputs
+            .insert(prepared_agent_execution.agent_name.clone(), Value::Array(iteration_outputs));
+
+        runtime_state
+            .agent_contexts
+            .insert(prepared_agent_execution.agent_name.clone(), Value::Array(iteration_contexts));
+
+        Ok(())
+    }
+
+    async fn execute_single_agent<RunnerType>(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &mut RuntimeState,
+        runner: &RunnerType,
+    ) -> Result<(), WorkflowRuntimeError>
+    where
+        RunnerType: AgentRunner,
+    {
+        let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, HashMap::new())?;
+        let agent_result = self.run_agent_request(prepared_agent_execution, prompt, runner).await?;
+
+        validate_agent_output_value(
+            &agent_result.output,
+            &prepared_agent_execution.output_type,
+            &prepared_agent_execution.agent_name,
+        )?;
+
+        runtime_state
+            .agent_outputs
+            .insert(prepared_agent_execution.agent_name.clone(), agent_result.output);
+
+        runtime_state
+            .agent_contexts
+            .insert(prepared_agent_execution.agent_name.clone(), agent_result.context);
+
+        Ok(())
+    }
+
+    fn evaluate_agent_prompt(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+    ) -> Result<String, WorkflowRuntimeError> {
         let prompt_value = evaluate_expression(
-            agent_prompt_expression,
-            &runtime_state_to_evaluation_context(runtime_state, HashMap::new()),
-            &format!("prompt for agent `{agent_name}`"),
+            prepared_agent_execution.prompt_expression,
+            &runtime_state_to_evaluation_context(runtime_state, local_bindings.clone()),
+            &format!("prompt for agent `{}`", prepared_agent_execution.agent_name),
         )?;
 
         let prompt = normalize_prompt(prompt_value);
-        let prompt = apply_optional_context_prefix(prompt, context_property_expression, runtime_state, HashMap::new(), &agent_name)?;
 
-        let request = AgentExecutionRequest {
-            agent_name: agent_name.clone(),
-            provider_config: provider_config.clone(),
-            model_name: planned_agent.model_name.clone(),
+        apply_optional_context_prefix(
             prompt,
-            config: base_config,
-            output_schema: iteration_output_schema,
+            prepared_agent_execution.context_expression,
+            runtime_state,
+            local_bindings,
+            &prepared_agent_execution.agent_name,
+        )
+    }
+
+    async fn run_agent_request<RunnerType>(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        prompt: String,
+        runner: &RunnerType,
+    ) -> Result<AgentExecutionResult, WorkflowRuntimeError>
+    where
+        RunnerType: AgentRunner,
+    {
+        let request = AgentExecutionRequest {
+            agent_name: prepared_agent_execution.agent_name.clone(),
+            provider_config: prepared_agent_execution.provider_config.clone(),
+            model_name: prepared_agent_execution.model_name.clone(),
+            prompt,
+            config: prepared_agent_execution.config.clone(),
+            output_schema: prepared_agent_execution.output_schema.clone(),
         };
 
-        let agent_result = runner.run_agent(&request).await?;
-        validate_agent_output_value(&agent_result.output, &iteration_output_type, &agent_name)?;
-
-        runtime_state.agent_outputs.insert(agent_name.clone(), agent_result.output);
-
-        runtime_state.agent_contexts.insert(agent_name, agent_result.context);
-
-        Ok(())
+        runner.run_agent(&request).await
     }
 
     fn evaluate_workflow_output(&self, runtime_state: &RuntimeState) -> Result<Value, WorkflowRuntimeError> {

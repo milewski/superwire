@@ -13,6 +13,6 @@
            .build();
       ```
 - [x] Replace string-based agent property lookups in `runtime/workflow_runtime.rs` with enum-backed property accessors
-- [ ] Split `WorkflowRuntime::execute_agent` into smaller single-agent and for-loop execution units
+- [x] Split `WorkflowRuntime::execute_agent` into smaller single-agent and for-loop execution units
 - [ ] Extract shared `agent.<name>` reference validation helper for `context(...)` and `compact(...)`
 - [ ] Consolidate remaining property-name string literals into enum-backed keys across runtime and semantic layers
