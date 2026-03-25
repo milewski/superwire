@@ -1,20 +1,18 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
-use engine_ai_core::dsl::{
-    AgentProperty, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, SingletonDeclarationKind, SourceSpan, TypeExpression,
-    TypedField, Workflow,
-};
+use engine_ai_core::dsl::{AgentProperty, Declaration, Expression, ProviderDeclaration, SourceSpan, TypeExpression, TypedField, Workflow};
 use engine_ai_core::runtime::ProviderDriver;
+use engine_ai_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
 
 use crate::protocol::Position;
 
 use super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::hover::builtin_symbol_suggestions;
 use super::position::source_span_contains_position;
-use super::text_utils::{is_identifier, trailing_identifier};
+use super::text_utils::trailing_identifier;
 use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(super) struct SemanticIndex {
     pub(in crate::document) providers: HashMap<String, ProviderSummary>,
     pub(in crate::document) provider_locations: Vec<NamedSpan>,
@@ -28,6 +26,7 @@ pub(super) struct SemanticIndex {
     pub(in crate::document) output_locations: Vec<SourceSpan>,
     pub(in crate::document) typed_declaration_locations: Vec<SourceSpan>,
     pub(in crate::document) agent_locations: Vec<NamedSpan>,
+    pub(in crate::document) tooling_snapshot: SemanticToolingSnapshot,
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +53,22 @@ pub(in crate::document) struct NamedSpan {
 
 impl SemanticIndex {
     pub(super) fn from_workflow(workflow: &Workflow) -> Self {
-        let mut semantic_index = Self::default();
+        let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
+        let mut semantic_index = Self {
+            providers: HashMap::new(),
+            provider_locations: Vec::new(),
+            schemas: HashMap::new(),
+            schema_names: Vec::new(),
+            schema_locations: Vec::new(),
+            input_fields: BTreeMap::new(),
+            secrets_fields: BTreeMap::new(),
+            agents: HashMap::new(),
+            agent_names: Vec::new(),
+            output_locations: Vec::new(),
+            typed_declaration_locations: Vec::new(),
+            agent_locations: Vec::new(),
+            tooling_snapshot,
+        };
 
         for declaration in workflow.declarations() {
             match declaration {
@@ -130,50 +144,101 @@ impl SemanticIndex {
     }
 
     pub(super) fn from_text_fallback(source_text: &str) -> Self {
-        let provider_names = collect_named_declaration_names(source_text, DeclarationKeyword::Provider);
-        let schema_names = collect_named_declaration_names(source_text, DeclarationKeyword::Schema);
-        let agent_names = collect_named_declaration_names(source_text, DeclarationKeyword::Agent);
+        let tooling_snapshot = SemanticToolingSnapshot::from_source_tolerant(source_text);
 
-        let input_fields = collect_singleton_block_field_names(source_text, SingletonDeclarationKind::Input)
-            .into_iter()
-            .map(|field_name| (field_name, TypeExpression::String))
-            .collect::<BTreeMap<_, _>>();
+        Self::from_tooling_snapshot(&tooling_snapshot)
+    }
 
-        let secrets_fields = collect_singleton_block_field_names(source_text, SingletonDeclarationKind::Secrets)
-            .into_iter()
-            .map(|field_name| (field_name, TypeExpression::String))
-            .collect::<BTreeMap<_, _>>();
+    fn from_tooling_snapshot(tooling_snapshot: &SemanticToolingSnapshot) -> Self {
+        let providers = tooling_snapshot
+            .declaration_index()
+            .symbols_by_category(ToolingSymbolCategory::Provider)
+            .map(|named_symbol_span| {
+                (
+                    named_symbol_span.name.clone(),
+                    ProviderSummary {
+                        driver: None,
+                        models: Vec::new(),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let provider_locations = tooling_snapshot
+            .declaration_index()
+            .symbols_by_category(ToolingSymbolCategory::Provider)
+            .map(|named_symbol_span| NamedSpan {
+                name: named_symbol_span.name.clone(),
+                span: named_symbol_span.span,
+            })
+            .collect::<Vec<_>>();
+
+        let schemas = tooling_snapshot
+            .schemas()
+            .iter()
+            .map(|(schema_name, schema_fields)| {
+                (
+                    schema_name.clone(),
+                    SchemaSummary {
+                        fields: schema_fields.clone(),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut schema_names = tooling_snapshot.schemas().keys().cloned().collect::<Vec<_>>();
+        schema_names.sort();
+        schema_names.dedup();
+
+        let schema_locations = tooling_snapshot
+            .declaration_index()
+            .symbols_by_category(ToolingSymbolCategory::Schema)
+            .map(|named_symbol_span| NamedSpan {
+                name: named_symbol_span.name.clone(),
+                span: named_symbol_span.span,
+            })
+            .collect::<Vec<_>>();
+
+        let agents = tooling_snapshot
+            .agents()
+            .iter()
+            .map(|(agent_name, agent_output_type)| {
+                (
+                    agent_name.clone(),
+                    AgentSummary {
+                        output_type: agent_output_type.clone(),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut agent_names = tooling_snapshot.agents().keys().cloned().collect::<Vec<_>>();
+        agent_names.sort();
+        agent_names.dedup();
+
+        let agent_locations = tooling_snapshot
+            .declaration_index()
+            .symbols_by_category(ToolingSymbolCategory::Agent)
+            .map(|named_symbol_span| NamedSpan {
+                name: named_symbol_span.name.clone(),
+                span: named_symbol_span.span,
+            })
+            .collect::<Vec<_>>();
 
         Self {
-            providers: provider_names
-                .iter()
-                .map(|provider_name| {
-                    (
-                        provider_name.clone(),
-                        ProviderSummary {
-                            driver: None,
-                            models: Vec::new(),
-                        },
-                    )
-                })
-                .collect(),
-            provider_locations: Vec::new(),
-            schemas: schema_names
-                .iter()
-                .map(|schema_name| (schema_name.clone(), SchemaSummary { fields: BTreeMap::new() }))
-                .collect(),
+            providers,
+            provider_locations,
+            schemas,
             schema_names,
-            schema_locations: Vec::new(),
-            input_fields,
-            secrets_fields,
-            agents: agent_names
-                .iter()
-                .map(|agent_name| (agent_name.clone(), AgentSummary { output_type: None }))
-                .collect(),
+            schema_locations,
+            input_fields: tooling_snapshot.input_fields().clone(),
+            secrets_fields: tooling_snapshot.secrets_fields().clone(),
+            agents,
             agent_names,
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
-            agent_locations: Vec::new(),
+            agent_locations,
+            tooling_snapshot: tooling_snapshot.clone(),
         }
     }
 
@@ -489,93 +554,4 @@ fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpr
         .iter()
         .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
         .collect()
-}
-
-fn collect_named_declaration_names(source_text: &str, declaration_keyword: DeclarationKeyword) -> Vec<String> {
-    let declaration_keyword = declaration_keyword.as_str();
-    let mut names = HashSet::<String>::new();
-
-    for source_line in source_text.lines() {
-        let trimmed_line = source_line.trim_start();
-
-        let Some(line_after_keyword) = trimmed_line.strip_prefix(declaration_keyword) else {
-            continue;
-        };
-
-        if !line_after_keyword.starts_with(char::is_whitespace) {
-            continue;
-        }
-
-        let declaration_name = line_after_keyword
-            .trim_start()
-            .chars()
-            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
-            .collect::<String>();
-
-        if declaration_name.is_empty() {
-            continue;
-        }
-
-        names.insert(declaration_name);
-    }
-
-    let mut sorted_names = names.into_iter().collect::<Vec<_>>();
-    sorted_names.sort();
-
-    sorted_names
-}
-
-fn collect_singleton_block_field_names(source_text: &str, singleton_declaration_kind: SingletonDeclarationKind) -> Vec<String> {
-    let block_name = singleton_declaration_kind.as_str();
-    let mut field_names = HashSet::<String>::new();
-    let mut inside_block = false;
-    let mut brace_depth = 0_isize;
-
-    for source_line in source_text.lines() {
-        let trimmed_line = source_line.trim();
-
-        if !inside_block {
-            let starts_named_block = trimmed_line.starts_with(block_name) && trimmed_line[block_name.len()..].trim_start().starts_with('{');
-
-            if starts_named_block {
-                inside_block = true;
-                brace_depth = 1;
-            }
-
-            continue;
-        }
-
-        if brace_depth == 1 {
-            if let Some(field_name) = line_field_name(trimmed_line) {
-                field_names.insert(field_name);
-            }
-        }
-
-        let open_brace_count = isize::try_from(trimmed_line.chars().filter(|character| *character == '{').count()).unwrap_or(isize::MAX);
-        let close_brace_count = isize::try_from(trimmed_line.chars().filter(|character| *character == '}').count()).unwrap_or(isize::MAX);
-
-        brace_depth = brace_depth.saturating_add(open_brace_count);
-        brace_depth = brace_depth.saturating_sub(close_brace_count);
-
-        if brace_depth <= 0 {
-            inside_block = false;
-            brace_depth = 0;
-        }
-    }
-
-    let mut sorted_field_names = field_names.into_iter().collect::<Vec<_>>();
-    sorted_field_names.sort();
-
-    sorted_field_names
-}
-
-fn line_field_name(source_line: &str) -> Option<String> {
-    let (field_name, _) = source_line.split_once(':')?;
-    let field_name = field_name.trim();
-
-    if !is_identifier(field_name) {
-        return None;
-    }
-
-    Some(field_name.to_string())
 }
