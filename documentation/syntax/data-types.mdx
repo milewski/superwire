@@ -1,181 +1,111 @@
 ---
-title: 'Data Types'
-description: 'Understanding data types in Engine AI'
+title: Data Types
+description: The complete type system used by input, secrets, schemas, and agent output declarations.
 ---
 
-## Primitive Types
+Engine AI uses the same type expression grammar in four places:
 
-### String
+- `input { ... }`
+- `secrets { ... }`
+- `schema Name { ... }`
+- `agent name { output: ... }`
 
-Text values enclosed in double quotes:
+## Primitive types
 
-```rust
-name <- "Alice"
-message <- "Hello, world!"
-multiline <- "Line 1
-Line 2
-Line 3"
+```txt
+string
+number
+float
+boolean
+null
 ```
 
-### Integer
+## Schema references
 
-Whole numbers:
+```txt
+schema Participant {
+    name: string
+    role: string
+}
 
-```rust
-count <- 42
-negative <- -10
-zero <- 0
-```
-
-### Float
-
-Decimal numbers:
-
-```rust
-price <- 19.99
-temperature <- -3.5
-pi <- 3.14159
-```
-
-### Boolean
-
-True or false values:
-
-```rust
-is_active <- true
-is_complete <- false
-```
-
-## Complex Types
-
-### Array
-
-Ordered collections of values:
-
-```rust
-numbers <- [1, 2, 3, 4, 5]
-names <- ["Alice", "Bob", "Charlie"]
-mixed <- [1, "two", 3.0, true]
-```
-
-Access array elements:
-
-```rust
-items <- ["a", "b", "c"]
-first <- items[0]  // "a"
-second <- items[1]  // "b"
-```
-
-### Object
-
-Key-value pairs:
-
-```rust
-user <- {
-    name <- "Alice"
-    age <- 30
-    email <- "alice@example.com"
+schema ResearchSummary {
+    lead: schema.Participant
+    participants: [schema.Participant]
 }
 ```
 
-Access object properties:
+## Arrays
 
-```rust
-user_name <- user.name
-user_age <- user.age
+```txt
+[string]
+[number]
+[{ id: string score: number }]
 ```
 
-### Nested Structures
+### Fixed-length arrays
 
-Combine arrays and objects:
+```txt
+[string; 3]
+```
 
-```rust
-users <- [
-    { name <- "Alice", age <- 30 },
-    { name <- "Bob", age <- 25 }
-]
+Validation enforces the exact array length.
 
-config <- {
-    database <- {
-        host <- "localhost"
-        port <- 5432
-    }
-    features <- ["auth", "api", "admin"]
+## Tuples
+
+```txt
+(string, number, [string; 3])
+```
+
+Tuples validate both order and length.
+
+## Objects
+
+```txt
+{
+    title: string
+    score: number
 }
 ```
 
-## Type Conversion
+## Unions
 
-Engine AI automatically converts between compatible types:
-
-```rust
-// String to number
-num <- "42"
-result <- num + 10  // 52
-
-// Number to string
-count <- 42
-message <- "Count: " + count  // "Count: 42"
+```txt
+string | null
+schema.Participant | null
+"draft" | "ready" | "published"
 ```
 
-## Null Values
+## String enums
 
-Use `null` for absent values:
+String literals inside type expressions create exact string enum members.
 
-```rust
-optional_value <- null
+```txt
+status: "draft" | "ready" | "published"
+```
 
-config <- {
-    required <- "value"
-    optional <- null
+## Field descriptions
+
+You can add a trailing string description to any typed field.
+
+```txt
+output: {
+    title: string "Short title shown to the reader"
+    score: number "Confidence score from 0 to 100"
 }
 ```
 
-## Type Checking
+## Practical example
 
-Check types in conditional expressions:
-
-```rust
-value <- 42
-
-agent checker {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Is {{ value }} a number? {{ value is number }}"
+```txt
+schema AllTypes {
+    string_value: string "A basic string value"
+    nullable_number: number | null "Required but may be null"
+    fixed_array: [string; 3] "Exactly three strings"
+    tuple_value: (string, number, [string; 3]) "Mixed tuple"
+    object_value: {
+        string_value: string
+        number_value: number
+    } "Nested object"
+    enum_value: "draft" | "ready" | "published" "Fixed string choices"
 }
 ```
-
-## Agent Response Types
-
-Agent responses have a structured type:
-
-```rust
-<- agent task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Hello"
-}
-
-// Access response fields
-text_content <- task.text
-model_used <- task.model
-```
-
-## Best Practices
-
-<Tip>
-  Use consistent types throughout your workflow to avoid unexpected conversions.
-</Tip>
-
-<Warning>
-  Be careful when mixing types in arrays - it can make data processing more complex.
-</Warning>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Variables" icon="code" href="/syntax/variables">
-    Learn about variables
-  </Card>
-  <Card title="Operators" icon="calculator" href="/syntax/operators">
-    Work with operators
-  </Card>
-</CardGroup>

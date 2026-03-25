@@ -1,326 +1,73 @@
 ---
-title: 'Dependencies'
-description: 'Managing agent execution order and dependencies'
+title: Dependencies
+description: Engine AI builds the execution graph from agent references automatically.
 ---
 
-## Automatic Dependency Detection
+Engine AI does not require you to list edges manually. Dependencies come from references.
 
-Engine AI automatically detects dependencies between agents based on variable references:
+## Dependency rule
 
-```rust
-<- agent step1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "First step"
+If an agent expression references another agent through `agent.<name>`, the current agent depends on that upstream agent.
+
+```txt
+agent first {
+    model: scripted("mock-model")
+    prompt: "First prompt: {{ input.subject }}"
+    output: {
+        summary: string
+    }
 }
 
-// step2 depends on step1 because it references step1.text
-<- agent step2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Second step: {{ step1.text }}"
-}
-```
-
-## Execution Order
-
-Agents execute in dependency order:
-
-```rust
-<- agent analyze {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze the data"
-}
-
-<- agent validate {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate: {{ analyze.text }}"
-}
-
-<- agent process {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process: {{ validate.text }}"
-}
-
-// Execution order: analyze → validate → process
-```
-
-## Parallel Execution
-
-Agents without dependencies run in parallel:
-
-```rust
-// These three agents run simultaneously
-<- agent task1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Independent task 1"
-}
-
-<- agent task2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Independent task 2"
-}
-
-<- agent task3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Independent task 3"
+agent second {
+    model: scripted("mock-model")
+    prompt: "Second prompt: {{ agent.first.summary }}"
+    output: string
 }
 ```
 
-## Multiple Dependencies
+In this case, `second` runs after `first`.
 
-An agent can depend on multiple other agents:
+## Where dependencies are discovered
 
-```rust
-<- agent source1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate data 1"
+The dependency graph is built from references found in:
+
+- `model`
+- `prompt`
+- `context`
+- `inference`
+- `tools`
+- custom agent properties
+- loop iterables in `agent ... for ... in ...`
+
+## What does not create dependencies
+
+- references to `input.*`
+- references to `secrets.*`
+- literal values
+
+## Cycle detection
+
+Validation rejects cycles before runtime execution.
+
+```txt
+agent alpha {
+    model: openai("gpt-4.1-mini")
+    prompt: "Use {{ agent.beta }}"
+    output: string
 }
 
-<- agent source2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Generate data 2"
-}
-
-// Waits for both source1 and source2
-<- agent combiner {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Combine: {{ source1.text }} and {{ source2.text }}"
-}
-```
-
-## Diamond Dependencies
-
-Handle complex dependency graphs:
-
-```rust
-<- agent input {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process input"
-}
-
-<- agent branch1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Branch 1: {{ input.text }}"
-}
-
-<- agent branch2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Branch 2: {{ input.text }}"
-}
-
-// Waits for both branches
-<- agent merge {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Merge: {{ branch1.text }} and {{ branch2.text }}"
+agent beta {
+    model: openai("gpt-4.1-mini")
+    prompt: "Use {{ agent.alpha }}"
+    output: string
 }
 ```
 
-## Conditional Dependencies
+This produces an `AgentDependencyCycle` validation problem.
 
-Dependencies respect conditional execution:
+## Practical guidance
 
-```rust
-use_cache <- true
-
-<- agent fetch_data {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Fetch fresh data"
-    when <- !use_cache
-}
-
-// Only depends on fetch_data if it executes
-<- agent process {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process: {{ fetch_data.text }}"
-    when <- !use_cache
-}
-```
-
-## Avoiding Circular Dependencies
-
-Circular dependencies cause errors:
-
-```rust
-// ERROR: Circular dependency
-agent a {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Use {{ b.text }}"
-}
-
-agent b {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Use {{ a.text }}"
-}
-```
-
-<Warning>
-  Circular dependencies will cause workflow execution to fail. Ensure your dependency graph is acyclic.
-</Warning>
-
-## Dependency Visualization
-
-Visualize your workflow dependencies:
-
-```rust
-// Linear chain
-A → B → C → D
-
-// Parallel branches
-    ┌─→ B ─┐
-A ──┤      ├─→ D
-    └─→ C ─┘
-
-// Complex graph
-    ┌─→ B ─┐
-A ──┤      ├─→ E → F
-    └─→ C ─┤
-        ↓  └─→ G
-        D
-```
-
-## Examples
-
-### Sequential Pipeline
-
-```rust
-<- agent extract {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Extract data from source"
-}
-
-<- agent transform {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Transform: {{ extract.text }}"
-}
-
-<- agent load {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Load: {{ transform.text }}"
-}
-```
-
-### Parallel Processing with Merge
-
-```rust
-input <- "Process this data"
-
-// Process in parallel
-<- agent processor1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process method 1: {{ input }}"
-}
-
-<- agent processor2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process method 2: {{ input }}"
-}
-
-<- agent processor3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process method 3: {{ input }}"
-}
-
-// Merge results
-<- agent merger {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Merge results:
-Method 1: {{ processor1.text }}
-Method 2: {{ processor2.text }}
-Method 3: {{ processor3.text }}"
-}
-```
-
-### Conditional Pipeline
-
-```rust
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze input"
-}
-
-<- agent simple_processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Simple processing: {{ analyzer.text }}"
-    when <- analyzer.text == "simple"
-}
-
-<- agent complex_processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Complex processing: {{ analyzer.text }}"
-    when <- analyzer.text == "complex"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Keep dependency chains shallow when possible. Deep chains increase latency since agents must wait for predecessors.
-</Tip>
-
-<Info>
-  Use parallel execution for independent tasks to maximize throughput.
-</Info>
-
-<Warning>
-  Be mindful of API rate limits when running many agents in parallel.
-</Warning>
-
-## Performance Considerations
-
-### Sequential vs Parallel
-
-```rust
-// Sequential: Total time = sum of all agents
-A → B → C → D  // 4x time
-
-// Parallel: Total time = longest agent
-A ─┬─→ B
-   ├─→ C
-   └─→ D      // 1x time (if all take same time)
-```
-
-### Optimizing Dependencies
-
-```rust
-// Inefficient: Unnecessary sequential execution
-<- agent a {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task A"
-}
-
-<- agent b {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task B using {{ a.text }}"  // Depends on A
-}
-
-<- agent c {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task C using {{ b.text }}"  // Depends on B
-}
-
-// Efficient: Parallel where possible
-<- agent a {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task A"
-}
-
-<- agent b {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task B"  // Independent
-}
-
-<- agent c {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task C using {{ a.text }} and {{ b.text }}"  // Waits for both
-}
-```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Parallel Execution" icon="arrows-split-up-and-left" href="/advanced/parallel-execution">
-    Learn about parallel execution
-  </Card>
-  <Card title="Workflows" icon="diagram-project" href="/core-concepts/workflows">
-    Understand workflows
-  </Card>
-</CardGroup>
+- reference full upstream objects when the downstream step truly needs them
+- reference fields when the downstream step only needs a small part of the result
+- keep dependency chains shallow when you want more parallelism
+- use explicit `output` blocks to keep public results stable

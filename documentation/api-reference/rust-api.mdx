@@ -1,96 +1,91 @@
 ---
-title: 'Rust API'
-description: 'Use Engine AI in Rust applications'
+title: Rust API
+description: Parse, validate, and execute Engine AI workflows from Rust.
 ---
 
-## Installation
+The public Rust surface is centered around two modules:
 
-Add to your `Cargo.toml`:
+- `engine_ai_core::dsl`
+- `engine_ai_core::runtime`
 
-```toml
-[dependencies]
-engine-ai = "0.1.0"
-tokio = { version = "1", features = ["full"] }
-```
-
-## Basic Usage
+## Parse and validate
 
 ```rust
-use engine_ai::Engine;
+use engine_ai_core::dsl::{parse_workflow, validate_workflow};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let engine = Engine::new();
-    let result = engine.execute_workflow("workflow.ai").await?;
-    println!("{:?}", result);
-    Ok(())
-}
+let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+let workflow = parse_workflow(workflow_source)?;
+let validation_report = validate_workflow(&workflow);
+
+assert!(validation_report.is_valid());
 ```
 
-## Execute Workflow
+## Execute with built-in providers
 
 ```rust
-use engine_ai::Engine;
+use engine_ai_core::dsl::parse_workflow;
+use engine_ai_core::runtime::execute_workflow_without_input;
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-let engine = Engine::new();
-let result = engine.execute_workflow("path/to/workflow.ai").await?;
-```
-
-## Execute from String
-
-```rust
-use engine_ai::Engine;
-
-let workflow_content = r#"
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
+#[derive(Debug, Deserialize, JsonSchema)]
+struct Output {
+    greeting: String,
 }
 
-<- agent task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Hello, world!"
-}
-"#;
-
-let engine = Engine::new();
-let result = engine.execute_workflow_string(workflow_content).await?;
+let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+let workflow = parse_workflow(workflow_source)?;
+let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
 ```
 
-## Configuration
+## Execute with explicit input and secrets
 
 ```rust
-use engine_ai::{Engine, Config};
+use engine_ai_core::dsl::parse_workflow;
+use engine_ai_core::runtime::execute_workflow;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
-let config = Config::builder()
-    .max_parallel_agents(10)
-    .timeout_seconds(300)
-    .build();
+#[derive(Debug, Serialize, JsonSchema)]
+struct Input {
+    topic: String,
+}
 
-let engine = Engine::with_config(config);
+#[derive(Debug, Deserialize, JsonSchema)]
+struct Output {
+    summary: String,
+}
+
+let workflow_source = include_str!("../../crates/core/workflows/structured_output.ai");
+let workflow = parse_workflow(workflow_source)?;
+
+let workflow_output: Output = execute_workflow(
+    &workflow,
+    Input {
+        topic: "agent workflows".to_string(),
+    },
+)
+.await?;
 ```
 
-## Error Handling
+## Runtime types
+
+Useful runtime exports include:
+
+- `WorkflowRuntime`
+- `WorkflowRuntimeError`
+- `execute_workflow`
+- `execute_workflow_without_input`
+- `AgentRunner`
+- `AgentExecutionRequest`
+- `AgentExecutionResult`
+- `ProviderDriver`
+- `ProviderConfig`
+
+## Macro helper
+
+The crate exports `try_workflow!` for already-parsed workflows.
 
 ```rust
-use engine_ai::{Engine, EngineError};
-
-match engine.execute_workflow("workflow.ai").await {
-    Ok(result) => println!("Success: {:?}", result),
-    Err(EngineError::ParseError(e)) => eprintln!("Parse error: {}", e),
-    Err(EngineError::ExecutionError(e)) => eprintln!("Execution error: {}", e),
-    Err(e) => eprintln!("Error: {}", e),
-}
+use engine_ai_core::try_workflow;
 ```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="JavaScript API" icon="js" href="/api-reference/javascript-api">
-    JavaScript/TypeScript API
-  </Card>
-  <Card title="CLI" icon="terminal" href="/api-reference/cli">
-    Command-line interface
-  </Card>
-</CardGroup>

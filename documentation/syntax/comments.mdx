@@ -1,266 +1,31 @@
 ---
-title: 'Comments'
-description: 'Document your workflows with comments'
+title: Comments
+description: Use `//` comments to annotate workflows without affecting parsing.
 ---
 
-## Single-Line Comments
+Engine AI supports single-line comments.
 
-Use `//` for single-line comments:
-
-```rust
-// This is a comment
-name <- "Alice"
-
-age <- 30  // Inline comment
-```
-
-## Multi-Line Comments
-
-Use `/* */` for multi-line comments:
-
-```rust
-/*
-This is a multi-line comment
-that spans multiple lines
-*/
-
+```txt
+// Provider defines where the model comes from.
 provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
+    driver: "ollama"
+    endpoint: "http://localhost:11434"
+    models: ["qwen3.5:8b"]
 }
 ```
 
-## Documenting Workflows
+## Rules
 
-Add comments to explain workflow logic:
+- comments start with `//`
+- comments run to the end of the line
+- comments can appear on their own line or after a value
 
-```rust
-// Configuration
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-// User input
-user_query <- "What is AI?"
-
-// Step 1: Analyze the query
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze this query: {{ user_query }}"
-}
-
-// Step 2: Generate response based on analysis
-<- agent responder {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Answer based on analysis: {{ analyzer.text }}"
+```txt
+input {
+    topic: string // Topic supplied by the caller
 }
 ```
 
-## Commenting Agents
+## Recommendation
 
-Document agent purpose and behavior:
-
-```rust
-// Primary content generator
-// Uses GPT-4 for high-quality output
-<- agent generator {
-    model <- "openai/gpt-4"
-    prompt <- "Generate content"
-}
-
-// Quality checker
-// Validates the generated content meets requirements
-<- agent validator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate: {{ generator.text }}"
-}
-```
-
-## Inline Documentation
-
-Add context to complex expressions:
-
-```rust
-price <- 100
-tax_rate <- 0.08  // 8% sales tax
-shipping <- 15    // Flat rate shipping
-
-// Calculate total with tax and shipping
-total <- (price * (1 + tax_rate)) + shipping
-```
-
-## Temporary Disabling
-
-Comment out code temporarily:
-
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-// Temporarily disabled for testing
-// provider openai {
-//     driver <- "openai"
-//     config <- { api_key <- "sk-..." }
-//     models <- ["gpt-4"]
-// }
-```
-
-## Section Headers
-
-Organize workflows with comment headers:
-
-```rust
-// ============================================
-// CONFIGURATION
-// ============================================
-
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-// ============================================
-// DATA PROCESSING
-// ============================================
-
-<- agent processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process data"
-}
-
-// ============================================
-// OUTPUT GENERATION
-// ============================================
-
-<- agent formatter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Format output: {{ processor.text }}"
-}
-```
-
-## TODO Comments
-
-Mark areas for future work:
-
-```rust
-// TODO: Add error handling
-// TODO: Implement retry logic
-// FIXME: This prompt needs improvement
-
-agent task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Perform task"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Write comments that explain WHY, not WHAT. The code shows what it does; comments should explain the reasoning.
-</Tip>
-
-```rust
-// Good: Explains reasoning
-// Use GPT-4 for complex analysis because local models struggle with nuance
-agent analyzer {
-    model <- "openai/gpt-4"
-    prompt <- "Analyze sentiment"
-}
-
-// Avoid: States the obvious
-// This agent analyzes sentiment
-agent analyzer {
-    model <- "openai/gpt-4"
-    prompt <- "Analyze sentiment"
-}
-```
-
-<Warning>
-  Keep comments up to date. Outdated comments are worse than no comments.
-</Warning>
-
-## Examples
-
-### Documented Workflow
-
-```rust
-/*
-Multi-Agent Content Pipeline
-1. Generate initial draft
-2. Review and improve
-3. Format for publication
-*/
-
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-// Input topic
-topic <- "Artificial Intelligence"
-
-// Stage 1: Draft generation
-<- agent drafter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write a draft about: {{ topic }}"
-}
-
-// Stage 2: Content review
-// Checks for accuracy and clarity
-<- agent reviewer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Review and improve: {{ drafter.text }}"
-}
-
-// Stage 3: Final formatting
-// Prepares content for publication
-<- agent formatter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Format for publication: {{ reviewer.text }}"
-}
-```
-
-### Configuration Documentation
-
-```rust
-// Provider Configuration
-// Using local Ollama for development
-// Switch to OpenAI for production by uncommenting below
-
-provider ollama {
-    driver <- "ollama"
-    config <- {
-        endpoint <- "http://localhost:11434"  // Local Ollama server
-    }
-    models <- ["qwen3:8b"]  // Fast 8B parameter model
-}
-
-// Production provider (currently disabled)
-// provider openai {
-//     driver <- "openai"
-//     config <- {
-//         api_key <- "sk-proj-..."
-//         endpoint <- "https://api.openai.com/v1"
-//     }
-//     models <- ["gpt-4"]
-// }
-```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Variables" icon="code" href="/syntax/variables">
-    Learn about variables
-  </Card>
-  <Card title="Best Practices" icon="star" href="/guides/best-practices">
-    Workflow best practices
-  </Card>
-</CardGroup>
+Use comments for workflow intent and business context, not to restate obvious syntax. The best comments explain why a provider, prompt, or output shape exists.

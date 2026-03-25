@@ -15,41 +15,21 @@
   "navbar": {
     "links": [
       {
-        "label": "Support",
-        "href": "mailto:support@example.com"
+        "label": "GitHub",
+        "href": "https://github.com/milewski/engine-ai"
       },
       {
-        "type": "github",
-        "href": "https://github.com/yourusername/engine-ai"
+        "label": "Issues",
+        "href": "https://github.com/milewski/engine-ai/issues"
       }
     ]
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/yourusername/engine-ai",
-      "twitter": "https://twitter.com/yourhandle"
+      "github": "https://github.com/milewski/engine-ai"
     }
   },
   "navigation": {
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "icon": "book-open-cover",
-          "href": "https://docs.example.com"
-        },
-        {
-          "anchor": "Community",
-          "icon": "slack",
-          "href": "https://community.example.com"
-        },
-        {
-          "anchor": "Blog",
-          "icon": "newspaper",
-          "href": "https://blog.example.com"
-        }
-      ]
-    },
     "tabs": [
       {
         "tab": "Documentation",
@@ -74,8 +54,9 @@
             ]
           },
           {
-            "group": "Language Syntax",
+            "group": "DSL Reference",
             "pages": [
+              "syntax/overview",
               "syntax/variables",
               "syntax/data-types",
               "syntax/operators",
@@ -85,7 +66,7 @@
             ]
           },
           {
-            "group": "Advanced Features",
+            "group": "Advanced",
             "pages": [
               "advanced/parallel-execution",
               "advanced/context-sharing",
@@ -98,8 +79,8 @@
             "pages": [
               "guides/building-workflows",
               "guides/testing",
-              "guides/deployment",
-              "guides/best-practices"
+              "guides/best-practices",
+              "guides/migration"
             ]
           },
           {
@@ -107,7 +88,7 @@
             "pages": [
               "integrations/ollama",
               "integrations/openai",
-              "integrations/anthropic"
+              "integrations/custom-provider-factories"
             ]
           }
         ]
@@ -119,8 +100,8 @@
             "group": "API Reference",
             "pages": [
               "api-reference/rust-api",
-              "api-reference/javascript-api",
-              "api-reference/cli"
+              "api-reference/lsp",
+              "api-reference/diagnostics"
             ]
           }
         ]

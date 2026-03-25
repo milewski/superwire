@@ -1,201 +1,82 @@
 ---
-title: 'Building Workflows'
-description: 'Best practices for designing effective workflows'
+title: Building Workflows
+description: A practical workflow-authoring process that starts from outputs and works backward.
 ---
 
-## Workflow Structure
+A good Engine AI workflow usually gets easier to maintain when you design it from the outside in.
 
-A well-structured workflow has clear stages:
+## 1. Start with the final output
 
-```rust
-// 1. Configuration
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
+Decide what the caller should receive.
 
-// 2. Input variables
-topic <- "Artificial Intelligence"
-
-// 3. Processing agents
-<- agent research {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Research: {{ topic }}"
-}
-
-<- agent outline {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Create outline: {{ research.text }}"
-}
-
-<- agent draft {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Write draft: {{ outline.text }}"
-}
-
-// 4. Output agent
-<- agent final {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Finalize: {{ draft.text }}"
+```txt
+output {
+    title: agent.release_summary.title
+    summary: agent.release_summary.summary
+    risks: agent.release_review.risks
 }
 ```
 
-## Design Principles
+## 2. Define reusable schemas early
 
-### Single Responsibility
+When multiple agents or outputs share a structure, give it a name.
 
-Each agent should have one clear purpose:
-
-```rust
-// Good: Clear, focused agents
-<- agent extractor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Extract key information"
-}
-
-<- agent validator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate extracted data"
-}
-
-// Avoid: Agent doing too much
-<- agent do_everything {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Extract, validate, process, and format data"
+```txt
+schema ReleaseSummary {
+    title: string
+    summary: string
+    key_points: [string; 3]
 }
 ```
 
-### Composability
+## 3. Keep providers explicit
 
-Build reusable components:
+Declare model backends up front and list allowed models so validation can catch mistakes.
 
-```rust
-// Reusable validation pattern
-<- agent validate_input {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate: {{ input }}"
-}
-
-agent process_valid {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process: {{ input }}"
-    when <- validate_input.text == "valid"
+```txt
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
 }
 ```
 
-### Error Handling
+## 4. Keep prompts focused
 
-Always include fallback paths:
+Prefer small, typed stages over one huge prompt.
 
-```rust
-<- agent primary {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Primary approach"
-}
-
-agent fallback {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Fallback approach"
-    when <- primary.text == null
+```txt
+agent summarize_notes {
+    model: openai("gpt-4.1-mini")
+    prompt: "Summarize these notes into three findings: {{ input.notes }}"
+    output: {
+        findings: [string; 3]
+    }
 }
 ```
 
-## Common Patterns
+## 5. Wire dependencies by reference
 
-### Pipeline Pattern
+Downstream stages should read from upstream stages through `agent.*` references.
 
-Sequential processing stages:
-
-```rust
-<- agent extract {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Extract data"
-}
-
-<- agent transform {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Transform: {{ extract.text }}"
-}
-
-<- agent load {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Load: {{ transform.text }}"
+```txt
+agent create_brief {
+    model: openai("gpt-4.1-mini")
+    prompt: "Turn these findings into a brief: {{ agent.summarize_notes.findings }}"
+    output: schema.ReleaseSummary
 }
 ```
 
-### Fan-Out/Fan-In Pattern
+## 6. Keep workflow output stable
 
-Parallel processing with merge:
+The top-level `output` block is the contract you expose to callers. Resist the urge to mirror every internal field directly.
 
-```rust
-<- agent input {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process input"
-}
+## Checklist
 
-// Fan out
-<- agent process1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process 1: {{ input.text }}"
-}
-
-<- agent process2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process 2: {{ input.text }}"
-}
-
-// Fan in
-<- agent merge {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Merge: {{ process1.text }} and {{ process2.text }}"
-}
-```
-
-### Validation Pattern
-
-Validate before processing:
-
-```rust
-<- agent validator {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate input"
-}
-
-agent processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process validated input"
-    when <- validator.text == "valid"
-}
-
-agent error_handler {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Handle invalid input"
-    when <- validator.text != "valid"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Start simple and add complexity only when needed.
-</Tip>
-
-<Info>
-  Use descriptive names for agents and variables.
-</Info>
-
-<Warning>
-  Avoid deep dependency chains - they increase latency.
-</Warning>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Best Practices" icon="star" href="/guides/best-practices">
-    Workflow best practices
-  </Card>
-  <Card title="Testing" icon="flask" href="/guides/testing">
-    Test your workflows
-  </Card>
-</CardGroup>
+- providers are named clearly
+- secrets never appear in prompts or output
+- agent outputs have explicit types
+- shared shapes use named schemas
+- public output is smaller than internal agent output
+- model names are listed in each provider for validation

@@ -1,118 +1,47 @@
 ---
-title: 'Structured Output'
-description: 'Generate structured data with schemas'
+title: Structured Output
+description: Use schemas, enums, arrays, and nested objects to keep agent output predictable.
 ---
 
-## Using Schemas
-
-Define schemas for structured output:
-
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
+```txt
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
 }
 
-schema UserProfile {
-    name: string
-    age: integer
-    email: string
-    interests: array
+schema ReleaseSummary {
+    title: string "Short release title"
+    status: "draft" | "ready" | "published" "Release state"
+    key_points: [string; 3] "Exactly three key points"
+    metadata: {
+        confidence: number
+        audience: string
+    } "Nested metadata"
 }
 
-<- agent extractor {
-    model <- "ollama/qwen3:8b"
-    schema <- UserProfile
-    prompt <- "Extract user profile from: John Doe, 30 years old, john@example.com, likes hiking and photography"
-}
-```
-
-## Nested Structures
-
-Create complex nested schemas:
-
-```rust
-schema Address {
-    street: string
-    city: string
-    country: string
-    postal_code: string
+input {
+    release_notes: [string]
+    audience: string
 }
 
-schema Company {
-    name: string
-    address: Address
-    employees: integer
-    founded: integer
+agent summarize_release {
+    model: openai("gpt-4.1-mini")
+    prompt: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
+    output: schema.ReleaseSummary
 }
 
-<- agent company_extractor {
-    model <- "ollama/qwen3:8b"
-    schema <- Company
-    prompt <- "Extract company info from text"
+output {
+    result: agent.summarize_release
+    status: agent.summarize_release.status
+    confidence: agent.summarize_release.metadata.confidence
 }
 ```
 
-## Array Outputs
+## What it demonstrates
 
-Generate arrays of structured data:
-
-```rust
-schema Product {
-    name: string
-    price: float
-    category: string
-    in_stock: boolean
-}
-
-<- agent product_list {
-    model <- "ollama/qwen3:8b"
-    schema <- [Product]
-    prompt <- "Extract all products from this catalog"
-}
-```
-
-## Accessing Structured Data
-
-Use structured output in subsequent agents:
-
-```rust
-schema Analysis {
-    sentiment: string
-    confidence: float
-    topics: array
-}
-
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    schema <- Analysis
-    prompt <- "Analyze this text"
-}
-
-agent reporter {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Create report: Sentiment is {{ analyzer.sentiment }} with {{ analyzer.confidence }} confidence. Topics: {{ analyzer.topics }}"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Use schemas when you need consistent, parseable output format.
-</Tip>
-
-<Info>
-  Schemas help ensure data quality and make post-processing easier.
-</Info>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Schemas" icon="table" href="/core-concepts/schemas">
-    Learn about schemas
-  </Card>
-  <Card title="Data Types" icon="database" href="/syntax/data-types">
-    Understand data types
-  </Card>
-</CardGroup>
+- named schema reuse through `schema.ReleaseSummary`
+- string enums inside output types
+- fixed-length arrays
+- nested object access in the final output

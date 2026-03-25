@@ -1,109 +1,74 @@
 ---
-title: 'Variables'
-description: 'Declare and use variables in Engine AI'
+title: References and Identifiers
+description: Understand names, keyword roots, dot access, and optional chaining.
 ---
 
-## Variable Declaration
+References are how one part of a workflow reads values from another part.
 
-Variables in Engine AI are declared using the `<-` assignment operator:
+## Identifier rules
 
-```rust
-name <- "Alice"
-age <- 30
-is_active <- true
+Identifiers:
+
+- start with a letter or underscore
+- continue with letters, digits, or underscores
+
+Examples:
+
+- `openai`
+- `release_summary`
+- `_internal`
+
+## Keyword roots
+
+The language reserves these reference roots:
+
+- `agent`
+- `input`
+- `secrets`
+- `tool`
+
+Examples:
+
+```txt
+input.topic
+secrets.openai_api_key
+agent.summary
+agent.summary.title
+tool.web_search
 ```
 
-## Variable Naming
+## Dot access
 
-Variable names must:
-- Start with a letter or underscore
-- Contain only letters, numbers, and underscores
-- Be case-sensitive
+Use `.` to access a nested field.
 
-```rust
-user_name <- "Bob"
-_private <- "secret"
-count123 <- 42
+```txt
+agent.summary.title
+input.customer.profile.name
 ```
 
-## Variable Scope
+## Optional chaining
 
-Variables are scoped to the workflow or agent where they're defined:
+Use `?.` when a nullable object may be `null`.
 
-```rust
-global_var <- "accessible everywhere"
+```txt
+agent.typed_example.nullable_object?.string_value
+```
 
-agent task {
-    model <- "ollama/qwen3:8b"
-    local_var <- "only in this agent"
-    prompt <- "Use {{ global_var }} and {{ local_var }}"
+Validation allows optional chaining when the path can be followed through the declared type. At runtime, `?.` returns `null` instead of failing when the current value is `null` or the field is absent.
+
+## Bare identifiers
+
+The grammar allows a plain identifier as a reference root. This is mainly useful for expression forms such as loop variables and function-call syntax.
+
+```txt
+agent remediation_plan for finding in agent.findings.items {
+    prompt: "Create a remediation plan for {{ finding }}"
+    output: string
 }
 ```
 
-## Agent Output Variables
-
-Agent outputs are automatically stored as variables:
-
-```rust
-<- agent analyzer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze this text"
-}
-
-// Access the agent's output
-agent summarizer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Summarize: {{ analyzer.text }}"
-}
-```
-
-## Reassignment
-
-Variables can be reassigned:
-
-```rust
-counter <- 0
-counter <- counter + 1
-counter <- counter + 1
-// counter is now 2
-```
-
-## Type Inference
-
-Engine AI automatically infers variable types:
-
-```rust
-text <- "hello"        // string
-number <- 42           // integer
-decimal <- 3.14        // float
-flag <- true           // boolean
-items <- [1, 2, 3]     // array
-config <- { key <- "value" }  // object
-```
-
-## Best Practices
-
-<Tip>
-  Use descriptive variable names that clearly indicate their purpose.
-</Tip>
-
-```rust
-// Good
-user_email <- "user@example.com"
-max_retries <- 3
-
-// Avoid
-e <- "user@example.com"
-x <- 3
-```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Data Types" icon="database" href="/syntax/data-types">
-    Learn about available data types
-  </Card>
-  <Card title="Operators" icon="calculator" href="/syntax/operators">
-    Work with operators
-  </Card>
-</CardGroup>
+<Warning>
+  The current default runtime only resolves keyword-root references such as
+  `agent.*`, `input.*`, and `secrets.*`. Plain identifier references are not
+  resolved during runtime execution today.
+</Warning>

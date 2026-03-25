@@ -1,0 +1,63 @@
+---
+title: Diagnostics
+description: The main parse, validation, and runtime error types exposed by the Rust API.
+---
+
+## Parse diagnostics
+
+Parsing returns `DslParseError`.
+
+Important variants include:
+
+- `Pest`
+- `MissingNode`
+- `UnexpectedRule`
+- `InvalidIntegerLiteral`
+
+Parse errors expose source spans through `DslParseError::span()`.
+
+## Validation diagnostics
+
+Validation returns a `ValidationReport` with zero or more `ValidationIssue` values.
+
+Common issue categories include:
+
+- duplicate declarations
+- unknown schema references
+- invalid model expressions
+- unknown providers or unknown models
+- invalid keyword roots
+- missing input or secrets declarations
+- secret leaks in prompts or output
+- invalid reference paths
+- missing agent output types for field access
+- dependency cycles
+
+## Runtime diagnostics
+
+Execution returns `WorkflowRuntimeError`.
+
+Important variants include:
+
+- `ParseFailed`
+- `InvalidWorkflow`
+- `ExecutionPlanInvariant`
+- `MissingDeclaration`
+- `UnsupportedFeature`
+- `ProviderConfiguration`
+- `ExpressionEvaluation`
+- `InvalidAgentProperty`
+- `InputTypeMismatch`
+- `OutputTypeMismatch`
+- `InputValueMismatch`
+- `AgentExecutionFailed`
+- `AgentOutputTypeMismatch`
+- `SerializationFailed`
+- `OutputDeserializationFailed`
+- `Other`
+
+## Practical advice
+
+- surface parse spans directly in editors or test failures
+- treat validation as a required preflight step
+- reserve runtime errors for provider failures, unsupported features, input/output mismatches, and agent execution failures

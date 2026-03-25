@@ -1,584 +1,86 @@
 ---
-title: 'Workflows'
-description: 'Orchestrate multiple agents into powerful AI pipelines'
+title: Workflows
+description: See how declarations combine into a complete workflow file and final output object.
 ---
 
-## What is a Workflow?
+A workflow is the complete `.ai` file. The top-level grammar is intentionally small so most of the complexity stays inside agents and type expressions.
 
-A workflow is a complete `.ai` file that defines providers, inputs, agents, and outputs. Workflows orchestrate multiple AI agents to accomplish complex tasks through coordinated execution.
+## Full workflow anatomy
 
-## Workflow Structure
-
-```rust
-// 1. Provider Configuration
-provider <name> {
-    driver <- "<type>"
-    config <- { ... }
-    models <- [...]
+```txt
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
 }
 
-// 2. Input Definition (optional)
+secrets {
+    openai_api_key: string
+}
+
 input {
-    field: type
+    study_name: string
+    interview_notes: [string]
 }
 
-// 3. Agent Definitions
-agent <name> {
-    model <- "provider/model"
-    prompt <- "..."
+schema Brief {
+    summary: string
+    recommendations: [string]
 }
 
-// 4. Output Definition (optional)
+agent summarize_notes {
+    model: openai("gpt-4.1-mini")
+    prompt: "Summarize {{ input.interview_notes }} for {{ input.study_name }}."
+    output: schema.Brief
+}
+
 output {
-    field <- value
+    study_name: input.study_name
+    summary: agent.summarize_notes.summary
+    recommendations: agent.summarize_notes.recommendations
 }
 ```
 
-## Complete Workflow Example
+## Final output block
 
-```rust workflow.ai
-// Configure LLM provider
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
+The `output` declaration is an object expression, not a type block.
 
-// Define workflow inputs
-input {
-    topic: string
-    audience: string
-}
+That means each field can be built from:
 
-// Research agent
-agent research {
-    model <- "ollama/qwen3:8b"
-    output <- {
-        summary: string
-        key_points: [string]
-    }
-    prompt <- """
-        Research {{ input.topic }} for {{ input.audience }} audience.
-        Provide summary and 3 key points.
-    """
-}
+- literals
+- references
+- arrays
+- objects
+- interpolated strings
 
-// Analysis agent (depends on research)
-agent analyze {
-    model <- "ollama/qwen3:8b"
-    output <- {
-        sentiment: string
-        complexity: "beginner" | "intermediate" | "advanced"
-    }
-    prompt <- "Analyze this research: {{ research.summary }}"
-}
-
-// Content generation agent (depends on both)
-<- agent generate_content {
-    model <- "ollama/qwen3:8b"
-    output <- {
-        title: string
-        content: string
-        tags: [string]
-    }
-    prompt <- """
-        Create content about {{ input.topic }}.
-        
-        Research: {{ research.summary }}
-        Key points: {{ research.key_points }}
-        Complexity level: {{ analyze.complexity }}
-        
-        Target audience: {{ input.audience }}
-    """
-}
-
-// Define workflow outputs
+```txt
 output {
-    topic <- input.topic
-    content <- agent.generate_content
-    analysis <- agent.analyze
-}
-```
-
-## Input Block
-
-Define parameters your workflow accepts:
-
-### Basic Input
-
-```rust
-input {
-    user_query: string
-    max_results: number
-    include_metadata: boolean
-}
-```
-
-### Complex Input
-
-```rust
-input {
-    user: {
-        name: string
-        email: string
-    }
-    preferences: {
-        language: string
-        topics: [string]
-    }
-    filters: [{
-        field: string
-        operator: "eq" | "gt" | "lt"
-        value: string | number
-    }]
-}
-```
-
-### Accessing Input
-
-```rust
-agent process {
-    model <- "ollama/qwen3:8b"
-    prompt <- """
-        User: {{ input.user.name }}
-        Query: {{ input.user_query }}
-        Language: {{ input.preferences.language }}
-    """
-}
-```
-
-## Output Block
-
-Define what data the workflow returns:
-
-### Basic Output
-
-```rust
-output {
-    result <- agent.final.text
-    status <- "completed"
-}
-```
-
-### Complex Output
-
-```rust
-output {
-    // Copy input fields
-    original_query <- input.query
-    
-    // Agent outputs
-    research_summary <- agent.research.summary
-    analysis <- agent.analyze
-    
-    // Computed values
-    total_agents <- 3
-    
-    // Nested structure
-    results <- {
-        content <- agent.generate.content
-        metadata <- {
-            word_count <- agent.generate.word_count
-            tags <- agent.generate.tags
-        }
+    version: 2
+    generated_by: "research_brief"
+    report: {
+        summary: agent.summarize_notes.summary
+        recommendation_count: 3
     }
 }
 ```
 
-<Info>
-  The output block is optional. Without it, all terminal agents' outputs are returned.
-</Info>
+## Inputs and secrets
 
-## Execution Flow
+The language distinguishes normal input from secret declarations:
 
-### Sequential Execution
+- `input` is for regular business data
+- `secrets` is for sensitive configuration and credentials
 
-Agents with dependencies execute in order:
+Validation prevents `secrets.*` references from being used in prompts, context, and workflow output.
 
-```rust
-agent step1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 1"
-}
+The current public runtime API accepts typed input values directly. Secret declaration support is available in the DSL and validator.
 
-agent step2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 2: {{ step1.text }}"
-}
+## Optional output declaration
 
-agent step3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Step 3: {{ step2.text }}"
-}
-```
+The grammar allows workflows without a top-level `output` block. In the current runtime, omitting `output` yields an empty JSON object.
 
-**Execution:** step1 → step2 → step3
-
-### Parallel Execution
-
-Independent agents run simultaneously:
-
-```rust
-agent task_a {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task A"
-}
-
-agent task_b {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task B"
-}
-
-agent task_c {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Task C"
-}
-```
-
-**Execution:** task_a, task_b, task_c all run in parallel
-
-### Mixed Execution
-
-Combine sequential and parallel patterns:
-
-```rust
-// Phase 1: Parallel
-agent research_a {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Research A"
-}
-
-agent research_b {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Research B"
-}
-
-// Phase 2: Sequential (waits for both)
-agent synthesize {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Synthesize {{ research_a.text }} and {{ research_b.text }}"
-}
-
-// Phase 3: Parallel (both depend on synthesize)
-agent output_a {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Output A from {{ synthesize.text }}"
-}
-
-agent output_b {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Output B from {{ synthesize.text }}"
-}
-```
-
-**Execution:**
-1. research_a and research_b in parallel
-2. synthesize waits for both
-3. output_a and output_b in parallel
-
-## Workflow Patterns
-
-### Pattern 1: Linear Pipeline
-
-```rust
-agent extract {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Extract data from {{ input.source }}"
-}
-
-agent transform {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Transform {{ extract.text }}"
-}
-
-agent load {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Load {{ transform.text }}"
-}
-
-<- agent validate {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate {{ load.text }}"
-}
-```
-
-### Pattern 2: Fan-Out/Fan-In
-
-```rust
-// Single input
-agent prepare {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Prepare {{ input.data }}"
-}
-
-// Fan-out: Multiple parallel processors
-agent process_sentiment {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze sentiment: {{ prepare.text }}"
-}
-
-agent process_entities {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Extract entities: {{ prepare.text }}"
-}
-
-agent process_topics {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Identify topics: {{ prepare.text }}"
-}
-
-// Fan-in: Combine results
-<- agent combine {
-    model <- "ollama/qwen3:8b"
-    prompt <- """
-        Combine analysis:
-        Sentiment: {{ process_sentiment.text }}
-        Entities: {{ process_entities.text }}
-        Topics: {{ process_topics.text }}
-    """
-}
-```
-
-### Pattern 3: Iterative Refinement
-
-```rust
-agent draft {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Create draft: {{ input.requirements }}"
-}
-
-agent review {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Review and critique: {{ draft.text }}"
-}
-
-<- agent refine {
-    model <- "ollama/qwen3:8b"
-    prompt <- """
-        Refine based on feedback:
-        Original: {{ draft.text }}
-        Feedback: {{ review.text }}
-    """
-}
-```
-
-### Pattern 4: Consensus Building
-
-```rust
-// Multiple independent analyses
-agent analyst_1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze from perspective 1: {{ input.data }}"
-}
-
-agent analyst_2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze from perspective 2: {{ input.data }}"
-}
-
-agent analyst_3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze from perspective 3: {{ input.data }}"
-}
-
-// Build consensus
-<- agent consensus {
-    model <- "ollama/qwen3:8b"
-    prompt <- """
-        Build consensus from:
-        1. {{ analyst_1.text }}
-        2. {{ analyst_2.text }}
-        3. {{ analyst_3.text }}
-    """
-}
-```
-
-### Pattern 5: Conditional Processing
-
-```rust
-agent classify {
-    model <- "ollama/qwen3:8b"
-    output <- { category: string }
-    prompt <- "Classify: {{ input.text }}"
-}
-
-agent process_technical {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Technical processing: {{ input.text }}"
-}
-
-agent process_general {
-    model <- "ollama/qwen3:8b"
-    prompt <- "General processing: {{ input.text }}"
-}
-
-<- agent route {
-    model <- "ollama/qwen3:8b"
-    prompt <- """
-        Category: {{ classify.category }}
-        Technical result: {{ process_technical.text }}
-        General result: {{ process_general.text }}
-        
-        Select appropriate result based on category.
-    """
-}
-```
-
-## Running Workflows
-
-### CLI
-
-```bash
-# Basic execution
-engine-ai run workflow.ai
-
-# With input
-engine-ai run workflow.ai --input '{"topic": "AI", "audience": "developers"}'
-
-# From stdin
-echo '{"topic": "AI"}' | engine-ai run workflow.ai --input -
-
-# With input file
-engine-ai run workflow.ai --input @input.json
-```
-
-### Rust API
-
-```rust
-use engine_ai::Engine;
-use serde_json::json;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let engine = Engine::new();
-    
-    let input = json!({
-        "topic": "AI agents",
-        "audience": "developers"
-    });
-    
-    let result = engine
-        .execute_workflow_with_input("workflow.ai", input)
-        .await?;
-    
-    println!("{:?}", result);
-    Ok(())
-}
-```
-
-### JavaScript API
-
-```javascript
-import { Engine } from 'engine-ai';
-
-const engine = new Engine();
-
-const input = {
-    topic: "AI agents",
-    audience: "developers"
-};
-
-const result = await engine.executeWorkflow('workflow.ai', input);
-console.log(result);
-```
-
-## Workflow Best Practices
-
-<AccordionGroup>
-  <Accordion title="Keep workflows focused">
-    Each workflow should accomplish one clear goal. Break large tasks into multiple workflows.
-  </Accordion>
-
-  <Accordion title="Use descriptive names">
-    Name agents and fields clearly to make workflows self-documenting.
-  </Accordion>
-
-  <Accordion title="Minimize dependencies">
-    Reduce dependencies between agents to maximize parallel execution.
-  </Accordion>
-
-  <Accordion title="Define clear inputs and outputs">
-    Explicit input/output blocks make workflows easier to use and test.
-  </Accordion>
-
-  <Accordion title="Use schemas for structured data">
-    Define schemas for agent outputs to ensure data consistency.
-  </Accordion>
-
-  <Accordion title="Handle errors gracefully">
-    Use validation and structured outputs to catch errors early.
-  </Accordion>
-</AccordionGroup>
-
-## Workflow Composition
-
-### Reusable Workflows
-
-Break complex workflows into smaller, reusable pieces:
-
-```rust research.ai
-// Reusable research workflow
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-input {
-    topic: string
-}
-
-<- agent research {
-    model <- "ollama/qwen3:8b"
-    output <- {
-        summary: string
-        sources: [string]
-    }
-    prompt <- "Research {{ input.topic }}"
-}
-```
-
-```rust main.ai
-// Main workflow that uses research
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-input {
-    topics: [string]
-}
-
-// Process each topic
-agent research_all for_each topic in input.topics {
-    model <- "ollama/qwen3:8b"
-    output <- {
-        summary: string
-        sources: [string]
-    }
-    prompt <- "Research {{ input.topic }}"
-}
-
-<- agent synthesize {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Synthesize all research: {{ research_all }}"
-}
-```
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
-    Master agent dependencies
-  </Card>
-  <Card title="Examples" icon="code" href="/examples/basic-agent">
-    Explore workflow examples
-  </Card>
-  <Card title="Advanced Features" icon="rocket" href="/advanced/parallel-execution">
-    Learn advanced techniques
-  </Card>
-  <Card title="Best Practices" icon="star" href="/guides/best-practices">
-    Follow workflow best practices
-  </Card>
-</CardGroup>
+<Tip>
+  Most production workflows should still define `output` explicitly so the
+  public result stays stable even when agent internals change.
+</Tip>

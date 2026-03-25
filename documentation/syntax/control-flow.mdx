@@ -1,218 +1,53 @@
 ---
-title: 'Control Flow'
-description: 'Conditional execution and loops in Engine AI'
+title: Control Flow
+description: The current grammar-level control flow feature is the agent `for` loop.
 ---
 
-## Conditional Agents
+The current DSL has one explicit control-flow construct: looping an agent over a collection.
 
-Execute agents based on conditions:
+## Syntax
 
-```rust
-score <- 85
-
-agent pass_message {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Congratulations! You passed with {{ score }}%"
-    when <- score >= 60
-}
-
-agent fail_message {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Sorry, you need at least 60% to pass. You got {{ score }}%"
-    when <- score < 60
+```txt
+agent <name> for <item_name> in <expression> {
+    ...
 }
 ```
 
-## The `when` Clause
+## Example
 
-Control agent execution with boolean expressions:
+```txt
+input {
+    numbers: [number]
+}
 
-```rust
-is_premium <- true
-credits <- 100
-
-agent premium_feature {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Access premium features"
-    when <- is_premium && credits > 0
+agent input_number_note for n in input.numbers {
+    model: openai("gpt-4.1-mini")
+    prompt: "Write a short note for input number {{ n }}"
+    output: {
+        number: number
+        note: string
+    }
 }
 ```
 
-## Dependent Execution
+## Common iterable sources
 
-Agents execute in dependency order:
+- input arrays: `input.items`
+- agent-produced arrays: `agent.findings.items`
+- inline literals: `[1, 2, 3, 4]`
 
-```rust
-<- agent step1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "First step"
-}
+## Expected result shape
 
-<- agent step2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Second step, after: {{ step1.text }}"
-}
+Referencing a looped agent returns an array of outputs:
 
-<- agent step3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Third step, after: {{ step2.text }}"
+```txt
+output {
+    notes: agent.input_number_note
 }
 ```
 
-## Parallel Execution
+## Current runtime status
 
-Agents without dependencies run in parallel:
+Looped agents execute in the default runtime.
 
-```rust
-// These run simultaneously
-<- agent task1 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Independent task 1"
-}
-
-<- agent task2 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Independent task 2"
-}
-
-<- agent task3 {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Independent task 3"
-}
-```
-
-## Complex Conditions
-
-Combine multiple conditions:
-
-```rust
-user_role <- "admin"
-is_active <- true
-has_permission <- true
-
-agent admin_action {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Perform admin action"
-    when <- user_role == "admin" && is_active && has_permission
-}
-```
-
-## Conditional Workflows
-
-Create branching workflows:
-
-```rust
-input_type <- "text"
-
-<- agent text_processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process text input"
-    when <- input_type == "text"
-}
-
-<- agent image_processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process image input"
-    when <- input_type == "image"
-}
-
-<- agent video_processor {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process video input"
-    when <- input_type == "video"
-}
-```
-
-## Error Handling
-
-Handle different scenarios:
-
-```rust
-<- agent primary_task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Try primary approach"
-}
-
-agent fallback_task {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Use fallback approach"
-    when <- primary_task.text == null || primary_task.text == ""
-}
-```
-
-## Examples
-
-### Multi-Stage Pipeline
-
-```rust
-<- agent analyze {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Analyze the input data"
-}
-
-<- agent validate {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Validate: {{ analyze.text }}"
-}
-
-agent process_valid {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Process valid data: {{ validate.text }}"
-    when <- validate.text != "invalid"
-}
-
-agent handle_invalid {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Handle invalid data: {{ validate.text }}"
-    when <- validate.text == "invalid"
-}
-```
-
-### Role-Based Execution
-
-```rust
-user_role <- "editor"
-
-agent admin_dashboard {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Show admin dashboard"
-    when <- user_role == "admin"
-}
-
-agent editor_dashboard {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Show editor dashboard"
-    when <- user_role == "editor"
-}
-
-agent viewer_dashboard {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Show viewer dashboard"
-    when <- user_role == "viewer"
-}
-```
-
-## Best Practices
-
-<Tip>
-  Use clear, descriptive conditions that make the workflow logic easy to understand.
-</Tip>
-
-<Warning>
-  Avoid circular dependencies between agents - they will cause execution errors.
-</Warning>
-
-<Info>
-  Agents with `when <- false` are skipped entirely and don't consume API calls.
-</Info>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Parallel Execution" icon="arrows-split-up-and-left" href="/advanced/parallel-execution">
-    Learn about parallel execution
-  </Card>
-  <Card title="Dependencies" icon="link" href="/core-concepts/dependencies">
-    Understand agent dependencies
-  </Card>
-</CardGroup>
+Each loop iteration produces one output item, and referencing the looped agent returns the full output array.

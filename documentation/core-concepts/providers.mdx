@@ -1,481 +1,134 @@
 ---
-title: 'Providers'
-description: 'Configure LLM backends for your AI agents'
+title: Providers
+description: Declare model backends and bind agents to them with explicit model calls.
 ---
 
-## What are Providers?
+Providers are named blocks that hold backend settings.
 
-Providers are the LLM backends that power your agents. Engine AI supports multiple providers, allowing you to use different models for different tasks or switch between providers seamlessly.
-
-## Provider Configuration
-
-Every workflow must define at least one provider:
-
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b", "llama2:7b"]
-}
-```
-
-### Provider Structure
-
-```rust
-provider <name> {
-    driver <- "<driver_type>"
-    config <- { <configuration_options> }
-    models <- [<available_models>]
-}
-```
-
-- **name**: Unique identifier for this provider
-- **driver**: The provider type (`ollama`, `openai`, `anthropic`)
-- **config**: Provider-specific configuration
-- **models**: List of models available through this provider
-
-## Supported Providers
-
-<Tabs>
-  <Tab title="Ollama">
-    **Ollama** provides local LLM inference with no API costs.
-
-    ```rust
-    provider ollama {
-        driver <- "ollama"
-        config <- { 
-            endpoint <- "http://localhost:11434"
-        }
-        models <- [
-            "qwen3:8b",
-            "llama2:7b",
-            "mistral:7b",
-            "codellama:13b"
-        ]
-    }
-    ```
-
-    ### Configuration Options
-
-    | Option | Type | Required | Description |
-    |--------|------|----------|-------------|
-    | `endpoint` | string | Yes | Ollama server URL |
-
-    ### Using Ollama Models
-
-    ```rust
-    agent task {
-        model <- "ollama/qwen3:8b"
-        prompt <- "Your prompt here"
-    }
-    ```
-
-    <Tip>
-      Ollama is perfect for development and testing. Install models with `ollama pull <model>`.
-    </Tip>
-  </Tab>
-
-  <Tab title="OpenAI">
-    **OpenAI** provides access to GPT models via API.
-
-    ```rust
-    provider openai {
-        driver <- "openai"
-        config <- {
-            api_key <- "sk-proj-..."
-            endpoint <- "https://api.openai.com/v1"
-        }
-        models <- [
-            "gpt-4",
-            "gpt-4-turbo",
-            "gpt-3.5-turbo"
-        ]
-    }
-    ```
-
-    ### Configuration Options
-
-    | Option | Type | Required | Description |
-    |--------|------|----------|-------------|
-    | `api_key` | string | Yes | OpenAI API key |
-    | `endpoint` | string | No | API endpoint URL (default: https://api.openai.com/v1) |
-
-    ### Using OpenAI Models
-
-    ```rust
-    agent task {
-        model <- "openai/gpt-4"
-        prompt <- "Your prompt here"
-    }
-    ```
-
-    ### Custom Endpoint Example
-
-    Use OpenAI-compatible endpoints like OpenCode:
-
-    ```rust
-    provider opencode {
-        driver <- "openai"
-        config <- {
-            api_key <- "your-api-key"
-            endpoint <- "https://opencode.ai/zen/v1"
-        }
-        models <- ["zen-bigpickle"]
-    }
-
-    agent task {
-        model <- "opencode/zen-bigpickle"
-        prompt <- "Your prompt here"
-    }
-    ```
-
-    <Warning>
-      Keep your API keys secure. Never commit them to version control.
-    </Warning>
-  </Tab>
-
-  <Tab title="Anthropic">
-    **Anthropic** provides access to Claude models via API.
-
-    ```rust
-    provider anthropic {
-        driver <- "anthropic"
-        config <- {
-            api_key <- "sk-ant-..."
-            endpoint <- "https://api.anthropic.com/v1/messages"
-        }
-        models <- [
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307"
-        ]
-    }
-    ```
-
-    ### Configuration Options
-
-    | Option | Type | Required | Description |
-    |--------|------|----------|-------------|
-    | `api_key` | string | Yes | Anthropic API key |
-    | `endpoint` | string | No | API endpoint URL (default: https://api.anthropic.com/v1/messages) |
-
-    ### Using Anthropic Models
-
-    ```rust
-    agent task {
-        model <- "anthropic/claude-3-opus-20240229"
-        prompt <- "Your prompt here"
-    }
-    ```
-
-    ### Custom Endpoint Example
-
-    Use Anthropic-compatible endpoints:
-
-    ```rust
-    provider custom_anthropic {
-        driver <- "anthropic"
-        config <- {
-            api_key <- "your-api-key"
-            endpoint <- "https://custom-proxy.example.com/v1/messages"
-        }
-        models <- ["claude-3-opus-20240229"]
-    }
-
-    agent task {
-        model <- "custom_anthropic/claude-3-opus-20240229"
-        prompt <- "Your prompt here"
-    }
-    ```
-  </Tab>
-</Tabs>
-
-## Multiple Providers
-
-You can define multiple providers in a single workflow:
-
-```rust
-// Local provider for development
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-// Cloud provider for production
+```txt
 provider openai {
-    driver <- "openai"
-    config <- { api_key <- "sk-proj-..." }
-    models <- ["gpt-4"]
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini", "gpt-4.1"]
+}
+```
+
+## Provider syntax
+
+```txt
+provider <provider_name> {
+    <property_name>: <expression>
+    ...
+}
+```
+
+Every provider property is a key/value expression pair in the DSL. The parser preserves all properties.
+
+## Binding an agent to a provider
+
+Agents select a provider by calling the provider name in the `model` property.
+
+```txt
+agent summarizer {
+    model: openai("gpt-4.1-mini")
+    prompt: "Summarize the release notes."
+    output: string
+}
+```
+
+The model name can be passed either positionally or as a named argument:
+
+```txt
+model: openai("gpt-4.1-mini")
+model: openai(model: "gpt-4.1-mini")
+```
+
+## Validation behavior
+
+Validation checks these provider-related conditions:
+
+- provider names must be unique
+- an agent `model:` call must reference a declared provider
+- if a provider declares `models`, the chosen model must appear in that list
+- the `model:` property must be a provider call, not a string literal or object
+
+## Built-in runtime provider settings
+
+### OpenAI driver
+
+```txt
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
+}
+```
+
+Required settings consumed by runtime:
+
+- `driver`
+- `endpoint`
+- `api_key`
+
+Optional setting used by validation:
+
+- `models`
+
+### Ollama driver
+
+```txt
+provider ollama {
+    driver: "ollama"
+    endpoint: "http://localhost:11434"
+    models: ["qwen3.5:8b"]
+}
+```
+
+Required settings consumed by runtime:
+
+- `driver`
+- `endpoint` (must include host and port)
+
+Optional setting used by validation:
+
+- `models`
+
+## Practical pattern: local first, cloud second
+
+```txt
+provider ollama_local {
+    driver: "ollama"
+    endpoint: "http://localhost:11434"
+    models: ["qwen3.5:8b"]
 }
 
-// Use different providers for different agents
-agent draft {
-    model <- "ollama/qwen3:8b"  // Fast local model for drafts
-    prompt <- "Create a draft"
+provider openai_cloud {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
 }
 
-agent refine {
-    model <- "openai/gpt-4"  // Powerful cloud model for refinement
-    prompt <- "Refine this draft: {{ draft.text }}"
+agent redact_notes {
+    model: ollama_local("qwen3.5:8b")
+    prompt: "Remove names and email addresses from {{ input.notes }}."
+    output: [string]
+}
+
+agent synthesize {
+    model: openai_cloud("gpt-4.1-mini")
+    prompt: "Summarize {{ agent.redact_notes }} into key insights."
+    output: {
+        insights: [string]
+        recommendations: [string]
+    }
 }
 ```
 
 <Info>
-  Using multiple providers lets you optimize for cost, speed, and quality based on each agent's requirements.
+  Provider configuration fields currently need string literals for runtime parsing.
+  Secret references inside provider blocks are validated by the DSL, but runtime
+  provider parsing expects literal `endpoint` and `api_key` values.
 </Info>
-
-## Model Selection
-
-### Specifying Models
-
-Reference models using the format `provider/model`:
-
-```rust
-agent task {
-    model <- "ollama/qwen3:8b"
-    //        ^^^^^^  ^^^^^^^^
-    //        |       |
-    //        |       +-- Model name
-    //        +---------- Provider name
-    prompt <- "Your prompt"
-}
-```
-
-### Model Availability
-
-Models must be declared in the provider's `models` list:
-
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]  // Only this model is available
-}
-
-agent valid {
-    model <- "ollama/qwen3:8b"  // ✓ Valid
-    prompt <- "Task"
-}
-
-agent invalid {
-    model <- "ollama/llama2:7b"  // ✗ Error: model not in provider's list
-    prompt <- "Task"
-}
-```
-
-## Advanced Configuration
-
-### Custom Endpoints
-
-Use custom API endpoints for self-hosted or proxy services:
-
-```rust
-// OpenAI-compatible endpoint
-provider openai {
-    driver <- "openai"
-    config <- {
-        api_key <- "your-api-key"
-        endpoint <- "https://custom-proxy.example.com/v1"
-    }
-    models <- ["gpt-4"]
-}
-
-// Anthropic-compatible endpoint
-provider anthropic {
-    driver <- "anthropic"
-    config <- {
-        api_key <- "your-api-key"
-        endpoint <- "https://custom-proxy.example.com/v1/messages"
-    }
-    models <- ["claude-3-opus-20240229"]
-}
-```
-
-### Request Parameters
-
-Pass additional parameters to the provider:
-
-```rust
-provider ollama {
-    driver <- "ollama"
-    config <- {
-        endpoint <- "http://localhost:11434"
-        temperature <- 0.7
-        top_p <- 0.9
-        max_tokens <- 2000
-    }
-    models <- ["qwen3:8b"]
-}
-```
-
-## Provider Selection Strategy
-
-Choose providers based on your needs:
-
-<CardGroup cols={2}>
-  <Card title="Development" icon="laptop-code">
-    **Ollama** - Free, fast, local inference
-    
-    Perfect for testing and iteration
-  </Card>
-  <Card title="Production" icon="server">
-    **OpenAI/Anthropic** - Reliable, scalable APIs
-    
-    Best for production workloads
-  </Card>
-  <Card title="Cost Optimization" icon="dollar-sign">
-    **Mix providers** - Use local for simple tasks, cloud for complex ones
-    
-    Balance cost and quality
-  </Card>
-  <Card title="Privacy" icon="lock">
-    **Ollama** - Data never leaves your infrastructure
-    
-    Ideal for sensitive data
-  </Card>
-</CardGroup>
-
-## Examples
-
-### Development Setup
-
-```rust
-// Use local Ollama for fast iteration
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-agent test {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Test prompt"
-}
-```
-
-### Production Setup
-
-```rust
-// Use OpenAI with fallback to Anthropic
-provider openai {
-    driver <- "openai"
-    config <- {
-        api_key <- "sk-proj-..."
-        endpoint <- "https://api.openai.com/v1"
-    }
-    models <- ["gpt-4", "gpt-3.5-turbo"]
-}
-
-provider anthropic {
-    driver <- "anthropic"
-    config <- {
-        api_key <- "sk-ant-..."
-        endpoint <- "https://api.anthropic.com/v1/messages"
-    }
-    models <- ["claude-3-opus-20240229"]
-}
-
-agent primary {
-    model <- "openai/gpt-4"
-    prompt <- "Primary task"
-}
-
-agent fallback {
-    model <- "anthropic/claude-3-opus-20240229"
-    prompt <- "Fallback task"
-}
-```
-
-### Hybrid Setup
-
-```rust
-// Use local for simple tasks, cloud for complex ones
-provider ollama {
-    driver <- "ollama"
-    config <- { endpoint <- "http://localhost:11434" }
-    models <- ["qwen3:8b"]
-}
-
-provider openai {
-    driver <- "openai"
-    config <- { api_key <- "sk-proj-..." }
-    models <- ["gpt-4"]
-}
-
-agent simple_task {
-    model <- "ollama/qwen3:8b"  // Fast and free
-    prompt <- "Simple classification"
-}
-
-agent complex_task {
-    model <- "openai/gpt-4"  // Powerful but costs money
-    prompt <- "Complex reasoning task"
-}
-```
-
-## Troubleshooting
-
-<AccordionGroup>
-  <Accordion title="Provider connection failed">
-    **Ollama:**
-    ```bash
-    # Check if Ollama is running
-    curl http://localhost:11434/api/tags
-    
-    # Start Ollama if not running
-    ollama serve
-    ```
-
-    **OpenAI/Anthropic:**
-    ```bash
-    # Verify API key is set
-    echo $OPENAI_API_KEY
-    
-    # Test API connection
-    curl https://api.openai.com/v1/models \
-      -H "Authorization: Bearer $OPENAI_API_KEY"
-    ```
-  </Accordion>
-
-  <Accordion title="Model not found">
-    Ensure the model is:
-    1. Listed in the provider's `models` array
-    2. Available on the provider (for Ollama: `ollama list`)
-    3. Spelled correctly with proper casing
-  </Accordion>
-
-  <Accordion title="API rate limits">
-    If you encounter rate limits, consider:
-    - Reducing parallel agent execution
-    - Adding delays between requests
-    - Using a different provider or model tier
-  </Accordion>
-
-  <Accordion title="Timeout errors">
-    If requests are timing out:
-    - Check your network connection
-    - Verify the provider endpoint is accessible
-    - For Ollama, ensure the model is fully loaded
-    ```rust
-    provider ollama {
-        driver <- "ollama"
-        config <- {
-            endpoint <- "http://localhost:11434"
-        }
-        models <- ["large-model:70b"]
-    }
-    ```
-  </Accordion>
-</AccordionGroup>
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Agents" icon="robot" href="/core-concepts/agents">
-    Learn how to create agents that use providers
-  </Card>
-  <Card title="Integrations" icon="plug" href="/integrations/ollama">
-    Detailed provider integration guides
-  </Card>
-</CardGroup>

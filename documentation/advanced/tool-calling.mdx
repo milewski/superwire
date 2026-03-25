@@ -1,104 +1,48 @@
 ---
-title: 'Tool Calling'
-description: 'Enable agents to use external tools and functions'
+title: Tool Calling
+description: Reference the grammar for `tools:` and `tool.*` expressions, including named arguments.
 ---
 
-## Overview
+Tools are expressed through the `tools:` agent property.
 
-Tool calling allows agents to interact with external systems, APIs, and functions during execution.
+## Basic syntax
 
-<Info>
-  Tool calling support varies by provider and model. Check your provider's documentation for capabilities.
-</Info>
-
-## Defining Tools
-
-Tools are defined as functions that agents can call:
-
-```rust
-// Tool definition example
-tool get_weather {
-    description <- "Get current weather for a location"
-    parameters <- {
-        location <- "string"
-        units <- "string"
+```txt
+agent assistant_with_tools {
+    model: openai("gpt-4.1-mini")
+    tools: [
+        tool.web_search,
+        tool.knowledge_base_search(password: secrets.knowledge_base_password),
+        tool.issue_tracker_lookup(project: "engine-ai", status: "open", token: secrets.issue_tracker_token)
+    ]
+    prompt: "Answer the question using tools when needed: {{ input.question }}"
+    output: {
+        answer: string
+        sources: [string]
     }
 }
 ```
 
-## Using Tools in Agents
+## Supported expression shapes in the grammar
 
-Agents can be configured to use available tools:
+- bare tool reference: `tool.web_search`
+- tool call with named arguments: `tool.search(query: input.query)`
+- tool arguments built from literals, references, arrays, and objects
 
-```rust
-agent assistant {
-    model <- "ollama/qwen3:8b"
-    prompt <- "What's the weather in San Francisco?"
-    tools <- [get_weather]
-}
-```
+## Validation behavior
 
-## Tool Response Handling
-
-Process tool call results:
-
-```rust
-<- agent with_tools {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Get weather and summarize"
-    tools <- [get_weather]
-}
-
-agent summarizer {
-    model <- "ollama/qwen3:8b"
-    prompt <- "Summarize: {{ with_tools.text }}"
-}
-```
-
-## Common Tool Patterns
-
-### API Integration
-
-```rust
-tool api_call {
-    description <- "Call external API"
-    parameters <- {
-        endpoint <- "string"
-        method <- "string"
-        data <- "object"
-    }
-}
-```
-
-### Data Processing
-
-```rust
-tool process_data {
-    description <- "Process structured data"
-    parameters <- {
-        data <- "array"
-        operation <- "string"
-    }
-}
-```
-
-## Best Practices
-
-<Tip>
-  Provide clear tool descriptions to help agents understand when and how to use them.
-</Tip>
+- `tool` is a reserved keyword root in references
+- tool expressions still participate in dependency scanning
+- secret references are allowed inside `tools:` because they are configuration data, not prompt text
 
 <Warning>
-  Tool calling may increase execution time and API costs.
+  The current default runtime does not evaluate `tool.*` expressions or the
+  `tools:` property yet. Tool syntax is part of the DSL surface area, but not
+  yet part of runtime execution in `engine-ai-core`.
 </Warning>
 
-## Next Steps
+## Practical guidance
 
-<CardGroup cols={2}>
-  <Card title="Schemas" icon="table" href="/core-concepts/schemas">
-    Learn about schemas
-  </Card>
-  <Card title="Error Handling" icon="triangle-exclamation" href="/advanced/error-handling">
-    Handle errors
-  </Card>
-</CardGroup>
+- keep tool argument payloads small and explicit
+- prefer named arguments for readability
+- pass secrets only through tool configuration, never through prompts

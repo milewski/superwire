@@ -1,0 +1,55 @@
+---
+title: Custom Agent Runners
+description: Extend runtime execution by implementing `AgentRunner` and passing it to `WorkflowRuntime::run_with_runner`.
+---
+
+The current runtime API does not expose `WorkflowProviderFactory` or dynamic provider registration.
+
+For custom execution logic, implement `AgentRunner` and run workflows with `run_with_runner(...)`.
+
+## Extension point
+
+```rust
+use async_trait::async_trait;
+use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntimeError};
+use serde_json::json;
+
+struct MyRunner;
+
+#[async_trait]
+impl AgentRunner for MyRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        let synthetic_output = json!({
+            "agent": request.agent_name,
+            "model": request.model_name,
+            "prompt": request.prompt,
+        });
+
+        Ok(AgentExecutionResult {
+            output: synthetic_output,
+            context: json!({"runner": "my-runner"}),
+        })
+    }
+}
+```
+
+## Running with a custom runner
+
+```rust
+use engine_ai_core::runtime::WorkflowRuntime;
+
+let runtime = WorkflowRuntime::<Input, Output>::new(workflow)?;
+let output = runtime.run_with_runner(input, &MyRunner).await?;
+```
+
+## Practical use cases
+
+1. deterministic integration tests without live model calls
+2. custom transport or queue-backed execution
+3. request/response tracing for observability
+4. policy checks before dispatching agent calls
+
+## Current limitation
+
+Provider declarations still parse into the built-in `ProviderConfig` variants (`openai` and `ollama`).
+If you need new provider drivers, add them in `engine-ai-core` and wire them into runtime provider parsing.
