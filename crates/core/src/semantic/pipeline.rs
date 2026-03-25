@@ -14,43 +14,46 @@ pub enum WorkflowPipelineInput<'input> {
 
 #[derive(Debug, Clone)]
 pub struct WorkflowPipeline<PipelineState> {
-    pipeline_state: PipelineState,
+    state: PipelineState,
 }
 
 impl<PipelineState> WorkflowPipeline<PipelineState> {
-    fn new(pipeline_state: PipelineState) -> Self {
-        Self { pipeline_state }
+    fn new(state: PipelineState) -> Self {
+        Self { state }
     }
 
     #[must_use]
     pub fn state(&self) -> &PipelineState {
-        &self.pipeline_state
+        &self.state
     }
 
     #[must_use]
     pub fn into_state(self) -> PipelineState {
-        self.pipeline_state
+        self.state
     }
 }
 
 impl WorkflowPipeline<ParseStageOutput> {
-    pub fn parse(workflow_input: WorkflowPipelineInput<'_>) -> Result<Self, WorkflowRuntimeError> {
-        let parse_stage_output = parse_workflow_stage(workflow_input)?;
+    pub fn parse(input: WorkflowPipelineInput<'_>) -> Result<Self, WorkflowRuntimeError> {
+        let workflow = match input {
+            WorkflowPipelineInput::Source(source) => {
+                parse_workflow(source).map_err(|source| WorkflowRuntimeError::ParseFailed { source })?
+            }
+            WorkflowPipelineInput::Workflow(workflow) => workflow.clone(),
+        };
 
-        Ok(Self::new(parse_stage_output))
+        Ok(Self::new(ParseStageOutput { workflow }))
     }
 
     #[must_use]
     pub fn normalize(self) -> WorkflowPipeline<NormalizeStageOutput> {
-        WorkflowPipeline::new(self.pipeline_state.normalize())
+        WorkflowPipeline::new(self.state.normalize())
     }
 }
 
 impl WorkflowPipeline<NormalizeStageOutput> {
     pub fn validate(self) -> Result<WorkflowPipeline<ValidateStageOutput>, WorkflowRuntimeError> {
-        let validate_stage_output = self.pipeline_state.validate()?;
-
-        Ok(WorkflowPipeline::new(validate_stage_output))
+        Ok(WorkflowPipeline::new(self.state.validate()?))
     }
 }
 
@@ -60,29 +63,25 @@ impl WorkflowPipeline<ValidateStageOutput> {
         Input: Serialize + JsonSchema,
         Output: DeserializeOwned + JsonSchema,
     {
-        let typecheck_stage_output = self.pipeline_state.typecheck::<Input, Output>()?;
-
-        Ok(WorkflowPipeline::new(typecheck_stage_output))
+        Ok(WorkflowPipeline::new(self.state.typecheck::<Input, Output>()?))
     }
 }
 
 impl WorkflowPipeline<TypecheckStageOutput> {
     pub fn plan(self) -> Result<WorkflowPipeline<PlanStageOutput>, WorkflowRuntimeError> {
-        let plan_stage_output = self.pipeline_state.plan()?;
-
-        Ok(WorkflowPipeline::new(plan_stage_output))
+        Ok(WorkflowPipeline::new(self.state.plan()?))
     }
 }
 
 impl WorkflowPipeline<PlanStageOutput> {
     #[must_use]
     pub fn execution_plan(&self) -> &ExecutionPlan {
-        self.pipeline_state.execution_plan()
+        self.state.execution_plan()
     }
 
     #[must_use]
     pub fn into_execution_plan(self) -> ExecutionPlan {
-        self.pipeline_state.into_execution_plan()
+        self.state.into_execution_plan()
     }
 }
 
@@ -237,40 +236,6 @@ impl PlanStageOutput {
     }
 }
 
-pub fn parse_workflow_stage(workflow_input: WorkflowPipelineInput<'_>) -> Result<ParseStageOutput, WorkflowRuntimeError> {
-    let workflow = match workflow_input {
-        WorkflowPipelineInput::Source(workflow_source) => {
-            parse_workflow(workflow_source).map_err(|source| WorkflowRuntimeError::ParseFailed { source })?
-        }
-        WorkflowPipelineInput::Workflow(workflow) => workflow.clone(),
-    };
-
-    Ok(ParseStageOutput { workflow })
-}
-
-#[must_use]
-pub fn normalize_workflow_stage(parse_stage_output: ParseStageOutput) -> NormalizeStageOutput {
-    parse_stage_output.normalize()
-}
-
-pub fn validate_workflow_stage(normalize_stage_output: NormalizeStageOutput) -> Result<ValidateStageOutput, WorkflowRuntimeError> {
-    normalize_stage_output.validate()
-}
-
-pub fn typecheck_workflow_stage<Input, Output>(
-    validate_stage_output: ValidateStageOutput,
-) -> Result<TypecheckStageOutput, WorkflowRuntimeError>
-where
-    Input: Serialize + JsonSchema,
-    Output: DeserializeOwned + JsonSchema,
-{
-    validate_stage_output.typecheck::<Input, Output>()
-}
-
-pub fn plan_workflow_stage(typecheck_stage_output: TypecheckStageOutput) -> Result<PlanStageOutput, WorkflowRuntimeError> {
-    typecheck_stage_output.plan()
-}
-
 pub fn compile_workflow_pipeline<Input, Output>(workflow_input: WorkflowPipelineInput<'_>) -> Result<PlanStageOutput, WorkflowRuntimeError>
 where
     Input: Serialize + JsonSchema,
@@ -297,10 +262,7 @@ fn render_validation_report(validation_report: &ValidationReport) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        compile_workflow_pipeline, normalize_workflow_stage, parse_workflow_stage, plan_workflow_stage, typecheck_workflow_stage,
-        validate_workflow_stage, WorkflowPipeline, WorkflowPipelineInput,
-    };
+    use super::{compile_workflow_pipeline, WorkflowPipeline, WorkflowPipelineInput};
     use crate::parse_inline_workflow;
     use crate::runtime::error::WorkflowRuntimeError;
     use schemars::JsonSchema;
@@ -366,15 +328,20 @@ mod tests {
     }
 
     #[test]
-    fn stage_functions_match_pipeline_wrapper_transitions() {
-        let parse_stage_output = parse_workflow_stage(WorkflowPipelineInput::Workflow(&VALID_WORKFLOW)).unwrap();
-        let normalize_stage_output = normalize_workflow_stage(parse_stage_output);
-        let validate_stage_output = validate_workflow_stage(normalize_stage_output).unwrap();
-        let typecheck_stage_output = typecheck_workflow_stage::<Input, Output>(validate_stage_output).unwrap();
-        let plan_stage_output = plan_workflow_stage(typecheck_stage_output).unwrap();
+    fn pipeline_state_transitions_allow_stage_level_assertions() {
+        let parse_pipeline = WorkflowPipeline::parse(WorkflowPipelineInput::Workflow(&VALID_WORKFLOW)).expect("parse stage should succeed");
+
+        assert!(!parse_pipeline.state().workflow().declarations().is_empty());
+
+        let normalize_pipeline = parse_pipeline.normalize();
+        let validate_pipeline = normalize_pipeline.validate().expect("validate stage should succeed");
+        let typecheck_pipeline = validate_pipeline
+            .typecheck::<Input, Output>()
+            .expect("typecheck stage should succeed");
+        let plan_pipeline = typecheck_pipeline.plan().expect("plan stage should succeed");
 
         assert_eq!(
-            plan_stage_output.execution_plan().agent_execution_order,
+            plan_pipeline.execution_plan().agent_execution_order,
             vec!["first".to_string(), "second".to_string()]
         );
     }
@@ -401,9 +368,10 @@ mod tests {
             }
         };
 
-        let parse_stage_output = parse_workflow_stage(WorkflowPipelineInput::Workflow(&workflow)).unwrap();
-        let normalize_stage_output = normalize_workflow_stage(parse_stage_output);
-        let validate_result = validate_workflow_stage(normalize_stage_output);
+        let validate_result = WorkflowPipeline::parse(WorkflowPipelineInput::Workflow(&workflow))
+            .expect("parse stage should succeed")
+            .normalize()
+            .validate();
 
         assert!(matches!(
             validate_result,
