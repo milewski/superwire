@@ -2,11 +2,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use engine_ai_core::dsl::{
     parse_workflow, validate_workflow, AgentProperty, Declaration, DslParseError, Expression, ProviderDeclaration, SourcePosition,
-    SourceSpan, TypeExpression, TypedField, ValidationReport, Workflow,
+    SourceSpan, TypeExpression, TypedField, ValidationIssue, ValidationReport, Workflow,
 };
 use engine_ai_core::runtime::{InferenceSetting, ProviderDriver};
 
-use crate::protocol::{Position, Range};
+use crate::protocol::{DiagnosticCode, Position, Range};
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
@@ -40,18 +40,30 @@ impl DocumentState {
             return Vec::new();
         };
 
+        let completion_scope = self.completion_scope(position);
+
+        if completion_scope == CompletionScope::TypedDeclarations {
+            if !line_prefix.contains(':') {
+                return Vec::new();
+            }
+
+            let semantic_index = self.semantic_index_for_completion(position);
+
+            return semantic_index.type_suggestions(&line_prefix);
+        }
+
         let semantic_index = self.semantic_index_for_completion(position);
         let line_has_property_separator = line_prefix.trim_start().contains(':');
 
         if !line_has_property_separator {
-            match self.completion_scope(position) {
+            match completion_scope {
                 CompletionScope::InferenceSettings => {
                     return inference_setting_scope_suggestions(&line_prefix);
                 }
                 CompletionScope::AgentProperties => {
                     return agent_property_scope_suggestions(&line_prefix);
                 }
-                CompletionScope::General => {}
+                CompletionScope::General | CompletionScope::TypedDeclarations => {}
             }
         }
 
@@ -218,7 +230,7 @@ impl SemanticSnapshot {
                 DocumentDiagnostic {
                     range,
                     severity: DiagnosticSeverity::Error,
-                    code: validation_issue.code().to_string(),
+                    code: DiagnosticCode::from(validation_issue),
                     message: validation_issue.message(),
                 }
             })
@@ -237,7 +249,7 @@ impl SemanticSnapshot {
         vec![DocumentDiagnostic {
             range,
             severity: DiagnosticSeverity::Error,
-            code: parse_error.code().to_string(),
+            code: DiagnosticCode::from(parse_error),
             message: parse_error.to_string(),
         }]
     }
@@ -247,7 +259,7 @@ impl SemanticSnapshot {
 pub struct DocumentDiagnostic {
     pub range: Range,
     pub severity: DiagnosticSeverity,
-    pub code: String,
+    pub code: DiagnosticCode,
     pub message: String,
 }
 
@@ -1379,6 +1391,7 @@ enum CompletionScope {
     General,
     AgentProperties,
     InferenceSettings,
+    TypedDeclarations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1386,6 +1399,7 @@ enum ScopeBlock {
     Other,
     Agent,
     Inference,
+    TypedDeclaration,
 }
 
 fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> CompletionScope {
@@ -1431,6 +1445,7 @@ fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Comple
     match scope_blocks.last().copied() {
         Some(ScopeBlock::Inference) => CompletionScope::InferenceSettings,
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
+        Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
         Some(ScopeBlock::Other) | None => CompletionScope::General,
     }
 }
@@ -1461,10 +1476,18 @@ impl ScopeScannerTokenState {
             return ScopeBlock::Other;
         };
 
+        if parent_block == Some(ScopeBlock::TypedDeclaration) {
+            return ScopeBlock::TypedDeclaration;
+        }
+
         if let Some(pending_property) = &self.pending_property {
             if pending_property == "inference" && parent_block == Some(ScopeBlock::Agent) {
                 return ScopeBlock::Inference;
             }
+        }
+
+        if last_identifier == "input" || last_identifier == "secrets" {
+            return ScopeBlock::TypedDeclaration;
         }
 
         if self.recent_identifiers.len() >= 2 {
@@ -1472,6 +1495,10 @@ impl ScopeScannerTokenState {
 
             if penultimate_identifier == "agent" && last_identifier != "agent" {
                 return ScopeBlock::Agent;
+            }
+
+            if penultimate_identifier == "schema" && last_identifier != "schema" {
+                return ScopeBlock::TypedDeclaration;
             }
         }
 
@@ -1652,29 +1679,76 @@ fn zero_range() -> Range {
     }
 }
 
-trait ValidationParseErrorCode {
-    fn code(&self) -> &'static str;
-}
-
-impl ValidationParseErrorCode for DslParseError {
-    fn code(&self) -> &'static str {
-        match self {
-            Self::Pest { message: _, span: _ } => "parse_error",
-            Self::MissingNode {
+impl From<&DslParseError> for DiagnosticCode {
+    fn from(parse_error: &DslParseError) -> Self {
+        match parse_error {
+            DslParseError::Pest { message: _, span: _ } => Self::ParseError,
+            DslParseError::MissingNode {
                 expected: _,
                 context: _,
                 span: _,
-            } => "missing_node",
-            Self::UnexpectedRule {
+            } => Self::MissingNode,
+            DslParseError::UnexpectedRule {
                 rule: _,
                 context: _,
                 span: _,
-            } => "unexpected_rule",
-            Self::InvalidIntegerLiteral {
+            } => Self::UnexpectedRule,
+            DslParseError::InvalidIntegerLiteral {
                 literal: _,
                 context: _,
                 span: _,
-            } => "invalid_integer_literal",
+            } => Self::InvalidIntegerLiteral,
+        }
+    }
+}
+
+impl From<&ValidationIssue> for DiagnosticCode {
+    fn from(validation_issue: &ValidationIssue) -> Self {
+        match validation_issue {
+            ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
+            ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
+            ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
+            ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
+            ValidationIssue::UnknownAgentProperty {
+                agent_name: _,
+                property_name: _,
+            } => Self::UnknownAgentProperty,
+            ValidationIssue::InvalidModelExpression { agent_name: _ } => Self::InvalidModelExpression,
+            ValidationIssue::UnknownProviderInModel {
+                agent_name: _,
+                provider_name: _,
+            } => Self::UnknownProviderInModel,
+            ValidationIssue::UnknownModelForProvider {
+                agent_name: _,
+                provider_name: _,
+                model_name: _,
+            } => Self::UnknownModelForProvider,
+            ValidationIssue::UnknownAgentReference {
+                referenced_agent: _,
+                context: _,
+            } => Self::UnknownAgentReference,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword: _, context: _ } => Self::InvalidKeywordReferenceRoot,
+            ValidationIssue::MissingInputDeclaration { context: _ } => Self::MissingInputDeclaration,
+            ValidationIssue::MissingSecretsDeclaration { context: _ } => Self::MissingSecretsDeclaration,
+            ValidationIssue::UnknownInputFieldReference { field_name: _, context: _ } => Self::UnknownInputFieldReference,
+            ValidationIssue::UnknownSecretsFieldReference { field_name: _, context: _ } => Self::UnknownSecretsFieldReference,
+            ValidationIssue::SecretReferenceInLlmContext {
+                reference_path: _,
+                context: _,
+            } => Self::SecretReferenceInLlmContext,
+            ValidationIssue::MissingAgentOutputTypeForFieldReference { agent_name: _, context: _ } => {
+                Self::MissingAgentOutputTypeForFieldReference
+            }
+            ValidationIssue::InvalidReferencePath {
+                reference_path: _,
+                invalid_field: _,
+                context: _,
+            } => Self::InvalidReferencePath,
+            ValidationIssue::UnknownSchemaReference {
+                referenced_schema: _,
+                context: _,
+            } => Self::UnknownSchemaReference,
+            ValidationIssue::AgentDependencyCycle { agent_names: _ } => Self::AgentDependencyCycle,
         }
     }
 }
@@ -1944,17 +2018,31 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{DocumentState, Position};
+    use crate::protocol::DiagnosticCode;
+
+    macro_rules! inline_document_with_cursor {
+        ($($workflow_tokens:tt)*) => {{
+            source_with_cursor(stringify!($($workflow_tokens)*))
+        }};
+    }
 
     fn source_with_cursor(source_template: &str) -> (String, Position) {
-        let cursor_marker = "<cursor>";
-        let cursor_byte_offset = source_template
-            .find(cursor_marker)
-            .expect("cursor marker should exist in test source");
+        let normalized_template = normalize_inline_cursor_layout(source_template);
+        let compact_cursor_marker = "<cursor>";
+        let spaced_cursor_marker = "< cursor >";
+
+        let (cursor_marker, cursor_byte_offset) = if let Some(marker_offset) = normalized_template.find(compact_cursor_marker) {
+            (compact_cursor_marker, marker_offset)
+        } else if let Some(marker_offset) = normalized_template.find(spaced_cursor_marker) {
+            (spaced_cursor_marker, marker_offset)
+        } else {
+            panic!("cursor marker should exist in test source");
+        };
 
         let mut line = 0_u32;
         let mut character = 0_u32;
 
-        for character_in_source in source_template[..cursor_byte_offset].chars() {
+        for character_in_source in normalized_template[..cursor_byte_offset].chars() {
             if character_in_source == '\n' {
                 line += 1;
                 character = 0;
@@ -1964,9 +2052,123 @@ mod tests {
             character += 1;
         }
 
-        let source_without_cursor = source_template.replacen(cursor_marker, "", 1);
+        let source_without_cursor = normalized_template.replacen(cursor_marker, "", 1);
 
         (source_without_cursor, Position { line, character })
+    }
+
+    fn normalize_inline_cursor_layout(source_template: &str) -> String {
+        let compact_marker = "<cursor>";
+        let spaced_marker = "< cursor >";
+
+        let compact_marker_offset = source_template.find(compact_marker);
+        let spaced_marker_offset = source_template.find(spaced_marker);
+
+        let (marker, marker_offset) = match (compact_marker_offset, spaced_marker_offset) {
+            (Some(compact_offset), Some(spaced_offset)) => {
+                if compact_offset <= spaced_offset {
+                    (compact_marker, compact_offset)
+                } else {
+                    (spaced_marker, spaced_offset)
+                }
+            }
+            (Some(compact_offset), None) => (compact_marker, compact_offset),
+            (None, Some(spaced_offset)) => (spaced_marker, spaced_offset),
+            (None, None) => {
+                return source_template.to_string();
+            }
+        };
+
+        if is_inside_string_literal(source_template, marker_offset) {
+            return source_template.to_string();
+        }
+
+        let previous_character = source_template[..marker_offset]
+            .chars()
+            .rev()
+            .find(|character| !character.is_whitespace());
+
+        if previous_character == Some('.') || previous_character == Some(':') {
+            return source_template.to_string();
+        }
+
+        let mut normalized_source = String::new();
+        normalized_source.push_str(&source_template[..marker_offset]);
+
+        if !normalized_source.ends_with('\n') {
+            normalized_source.push('\n');
+        }
+
+        normalized_source.push_str(marker);
+
+        let marker_end_offset = marker_offset + marker.len();
+        let remaining_source = &source_template[marker_end_offset..];
+        let next_character = remaining_source.chars().find(|character| !character.is_whitespace());
+
+        if next_character == Some('}') {
+            normalized_source.push('\n');
+        }
+
+        normalized_source.push_str(remaining_source);
+
+        merge_lone_opening_brace_lines(&normalized_source)
+    }
+
+    fn merge_lone_opening_brace_lines(source_text: &str) -> String {
+        let mut source_lines = source_text.lines().map(str::to_string).collect::<Vec<_>>();
+        let mut line_index = 0_usize;
+
+        while line_index < source_lines.len() {
+            if line_index == 0 {
+                line_index += 1;
+                continue;
+            }
+
+            if source_lines[line_index].trim() != "{" {
+                line_index += 1;
+                continue;
+            }
+
+            if !source_lines[line_index - 1].is_empty() {
+                source_lines[line_index - 1].push(' ');
+            }
+
+            source_lines[line_index - 1].push('{');
+            let _ = source_lines.remove(line_index);
+        }
+
+        source_lines.join("\n")
+    }
+
+    fn is_inside_string_literal(source_text: &str, byte_offset: usize) -> bool {
+        let mut inside_string = false;
+        let mut escaping = false;
+
+        for character in source_text[..byte_offset].chars() {
+            if escaping {
+                escaping = false;
+                continue;
+            }
+
+            if inside_string {
+                if character == '\\' {
+                    escaping = true;
+                    continue;
+                }
+
+                if character == '"' {
+                    inside_string = false;
+                }
+
+                continue;
+            }
+
+            if character == '"' {
+                inside_string = true;
+            }
+        }
+
+        inside_string
     }
 
     #[test]
@@ -1975,7 +2177,7 @@ mod tests {
         let diagnostics = document_state.diagnostics();
 
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].code, "parse_error");
+        assert_eq!(diagnostics[0].code, DiagnosticCode::ParseError);
     }
 
     #[test]
@@ -1996,7 +2198,9 @@ mod tests {
         let document_state = DocumentState::new(source.to_string());
         let diagnostics = document_state.diagnostics();
 
-        assert!(diagnostics.iter().any(|diagnostic| diagnostic.code == "unknown_model_for_provider"));
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::UnknownModelForProvider));
     }
 
     #[test]
@@ -2018,13 +2222,14 @@ mod tests {
         let document_state = DocumentState::new(source.to_string());
         let diagnostics = document_state.diagnostics();
 
-        assert!(diagnostics.iter().any(|diagnostic| diagnostic.code == "unknown_agent_property"));
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::UnknownAgentProperty));
     }
 
     #[test]
     fn completes_nested_input_field_attributes() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             input {
                 profile: {
                     name: {
@@ -2037,11 +2242,15 @@ mod tests {
             output {
                 value: input.profile.name.<cursor>
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        dbg!(completion_suggestions
+            .iter()
+            .map(|completion_suggestion| completion_suggestion.label.clone())
+            .collect::<Vec<_>>());
 
         assert!(completion_suggestions
             .iter()
@@ -2053,17 +2262,20 @@ mod tests {
 
     #[test]
     fn completes_provider_driver_specific_properties() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             provider openai {
                 driver: "openai"
                 <cursor>
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        dbg!(completion_suggestions
+            .iter()
+            .map(|completion_suggestion| completion_suggestion.label.clone())
+            .collect::<Vec<_>>());
 
         assert!(completion_suggestions
             .iter()
@@ -2075,13 +2287,11 @@ mod tests {
 
     #[test]
     fn suggests_only_agent_properties_in_agent_block_scope() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             agent writer {
                 <cursor>
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
@@ -2102,15 +2312,13 @@ mod tests {
 
     #[test]
     fn suggests_only_inference_settings_inside_inference_object() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             agent writer {
                 inference: {
                     <cursor>
                 }
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
@@ -2131,8 +2339,7 @@ mod tests {
 
     #[test]
     fn suggests_agent_properties_before_inference_block() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             agent release_analyst {
                 model: openai("gpt-4.1-mini")
 
@@ -2143,8 +2350,7 @@ mod tests {
                     max_tokens: 12_000
                 }
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
@@ -2159,23 +2365,19 @@ mod tests {
 
     #[test]
     fn includes_descriptive_details_for_agent_and_inference_completions() {
-        let (agent_source, agent_cursor_position) = source_with_cursor(
-            r#"
+        let (agent_source, agent_cursor_position) = inline_document_with_cursor! {
             agent writer {
                 <cursor>
             }
-            "#,
-        );
+        };
 
-        let (inference_source, inference_cursor_position) = source_with_cursor(
-            r#"
+        let (inference_source, inference_cursor_position) = inline_document_with_cursor! {
             agent writer {
                 inference: {
                     <cursor>
                 }
             }
-            "#,
-        );
+        };
 
         let agent_document_state = DocumentState::new(agent_source);
         let inference_document_state = DocumentState::new(inference_source);
@@ -2199,8 +2401,7 @@ mod tests {
 
     #[test]
     fn completes_registered_provider_models_inside_model_call() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             provider openai {
                 driver: "openai"
                 models: ["gpt-4.1-mini", "gpt-4o-mini"]
@@ -2211,8 +2412,7 @@ mod tests {
                 prompt: "hello"
                 output: string
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
@@ -2227,8 +2427,7 @@ mod tests {
 
     #[test]
     fn completes_schema_references_in_type_context() {
-        let (source, cursor_position) = source_with_cursor(
-            r#"
+        let (source, cursor_position) = inline_document_with_cursor! {
             schema Person {
                 name: string
             }
@@ -2236,8 +2435,7 @@ mod tests {
             input {
                 profile: schema.<cursor>
             }
-            "#,
-        );
+        };
 
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
@@ -2245,5 +2443,44 @@ mod tests {
         assert!(completion_suggestions
             .iter()
             .any(|completion_suggestion| completion_suggestion.label == "Person"));
+    }
+
+    #[test]
+    fn suppresses_key_suggestions_inside_input_block() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            input {
+                <cursor>
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert!(completion_suggestions.is_empty());
+    }
+
+    #[test]
+    fn suggests_only_types_for_input_field_values() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            input {
+                product_name: <cursor>
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert!(completion_suggestions
+            .iter()
+            .any(|completion_suggestion| completion_suggestion.label == "string"));
+        assert!(completion_suggestions
+            .iter()
+            .any(|completion_suggestion| completion_suggestion.label == "number"));
+        assert!(!completion_suggestions
+            .iter()
+            .any(|completion_suggestion| completion_suggestion.label == "provider"));
+        assert!(!completion_suggestions
+            .iter()
+            .any(|completion_suggestion| completion_suggestion.label == "agent"));
     }
 }

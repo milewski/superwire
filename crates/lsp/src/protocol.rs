@@ -76,9 +76,59 @@ pub struct DidCloseTextDocumentParams {
 pub struct Diagnostic {
     pub range: Range,
     pub severity: u32,
-    pub code: String,
+    pub code: DiagnosticCode,
     pub source: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum DiagnosticCode {
+    #[serde(rename = "parse_error")]
+    ParseError,
+    #[serde(rename = "missing_node")]
+    MissingNode,
+    #[serde(rename = "unexpected_rule")]
+    UnexpectedRule,
+    #[serde(rename = "invalid_integer_literal")]
+    InvalidIntegerLiteral,
+    #[serde(rename = "duplicate_provider")]
+    DuplicateProvider,
+    #[serde(rename = "duplicate_schema")]
+    DuplicateSchema,
+    #[serde(rename = "duplicate_agent")]
+    DuplicateAgent,
+    #[serde(rename = "duplicate_singleton_declaration")]
+    DuplicateSingletonDeclaration,
+    #[serde(rename = "unknown_agent_property")]
+    UnknownAgentProperty,
+    #[serde(rename = "invalid_model_expression")]
+    InvalidModelExpression,
+    #[serde(rename = "unknown_provider_in_model")]
+    UnknownProviderInModel,
+    #[serde(rename = "unknown_model_for_provider")]
+    UnknownModelForProvider,
+    #[serde(rename = "unknown_agent_reference")]
+    UnknownAgentReference,
+    #[serde(rename = "invalid_keyword_reference_root")]
+    InvalidKeywordReferenceRoot,
+    #[serde(rename = "missing_input_declaration")]
+    MissingInputDeclaration,
+    #[serde(rename = "missing_secrets_declaration")]
+    MissingSecretsDeclaration,
+    #[serde(rename = "unknown_input_field_reference")]
+    UnknownInputFieldReference,
+    #[serde(rename = "unknown_secrets_field_reference")]
+    UnknownSecretsFieldReference,
+    #[serde(rename = "secret_reference_in_llm_context")]
+    SecretReferenceInLlmContext,
+    #[serde(rename = "missing_agent_output_type_for_field_reference")]
+    MissingAgentOutputTypeForFieldReference,
+    #[serde(rename = "invalid_reference_path")]
+    InvalidReferencePath,
+    #[serde(rename = "unknown_schema_reference")]
+    UnknownSchemaReference,
+    #[serde(rename = "agent_dependency_cycle")]
+    AgentDependencyCycle,
 }
 
 #[must_use]
