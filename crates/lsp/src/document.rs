@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use engine_ai_core::dsl::{
-    parse_workflow, validate_workflow, AgentProperty, Declaration, DslParseError, Expression, ProviderDeclaration, SourcePosition,
-    SourceSpan, TypeExpression, TypedField, ValidationIssue, ValidationReport, Workflow,
+    parse_workflow, validate_workflow, AgentProperty, Declaration, DeclarationKeyword, DslParseError, Expression, ProviderDeclaration,
+    ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, ValidationIssue, ValidationReport,
+    Workflow,
 };
 use engine_ai_core::runtime::{InferenceSetting, ProviderDriver};
 
@@ -403,16 +404,16 @@ impl SemanticIndex {
     }
 
     fn from_text_fallback(source_text: &str) -> Self {
-        let provider_names = collect_named_declaration_names(source_text, "provider");
-        let schema_names = collect_named_declaration_names(source_text, "schema");
-        let agent_names = collect_named_declaration_names(source_text, "agent");
+        let provider_names = collect_named_declaration_names(source_text, DeclarationKeyword::Provider);
+        let schema_names = collect_named_declaration_names(source_text, DeclarationKeyword::Schema);
+        let agent_names = collect_named_declaration_names(source_text, DeclarationKeyword::Agent);
 
-        let input_fields = collect_singleton_block_field_names(source_text, "input")
+        let input_fields = collect_singleton_block_field_names(source_text, SingletonDeclarationKind::Input)
             .into_iter()
             .map(|field_name| (field_name, TypeExpression::String))
             .collect::<BTreeMap<_, _>>();
 
-        let secrets_fields = collect_singleton_block_field_names(source_text, "secrets")
+        let secrets_fields = collect_singleton_block_field_names(source_text, SingletonDeclarationKind::Secrets)
             .into_iter()
             .map(|field_name| (field_name, TypeExpression::String))
             .collect::<BTreeMap<_, _>>();
@@ -599,23 +600,25 @@ impl SemanticIndex {
     }
 
     fn reference_path_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
-        match reference_completion_path.root.as_str() {
-            "input" => self.singleton_reference_suggestions(
+        if reference_completion_path.is_schema_root() {
+            return self.schema_reference_suggestions(reference_completion_path);
+        }
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Input) => self.singleton_reference_suggestions(
                 &self.input_fields,
                 &reference_completion_path.complete_accesses,
                 &reference_completion_path.pending_prefix,
                 "Input field",
             ),
-            "secrets" => self.singleton_reference_suggestions(
+            Some(ReferenceKeyword::Secrets) => self.singleton_reference_suggestions(
                 &self.secrets_fields,
                 &reference_completion_path.complete_accesses,
                 &reference_completion_path.pending_prefix,
                 "Secrets field",
             ),
-            "agent" => self.agent_reference_suggestions(reference_completion_path),
-            "schema" => self.schema_reference_suggestions(reference_completion_path),
-            "tool" => Vec::new(),
-            _ => Vec::new(),
+            Some(ReferenceKeyword::Agent) => self.agent_reference_suggestions(reference_completion_path),
+            Some(ReferenceKeyword::Tool) | None => Vec::new(),
         }
     }
 
@@ -971,21 +974,36 @@ impl SemanticIndex {
         let mut resolved_accesses = reference_completion_path.complete_accesses.clone();
 
         if !reference_completion_path.pending_prefix.is_empty() {
-            resolved_accesses.push(reference_completion_path.pending_prefix);
+            resolved_accesses.push(reference_completion_path.pending_prefix.clone());
         }
 
-        match reference_completion_path.root.as_str() {
-            "input" => {
+        if reference_completion_path.is_schema_root() {
+            let schema_name = resolved_accesses.first()?;
+            let schema_summary = self.schemas.get(schema_name)?;
+
+            return Some(format!(
+                "**schema.{schema_name}**\n\nFields: {}",
+                schema_summary
+                    .fields
+                    .iter()
+                    .map(|(field_name, field_type)| format!("`{field_name}: {}`", field_type.render_type()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Input) => {
                 let field_type = resolve_singleton_reference_type(&self.input_fields, resolved_accesses.as_slice(), self)?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
             }
-            "secrets" => {
+            Some(ReferenceKeyword::Secrets) => {
                 let field_type = resolve_singleton_reference_type(&self.secrets_fields, resolved_accesses.as_slice(), self)?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
             }
-            "agent" => {
+            Some(ReferenceKeyword::Agent) => {
                 let agent_name = resolved_accesses.first()?;
                 let agent_summary = self.agents.get(agent_name)?;
 
@@ -1003,22 +1021,7 @@ impl SemanticIndex {
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
             }
-            "schema" => {
-                let schema_name = resolved_accesses.first()?;
-                let schema_summary = self.schemas.get(schema_name)?;
-
-                Some(format!(
-                    "**schema.{schema_name}**\n\nFields: {}",
-                    schema_summary
-                        .fields
-                        .iter()
-                        .map(|(field_name, field_type)| format!("`{field_name}: {}`", field_type.render_type()))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            }
-            "tool" => None,
-            _ => None,
+            Some(ReferenceKeyword::Tool) | None => None,
         }
     }
 
@@ -1206,6 +1209,18 @@ impl ReferenceCompletionPath {
             pending_prefix,
         })
     }
+
+    fn root_keyword(&self) -> Option<ReferenceKeyword> {
+        ReferenceKeyword::from_identifier(&self.root)
+    }
+
+    fn root_declaration_keyword(&self) -> Option<DeclarationKeyword> {
+        DeclarationKeyword::from_identifier(&self.root)
+    }
+
+    fn is_schema_root(&self) -> bool {
+        self.root_declaration_keyword() == Some(DeclarationKeyword::Schema)
+    }
 }
 
 fn all_provider_property_names() -> Vec<&'static str> {
@@ -1248,7 +1263,8 @@ fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpr
         .collect()
 }
 
-fn collect_named_declaration_names(source_text: &str, declaration_keyword: &str) -> Vec<String> {
+fn collect_named_declaration_names(source_text: &str, declaration_keyword: DeclarationKeyword) -> Vec<String> {
+    let declaration_keyword = declaration_keyword.as_str();
     let mut names = HashSet::<String>::new();
 
     for source_line in source_text.lines() {
@@ -1281,7 +1297,8 @@ fn collect_named_declaration_names(source_text: &str, declaration_keyword: &str)
     sorted_names
 }
 
-fn collect_singleton_block_field_names(source_text: &str, block_name: &str) -> Vec<String> {
+fn collect_singleton_block_field_names(source_text: &str, singleton_declaration_kind: SingletonDeclarationKind) -> Vec<String> {
+    let block_name = singleton_declaration_kind.as_str();
     let mut field_names = HashSet::<String>::new();
     let mut inside_block = false;
     let mut brace_depth = 0_isize;
@@ -1486,18 +1503,18 @@ impl ScopeScannerTokenState {
             }
         }
 
-        if last_identifier == "input" || last_identifier == "secrets" {
+        if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
             return ScopeBlock::TypedDeclaration;
         }
 
         if self.recent_identifiers.len() >= 2 {
             let penultimate_identifier = &self.recent_identifiers[self.recent_identifiers.len() - 2];
 
-            if penultimate_identifier == "agent" && last_identifier != "agent" {
+            if penultimate_identifier == DeclarationKeyword::Agent.as_str() && last_identifier != DeclarationKeyword::Agent.as_str() {
                 return ScopeBlock::Agent;
             }
 
-            if penultimate_identifier == "schema" && last_identifier != "schema" {
+            if penultimate_identifier == DeclarationKeyword::Schema.as_str() && last_identifier != DeclarationKeyword::Schema.as_str() {
                 return ScopeBlock::TypedDeclaration;
             }
         }
@@ -1809,43 +1826,7 @@ struct BuiltinSymbolDoc {
     documentation: &'static str,
 }
 
-const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 14] = [
-    BuiltinSymbolDoc {
-        label: "provider",
-        kind: CompletionKind::Keyword,
-        detail: "Provider declaration",
-        documentation: "Declares a provider configuration block.",
-    },
-    BuiltinSymbolDoc {
-        label: "agent",
-        kind: CompletionKind::Keyword,
-        detail: "Agent declaration",
-        documentation: "Declares an executable workflow agent.",
-    },
-    BuiltinSymbolDoc {
-        label: "schema",
-        kind: CompletionKind::Keyword,
-        detail: "Schema declaration",
-        documentation: "Declares a reusable named schema type.",
-    },
-    BuiltinSymbolDoc {
-        label: "input",
-        kind: CompletionKind::Keyword,
-        detail: "Input declaration",
-        documentation: "Declares workflow input fields.",
-    },
-    BuiltinSymbolDoc {
-        label: "secrets",
-        kind: CompletionKind::Keyword,
-        detail: "Secrets declaration",
-        documentation: "Declares workflow secret fields.",
-    },
-    BuiltinSymbolDoc {
-        label: "output",
-        kind: CompletionKind::Keyword,
-        detail: "Output declaration",
-        documentation: "Declares final workflow output fields.",
-    },
+const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 8] = [
     BuiltinSymbolDoc {
         label: "tool",
         kind: CompletionKind::Module,
@@ -1937,6 +1918,36 @@ trait InferenceSettingCompletionDoc {
     fn completion_documentation(self) -> &'static str;
 }
 
+trait DeclarationKeywordCompletionDoc {
+    fn completion_detail(self) -> &'static str;
+
+    fn completion_documentation(self) -> &'static str;
+}
+
+impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
+    fn completion_detail(self) -> &'static str {
+        match self {
+            DeclarationKeyword::Provider => "Provider declaration",
+            DeclarationKeyword::Secrets => "Secrets declaration",
+            DeclarationKeyword::Input => "Input declaration",
+            DeclarationKeyword::Schema => "Schema declaration",
+            DeclarationKeyword::Agent => "Agent declaration",
+            DeclarationKeyword::Output => "Output declaration",
+        }
+    }
+
+    fn completion_documentation(self) -> &'static str {
+        match self {
+            DeclarationKeyword::Provider => "Declares a provider configuration block.",
+            DeclarationKeyword::Secrets => "Declares workflow secret fields.",
+            DeclarationKeyword::Input => "Declares workflow input fields.",
+            DeclarationKeyword::Schema => "Declares a reusable named schema type.",
+            DeclarationKeyword::Agent => "Declares an executable workflow agent.",
+            DeclarationKeyword::Output => "Declares final workflow output fields.",
+        }
+    }
+}
+
 impl InferenceSettingCompletionDoc for InferenceSetting {
     fn completion_detail(self) -> &'static str {
         match self {
@@ -1972,8 +1983,7 @@ impl InferenceSettingCompletionDoc for InferenceSetting {
 }
 
 fn builtin_symbol_suggestions() -> Vec<CompletionSuggestion> {
-    BUILTIN_SYMBOL_DOCS
-        .iter()
+    builtin_symbol_docs()
         .map(|builtin_symbol_doc| CompletionSuggestion {
             label: builtin_symbol_doc.label.to_string(),
             kind: builtin_symbol_doc.kind,
@@ -1985,29 +1995,24 @@ fn builtin_symbol_suggestions() -> Vec<CompletionSuggestion> {
 }
 
 fn type_symbol_suggestions() -> Vec<CompletionSuggestion> {
-    ["string", "number", "float", "boolean", "null"]
+    primitive_type_expressions()
         .into_iter()
-        .map(|type_name| CompletionSuggestion {
-            label: type_name.to_string(),
-            kind: CompletionKind::Type,
-            detail: "Primitive type".to_string(),
-            documentation: "Primitive workflow type.".to_string(),
-            insert_text: type_name.to_string(),
+        .map(|primitive_type_expression| {
+            let type_name = primitive_type_expression.render_type();
+
+            CompletionSuggestion {
+                label: type_name.clone(),
+                kind: CompletionKind::Type,
+                detail: "Primitive type".to_string(),
+                documentation: "Primitive workflow type.".to_string(),
+                insert_text: type_name.clone(),
+            }
         })
         .collect()
 }
 
 fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
-    let direct_match = BUILTIN_SYMBOL_DOCS
-        .iter()
-        .find(|builtin_symbol_doc| builtin_symbol_doc.label == symbol_name)
-        .or_else(|| {
-            symbol_name.rsplit('.').next().and_then(|symbol_suffix| {
-                BUILTIN_SYMBOL_DOCS
-                    .iter()
-                    .find(|builtin_symbol_doc| builtin_symbol_doc.label == symbol_suffix)
-            })
-        })?;
+    let direct_match = find_builtin_symbol_doc(symbol_name).or_else(|| symbol_name.rsplit('.').next().and_then(find_builtin_symbol_doc))?;
 
     Some(format!(
         "**{}**\n\n{}\n\n{}",
@@ -2015,15 +2020,223 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
     ))
 }
 
+fn primitive_type_expressions() -> [TypeExpression; 5] {
+    [
+        TypeExpression::String,
+        TypeExpression::Number,
+        TypeExpression::Float,
+        TypeExpression::Boolean,
+        TypeExpression::Null,
+    ]
+}
+
+fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 6] {
+    [
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Provider.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Provider.completion_detail(),
+            documentation: DeclarationKeyword::Provider.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Agent.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Agent.completion_detail(),
+            documentation: DeclarationKeyword::Agent.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Schema.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Schema.completion_detail(),
+            documentation: DeclarationKeyword::Schema.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: SingletonDeclarationKind::Input.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Input.completion_detail(),
+            documentation: DeclarationKeyword::Input.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: SingletonDeclarationKind::Secrets.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Secrets.completion_detail(),
+            documentation: DeclarationKeyword::Secrets.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: SingletonDeclarationKind::Output.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Output.completion_detail(),
+            documentation: DeclarationKeyword::Output.completion_documentation(),
+        },
+    ]
+}
+
+fn builtin_symbol_docs() -> impl Iterator<Item = BuiltinSymbolDoc> {
+    declaration_builtin_symbol_docs().into_iter().chain(BUILTIN_SYMBOL_DOCS)
+}
+
+fn find_builtin_symbol_doc(symbol_name: &str) -> Option<BuiltinSymbolDoc> {
+    builtin_symbol_docs().find(|builtin_symbol_doc| builtin_symbol_doc.label == symbol_name)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DocumentState, Position};
+    use super::{CompletionSuggestion, DocumentState, InferenceSetting, Position, TypeExpression};
     use crate::protocol::DiagnosticCode;
+    use engine_ai_core::dsl::{
+        AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind,
+    };
 
     macro_rules! inline_document_with_cursor {
         ($($workflow_tokens:tt)*) => {{
             source_with_cursor(stringify!($($workflow_tokens)*))
         }};
+    }
+
+    macro_rules! assert_completion_contains_labels {
+        ($completion_suggestions:expr, $($expected_label:expr),+ $(,)?) => {{
+            let available_labels = completion_label_set($completion_suggestions);
+
+            $(
+                let expected_label = expected_completion_label($expected_label);
+
+                assert!(
+                    available_labels.contains(expected_label),
+                    "expected completion label `{expected_label}`; available labels: {:?}",
+                    available_labels
+                );
+            )+
+        }};
+    }
+
+    macro_rules! assert_completion_contains_all_inference_settings {
+        ($completion_suggestions:expr) => {{
+            for inference_setting in InferenceSetting::all() {
+                assert_completion_contains_labels!($completion_suggestions, inference_setting);
+            }
+        }};
+    }
+
+    macro_rules! assert_completion_contains {
+        ($completion_suggestions:expr, $first_label:expr $(, $additional_label:expr)* $(,)?) => {{
+            assert_completion_contains_labels!($completion_suggestions, $first_label $(, $additional_label)*);
+        }};
+    }
+
+    macro_rules! assert_diagnostics_contain_codes {
+        ($diagnostics:expr, $($expected_code:expr),+ $(,)?) => {{
+            $(
+                assert!(
+                    diagnostic_has_code($diagnostics, $expected_code),
+                    "expected diagnostic code `{:?}`; diagnostics: {:?}",
+                    $expected_code,
+                    $diagnostics
+                );
+            )+
+        }};
+    }
+
+    macro_rules! assert_completion_excludes_labels {
+        ($completion_suggestions:expr, $($unexpected_label:expr),+ $(,)?) => {{
+            let available_labels = completion_label_set($completion_suggestions);
+
+            $(
+                let unexpected_label = expected_completion_label($unexpected_label);
+
+                assert!(
+                    !available_labels.contains(unexpected_label),
+                    "unexpected completion label `{unexpected_label}`; available labels: {:?}",
+                    available_labels
+                );
+            )+
+        }};
+    }
+
+    fn completion_label_set(completion_suggestions: &[CompletionSuggestion]) -> std::collections::HashSet<&str> {
+        completion_suggestions
+            .iter()
+            .map(|completion_suggestion| completion_suggestion.label.as_str())
+            .collect()
+    }
+
+    fn diagnostic_has_code(diagnostics: &[super::DocumentDiagnostic], expected_code: DiagnosticCode) -> bool {
+        diagnostics.iter().any(|diagnostic| diagnostic.code == expected_code)
+    }
+
+    fn expected_completion_label<TLabel>(label_value: TLabel) -> &'static str
+    where
+        TLabel: CompletionLabel,
+    {
+        label_value.as_completion_label()
+    }
+
+    trait CompletionLabel {
+        fn as_completion_label(self) -> &'static str;
+    }
+
+    impl CompletionLabel for &'static str {
+        fn as_completion_label(self) -> &'static str {
+            self
+        }
+    }
+
+    impl CompletionLabel for InferenceSetting {
+        fn as_completion_label(self) -> &'static str {
+            self.key()
+        }
+    }
+
+    impl CompletionLabel for AgentExpressionPropertyName {
+        fn as_completion_label(self) -> &'static str {
+            self.as_str()
+        }
+    }
+
+    impl CompletionLabel for BuiltinFunctionName {
+        fn as_completion_label(self) -> &'static str {
+            self.as_str()
+        }
+    }
+
+    impl CompletionLabel for ReferenceKeyword {
+        fn as_completion_label(self) -> &'static str {
+            self.as_str()
+        }
+    }
+
+    impl CompletionLabel for SingletonDeclarationKind {
+        fn as_completion_label(self) -> &'static str {
+            self.as_str()
+        }
+    }
+
+    impl CompletionLabel for DeclarationKeyword {
+        fn as_completion_label(self) -> &'static str {
+            self.as_str()
+        }
+    }
+
+    impl CompletionLabel for TypeExpression {
+        fn as_completion_label(self) -> &'static str {
+            match self {
+                TypeExpression::String => "string",
+                TypeExpression::Number => "number",
+                TypeExpression::Float => "float",
+                TypeExpression::Boolean => "boolean",
+                TypeExpression::Null => "null",
+                TypeExpression::SchemaReference(_)
+                | TypeExpression::StringEnum(_)
+                | TypeExpression::Array {
+                    item_type: _,
+                    fixed_length: _,
+                }
+                | TypeExpression::Tuple(_)
+                | TypeExpression::Object(_)
+                | TypeExpression::Union(_) => {
+                    panic!("completion label is only defined for primitive TypeExpression variants")
+                }
+            }
+        }
     }
 
     fn source_with_cursor(source_template: &str) -> (String, Position) {
@@ -2198,9 +2411,7 @@ mod tests {
         let document_state = DocumentState::new(source.to_string());
         let diagnostics = document_state.diagnostics();
 
-        assert!(diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == DiagnosticCode::UnknownModelForProvider));
+        assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownModelForProvider);
     }
 
     #[test]
@@ -2222,9 +2433,7 @@ mod tests {
         let document_state = DocumentState::new(source.to_string());
         let diagnostics = document_state.diagnostics();
 
-        assert!(diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == DiagnosticCode::UnknownAgentProperty));
+        assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownAgentProperty);
     }
 
     #[test]
@@ -2247,17 +2456,7 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        dbg!(completion_suggestions
-            .iter()
-            .map(|completion_suggestion| completion_suggestion.label.clone())
-            .collect::<Vec<_>>());
-
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "first"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "last"));
+        assert_completion_contains!(&completion_suggestions, "first", "last");
     }
 
     #[test]
@@ -2272,17 +2471,33 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        dbg!(completion_suggestions
-            .iter()
-            .map(|completion_suggestion| completion_suggestion.label.clone())
-            .collect::<Vec<_>>());
+        assert_completion_contains!(&completion_suggestions, "endpoint", "api_key");
+    }
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "endpoint"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "api_key"));
+    #[test]
+    fn suggests_builtin_functions_and_singleton_keywords_from_enums() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            <cursor>
+
+            output {
+                value: null
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains_labels!(
+            &completion_suggestions,
+            BuiltinFunctionName::Context,
+            BuiltinFunctionName::Template,
+            BuiltinFunctionName::Compact,
+            SingletonDeclarationKind::Input,
+            SingletonDeclarationKind::Secrets,
+            SingletonDeclarationKind::Output,
+            ReferenceKeyword::Agent,
+            ReferenceKeyword::Tool
+        );
     }
 
     #[test]
@@ -2296,18 +2511,14 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "model"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "prompt"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "output"));
-        assert!(!completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "provider"));
+        assert_completion_contains_labels!(
+            &completion_suggestions,
+            AgentExpressionPropertyName::Model,
+            AgentExpressionPropertyName::Prompt,
+            "output"
+        );
+
+        assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider);
     }
 
     #[test]
@@ -2323,18 +2534,13 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "max_tokens"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "temperature"));
-        assert!(!completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "model"));
-        assert!(!completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "provider"));
+        assert_completion_contains_all_inference_settings!(&completion_suggestions);
+
+        assert_completion_excludes_labels!(
+            &completion_suggestions,
+            AgentExpressionPropertyName::Model,
+            DeclarationKeyword::Provider
+        );
     }
 
     #[test]
@@ -2355,12 +2561,8 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "prompt"));
-        assert!(!completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "max_tokens"));
+        assert_completion_contains_labels!(&completion_suggestions, AgentExpressionPropertyName::Prompt);
+        assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting::MaxTokens);
     }
 
     #[test]
@@ -2392,7 +2594,7 @@ mod tests {
 
         let max_tokens_completion = inference_completions
             .iter()
-            .find(|completion_suggestion| completion_suggestion.label == "max_tokens")
+            .find(|completion_suggestion| completion_suggestion.label == InferenceSetting::MaxTokens.key())
             .expect("inference completion should include max_tokens setting");
 
         assert_eq!(model_completion.detail, "Model binding (required)");
@@ -2417,12 +2619,7 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "gpt-4.1-mini"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "gpt-4o-mini"));
+        assert_completion_contains!(&completion_suggestions, "gpt-4.1-mini", "gpt-4o-mini");
     }
 
     #[test]
@@ -2440,9 +2637,7 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "Person"));
+        assert_completion_contains!(&completion_suggestions, "Person");
     }
 
     #[test]
@@ -2470,17 +2665,7 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "string"));
-        assert!(completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "number"));
-        assert!(!completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "provider"));
-        assert!(!completion_suggestions
-            .iter()
-            .any(|completion_suggestion| completion_suggestion.label == "agent"));
+        assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
+        assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider, DeclarationKeyword::Agent);
     }
 }

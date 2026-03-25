@@ -80,6 +80,43 @@ pub enum Declaration {
     Output(OutputDeclaration),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DeclarationKeyword {
+    Provider,
+    Secrets,
+    Input,
+    Schema,
+    Agent,
+    Output,
+}
+
+impl DeclarationKeyword {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "provider" => Some(Self::Provider),
+            "secrets" => Some(Self::Secrets),
+            "input" => Some(Self::Input),
+            "schema" => Some(Self::Schema),
+            "agent" => Some(Self::Agent),
+            "output" => Some(Self::Output),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Provider => "provider",
+            Self::Secrets => "secrets",
+            Self::Input => "input",
+            Self::Schema => "schema",
+            Self::Agent => "agent",
+            Self::Output => "output",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderDeclaration {
     pub name: String,
