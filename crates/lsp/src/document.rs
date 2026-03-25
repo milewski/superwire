@@ -1,13 +1,20 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use engine_ai_core::dsl::{
-    parse_workflow, validate_workflow, AgentProperty, Declaration, DeclarationKeyword, DslParseError, Expression, ProviderDeclaration,
-    ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, ValidationIssue, ValidationReport,
-    Workflow,
-};
-use engine_ai_core::runtime::{InferenceSetting, ProviderDriver};
+mod scope;
+mod snapshot;
+mod types;
 
-use crate::protocol::{DiagnosticCode, Position, Range};
+use scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
+use snapshot::SemanticSnapshot;
+pub use types::{CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic};
+
+use engine_ai_core::dsl::{
+    parse_workflow, AgentProperty, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, ReferenceKeyword,
+    SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
+};
+use engine_ai_core::runtime::ProviderDriver;
+
+use crate::protocol::{Position, Range};
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
@@ -41,6 +48,12 @@ impl DocumentState {
             return Vec::new();
         };
 
+        let inside_interpolation_expression = is_inside_interpolation_expression(&line_prefix);
+
+        if self.is_inside_multiline_string_literal(position) && !inside_interpolation_expression {
+            return Vec::new();
+        }
+
         let completion_scope = self.completion_scope(position);
 
         if completion_scope == CompletionScope::TypedDeclarations {
@@ -56,7 +69,7 @@ impl DocumentState {
         let semantic_index = self.semantic_index_for_completion(position);
         let line_has_property_separator = line_prefix.trim_start().contains(':');
 
-        if !line_has_property_separator {
+        if !line_has_property_separator && !inside_interpolation_expression {
             match completion_scope {
                 CompletionScope::InferenceSettings => {
                     return inference_setting_scope_suggestions(&line_prefix);
@@ -85,7 +98,13 @@ impl DocumentState {
         }
 
         if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
-            let reference_suggestions = semantic_index.reference_path_suggestions(&reference_completion_path);
+            let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(&line_prefix);
+            let reference_suggestions =
+                semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint);
+
+            if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
+                return reference_suggestions;
+            }
 
             if !reference_suggestions.is_empty() {
                 return reference_suggestions;
@@ -184,134 +203,13 @@ impl DocumentState {
 
         completion_scope_at_offset(&self.text, cursor_offset)
     }
-}
 
-#[derive(Debug)]
-struct SemanticSnapshot {
-    parse_error: Option<DslParseError>,
-    validation_report: Option<ValidationReport>,
-    semantic_index: SemanticIndex,
-}
-
-impl SemanticSnapshot {
-    fn from_text(source_text: &str) -> Self {
-        match parse_workflow(source_text) {
-            Ok(workflow) => {
-                let validation_report = validate_workflow(&workflow);
-                let semantic_index = SemanticIndex::from_workflow(&workflow);
-
-                Self {
-                    parse_error: None,
-                    validation_report: Some(validation_report),
-                    semantic_index,
-                }
-            }
-            Err(parse_error) => Self {
-                parse_error: Some(parse_error),
-                validation_report: None,
-                semantic_index: SemanticIndex::from_text_fallback(source_text),
-            },
-        }
-    }
-
-    fn diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
-        if self.parse_error.is_some() {
-            return self.parse_diagnostics(source_text);
-        }
-
-        let Some(validation_report) = &self.validation_report else {
-            return Vec::new();
+    fn is_inside_multiline_string_literal(&self, position: Position) -> bool {
+        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
+            return false;
         };
 
-        validation_report
-            .issues_with_spans()
-            .map(|(validation_issue, optional_span)| {
-                let range = optional_span.map_or_else(zero_range, |source_span| source_span_to_range(source_text, source_span));
-
-                DocumentDiagnostic {
-                    range,
-                    severity: DiagnosticSeverity::Error,
-                    code: DiagnosticCode::from(validation_issue),
-                    message: validation_issue.message(),
-                }
-            })
-            .collect()
-    }
-
-    fn parse_diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
-        let Some(parse_error) = &self.parse_error else {
-            return Vec::new();
-        };
-
-        let range = parse_error
-            .span()
-            .map_or_else(zero_range, |source_span| source_span_to_range(source_text, source_span));
-
-        vec![DocumentDiagnostic {
-            range,
-            severity: DiagnosticSeverity::Error,
-            code: DiagnosticCode::from(parse_error),
-            message: parse_error.to_string(),
-        }]
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct DocumentDiagnostic {
-    pub range: Range,
-    pub severity: DiagnosticSeverity,
-    pub code: DiagnosticCode,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DiagnosticSeverity {
-    Error,
-    Warning,
-}
-
-impl DiagnosticSeverity {
-    #[must_use]
-    pub fn as_lsp_severity(self) -> u32 {
-        match self {
-            Self::Error => 1,
-            Self::Warning => 2,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CompletionSuggestion {
-    pub label: String,
-    pub kind: CompletionKind,
-    pub detail: String,
-    pub documentation: String,
-    pub insert_text: String,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CompletionKind {
-    Keyword,
-    Function,
-    Module,
-    Property,
-    Variable,
-    Type,
-    Value,
-}
-
-impl CompletionKind {
-    #[must_use]
-    pub fn as_lsp_kind(self) -> u32 {
-        match self {
-            Self::Keyword => 14,
-            Self::Function => 3,
-            Self::Module => 9,
-            Self::Property => 10,
-            Self::Variable => 6,
-            Self::Type => 13,
-            Self::Value => 12,
-        }
+        is_inside_multiline_string_literal(&self.text, cursor_offset)
     }
 }
 
@@ -599,8 +497,16 @@ impl SemanticIndex {
         all_provider_property_names()
     }
 
-    fn reference_path_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+    fn reference_path_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+    ) -> Vec<CompletionSuggestion> {
         if reference_completion_path.is_schema_root() {
+            if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
+                return Vec::new();
+            }
+
             return self.schema_reference_suggestions(reference_completion_path);
         }
 
@@ -610,14 +516,16 @@ impl SemanticIndex {
                 &reference_completion_path.complete_accesses,
                 &reference_completion_path.pending_prefix,
                 "Input field",
+                reference_completion_constraint,
             ),
             Some(ReferenceKeyword::Secrets) => self.singleton_reference_suggestions(
                 &self.secrets_fields,
                 &reference_completion_path.complete_accesses,
                 &reference_completion_path.pending_prefix,
                 "Secrets field",
+                reference_completion_constraint,
             ),
-            Some(ReferenceKeyword::Agent) => self.agent_reference_suggestions(reference_completion_path),
+            Some(ReferenceKeyword::Agent) => self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint),
             Some(ReferenceKeyword::Tool) | None => Vec::new(),
         }
     }
@@ -628,11 +536,15 @@ impl SemanticIndex {
         complete_accesses: &[String],
         pending_prefix: &str,
         detail_prefix: &str,
+        reference_completion_constraint: ReferenceCompletionConstraint,
     ) -> Vec<CompletionSuggestion> {
         if complete_accesses.is_empty() {
             return root_fields
                 .iter()
                 .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
+                .filter(|(_, field_type)| {
+                    reference_completion_constraint == ReferenceCompletionConstraint::None || field_type.supports_for_loop_iterable()
+                })
                 .map(|(field_name, field_type)| CompletionSuggestion {
                     label: field_name.clone(),
                     kind: CompletionKind::Property,
@@ -650,15 +562,34 @@ impl SemanticIndex {
 
         let candidate_types = self.resolve_access_path(vec![root_field_type], &complete_accesses[1..]);
 
-        self.field_suggestions_from_types(candidate_types.as_slice(), pending_prefix)
+        self.field_suggestions_from_types(candidate_types.as_slice(), pending_prefix, reference_completion_constraint)
     }
 
-    fn agent_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+    fn agent_reference_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+    ) -> Vec<CompletionSuggestion> {
         if reference_completion_path.complete_accesses.is_empty() {
             return self
                 .agent_names
                 .iter()
                 .filter(|agent_name| agent_name.starts_with(&reference_completion_path.pending_prefix))
+                .filter(|agent_name| {
+                    if reference_completion_constraint == ReferenceCompletionConstraint::None {
+                        return true;
+                    }
+
+                    let Some(agent_summary) = self.agents.get(*agent_name) else {
+                        return false;
+                    };
+
+                    let Some(agent_output_type) = &agent_summary.output_type else {
+                        return false;
+                    };
+
+                    agent_output_type.supports_for_loop_iterable()
+                })
                 .map(|agent_name| CompletionSuggestion {
                     label: agent_name.clone(),
                     kind: CompletionKind::Variable,
@@ -681,7 +612,11 @@ impl SemanticIndex {
         let remaining_accesses = &reference_completion_path.complete_accesses[1..];
         let candidate_types = self.resolve_access_path(vec![agent_output_type], remaining_accesses);
 
-        self.field_suggestions_from_types(candidate_types.as_slice(), &reference_completion_path.pending_prefix)
+        self.field_suggestions_from_types(
+            candidate_types.as_slice(),
+            &reference_completion_path.pending_prefix,
+            reference_completion_constraint,
+        )
     }
 
     fn schema_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
@@ -723,10 +658,19 @@ impl SemanticIndex {
 
         let candidate_types = self.resolve_access_path(vec![root_type], &reference_completion_path.complete_accesses[1..]);
 
-        self.field_suggestions_from_types(candidate_types.as_slice(), &reference_completion_path.pending_prefix)
+        self.field_suggestions_from_types(
+            candidate_types.as_slice(),
+            &reference_completion_path.pending_prefix,
+            ReferenceCompletionConstraint::None,
+        )
     }
 
-    fn field_suggestions_from_types(&self, candidate_types: &[TypeExpression], pending_prefix: &str) -> Vec<CompletionSuggestion> {
+    fn field_suggestions_from_types(
+        &self,
+        candidate_types: &[TypeExpression],
+        pending_prefix: &str,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+    ) -> Vec<CompletionSuggestion> {
         let mut available_fields = BTreeMap::<String, TypeExpression>::new();
 
         for candidate_type in candidate_types {
@@ -736,6 +680,9 @@ impl SemanticIndex {
         available_fields
             .into_iter()
             .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
+            .filter(|(_, field_type)| {
+                reference_completion_constraint == ReferenceCompletionConstraint::None || field_type.supports_for_loop_iterable()
+            })
             .map(|(field_name, field_type)| CompletionSuggestion {
                 label: field_name.clone(),
                 kind: CompletionKind::Property,
@@ -1223,6 +1170,22 @@ impl ReferenceCompletionPath {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReferenceCompletionConstraint {
+    None,
+    ForLoopIterable,
+}
+
+impl ReferenceCompletionConstraint {
+    fn from_line_prefix(line_prefix: &str) -> Self {
+        if is_for_loop_iterable_reference_context(line_prefix) {
+            return Self::ForLoopIterable;
+        }
+
+        Self::None
+    }
+}
+
 fn all_provider_property_names() -> Vec<&'static str> {
     let mut property_name_set = HashSet::<&'static str>::new();
 
@@ -1390,6 +1353,102 @@ fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
     Some(&line_prefix[start_index..])
 }
 
+fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
+    let open_count = line_prefix.match_indices("{{").count();
+    let close_count = line_prefix.match_indices("}}").count();
+
+    open_count > close_count
+}
+
+fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
+    let source_prefix = &source_text[..cursor_offset];
+    let triple_quote_count = source_prefix.match_indices("\"\"\"").count();
+
+    triple_quote_count % 2 == 1
+}
+
+fn is_for_loop_iterable_reference_context(line_prefix: &str) -> bool {
+    let Some(reference_token) = trailing_reference_token(line_prefix) else {
+        return false;
+    };
+
+    let Some(reference_start_index) = line_prefix.rfind(reference_token) else {
+        return false;
+    };
+
+    let prefix_before_reference = &line_prefix[..reference_start_index];
+    let for_clause_prefix = prefix_before_reference
+        .rfind(" for ")
+        .map_or(prefix_before_reference, |for_clause_index| {
+            &prefix_before_reference[for_clause_index + 1..]
+        });
+
+    let Some(after_for_keyword) = for_clause_prefix.strip_prefix("for ") else {
+        return false;
+    };
+
+    let Some(iterator_name) = leading_identifier(after_for_keyword) else {
+        return false;
+    };
+
+    let remaining_after_iterator = after_for_keyword[iterator_name.len()..].trim_start();
+    let Some(after_in_keyword) = remaining_after_iterator.strip_prefix("in") else {
+        return false;
+    };
+
+    after_in_keyword.starts_with(char::is_whitespace)
+}
+
+fn leading_identifier(source_text: &str) -> Option<&str> {
+    let mut identifier_end = 0;
+
+    for character in source_text.chars() {
+        if character.is_ascii_alphanumeric() || character == '_' {
+            identifier_end += character.len_utf8();
+            continue;
+        }
+
+        break;
+    }
+
+    if identifier_end == 0 {
+        return None;
+    }
+
+    let identifier = &source_text[..identifier_end];
+
+    if !is_identifier(identifier) {
+        return None;
+    }
+
+    Some(identifier)
+}
+
+trait ForLoopIterableType {
+    fn supports_for_loop_iterable(&self) -> bool;
+}
+
+impl ForLoopIterableType for TypeExpression {
+    fn supports_for_loop_iterable(&self) -> bool {
+        match self {
+            TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            } => true,
+            TypeExpression::Union(union_members) => union_members.iter().any(ForLoopIterableType::supports_for_loop_iterable),
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::SchemaReference(_)
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::Tuple(_)
+            | TypeExpression::Object(_) => false,
+        }
+    }
+}
+
 fn is_identifier(identifier: &str) -> bool {
     let mut characters = identifier.chars();
     let Some(first_character) = characters.next() else {
@@ -1401,205 +1460,6 @@ fn is_identifier(identifier: &str) -> bool {
     }
 
     characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CompletionScope {
-    General,
-    AgentProperties,
-    InferenceSettings,
-    TypedDeclarations,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScopeBlock {
-    Other,
-    Agent,
-    Inference,
-    TypedDeclaration,
-}
-
-fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> CompletionScope {
-    let mut scope_blocks = Vec::<ScopeBlock>::new();
-    let mut token_state = ScopeScannerTokenState::default();
-    let mut string_state = ScopeScannerStringState::default();
-
-    for character in source_text[..cursor_offset].chars() {
-        if string_state.accept(character) {
-            continue;
-        }
-
-        if character.is_ascii_alphanumeric() || character == '_' {
-            token_state.current_identifier.push(character);
-            continue;
-        }
-
-        token_state.flush_identifier();
-
-        match character {
-            ':' => {
-                token_state.pending_property = token_state.recent_identifiers.last().cloned();
-            }
-            '{' => {
-                let block_kind = token_state.block_for_open_brace(scope_blocks.last().copied());
-                scope_blocks.push(block_kind);
-                token_state.clear_after_brace();
-            }
-            '}' => {
-                let _ = scope_blocks.pop();
-                token_state.clear_after_brace();
-            }
-            '\n' | '\r' | ';' => {
-                token_state.clear_after_statement();
-            }
-            ',' => {
-                token_state.pending_property = None;
-            }
-            _ => {}
-        }
-    }
-
-    match scope_blocks.last().copied() {
-        Some(ScopeBlock::Inference) => CompletionScope::InferenceSettings,
-        Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
-        Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
-        Some(ScopeBlock::Other) | None => CompletionScope::General,
-    }
-}
-
-#[derive(Debug, Default)]
-struct ScopeScannerTokenState {
-    current_identifier: String,
-    recent_identifiers: Vec<String>,
-    pending_property: Option<String>,
-}
-
-impl ScopeScannerTokenState {
-    fn flush_identifier(&mut self) {
-        if self.current_identifier.is_empty() {
-            return;
-        }
-
-        self.recent_identifiers.push(self.current_identifier.clone());
-        self.current_identifier.clear();
-
-        if self.recent_identifiers.len() > 6 {
-            let _ = self.recent_identifiers.remove(0);
-        }
-    }
-
-    fn block_for_open_brace(&self, parent_block: Option<ScopeBlock>) -> ScopeBlock {
-        let Some(last_identifier) = self.recent_identifiers.last() else {
-            return ScopeBlock::Other;
-        };
-
-        if parent_block == Some(ScopeBlock::TypedDeclaration) {
-            return ScopeBlock::TypedDeclaration;
-        }
-
-        if let Some(pending_property) = &self.pending_property {
-            if pending_property == "inference" && parent_block == Some(ScopeBlock::Agent) {
-                return ScopeBlock::Inference;
-            }
-        }
-
-        if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
-            return ScopeBlock::TypedDeclaration;
-        }
-
-        if self.recent_identifiers.len() >= 2 {
-            let penultimate_identifier = &self.recent_identifiers[self.recent_identifiers.len() - 2];
-
-            if penultimate_identifier == DeclarationKeyword::Agent.as_str() && last_identifier != DeclarationKeyword::Agent.as_str() {
-                return ScopeBlock::Agent;
-            }
-
-            if penultimate_identifier == DeclarationKeyword::Schema.as_str() && last_identifier != DeclarationKeyword::Schema.as_str() {
-                return ScopeBlock::TypedDeclaration;
-            }
-        }
-
-        ScopeBlock::Other
-    }
-
-    fn clear_after_brace(&mut self) {
-        self.pending_property = None;
-        self.recent_identifiers.clear();
-        self.current_identifier.clear();
-    }
-
-    fn clear_after_statement(&mut self) {
-        self.pending_property = None;
-        self.recent_identifiers.clear();
-        self.current_identifier.clear();
-    }
-}
-
-#[derive(Debug, Default)]
-struct ScopeScannerStringState {
-    inside_string: bool,
-    escaping: bool,
-}
-
-impl ScopeScannerStringState {
-    fn accept(&mut self, character: char) -> bool {
-        if self.inside_string {
-            if self.escaping {
-                self.escaping = false;
-                return true;
-            }
-
-            if character == '\\' {
-                self.escaping = true;
-                return true;
-            }
-
-            if character == '"' {
-                self.inside_string = false;
-            }
-
-            return true;
-        }
-
-        if character == '"' {
-            self.inside_string = true;
-            return true;
-        }
-
-        false
-    }
-}
-
-fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
-    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
-
-    AGENT_PROPERTY_DOCS
-        .iter()
-        .filter(|agent_property_doc| agent_property_doc.name.starts_with(property_prefix))
-        .map(|agent_property_doc| CompletionSuggestion {
-            label: agent_property_doc.name.to_string(),
-            kind: CompletionKind::Property,
-            detail: agent_property_doc.detail.to_string(),
-            documentation: agent_property_doc.documentation.to_string(),
-            insert_text: agent_property_doc.name.to_string(),
-        })
-        .collect()
-}
-
-fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
-    let setting_prefix = trailing_identifier(line_prefix).unwrap_or_default();
-
-    InferenceSetting::all()
-        .into_iter()
-        .filter(|inference_setting| inference_setting.key().starts_with(setting_prefix))
-        .map(|inference_setting| CompletionSuggestion {
-            label: inference_setting.key().to_string(),
-            kind: CompletionKind::Property,
-            detail: inference_setting.completion_detail().to_string(),
-            documentation: inference_setting.completion_documentation().to_string(),
-            insert_text: inference_setting.key().to_string(),
-        })
-        .collect()
 }
 
 fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
@@ -1693,80 +1553,6 @@ fn zero_range() -> Range {
     Range {
         start: Position { line: 0, character: 0 },
         end: Position { line: 0, character: 1 },
-    }
-}
-
-impl From<&DslParseError> for DiagnosticCode {
-    fn from(parse_error: &DslParseError) -> Self {
-        match parse_error {
-            DslParseError::Pest { message: _, span: _ } => Self::ParseError,
-            DslParseError::MissingNode {
-                expected: _,
-                context: _,
-                span: _,
-            } => Self::MissingNode,
-            DslParseError::UnexpectedRule {
-                rule: _,
-                context: _,
-                span: _,
-            } => Self::UnexpectedRule,
-            DslParseError::InvalidIntegerLiteral {
-                literal: _,
-                context: _,
-                span: _,
-            } => Self::InvalidIntegerLiteral,
-        }
-    }
-}
-
-impl From<&ValidationIssue> for DiagnosticCode {
-    fn from(validation_issue: &ValidationIssue) -> Self {
-        match validation_issue {
-            ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
-            ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
-            ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
-            ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
-            ValidationIssue::UnknownAgentProperty {
-                agent_name: _,
-                property_name: _,
-            } => Self::UnknownAgentProperty,
-            ValidationIssue::InvalidModelExpression { agent_name: _ } => Self::InvalidModelExpression,
-            ValidationIssue::UnknownProviderInModel {
-                agent_name: _,
-                provider_name: _,
-            } => Self::UnknownProviderInModel,
-            ValidationIssue::UnknownModelForProvider {
-                agent_name: _,
-                provider_name: _,
-                model_name: _,
-            } => Self::UnknownModelForProvider,
-            ValidationIssue::UnknownAgentReference {
-                referenced_agent: _,
-                context: _,
-            } => Self::UnknownAgentReference,
-            ValidationIssue::InvalidKeywordReferenceRoot { keyword: _, context: _ } => Self::InvalidKeywordReferenceRoot,
-            ValidationIssue::MissingInputDeclaration { context: _ } => Self::MissingInputDeclaration,
-            ValidationIssue::MissingSecretsDeclaration { context: _ } => Self::MissingSecretsDeclaration,
-            ValidationIssue::UnknownInputFieldReference { field_name: _, context: _ } => Self::UnknownInputFieldReference,
-            ValidationIssue::UnknownSecretsFieldReference { field_name: _, context: _ } => Self::UnknownSecretsFieldReference,
-            ValidationIssue::SecretReferenceInLlmContext {
-                reference_path: _,
-                context: _,
-            } => Self::SecretReferenceInLlmContext,
-            ValidationIssue::MissingAgentOutputTypeForFieldReference { agent_name: _, context: _ } => {
-                Self::MissingAgentOutputTypeForFieldReference
-            }
-            ValidationIssue::InvalidReferencePath {
-                reference_path: _,
-                invalid_field: _,
-                context: _,
-            } => Self::InvalidReferencePath,
-            ValidationIssue::UnknownSchemaReference {
-                referenced_schema: _,
-                context: _,
-            } => Self::UnknownSchemaReference,
-            ValidationIssue::AgentDependencyCycle { agent_names: _ } => Self::AgentDependencyCycle,
-        }
     }
 }
 
@@ -1877,47 +1663,6 @@ const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 8] = [
     },
 ];
 
-#[derive(Debug, Clone, Copy)]
-struct AgentPropertyDoc {
-    name: &'static str,
-    detail: &'static str,
-    documentation: &'static str,
-}
-
-const AGENT_PROPERTY_DOCS: [AgentPropertyDoc; 5] = [
-    AgentPropertyDoc {
-        name: "model",
-        detail: "Model binding (required)",
-        documentation: "Selects provider and model call used by this agent.",
-    },
-    AgentPropertyDoc {
-        name: "prompt",
-        detail: "Prompt expression (required)",
-        documentation: "Defines the prompt sent to the provider.",
-    },
-    AgentPropertyDoc {
-        name: "output",
-        detail: "Output type",
-        documentation: "Declares the expected structured output type.",
-    },
-    AgentPropertyDoc {
-        name: "inference",
-        detail: "Inference settings object",
-        documentation: "Configures sampling and provider retry behavior.",
-    },
-    AgentPropertyDoc {
-        name: "context",
-        detail: "Context expression",
-        documentation: "Prepends evaluated context to the rendered prompt.",
-    },
-];
-
-trait InferenceSettingCompletionDoc {
-    fn completion_detail(self) -> &'static str;
-
-    fn completion_documentation(self) -> &'static str;
-}
-
 trait DeclarationKeywordCompletionDoc {
     fn completion_detail(self) -> &'static str;
 
@@ -1944,40 +1689,6 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Schema => "Declares a reusable named schema type.",
             DeclarationKeyword::Agent => "Declares an executable workflow agent.",
             DeclarationKeyword::Output => "Declares final workflow output fields.",
-        }
-    }
-}
-
-impl InferenceSettingCompletionDoc for InferenceSetting {
-    fn completion_detail(self) -> &'static str {
-        match self {
-            Self::MaxTokens => "Token budget (integer)",
-            Self::Temperature => "Sampling temperature (number)",
-            Self::TopP => "Nucleus sampling top_p (number)",
-            Self::TopK => "Top-k sampling limit (integer)",
-            Self::FrequencyPenalty => "Frequency penalty (number)",
-            Self::PresencePenalty => "Presence penalty (number)",
-            Self::RepeatPenalty => "Repeat penalty (number)",
-            Self::Seed => "Random seed (integer)",
-            Self::StuckThreshold => "Stuck retry threshold (integer)",
-            Self::ProviderMaxRetries => "Provider max retries (integer)",
-            Self::ProviderRetryBaseDelayMs => "Retry base delay ms (integer)",
-        }
-    }
-
-    fn completion_documentation(self) -> &'static str {
-        match self {
-            Self::MaxTokens => "Maximum number of generated tokens.",
-            Self::Temperature => "Controls randomness in token sampling.",
-            Self::TopP => "Limits sampling to the smallest token set reaching cumulative probability `p`.",
-            Self::TopK => "Limits sampling to the top `k` most likely tokens.",
-            Self::FrequencyPenalty => "Penalizes tokens repeated frequently in generated output.",
-            Self::PresencePenalty => "Penalizes tokens that already appeared in generated output.",
-            Self::RepeatPenalty => "Applies multiplicative penalty to repeated tokens.",
-            Self::Seed => "Sets deterministic random seed for repeatable generation.",
-            Self::StuckThreshold => "Retry generation after this many stalled attempts.",
-            Self::ProviderMaxRetries => "Maximum retries for provider-side failures.",
-            Self::ProviderRetryBaseDelayMs => "Base backoff delay in milliseconds between provider retries.",
         }
     }
 }
@@ -2081,11 +1792,12 @@ fn find_builtin_symbol_doc(symbol_name: &str) -> Option<BuiltinSymbolDoc> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompletionSuggestion, DocumentState, InferenceSetting, Position, TypeExpression};
+    use super::{CompletionSuggestion, DocumentState, Position, TypeExpression};
     use crate::protocol::DiagnosticCode;
     use engine_ai_core::dsl::{
         AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind,
     };
+    use engine_ai_core::runtime::InferenceSetting;
 
     macro_rules! inline_document_with_cursor {
         ($($workflow_tokens:tt)*) => {{
@@ -2111,9 +1823,17 @@ mod tests {
 
     macro_rules! assert_completion_contains_all_inference_settings {
         ($completion_suggestions:expr) => {{
-            for inference_setting in InferenceSetting::all() {
-                assert_completion_contains_labels!($completion_suggestions, inference_setting);
-            }
+            assert_completion_contains_label_groups!($completion_suggestions, InferenceSetting);
+        }};
+    }
+
+    macro_rules! assert_completion_contains_label_groups {
+        ($completion_suggestions:expr, $($label_group:ident),+ $(,)?) => {{
+            let available_labels = completion_label_set($completion_suggestions);
+
+            $(
+                assert_completion_contains_label_group::<$label_group>(&available_labels);
+            )+
         }};
     }
 
@@ -2137,6 +1857,10 @@ mod tests {
     }
 
     macro_rules! assert_completion_excludes_labels {
+        ($completion_suggestions:expr, $label_group:ident $(,)?) => {{
+            assert_completion_excludes_label_group::<$label_group>($completion_suggestions);
+        }};
+
         ($completion_suggestions:expr, $($unexpected_label:expr),+ $(,)?) => {{
             let available_labels = completion_label_set($completion_suggestions);
 
@@ -2159,19 +1883,51 @@ mod tests {
             .collect()
     }
 
+    fn assert_completion_excludes_label_group<TLabelGroup>(completion_suggestions: &[CompletionSuggestion])
+    where
+        TLabelGroup: CompletionLabelGroup,
+    {
+        let available_labels = completion_label_set(completion_suggestions);
+
+        for label_in_group in TLabelGroup::completion_labels() {
+            assert!(
+                !available_labels.contains(label_in_group),
+                "unexpected completion label `{label_in_group}` from group; available labels: {:?}",
+                available_labels
+            );
+        }
+    }
+
+    fn assert_completion_contains_label_group<TLabelGroup>(available_labels: &std::collections::HashSet<&str>)
+    where
+        TLabelGroup: CompletionLabelGroup,
+    {
+        for label_in_group in TLabelGroup::completion_labels() {
+            assert!(
+                available_labels.contains(label_in_group),
+                "expected completion label `{label_in_group}` from group; available labels: {:?}",
+                available_labels
+            );
+        }
+    }
+
     fn diagnostic_has_code(diagnostics: &[super::DocumentDiagnostic], expected_code: DiagnosticCode) -> bool {
         diagnostics.iter().any(|diagnostic| diagnostic.code == expected_code)
     }
 
-    fn expected_completion_label<TLabel>(label_value: TLabel) -> &'static str
+    fn expected_completion_label<Label>(label_value: Label) -> &'static str
     where
-        TLabel: CompletionLabel,
+        Label: CompletionLabel,
     {
         label_value.as_completion_label()
     }
 
     trait CompletionLabel {
         fn as_completion_label(self) -> &'static str;
+    }
+
+    trait CompletionLabelGroup {
+        fn completion_labels() -> Vec<&'static str>;
     }
 
     impl CompletionLabel for &'static str {
@@ -2183,6 +1939,24 @@ mod tests {
     impl CompletionLabel for InferenceSetting {
         fn as_completion_label(self) -> &'static str {
             self.key()
+        }
+    }
+
+    impl CompletionLabelGroup for InferenceSetting {
+        fn completion_labels() -> Vec<&'static str> {
+            InferenceSetting::all().into_iter().map(InferenceSetting::key).collect()
+        }
+    }
+
+    impl CompletionLabelGroup for BuiltinFunctionName {
+        fn completion_labels() -> Vec<&'static str> {
+            vec![Self::Context.as_str(), Self::Template.as_str(), Self::Compact.as_str()]
+        }
+    }
+
+    impl CompletionLabelGroup for SingletonDeclarationKind {
+        fn completion_labels() -> Vec<&'static str> {
+            vec![Self::Input.as_str(), Self::Secrets.as_str(), Self::Output.as_str()]
         }
     }
 
@@ -2242,12 +2016,9 @@ mod tests {
     fn source_with_cursor(source_template: &str) -> (String, Position) {
         let normalized_template = normalize_inline_cursor_layout(source_template);
         let compact_cursor_marker = "<cursor>";
-        let spaced_cursor_marker = "< cursor >";
 
         let (cursor_marker, cursor_byte_offset) = if let Some(marker_offset) = normalized_template.find(compact_cursor_marker) {
             (compact_cursor_marker, marker_offset)
-        } else if let Some(marker_offset) = normalized_template.find(spaced_cursor_marker) {
-            (spaced_cursor_marker, marker_offset)
         } else {
             panic!("cursor marker should exist in test source");
         };
@@ -2395,7 +2166,7 @@ mod tests {
 
     #[test]
     fn reports_unknown_model_for_provider_diagnostic() {
-        let source = r#"
+        let (source, _cursor_position) = inline_document_with_cursor! {
             provider openai {
                 driver: "openai"
                 models: ["gpt-4.1-mini"]
@@ -2406,9 +2177,10 @@ mod tests {
                 prompt: "hello"
                 output: string
             }
-        "#;
+            <cursor>
+        };
 
-        let document_state = DocumentState::new(source.to_string());
+        let document_state = DocumentState::new(source);
         let diagnostics = document_state.diagnostics();
 
         assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownModelForProvider);
@@ -2416,7 +2188,7 @@ mod tests {
 
     #[test]
     fn reports_unknown_agent_property_diagnostic() {
-        let source = r#"
+        let (source, _cursor_position) = inline_document_with_cursor! {
             provider openai {
                 driver: "openai"
                 models: ["gpt-4.1-mini"]
@@ -2428,9 +2200,10 @@ mod tests {
                 retries: 3
                 output: string
             }
-        "#;
+            <cursor>
+        };
 
-        let document_state = DocumentState::new(source.to_string());
+        let document_state = DocumentState::new(source);
         let diagnostics = document_state.diagnostics();
 
         assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownAgentProperty);
@@ -2457,6 +2230,215 @@ mod tests {
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
         assert_completion_contains!(&completion_suggestions, "first", "last");
+    }
+
+    #[test]
+    fn completes_input_fields_in_for_loop_iterable_reference() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            input {
+                products: [string]
+            }
+
+            agent worker for item in input.<cursor> {
+                prompt: item
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains!(&completion_suggestions, "products");
+    }
+
+    #[test]
+    fn completes_agent_references_inside_prompt_string_interpolation() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            agent context_agent {
+                model: openai("gpt-4.1-mini")
+                prompt: "hello"
+                output: string
+            }
+
+            agent worker {
+                model: openai("gpt-4.1-mini")
+                prompt: "example {{ agent.<cursor> }}"
+                output: string
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains!(&completion_suggestions, "context_agent");
+    }
+
+    #[test]
+    fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
+        let (source, cursor_position) = source_with_cursor(
+            r#"
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            agent context_agent {
+                model: openai("gpt-4.1-mini")
+                prompt: "hello"
+                output: string
+            }
+
+            agent worker {
+                model: openai("gpt-4.1-mini")
+                prompt: """
+                    example {{ agent.<cursor> }}
+                """
+                output: string
+            }
+            "#,
+        );
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains!(&completion_suggestions, "context_agent");
+    }
+
+    #[test]
+    fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
+        let (source, cursor_position) = source_with_cursor(
+            r#"
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            agent worker {
+                model: openai("gpt-4.1-mini")
+                prompt: """
+                    Like this <cursor>
+                """
+                output: string
+            }
+            "#,
+        );
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert!(completion_suggestions.is_empty());
+    }
+
+    #[test]
+    fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
+        let (source, _cursor_position) = inline_document_with_cursor! {
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            schema Payload {
+                value: string
+            }
+
+            input {
+                query: string
+            }
+
+            secrets {
+                api_key: string
+            }
+
+            agent context_agent {
+                model: openai("gpt-4.1-mini")
+                prompt: "hello"
+                output: string
+            }
+
+            agent worker {
+                model: openai("gpt-4.1-mini")
+                prompt: "example {{ agent.context_agent }} {{ input.query }} {{ schema.Payload }} {{ secrets.api_key }}"
+                output: string
+            }
+
+            <cursor>
+        };
+
+        let document_state = DocumentState::new(source);
+        let diagnostics = document_state.diagnostics();
+
+        assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::SecretReferenceInLlmContext);
+    }
+
+    #[test]
+    fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic() {
+        let source = r#"
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            input {
+                query: string
+            }
+
+            secrets {
+                api_key: string
+            }
+
+            agent worker {
+                model: openai("gpt-4.1-mini")
+                prompt: """
+                    example {{ input.query }}
+                    forbidden {{ secrets.api_key }}
+                """
+                output: string
+            }
+        "#;
+
+        let document_state = DocumentState::new(source.to_string());
+        let diagnostics = document_state.diagnostics();
+
+        assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::SecretReferenceInLlmContext);
+    }
+
+    #[test]
+    fn suppresses_non_iterable_input_field_suggestions_in_for_loop_iterable_reference() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            input {
+                xxxx: string
+            }
+
+            agent worker for item in input.<cursor> {
+                prompt: item
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert!(completion_suggestions.is_empty());
+    }
+
+    #[test]
+    fn suggests_agent_properties_inside_for_loop_agent_block() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            agent source {}
+
+            agent worker for item in agent.source {
+                <cursor>
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains!(&completion_suggestions, AgentExpressionPropertyName::Prompt);
+        assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting);
     }
 
     #[test]
@@ -2487,17 +2469,9 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert_completion_contains_labels!(
-            &completion_suggestions,
-            BuiltinFunctionName::Context,
-            BuiltinFunctionName::Template,
-            BuiltinFunctionName::Compact,
-            SingletonDeclarationKind::Input,
-            SingletonDeclarationKind::Secrets,
-            SingletonDeclarationKind::Output,
-            ReferenceKeyword::Agent,
-            ReferenceKeyword::Tool
-        );
+        assert_completion_contains_label_groups!(&completion_suggestions, BuiltinFunctionName, SingletonDeclarationKind);
+
+        assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Agent, ReferenceKeyword::Tool);
     }
 
     #[test]
@@ -2562,7 +2536,7 @@ mod tests {
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
         assert_completion_contains_labels!(&completion_suggestions, AgentExpressionPropertyName::Prompt);
-        assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting::MaxTokens);
+        assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting);
     }
 
     #[test]
