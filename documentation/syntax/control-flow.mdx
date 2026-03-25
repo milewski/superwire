@@ -7,7 +7,7 @@ The current DSL has one explicit control-flow construct: looping an agent over a
 
 ## Syntax
 
-```txt
+```ai
 agent <name> for <item_name> in <expression> {
     ...
 }
@@ -15,7 +15,7 @@ agent <name> for <item_name> in <expression> {
 
 ## Example
 
-```txt
+```ai
 input {
     numbers: [number]
 }
@@ -40,7 +40,7 @@ agent input_number_note for n in input.numbers {
 
 Referencing a looped agent returns an array of outputs:
 
-```txt
+```ai
 output {
     notes: agent.input_number_note
 }

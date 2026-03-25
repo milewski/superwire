@@ -9,7 +9,7 @@ Engine AI does not require you to list edges manually. Dependencies come from re
 
 If an agent expression references another agent through `agent.<name>`, the current agent depends on that upstream agent.
 
-```txt
+```ai
 agent first {
     model: scripted("mock-model")
     prompt: "First prompt: {{ input.subject }}"
@@ -49,7 +49,7 @@ The dependency graph is built from references found in:
 
 Validation rejects cycles before runtime execution.
 
-```txt
+```ai
 agent alpha {
     model: openai("gpt-4.1-mini")
     prompt: "Use {{ agent.beta }}"

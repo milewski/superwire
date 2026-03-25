@@ -12,6 +12,15 @@
     "light": "#07C983",
     "dark": "#0D9373"
   },
+  "styling": {
+    "codeblocks": {
+      "languages": {
+        "custom": [
+          "/languages/ai.tmLanguage.json"
+        ]
+      }
+    }
+  },
   "navbar": {
     "links": [
       {
