@@ -175,7 +175,7 @@ These decisions are intended to align with the long-term vision and reduce drift
   - **Files**: `crates/core/src/dsl/parser.rs`, `crates/core/src/dsl/validation.rs`, `crates/core/src/semantic/*`.
   - **Goal**: Remove local code mapping from LSP.
 
-- [ ] **D3. Reduce `crates/lsp/src/document/snapshot.rs` to adapter-only role**
+- [x] **D3. Reduce `crates/lsp/src/document/snapshot.rs` to adapter-only role**
   - **Goal**: only map core diagnostics to LSP wire format (`protocol.rs`) without semantic branching.
 
 ## Phase E — Completion Policy and Context Contracts
