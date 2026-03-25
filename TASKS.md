@@ -151,17 +151,17 @@ These decisions are intended to align with the long-term vision and reduce drift
     - context-aware lookup helpers
   - **Goal**: LSP consumes this API rather than rebuilding semantics.
 
-- [ ] **C2. Replace `SemanticIndex::from_text_fallback` with core-provided tolerant semantic API**
+- [x] **C2. Replace `SemanticIndex::from_text_fallback` with core-provided tolerant semantic API**
   - **Files**: `crates/lsp/src/document/*`, `crates/core/src/semantic/*`.
   - **Goal**: Remove or greatly reduce LSP-local fallback heuristics.
 
-- [ ] **C3. Move reference path/type traversal semantics from LSP into core**
+- [x] **C3. Move reference path/type traversal semantics from LSP into core**
   - **Current LSP logic**: `resolve_access_path`, `collect_next_types_for_field`, `collect_available_fields`.
   - **Goal**: one implementation for runtime/compiler/tooling semantics.
 
 ## Phase D — Shared Diagnostics Model
 
-- [ ] **D1. Create core diagnostic domain model**
+- [x] **D1. Create core diagnostic domain model**
   - **New files**: `crates/core/src/diagnostic/mod.rs` (and optional submodules).
   - **Model should include**:
     - stable code enum
@@ -171,11 +171,11 @@ These decisions are intended to align with the long-term vision and reduce drift
     - notes/help
   - **Goal**: parser/validator/semantic compiler can all emit one shape.
 
-- [ ] **D2. Convert `dsl` parse/validation output to shared diagnostic model**
+- [x] **D2. Convert `dsl` parse/validation output to shared diagnostic model**
   - **Files**: `crates/core/src/dsl/parser.rs`, `crates/core/src/dsl/validation.rs`, `crates/core/src/semantic/*`.
   - **Goal**: Remove local code mapping from LSP.
 
-- [ ] **D3. Reduce `crates/lsp/src/document/snapshot.rs` to adapter-only role**
+- [x] **D3. Reduce `crates/lsp/src/document/snapshot.rs` to adapter-only role**
   - **Goal**: only map core diagnostics to LSP wire format (`protocol.rs`) without semantic branching.
 
 ## Phase E — Completion Policy and Context Contracts

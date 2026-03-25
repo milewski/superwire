@@ -333,6 +333,17 @@ impl SemanticToolingSnapshot {
         candidate_types
     }
 
+    #[must_use]
+    pub fn available_fields_for_types(&self, candidate_types: &[TypeExpression]) -> BTreeMap<String, TypeExpression> {
+        let mut available_fields = BTreeMap::<String, TypeExpression>::new();
+
+        for candidate_type in candidate_types {
+            candidate_type.collect_available_fields(self, &mut available_fields);
+        }
+
+        available_fields
+    }
+
     fn root_type_for_reference_path<'path>(
         &self,
         reference_path: &'path ToolingReferencePath,
@@ -441,6 +452,47 @@ impl TypeExpression {
             TypeExpression::Union(union_members) => {
                 for union_member in union_members {
                     union_member.collect_next_types_for_field(tooling_snapshot, field_name, next_candidate_types);
+                }
+            }
+            TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_)
+            | TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::StringEnum(_) => {}
+        }
+    }
+
+    fn collect_available_fields(
+        &self,
+        tooling_snapshot: &SemanticToolingSnapshot,
+        available_fields: &mut BTreeMap<String, TypeExpression>,
+    ) {
+        match self {
+            TypeExpression::Object(typed_fields) => {
+                for typed_field in typed_fields {
+                    available_fields
+                        .entry(typed_field.name.clone())
+                        .or_insert_with(|| typed_field.field_type.clone());
+                }
+            }
+            TypeExpression::SchemaReference(schema_name) => {
+                let Some(schema_fields) = tooling_snapshot.schemas.get(schema_name) else {
+                    return;
+                };
+
+                for (field_name, field_type) in schema_fields {
+                    available_fields.entry(field_name.clone()).or_insert_with(|| field_type.clone());
+                }
+            }
+            TypeExpression::Union(union_members) => {
+                for union_member in union_members {
+                    union_member.collect_available_fields(tooling_snapshot, available_fields);
                 }
             }
             TypeExpression::Array {
