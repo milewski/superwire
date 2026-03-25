@@ -115,7 +115,9 @@ impl SemanticIndex {
                     ));
                 }
 
-                let candidate_types = self.resolve_access_path(vec![agent_output_type.clone()], &resolved_accesses[1..]);
+                let candidate_types = self
+                    .tooling_snapshot
+                    .resolve_access_path_types(vec![agent_output_type.clone()], &resolved_accesses[1..]);
                 let final_type = candidate_types.first()?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))

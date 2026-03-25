@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use engine_ai_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, SourcePosition, SourceSpan, TypeExpression, TypedField};
+use engine_ai_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, TypeExpression};
+use engine_ai_core::semantic::ToolingReferencePath;
 
 use crate::protocol::Position;
 
@@ -170,7 +171,9 @@ impl SemanticIndex {
             return Some(root_field_type);
         }
 
-        let candidate_types = self.resolve_access_path(vec![root_field_type], &resolved_accesses[1..]);
+        let candidate_types = self
+            .tooling_snapshot
+            .resolve_access_path_types(vec![root_field_type], &resolved_accesses[1..]);
 
         candidate_types.first().cloned()
     }
@@ -205,7 +208,9 @@ impl SemanticIndex {
             return Vec::new();
         };
 
-        let candidate_types = self.resolve_access_path(vec![root_field_type], &complete_accesses[1..]);
+        let candidate_types = self
+            .tooling_snapshot
+            .resolve_access_path_types(vec![root_field_type], &complete_accesses[1..]);
 
         self.field_suggestions_from_types(candidate_types.as_slice(), pending_prefix, reference_completion_constraint)
     }
@@ -262,7 +267,9 @@ impl SemanticIndex {
         };
 
         let remaining_accesses = &reference_completion_path.complete_accesses[1..];
-        let candidate_types = self.resolve_access_path(vec![agent_output_type], remaining_accesses);
+        let candidate_types = self
+            .tooling_snapshot
+            .resolve_access_path_types(vec![agent_output_type], remaining_accesses);
 
         self.field_suggestions_from_types(
             candidate_types.as_slice(),
@@ -298,27 +305,10 @@ impl SemanticIndex {
             return Vec::new();
         }
 
-        let Some(schema_summary) = self.schemas.get(schema_name) else {
-            return Vec::new();
-        };
-
-        let root_type = TypeExpression::Object(
-            schema_summary
-                .fields
-                .iter()
-                .map(|(field_name, field_type)| TypedField {
-                    name: field_name.clone(),
-                    field_type: field_type.clone(),
-                    description: None,
-                    span: SourceSpan {
-                        start: SourcePosition { line: 1, column: 1 },
-                        end: SourcePosition { line: 1, column: 1 },
-                    },
-                })
-                .collect(),
-        );
-
-        let candidate_types = self.resolve_access_path(vec![root_type], &reference_completion_path.complete_accesses[1..]);
+        let remaining_accesses = reference_completion_path.complete_accesses[1..].to_vec();
+        let candidate_types = self
+            .tooling_snapshot
+            .resolve_reference_path_types(&ToolingReferencePath::schema(schema_name.clone(), remaining_accesses));
 
         self.field_suggestions_from_types(
             candidate_types.as_slice(),
@@ -333,11 +323,7 @@ impl SemanticIndex {
         pending_prefix: &str,
         reference_completion_constraint: ReferenceCompletionConstraint,
     ) -> Vec<CompletionSuggestion> {
-        let mut available_fields = BTreeMap::<String, TypeExpression>::new();
-
-        for candidate_type in candidate_types {
-            self.collect_available_fields(candidate_type, &mut available_fields);
-        }
+        let available_fields = self.tooling_snapshot.available_fields_for_types(candidate_types);
 
         available_fields
             .into_iter()
@@ -353,103 +339,6 @@ impl SemanticIndex {
                 insert_text: field_name,
             })
             .collect()
-    }
-
-    pub(in crate::document) fn resolve_access_path(&self, start_types: Vec<TypeExpression>, accesses: &[String]) -> Vec<TypeExpression> {
-        let mut candidate_types = start_types;
-
-        for access_name in accesses {
-            let mut next_candidate_types = Vec::<TypeExpression>::new();
-
-            for candidate_type in &candidate_types {
-                self.collect_next_types_for_field(candidate_type, access_name, &mut next_candidate_types);
-            }
-
-            if next_candidate_types.is_empty() {
-                return Vec::new();
-            }
-
-            candidate_types = next_candidate_types;
-        }
-
-        candidate_types
-    }
-
-    fn collect_next_types_for_field(
-        &self,
-        candidate_type: &TypeExpression,
-        field_name: &str,
-        next_candidate_types: &mut Vec<TypeExpression>,
-    ) {
-        match candidate_type {
-            TypeExpression::Object(typed_fields) => {
-                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
-                    next_candidate_types.push(typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_summary) = self.schemas.get(schema_name) else {
-                    return;
-                };
-
-                if let Some(field_type) = schema_summary.fields.get(field_name) {
-                    next_candidate_types.push(field_type.clone());
-                }
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    self.collect_next_types_for_field(union_member, field_name, next_candidate_types);
-                }
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_)
-            | TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::StringEnum(_) => {}
-        }
-    }
-
-    fn collect_available_fields(&self, candidate_type: &TypeExpression, available_fields: &mut BTreeMap<String, TypeExpression>) {
-        match candidate_type {
-            TypeExpression::Object(typed_fields) => {
-                for typed_field in typed_fields {
-                    available_fields
-                        .entry(typed_field.name.clone())
-                        .or_insert_with(|| typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_summary) = self.schemas.get(schema_name) else {
-                    return;
-                };
-
-                for (field_name, field_type) in &schema_summary.fields {
-                    available_fields.entry(field_name.clone()).or_insert_with(|| field_type.clone());
-                }
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    self.collect_available_fields(union_member, available_fields);
-                }
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_)
-            | TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::StringEnum(_) => {}
-        }
     }
 }
 

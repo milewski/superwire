@@ -155,7 +155,7 @@ These decisions are intended to align with the long-term vision and reduce drift
   - **Files**: `crates/lsp/src/document/*`, `crates/core/src/semantic/*`.
   - **Goal**: Remove or greatly reduce LSP-local fallback heuristics.
 
-- [ ] **C3. Move reference path/type traversal semantics from LSP into core**
+- [x] **C3. Move reference path/type traversal semantics from LSP into core**
   - **Current LSP logic**: `resolve_access_path`, `collect_next_types_for_field`, `collect_available_fields`.
   - **Goal**: one implementation for runtime/compiler/tooling semantics.
 

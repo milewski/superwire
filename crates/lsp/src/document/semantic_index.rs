@@ -12,7 +12,7 @@ use super::position::source_span_contains_position;
 use super::text_utils::trailing_identifier;
 use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(super) struct SemanticIndex {
     pub(in crate::document) providers: HashMap<String, ProviderSummary>,
     pub(in crate::document) provider_locations: Vec<NamedSpan>,
@@ -26,6 +26,7 @@ pub(super) struct SemanticIndex {
     pub(in crate::document) output_locations: Vec<SourceSpan>,
     pub(in crate::document) typed_declaration_locations: Vec<SourceSpan>,
     pub(in crate::document) agent_locations: Vec<NamedSpan>,
+    pub(in crate::document) tooling_snapshot: SemanticToolingSnapshot,
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +53,22 @@ pub(in crate::document) struct NamedSpan {
 
 impl SemanticIndex {
     pub(super) fn from_workflow(workflow: &Workflow) -> Self {
-        let mut semantic_index = Self::default();
+        let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
+        let mut semantic_index = Self {
+            providers: HashMap::new(),
+            provider_locations: Vec::new(),
+            schemas: HashMap::new(),
+            schema_names: Vec::new(),
+            schema_locations: Vec::new(),
+            input_fields: BTreeMap::new(),
+            secrets_fields: BTreeMap::new(),
+            agents: HashMap::new(),
+            agent_names: Vec::new(),
+            output_locations: Vec::new(),
+            typed_declaration_locations: Vec::new(),
+            agent_locations: Vec::new(),
+            tooling_snapshot,
+        };
 
         for declaration in workflow.declarations() {
             match declaration {
@@ -222,6 +238,7 @@ impl SemanticIndex {
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
             agent_locations,
+            tooling_snapshot: tooling_snapshot.clone(),
         }
     }
 
