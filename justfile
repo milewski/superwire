@@ -16,3 +16,7 @@ build workflow output:
 # Example: compile the input_output workflow
 build-example:
     cargo run --release -p engine_ai_cli -- build crates/test/workflows/input_output.ai --output ./compiled-workflow
+
+# Build the current workspace for Windows GNU target
+build-windows-gnu:
+    cargo build -p engine-ai-lsp --release --target x86_64-pc-windows-gnu

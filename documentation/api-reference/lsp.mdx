@@ -1,6 +1,6 @@
 ---
 title: Language Server
-description: Run the Engine AI language server over stdio for completion and hover support.
+description: Run the Engine AI language server over stdio for diagnostics, completion, and hover support.
 ---
 
 The repository includes a language server binary in `crates/lsp`.
@@ -16,26 +16,38 @@ cargo run -p engine-ai-lsp
 The server speaks JSON-RPC over stdio and advertises:
 
 - text document sync
+- publish diagnostics notifications
 - hover support
 - completion support
 
-## Current completion behavior
+## Diagnostics
 
-The server offers completions for:
+The server publishes diagnostics from the shared DSL pipeline:
 
-- named schemas after `schema.`
-- declared agents after `agent.`
-- input fields after `input.`
-- secret fields after `secrets.`
-- built-in symbols in function-like contexts
+- parse/syntax errors with source spans
+- semantic validation errors from `engine-ai-core`
+- invalid agent properties
+- unknown provider/model bindings
+- invalid reference paths and schema references
 
-## Current hover behavior
+## Completion behavior
+
+The server offers context-aware completions for:
+
+- provider driver values (`driver: "..."`)
+- provider driver-specific properties (`endpoint`, `api_key`, `models`, etc.)
+- model names declared under provider `models` when editing `model: provider("...")`
+- named schemas after `schema.` in type positions
+- nested singleton/object fields like `input.profile.name.<cursor>`
+- built-in symbols and workflow keywords
+
+## Hover behavior
 
 Hover text is available for:
 
-- declared `schema.Name` references
-- declared `agent.name` references
-- declared `input.field` references
+- declared `schema.Name` references and schema field summaries
+- declared `agent.name` references with output type information
+- declared `input.field` and `secrets.field` references with inferred type information
 - provider model calls such as `openai(...)`
 
 ## Trigger characters
@@ -44,3 +56,4 @@ The server currently triggers completion on:
 
 - `.`
 - `:`
+- `"`
