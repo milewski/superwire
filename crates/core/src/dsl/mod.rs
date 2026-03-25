@@ -1,5 +1,4 @@
 mod ast;
-#[cfg(test)]
 pub mod macros;
 mod parser;
 mod validation;

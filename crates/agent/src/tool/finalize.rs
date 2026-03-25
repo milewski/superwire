@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use schemars::{schema_for, JsonSchema, Schema};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -68,6 +69,66 @@ where
     pub fn parameters_schema(&self) -> &Schema {
         &self.parameters_schema
     }
+
+    pub fn parameters_schema_for_answer_schema(answer_schema: &Schema) -> Result<Schema, ToolError> {
+        let mut generated_finalize_schema = serde_json::to_value(schema_for!(FinalizeArguments<Value>))
+            .map_err(|error| ToolError::new(format!("Failed to serialize finalize schema template: {error}")))?;
+
+        let serialized_answer_schema = serde_json::to_value(answer_schema)
+            .map_err(|error| ToolError::new(format!("Failed to serialize finalize answer schema: {error}")))?;
+
+        let success_answer_schema_slot = find_success_answer_schema_slot(&mut generated_finalize_schema)
+            .ok_or_else(|| ToolError::new("Failed to locate success answer schema slot in finalize schema template"))?;
+
+        *success_answer_schema_slot = serialized_answer_schema;
+
+        serde_json::from_value(generated_finalize_schema)
+            .map_err(|error| ToolError::new(format!("Failed to build finalize parameters schema: {error}")))
+    }
+}
+
+fn find_success_answer_schema_slot(schema_template: &mut Value) -> Option<&mut Value> {
+    match schema_template {
+        Value::Object(schema_object) => {
+            let is_success_branch = schema_object
+                .get("properties")
+                .and_then(Value::as_object)
+                .and_then(|properties| {
+                    properties
+                        .get("type")
+                        .and_then(Value::as_object)
+                        .and_then(|type_schema| type_schema.get("const"))
+                        .and_then(Value::as_str)
+                        .map(|constant_value| constant_value == "success" && properties.contains_key("answer"))
+                })
+                .unwrap_or(false);
+
+            if is_success_branch {
+                return schema_object
+                    .get_mut("properties")
+                    .and_then(Value::as_object_mut)
+                    .and_then(|properties| properties.get_mut("answer"));
+            }
+
+            for nested_schema in schema_object.values_mut() {
+                if let Some(answer_slot) = find_success_answer_schema_slot(nested_schema) {
+                    return Some(answer_slot);
+                }
+            }
+
+            None
+        }
+        Value::Array(schema_array) => {
+            for nested_schema in schema_array {
+                if let Some(answer_slot) = find_success_answer_schema_slot(nested_schema) {
+                    return Some(answer_slot);
+                }
+            }
+
+            None
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
+    }
 }
 
 impl<O> Clone for FinalizeTool<O>
@@ -116,5 +177,41 @@ where
             ToolError::new(format!("Failed to serialize output: {error}"))
                 .with_suggestion("Ensure the output type implements Serialize correctly")
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FinalizeTool;
+    use crate::validate_json_against_schema_with_context;
+    use schemars::Schema;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn injects_runtime_answer_schema_into_generated_finalize_schema() {
+        let integer_answer_schema: Schema =
+            serde_json::from_value(json!({ "type": "integer" })).expect("integer answer schema should deserialize");
+
+        let finalize_schema = FinalizeTool::<Value>::parameters_schema_for_answer_schema(&integer_answer_schema)
+            .expect("finalize schema should be generated");
+
+        let valid_finalize_arguments = json!({
+            "output": {
+                "type": "success",
+                "answer": 42
+            }
+        });
+
+        let invalid_finalize_arguments = json!({
+            "output": {
+                "type": "success",
+                "answer": {
+                    "random_number": 42
+                }
+            }
+        });
+
+        assert!(validate_json_against_schema_with_context(&valid_finalize_arguments, &finalize_schema, "Finalize validation",).is_ok());
+        assert!(validate_json_against_schema_with_context(&invalid_finalize_arguments, &finalize_schema, "Finalize validation",).is_err());
     }
 }
