@@ -54,6 +54,7 @@ pub trait ProviderConfigParser {
         Ok(string_literal.clone())
     }
 
+    #[must_use]
     fn provider_property_by_name<'property>(
         provider_properties: &'property [ObjectField],
         property_name: &str,

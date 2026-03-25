@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use engine_ai_core::{builtin_symbols, lookup_symbol, SymbolCategory, SymbolDoc};
 use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
@@ -30,6 +29,134 @@ pub struct LanguageServer {
     documents: HashMap<String, DocumentIndex>,
     shutdown_requested: bool,
 }
+
+#[derive(Debug, Clone, Copy)]
+enum SymbolCategory {
+    Keyword,
+    Function,
+    Namespace,
+    Property,
+    Type,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SymbolDoc {
+    label: &'static str,
+    category: SymbolCategory,
+    detail: &'static str,
+    documentation: &'static str,
+}
+
+const BUILTIN_SYMBOLS: [SymbolDoc; 18] = [
+    SymbolDoc {
+        label: "agent",
+        category: SymbolCategory::Namespace,
+        detail: "Agent namespace",
+        documentation: "Use `agent.<name>` to reference outputs from declared agents.",
+    },
+    SymbolDoc {
+        label: "input",
+        category: SymbolCategory::Namespace,
+        detail: "Input namespace",
+        documentation: "Use `input.<field>` to reference workflow input fields.",
+    },
+    SymbolDoc {
+        label: "schema",
+        category: SymbolCategory::Namespace,
+        detail: "Schema namespace",
+        documentation: "Use `schema.<name>` to reference named schemas declared in the workflow.",
+    },
+    SymbolDoc {
+        label: "secrets",
+        category: SymbolCategory::Namespace,
+        detail: "Secrets namespace",
+        documentation: "Use `secrets.<name>` to reference secret fields declared in the workflow.",
+    },
+    SymbolDoc {
+        label: "tool",
+        category: SymbolCategory::Namespace,
+        detail: "Tool namespace",
+        documentation: "Use `tool.<name>` to reference callable tool declarations.",
+    },
+    SymbolDoc {
+        label: "provider",
+        category: SymbolCategory::Keyword,
+        detail: "Provider declaration",
+        documentation: "Declares an LLM provider configuration block.",
+    },
+    SymbolDoc {
+        label: "agent",
+        category: SymbolCategory::Keyword,
+        detail: "Agent declaration",
+        documentation: "Declares an executable agent with model, prompt, and output type.",
+    },
+    SymbolDoc {
+        label: "schema",
+        category: SymbolCategory::Keyword,
+        detail: "Schema declaration",
+        documentation: "Declares a reusable named type schema.",
+    },
+    SymbolDoc {
+        label: "output",
+        category: SymbolCategory::Keyword,
+        detail: "Output declaration",
+        documentation: "Declares the workflow output object.",
+    },
+    SymbolDoc {
+        label: "context",
+        category: SymbolCategory::Function,
+        detail: "Builtin function",
+        documentation: "Returns the current execution context for an agent invocation.",
+    },
+    SymbolDoc {
+        label: "template",
+        category: SymbolCategory::Function,
+        detail: "Builtin function",
+        documentation: "Renders a structured template from literal and interpolated parts.",
+    },
+    SymbolDoc {
+        label: "compact",
+        category: SymbolCategory::Function,
+        detail: "Builtin function",
+        documentation: "Removes empty values from objects and arrays.",
+    },
+    SymbolDoc {
+        label: "string",
+        category: SymbolCategory::Type,
+        detail: "Primitive type",
+        documentation: "String type.",
+    },
+    SymbolDoc {
+        label: "number",
+        category: SymbolCategory::Type,
+        detail: "Primitive type",
+        documentation: "Integer number type.",
+    },
+    SymbolDoc {
+        label: "float",
+        category: SymbolCategory::Type,
+        detail: "Primitive type",
+        documentation: "Floating-point number type.",
+    },
+    SymbolDoc {
+        label: "boolean",
+        category: SymbolCategory::Type,
+        detail: "Primitive type",
+        documentation: "Boolean type.",
+    },
+    SymbolDoc {
+        label: "null",
+        category: SymbolCategory::Type,
+        detail: "Primitive type",
+        documentation: "Null type.",
+    },
+    SymbolDoc {
+        label: "models",
+        category: SymbolCategory::Property,
+        detail: "Provider property",
+        documentation: "Specifies the models supported by a provider declaration.",
+    },
+];
 
 impl LanguageServer {
     pub async fn run_stdio() -> Result<(), ServerError> {
@@ -266,6 +393,14 @@ fn initialize_result() -> Value {
             "version": "0.1.0"
         }
     })
+}
+
+fn builtin_symbols() -> &'static [SymbolDoc] {
+    &BUILTIN_SYMBOLS
+}
+
+fn lookup_symbol(label: &str) -> Option<&'static SymbolDoc> {
+    builtin_symbols().iter().find(|symbol_doc| symbol_doc.label == label)
 }
 
 fn symbol_completion_item(symbol_doc: &SymbolDoc) -> Value {

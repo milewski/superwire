@@ -145,12 +145,11 @@ mod tests {
     fn parses_all_workflow_samples() {
         for (file_name, workflow_source) in discover_workflow_examples() {
             let workflow =
-                parse_workflow(&workflow_source).unwrap_or_else(|parse_error| panic!("{} failed to parse: {parse_error}", file_name));
+                parse_workflow(&workflow_source).unwrap_or_else(|parse_error| panic!("{file_name} failed to parse: {parse_error}"));
 
             assert!(
                 !workflow.declarations.is_empty(),
-                "{} should produce at least one declaration",
-                file_name
+                "{file_name} should produce at least one declaration"
             );
         }
     }
@@ -258,14 +257,12 @@ mod tests {
             .find(|agent_property| matches!(agent_property, AgentProperty::Tools(_)))
             .expect("tools property should exist");
 
-        let tools_expression = match tools_property {
-            AgentProperty::Tools(tools_expression) => tools_expression,
-            _ => unreachable!("tools property matcher should guarantee variant"),
+        let AgentProperty::Tools(tools_expression) = tools_property else {
+            unreachable!("tools property matcher should guarantee variant");
         };
 
-        let tools_entries = match tools_expression {
-            Expression::ArrayLiteral(tools_entries) => tools_entries,
-            _ => panic!("tools property should be an array literal"),
+        let Expression::ArrayLiteral(tools_entries) = tools_expression else {
+            panic!("tools property should be an array literal");
         };
 
         assert_eq!(tools_entries.len(), 3);
@@ -358,9 +355,8 @@ mod tests {
             .find(|agent_property| matches!(agent_property, AgentProperty::Prompt(_)))
             .expect("prompt property should exist");
 
-        let prompt_expression = match prompt_property {
-            AgentProperty::Prompt(prompt_expression) => prompt_expression,
-            _ => unreachable!("prompt property matcher should guarantee variant"),
+        let AgentProperty::Prompt(prompt_expression) = prompt_property else {
+            unreachable!("prompt property matcher should guarantee variant");
         };
 
         let Expression::StringTemplate(prompt_template) = prompt_expression else {

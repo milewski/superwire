@@ -5,6 +5,7 @@ use schemars::{JsonSchema, Schema};
 use serde_json::{json, Number, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use std::hash::BuildHasher;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowType {
@@ -132,16 +133,16 @@ impl Display for WorkflowType {
     }
 }
 
-pub fn workflow_type_from_dsl(
+pub fn workflow_type_from_dsl<HashBuilder: BuildHasher>(
     type_expression: &TypeExpression,
-    named_schemas: &HashMap<String, TypeExpression>,
+    named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
 ) -> Result<WorkflowType, WorkflowRuntimeError> {
     workflow_type_from_dsl_with_stack(type_expression, named_schemas, &mut Vec::new()).map(WorkflowType::normalize)
 }
 
-fn workflow_type_from_dsl_with_stack(
+fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
     type_expression: &TypeExpression,
-    named_schemas: &HashMap<String, TypeExpression>,
+    named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
     resolution_stack: &mut Vec<String>,
 ) -> Result<WorkflowType, WorkflowRuntimeError> {
     match type_expression {
@@ -202,9 +203,9 @@ fn workflow_type_from_dsl_with_stack(
     }
 }
 
-fn resolve_object_fields(
+fn resolve_object_fields<HashBuilder: BuildHasher>(
     fields: &[TypedField],
-    named_schemas: &HashMap<String, TypeExpression>,
+    named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
     resolution_stack: &mut Vec<String>,
 ) -> Result<BTreeMap<String, WorkflowType>, WorkflowRuntimeError> {
     let mut resolved_fields = BTreeMap::new();
@@ -608,10 +609,12 @@ pub fn parse_number_literal(number_literal: &str) -> Result<Number, WorkflowRunt
     Ok(serialized_number)
 }
 
+#[must_use]
 pub fn ensure_type_matches(expected_type: &WorkflowType, actual_type: &WorkflowType) -> bool {
     expected_type.clone().normalize() == actual_type.clone().normalize()
 }
 
+#[must_use]
 pub fn value_kind_name(value: &Value) -> &'static str {
     match value {
         Value::Null => "null",
