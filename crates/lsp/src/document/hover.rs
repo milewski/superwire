@@ -5,6 +5,7 @@ use crate::protocol::Position;
 
 use super::reference::ReferenceCompletionPath;
 use super::semantic_index::SemanticIndex;
+use super::text_utils::is_symbol_character;
 use super::{CompletionKind, CompletionSuggestion, DocumentState, RenderTypeExpression};
 
 impl DocumentState {
@@ -114,7 +115,9 @@ impl SemanticIndex {
                     ));
                 }
 
-                let candidate_types = self.resolve_access_path(vec![agent_output_type.clone()], &resolved_accesses[1..]);
+                let candidate_types = self
+                    .tooling_snapshot
+                    .resolve_access_path_types(vec![agent_output_type.clone()], &resolved_accesses[1..]);
                 let final_type = candidate_types.first()?;
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
@@ -282,8 +285,4 @@ fn builtin_symbol_docs() -> impl Iterator<Item = BuiltinSymbolDoc> {
 
 fn find_builtin_symbol_doc(symbol_name: &str) -> Option<BuiltinSymbolDoc> {
     builtin_symbol_docs().find(|builtin_symbol_doc| builtin_symbol_doc.label == symbol_name)
-}
-
-fn is_symbol_character(character: char) -> bool {
-    character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?'
 }

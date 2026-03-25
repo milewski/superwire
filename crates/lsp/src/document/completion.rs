@@ -2,10 +2,12 @@ use engine_ai_core::dsl::{parse_workflow, ReferenceKeyword};
 
 use crate::protocol::Position;
 
-use super::completion_context::{is_inside_interpolation_expression, ModelCallCompletionContext};
+use super::completion_context::ModelCallCompletionContext;
+use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
 use super::semantic_index::SemanticIndex;
+use super::text_utils::{is_inside_interpolation_expression, is_inside_multiline_string_literal};
 use super::{CompletionSuggestion, DocumentState};
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
@@ -135,45 +137,4 @@ impl DocumentState {
 
         is_inside_multiline_string_literal(&self.text, cursor_offset)
     }
-}
-
-fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
-    let source_prefix = &source_text[..cursor_offset];
-    let triple_quote_count = source_prefix.match_indices("\"\"\"").count();
-
-    triple_quote_count % 2 == 1
-}
-
-fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
-    let target_line = position.line as usize;
-    let target_character = position.character as usize;
-
-    let mut current_line = 0_usize;
-    let mut current_character = 0_usize;
-
-    for (byte_offset, character) in source_text.char_indices() {
-        if current_line == target_line && current_character == target_character {
-            return Some(byte_offset);
-        }
-
-        if character == '\n' {
-            if current_line == target_line {
-                return Some(byte_offset);
-            }
-
-            current_line += 1;
-            current_character = 0;
-            continue;
-        }
-
-        if current_line == target_line {
-            current_character += 1;
-        }
-    }
-
-    if current_line == target_line {
-        return Some(source_text.len());
-    }
-
-    None
 }
