@@ -161,7 +161,7 @@ These decisions are intended to align with the long-term vision and reduce drift
 
 ## Phase D — Shared Diagnostics Model
 
-- [ ] **D1. Create core diagnostic domain model**
+- [x] **D1. Create core diagnostic domain model**
   - **New files**: `crates/core/src/diagnostic/mod.rs` (and optional submodules).
   - **Model should include**:
     - stable code enum
