@@ -11,7 +11,8 @@ static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(||
     parse_inline_workflow! {
         provider openai {
             driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
             models: ["model-a"]
         }
     }

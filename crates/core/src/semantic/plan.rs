@@ -175,6 +175,8 @@ mod tests {
         parse_inline_workflow! {
             provider openai {
                 driver: "openai"
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
                 models: ["model-a"]
             }
 
