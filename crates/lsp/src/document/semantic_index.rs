@@ -1,19 +1,16 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use engine_ai_core::dsl::{
-    AgentProperty, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind,
-    SourceSpan, TypeExpression, TypedField, Workflow,
+    AgentProperty, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, SingletonDeclarationKind, SourceSpan, TypeExpression,
+    TypedField, Workflow,
 };
 use engine_ai_core::runtime::ProviderDriver;
 
 use crate::protocol::Position;
 
 use super::completion_context::{trailing_identifier, ModelCallCompletionContext, ValueCompletionContext};
-use super::reference::ReferenceCompletionPath;
-use super::{
-    all_provider_property_names, builtin_symbol_suggestions, source_span_contains_position, type_symbol_suggestions, CompletionKind,
-    CompletionSuggestion, RenderTypeExpression,
-};
+use super::hover::builtin_symbol_suggestions;
+use super::{all_provider_property_names, source_span_contains_position, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SemanticIndex {
@@ -443,75 +440,6 @@ impl SemanticIndex {
         completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 
         completion_suggestions
-    }
-
-    pub(super) fn hover_markdown(&self, hovered_symbol: &str) -> Option<String> {
-        if let Some(provider_summary) = self.providers.get(hovered_symbol) {
-            let provider_driver_name = provider_summary.driver.map_or("unknown", ProviderDriver::as_str);
-
-            return Some(format!(
-                "**provider {hovered_symbol}**\n\nDriver: `{provider_driver_name}`\n\nDeclared models: {}",
-                if provider_summary.models.is_empty() {
-                    "none".to_string()
-                } else {
-                    provider_summary.models.join(", ")
-                }
-            ));
-        }
-
-        let reference_completion_path = ReferenceCompletionPath::from_token(hovered_symbol)?;
-        let mut resolved_accesses = reference_completion_path.complete_accesses.clone();
-
-        if !reference_completion_path.pending_prefix.is_empty() {
-            resolved_accesses.push(reference_completion_path.pending_prefix.clone());
-        }
-
-        if reference_completion_path.is_schema_root() {
-            let schema_name = resolved_accesses.first()?;
-            let schema_summary = self.schemas.get(schema_name)?;
-
-            return Some(format!(
-                "**schema.{schema_name}**\n\nFields: {}",
-                schema_summary
-                    .fields
-                    .iter()
-                    .map(|(field_name, field_type)| format!("`{field_name}: {}`", field_type.render_type()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-
-        match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input) => {
-                let field_type = self.resolve_singleton_reference_type(&self.input_fields, resolved_accesses.as_slice())?;
-
-                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
-            }
-            Some(ReferenceKeyword::Secrets) => {
-                let field_type = self.resolve_singleton_reference_type(&self.secrets_fields, resolved_accesses.as_slice())?;
-
-                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
-            }
-            Some(ReferenceKeyword::Agent) => {
-                let agent_name = resolved_accesses.first()?;
-                let agent_summary = self.agents.get(agent_name)?;
-
-                let agent_output_type = agent_summary.output_type.as_ref()?;
-
-                if resolved_accesses.len() == 1 {
-                    return Some(format!(
-                        "**agent.{agent_name}**\n\nOutput type: `{}`",
-                        agent_output_type.render_type()
-                    ));
-                }
-
-                let candidate_types = self.resolve_access_path(vec![agent_output_type.clone()], &resolved_accesses[1..]);
-                let final_type = candidate_types.first()?;
-
-                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
-            }
-            Some(ReferenceKeyword::Tool) | None => None,
-        }
     }
 
     pub(super) fn provider_name_at_position(&self, position: Position) -> Option<&str> {
