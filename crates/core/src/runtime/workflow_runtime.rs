@@ -245,6 +245,7 @@ where
             .get(&agent_declaration.name)
             .expect("agent iteration output type should exist")
             .clone();
+        
         let iteration_output_schema = workflow_type_to_schemars_schema(&iteration_output_type)?;
 
         if let Some(for_loop) = &agent_declaration.for_loop {
