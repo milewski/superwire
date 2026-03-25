@@ -96,14 +96,14 @@ These decisions are intended to align with the long-term vision and reduce drift
 
 ## Phase A — Stabilize and Isolate Current Behavior
 
-- [ ] **A1. Add black-box LSP integration tests at server boundary**
+- [x] **A1. Add black-box LSP integration tests at server boundary**
   - **Files**: `crates/lsp/src/server.rs`, new test module under `crates/lsp/src/server_tests.rs` (or `crates/lsp/tests/`).
   - **Goal**: Validate JSON-RPC read/write framing and method routing independent of internal completion implementation.
   - **Acceptance**:
     - `initialize`, `didOpen`, `didChange`, `completion`, `hover`, `didClose` flows are covered.
     - No regressions when `document` internals are refactored.
 
-- [ ] **A2. Add completion behavior matrix tests (table-driven style)**
+- [x] **A2. Add completion behavior matrix tests (table-driven style)**
   - **Files**: `crates/lsp/src/document.rs` test module (later move to `crates/lsp/src/document/tests/`).
   - **Goal**: Explicitly lock behavior for each context: declarations, agent properties, inference block, typed declarations, interpolation, for-loop iterable, tools.
   - **Acceptance**:
@@ -111,26 +111,26 @@ These decisions are intended to align with the long-term vision and reduce drift
 
 ## Phase B — Split `document.rs` by Responsibility
 
-- [ ] **B1. Extract semantic index and path resolution logic into dedicated module**
+- [x] **B1. Extract semantic index and path resolution logic into dedicated module**
   - **New files**: `crates/lsp/src/document/semantic_index.rs`, `crates/lsp/src/document/reference.rs`.
   - **Move from**: `crates/lsp/src/document.rs` (`SemanticIndex`, reference path logic, resolve/collect methods).
   - **Goal**: Separate semantic graph/index from request orchestration.
 
-- [ ] **B2. Extract completion engine into dedicated modules**
+- [x] **B2. Extract completion engine into dedicated modules**
   - **New files**: `crates/lsp/src/document/completion.rs`, `crates/lsp/src/document/completion_context.rs`.
   - **Move from**: `DocumentState::completion_suggestions` and related context helpers.
   - **Goal**: Keep `DocumentState` as thin coordinator.
 
-- [ ] **B3. Extract hover engine into dedicated module**
+- [x] **B3. Extract hover engine into dedicated module**
   - **New files**: `crates/lsp/src/document/hover.rs`.
   - **Move from**: `hover_markdown` and symbol documentation helpers.
   - **Goal**: Hover behavior changes won’t risk completion logic.
 
-- [ ] **B4. Extract parser/position/text utility helpers**
+- [x] **B4. Extract parser/position/text utility helpers**
   - **New files**: `crates/lsp/src/document/text_utils.rs`, `crates/lsp/src/document/position.rs`.
   - **Move from**: `byte_offset_for_position`, token scanners, span/range conversion helpers.
 
-- [ ] **B5. Move tests out of `document.rs` into dedicated test modules**
+- [x] **B5. Move tests out of `document.rs` into dedicated test modules**
   - **New folder**: `crates/lsp/src/document/tests/`
   - **Example files**:
     - `completion_tests.rs`
@@ -142,7 +142,7 @@ These decisions are intended to align with the long-term vision and reduce drift
 
 ## Phase C — Unify Semantic Ownership in Core
 
-- [ ] **C1. Introduce core semantic snapshot API for tooling**
+- [x] **C1. Introduce core semantic snapshot API for tooling**
   - **New file**: `crates/core/src/semantic/tooling.rs` (or `crates/core/src/semantic/lsp.rs`)
   - **Expose**:
     - declaration index (providers/schemas/agents)
