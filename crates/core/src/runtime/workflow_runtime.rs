@@ -4,6 +4,7 @@ use crate::dsl::{
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{collect_agent_dependencies, evaluate_expression, EvaluationContext};
+use crate::runtime::inference::InferenceSetting;
 use crate::runtime::provider::{build_provider_index, ProviderConfig};
 use crate::runtime::runner::{AgentExecutionRequest, AgentRunner, LoopAgentRunner};
 use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
@@ -787,109 +788,11 @@ fn build_agent_config(agent_declaration: &AgentDeclaration, runtime_state: &Runt
 
     let mut config = AgentConfig::default();
 
-    if let Some(max_tokens) = parse_optional_u64(inference_fields, "max_tokens")? {
-        config = config.with_max_tokens(u64_to_usize(max_tokens, "max_tokens", &agent_declaration.name)?);
-    }
-
-    if let Some(temperature) = parse_optional_f32(inference_fields, "temperature")? {
-        config = config.with_temperature(temperature);
-    }
-
-    if let Some(top_p) = parse_optional_f32(inference_fields, "top_p")? {
-        config = config.with_top_p(top_p);
-    }
-
-    if let Some(top_k) = parse_optional_u64(inference_fields, "top_k")? {
-        config = config.with_top_k(u64_to_u32(top_k, "top_k", &agent_declaration.name)?);
-    }
-
-    if let Some(frequency_penalty) = parse_optional_f32(inference_fields, "frequency_penalty")? {
-        config = config.with_frequency_penalty(frequency_penalty);
-    }
-
-    if let Some(presence_penalty) = parse_optional_f32(inference_fields, "presence_penalty")? {
-        config = config.with_presence_penalty(presence_penalty);
-    }
-
-    if let Some(repeat_penalty) = parse_optional_f32(inference_fields, "repeat_penalty")? {
-        config = config.with_repeat_penalty(repeat_penalty);
-    }
-
-    if let Some(seed) = parse_optional_i32(inference_fields, "seed", &agent_declaration.name)? {
-        config = config.with_seed(seed);
-    }
-
-    if let Some(stuck_threshold) = parse_optional_u64(inference_fields, "stuck_threshold")? {
-        config = config.with_stuck_threshold(u64_to_usize(stuck_threshold, "stuck_threshold", &agent_declaration.name)?);
-    }
-
-    if let Some(provider_max_retries) = parse_optional_u64(inference_fields, "provider_max_retries")? {
-        config = config.with_provider_max_retries(u64_to_usize(provider_max_retries, "provider_max_retries", &agent_declaration.name)?);
-    }
-
-    if let Some(provider_retry_base_delay_ms) = parse_optional_u64(inference_fields, "provider_retry_base_delay_ms")? {
-        config = config.with_provider_retry_base_delay_ms(provider_retry_base_delay_ms);
+    for inference_setting in InferenceSetting::all() {
+        config = inference_setting.apply(config, inference_fields, &agent_declaration.name)?;
     }
 
     Ok(config)
-}
-
-fn parse_optional_u64(inference_fields: &Map<String, Value>, field_name: &str) -> Result<Option<u64>, WorkflowRuntimeError> {
-    let Some(field_value) = inference_fields.get(field_name) else {
-        return Ok(None);
-    };
-
-    let Some(parsed_value) = field_value.as_u64() else {
-        return Err(WorkflowRuntimeError::Other {
-            message: format!("inference `{field_name}` must be a non-negative integer"),
-        });
-    };
-
-    Ok(Some(parsed_value))
-}
-
-fn parse_optional_i32(
-    inference_fields: &Map<String, Value>,
-    field_name: &str,
-    agent_name: &str,
-) -> Result<Option<i32>, WorkflowRuntimeError> {
-    let Some(field_value) = inference_fields.get(field_name) else {
-        return Ok(None);
-    };
-
-    let Some(parsed_value) = field_value.as_i64() else {
-        return Err(WorkflowRuntimeError::InvalidAgentProperty {
-            agent_name: agent_name.to_string(),
-            property: "inference".to_string(),
-            message: format!("`{field_name}` must be an integer"),
-        });
-    };
-
-    let parsed_value = i32::try_from(parsed_value).map_err(|_| WorkflowRuntimeError::InvalidAgentProperty {
-        agent_name: agent_name.to_string(),
-        property: "inference".to_string(),
-        message: format!("`{field_name}` exceeds i32 range"),
-    })?;
-
-    Ok(Some(parsed_value))
-}
-
-fn parse_optional_f32(inference_fields: &Map<String, Value>, field_name: &str) -> Result<Option<f32>, WorkflowRuntimeError> {
-    let Some(field_value) = inference_fields.get(field_name) else {
-        return Ok(None);
-    };
-
-    let parsed_value = serde_json::from_value::<f32>(field_value.clone()).map_err(|_| WorkflowRuntimeError::Other {
-        message: format!("inference `{field_name}` must be numeric"),
-    })?;
-
-    if !parsed_value.is_finite() {
-        return Err(WorkflowRuntimeError::Other {
-            message: format!("inference `{field_name}` must be numeric"),
-        });
-    }
-
-    Ok(Some(parsed_value))
 }
 
 fn normalize_prompt(prompt_value: Value) -> String {
@@ -930,20 +833,4 @@ fn runtime_state_to_evaluation_context(runtime_state: &RuntimeState, local_bindi
         agent_contexts: runtime_state.agent_contexts.clone(),
         local_bindings,
     }
-}
-
-fn u64_to_usize(value: u64, field_name: &str, agent_name: &str) -> Result<usize, WorkflowRuntimeError> {
-    usize::try_from(value).map_err(|_| WorkflowRuntimeError::InvalidAgentProperty {
-        agent_name: agent_name.to_string(),
-        property: "inference".to_string(),
-        message: format!("`{field_name}` exceeds usize range"),
-    })
-}
-
-fn u64_to_u32(value: u64, field_name: &str, agent_name: &str) -> Result<u32, WorkflowRuntimeError> {
-    u32::try_from(value).map_err(|_| WorkflowRuntimeError::InvalidAgentProperty {
-        agent_name: agent_name.to_string(),
-        property: "inference".to_string(),
-        message: format!("`{field_name}` exceeds u32 range"),
-    })
 }
