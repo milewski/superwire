@@ -68,6 +68,7 @@ impl DocumentState {
 
         let semantic_index = self.semantic_index_for_completion(position);
         let line_has_property_separator = line_prefix.trim_start().contains(':');
+        let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
 
         if !line_has_property_separator && !inside_interpolation_expression {
             match completion_scope {
@@ -119,7 +120,7 @@ impl DocumentState {
             }
         }
 
-        semantic_index.default_suggestions()
+        semantic_index.default_suggestions(should_include_builtin_function_suggestions)
     }
 
     #[must_use]
@@ -879,8 +880,8 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    fn default_suggestions(&self) -> Vec<CompletionSuggestion> {
-        let mut completion_suggestions = builtin_symbol_suggestions();
+    fn default_suggestions(&self, include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = builtin_symbol_suggestions(include_builtin_function_suggestions);
 
         completion_suggestions.extend(self.providers.keys().map(|provider_name| CompletionSuggestion {
             label: provider_name.clone(),
@@ -1698,8 +1699,9 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
     }
 }
 
-fn builtin_symbol_suggestions() -> Vec<CompletionSuggestion> {
+fn builtin_symbol_suggestions(include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
     builtin_symbol_docs()
+        .filter(|builtin_symbol_doc| include_builtin_function_suggestions || !matches!(builtin_symbol_doc.kind, CompletionKind::Function))
         .map(|builtin_symbol_doc| CompletionSuggestion {
             label: builtin_symbol_doc.label.to_string(),
             kind: builtin_symbol_doc.kind,
@@ -1797,7 +1799,7 @@ fn find_builtin_symbol_doc(symbol_name: &str) -> Option<BuiltinSymbolDoc> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompletionSuggestion, DocumentState, Position, TypeExpression};
+    use super::{CompletionKind, CompletionSuggestion, DocumentState, Position, TypeExpression};
     use crate::protocol::DiagnosticCode;
     use engine_ai_core::dsl::{
         AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind,
@@ -1878,6 +1880,27 @@ mod tests {
                     available_labels
                 );
             )+
+        }};
+    }
+
+    macro_rules! assert_completion_excludes_kind {
+        ($completion_suggestions:expr, $completion_kind_pattern:pat) => {{
+            assert!(
+                !$completion_suggestions
+                    .iter()
+                    .any(|completion_suggestion| matches!(completion_suggestion.kind, $completion_kind_pattern)),
+                "unexpected completion kind `{}`; suggestions: {:?}",
+                stringify!($completion_kind_pattern),
+                $completion_suggestions
+                    .iter()
+                    .map(|completion_suggestion| {
+                        (
+                            completion_suggestion.label.clone(),
+                            std::mem::discriminant(&completion_suggestion.kind),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            );
         }};
     }
 
@@ -2462,7 +2485,7 @@ mod tests {
     }
 
     #[test]
-    fn suggests_builtin_functions_and_singleton_keywords_from_enums() {
+    fn suppresses_builtin_functions_in_top_level_scope() {
         let (source, cursor_position) = inline_document_with_cursor! {
             <cursor>
 
@@ -2474,9 +2497,24 @@ mod tests {
         let document_state = DocumentState::new(source);
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-        assert_completion_contains_label_groups!(&completion_suggestions, BuiltinFunctionName, SingletonDeclarationKind);
+        assert_completion_contains_label_groups!(&completion_suggestions, SingletonDeclarationKind);
 
         assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Agent, ReferenceKeyword::Tool);
+        assert_completion_excludes_labels!(&completion_suggestions, BuiltinFunctionName);
+    }
+
+    #[test]
+    fn suggests_builtin_functions_in_output_expression_context() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            output {
+                value: <cursor>
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains_label_groups!(&completion_suggestions, BuiltinFunctionName);
     }
 
     #[test]
@@ -2498,6 +2536,7 @@ mod tests {
         );
 
         assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider);
+        assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
     }
 
     #[test]
@@ -2520,6 +2559,8 @@ mod tests {
             AgentExpressionPropertyName::Model,
             DeclarationKeyword::Provider
         );
+
+        assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
     }
 
     #[test]
