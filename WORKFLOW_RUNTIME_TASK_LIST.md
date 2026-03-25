@@ -58,19 +58,19 @@ This checklist breaks down long-term runtime/compiler work into phased, dependen
 
 ## Phase 2 - Diagnostics Platform (Critical UX and Tooling)
 
-- [ ] Create shared diagnostic model
+- [x] Create shared diagnostic model
   - Reasoning: Parser/runtime/LSP currently need a unified format for consistency.
   - Deliverable: `Diagnostic { code, severity, message, primary_span, labels, notes, help }`.
 
-- [ ] Introduce stable diagnostic codes (for example, `WF1xxx`, `WF2xxx`)
+- [x] Introduce stable diagnostic codes (for example, `WF1xxx`, `WF2xxx`)
   - Reasoning: Stable codes enable docs, support workflows, and LSP integrations.
   - Deliverable: Diagnostic code registry and mapping policy.
 
-- [ ] Implement code-frame renderer with arrows and span labels
+- [x] Implement code-frame renderer with arrows and span labels
   - Reasoning: Rich snippet diagnostics drastically improve debugging speed.
   - Deliverable: CLI renderer showing line numbers, highlights, and pointers.
 
-- [ ] Ensure every validation/runtime error maps to diagnostics + spans where possible
+- [x] Ensure every validation/runtime error maps to diagnostics + spans where possible
   - Reasoning: Avoid generic runtime messages when source location is available.
   - Deliverable: Span propagation strategy from parser AST to IR and runtime failures.
 

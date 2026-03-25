@@ -1,3 +1,4 @@
+use crate::diagnostics::{diagnostics_from_validation_report, render_diagnostics};
 use crate::dsl::{parse_workflow, validate_workflow, ValidationReport, Workflow};
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::semantic::ir::{build_typed_workflow_ir, TypedWorkflowIr};
@@ -15,17 +16,20 @@ pub enum WorkflowPipelineInput<'input> {
 #[derive(Debug, Clone)]
 pub struct ParseStageOutput {
     pub workflow: Workflow,
+    pub source_code: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NormalizeStageOutput {
     pub workflow: Workflow,
+    pub source_code: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ValidateStageOutput {
     pub workflow: Workflow,
     pub validation_report: ValidationReport,
+    pub source_code: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +37,7 @@ pub struct TypecheckStageOutput {
     pub workflow: Workflow,
     pub validation_report: ValidationReport,
     pub typed_workflow_ir: TypedWorkflowIr,
+    pub source_code: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,23 +46,27 @@ pub struct PlanStageOutput {
     pub validation_report: ValidationReport,
     pub typed_workflow_ir: TypedWorkflowIr,
     pub execution_plan: ExecutionPlan,
+    pub source_code: Option<String>,
 }
 
 pub fn parse_workflow_stage(workflow_input: WorkflowPipelineInput<'_>) -> Result<ParseStageOutput, WorkflowRuntimeError> {
-    let workflow = match workflow_input {
+    let (workflow, source_code) = match workflow_input {
         WorkflowPipelineInput::Source(workflow_source) => {
-            parse_workflow(workflow_source).map_err(|source| WorkflowRuntimeError::ParseFailed { source })?
+            let workflow = parse_workflow(workflow_source).map_err(|source| WorkflowRuntimeError::ParseFailed { source })?;
+
+            (workflow, Some(workflow_source.to_string()))
         }
-        WorkflowPipelineInput::Workflow(workflow) => workflow.clone(),
+        WorkflowPipelineInput::Workflow(workflow) => (workflow.clone(), None),
     };
 
-    Ok(ParseStageOutput { workflow })
+    Ok(ParseStageOutput { workflow, source_code })
 }
 
 #[must_use]
 pub fn normalize_workflow_stage(parse_stage_output: ParseStageOutput) -> NormalizeStageOutput {
     NormalizeStageOutput {
         workflow: parse_stage_output.workflow,
+        source_code: parse_stage_output.source_code,
     }
 }
 
@@ -65,14 +74,16 @@ pub fn validate_workflow_stage(normalize_stage_output: NormalizeStageOutput) -> 
     let validation_report = validate_workflow(&normalize_stage_output.workflow);
 
     if validation_report.has_issues() {
-        return Err(WorkflowRuntimeError::InvalidWorkflow {
-            issues: render_validation_report(&validation_report),
-        });
+        let diagnostics = diagnostics_from_validation_report(&validation_report);
+        let rendered = render_diagnostics(&diagnostics, normalize_stage_output.source_code.as_deref());
+
+        return Err(WorkflowRuntimeError::InvalidWorkflow { diagnostics, rendered });
     }
 
     Ok(ValidateStageOutput {
         workflow: normalize_stage_output.workflow,
         validation_report,
+        source_code: normalize_stage_output.source_code,
     })
 }
 
@@ -89,6 +100,7 @@ where
         workflow: validate_stage_output.workflow,
         validation_report: validate_stage_output.validation_report,
         typed_workflow_ir,
+        source_code: validate_stage_output.source_code,
     })
 }
 
@@ -100,6 +112,7 @@ pub fn plan_workflow_stage(typecheck_stage_output: TypecheckStageOutput) -> Resu
         validation_report: typecheck_stage_output.validation_report,
         typed_workflow_ir: typecheck_stage_output.typed_workflow_ir,
         execution_plan,
+        source_code: typecheck_stage_output.source_code,
     })
 }
 
@@ -114,17 +127,6 @@ where
     let typecheck_stage_output = typecheck_workflow_stage::<Input, Output>(validate_stage_output)?;
 
     plan_workflow_stage(typecheck_stage_output)
-}
-
-fn render_validation_report(validation_report: &ValidationReport) -> String {
-    validation_report
-        .issues_with_spans()
-        .map(|(validation_issue, issue_span)| match issue_span {
-            Some(issue_span) => format!("- {validation_issue:?} at {}:{}", issue_span.start.line, issue_span.start.column),
-            None => format!("- {validation_issue:?}"),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[cfg(test)]
@@ -223,7 +225,7 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues }) if issues.contains("UnknownInputFieldReference")
+            Err(WorkflowRuntimeError::InvalidWorkflow { rendered, .. }) if rendered.contains("WF2012")
         ));
     }
 }

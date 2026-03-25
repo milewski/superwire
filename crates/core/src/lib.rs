@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod dsl;
 pub mod runtime;
 pub mod semantic;
