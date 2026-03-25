@@ -133,9 +133,11 @@ mod tests {
         compile_workflow_pipeline, normalize_workflow_stage, parse_workflow_stage, plan_workflow_stage, typecheck_workflow_stage,
         validate_workflow_stage, WorkflowPipelineInput,
     };
+    use crate::parse_inline_workflow;
     use crate::runtime::error::WorkflowRuntimeError;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
+    use std::sync::LazyLock;
 
     #[derive(Debug, Serialize, JsonSchema)]
     struct Input {
@@ -148,43 +150,42 @@ mod tests {
         final_text: String,
     }
 
-    const VALID_WORKFLOW_SOURCE: &str = r#"
-        provider openai {
-            driver: "openai"
-            models: ["model-a"]
-        }
+    static VALID_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
+        parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                models: ["model-a"]
+            }
 
-        input {
-            topic: string
-        }
+            input {
+                topic: string
+            }
 
-        agent first {
-            model: openai("model-a")
-            prompt: input.topic
-            output: string
-        }
+            agent first {
+                model: openai("model-a")
+                prompt: input.topic
+                output: string
+            }
 
-        agent second {
-            model: openai("model-a")
-            prompt: agent.first
-            output: string
-        }
+            agent second {
+                model: openai("model-a")
+                prompt: agent.first
+                output: string
+            }
 
-        output {
-            final_text: agent.second
+            output {
+                final_text: agent.second
+            }
         }
-    "#;
+    });
 
     #[test]
     fn supports_explicit_staged_pipeline_execution() {
-        let parse_stage_output =
-            parse_workflow_stage(WorkflowPipelineInput::Source(VALID_WORKFLOW_SOURCE)).expect("parse stage should succeed");
-
+        let parse_stage_output = parse_workflow_stage(WorkflowPipelineInput::Workflow(&VALID_WORKFLOW)).unwrap();
         let normalize_stage_output = normalize_workflow_stage(parse_stage_output);
-        let validate_stage_output = validate_workflow_stage(normalize_stage_output).expect("validate stage should succeed");
-        let typecheck_stage_output =
-            typecheck_workflow_stage::<Input, Output>(validate_stage_output).expect("typecheck stage should succeed");
-        let plan_stage_output = plan_workflow_stage(typecheck_stage_output).expect("plan stage should succeed");
+        let validate_stage_output = validate_workflow_stage(normalize_stage_output).unwrap();
+        let typecheck_stage_output = typecheck_workflow_stage::<Input, Output>(validate_stage_output).unwrap();
+        let plan_stage_output = plan_workflow_stage(typecheck_stage_output).unwrap();
 
         assert_eq!(
             plan_stage_output.execution_plan.agent_execution_order,
@@ -194,8 +195,7 @@ mod tests {
 
     #[test]
     fn orchestration_entrypoint_runs_all_stages() {
-        let plan_stage_output = compile_workflow_pipeline::<Input, Output>(WorkflowPipelineInput::Source(VALID_WORKFLOW_SOURCE))
-            .expect("pipeline should succeed");
+        let plan_stage_output = compile_workflow_pipeline::<Input, Output>(WorkflowPipelineInput::Workflow(&VALID_WORKFLOW)).unwrap();
 
         assert_eq!(
             plan_stage_output.execution_plan.agent_execution_order,
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn validation_stage_rejects_invalid_workflow() {
-        let invalid_workflow_source = r#"
+        let workflow = parse_inline_workflow! {
             input {
                 known_field: string
             }
@@ -213,11 +213,9 @@ mod tests {
             output {
                 broken: input.missing_field
             }
-        "#;
+        };
 
-        let parse_stage_output =
-            parse_workflow_stage(WorkflowPipelineInput::Source(invalid_workflow_source)).expect("parse stage should succeed");
-
+        let parse_stage_output = parse_workflow_stage(WorkflowPipelineInput::Workflow(&workflow)).unwrap();
         let normalize_stage_output = normalize_workflow_stage(parse_stage_output);
         let validate_result = validate_workflow_stage(normalize_stage_output);
 

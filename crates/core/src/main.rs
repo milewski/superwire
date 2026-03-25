@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let inline = parse_inline_workflow! {
         provider openai {
             driver: "openai"
-            api_endpoint: "http://169.254.83.107:1234/v1"
+            api_endpoint: "http://100.76.74.102:1234/v1"
             models: ["qwen3.5-27b"]
         }
 
