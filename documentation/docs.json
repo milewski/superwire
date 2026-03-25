@@ -14,6 +14,7 @@
   },
   "styling": {
     "codeblocks": {
+      "theme": "css-variables",
       "languages": {
         "custom": [
           "languages/ai.tmLanguage.json",
