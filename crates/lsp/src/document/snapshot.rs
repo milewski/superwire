@@ -1,7 +1,7 @@
 use engine_ai_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
-use engine_ai_core::dsl::{parse_workflow, validate_workflow, DslParseError, ValidationReport};
+use engine_ai_core::dsl::{parse_workflow, validate_workflow, DslParseError};
 
 use crate::protocol::DiagnosticCode;
 
@@ -12,7 +12,7 @@ use super::{DiagnosticSeverity, DocumentDiagnostic};
 #[derive(Debug)]
 pub(super) struct SemanticSnapshot {
     pub(super) parse_error: Option<DslParseError>,
-    validation_report: Option<ValidationReport>,
+    diagnostics: Vec<CoreDiagnostic>,
     pub(super) semantic_index: SemanticIndex,
 }
 
@@ -22,32 +22,28 @@ impl SemanticSnapshot {
             Ok(workflow) => {
                 let validation_report = validate_workflow(&workflow);
                 let semantic_index = SemanticIndex::from_workflow(&workflow);
+                let diagnostics = validation_report.diagnostics();
 
                 Self {
                     parse_error: None,
-                    validation_report: Some(validation_report),
+                    diagnostics,
                     semantic_index,
                 }
             }
-            Err(parse_error) => Self {
-                parse_error: Some(parse_error),
-                validation_report: None,
-                semantic_index: SemanticIndex::from_text_fallback(source_text),
-            },
+            Err(parse_error) => {
+                let diagnostics = vec![parse_error.diagnostic()];
+
+                Self {
+                    parse_error: Some(parse_error),
+                    diagnostics,
+                    semantic_index: SemanticIndex::from_text_fallback(source_text),
+                }
+            }
         }
     }
 
     pub(super) fn diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
-        if let Some(parse_error) = &self.parse_error {
-            return vec![document_diagnostic_from_core(&parse_error.diagnostic(), source_text)];
-        }
-
-        let Some(validation_report) = &self.validation_report else {
-            return Vec::new();
-        };
-
-        validation_report
-            .diagnostics()
+        self.diagnostics
             .iter()
             .map(|core_diagnostic| document_diagnostic_from_core(core_diagnostic, source_text))
             .collect()
