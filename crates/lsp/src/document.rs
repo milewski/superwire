@@ -1,22 +1,20 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashSet;
 
+mod completion;
+mod completion_context;
+mod reference;
 mod scope;
+mod semantic_index;
 mod snapshot;
 mod types;
 
-use scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
 use snapshot::SemanticSnapshot;
 pub use types::{CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic};
 
-use engine_ai_core::dsl::{
-    parse_workflow, AgentProperty, Declaration, DeclarationKeyword, Expression, ForClauseKeyword, ProviderDeclaration, ReferenceKeyword,
-    SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
-};
+use engine_ai_core::dsl::{DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression};
 use engine_ai_core::runtime::ProviderDriver;
 
 use crate::protocol::{Position, Range};
-
-const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
 #[derive(Debug)]
 pub struct DocumentState {
@@ -40,93 +38,6 @@ impl DocumentState {
     #[must_use]
     pub fn diagnostics(&self) -> Vec<DocumentDiagnostic> {
         self.semantic_snapshot.diagnostics(&self.text)
-    }
-
-    #[must_use]
-    pub fn completion_suggestions(&self, position: Position) -> Vec<CompletionSuggestion> {
-        let Some(line_prefix) = self.line_prefix(position) else {
-            return Vec::new();
-        };
-
-        let inside_interpolation_expression = is_inside_interpolation_expression(&line_prefix);
-
-        if self.is_inside_multiline_string_literal(position) && !inside_interpolation_expression {
-            return Vec::new();
-        }
-
-        let completion_scope = self.completion_scope(position);
-
-        if completion_scope == CompletionScope::TypedDeclarations {
-            if !line_prefix.contains(':') {
-                return Vec::new();
-            }
-
-            let semantic_index = self.semantic_index_for_completion(position);
-            let current_schema_name = semantic_index.schema_name_at_position(position);
-
-            return semantic_index.type_suggestions(&line_prefix, current_schema_name);
-        }
-
-        let semantic_index = self.semantic_index_for_completion(position);
-        let line_has_property_separator = line_prefix.trim_start().contains(':');
-        let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
-
-        if !line_has_property_separator && !inside_interpolation_expression {
-            match completion_scope {
-                CompletionScope::InferenceSettings => {
-                    return inference_setting_scope_suggestions(&line_prefix);
-                }
-                CompletionScope::AgentProperties => {
-                    return agent_property_scope_suggestions(&line_prefix);
-                }
-                CompletionScope::General | CompletionScope::TypedDeclarations => {}
-            }
-        }
-
-        if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {
-            let model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
-
-            if !model_suggestions.is_empty() {
-                return model_suggestions;
-            }
-        }
-
-        if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, &line_prefix) {
-            return provider_driver_suggestions;
-        }
-
-        if let Some(provider_property_suggestions) = semantic_index.provider_property_suggestions(position, &line_prefix) {
-            return provider_property_suggestions;
-        }
-
-        if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
-            let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(&line_prefix);
-            let reference_suggestions =
-                semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
-
-            if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
-                return reference_suggestions;
-            }
-
-            if reference_completion_path.root_keyword() == Some(ReferenceKeyword::Tool) {
-                return reference_suggestions;
-            }
-
-            if !reference_suggestions.is_empty() {
-                return reference_suggestions;
-            }
-        }
-
-        if semantic_index.is_type_position(position, &line_prefix) {
-            let current_schema_name = semantic_index.schema_name_at_position(position);
-            let type_suggestions = semantic_index.type_suggestions(&line_prefix, current_schema_name);
-
-            if !type_suggestions.is_empty() {
-                return type_suggestions;
-            }
-        }
-
-        semantic_index.default_suggestions(should_include_builtin_function_suggestions)
     }
 
     #[must_use]
@@ -180,1065 +91,6 @@ impl DocumentState {
 
         Some(line_characters[start_index..end_index].iter().collect())
     }
-
-    fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
-        if self.semantic_snapshot.parse_error.is_none() {
-            return self.semantic_snapshot.semantic_index.clone();
-        }
-
-        self.recovered_semantic_index(position)
-            .unwrap_or_else(|| self.semantic_snapshot.semantic_index.clone())
-    }
-
-    fn recovered_semantic_index(&self, position: Position) -> Option<SemanticIndex> {
-        let cursor_offset = byte_offset_for_position(&self.text, position)?;
-
-        let mut recovered_source = String::with_capacity(self.text.len() + COMPLETION_RECOVERY_PLACEHOLDER.len());
-        recovered_source.push_str(&self.text[..cursor_offset]);
-        recovered_source.push_str(COMPLETION_RECOVERY_PLACEHOLDER);
-        recovered_source.push_str(&self.text[cursor_offset..]);
-
-        let workflow = parse_workflow(&recovered_source).ok()?;
-
-        Some(SemanticIndex::from_workflow(&workflow))
-    }
-
-    fn completion_scope(&self, position: Position) -> CompletionScope {
-        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
-            return CompletionScope::General;
-        };
-
-        completion_scope_at_offset(&self.text, cursor_offset)
-    }
-
-    fn is_inside_multiline_string_literal(&self, position: Position) -> bool {
-        let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
-            return false;
-        };
-
-        is_inside_multiline_string_literal(&self.text, cursor_offset)
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct SemanticIndex {
-    providers: HashMap<String, ProviderSummary>,
-    provider_locations: Vec<NamedSpan>,
-    schemas: HashMap<String, SchemaSummary>,
-    schema_names: Vec<String>,
-    schema_locations: Vec<NamedSpan>,
-    input_fields: BTreeMap<String, TypeExpression>,
-    secrets_fields: BTreeMap<String, TypeExpression>,
-    agents: HashMap<String, AgentSummary>,
-    agent_names: Vec<String>,
-    output_locations: Vec<SourceSpan>,
-    typed_declaration_locations: Vec<SourceSpan>,
-    agent_locations: Vec<NamedSpan>,
-}
-
-impl SemanticIndex {
-    fn from_workflow(workflow: &Workflow) -> Self {
-        let mut semantic_index = Self::default();
-
-        for declaration in workflow.declarations() {
-            match declaration {
-                Declaration::Provider(provider_declaration) => {
-                    semantic_index.insert_provider(provider_declaration);
-                }
-                Declaration::Schema(schema_declaration) => {
-                    let schema_fields = schema_declaration
-                        .fields
-                        .iter()
-                        .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-                        .collect::<BTreeMap<_, _>>();
-
-                    semantic_index
-                        .schemas
-                        .insert(schema_declaration.name.clone(), SchemaSummary { fields: schema_fields });
-
-                    semantic_index.schema_names.push(schema_declaration.name.clone());
-                    semantic_index.schema_locations.push(NamedSpan {
-                        name: schema_declaration.name.clone(),
-                        span: schema_declaration.span,
-                    });
-                    semantic_index.typed_declaration_locations.push(schema_declaration.span);
-                }
-                Declaration::Input(input_declaration) => {
-                    if semantic_index.input_fields.is_empty() {
-                        semantic_index.input_fields = typed_fields_to_map(&input_declaration.fields);
-                    }
-
-                    semantic_index.typed_declaration_locations.push(input_declaration.span);
-                }
-                Declaration::Secrets(secrets_declaration) => {
-                    if semantic_index.secrets_fields.is_empty() {
-                        semantic_index.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
-                    }
-
-                    semantic_index.typed_declaration_locations.push(secrets_declaration.span);
-                }
-                Declaration::Agent(agent_declaration) => {
-                    let output_type = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
-                        AgentProperty::Output(type_expression) => Some(type_expression.clone()),
-                        AgentProperty::Model(_)
-                        | AgentProperty::Prompt(_)
-                        | AgentProperty::Context(_)
-                        | AgentProperty::Inference(_)
-                        | AgentProperty::Tools(_)
-                        | AgentProperty::Custom { name: _, value: _ } => None,
-                    });
-
-                    semantic_index
-                        .agents
-                        .insert(agent_declaration.name.clone(), AgentSummary { output_type });
-
-                    semantic_index.agent_names.push(agent_declaration.name.clone());
-                    semantic_index.agent_locations.push(NamedSpan {
-                        name: agent_declaration.name.clone(),
-                        span: agent_declaration.span,
-                    });
-                }
-                Declaration::Output(output_declaration) => {
-                    semantic_index.output_locations.push(output_declaration.span);
-                }
-            }
-        }
-
-        semantic_index.schema_names.sort();
-        semantic_index.schema_names.dedup();
-
-        semantic_index.agent_names.sort();
-        semantic_index.agent_names.dedup();
-
-        semantic_index
-    }
-
-    fn from_text_fallback(source_text: &str) -> Self {
-        let provider_names = collect_named_declaration_names(source_text, DeclarationKeyword::Provider);
-        let schema_names = collect_named_declaration_names(source_text, DeclarationKeyword::Schema);
-        let agent_names = collect_named_declaration_names(source_text, DeclarationKeyword::Agent);
-
-        let input_fields = collect_singleton_block_field_names(source_text, SingletonDeclarationKind::Input)
-            .into_iter()
-            .map(|field_name| (field_name, TypeExpression::String))
-            .collect::<BTreeMap<_, _>>();
-
-        let secrets_fields = collect_singleton_block_field_names(source_text, SingletonDeclarationKind::Secrets)
-            .into_iter()
-            .map(|field_name| (field_name, TypeExpression::String))
-            .collect::<BTreeMap<_, _>>();
-
-        Self {
-            providers: provider_names
-                .iter()
-                .map(|provider_name| {
-                    (
-                        provider_name.clone(),
-                        ProviderSummary {
-                            driver: None,
-                            models: Vec::new(),
-                        },
-                    )
-                })
-                .collect(),
-            provider_locations: Vec::new(),
-            schemas: schema_names
-                .iter()
-                .map(|schema_name| (schema_name.clone(), SchemaSummary { fields: BTreeMap::new() }))
-                .collect(),
-            schema_names,
-            schema_locations: Vec::new(),
-            input_fields,
-            secrets_fields,
-            agents: agent_names
-                .iter()
-                .map(|agent_name| (agent_name.clone(), AgentSummary { output_type: None }))
-                .collect(),
-            agent_names,
-            output_locations: Vec::new(),
-            typed_declaration_locations: Vec::new(),
-            agent_locations: Vec::new(),
-        }
-    }
-
-    fn insert_provider(&mut self, provider_declaration: &ProviderDeclaration) {
-        let provider_driver = provider_declaration
-            .properties
-            .iter()
-            .find(|provider_property| provider_property.name == "driver")
-            .and_then(|provider_property| match &provider_property.value {
-                Expression::StringLiteral(driver_name) => ProviderDriver::parse(driver_name),
-                Expression::StringTemplate(_)
-                | Expression::NumberLiteral(_)
-                | Expression::BooleanLiteral(_)
-                | Expression::NullLiteral
-                | Expression::Reference(_)
-                | Expression::FunctionCall(_)
-                | Expression::ArrayLiteral(_)
-                | Expression::ObjectLiteral(_) => None,
-            });
-
-        let provider_models = provider_declaration
-            .properties
-            .iter()
-            .find(|provider_property| provider_property.name == "models")
-            .and_then(|provider_property| extract_models(&provider_property.value))
-            .unwrap_or_default();
-
-        self.providers.insert(
-            provider_declaration.name.clone(),
-            ProviderSummary {
-                driver: provider_driver,
-                models: provider_models,
-            },
-        );
-
-        self.provider_locations.push(NamedSpan {
-            name: provider_declaration.name.clone(),
-            span: provider_declaration.span,
-        });
-    }
-
-    fn model_call_suggestions(&self, model_call_context: &ModelCallCompletionContext) -> Vec<CompletionSuggestion> {
-        let Some(provider_summary) = self.providers.get(&model_call_context.provider_name) else {
-            return Vec::new();
-        };
-
-        let mut completion_suggestions = provider_summary
-            .models
-            .iter()
-            .filter(|model_name| model_name.starts_with(&model_call_context.model_prefix))
-            .map(|model_name| {
-                let insert_text = if model_call_context.inside_string_literal {
-                    model_name.clone()
-                } else {
-                    format!("\"{model_name}\"")
-                };
-
-                CompletionSuggestion {
-                    label: model_name.clone(),
-                    kind: CompletionKind::Value,
-                    detail: format!("Model from `{}` provider", model_call_context.provider_name),
-                    documentation: "Model declared in provider `models` list.".to_string(),
-                    insert_text,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
-
-        completion_suggestions
-    }
-
-    fn provider_driver_value_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
-        let provider_name = self.provider_name_at_position(position)?;
-        let _ = provider_name;
-
-        let trimmed_line_prefix = line_prefix.trim_start();
-        let (property_name, property_value_prefix) = trimmed_line_prefix.split_once(':')?;
-
-        if property_name.trim() != "driver" {
-            return None;
-        }
-
-        let value_completion_context = ValueCompletionContext::from_value_prefix(property_value_prefix);
-        let mut completion_suggestions = ProviderDriver::all()
-            .into_iter()
-            .map(engine_ai_core::ProviderDriver::as_str)
-            .filter(|driver_name| driver_name.starts_with(&value_completion_context.value_prefix))
-            .map(|driver_name| {
-                let insert_text = if value_completion_context.inside_string_literal {
-                    driver_name.to_string()
-                } else {
-                    format!("\"{driver_name}\"")
-                };
-
-                CompletionSuggestion {
-                    label: driver_name.to_string(),
-                    kind: CompletionKind::Value,
-                    detail: "Provider driver".to_string(),
-                    documentation: "Valid provider driver value.".to_string(),
-                    insert_text,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
-
-        Some(completion_suggestions)
-    }
-
-    fn provider_property_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
-        let provider_name = self.provider_name_at_position(position)?;
-
-        if line_prefix.trim_start().contains(':') {
-            return None;
-        }
-
-        let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
-        let mut provider_property_names = self.provider_property_names(provider_name);
-
-        provider_property_names.retain(|property_name| property_name.starts_with(property_prefix));
-
-        if provider_property_names.is_empty() {
-            return None;
-        }
-
-        let completion_suggestions = provider_property_names
-            .into_iter()
-            .map(|property_name| CompletionSuggestion {
-                label: property_name.to_string(),
-                kind: CompletionKind::Property,
-                detail: format!("`{provider_name}` provider property"),
-                documentation: "Provider configuration property.".to_string(),
-                insert_text: property_name.to_string(),
-            })
-            .collect::<Vec<_>>();
-
-        Some(completion_suggestions)
-    }
-
-    fn provider_property_names(&self, provider_name: &str) -> Vec<&'static str> {
-        let Some(provider_summary) = self.providers.get(provider_name) else {
-            return all_provider_property_names();
-        };
-
-        if let Some(provider_driver) = provider_summary.driver {
-            return provider_driver.available_property_names().to_vec();
-        }
-
-        all_provider_property_names()
-    }
-
-    fn reference_path_suggestions(
-        &self,
-        reference_completion_path: &ReferenceCompletionPath,
-        reference_completion_constraint: ReferenceCompletionConstraint,
-        position: Position,
-    ) -> Vec<CompletionSuggestion> {
-        let current_schema_name = self.schema_name_at_position(position);
-        let current_agent_name = self.agent_name_at_position(position);
-
-        if reference_completion_path.is_schema_root() {
-            if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
-                return Vec::new();
-            }
-
-            return self.schema_reference_suggestions(reference_completion_path, current_schema_name);
-        }
-
-        match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input) => self.singleton_reference_suggestions(
-                &self.input_fields,
-                &reference_completion_path.complete_accesses,
-                &reference_completion_path.pending_prefix,
-                "Input field",
-                reference_completion_constraint,
-            ),
-            Some(ReferenceKeyword::Secrets) => self.singleton_reference_suggestions(
-                &self.secrets_fields,
-                &reference_completion_path.complete_accesses,
-                &reference_completion_path.pending_prefix,
-                "Secrets field",
-                reference_completion_constraint,
-            ),
-            Some(ReferenceKeyword::Agent) => {
-                self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint, current_agent_name)
-            }
-            Some(ReferenceKeyword::Tool) | None => Vec::new(),
-        }
-    }
-
-    fn singleton_reference_suggestions(
-        &self,
-        root_fields: &BTreeMap<String, TypeExpression>,
-        complete_accesses: &[String],
-        pending_prefix: &str,
-        detail_prefix: &str,
-        reference_completion_constraint: ReferenceCompletionConstraint,
-    ) -> Vec<CompletionSuggestion> {
-        if complete_accesses.is_empty() {
-            return root_fields
-                .iter()
-                .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
-                .filter(|(_, field_type)| {
-                    reference_completion_constraint == ReferenceCompletionConstraint::None || field_type.supports_for_loop_iterable()
-                })
-                .map(|(field_name, field_type)| CompletionSuggestion {
-                    label: field_name.clone(),
-                    kind: CompletionKind::Property,
-                    detail: format!("{detail_prefix}: {}", field_type.render_type()),
-                    documentation: "Field in singleton declaration.".to_string(),
-                    insert_text: field_name.clone(),
-                })
-                .collect();
-        }
-
-        let first_field_name = &complete_accesses[0];
-        let Some(root_field_type) = root_fields.get(first_field_name).cloned() else {
-            return Vec::new();
-        };
-
-        let candidate_types = self.resolve_access_path(vec![root_field_type], &complete_accesses[1..]);
-
-        self.field_suggestions_from_types(candidate_types.as_slice(), pending_prefix, reference_completion_constraint)
-    }
-
-    fn agent_reference_suggestions(
-        &self,
-        reference_completion_path: &ReferenceCompletionPath,
-        reference_completion_constraint: ReferenceCompletionConstraint,
-        current_agent_name: Option<&str>,
-    ) -> Vec<CompletionSuggestion> {
-        if reference_completion_path.complete_accesses.is_empty() {
-            return self
-                .agent_names
-                .iter()
-                .filter(|agent_name| agent_name.starts_with(&reference_completion_path.pending_prefix))
-                .filter(|agent_name| current_agent_name.is_none_or(|current_name| *agent_name != current_name))
-                .filter(|agent_name| {
-                    if reference_completion_constraint == ReferenceCompletionConstraint::None {
-                        return true;
-                    }
-
-                    let Some(agent_summary) = self.agents.get(*agent_name) else {
-                        return false;
-                    };
-
-                    let Some(agent_output_type) = &agent_summary.output_type else {
-                        return false;
-                    };
-
-                    agent_output_type.supports_for_loop_iterable()
-                })
-                .map(|agent_name| CompletionSuggestion {
-                    label: agent_name.clone(),
-                    kind: CompletionKind::Variable,
-                    detail: "Declared agent".to_string(),
-                    documentation: "Reference to a declared agent output.".to_string(),
-                    insert_text: agent_name.clone(),
-                })
-                .collect();
-        }
-
-        let agent_name = &reference_completion_path.complete_accesses[0];
-
-        if current_agent_name == Some(agent_name.as_str()) {
-            return Vec::new();
-        }
-
-        let Some(agent_summary) = self.agents.get(agent_name) else {
-            return Vec::new();
-        };
-
-        let Some(agent_output_type) = agent_summary.output_type.clone() else {
-            return Vec::new();
-        };
-
-        let remaining_accesses = &reference_completion_path.complete_accesses[1..];
-        let candidate_types = self.resolve_access_path(vec![agent_output_type], remaining_accesses);
-
-        self.field_suggestions_from_types(
-            candidate_types.as_slice(),
-            &reference_completion_path.pending_prefix,
-            reference_completion_constraint,
-        )
-    }
-
-    fn schema_reference_suggestions(
-        &self,
-        reference_completion_path: &ReferenceCompletionPath,
-        current_schema_name: Option<&str>,
-    ) -> Vec<CompletionSuggestion> {
-        if reference_completion_path.complete_accesses.is_empty() {
-            return self
-                .schema_names
-                .iter()
-                .filter(|schema_name| current_schema_name.is_none_or(|current_name| *schema_name != current_name))
-                .filter(|schema_name| schema_name.starts_with(&reference_completion_path.pending_prefix))
-                .map(|schema_name| CompletionSuggestion {
-                    label: schema_name.clone(),
-                    kind: CompletionKind::Type,
-                    detail: "Named schema".to_string(),
-                    documentation: "Named schema type from this workflow.".to_string(),
-                    insert_text: schema_name.clone(),
-                })
-                .collect();
-        }
-
-        let schema_name = &reference_completion_path.complete_accesses[0];
-
-        if current_schema_name == Some(schema_name.as_str()) {
-            return Vec::new();
-        }
-
-        let Some(schema_summary) = self.schemas.get(schema_name) else {
-            return Vec::new();
-        };
-
-        let root_type = TypeExpression::Object(
-            schema_summary
-                .fields
-                .iter()
-                .map(|(field_name, field_type)| TypedField {
-                    name: field_name.clone(),
-                    field_type: field_type.clone(),
-                    description: None,
-                    span: SourceSpan {
-                        start: SourcePosition { line: 1, column: 1 },
-                        end: SourcePosition { line: 1, column: 1 },
-                    },
-                })
-                .collect(),
-        );
-
-        let candidate_types = self.resolve_access_path(vec![root_type], &reference_completion_path.complete_accesses[1..]);
-
-        self.field_suggestions_from_types(
-            candidate_types.as_slice(),
-            &reference_completion_path.pending_prefix,
-            ReferenceCompletionConstraint::None,
-        )
-    }
-
-    fn field_suggestions_from_types(
-        &self,
-        candidate_types: &[TypeExpression],
-        pending_prefix: &str,
-        reference_completion_constraint: ReferenceCompletionConstraint,
-    ) -> Vec<CompletionSuggestion> {
-        let mut available_fields = BTreeMap::<String, TypeExpression>::new();
-
-        for candidate_type in candidate_types {
-            self.collect_available_fields(candidate_type, &mut available_fields);
-        }
-
-        available_fields
-            .into_iter()
-            .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
-            .filter(|(_, field_type)| {
-                reference_completion_constraint == ReferenceCompletionConstraint::None || field_type.supports_for_loop_iterable()
-            })
-            .map(|(field_name, field_type)| CompletionSuggestion {
-                label: field_name.clone(),
-                kind: CompletionKind::Property,
-                detail: format!("Field: {}", field_type.render_type()),
-                documentation: "Field available at this reference path.".to_string(),
-                insert_text: field_name,
-            })
-            .collect()
-    }
-
-    fn resolve_access_path(&self, start_types: Vec<TypeExpression>, accesses: &[String]) -> Vec<TypeExpression> {
-        let mut candidate_types = start_types;
-
-        for access_name in accesses {
-            let mut next_candidate_types = Vec::<TypeExpression>::new();
-
-            for candidate_type in &candidate_types {
-                self.collect_next_types_for_field(candidate_type, access_name, &mut next_candidate_types);
-            }
-
-            if next_candidate_types.is_empty() {
-                return Vec::new();
-            }
-
-            candidate_types = next_candidate_types;
-        }
-
-        candidate_types
-    }
-
-    fn collect_next_types_for_field(
-        &self,
-        candidate_type: &TypeExpression,
-        field_name: &str,
-        next_candidate_types: &mut Vec<TypeExpression>,
-    ) {
-        match candidate_type {
-            TypeExpression::Object(typed_fields) => {
-                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
-                    next_candidate_types.push(typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_summary) = self.schemas.get(schema_name) else {
-                    return;
-                };
-
-                if let Some(field_type) = schema_summary.fields.get(field_name) {
-                    next_candidate_types.push(field_type.clone());
-                }
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    self.collect_next_types_for_field(union_member, field_name, next_candidate_types);
-                }
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_)
-            | TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::StringEnum(_) => {}
-        }
-    }
-
-    fn collect_available_fields(&self, candidate_type: &TypeExpression, available_fields: &mut BTreeMap<String, TypeExpression>) {
-        match candidate_type {
-            TypeExpression::Object(typed_fields) => {
-                for typed_field in typed_fields {
-                    available_fields
-                        .entry(typed_field.name.clone())
-                        .or_insert_with(|| typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_summary) = self.schemas.get(schema_name) else {
-                    return;
-                };
-
-                for (field_name, field_type) in &schema_summary.fields {
-                    available_fields.entry(field_name.clone()).or_insert_with(|| field_type.clone());
-                }
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    self.collect_available_fields(union_member, available_fields);
-                }
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_)
-            | TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::StringEnum(_) => {}
-        }
-    }
-
-    fn is_type_position(&self, position: Position, line_prefix: &str) -> bool {
-        let trimmed_line_prefix = line_prefix.trim_end();
-
-        if trimmed_line_prefix.ends_with("schema.") {
-            return true;
-        }
-
-        let looks_like_type_trigger = trimmed_line_prefix.ends_with(':')
-            || trimmed_line_prefix.ends_with('|')
-            || trimmed_line_prefix.ends_with('[')
-            || trimmed_line_prefix.ends_with('(')
-            || trimmed_line_prefix.ends_with(',');
-
-        if !looks_like_type_trigger {
-            return false;
-        }
-
-        let inside_output = self
-            .output_locations
-            .iter()
-            .copied()
-            .any(|output_span| source_span_contains_position(output_span, position));
-
-        if inside_output {
-            return false;
-        }
-
-        let inside_typed_declaration = self
-            .typed_declaration_locations
-            .iter()
-            .copied()
-            .any(|typed_declaration_span| source_span_contains_position(typed_declaration_span, position));
-
-        if inside_typed_declaration {
-            return true;
-        }
-
-        let inside_agent = self
-            .agent_locations
-            .iter()
-            .any(|agent_location| source_span_contains_position(agent_location.span, position));
-
-        if !inside_agent {
-            return false;
-        }
-
-        trimmed_line_prefix.contains("output:")
-    }
-
-    fn type_suggestions(&self, line_prefix: &str, current_schema_name: Option<&str>) -> Vec<CompletionSuggestion> {
-        if line_prefix.trim_end().ends_with("schema.") {
-            return self
-                .schema_names
-                .iter()
-                .filter(|schema_name| current_schema_name.is_none_or(|current_name| *schema_name != current_name))
-                .map(|schema_name| CompletionSuggestion {
-                    label: schema_name.clone(),
-                    kind: CompletionKind::Type,
-                    detail: "Named schema".to_string(),
-                    documentation: "Type declared in a `schema` block.".to_string(),
-                    insert_text: schema_name.clone(),
-                })
-                .collect();
-        }
-
-        let prefix = trailing_identifier(line_prefix).unwrap_or_default();
-        let mut completion_suggestions = type_symbol_suggestions()
-            .into_iter()
-            .filter(|completion_suggestion| completion_suggestion.label.starts_with(prefix))
-            .collect::<Vec<_>>();
-
-        completion_suggestions.extend(
-            self.schema_names
-                .iter()
-                .filter(|schema_name| {
-                    if current_schema_name == Some(schema_name.as_str()) {
-                        return false;
-                    }
-
-                    let schema_reference = format!("schema.{schema_name}");
-                    schema_reference.starts_with(prefix)
-                })
-                .map(|schema_name| CompletionSuggestion {
-                    label: format!("schema.{schema_name}"),
-                    kind: CompletionKind::Type,
-                    detail: "Named schema reference".to_string(),
-                    documentation: "Reference a named schema type.".to_string(),
-                    insert_text: format!("schema.{schema_name}"),
-                }),
-        );
-
-        completion_suggestions
-    }
-
-    fn default_suggestions(&self, include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
-        let mut completion_suggestions = builtin_symbol_suggestions(include_builtin_function_suggestions);
-
-        completion_suggestions.extend(self.providers.keys().map(|provider_name| CompletionSuggestion {
-            label: provider_name.clone(),
-            kind: CompletionKind::Function,
-            detail: "Declared provider".to_string(),
-            documentation: "Provider call used in `model` properties.".to_string(),
-            insert_text: provider_name.clone(),
-        }));
-
-        completion_suggestions.extend(self.agent_names.iter().map(|agent_name| CompletionSuggestion {
-            label: agent_name.clone(),
-            kind: CompletionKind::Variable,
-            detail: "Declared agent".to_string(),
-            documentation: "Agent declared in this document.".to_string(),
-            insert_text: agent_name.clone(),
-        }));
-
-        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
-
-        completion_suggestions
-    }
-
-    fn hover_markdown(&self, hovered_symbol: &str) -> Option<String> {
-        if let Some(provider_summary) = self.providers.get(hovered_symbol) {
-            let provider_driver_name = provider_summary.driver.map_or("unknown", ProviderDriver::as_str);
-
-            return Some(format!(
-                "**provider {hovered_symbol}**\n\nDriver: `{provider_driver_name}`\n\nDeclared models: {}",
-                if provider_summary.models.is_empty() {
-                    "none".to_string()
-                } else {
-                    provider_summary.models.join(", ")
-                }
-            ));
-        }
-
-        let reference_completion_path = ReferenceCompletionPath::from_token(hovered_symbol)?;
-        let mut resolved_accesses = reference_completion_path.complete_accesses.clone();
-
-        if !reference_completion_path.pending_prefix.is_empty() {
-            resolved_accesses.push(reference_completion_path.pending_prefix.clone());
-        }
-
-        if reference_completion_path.is_schema_root() {
-            let schema_name = resolved_accesses.first()?;
-            let schema_summary = self.schemas.get(schema_name)?;
-
-            return Some(format!(
-                "**schema.{schema_name}**\n\nFields: {}",
-                schema_summary
-                    .fields
-                    .iter()
-                    .map(|(field_name, field_type)| format!("`{field_name}: {}`", field_type.render_type()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-
-        match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input) => {
-                let field_type = resolve_singleton_reference_type(&self.input_fields, resolved_accesses.as_slice(), self)?;
-
-                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
-            }
-            Some(ReferenceKeyword::Secrets) => {
-                let field_type = resolve_singleton_reference_type(&self.secrets_fields, resolved_accesses.as_slice(), self)?;
-
-                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, field_type.render_type()))
-            }
-            Some(ReferenceKeyword::Agent) => {
-                let agent_name = resolved_accesses.first()?;
-                let agent_summary = self.agents.get(agent_name)?;
-
-                let agent_output_type = agent_summary.output_type.as_ref()?;
-
-                if resolved_accesses.len() == 1 {
-                    return Some(format!(
-                        "**agent.{agent_name}**\n\nOutput type: `{}`",
-                        agent_output_type.render_type()
-                    ));
-                }
-
-                let candidate_types = self.resolve_access_path(vec![agent_output_type.clone()], &resolved_accesses[1..]);
-                let final_type = candidate_types.first()?;
-
-                Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
-            }
-            Some(ReferenceKeyword::Tool) | None => None,
-        }
-    }
-
-    fn provider_name_at_position(&self, position: Position) -> Option<&str> {
-        self.provider_locations
-            .iter()
-            .find(|provider_location| source_span_contains_position(provider_location.span, position))
-            .map(|provider_location| provider_location.name.as_str())
-    }
-
-    fn schema_name_at_position(&self, position: Position) -> Option<&str> {
-        self.schema_locations
-            .iter()
-            .find(|schema_location| source_span_contains_position(schema_location.span, position))
-            .map(|schema_location| schema_location.name.as_str())
-    }
-
-    fn agent_name_at_position(&self, position: Position) -> Option<&str> {
-        self.agent_locations
-            .iter()
-            .find(|agent_location| source_span_contains_position(agent_location.span, position))
-            .map(|agent_location| agent_location.name.as_str())
-    }
-}
-
-fn resolve_singleton_reference_type(
-    root_fields: &BTreeMap<String, TypeExpression>,
-    resolved_accesses: &[String],
-    semantic_index: &SemanticIndex,
-) -> Option<TypeExpression> {
-    let first_field_name = resolved_accesses.first()?;
-    let root_field_type = root_fields.get(first_field_name)?.clone();
-
-    if resolved_accesses.len() == 1 {
-        return Some(root_field_type);
-    }
-
-    let candidate_types = semantic_index.resolve_access_path(vec![root_field_type], &resolved_accesses[1..]);
-
-    candidate_types.first().cloned()
-}
-
-#[derive(Debug, Clone)]
-struct ProviderSummary {
-    driver: Option<ProviderDriver>,
-    models: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-struct SchemaSummary {
-    fields: BTreeMap<String, TypeExpression>,
-}
-
-#[derive(Debug, Clone)]
-struct AgentSummary {
-    output_type: Option<TypeExpression>,
-}
-
-#[derive(Debug, Clone)]
-struct NamedSpan {
-    name: String,
-    span: SourceSpan,
-}
-
-#[derive(Debug, Clone)]
-struct ModelCallCompletionContext {
-    provider_name: String,
-    model_prefix: String,
-    inside_string_literal: bool,
-}
-
-impl ModelCallCompletionContext {
-    fn from_line_prefix(line_prefix: &str) -> Option<Self> {
-        let trimmed_prefix = line_prefix.trim_end();
-        let open_parenthesis_index = trimmed_prefix.rfind('(')?;
-
-        let callee_prefix = trimmed_prefix[..open_parenthesis_index].trim_end();
-        let provider_name = trailing_identifier(callee_prefix)?.to_string();
-        let argument_prefix = &trimmed_prefix[open_parenthesis_index + 1..];
-
-        if argument_prefix.contains(')') {
-            return None;
-        }
-
-        let value_completion_context = ValueCompletionContext::from_value_prefix(argument_prefix);
-
-        Some(Self {
-            provider_name,
-            model_prefix: value_completion_context.value_prefix,
-            inside_string_literal: value_completion_context.inside_string_literal,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ValueCompletionContext {
-    value_prefix: String,
-    inside_string_literal: bool,
-}
-
-impl ValueCompletionContext {
-    fn from_value_prefix(value_prefix: &str) -> Self {
-        let trimmed_value_prefix = value_prefix.trim_start();
-        let quotation_count = trimmed_value_prefix.chars().filter(|character| *character == '"').count();
-
-        if quotation_count % 2 == 1 {
-            let last_quote_index = trimmed_value_prefix.rfind('"').unwrap_or(0);
-
-            return Self {
-                value_prefix: trimmed_value_prefix[last_quote_index + 1..].to_string(),
-                inside_string_literal: true,
-            };
-        }
-
-        Self {
-            value_prefix: trimmed_value_prefix.to_string(),
-            inside_string_literal: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ReferenceCompletionPath {
-    root: String,
-    complete_accesses: Vec<String>,
-    pending_prefix: String,
-}
-
-impl ReferenceCompletionPath {
-    fn from_line_prefix(line_prefix: &str) -> Option<Self> {
-        let reference_token = trailing_reference_token(line_prefix)?;
-
-        Self::from_token(reference_token)
-    }
-
-    fn from_token(reference_token: &str) -> Option<Self> {
-        if reference_token.is_empty() || reference_token.ends_with('?') {
-            return None;
-        }
-
-        let normalized_token = reference_token.replace("?.", ".");
-
-        if normalized_token.contains("..") {
-            return None;
-        }
-
-        let token_parts = normalized_token.split('.').collect::<Vec<_>>();
-        let root = (*token_parts.first()?).to_string();
-
-        if !is_identifier(root.as_str()) {
-            return None;
-        }
-
-        let token_has_trailing_separator = normalized_token.ends_with('.');
-
-        if token_parts.len() == 1 {
-            return Some(Self {
-                root,
-                complete_accesses: Vec::new(),
-                pending_prefix: String::new(),
-            });
-        }
-
-        let mut complete_accesses = Vec::<String>::new();
-
-        if token_has_trailing_separator {
-            for token_part in token_parts.iter().skip(1).take(token_parts.len().saturating_sub(2)) {
-                if token_part.is_empty() || !is_identifier(token_part) {
-                    return None;
-                }
-
-                complete_accesses.push((*token_part).to_string());
-            }
-
-            return Some(Self {
-                root,
-                complete_accesses,
-                pending_prefix: String::new(),
-            });
-        }
-
-        for token_part in token_parts.iter().skip(1).take(token_parts.len().saturating_sub(2)) {
-            if token_part.is_empty() || !is_identifier(token_part) {
-                return None;
-            }
-
-            complete_accesses.push((*token_part).to_string());
-        }
-
-        let pending_prefix = (*token_parts.last()?).to_string();
-
-        if !pending_prefix.is_empty() && !is_identifier(&pending_prefix) {
-            return None;
-        }
-
-        Some(Self {
-            root,
-            complete_accesses,
-            pending_prefix,
-        })
-    }
-
-    fn root_keyword(&self) -> Option<ReferenceKeyword> {
-        ReferenceKeyword::from_identifier(&self.root)
-    }
-
-    fn root_declaration_keyword(&self) -> Option<DeclarationKeyword> {
-        DeclarationKeyword::from_identifier(&self.root)
-    }
-
-    fn is_schema_root(&self) -> bool {
-        self.root_declaration_keyword() == Some(DeclarationKeyword::Schema)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ReferenceCompletionConstraint {
-    None,
-    ForLoopIterable,
-}
-
-impl ReferenceCompletionConstraint {
-    fn from_line_prefix(line_prefix: &str) -> Self {
-        if is_for_loop_iterable_reference_context(line_prefix) {
-            return Self::ForLoopIterable;
-        }
-
-        Self::None
-    }
 }
 
 fn all_provider_property_names() -> Vec<&'static str> {
@@ -1254,306 +106,6 @@ fn all_provider_property_names() -> Vec<&'static str> {
     property_names.sort_unstable();
 
     property_names
-}
-
-fn extract_models(model_expression: &Expression) -> Option<Vec<String>> {
-    let Expression::ArrayLiteral(model_values) = model_expression else {
-        return None;
-    };
-
-    let mut model_names = Vec::<String>::new();
-
-    for model_value in model_values {
-        let Expression::StringLiteral(model_name) = model_value else {
-            return None;
-        };
-
-        model_names.push(model_name.clone());
-    }
-
-    Some(model_names)
-}
-
-fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpression> {
-    typed_fields
-        .iter()
-        .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-        .collect()
-}
-
-fn collect_named_declaration_names(source_text: &str, declaration_keyword: DeclarationKeyword) -> Vec<String> {
-    let declaration_keyword = declaration_keyword.as_str();
-    let mut names = HashSet::<String>::new();
-
-    for source_line in source_text.lines() {
-        let trimmed_line = source_line.trim_start();
-
-        let Some(line_after_keyword) = trimmed_line.strip_prefix(declaration_keyword) else {
-            continue;
-        };
-
-        if !line_after_keyword.starts_with(char::is_whitespace) {
-            continue;
-        }
-
-        let declaration_name = line_after_keyword
-            .trim_start()
-            .chars()
-            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
-            .collect::<String>();
-
-        if declaration_name.is_empty() {
-            continue;
-        }
-
-        names.insert(declaration_name);
-    }
-
-    let mut sorted_names = names.into_iter().collect::<Vec<_>>();
-    sorted_names.sort();
-
-    sorted_names
-}
-
-fn collect_singleton_block_field_names(source_text: &str, singleton_declaration_kind: SingletonDeclarationKind) -> Vec<String> {
-    let block_name = singleton_declaration_kind.as_str();
-    let mut field_names = HashSet::<String>::new();
-    let mut inside_block = false;
-    let mut brace_depth = 0_isize;
-
-    for source_line in source_text.lines() {
-        let trimmed_line = source_line.trim();
-
-        if !inside_block {
-            let starts_named_block = trimmed_line.starts_with(block_name) && trimmed_line[block_name.len()..].trim_start().starts_with('{');
-
-            if starts_named_block {
-                inside_block = true;
-                brace_depth = 1;
-            }
-
-            continue;
-        }
-
-        if brace_depth == 1 {
-            if let Some(field_name) = line_field_name(trimmed_line) {
-                field_names.insert(field_name);
-            }
-        }
-
-        let open_brace_count = isize::try_from(trimmed_line.chars().filter(|character| *character == '{').count()).unwrap_or(isize::MAX);
-        let close_brace_count = isize::try_from(trimmed_line.chars().filter(|character| *character == '}').count()).unwrap_or(isize::MAX);
-
-        brace_depth = brace_depth.saturating_add(open_brace_count);
-        brace_depth = brace_depth.saturating_sub(close_brace_count);
-
-        if brace_depth <= 0 {
-            inside_block = false;
-            brace_depth = 0;
-        }
-    }
-
-    let mut sorted_field_names = field_names.into_iter().collect::<Vec<_>>();
-    sorted_field_names.sort();
-
-    sorted_field_names
-}
-
-fn line_field_name(source_line: &str) -> Option<String> {
-    let (field_name, _) = source_line.split_once(':')?;
-    let field_name = field_name.trim();
-
-    if !is_identifier(field_name) {
-        return None;
-    }
-
-    Some(field_name.to_string())
-}
-
-fn trailing_identifier(line_prefix: &str) -> Option<&str> {
-    let mut start_index = line_prefix.len();
-
-    for (character_index, character) in line_prefix.char_indices().rev() {
-        if character.is_ascii_alphanumeric() || character == '_' {
-            start_index = character_index;
-            continue;
-        }
-
-        break;
-    }
-
-    if start_index == line_prefix.len() {
-        return None;
-    }
-
-    Some(&line_prefix[start_index..])
-}
-
-fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
-    let mut start_index = line_prefix.len();
-
-    for (character_index, character) in line_prefix.char_indices().rev() {
-        if character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?' {
-            start_index = character_index;
-            continue;
-        }
-
-        break;
-    }
-
-    if start_index == line_prefix.len() {
-        return None;
-    }
-
-    Some(&line_prefix[start_index..])
-}
-
-fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
-    let open_count = line_prefix.match_indices("{{").count();
-    let close_count = line_prefix.match_indices("}}").count();
-
-    open_count > close_count
-}
-
-fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
-    let source_prefix = &source_text[..cursor_offset];
-    let triple_quote_count = source_prefix.match_indices("\"\"\"").count();
-
-    triple_quote_count % 2 == 1
-}
-
-fn is_for_loop_iterable_reference_context(line_prefix: &str) -> bool {
-    let for_keyword = ForClauseKeyword::For.as_str();
-    let in_keyword = ForClauseKeyword::In.as_str();
-    let for_keyword_with_surrounding_whitespace = format!(" {for_keyword} ");
-    let for_keyword_with_trailing_whitespace = format!("{for_keyword} ");
-
-    let Some(reference_token) = trailing_reference_token(line_prefix) else {
-        return false;
-    };
-
-    let Some(reference_start_index) = line_prefix.rfind(reference_token) else {
-        return false;
-    };
-
-    let prefix_before_reference = &line_prefix[..reference_start_index];
-    let for_clause_prefix = prefix_before_reference
-        .rfind(for_keyword_with_surrounding_whitespace.as_str())
-        .map_or(prefix_before_reference, |for_clause_index| {
-            &prefix_before_reference[for_clause_index + 1..]
-        });
-
-    let Some(after_for_keyword) = for_clause_prefix.strip_prefix(for_keyword_with_trailing_whitespace.as_str()) else {
-        return false;
-    };
-
-    let Some(iterator_name) = leading_identifier(after_for_keyword) else {
-        return false;
-    };
-
-    let remaining_after_iterator = after_for_keyword[iterator_name.len()..].trim_start();
-    let Some(after_in_keyword) = remaining_after_iterator.strip_prefix(in_keyword) else {
-        return false;
-    };
-
-    after_in_keyword.starts_with(char::is_whitespace)
-}
-
-fn leading_identifier(source_text: &str) -> Option<&str> {
-    let mut identifier_end = 0;
-
-    for character in source_text.chars() {
-        if character.is_ascii_alphanumeric() || character == '_' {
-            identifier_end += character.len_utf8();
-            continue;
-        }
-
-        break;
-    }
-
-    if identifier_end == 0 {
-        return None;
-    }
-
-    let identifier = &source_text[..identifier_end];
-
-    if !is_identifier(identifier) {
-        return None;
-    }
-
-    Some(identifier)
-}
-
-trait ForLoopIterableType {
-    fn supports_for_loop_iterable(&self) -> bool;
-}
-
-impl ForLoopIterableType for TypeExpression {
-    fn supports_for_loop_iterable(&self) -> bool {
-        match self {
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            } => true,
-            TypeExpression::Union(union_members) => union_members.iter().any(ForLoopIterableType::supports_for_loop_iterable),
-            TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::SchemaReference(_)
-            | TypeExpression::StringEnum(_)
-            | TypeExpression::Tuple(_)
-            | TypeExpression::Object(_) => false,
-        }
-    }
-}
-
-fn is_identifier(identifier: &str) -> bool {
-    let mut characters = identifier.chars();
-    let Some(first_character) = characters.next() else {
-        return false;
-    };
-
-    if !first_character.is_ascii_alphabetic() && first_character != '_' {
-        return false;
-    }
-
-    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
-}
-
-fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
-    let target_line = position.line as usize;
-    let target_character = position.character as usize;
-
-    let mut current_line = 0_usize;
-    let mut current_character = 0_usize;
-
-    for (byte_offset, character) in source_text.char_indices() {
-        if current_line == target_line && current_character == target_character {
-            return Some(byte_offset);
-        }
-
-        if character == '\n' {
-            if current_line == target_line {
-                return Some(byte_offset);
-            }
-
-            current_line += 1;
-            current_character = 0;
-            continue;
-        }
-
-        if current_line == target_line {
-            current_character += 1;
-        }
-    }
-
-    if current_line == target_line {
-        return Some(source_text.len());
-    }
-
-    None
 }
 
 fn is_symbol_character(character: char) -> bool {
@@ -2235,6 +787,386 @@ mod tests {
         }
 
         inside_string
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum CompletionMatrixContext {
+        Declarations,
+        AgentProperties,
+        InferenceBlock,
+        TypedDeclarations,
+        Interpolation,
+        ForLoopIterable,
+        Tools,
+    }
+
+    impl CompletionMatrixContext {
+        fn all() -> [Self; 7] {
+            [
+                Self::Declarations,
+                Self::AgentProperties,
+                Self::InferenceBlock,
+                Self::TypedDeclarations,
+                Self::Interpolation,
+                Self::ForLoopIterable,
+                Self::Tools,
+            ]
+        }
+
+        fn display_name(self) -> &'static str {
+            match self {
+                Self::Declarations => "declarations",
+                Self::AgentProperties => "agent_properties",
+                Self::InferenceBlock => "inference_block",
+                Self::TypedDeclarations => "typed_declarations",
+                Self::Interpolation => "interpolation",
+                Self::ForLoopIterable => "for_loop_iterable",
+                Self::Tools => "tools",
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum CompletionExpectationKind {
+        Positive,
+        Negative,
+    }
+
+    impl CompletionExpectationKind {
+        fn display_name(self) -> &'static str {
+            match self {
+                Self::Positive => "positive",
+                Self::Negative => "negative",
+            }
+        }
+    }
+
+    struct CompletionMatrixCase {
+        case_name: &'static str,
+        context: CompletionMatrixContext,
+        expectation_kind: CompletionExpectationKind,
+        source_template: &'static str,
+        expected_present_labels: Vec<&'static str>,
+        expected_absent_labels: Vec<&'static str>,
+        expects_empty_suggestions: bool,
+    }
+
+    fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+        vec![
+            CompletionMatrixCase {
+                case_name: "top_level_declares_keywords",
+                context: CompletionMatrixContext::Declarations,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                <cursor>
+
+                output {
+                    value: null
+                }
+                "#,
+                expected_present_labels: vec![DeclarationKeyword::Provider.as_str(), DeclarationKeyword::Agent.as_str()],
+                expected_absent_labels: vec![BuiltinFunctionName::Context.as_str()],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "agent_block_excludes_declaration_keywords",
+                context: CompletionMatrixContext::Declarations,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                agent writer {
+                    <cursor>
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec![DeclarationKeyword::Provider.as_str(), DeclarationKeyword::Schema.as_str()],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "agent_block_suggests_agent_properties",
+                context: CompletionMatrixContext::AgentProperties,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                agent writer {
+                    <cursor>
+                }
+                "#,
+                expected_present_labels: vec![
+                    AgentExpressionPropertyName::Model.as_str(),
+                    AgentExpressionPropertyName::Prompt.as_str(),
+                ],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "inference_object_excludes_agent_properties",
+                context: CompletionMatrixContext::AgentProperties,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                agent writer {
+                    inference: {
+                        <cursor>
+                    }
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec![
+                    AgentExpressionPropertyName::Model.as_str(),
+                    AgentExpressionPropertyName::Prompt.as_str(),
+                ],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "inference_object_suggests_inference_settings",
+                context: CompletionMatrixContext::InferenceBlock,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                agent writer {
+                    inference: {
+                        <cursor>
+                    }
+                }
+                "#,
+                expected_present_labels: vec![InferenceSetting::Temperature.key(), InferenceSetting::MaxTokens.key()],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "agent_scope_excludes_inference_settings",
+                context: CompletionMatrixContext::InferenceBlock,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                agent release_analyst {
+                    model: openai("gpt-4.1-mini")
+
+                    <cursor>
+
+                    inference: {
+                        temperature: 0.2
+                        max_tokens: 12_000
+                    }
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec![InferenceSetting::Temperature.key(), InferenceSetting::MaxTokens.key()],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "typed_declaration_suggests_primitive_types",
+                context: CompletionMatrixContext::TypedDeclarations,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                input {
+                    product_name: <cursor>
+                }
+                "#,
+                expected_present_labels: vec![
+                    TypeExpression::String.as_completion_label(),
+                    TypeExpression::Number.as_completion_label(),
+                ],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "input_key_position_excludes_typed_declaration_values",
+                context: CompletionMatrixContext::TypedDeclarations,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                input {
+                    <cursor>
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec![
+                    TypeExpression::String.as_completion_label(),
+                    TypeExpression::Number.as_completion_label(),
+                ],
+                expects_empty_suggestions: true,
+            },
+            CompletionMatrixCase {
+                case_name: "interpolation_suggests_agent_references",
+                context: CompletionMatrixContext::Interpolation,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                provider openai {
+                    driver: "openai"
+                    models: ["gpt-4.1-mini"]
+                }
+
+                agent context_agent {
+                    model: openai("gpt-4.1-mini")
+                    prompt: "hello"
+                    output: string
+                }
+
+                agent worker {
+                    model: openai("gpt-4.1-mini")
+                    prompt: "example {{ agent.<cursor> }}"
+                    output: string
+                }
+                "#,
+                expected_present_labels: vec!["context_agent"],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "interpolation_excludes_current_agent_reference",
+                context: CompletionMatrixContext::Interpolation,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                provider openai {
+                    driver: "openai"
+                    models: ["gpt-4.1-mini"]
+                }
+
+                agent context_agent {
+                    model: openai("gpt-4.1-mini")
+                    prompt: "hello"
+                    output: string
+                }
+
+                agent worker {
+                    model: openai("gpt-4.1-mini")
+                    prompt: "example {{ agent.<cursor> }}"
+                    output: string
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec!["worker"],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "for_loop_iterable_suggests_iterable_fields",
+                context: CompletionMatrixContext::ForLoopIterable,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                input {
+                    products: [string]
+                }
+
+                agent worker for item in input.<cursor> {
+                    prompt: item
+                }
+                "#,
+                expected_present_labels: vec!["products"],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "for_loop_iterable_excludes_non_iterable_fields",
+                context: CompletionMatrixContext::ForLoopIterable,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                input {
+                    product_name: string
+                }
+
+                agent worker for item in input.<cursor> {
+                    prompt: item
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec!["product_name"],
+                expects_empty_suggestions: true,
+            },
+            CompletionMatrixCase {
+                case_name: "tools_expression_suggests_tool_keyword",
+                context: CompletionMatrixContext::Tools,
+                expectation_kind: CompletionExpectationKind::Positive,
+                source_template: r#"
+                agent tooling {
+                    tools: <cursor>
+                }
+                "#,
+                expected_present_labels: vec![ReferenceKeyword::Tool.as_str()],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: false,
+            },
+            CompletionMatrixCase {
+                case_name: "tool_namespace_excludes_member_suggestions",
+                context: CompletionMatrixContext::Tools,
+                expectation_kind: CompletionExpectationKind::Negative,
+                source_template: r#"
+                agent tooling {
+                    tools: [tool.<cursor>]
+                }
+                "#,
+                expected_present_labels: vec![],
+                expected_absent_labels: vec![],
+                expects_empty_suggestions: true,
+            },
+        ]
+    }
+
+    #[test]
+    fn completion_behavior_matrix_covers_primary_contexts() {
+        let completion_matrix_cases = completion_matrix_cases();
+
+        for completion_matrix_context in CompletionMatrixContext::all() {
+            assert!(
+                completion_matrix_cases.iter().any(|completion_matrix_case| {
+                    completion_matrix_case.context == completion_matrix_context
+                        && completion_matrix_case.expectation_kind == CompletionExpectationKind::Positive
+                }),
+                "completion matrix should include a positive case for context {}",
+                completion_matrix_context.display_name()
+            );
+
+            assert!(
+                completion_matrix_cases.iter().any(|completion_matrix_case| {
+                    completion_matrix_case.context == completion_matrix_context
+                        && completion_matrix_case.expectation_kind == CompletionExpectationKind::Negative
+                }),
+                "completion matrix should include a negative case for context {}",
+                completion_matrix_context.display_name()
+            );
+        }
+
+        for completion_matrix_case in completion_matrix_cases {
+            let (source, cursor_position) = source_with_cursor(completion_matrix_case.source_template);
+            let document_state = DocumentState::new(source);
+            let completion_suggestions = document_state.completion_suggestions(cursor_position);
+            let available_labels = completion_label_set(&completion_suggestions);
+            let mut sorted_available_labels = available_labels.into_iter().collect::<Vec<_>>();
+
+            sorted_available_labels.sort_unstable();
+
+            if completion_matrix_case.expects_empty_suggestions {
+                assert!(
+                    completion_suggestions.is_empty(),
+                    "case `{}` ({}/{}) expected empty completion suggestions; got labels {:?}",
+                    completion_matrix_case.case_name,
+                    completion_matrix_case.context.display_name(),
+                    completion_matrix_case.expectation_kind.display_name(),
+                    sorted_available_labels
+                );
+
+                continue;
+            }
+
+            for expected_label in completion_matrix_case.expected_present_labels {
+                assert!(
+                    sorted_available_labels.contains(&expected_label),
+                    "case `{}` ({}/{}) expected label `{}`; available labels {:?}",
+                    completion_matrix_case.case_name,
+                    completion_matrix_case.context.display_name(),
+                    completion_matrix_case.expectation_kind.display_name(),
+                    expected_label,
+                    sorted_available_labels
+                );
+            }
+
+            for unexpected_label in completion_matrix_case.expected_absent_labels {
+                assert!(
+                    !sorted_available_labels.contains(&unexpected_label),
+                    "case `{}` ({}/{}) should not include label `{}`; available labels {:?}",
+                    completion_matrix_case.case_name,
+                    completion_matrix_case.context.display_name(),
+                    completion_matrix_case.expectation_kind.display_name(),
+                    unexpected_label,
+                    sorted_available_labels
+                );
+            }
+        }
     }
 
     #[test]
