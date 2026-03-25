@@ -7,7 +7,7 @@ Schemas let you name complex type expressions and reuse them in agent outputs, i
 
 ## Named schemas
 
-```ai-dsl
+```ai
 schema Participant {
     name: string
     role: string
@@ -27,7 +27,7 @@ schema ResearchSummary {
 - inside `secrets`
 - as an agent `output`
 
-```ai-dsl
+```ai
 input {
     lead_participant: schema.Participant
     previous_summary: schema.ResearchSummary
@@ -44,7 +44,7 @@ agent summarize {
 
 A typed field may optionally include a trailing string description.
 
-```ai-dsl
+```ai
 schema ReleaseNote {
     title: string "Short human-readable title"
     impact: "low" | "medium" | "high" "Severity bucket"
@@ -66,7 +66,7 @@ The parser stores these descriptions in the AST so schema-aware tooling can use 
 
 ## Practical example
 
-```ai-dsl
+```ai
 schema AllTypes {
     string_value: string
     nullable_string: string | null

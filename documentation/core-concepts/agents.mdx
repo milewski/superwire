@@ -7,7 +7,7 @@ Agents are the center of the DSL. They describe a named unit of work that can re
 
 ## Basic syntax
 
-```ai-dsl
+```ai
 agent summary {
     model: openai("gpt-4.1-mini")
     prompt: "Summarize {{ input.notes }}."
@@ -17,7 +17,7 @@ agent summary {
 
 ## Agent declaration form
 
-```ai-dsl
+```ai
 agent <name> [for <item> in <expression>] {
     model: <expression>
     prompt: <expression>
@@ -41,7 +41,7 @@ agent <name> [for <item> in <expression>] {
 
 ## A full example
 
-```ai-dsl
+```ai
 agent research_brief {
     model: openai("gpt-4.1-mini")
 
@@ -76,7 +76,7 @@ Referencing `agent.other_agent` creates a dependency edge automatically.
 
 The grammar also supports agent loops:
 
-```ai-dsl
+```ai
 agent remediation_plan for finding in agent.findings.items {
     model: openai("gpt-4.1-mini")
     prompt: "Create a remediation plan for {{ finding }}."

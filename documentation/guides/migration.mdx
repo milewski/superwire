@@ -9,14 +9,14 @@ Older examples in this repository's documentation used an earlier DSL shape. The
 
 Before:
 
-```ai-dsl
+```ai
 model <- "ollama/qwen3:8b"
 prompt <- "Say hello"
 ```
 
 Now:
 
-```ai-dsl
+```ai
 model: ollama("qwen3.5:8b")
 prompt: "Say hello"
 ```
@@ -25,7 +25,7 @@ prompt: "Say hello"
 
 Before:
 
-```ai-dsl
+```ai
 <- agent greeting {
     ...
 }
@@ -33,7 +33,7 @@ Before:
 
 Now:
 
-```ai-dsl
+```ai
 agent greeting {
     ...
 }
@@ -47,7 +47,7 @@ output {
 
 Before:
 
-```ai-dsl
+```ai
 agent process for_each item in input.items {
     ...
 }
@@ -55,7 +55,7 @@ agent process for_each item in input.items {
 
 Now:
 
-```ai-dsl
+```ai
 agent process for item in input.items {
     ...
 }
@@ -65,13 +65,13 @@ agent process for item in input.items {
 
 Before:
 
-```ai-dsl
+```ai
 model <- "ollama/qwen3:8b"
 ```
 
 Now:
 
-```ai-dsl
+```ai
 model: ollama("qwen3:8b")
 ```
 
@@ -79,7 +79,7 @@ model: ollama("qwen3:8b")
 
 Prefer current forms such as:
 
-```ai-dsl
+```ai
 input.topic
 agent.summary.text
 secrets.openai_api_key

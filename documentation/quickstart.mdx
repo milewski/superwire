@@ -17,7 +17,7 @@ ollama pull qwen3.5:8b
 
 Save this as `hello.ai`:
 
-```ai-dsl
+```ai
 provider ollama {
     driver: "ollama"
     endpoint: "http://localhost:11434"
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Typed input makes workflows reusable:
 
-```ai-dsl
+```ai
 provider ollama {
     driver: "ollama"
     endpoint: "http://localhost:11434"
