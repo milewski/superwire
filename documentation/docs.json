@@ -16,7 +16,7 @@
     "codeblocks": {
       "languages": {
         "custom": [
-          "/ai.tmLanguage.json"
+          "/languages/ai.tmLanguage.json"
         ]
       }
     }
