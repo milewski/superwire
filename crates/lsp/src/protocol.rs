@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 #[derive(Debug, Deserialize)]
@@ -28,10 +28,16 @@ pub struct TextDocumentItem {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Position {
     pub line: u32,
     pub character: u32,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct Range {
+    pub start: Position,
+    pub end: Position,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +66,21 @@ pub struct DidChangeTextDocumentParams {
     pub content_changes: Vec<TextDocumentContentChangeEvent>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DidCloseTextDocumentParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Diagnostic {
+    pub range: Range,
+    pub severity: u32,
+    pub code: String,
+    pub source: String,
+    pub message: String,
+}
+
 #[must_use]
 pub fn success_response(id: Value, result: Value) -> Value {
     json!({
@@ -77,6 +98,26 @@ pub fn error_response(id: Value, code: i64, message: &str) -> Value {
         "error": {
             "code": code,
             "message": message,
-        }
+        },
     })
+}
+
+#[must_use]
+pub fn notification(method: &str, params: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+    })
+}
+
+#[must_use]
+pub fn publish_diagnostics_notification(uri: &str, diagnostics: Vec<Diagnostic>) -> Value {
+    notification(
+        "textDocument/publishDiagnostics",
+        json!({
+            "uri": uri,
+            "diagnostics": diagnostics,
+        }),
+    )
 }

@@ -4,9 +4,10 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
 
-use crate::document::DocumentIndex;
+use crate::document::{CompletionSuggestion, DocumentState};
 use crate::protocol::{
-    error_response, success_response, DidChangeTextDocumentParams, DidOpenTextDocumentParams, JsonRpcRequest, TextDocumentPositionParams,
+    error_response, publish_diagnostics_notification, success_response, Diagnostic, DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, JsonRpcRequest, TextDocumentPositionParams,
 };
 
 #[derive(Debug, Error)]
@@ -21,142 +22,14 @@ pub enum ServerError {
 #[derive(Debug)]
 struct RequestOutcome {
     response: Option<Value>,
+    notifications: Vec<Value>,
     should_exit: bool,
 }
 
 #[derive(Debug, Default)]
 pub struct LanguageServer {
-    documents: HashMap<String, DocumentIndex>,
-    shutdown_requested: bool,
+    documents: HashMap<String, DocumentState>,
 }
-
-#[derive(Debug, Clone, Copy)]
-enum SymbolCategory {
-    Keyword,
-    Function,
-    Namespace,
-    Property,
-    Type,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SymbolDoc {
-    label: &'static str,
-    category: SymbolCategory,
-    detail: &'static str,
-    documentation: &'static str,
-}
-
-const BUILTIN_SYMBOLS: [SymbolDoc; 18] = [
-    SymbolDoc {
-        label: "agent",
-        category: SymbolCategory::Namespace,
-        detail: "Agent namespace",
-        documentation: "Use `agent.<name>` to reference outputs from declared agents.",
-    },
-    SymbolDoc {
-        label: "input",
-        category: SymbolCategory::Namespace,
-        detail: "Input namespace",
-        documentation: "Use `input.<field>` to reference workflow input fields.",
-    },
-    SymbolDoc {
-        label: "schema",
-        category: SymbolCategory::Namespace,
-        detail: "Schema namespace",
-        documentation: "Use `schema.<name>` to reference named schemas declared in the workflow.",
-    },
-    SymbolDoc {
-        label: "secrets",
-        category: SymbolCategory::Namespace,
-        detail: "Secrets namespace",
-        documentation: "Use `secrets.<name>` to reference secret fields declared in the workflow.",
-    },
-    SymbolDoc {
-        label: "tool",
-        category: SymbolCategory::Namespace,
-        detail: "Tool namespace",
-        documentation: "Use `tool.<name>` to reference callable tool declarations.",
-    },
-    SymbolDoc {
-        label: "provider",
-        category: SymbolCategory::Keyword,
-        detail: "Provider declaration",
-        documentation: "Declares an LLM provider configuration block.",
-    },
-    SymbolDoc {
-        label: "agent",
-        category: SymbolCategory::Keyword,
-        detail: "Agent declaration",
-        documentation: "Declares an executable agent with model, prompt, and output type.",
-    },
-    SymbolDoc {
-        label: "schema",
-        category: SymbolCategory::Keyword,
-        detail: "Schema declaration",
-        documentation: "Declares a reusable named type schema.",
-    },
-    SymbolDoc {
-        label: "output",
-        category: SymbolCategory::Keyword,
-        detail: "Output declaration",
-        documentation: "Declares the workflow output object.",
-    },
-    SymbolDoc {
-        label: "context",
-        category: SymbolCategory::Function,
-        detail: "Builtin function",
-        documentation: "Returns the current execution context for an agent invocation.",
-    },
-    SymbolDoc {
-        label: "template",
-        category: SymbolCategory::Function,
-        detail: "Builtin function",
-        documentation: "Renders a structured template from literal and interpolated parts.",
-    },
-    SymbolDoc {
-        label: "compact",
-        category: SymbolCategory::Function,
-        detail: "Builtin function",
-        documentation: "Removes empty values from objects and arrays.",
-    },
-    SymbolDoc {
-        label: "string",
-        category: SymbolCategory::Type,
-        detail: "Primitive type",
-        documentation: "String type.",
-    },
-    SymbolDoc {
-        label: "number",
-        category: SymbolCategory::Type,
-        detail: "Primitive type",
-        documentation: "Integer number type.",
-    },
-    SymbolDoc {
-        label: "float",
-        category: SymbolCategory::Type,
-        detail: "Primitive type",
-        documentation: "Floating-point number type.",
-    },
-    SymbolDoc {
-        label: "boolean",
-        category: SymbolCategory::Type,
-        detail: "Primitive type",
-        documentation: "Boolean type.",
-    },
-    SymbolDoc {
-        label: "null",
-        category: SymbolCategory::Type,
-        detail: "Primitive type",
-        documentation: "Null type.",
-    },
-    SymbolDoc {
-        label: "models",
-        category: SymbolCategory::Property,
-        detail: "Provider property",
-        documentation: "Specifies the models supported by a provider declaration.",
-    },
-];
 
 impl LanguageServer {
     pub async fn run_stdio() -> Result<(), ServerError> {
@@ -174,6 +47,10 @@ impl LanguageServer {
                 message_writer.write_message(&response).await?;
             }
 
+            for notification in outcome.notifications {
+                message_writer.write_message(&notification).await?;
+            }
+
             if outcome.should_exit {
                 break;
             }
@@ -185,111 +62,142 @@ impl LanguageServer {
     fn handle_request(&mut self, request: JsonRpcRequest) -> Result<RequestOutcome, ServerError> {
         log::debug!("handling LSP method {}", request.method);
 
-        let outcome = match request.method.as_str() {
-            "initialize" => RequestOutcome {
-                response: request.id.map(|request_id| success_response(request_id, initialize_result())),
-                should_exit: false,
-            },
-            "initialized" => RequestOutcome {
-                response: None,
-                should_exit: false,
-            },
-            "shutdown" => {
-                self.shutdown_requested = true;
+        match request.method.as_str() {
+            "initialize" => Ok(self.initialize_outcome(request.id)),
+            "initialized" => Ok(RequestOutcome::continue_without_response()),
+            "shutdown" => Ok(self.shutdown_outcome(request.id)),
+            "exit" => Ok(RequestOutcome::exit_without_response()),
+            "textDocument/didOpen" => self.handle_did_open(request.params),
+            "textDocument/didChange" => self.handle_did_change(request.params),
+            "textDocument/didClose" => self.handle_did_close(request.params),
+            "textDocument/completion" => self.handle_completion(request.id, request.params),
+            "textDocument/hover" => self.handle_hover(request.id, request.params),
+            _ => Ok(self.method_not_found_outcome(request.id)),
+        }
+    }
 
-                RequestOutcome {
-                    response: request.id.map(|request_id| success_response(request_id, Value::Null)),
-                    should_exit: false,
-                }
+    fn initialize_outcome(&self, request_id: Option<Value>) -> RequestOutcome {
+        RequestOutcome {
+            response: request_id.map(|request_id| success_response(request_id, initialize_result())),
+            notifications: Vec::new(),
+            should_exit: false,
+        }
+    }
+
+    fn shutdown_outcome(&self, request_id: Option<Value>) -> RequestOutcome {
+        RequestOutcome {
+            response: request_id.map(|request_id| success_response(request_id, Value::Null)),
+            notifications: Vec::new(),
+            should_exit: false,
+        }
+    }
+
+    fn method_not_found_outcome(&self, request_id: Option<Value>) -> RequestOutcome {
+        RequestOutcome {
+            response: request_id.map(|request_id| error_response(request_id, -32601, "Method not found")),
+            notifications: Vec::new(),
+            should_exit: false,
+        }
+    }
+
+    fn handle_did_open(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
+        let open_params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
+
+        self.documents.insert(
+            open_params.text_document.uri.clone(),
+            DocumentState::new(open_params.text_document.text),
+        );
+
+        let diagnostics_notification = self.publish_document_diagnostics(open_params.text_document.uri.as_str());
+
+        Ok(RequestOutcome::without_response(diagnostics_notification))
+    }
+
+    fn handle_did_change(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
+        let change_params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
+
+        if let Some(last_change) = change_params.content_changes.last() {
+            if let Some(document_state) = self.documents.get_mut(&change_params.text_document.uri) {
+                document_state.replace_text(last_change.text.clone());
+            } else {
+                self.documents.insert(
+                    change_params.text_document.uri.clone(),
+                    DocumentState::new(last_change.text.clone()),
+                );
             }
-            "exit" => RequestOutcome {
-                response: None,
-                should_exit: true,
-            },
-            "textDocument/didOpen" => {
-                let open_params: DidOpenTextDocumentParams = serde_json::from_value(request.params)?;
+        }
 
-                self.documents
-                    .insert(open_params.text_document.uri, DocumentIndex::new(open_params.text_document.text));
+        let diagnostics_notification = self.publish_document_diagnostics(change_params.text_document.uri.as_str());
 
-                RequestOutcome {
-                    response: None,
-                    should_exit: false,
-                }
-            }
-            "textDocument/didChange" => {
-                let change_params: DidChangeTextDocumentParams = serde_json::from_value(request.params)?;
+        Ok(RequestOutcome::without_response(diagnostics_notification))
+    }
 
-                if let Some(last_change) = change_params.content_changes.last() {
-                    self.documents
-                        .insert(change_params.text_document.uri, DocumentIndex::new(last_change.text.clone()));
-                }
+    fn handle_did_close(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
+        let close_params: DidCloseTextDocumentParams = serde_json::from_value(params)?;
 
-                RequestOutcome {
-                    response: None,
-                    should_exit: false,
-                }
-            }
-            "textDocument/completion" => {
-                let request_id = request.id.unwrap_or(Value::Null);
-                let completion_params: TextDocumentPositionParams = serde_json::from_value(request.params)?;
-                let completion_result = self.completion_result(&completion_params);
+        self.documents.remove(&close_params.text_document.uri);
 
-                RequestOutcome {
-                    response: Some(success_response(request_id, completion_result)),
-                    should_exit: false,
-                }
-            }
-            "textDocument/hover" => {
-                let request_id = request.id.unwrap_or(Value::Null);
-                let hover_params: TextDocumentPositionParams = serde_json::from_value(request.params)?;
+        let diagnostics_notification = publish_diagnostics_notification(&close_params.text_document.uri, Vec::new());
 
-                let response = match self.hover_result(&hover_params) {
-                    Some(hover_result) => success_response(request_id, hover_result),
-                    None => success_response(request_id, Value::Null),
-                };
+        Ok(RequestOutcome::without_response(Some(diagnostics_notification)))
+    }
 
-                RequestOutcome {
-                    response: Some(response),
-                    should_exit: false,
-                }
-            }
-            _ => RequestOutcome {
-                response: request.id.map(|request_id| error_response(request_id, -32601, "Method not found")),
-                should_exit: false,
-            },
-        };
+    fn handle_completion(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let completion_params: TextDocumentPositionParams = serde_json::from_value(params)?;
 
-        Ok(outcome)
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.completion_result(&completion_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_hover(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let hover_params: TextDocumentPositionParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.hover_result(&hover_params).unwrap_or(Value::Null),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn publish_document_diagnostics(&self, document_uri: &str) -> Option<Value> {
+        let document_state = self.documents.get(document_uri)?;
+        let diagnostics = document_state
+            .diagnostics()
+            .into_iter()
+            .map(|document_diagnostic| Diagnostic {
+                range: document_diagnostic.range,
+                severity: document_diagnostic.severity.as_lsp_severity(),
+                code: document_diagnostic.code,
+                source: "engine-ai-lsp".to_string(),
+                message: document_diagnostic.message,
+            })
+            .collect::<Vec<_>>();
+
+        Some(publish_diagnostics_notification(document_uri, diagnostics))
     }
 
     fn completion_result(&self, completion_params: &TextDocumentPositionParams) -> Value {
-        let Some(document_index) = self.documents.get(&completion_params.text_document.uri) else {
+        let Some(document_state) = self.documents.get(&completion_params.text_document.uri) else {
             return json!({
                 "isIncomplete": false,
                 "items": [],
             });
         };
 
-        let line_prefix = document_index.line_prefix(completion_params.position).unwrap_or_default();
-
-        let completion_items = if line_prefix.ends_with("schema.") {
-            named_completion_items(document_index.schema_names(), 7, "Named schema")
-        } else if line_prefix.ends_with("agent.") {
-            named_completion_items(document_index.agent_names(), 6, "Declared agent")
-        } else if line_prefix.ends_with("input.") {
-            named_completion_items(document_index.input_fields(), 5, "Input field")
-        } else if line_prefix.ends_with("secrets.") {
-            named_completion_items(document_index.secret_fields(), 5, "Secret field")
-        } else if looks_like_function_context(&line_prefix) {
-            builtin_symbols()
-                .iter()
-                .filter(|symbol| matches!(symbol.category, SymbolCategory::Function))
-                .map(symbol_completion_item)
-                .collect()
-        } else {
-            builtin_symbols().iter().map(symbol_completion_item).collect()
-        };
+        let completion_items = document_state
+            .completion_suggestions(completion_params.position)
+            .into_iter()
+            .map(completion_item_to_value)
+            .collect::<Vec<_>>();
 
         json!({
             "isIncomplete": false,
@@ -298,16 +206,36 @@ impl LanguageServer {
     }
 
     fn hover_result(&self, hover_params: &TextDocumentPositionParams) -> Option<Value> {
-        let document_index = self.documents.get(&hover_params.text_document.uri)?;
-        let hovered_symbol = document_index.symbol_at(hover_params.position)?;
+        let document_state = self.documents.get(&hover_params.text_document.uri)?;
+        let hover_markdown = document_state.hover_markdown(hover_params.position)?;
 
-        if let Some(hover_markdown) = dynamic_symbol_hover(document_index, &hovered_symbol) {
-            return Some(markdown_hover(&hover_markdown));
+        Some(markdown_hover(&hover_markdown))
+    }
+}
+
+impl RequestOutcome {
+    fn continue_without_response() -> Self {
+        Self {
+            response: None,
+            notifications: Vec::new(),
+            should_exit: false,
         }
+    }
 
-        let exact_lookup = lookup_symbol(&hovered_symbol).or_else(|| hovered_symbol.rsplit('.').next().and_then(lookup_symbol));
+    fn exit_without_response() -> Self {
+        Self {
+            response: None,
+            notifications: Vec::new(),
+            should_exit: true,
+        }
+    }
 
-        exact_lookup.map(|symbol_doc| markdown_hover(&format_symbol_doc(symbol_doc)))
+    fn without_response(optional_notification: Option<Value>) -> Self {
+        Self {
+            response: None,
+            notifications: optional_notification.into_iter().collect(),
+            should_exit: false,
+        }
     }
 }
 
@@ -350,7 +278,6 @@ impl MessageReader {
         };
 
         let mut message_buffer = vec![0_u8; message_length];
-
         self.reader.read_exact(&mut message_buffer).await?;
 
         Ok(Some(message_buffer))
@@ -381,64 +308,31 @@ impl MessageWriter {
 fn initialize_result() -> Value {
     json!({
         "capabilities": {
-            "textDocumentSync": 1,
+            "textDocumentSync": {
+                "openClose": true,
+                "change": 1
+            },
             "hoverProvider": true,
             "completionProvider": {
                 "resolveProvider": false,
-                "triggerCharacters": [".", ":"]
+                "triggerCharacters": [".", ":", "\""]
             }
         },
         "serverInfo": {
             "name": "engine-ai-lsp",
-            "version": "0.1.0"
+            "version": "0.2.0"
         }
     })
 }
 
-fn builtin_symbols() -> &'static [SymbolDoc] {
-    &BUILTIN_SYMBOLS
-}
-
-fn lookup_symbol(label: &str) -> Option<&'static SymbolDoc> {
-    builtin_symbols().iter().find(|symbol_doc| symbol_doc.label == label)
-}
-
-fn symbol_completion_item(symbol_doc: &SymbolDoc) -> Value {
+fn completion_item_to_value(completion_suggestion: CompletionSuggestion) -> Value {
     json!({
-        "label": symbol_doc.label,
-        "kind": completion_kind(symbol_doc.category),
-        "detail": symbol_doc.detail,
-        "documentation": symbol_doc.documentation,
-        "insertText": symbol_doc.label,
+        "label": completion_suggestion.label,
+        "kind": completion_suggestion.kind.as_lsp_kind(),
+        "detail": completion_suggestion.detail,
+        "documentation": completion_suggestion.documentation,
+        "insertText": completion_suggestion.insert_text,
     })
-}
-
-fn named_completion_items(entries: Vec<String>, kind: u32, detail: &str) -> Vec<Value> {
-    entries
-        .into_iter()
-        .map(|entry| {
-            json!({
-                "label": entry,
-                "kind": kind,
-                "detail": detail,
-                "insertText": entry,
-            })
-        })
-        .collect()
-}
-
-fn completion_kind(symbol_category: SymbolCategory) -> u32 {
-    match symbol_category {
-        SymbolCategory::Keyword => 14,
-        SymbolCategory::Function => 3,
-        SymbolCategory::Namespace => 9,
-        SymbolCategory::Property => 10,
-        SymbolCategory::Type => 13,
-    }
-}
-
-fn format_symbol_doc(symbol_doc: &SymbolDoc) -> String {
-    format!("**{}**\n\n{}\n\n{}", symbol_doc.label, symbol_doc.detail, symbol_doc.documentation)
 }
 
 fn markdown_hover(markdown: &str) -> Value {
@@ -448,58 +342,4 @@ fn markdown_hover(markdown: &str) -> Value {
             "value": markdown,
         }
     })
-}
-
-fn dynamic_symbol_hover(document_index: &DocumentIndex, symbol: &str) -> Option<String> {
-    if let Some(schema_name) = symbol.strip_prefix("schema.") {
-        if document_index
-            .schema_names()
-            .iter()
-            .any(|candidate_name| candidate_name == schema_name)
-        {
-            return Some(format!("**schema.{schema_name}**\n\nNamed schema declared in this document."));
-        }
-    }
-
-    if let Some(agent_reference) = symbol.strip_prefix("agent.") {
-        let agent_name = agent_reference.split('.').next()?;
-
-        if document_index
-            .agent_names()
-            .iter()
-            .any(|candidate_name| candidate_name == agent_name)
-        {
-            return Some(format!("**agent.{agent_name}**\n\nReference to the `{agent_name}` agent output."));
-        }
-    }
-
-    if let Some(input_field) = symbol.strip_prefix("input.") {
-        let field_name = input_field.split('.').next()?;
-
-        if document_index
-            .input_fields()
-            .iter()
-            .any(|candidate_name| candidate_name == field_name)
-        {
-            return Some(format!("**input.{field_name}**\n\nWorkflow input field declared in this document."));
-        }
-    }
-
-    if document_index
-        .provider_names()
-        .iter()
-        .any(|candidate_name| candidate_name == symbol)
-    {
-        return Some(format!(
-            "**{symbol}(...)**\n\nProvider model call bound to the `{symbol}` provider declared in this document."
-        ));
-    }
-
-    None
-}
-
-fn looks_like_function_context(line_prefix: &str) -> bool {
-    let trimmed_prefix = line_prefix.trim_end();
-
-    trimmed_prefix.ends_with(':') || trimmed_prefix.ends_with('(') || trimmed_prefix.ends_with(',')
 }

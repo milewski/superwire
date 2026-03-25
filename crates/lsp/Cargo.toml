@@ -18,4 +18,3 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 colog = { workspace = true }
-regex = { workspace = true }

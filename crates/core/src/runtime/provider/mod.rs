@@ -16,6 +16,11 @@ pub enum ProviderDriver {
 
 impl ProviderDriver {
     #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::OpenAI, Self::Ollama]
+    }
+
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::OpenAI => "openai",
@@ -31,7 +36,24 @@ impl ProviderDriver {
             _ => None,
         }
     }
+
+    #[must_use]
+    pub fn available_property_names(self) -> &'static [&'static str] {
+        match self {
+            Self::OpenAI => &OPENAI_PROVIDER_PROPERTIES,
+            Self::Ollama => &OLLAMA_PROVIDER_PROPERTIES,
+        }
+    }
+
+    #[must_use]
+    pub fn supports_property(self, property_name: &str) -> bool {
+        self.available_property_names().contains(&property_name)
+    }
 }
+
+const OPENAI_PROVIDER_PROPERTIES: [&str; 4] = ["driver", "endpoint", "api_key", "models"];
+
+const OLLAMA_PROVIDER_PROPERTIES: [&str; 3] = ["driver", "endpoint", "models"];
 
 pub trait ProviderConfigParser {
     fn parse(provider_declaration: &ProviderDeclaration) -> Result<ProviderConfig, WorkflowRuntimeError>;

@@ -1,7 +1,7 @@
 pub mod error;
 pub mod expression;
 pub mod functions;
-mod inference;
+pub mod inference;
 pub mod provider;
 mod runner;
 pub mod type_inference;
@@ -12,6 +12,7 @@ mod workflow_runtime;
 mod tests;
 
 pub use error::WorkflowRuntimeError;
+pub use inference::InferenceSetting;
 pub use provider::{ProviderConfig, ProviderDriver};
 pub use runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner};
 pub use workflow_runtime::{execute_workflow, execute_workflow_without_input, WorkflowRuntime};

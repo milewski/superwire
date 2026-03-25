@@ -42,11 +42,22 @@ impl ValidationReport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SingletonDeclarationKind {
     Secrets,
     Input,
     Output,
+}
+
+impl SingletonDeclarationKind {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Secrets => "secrets",
+            Self::Input => "input",
+            Self::Output => "output",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -57,6 +68,20 @@ pub enum ValidationContext {
     Input,
     Secrets,
     Output,
+}
+
+impl ValidationContext {
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Provider(provider_name) => format!("provider `{provider_name}`"),
+            Self::Schema(schema_name) => format!("schema `{schema_name}`"),
+            Self::Agent(agent_name) => format!("agent `{agent_name}`"),
+            Self::Input => "input declaration".to_string(),
+            Self::Secrets => "secrets declaration".to_string(),
+            Self::Output => "output declaration".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +97,10 @@ pub enum ValidationIssue {
     },
     DuplicateSingletonDeclaration {
         declaration_kind: SingletonDeclarationKind,
+    },
+    UnknownAgentProperty {
+        agent_name: String,
+        property_name: String,
     },
     InvalidModelExpression {
         agent_name: String,
@@ -129,6 +158,113 @@ pub enum ValidationIssue {
     },
 }
 
+impl ValidationIssue {
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::DuplicateProvider { .. } => "duplicate_provider",
+            Self::DuplicateSchema { .. } => "duplicate_schema",
+            Self::DuplicateAgent { .. } => "duplicate_agent",
+            Self::DuplicateSingletonDeclaration { .. } => "duplicate_singleton_declaration",
+            Self::UnknownAgentProperty { .. } => "unknown_agent_property",
+            Self::InvalidModelExpression { .. } => "invalid_model_expression",
+            Self::UnknownProviderInModel { .. } => "unknown_provider_in_model",
+            Self::UnknownModelForProvider { .. } => "unknown_model_for_provider",
+            Self::UnknownAgentReference { .. } => "unknown_agent_reference",
+            Self::InvalidKeywordReferenceRoot { .. } => "invalid_keyword_reference_root",
+            Self::MissingInputDeclaration { .. } => "missing_input_declaration",
+            Self::MissingSecretsDeclaration { .. } => "missing_secrets_declaration",
+            Self::UnknownInputFieldReference { .. } => "unknown_input_field_reference",
+            Self::UnknownSecretsFieldReference { .. } => "unknown_secrets_field_reference",
+            Self::SecretReferenceInLlmContext { .. } => "secret_reference_in_llm_context",
+            Self::MissingAgentOutputTypeForFieldReference { .. } => "missing_agent_output_type_for_field_reference",
+            Self::InvalidReferencePath { .. } => "invalid_reference_path",
+            Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
+            Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
+        }
+    }
+
+    #[must_use]
+    pub fn message(&self) -> String {
+        match self {
+            Self::DuplicateProvider { provider_name } => {
+                format!("Provider `{provider_name}` is declared more than once.")
+            }
+            Self::DuplicateSchema { schema_name } => {
+                format!("Schema `{schema_name}` is declared more than once.")
+            }
+            Self::DuplicateAgent { agent_name } => {
+                format!("Agent `{agent_name}` is declared more than once.")
+            }
+            Self::DuplicateSingletonDeclaration { declaration_kind } => {
+                format!("`{}` declaration is defined more than once.", declaration_kind.as_str())
+            }
+            Self::UnknownAgentProperty { agent_name, property_name } => {
+                format!("Agent `{agent_name}` declares unsupported property `{property_name}`.")
+            }
+            Self::InvalidModelExpression { agent_name } => {
+                format!("Agent `{agent_name}` has an invalid `model` expression.")
+            }
+            Self::UnknownProviderInModel { agent_name, provider_name } => {
+                format!("Agent `{agent_name}` references unknown provider `{provider_name}` in `model`.")
+            }
+            Self::UnknownModelForProvider {
+                agent_name,
+                provider_name,
+                model_name,
+            } => {
+                format!("Agent `{agent_name}` uses model `{model_name}` which is not registered by provider `{provider_name}`.")
+            }
+            Self::UnknownAgentReference { referenced_agent, context } => {
+                format!("Unknown agent `{referenced_agent}` referenced in {}.", context.describe())
+            }
+            Self::InvalidKeywordReferenceRoot { keyword, context } => {
+                format!("`{}` reference requires a field path in {}.", keyword.as_str(), context.describe())
+            }
+            Self::MissingInputDeclaration { context } => {
+                format!("Missing `input` declaration required by {}.", context.describe())
+            }
+            Self::MissingSecretsDeclaration { context } => {
+                format!("Missing `secrets` declaration required by {}.", context.describe())
+            }
+            Self::UnknownInputFieldReference { field_name, context } => {
+                format!("Unknown input field `{field_name}` referenced in {}.", context.describe())
+            }
+            Self::UnknownSecretsFieldReference { field_name, context } => {
+                format!("Unknown secrets field `{field_name}` referenced in {}.", context.describe())
+            }
+            Self::SecretReferenceInLlmContext { reference_path, context } => {
+                format!("Secret reference `{reference_path}` is not allowed in {}.", context.describe())
+            }
+            Self::MissingAgentOutputTypeForFieldReference { agent_name, context } => {
+                format!(
+                    "Agent `{agent_name}` must declare `output` before field access in {}.",
+                    context.describe()
+                )
+            }
+            Self::InvalidReferencePath {
+                reference_path,
+                invalid_field,
+                context,
+            } => {
+                format!(
+                    "Reference `{reference_path}` has no field `{invalid_field}` in {}.",
+                    context.describe()
+                )
+            }
+            Self::UnknownSchemaReference {
+                referenced_schema,
+                context,
+            } => {
+                format!("Unknown schema `schema.{referenced_schema}` referenced in {}.", context.describe())
+            }
+            Self::AgentDependencyCycle { agent_names } => {
+                format!("Circular agent dependency detected: {}.", agent_names.join(", "))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ProviderInfo {
     declared_models: Option<HashSet<String>>,
@@ -151,6 +287,7 @@ pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
     let validation_index = build_validation_index(workflow, &mut validation_report);
 
     validate_schema_references(workflow, &validation_index, &mut validation_report);
+    validate_agent_properties(workflow, &mut validation_report);
     validate_agent_model_bindings(workflow, &validation_index, &mut validation_report);
     validate_agent_references(workflow, &validation_index, &mut validation_report);
     validate_agent_dependency_cycles(workflow, &validation_index, &mut validation_report);
@@ -310,6 +447,40 @@ fn extract_declared_provider_models(provider_properties: &[ObjectField]) -> Opti
     }
 
     Some(declared_models)
+}
+
+fn validate_agent_properties(workflow: &Workflow, validation_report: &mut ValidationReport) {
+    let mut unknown_agent_properties = HashSet::<(String, String)>::new();
+
+    for declaration in workflow.declarations() {
+        let Declaration::Agent(agent_declaration) = declaration else {
+            continue;
+        };
+
+        for agent_property in &agent_declaration.properties {
+            let AgentProperty::Custom {
+                name: property_name,
+                value: _,
+            } = agent_property
+            else {
+                continue;
+            };
+
+            let issue_key = (agent_declaration.name.clone(), property_name.clone());
+
+            if !unknown_agent_properties.insert(issue_key.clone()) {
+                continue;
+            }
+
+            validation_report.push_issue_with_span(
+                ValidationIssue::UnknownAgentProperty {
+                    agent_name: issue_key.0,
+                    property_name: issue_key.1,
+                },
+                Some(agent_declaration.span),
+            );
+        }
+    }
 }
 
 fn validate_schema_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
@@ -1268,6 +1439,41 @@ mod tests {
             workflow,
             ValidationIssue::InvalidModelExpression { agent_name } if agent_name == "researcher"
         );
+    }
+
+    #[test]
+    fn reports_unknown_agent_properties() {
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            agent researcher {
+                model: openai("gpt-4.1-mini")
+                prompt: "Analyze this"
+                retries: 3
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::UnknownAgentProperty {
+                agent_name,
+                property_name
+            } if agent_name == "researcher" && property_name == "retries"
+        );
+    }
+
+    #[test]
+    fn exposes_stable_codes_and_messages_for_validation_issues() {
+        let issue = ValidationIssue::UnknownAgentProperty {
+            agent_name: "writer".to_string(),
+            property_name: "timeout".to_string(),
+        };
+
+        assert_eq!(issue.code(), "unknown_agent_property");
+        assert!(issue.message().contains("unsupported property `timeout`"));
     }
 
     #[test]
