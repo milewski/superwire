@@ -1,5 +1,5 @@
 use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::provider::{ProviderConfig, ProviderDriver};
+use crate::runtime::provider::ProviderConfig;
 use async_trait::async_trait;
 use engine_ai_agent::{Agent, AgentConfig, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
 use schemars::Schema;
@@ -34,24 +34,11 @@ impl AgentRunner for LoopAgentRunner {
     async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
         match &request.provider_config {
             ProviderConfig::OpenAI(openai_provider_config) => {
-                let openai_provider = if let Some(api_key) = &openai_provider_config.api_key {
-                    OpenAIProvider::new_with_base_url(
-                        openai_provider_config.api_endpoint.clone(),
-                        api_key.clone(),
-                        request.model_name.clone(),
-                    )
-                } else {
-                    let default_openai_endpoint = ProviderDriver::OpenAI.default_endpoint();
-
-                    if openai_provider_config.api_endpoint == default_openai_endpoint {
-                        return Err(WorkflowRuntimeError::ProviderConfiguration {
-                            provider_name: "openai".to_string(),
-                            message: "openai provider requires `api_key` when using default OpenAI endpoint".to_string(),
-                        });
-                    }
-
-                    OpenAIProvider::new_local(openai_provider_config.api_endpoint.clone(), request.model_name.clone())
-                };
+                let openai_provider = OpenAIProvider::new_with_base_url(
+                    openai_provider_config.endpoint.clone(),
+                    openai_provider_config.api_key.clone(),
+                    request.model_name.clone(),
+                );
 
                 self.run_with_provider(openai_provider, request).await
             }

@@ -1,10 +1,20 @@
+use crate::dsl::DslParseError;
 use engine_ai_agent::AgentError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum WorkflowRuntimeError {
+    #[error("workflow parse failed: {source}")]
+    ParseFailed {
+        #[source]
+        source: DslParseError,
+    },
+
     #[error("workflow validation failed:\n{issues}")]
     InvalidWorkflow { issues: String },
+
+    #[error("execution plan invariant violated: {message}")]
+    ExecutionPlanInvariant { message: String },
 
     #[error("missing declaration: {message}")]
     MissingDeclaration { message: String },

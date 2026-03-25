@@ -38,19 +38,19 @@ This checklist breaks down long-term runtime/compiler work into phased, dependen
 
 ## Phase 1 - Compiler Pipeline Separation (High Priority)
 
-- [ ] Introduce explicit pipeline boundaries: parse -> normalize -> validate -> typecheck -> plan
+- [x] Introduce explicit pipeline boundaries: parse -> normalize -> validate -> typecheck -> plan
   - Reasoning: Separating phases avoids semantic leakage into runtime logic and enables incremental tooling.
   - Deliverable: One orchestration entrypoint with typed output per stage.
 
-- [ ] Add typed IR module distinct from parser AST
+- [x] Add typed IR module distinct from parser AST
   - Reasoning: AST tracks syntax; IR tracks resolved semantics and runtime invariants.
   - Deliverable: `core::semantic::ir` with stable structures consumed by planner/runtime.
 
-- [ ] Move runtime planning to `ExecutionPlan` generated from typed IR
+- [x] Move runtime planning to `ExecutionPlan` generated from typed IR
   - Reasoning: Runtime should execute, not infer semantics ad hoc.
   - Deliverable: Deterministic plan object with resolved provider/agent dependencies and typed edges.
 
-- [ ] Add invariant checks at IR/planner boundary
+- [x] Add invariant checks at IR/planner boundary
   - Reasoning: Catch impossible states before runtime starts.
   - Deliverable: Planner validation pass with explicit diagnostics.
 

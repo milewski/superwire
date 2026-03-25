@@ -1,10 +1,11 @@
-mod error;
-mod expression;
+pub mod error;
+pub mod expression;
+pub mod functions;
 mod inference;
-mod provider;
+pub mod provider;
 mod runner;
-mod type_inference;
-mod types;
+pub mod type_inference;
+pub mod types;
 mod workflow_runtime;
 
 #[cfg(test)]

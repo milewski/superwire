@@ -114,6 +114,37 @@ pub struct AgentDeclaration {
     pub span: SourceSpan,
 }
 
+impl AgentDeclaration {
+    #[must_use]
+    pub fn expression_property(&self, property_name: AgentExpressionPropertyName) -> Option<&Expression> {
+        for agent_property in &self.properties {
+            match agent_property {
+                AgentProperty::Model(expression) if property_name == AgentExpressionPropertyName::Model => return Some(expression),
+                AgentProperty::Prompt(expression) if property_name == AgentExpressionPropertyName::Prompt => return Some(expression),
+                AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => return Some(expression),
+                AgentProperty::Inference(expression) if property_name == AgentExpressionPropertyName::Inference => return Some(expression),
+                AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
+                AgentProperty::Model(_)
+                | AgentProperty::Prompt(_)
+                | AgentProperty::Output(_)
+                | AgentProperty::Context(_)
+                | AgentProperty::Inference(_)
+                | AgentProperty::Tools(_)
+                | AgentProperty::Custom { name: _, value: _ } => {}
+            }
+        }
+
+        None
+    }
+
+    pub fn required_expression_property(
+        &self,
+        property_name: AgentExpressionPropertyName,
+    ) -> Result<&Expression, AgentExpressionPropertyName> {
+        self.expression_property(property_name).ok_or(property_name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentForLoop {
     pub iterator_name: String,
@@ -129,6 +160,40 @@ pub enum AgentProperty {
     Inference(Expression),
     Tools(Expression),
     Custom { name: String, value: Expression },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentExpressionPropertyName {
+    Model,
+    Prompt,
+    Context,
+    Inference,
+    Tools,
+}
+
+impl AgentExpressionPropertyName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "model" => Some(Self::Model),
+            "prompt" => Some(Self::Prompt),
+            "context" => Some(Self::Context),
+            "inference" => Some(Self::Inference),
+            "tools" => Some(Self::Tools),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Prompt => "prompt",
+            Self::Context => "context",
+            Self::Inference => "inference",
+            Self::Tools => "tools",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,10 +264,86 @@ pub struct FunctionCall {
     pub arguments: Vec<CallArgument>,
 }
 
+impl FunctionCall {
+    #[must_use]
+    pub fn identifier_name(&self) -> Option<&str> {
+        self.callee.root.as_identifier()
+    }
+
+    #[must_use]
+    pub fn builtin_function_name(&self) -> Option<BuiltinFunctionName> {
+        self.identifier_name().and_then(BuiltinFunctionName::from_identifier)
+    }
+
+    #[must_use]
+    pub fn argument_expression(&self, index: usize) -> Option<&Expression> {
+        self.arguments.get(index).map(CallArgument::expression)
+    }
+
+    #[must_use]
+    pub fn first_argument_expression(&self) -> Option<&Expression> {
+        self.argument_expression(0)
+    }
+
+    #[must_use]
+    pub fn named_argument_expression(&self, argument_name: &str) -> Option<&Expression> {
+        for call_argument in &self.arguments {
+            if call_argument.named_argument_name() == Some(argument_name) {
+                return Some(call_argument.expression());
+            }
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn builtin_named_argument_expression(&self, argument_name: BuiltinFunctionArgumentName) -> Option<&Expression> {
+        self.named_argument_expression(argument_name.as_str())
+    }
+
+    #[must_use]
+    pub fn model_named_argument_expression(&self, argument_name: ModelCallArgumentName) -> Option<&Expression> {
+        self.named_argument_expression(argument_name.as_str())
+    }
+
+    #[must_use]
+    pub fn agent_argument_expression(&self) -> Option<&Expression> {
+        for call_argument in &self.arguments {
+            if call_argument.named_argument_name().is_none() {
+                return Some(call_argument.expression());
+            }
+
+            if call_argument.named_argument_name() == Some(BuiltinFunctionArgumentName::Agent.as_str()) {
+                return Some(call_argument.expression());
+            }
+        }
+
+        None
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallArgument {
     Positional(Expression),
     Named(NamedArgument),
+}
+
+impl CallArgument {
+    #[must_use]
+    pub fn expression(&self) -> &Expression {
+        match self {
+            Self::Positional(expression) => expression,
+            Self::Named(named_argument) => &named_argument.value,
+        }
+    }
+
+    #[must_use]
+    pub fn named_argument_name(&self) -> Option<&str> {
+        match self {
+            Self::Positional(_) => None,
+            Self::Named(named_argument) => Some(named_argument.name.as_str()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,6 +357,59 @@ pub struct Reference {
     pub root: ReferenceRoot,
     pub accesses: Vec<ReferenceAccess>,
     pub span: SourceSpan,
+}
+
+impl Reference {
+    #[must_use]
+    pub fn root_keyword(&self) -> Option<ReferenceKeyword> {
+        self.root.keyword()
+    }
+
+    #[must_use]
+    pub fn is_keyword_root(&self, reference_keyword: ReferenceKeyword) -> bool {
+        self.root_keyword() == Some(reference_keyword)
+    }
+
+    #[must_use]
+    pub fn is_agent_root(&self) -> bool {
+        self.is_keyword_root(ReferenceKeyword::Agent)
+    }
+
+    #[must_use]
+    pub fn first_access(&self) -> Option<&ReferenceAccess> {
+        self.accesses.first()
+    }
+
+    #[must_use]
+    pub fn first_access_field(&self) -> Option<&str> {
+        self.first_access().map(|reference_access| reference_access.field.as_str())
+    }
+
+    #[must_use]
+    pub fn render_path(&self) -> String {
+        let mut rendered_reference = if let Some(reference_root_keyword) = self.root_keyword() {
+            reference_root_keyword.as_str().to_owned()
+        } else {
+            self.root
+                .as_identifier()
+                .expect("non-keyword reference root should be identifier")
+                .to_owned()
+        };
+
+        for reference_access in &self.accesses {
+            if reference_access.optional {
+                rendered_reference.push_str("?.");
+                rendered_reference.push_str(reference_access.field.as_str());
+
+                continue;
+            }
+
+            rendered_reference.push('.');
+            rendered_reference.push_str(reference_access.field.as_str());
+        }
+
+        rendered_reference
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -278,6 +472,78 @@ impl ReferenceKeyword {
             Self::Input => "input",
             Self::Secrets => "secrets",
             Self::Tool => "tool",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinFunctionName {
+    Context,
+    Template,
+    Compact,
+}
+
+impl BuiltinFunctionName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "context" => Some(Self::Context),
+            "template" => Some(Self::Template),
+            "compact" => Some(Self::Compact),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Context => "context",
+            Self::Template => "template",
+            Self::Compact => "compact",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinFunctionArgumentName {
+    Agent,
+}
+
+impl BuiltinFunctionArgumentName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "agent" => Some(Self::Agent),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Agent => "agent",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelCallArgumentName {
+    Model,
+}
+
+impl ModelCallArgumentName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "model" => Some(Self::Model),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Model => "model",
         }
     }
 }
