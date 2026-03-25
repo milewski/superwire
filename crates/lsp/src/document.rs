@@ -62,8 +62,9 @@ impl DocumentState {
             }
 
             let semantic_index = self.semantic_index_for_completion(position);
+            let current_schema_name = semantic_index.schema_name_at_position(position);
 
-            return semantic_index.type_suggestions(&line_prefix);
+            return semantic_index.type_suggestions(&line_prefix, current_schema_name);
         }
 
         let semantic_index = self.semantic_index_for_completion(position);
@@ -101,9 +102,13 @@ impl DocumentState {
         if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
             let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(&line_prefix);
             let reference_suggestions =
-                semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint);
+                semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
 
             if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
+                return reference_suggestions;
+            }
+
+            if reference_completion_path.root_keyword() == Some(ReferenceKeyword::Tool) {
                 return reference_suggestions;
             }
 
@@ -113,7 +118,8 @@ impl DocumentState {
         }
 
         if semantic_index.is_type_position(position, &line_prefix) {
-            let type_suggestions = semantic_index.type_suggestions(&line_prefix);
+            let current_schema_name = semantic_index.schema_name_at_position(position);
+            let type_suggestions = semantic_index.type_suggestions(&line_prefix, current_schema_name);
 
             if !type_suggestions.is_empty() {
                 return type_suggestions;
@@ -220,6 +226,7 @@ struct SemanticIndex {
     provider_locations: Vec<NamedSpan>,
     schemas: HashMap<String, SchemaSummary>,
     schema_names: Vec<String>,
+    schema_locations: Vec<NamedSpan>,
     input_fields: BTreeMap<String, TypeExpression>,
     secrets_fields: BTreeMap<String, TypeExpression>,
     agents: HashMap<String, AgentSummary>,
@@ -250,6 +257,10 @@ impl SemanticIndex {
                         .insert(schema_declaration.name.clone(), SchemaSummary { fields: schema_fields });
 
                     semantic_index.schema_names.push(schema_declaration.name.clone());
+                    semantic_index.schema_locations.push(NamedSpan {
+                        name: schema_declaration.name.clone(),
+                        span: schema_declaration.span,
+                    });
                     semantic_index.typed_declaration_locations.push(schema_declaration.span);
                 }
                 Declaration::Input(input_declaration) => {
@@ -336,6 +347,7 @@ impl SemanticIndex {
                 .map(|schema_name| (schema_name.clone(), SchemaSummary { fields: BTreeMap::new() }))
                 .collect(),
             schema_names,
+            schema_locations: Vec::new(),
             input_fields,
             secrets_fields,
             agents: agent_names
@@ -502,13 +514,17 @@ impl SemanticIndex {
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
+        position: Position,
     ) -> Vec<CompletionSuggestion> {
+        let current_schema_name = self.schema_name_at_position(position);
+        let current_agent_name = self.agent_name_at_position(position);
+
         if reference_completion_path.is_schema_root() {
             if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
                 return Vec::new();
             }
 
-            return self.schema_reference_suggestions(reference_completion_path);
+            return self.schema_reference_suggestions(reference_completion_path, current_schema_name);
         }
 
         match reference_completion_path.root_keyword() {
@@ -526,7 +542,9 @@ impl SemanticIndex {
                 "Secrets field",
                 reference_completion_constraint,
             ),
-            Some(ReferenceKeyword::Agent) => self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint),
+            Some(ReferenceKeyword::Agent) => {
+                self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint, current_agent_name)
+            }
             Some(ReferenceKeyword::Tool) | None => Vec::new(),
         }
     }
@@ -570,12 +588,14 @@ impl SemanticIndex {
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
+        current_agent_name: Option<&str>,
     ) -> Vec<CompletionSuggestion> {
         if reference_completion_path.complete_accesses.is_empty() {
             return self
                 .agent_names
                 .iter()
                 .filter(|agent_name| agent_name.starts_with(&reference_completion_path.pending_prefix))
+                .filter(|agent_name| current_agent_name.is_none_or(|current_name| *agent_name != current_name))
                 .filter(|agent_name| {
                     if reference_completion_constraint == ReferenceCompletionConstraint::None {
                         return true;
@@ -602,6 +622,11 @@ impl SemanticIndex {
         }
 
         let agent_name = &reference_completion_path.complete_accesses[0];
+
+        if current_agent_name == Some(agent_name.as_str()) {
+            return Vec::new();
+        }
+
         let Some(agent_summary) = self.agents.get(agent_name) else {
             return Vec::new();
         };
@@ -620,11 +645,16 @@ impl SemanticIndex {
         )
     }
 
-    fn schema_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+    fn schema_reference_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        current_schema_name: Option<&str>,
+    ) -> Vec<CompletionSuggestion> {
         if reference_completion_path.complete_accesses.is_empty() {
             return self
                 .schema_names
                 .iter()
+                .filter(|schema_name| current_schema_name.is_none_or(|current_name| *schema_name != current_name))
                 .filter(|schema_name| schema_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|schema_name| CompletionSuggestion {
                     label: schema_name.clone(),
@@ -637,6 +667,11 @@ impl SemanticIndex {
         }
 
         let schema_name = &reference_completion_path.complete_accesses[0];
+
+        if current_schema_name == Some(schema_name.as_str()) {
+            return Vec::new();
+        }
+
         let Some(schema_summary) = self.schemas.get(schema_name) else {
             return Vec::new();
         };
@@ -840,11 +875,12 @@ impl SemanticIndex {
         trimmed_line_prefix.contains("output:")
     }
 
-    fn type_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {
+    fn type_suggestions(&self, line_prefix: &str, current_schema_name: Option<&str>) -> Vec<CompletionSuggestion> {
         if line_prefix.trim_end().ends_with("schema.") {
             return self
                 .schema_names
                 .iter()
+                .filter(|schema_name| current_schema_name.is_none_or(|current_name| *schema_name != current_name))
                 .map(|schema_name| CompletionSuggestion {
                     label: schema_name.clone(),
                     kind: CompletionKind::Type,
@@ -865,6 +901,10 @@ impl SemanticIndex {
             self.schema_names
                 .iter()
                 .filter(|schema_name| {
+                    if current_schema_name == Some(schema_name.as_str()) {
+                        return false;
+                    }
+
                     let schema_reference = format!("schema.{schema_name}");
                     schema_reference.starts_with(prefix)
                 })
@@ -978,6 +1018,20 @@ impl SemanticIndex {
             .iter()
             .find(|provider_location| source_span_contains_position(provider_location.span, position))
             .map(|provider_location| provider_location.name.as_str())
+    }
+
+    fn schema_name_at_position(&self, position: Position) -> Option<&str> {
+        self.schema_locations
+            .iter()
+            .find(|schema_location| source_span_contains_position(schema_location.span, position))
+            .map(|schema_location| schema_location.name.as_str())
+    }
+
+    fn agent_name_at_position(&self, position: Position) -> Option<&str> {
+        self.agent_locations
+            .iter()
+            .find(|agent_location| source_span_contains_position(agent_location.span, position))
+            .map(|agent_location| agent_location.name.as_str())
     }
 }
 
@@ -2238,6 +2292,22 @@ mod tests {
     }
 
     #[test]
+    fn reports_invalid_bare_tool_reference_diagnostic() {
+        let (source, _cursor_position) = inline_document_with_cursor! {
+            agent tooling {
+                tools: [tool]
+            }
+
+            <cursor>
+        };
+
+        let document_state = DocumentState::new(source);
+        let diagnostics = document_state.diagnostics();
+
+        assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidKeywordReferenceRoot);
+    }
+
+    #[test]
     fn completes_nested_input_field_attributes() {
         let (source, cursor_position) = inline_document_with_cursor! {
             input {
@@ -2303,6 +2373,7 @@ mod tests {
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
         assert_completion_contains!(&completion_suggestions, "context_agent");
+        assert_completion_excludes_labels!(&completion_suggestions, "worker");
     }
 
     #[test]
@@ -2443,6 +2514,36 @@ mod tests {
 
             agent worker for item in input.<cursor> {
                 prompt: item
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert!(completion_suggestions.is_empty());
+    }
+
+    #[test]
+    fn suggests_tool_keyword_inside_tools_expression_context() {
+        let (source, cursor_position) = source_with_cursor(
+            r#"
+            agent tooling {
+                tools: <cursor>
+            }
+            "#,
+        );
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Tool);
+    }
+
+    #[test]
+    fn suppresses_member_suggestions_for_tool_namespace_reference() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            agent tooling {
+                tools: [tool.<cursor>]
             }
         };
 
@@ -2658,6 +2759,25 @@ mod tests {
         let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
         assert_completion_contains!(&completion_suggestions, "Person");
+    }
+
+    #[test]
+    fn excludes_current_schema_from_schema_type_suggestions() {
+        let (source, cursor_position) = inline_document_with_cursor! {
+            schema Person {
+                related: schema.<cursor>
+            }
+
+            schema Team {
+                members: [string]
+            }
+        };
+
+        let document_state = DocumentState::new(source);
+        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+        assert_completion_contains!(&completion_suggestions, "Team");
+        assert_completion_excludes_labels!(&completion_suggestions, "Person");
     }
 
     #[test]
