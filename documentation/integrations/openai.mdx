@@ -7,7 +7,7 @@ The runtime includes a built-in OpenAI-compatible driver.
 
 ## Required configuration
 
-```ai
+```ai-dsl
 provider openai {
     driver: "openai"
     endpoint: "https://api.openai.com/v1"
@@ -28,7 +28,7 @@ Optional validation setting:
 
 ## Agent example
 
-```ai
+```ai-dsl
 agent analyst {
     model: openai("gpt-4.1-mini")
     prompt: "Analyze {{ input.notes }} and return the main risks."

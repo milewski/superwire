@@ -12,7 +12,7 @@ Engine AI uses the same type expression grammar in four places:
 
 ## Primitive types
 
-```ai
+```ai-dsl
 string
 number
 float
@@ -22,7 +22,7 @@ null
 
 ## Schema references
 
-```ai
+```ai-dsl
 schema Participant {
     name: string
     role: string
@@ -36,7 +36,7 @@ schema ResearchSummary {
 
 ## Arrays
 
-```ai
+```ai-dsl
 [string]
 [number]
 [{ id: string score: number }]
@@ -44,7 +44,7 @@ schema ResearchSummary {
 
 ### Fixed-length arrays
 
-```ai
+```ai-dsl
 [string; 3]
 ```
 
@@ -52,7 +52,7 @@ Validation enforces the exact array length.
 
 ## Tuples
 
-```ai
+```ai-dsl
 (string, number, [string; 3])
 ```
 
@@ -60,7 +60,7 @@ Tuples validate both order and length.
 
 ## Objects
 
-```ai
+```ai-dsl
 {
     title: string
     score: number
@@ -69,7 +69,7 @@ Tuples validate both order and length.
 
 ## Unions
 
-```ai
+```ai-dsl
 string | null
 schema.Participant | null
 "draft" | "ready" | "published"
@@ -79,7 +79,7 @@ schema.Participant | null
 
 String literals inside type expressions create exact string enum members.
 
-```ai
+```ai-dsl
 status: "draft" | "ready" | "published"
 ```
 
@@ -87,7 +87,7 @@ status: "draft" | "ready" | "published"
 
 You can add a trailing string description to any typed field.
 
-```ai
+```ai-dsl
 output: {
     title: string "Short title shown to the reader"
     score: number "Confidence score from 0 to 100"
@@ -96,7 +96,7 @@ output: {
 
 ## Practical example
 
-```ai
+```ai-dsl
 schema AllTypes {
     string_value: string "A basic string value"
     nullable_number: number | null "Required but may be null"

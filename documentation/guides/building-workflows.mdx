@@ -9,7 +9,7 @@ A good Engine AI workflow usually gets easier to maintain when you design it fro
 
 Decide what the caller should receive.
 
-```ai
+```ai-dsl
 output {
     title: agent.release_summary.title
     summary: agent.release_summary.summary
@@ -21,7 +21,7 @@ output {
 
 When multiple agents or outputs share a structure, give it a name.
 
-```ai
+```ai-dsl
 schema ReleaseSummary {
     title: string
     summary: string
@@ -33,7 +33,7 @@ schema ReleaseSummary {
 
 Declare model backends up front and list allowed models so validation can catch mistakes.
 
-```ai
+```ai-dsl
 provider openai {
     driver: "openai"
     endpoint: "https://api.openai.com/v1"
@@ -46,7 +46,7 @@ provider openai {
 
 Prefer small, typed stages over one huge prompt.
 
-```ai
+```ai-dsl
 agent summarize_notes {
     model: openai("gpt-4.1-mini")
     prompt: "Summarize these notes into three findings: {{ input.notes }}"
@@ -60,7 +60,7 @@ agent summarize_notes {
 
 Downstream stages should read from upstream stages through `agent.*` references.
 
-```ai
+```ai-dsl
 agent create_brief {
     model: openai("gpt-4.1-mini")
     prompt: "Turn these findings into a brief: {{ agent.summarize_notes.findings }}"

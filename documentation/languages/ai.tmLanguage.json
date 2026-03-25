@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "ai",
+  "name": "ai-dsl",
   "scopeName": "source.ai",
   "patterns": [
     {
@@ -534,5 +534,10 @@
   },
   "fileTypes": [
     "ai"
+  ],
+  "aliases": [
+    "ai",
+    "ai-dsl",
+    "engine-ai"
   ]
 }

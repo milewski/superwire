@@ -7,7 +7,7 @@ The DSL supports a `context:` property on agents.
 
 ## Full-context syntax
 
-```ai
+```ai-dsl
 agent summary_from_full_context {
     model: openai("gpt-4.1-mini")
     context: context(agent.research_analysis)
@@ -18,7 +18,7 @@ agent summary_from_full_context {
 
 ## Compacted-context syntax
 
-```ai
+```ai-dsl
 agent summary_from_default_compact_context {
     model: openai("gpt-4.1-mini")
     context: compact(agent.research_analysis)
@@ -29,7 +29,7 @@ agent summary_from_default_compact_context {
 
 ## Custom compaction call
 
-```ai
+```ai-dsl
 agent summary_from_custom_compact_context {
     model: openai("gpt-4.1-mini")
     context: compact(
