@@ -5,6 +5,7 @@ use engine_ai_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword
 use crate::protocol::Position;
 
 use super::semantic_index::SemanticIndex;
+use super::text_utils::{is_identifier, leading_identifier, trailing_reference_token};
 use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
@@ -477,25 +478,6 @@ impl ForLoopIterableType for TypeExpression {
     }
 }
 
-fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
-    let mut start_index = line_prefix.len();
-
-    for (character_index, character) in line_prefix.char_indices().rev() {
-        if character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?' {
-            start_index = character_index;
-            continue;
-        }
-
-        break;
-    }
-
-    if start_index == line_prefix.len() {
-        return None;
-    }
-
-    Some(&line_prefix[start_index..])
-}
-
 fn is_for_loop_iterable_reference_context(line_prefix: &str) -> bool {
     let for_keyword = ForClauseKeyword::For.as_str();
     let in_keyword = ForClauseKeyword::In.as_str();
@@ -531,42 +513,4 @@ fn is_for_loop_iterable_reference_context(line_prefix: &str) -> bool {
     };
 
     after_in_keyword.starts_with(char::is_whitespace)
-}
-
-fn leading_identifier(source_text: &str) -> Option<&str> {
-    let mut identifier_end = 0;
-
-    for character in source_text.chars() {
-        if character.is_ascii_alphanumeric() || character == '_' {
-            identifier_end += character.len_utf8();
-            continue;
-        }
-
-        break;
-    }
-
-    if identifier_end == 0 {
-        return None;
-    }
-
-    let identifier = &source_text[..identifier_end];
-
-    if !is_identifier(identifier) {
-        return None;
-    }
-
-    Some(identifier)
-}
-
-fn is_identifier(identifier: &str) -> bool {
-    let mut characters = identifier.chars();
-    let Some(first_character) = characters.next() else {
-        return false;
-    };
-
-    if !first_character.is_ascii_alphabetic() && first_character != '_' {
-        return false;
-    }
-
-    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }

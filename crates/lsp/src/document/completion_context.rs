@@ -1,3 +1,5 @@
+use super::text_utils::trailing_identifier;
+
 #[derive(Debug, Clone)]
 pub(super) struct ModelCallCompletionContext {
     pub(super) provider_name: String,
@@ -53,30 +55,4 @@ impl ValueCompletionContext {
             inside_string_literal: false,
         }
     }
-}
-
-pub(super) fn trailing_identifier(line_prefix: &str) -> Option<&str> {
-    let mut start_index = line_prefix.len();
-
-    for (character_index, character) in line_prefix.char_indices().rev() {
-        if character.is_ascii_alphanumeric() || character == '_' {
-            start_index = character_index;
-            continue;
-        }
-
-        break;
-    }
-
-    if start_index == line_prefix.len() {
-        return None;
-    }
-
-    Some(&line_prefix[start_index..])
-}
-
-pub(super) fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
-    let open_count = line_prefix.match_indices("{{").count();
-    let close_count = line_prefix.match_indices("}}").count();
-
-    open_count > close_count
 }

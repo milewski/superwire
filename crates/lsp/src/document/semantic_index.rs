@@ -8,9 +8,11 @@ use engine_ai_core::runtime::ProviderDriver;
 
 use crate::protocol::Position;
 
-use super::completion_context::{trailing_identifier, ModelCallCompletionContext, ValueCompletionContext};
+use super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::hover::builtin_symbol_suggestions;
-use super::{all_provider_property_names, source_span_contains_position, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
+use super::position::source_span_contains_position;
+use super::text_utils::{is_identifier, trailing_identifier};
+use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SemanticIndex {
@@ -576,17 +578,4 @@ fn line_field_name(source_line: &str) -> Option<String> {
     }
 
     Some(field_name.to_string())
-}
-
-fn is_identifier(identifier: &str) -> bool {
-    let mut characters = identifier.chars();
-    let Some(first_character) = characters.next() else {
-        return false;
-    };
-
-    if !first_character.is_ascii_alphabetic() && first_character != '_' {
-        return false;
-    }
-
-    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }

@@ -3,19 +3,21 @@ use std::collections::HashSet;
 mod completion;
 mod completion_context;
 mod hover;
+mod position;
 mod reference;
 mod scope;
 mod semantic_index;
 mod snapshot;
+mod text_utils;
 mod types;
 
 use snapshot::SemanticSnapshot;
 pub use types::{CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic};
 
-use engine_ai_core::dsl::{SourcePosition, SourceSpan, TypeExpression};
+use engine_ai_core::dsl::TypeExpression;
 use engine_ai_core::runtime::ProviderDriver;
 
-use crate::protocol::{Position, Range};
+use crate::protocol::Position;
 
 #[derive(Debug)]
 pub struct DocumentState {
@@ -63,62 +65,6 @@ fn all_provider_property_names() -> Vec<&'static str> {
     property_names.sort_unstable();
 
     property_names
-}
-
-fn source_span_to_range(source_text: &str, source_span: SourceSpan) -> Range {
-    let start = source_position_to_position(source_span.start);
-    let mut end = source_position_to_position(source_span.end);
-
-    if end.line < start.line || (end.line == start.line && end.character <= start.character) {
-        end = Position {
-            line: start.line,
-            character: start.character.saturating_add(1),
-        };
-
-        if let Some(line_length) = line_character_count(source_text, start.line) {
-            end.character = end.character.min(u32_from_usize_saturating(line_length));
-        }
-    }
-
-    Range { start, end }
-}
-
-fn line_character_count(source_text: &str, line_index: u32) -> Option<usize> {
-    source_text
-        .lines()
-        .nth(line_index as usize)
-        .map(|line_text| line_text.chars().count())
-}
-
-fn source_position_to_position(source_position: SourcePosition) -> Position {
-    Position {
-        line: u32_from_usize_saturating(source_position.line.saturating_sub(1)),
-        character: u32_from_usize_saturating(source_position.column.saturating_sub(1)),
-    }
-}
-
-fn u32_from_usize_saturating(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
-}
-
-fn source_span_contains_position(source_span: SourceSpan, position: Position) -> bool {
-    let target_line = position.line as usize + 1;
-    let target_column = position.character as usize + 1;
-
-    let starts_before_or_at =
-        (source_span.start.line < target_line) || (source_span.start.line == target_line && source_span.start.column <= target_column);
-
-    let ends_after_or_at =
-        (source_span.end.line > target_line) || (source_span.end.line == target_line && source_span.end.column >= target_column);
-
-    starts_before_or_at && ends_after_or_at
-}
-
-fn zero_range() -> Range {
-    Range {
-        start: Position { line: 0, character: 0 },
-        end: Position { line: 0, character: 1 },
-    }
 }
 
 trait RenderTypeExpression {
