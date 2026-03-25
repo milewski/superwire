@@ -1,5 +1,6 @@
 use super::ast::{SourcePosition, SourceSpan, Workflow};
 use super::visitor::AstVisitor;
+use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use pest::error::LineColLocation;
 use pest_derive::Parser;
 use thiserror::Error;
@@ -116,6 +117,34 @@ impl DslParseError {
             Self::MissingNode { span, .. } => *span,
             Self::UnexpectedRule { span, .. } => *span,
             Self::InvalidIntegerLiteral { span, .. } => *span,
+        }
+    }
+
+    #[must_use]
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span())
+    }
+}
+
+impl From<&DslParseError> for DiagnosticCode {
+    fn from(parse_error: &DslParseError) -> Self {
+        match parse_error {
+            DslParseError::Pest { message: _, span: _ } => Self::ParseError,
+            DslParseError::MissingNode {
+                expected: _,
+                context: _,
+                span: _,
+            } => Self::MissingNode,
+            DslParseError::UnexpectedRule {
+                rule: _,
+                context: _,
+                span: _,
+            } => Self::UnexpectedRule,
+            DslParseError::InvalidIntegerLiteral {
+                literal: _,
+                context: _,
+                span: _,
+            } => Self::InvalidIntegerLiteral,
         }
     }
 }
