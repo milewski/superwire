@@ -319,52 +319,13 @@ async fn rejects_nested_object_when_declared_output_is_string() {
 
     let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
     let runner = ScriptedRunner::from_outputs(vec![json!({ "message": "hello from nested shape" })]);
-    let execution_result = runtime.run_with_runner((), &runner).await;
+    let output = runtime.run_with_runner((), &runner).await;
 
-    assert!(matches!(
-        execution_result,
-        Err(WorkflowRuntimeError::AgentOutputTypeMismatch { .. })
-    ));
+    assert!(matches!(output, Err(WorkflowRuntimeError::AgentOutputTypeMismatch { .. })));
 }
 
 #[tokio::test]
-async fn rejects_ambiguous_nested_candidates_for_declared_schema() {
-    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
-    struct Output {
-        greeting: String,
-    }
-
-    let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
-
-        agent greeting {
-            model: openai("model-a")
-            prompt: "generate message"
-            output: string
-        }
-
-        output {
-            greeting: agent.greeting
-        }
-    };
-
-    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
-    let runner = ScriptedRunner::from_outputs(vec![json!({ "first": "hello", "second": "world" })]);
-
-    let execution_result = runtime.run_with_runner((), &runner).await;
-
-    assert!(matches!(
-        execution_result,
-        Err(WorkflowRuntimeError::AgentOutputTypeMismatch { .. })
-    ));
-}
-
-#[tokio::test]
-async fn executes_number_workflow_and_returns_typed_output() {
+async fn rejects_wrapped_object_for_number_schema() {
     #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
     struct Output {
         answer: i64,
@@ -389,20 +350,26 @@ async fn executes_number_workflow_and_returns_typed_output() {
     };
 
     let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
-    let runner = ScriptedRunner::from_outputs(vec![json!(42)]);
-    let output = runtime
-        .run_with_runner((), &runner)
-        .await
-        .expect("workflow should run successfully");
+    let runner = ScriptedRunner::from_outputs(vec![json!({ "random_number": 42 })]);
+    let output = runtime.run_with_runner((), &runner).await;
 
-    assert_eq!(output, Output { answer: 42 });
+    assert!(matches!(output, Err(WorkflowRuntimeError::AgentOutputTypeMismatch { .. })));
 }
 
 #[tokio::test]
-async fn executes_number_workflow_with_usize_output_type() {
+async fn executes_number_workflow_and_supports_multiple_integer_output_types() {
     #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
     struct Output {
-        answer: usize,
+        signed_8: i8,
+        signed_16: i16,
+        signed_32: i32,
+        signed_64: i64,
+        signed_size: isize,
+        unsigned_8: u8,
+        unsigned_16: u16,
+        unsigned_32: u32,
+        unsigned_64: u64,
+        unsigned_size: usize,
     }
 
     let workflow = parse_inline_workflow! {
@@ -419,7 +386,16 @@ async fn executes_number_workflow_with_usize_output_type() {
         }
 
         output {
-            answer: agent.number_agent
+            signed_8: agent.number_agent
+            signed_16: agent.number_agent
+            signed_32: agent.number_agent
+            signed_64: agent.number_agent
+            signed_size: agent.number_agent
+            unsigned_8: agent.number_agent
+            unsigned_16: agent.number_agent
+            unsigned_32: agent.number_agent
+            unsigned_64: agent.number_agent
+            unsigned_size: agent.number_agent
         }
     };
 
@@ -430,7 +406,21 @@ async fn executes_number_workflow_with_usize_output_type() {
         .await
         .expect("workflow should run successfully");
 
-    assert_eq!(output, Output { answer: 42 });
+    assert_eq!(
+        output,
+        Output {
+            signed_8: 42,
+            signed_16: 42,
+            signed_32: 42,
+            signed_64: 42,
+            signed_size: 42,
+            unsigned_8: 42,
+            unsigned_16: 42,
+            unsigned_32: 42,
+            unsigned_64: 42,
+            unsigned_size: 42,
+        }
+    );
 }
 
 #[tokio::test]
