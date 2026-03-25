@@ -5,7 +5,17 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
+
+static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
+    parse_inline_workflow! {
+        provider openai {
+            driver: "openai"
+            api_endpoint: "http://localhost:1234/v1"
+            models: ["model-a"]
+        }
+    }
+});
 
 #[derive(Debug, Clone)]
 struct ScriptedRunner {
@@ -84,11 +94,7 @@ fn fails_preflight_when_output_type_does_not_match_dsl() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent greeting {
             model: openai("model-a")
@@ -105,6 +111,27 @@ fn fails_preflight_when_output_type_does_not_match_dsl() {
         WorkflowRuntime::<(), WrongOutput>::new(workflow),
         Err(WorkflowRuntimeError::OutputTypeMismatch { .. })
     ));
+}
+
+#[test]
+fn parse_inline_workflow_supports_composing_base_workflow_fragments() {
+    let composed_workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        agent greeting {
+            model: openai("model-a")
+            prompt: "hello"
+            output: string
+        }
+
+        output {
+            greeting: agent.greeting
+        }
+    };
+
+    assert!(composed_workflow.find_provider("openai").is_some());
+    assert!(composed_workflow.find_agent("greeting").is_some());
+    assert!(composed_workflow.find_output().is_some());
 }
 
 #[tokio::test]
@@ -260,11 +287,7 @@ async fn executes_string_workflow_and_returns_typed_output() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent greeting {
             model: openai("model-a")
@@ -300,11 +323,7 @@ async fn rejects_nested_object_when_declared_output_is_string() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent greeting {
             model: openai("model-a")
@@ -332,11 +351,7 @@ async fn rejects_wrapped_object_for_number_schema() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent number_agent {
             model: openai("model-a")
@@ -373,11 +388,7 @@ async fn executes_number_workflow_and_supports_multiple_integer_output_types() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent number_agent {
             model: openai("model-a")
@@ -431,11 +442,7 @@ async fn rejects_string_value_for_number_schema() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent number_agent {
             model: openai("model-a")
@@ -473,11 +480,7 @@ async fn executes_object_workflow_and_returns_typed_output() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent profile_agent {
             model: openai("model-a")
@@ -519,11 +522,7 @@ async fn resolves_agent_dependency_interpolation_in_prompt() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent first {
             model: openai("model-a")
@@ -572,11 +571,7 @@ async fn executes_for_loop_agent_and_returns_array_output() {
     }
 
     let workflow = parse_inline_workflow! {
-        provider openai {
-            driver: "openai"
-            api_endpoint: "http://localhost:1234/v1"
-            models: ["model-a"]
-        }
+        #BASE_PROVIDER_WORKFLOW;
 
         agent collect_numbers for item in [1, 2, 3] {
             model: openai("model-a")
