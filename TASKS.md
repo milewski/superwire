@@ -171,7 +171,7 @@ These decisions are intended to align with the long-term vision and reduce drift
     - notes/help
   - **Goal**: parser/validator/semantic compiler can all emit one shape.
 
-- [ ] **D2. Convert `dsl` parse/validation output to shared diagnostic model**
+- [x] **D2. Convert `dsl` parse/validation output to shared diagnostic model**
   - **Files**: `crates/core/src/dsl/parser.rs`, `crates/core/src/dsl/validation.rs`, `crates/core/src/semantic/*`.
   - **Goal**: Remove local code mapping from LSP.
 
