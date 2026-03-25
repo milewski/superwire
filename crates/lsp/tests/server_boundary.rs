@@ -1,5 +1,13 @@
 use std::{path::PathBuf, process::Stdio, time::Duration};
 
+macro_rules! dsl {
+    ($($tokens:tt)*) => {{
+        let source = stringify!($($tokens)*);
+        let trimmed = source.trim_start_matches('\n').trim_end_matches(['\n', ' ']);
+        trimmed.to_string()
+    }};
+}
+
 use serde_json::{json, Value};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -210,14 +218,15 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
     assert_eq!(initialize_response["id"], 1);
     assert!(initialize_response["result"]["capabilities"]["completionProvider"].is_object());
 
-    let initial_document_text = r#"input {
-    first: string
-}
+    let initial_document_text = dsl! {
+        input {
+            first: string
+        }
 
-agent helper {
-    prompt: "Name: ${input.first}"
-}
-"#;
+        agent helper {
+            prompt: "Name: ${input.first}"
+        }
+    };
 
     language_server_client
         .send_notification(
@@ -238,15 +247,16 @@ agent helper {
     assert_eq!(open_diagnostics_notification["params"]["uri"], document_uri);
     assert!(open_diagnostics_notification["params"]["diagnostics"].is_array());
 
-    let changed_document_text = r#"input {
-    first: string
-    last: string
-}
+    let changed_document_text = dsl! {
+        input {
+            first: string
+            last: string
+        }
 
-agent helper {
-    prompt: "Name: ${input.first}"
-}
-"#;
+        agent helper {
+            prompt: "Name: ${input.first}"
+        }
+    };
 
     language_server_client
         .send_notification(
