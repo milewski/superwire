@@ -1,5 +1,5 @@
 use crate::dsl::{
-    parse_workflow, AgentDeclaration, AgentProperty, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan,
+    parse_workflow, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan,
     TypeExpression, TypedField, Workflow,
 };
 use std::collections::BTreeMap;
@@ -397,20 +397,6 @@ impl SemanticToolingSnapshot {
                 })
                 .collect(),
         ))
-    }
-}
-
-impl AgentDeclaration {
-    fn output_type(&self) -> Option<&TypeExpression> {
-        self.properties.iter().find_map(|agent_property| match agent_property {
-            AgentProperty::Output(output_type_expression) => Some(output_type_expression),
-            AgentProperty::Model(_)
-            | AgentProperty::Prompt(_)
-            | AgentProperty::Context(_)
-            | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
-            | AgentProperty::Custom { name: _, value: _ } => None,
-        })
     }
 }
 

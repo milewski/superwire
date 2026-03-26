@@ -385,6 +385,32 @@ mod tests {
     }
 
     #[test]
+    fn validation_stage_rejects_output_reference_without_agent_output_type() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                prompt: "Write a short welcome message."
+            }
+
+            output {
+                greeting: agent.greeting
+            }
+        };
+
+        let validate_result = WorkflowPipeline::parse(WorkflowPipelineInput::Workflow(&workflow))
+            .expect("parse stage should succeed")
+            .normalize()
+            .validate();
+
+        assert!(matches!(
+            validate_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+                if issues.contains("missing_agent_output_type_for_field_reference")
+                    && issues.contains("Agent `greeting` must declare `output`")
+                    && issues.contains("output declaration")
+        ));
+    }
+
+    #[test]
     fn validation_stage_renders_source_snippet_with_arrow() {
         let workflow_source = r#"
             agent greeting {

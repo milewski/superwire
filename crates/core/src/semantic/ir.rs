@@ -130,7 +130,7 @@ fn collect_typed_agents(
             continue;
         };
 
-        let iteration_output_type = if let Some(output_type_expression) = optional_agent_output_type(agent_declaration) {
+        let iteration_output_type = if let Some(output_type_expression) = agent_declaration.output_type() {
             workflow_type_from_dsl(output_type_expression, named_schema_types)?
         } else {
             WorkflowType::String
@@ -163,16 +163,6 @@ fn collect_typed_agents(
     }
 
     Ok((agents, agent_output_types))
-}
-
-fn optional_agent_output_type(agent_declaration: &AgentDeclaration) -> Option<&TypeExpression> {
-    for agent_property in &agent_declaration.properties {
-        if let AgentProperty::Output(output_type_expression) = agent_property {
-            return Some(output_type_expression);
-        }
-    }
-
-    None
 }
 
 fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration) -> Vec<String> {

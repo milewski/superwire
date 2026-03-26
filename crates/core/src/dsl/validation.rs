@@ -280,7 +280,7 @@ impl ValidationIssue {
             }
             Self::MissingAgentOutputTypeForFieldReference { agent_name, context } => {
                 format!(
-                    "Agent `{agent_name}` must declare `output` before field access in {}.",
+                    "Agent `{agent_name}` must declare `output` before it can be referenced in {}.",
                     context.describe()
                 )
             }
@@ -478,7 +478,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     continue;
                 }
 
-                let agent_output_type = extract_agent_output_type(agent_declaration.properties.as_slice());
+                let agent_output_type = agent_declaration.output_type().cloned();
                 validation_index
                     .agent_output_types
                     .insert(agent_declaration.name.clone(), agent_output_type);
@@ -538,16 +538,6 @@ fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpre
         .iter()
         .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
         .collect()
-}
-
-fn extract_agent_output_type(agent_properties: &[AgentProperty]) -> Option<TypeExpression> {
-    agent_properties.iter().find_map(|agent_property| {
-        if let AgentProperty::Output(type_expression) = agent_property {
-            Some(type_expression.clone())
-        } else {
-            None
-        }
-    })
 }
 
 fn extract_declared_provider_models(provider_properties: &[ObjectField]) -> Option<HashSet<String>> {
@@ -1117,32 +1107,46 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         }
 
-        if reference.accesses.len() == 1 {
-            return;
-        }
-
-        let Some(agent_output_type) = self
+        let referenced_agent_output_type = self
             .validation_index
             .agent_output_types
             .get(referenced_agent_name)
-            .and_then(Clone::clone)
-        else {
-            let issue_key = (context.clone(), referenced_agent_name.to_owned());
+            .and_then(Clone::clone);
 
-            if self.missing_agent_output_type_references.insert(issue_key) {
-                self.validation_report.push_issue_with_span(
-                    ValidationIssue::MissingAgentOutputTypeForFieldReference {
-                        agent_name: referenced_agent_name.to_owned(),
-                        context,
-                    },
-                    Some(reference.span),
-                );
+        if reference.accesses.len() == 1 {
+            if context == ValidationContext::Output && referenced_agent_output_type.is_none() {
+                self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference.span);
             }
+
+            return;
+        }
+
+        let Some(agent_output_type) = referenced_agent_output_type else {
+            self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference.span);
 
             return;
         };
 
         self.validate_reference_path(reference, 1, agent_output_type, context);
+    }
+
+    fn push_missing_agent_output_type_reference_issue(
+        &mut self,
+        referenced_agent_name: &str,
+        context: ValidationContext,
+        reference_span: SourceSpan,
+    ) {
+        let issue_key = (context.clone(), referenced_agent_name.to_owned());
+
+        if self.missing_agent_output_type_references.insert(issue_key) {
+            self.validation_report.push_issue_with_span(
+                ValidationIssue::MissingAgentOutputTypeForFieldReference {
+                    agent_name: referenced_agent_name.to_owned(),
+                    context,
+                },
+                Some(reference_span),
+            );
+        }
     }
 
     fn validate_input_reference(&mut self, reference: &Reference, context: ValidationContext) {
@@ -1519,6 +1523,7 @@ mod tests {
 
             agent researcher {
                 prompt: input.title
+                output: string
             }
 
             output {
@@ -1990,6 +1995,27 @@ mod tests {
                 agent_name,
                 context
             } if agent_name == "producer" && *context == ValidationContext::Agent("consumer".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_missing_agent_output_type_for_output_agent_reference() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                prompt: "Write a short welcome message."
+            }
+
+            output {
+                greeting: agent.greeting
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::MissingAgentOutputTypeForFieldReference {
+                agent_name,
+                context
+            } if agent_name == "greeting" && *context == ValidationContext::Output
         );
     }
 

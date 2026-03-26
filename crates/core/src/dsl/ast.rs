@@ -274,6 +274,17 @@ impl AgentDeclaration {
     ) -> Result<&Expression, AgentExpressionPropertyName> {
         self.expression_property(property_name).ok_or(property_name)
     }
+
+    #[must_use]
+    pub fn output_type(&self) -> Option<&TypeExpression> {
+        for agent_property in &self.properties {
+            if let AgentProperty::Output(output_type_expression) = agent_property {
+                return Some(output_type_expression);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
