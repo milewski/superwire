@@ -1,5 +1,5 @@
 use super::text_utils::trailing_identifier;
-use engine_ai_core::dsl::DeclarationKeyword;
+use engine_ai_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DeclarationHeaderCompletionContext {
@@ -79,6 +79,28 @@ impl ModelCallCompletionContext {
             provider_name,
             model_prefix: value_completion_context.value_prefix,
             inside_string_literal: value_completion_context.inside_string_literal,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct AgentPropertyValueCompletionContext {
+    pub(super) property_name: AgentExpressionPropertyName,
+    pub(super) value_prefix: String,
+}
+
+impl AgentPropertyValueCompletionContext {
+    pub(super) fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let (line_before_value, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
+        let property_name_identifier = trailing_identifier(line_before_value)?;
+        let property_name = AgentExpressionPropertyName::from_identifier(property_name_identifier)?;
+
+        let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+        Some(Self {
+            property_name,
+            value_prefix: value_completion_context.value_prefix,
         })
     }
 }

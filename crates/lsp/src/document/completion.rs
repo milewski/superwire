@@ -1,8 +1,8 @@
-use engine_ai_core::dsl::{parse_workflow, ReferenceKeyword};
+use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, ReferenceKeyword};
 
 use crate::protocol::Position;
 
-use super::completion_context::{DeclarationHeaderCompletionContext, ModelCallCompletionContext};
+use super::completion_context::{AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, ModelCallCompletionContext};
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
@@ -41,6 +41,14 @@ impl DocumentState {
         let semantic_index = self.semantic_index_for_completion(position);
         let line_has_property_separator = line_prefix.trim_start().contains(':');
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
+
+        if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
+            if let Some(agent_property_value_completion_context) = AgentPropertyValueCompletionContext::from_line_prefix(&line_prefix) {
+                if agent_property_value_completion_context.property_name == AgentExpressionPropertyName::Context {
+                    return semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix);
+                }
+            }
+        }
 
         if !line_has_property_separator && !inside_interpolation_expression {
             if DeclarationHeaderCompletionContext::from_line_prefix(&line_prefix).is_some() {

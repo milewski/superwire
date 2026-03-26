@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use engine_ai_core::dsl::{
-    AgentProperty, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, SingletonDeclarationKind, SourceSpan, TypeExpression,
-    TypedField, Workflow,
+    AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, SingletonDeclarationKind,
+    SourceSpan, TypeExpression, TypedField, Workflow,
 };
 use engine_ai_core::runtime::ProviderDriver;
 use engine_ai_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
@@ -58,6 +58,19 @@ pub(in crate::document) struct NamedSpan {
 }
 
 impl SemanticIndex {
+    pub(super) fn context_function_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let context_function_label = BuiltinFunctionName::Context.as_str();
+
+        if !context_function_label.starts_with(value_prefix) {
+            return Vec::new();
+        }
+
+        builtin_symbol_suggestions(true)
+            .into_iter()
+            .filter(|completion_suggestion| completion_suggestion.label == context_function_label)
+            .collect()
+    }
+
     pub(super) fn from_workflow(workflow: &Workflow) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
         let mut semantic_index = Self {

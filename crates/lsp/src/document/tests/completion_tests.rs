@@ -542,6 +542,29 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
 }
 
 #[test]
+fn suggests_only_context_function_for_agent_context_property_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent example {
+            context: <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, BuiltinFunctionName::Context);
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        BuiltinFunctionName::Template,
+        BuiltinFunctionName::Compact,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Tool,
+        "string",
+        "number"
+    );
+
+    assert_eq!(completion_suggestions.len(), 1);
+}
+
+#[test]
 fn suggests_only_inference_settings_inside_inference_object() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
