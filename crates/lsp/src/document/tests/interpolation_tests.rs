@@ -72,54 +72,46 @@ fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() 
 
 #[test]
 fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
-    let (source, cursor_position) = source_with_cursor(
-        r#"
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
 
-            agent context_agent {
-                model: openai("gpt-4.1-mini")
-                prompt: "hello"
-                output: string
-            }
+        agent context_agent {
+            model: openai("gpt-4.1-mini")
+            prompt: "hello"
+            output: string
+        }
 
-            agent worker {
-                model: openai("gpt-4.1-mini")
-                prompt: """
-                    example {{ agent.<cursor> }}
-                """
-                output: string
-            }
-            "#,
-    );
-
-    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+        agent worker {
+            model: openai("gpt-4.1-mini")
+            prompt: """
+                example {{ agent.<cursor> }}
+            """
+            output: string
+        }
+    };
 
     assert_completion_contains!(&completion_suggestions, "context_agent");
 }
 
 #[test]
 fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
-    let (source, cursor_position) = source_with_cursor(
-        r#"
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
 
-            agent worker {
-                model: openai("gpt-4.1-mini")
-                prompt: """
-                    Like this <cursor>
-                """
-                output: string
-            }
-            "#,
-    );
-
-    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+        agent worker {
+            model: openai("gpt-4.1-mini")
+            prompt: """
+                Like this <cursor>
+            """
+            output: string
+        }
+    };
 
     assert!(completion_suggestions.is_empty());
 }

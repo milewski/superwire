@@ -2,13 +2,11 @@ use super::*;
 
 #[test]
 fn suggests_tool_keyword_inside_tools_expression_context() {
-    let completion_suggestions = completion_suggestions_from_template(
-        r#"
-            agent tooling {
-                tools: <cursor>
-            }
-            "#,
-    );
+    let completion_suggestions = inline_completion_suggestions! {
+        agent tooling {
+            tools: <cursor>
+        }
+    };
 
     assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Tool);
 }
