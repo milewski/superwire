@@ -5,12 +5,6 @@ use engine_ai_core::dsl::{
 };
 use engine_ai_core::runtime::InferenceSetting;
 
-macro_rules! inline_document_with_cursor {
-    ($($workflow_tokens:tt)*) => {{
-        source_with_cursor(stringify!($($workflow_tokens)*))
-    }};
-}
-
 macro_rules! inline_completion_suggestions {
     ($($workflow_tokens:tt)*) => {{
         completion_suggestions_from_template(stringify!($($workflow_tokens)*))
@@ -20,6 +14,12 @@ macro_rules! inline_completion_suggestions {
 macro_rules! inline_document_template {
     ($($workflow_tokens:tt)*) => {{
         stringify!($($workflow_tokens)*)
+    }};
+}
+
+macro_rules! inline_diagnostics {
+    ($($workflow_tokens:tt)*) => {{
+        diagnostics_from_template(stringify!($($workflow_tokens)*))
     }};
 }
 
@@ -290,6 +290,13 @@ fn completion_suggestions_from_source(source: String, cursor_position: Position)
     let document_state = DocumentState::new(source);
 
     document_state.completion_suggestions(cursor_position)
+}
+
+fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
+    let source = normalize_inline_cursor_layout(source_template);
+    let document_state = DocumentState::new(source);
+
+    document_state.diagnostics()
 }
 
 fn normalize_inline_cursor_layout(source_template: &str) -> String {
