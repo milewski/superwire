@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn completes_agent_references_inside_prompt_string_interpolation() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini"]
@@ -20,9 +20,6 @@ fn completes_agent_references_inside_prompt_string_interpolation() {
             output: string
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains!(&completion_suggestions, "context_agent");
     assert_completion_excludes_labels!(&completion_suggestions, "worker");
@@ -53,8 +50,7 @@ fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
             "#,
     );
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
 
     assert_completion_contains!(&completion_suggestions, "context_agent");
 }
@@ -78,8 +74,7 @@ fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
             "#,
     );
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
 
     assert!(completion_suggestions.is_empty());
 }

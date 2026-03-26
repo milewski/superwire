@@ -68,13 +68,13 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "top_level_declares_keywords",
             context: CompletionMatrixContext::Declarations,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 <cursor>
 
                 output {
                     value: null
                 }
-                "#,
+            },
             expected_present_labels: vec![DeclarationKeyword::Provider.as_str(), DeclarationKeyword::Agent.as_str()],
             expected_absent_labels: vec![BuiltinFunctionName::Context.as_str()],
             expects_empty_suggestions: false,
@@ -83,11 +83,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "agent_block_excludes_declaration_keywords",
             context: CompletionMatrixContext::Declarations,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent writer {
                     <cursor>
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec![DeclarationKeyword::Provider.as_str(), DeclarationKeyword::Schema.as_str()],
             expects_empty_suggestions: false,
@@ -96,11 +96,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "agent_block_suggests_agent_properties",
             context: CompletionMatrixContext::AgentProperties,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent writer {
                     <cursor>
                 }
-                "#,
+            },
             expected_present_labels: vec![
                 AgentExpressionPropertyName::Model.as_str(),
                 AgentExpressionPropertyName::Prompt.as_str(),
@@ -112,13 +112,13 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "inference_object_excludes_agent_properties",
             context: CompletionMatrixContext::AgentProperties,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent writer {
                     inference: {
                         <cursor>
                     }
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec![
                 AgentExpressionPropertyName::Model.as_str(),
@@ -130,13 +130,13 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "inference_object_suggests_inference_settings",
             context: CompletionMatrixContext::InferenceBlock,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent writer {
                     inference: {
                         <cursor>
                     }
                 }
-                "#,
+            },
             expected_present_labels: vec![InferenceSetting::Temperature.key(), InferenceSetting::MaxTokens.key()],
             expected_absent_labels: vec![],
             expects_empty_suggestions: false,
@@ -145,7 +145,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "agent_scope_excludes_inference_settings",
             context: CompletionMatrixContext::InferenceBlock,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent release_analyst {
                     model: openai("gpt-4.1-mini")
 
@@ -156,7 +156,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                         max_tokens: 12_000
                     }
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec![InferenceSetting::Temperature.key(), InferenceSetting::MaxTokens.key()],
             expects_empty_suggestions: false,
@@ -165,11 +165,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "typed_declaration_suggests_primitive_types",
             context: CompletionMatrixContext::TypedDeclarations,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 input {
                     product_name: <cursor>
                 }
-                "#,
+            },
             expected_present_labels: vec![
                 TypeExpression::String.as_completion_label(),
                 TypeExpression::Number.as_completion_label(),
@@ -181,11 +181,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "input_key_position_excludes_typed_declaration_values",
             context: CompletionMatrixContext::TypedDeclarations,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 input {
                     <cursor>
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec![
                 TypeExpression::String.as_completion_label(),
@@ -197,7 +197,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "interpolation_suggests_agent_references",
             context: CompletionMatrixContext::Interpolation,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 provider openai {
                     driver: "openai"
                     models: ["gpt-4.1-mini"]
@@ -214,7 +214,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                     prompt: "example {{ agent.<cursor> }}"
                     output: string
                 }
-                "#,
+            },
             expected_present_labels: vec!["context_agent"],
             expected_absent_labels: vec![],
             expects_empty_suggestions: false,
@@ -223,7 +223,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "interpolation_excludes_current_agent_reference",
             context: CompletionMatrixContext::Interpolation,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 provider openai {
                     driver: "openai"
                     models: ["gpt-4.1-mini"]
@@ -240,7 +240,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                     prompt: "example {{ agent.<cursor> }}"
                     output: string
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec!["worker"],
             expects_empty_suggestions: false,
@@ -249,7 +249,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "for_loop_iterable_suggests_iterable_fields",
             context: CompletionMatrixContext::ForLoopIterable,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 input {
                     products: [string]
                 }
@@ -257,7 +257,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 agent worker for item in input.<cursor> {
                     prompt: item
                 }
-                "#,
+            },
             expected_present_labels: vec!["products"],
             expected_absent_labels: vec![],
             expects_empty_suggestions: false,
@@ -266,7 +266,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "for_loop_iterable_excludes_non_iterable_fields",
             context: CompletionMatrixContext::ForLoopIterable,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 input {
                     product_name: string
                 }
@@ -274,7 +274,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 agent worker for item in input.<cursor> {
                     prompt: item
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec!["product_name"],
             expects_empty_suggestions: true,
@@ -283,11 +283,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "tools_expression_suggests_tool_keyword",
             context: CompletionMatrixContext::Tools,
             expectation_kind: CompletionExpectationKind::Positive,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent tooling {
                     tools: <cursor>
                 }
-                "#,
+            },
             expected_present_labels: vec![ReferenceKeyword::Tool.as_str()],
             expected_absent_labels: vec![],
             expects_empty_suggestions: false,
@@ -296,11 +296,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             case_name: "tool_namespace_excludes_member_suggestions",
             context: CompletionMatrixContext::Tools,
             expectation_kind: CompletionExpectationKind::Negative,
-            source_template: r#"
+            source_template: inline_document_template! {
                 agent tooling {
                     tools: [tool.<cursor>]
                 }
-                "#,
+            },
             expected_present_labels: vec![],
             expected_absent_labels: vec![],
             expects_empty_suggestions: true,
@@ -333,9 +333,7 @@ fn completion_behavior_matrix_covers_primary_contexts() {
     }
 
     for completion_matrix_case in completion_matrix_cases {
-        let (source, cursor_position) = source_with_cursor(completion_matrix_case.source_template);
-        let document_state = DocumentState::new(source);
-        let completion_suggestions = document_state.completion_suggestions(cursor_position);
+        let completion_suggestions = completion_suggestions_from_template(completion_matrix_case.source_template);
         let available_labels = completion_label_set(&completion_suggestions);
         let mut sorted_available_labels = available_labels.into_iter().collect::<Vec<_>>();
 
@@ -382,7 +380,7 @@ fn completion_behavior_matrix_covers_primary_contexts() {
 
 #[test]
 fn completes_nested_input_field_attributes() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         input {
             profile: {
                 name: {
@@ -397,39 +395,30 @@ fn completes_nested_input_field_attributes() {
         }
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert_completion_contains!(&completion_suggestions, "first", "last");
 }
 
 #[test]
 fn completes_provider_driver_specific_properties() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         provider openai {
             driver: "openai"
             <cursor>
         }
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert_completion_contains!(&completion_suggestions, "endpoint", "api_key");
 }
 
 #[test]
 fn suppresses_builtin_functions_in_top_level_scope() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         <cursor>
 
         output {
             value: null
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_labels!(
         &completion_suggestions,
@@ -455,7 +444,7 @@ fn suppresses_builtin_functions_in_top_level_scope() {
 
 #[test]
 fn suppresses_existing_singleton_keywords_in_top_level_scope() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         <cursor>
 
         provider openai {
@@ -475,9 +464,6 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
             value: null
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_labels!(
         &completion_suggestions,
@@ -499,7 +485,7 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
 
 #[test]
 fn suppresses_suggestions_after_singleton_declaration_keyword_header() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini"]
@@ -508,15 +494,12 @@ fn suppresses_suggestions_after_singleton_declaration_keyword_header() {
         input <cursor>
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert!(completion_suggestions.is_empty());
 }
 
 #[test]
 fn suppresses_suggestions_after_named_declaration_keyword_header() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini"]
@@ -525,36 +508,27 @@ fn suppresses_suggestions_after_named_declaration_keyword_header() {
         agent <cursor>
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert!(completion_suggestions.is_empty());
 }
 
 #[test]
 fn suggests_builtin_functions_in_output_expression_context() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         output {
             value: <cursor>
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_label_groups!(&completion_suggestions, BuiltinFunctionName);
 }
 
 #[test]
 fn suggests_only_agent_properties_in_agent_block_scope() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         agent writer {
             <cursor>
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_labels!(
         &completion_suggestions,
@@ -569,16 +543,13 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
 
 #[test]
 fn suggests_only_inference_settings_inside_inference_object() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         agent writer {
             inference: {
                 <cursor>
             }
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_all_inference_settings!(&completion_suggestions);
 
@@ -593,7 +564,7 @@ fn suggests_only_inference_settings_inside_inference_object() {
 
 #[test]
 fn suggests_agent_properties_before_inference_block() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         agent release_analyst {
             model: openai("gpt-4.1-mini")
 
@@ -605,9 +576,6 @@ fn suggests_agent_properties_before_inference_block() {
             }
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_labels!(&completion_suggestions, AgentExpressionPropertyName::Prompt);
     assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting);
@@ -629,11 +597,8 @@ fn includes_descriptive_details_for_agent_and_inference_completions() {
         }
     };
 
-    let agent_document_state = DocumentState::new(agent_source);
-    let inference_document_state = DocumentState::new(inference_source);
-
-    let agent_completions = agent_document_state.completion_suggestions(agent_cursor_position);
-    let inference_completions = inference_document_state.completion_suggestions(inference_cursor_position);
+    let agent_completions = completion_suggestions_from_source(agent_source, agent_cursor_position);
+    let inference_completions = completion_suggestions_from_source(inference_source, inference_cursor_position);
 
     let model_completion = agent_completions
         .iter()
@@ -651,7 +616,7 @@ fn includes_descriptive_details_for_agent_and_inference_completions() {
 
 #[test]
 fn completes_registered_provider_models_inside_model_call() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini", "gpt-4o-mini"]
@@ -664,15 +629,12 @@ fn completes_registered_provider_models_inside_model_call() {
         }
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert_completion_contains!(&completion_suggestions, "gpt-4.1-mini", "gpt-4o-mini");
 }
 
 #[test]
 fn completes_schema_references_in_type_context() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         schema Person {
             name: string
         }
@@ -682,15 +644,12 @@ fn completes_schema_references_in_type_context() {
         }
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert_completion_contains!(&completion_suggestions, "Person");
 }
 
 #[test]
 fn excludes_current_schema_from_schema_type_suggestions() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         schema Person {
             related: schema.<cursor>
         }
@@ -700,16 +659,13 @@ fn excludes_current_schema_from_schema_type_suggestions() {
         }
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert_completion_contains!(&completion_suggestions, "Team");
     assert_completion_excludes_labels!(&completion_suggestions, "Person");
 }
 
 #[test]
 fn excludes_current_schema_from_schema_type_suggestions_with_parse_errors() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         schema Person {
             related: schema.<cursor>
         }
@@ -717,51 +673,39 @@ fn excludes_current_schema_from_schema_type_suggestions_with_parse_errors() {
         @
     };
 
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
     assert_completion_excludes_labels!(&completion_suggestions, "Person");
     assert!(completion_suggestions.is_empty());
 }
 
 #[test]
 fn suppresses_type_suggestions_after_non_schema_dot_access() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         schema Test {
             test: boolean.<cursor>
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert!(completion_suggestions.is_empty());
 }
 
 #[test]
 fn suppresses_key_suggestions_inside_input_block() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         input {
             <cursor>
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert!(completion_suggestions.is_empty());
 }
 
 #[test]
 fn suggests_only_types_for_input_field_values() {
-    let (source, cursor_position) = inline_document_with_cursor! {
+    let completion_suggestions = inline_completion_suggestions! {
         input {
             product_name: <cursor>
         }
     };
-
-    let document_state = DocumentState::new(source);
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
     assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
     assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider, DeclarationKeyword::Agent);

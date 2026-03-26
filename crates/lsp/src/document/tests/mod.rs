@@ -11,6 +11,18 @@ macro_rules! inline_document_with_cursor {
     }};
 }
 
+macro_rules! inline_completion_suggestions {
+    ($($workflow_tokens:tt)*) => {{
+        completion_suggestions_from_template(stringify!($($workflow_tokens)*))
+    }};
+}
+
+macro_rules! inline_document_template {
+    ($($workflow_tokens:tt)*) => {{
+        stringify!($($workflow_tokens)*)
+    }};
+}
+
 macro_rules! assert_completion_contains_labels {
     ($completion_suggestions:expr, $($expected_label:expr),+ $(,)?) => {{
         let available_labels = completion_label_set($completion_suggestions);
@@ -266,6 +278,18 @@ fn source_with_cursor(source_template: &str) -> (String, Position) {
     let source_without_cursor = normalized_template.replacen(cursor_marker, "", 1);
 
     (source_without_cursor, Position { line, character })
+}
+
+fn completion_suggestions_from_template(source_template: &str) -> Vec<CompletionSuggestion> {
+    let (source, cursor_position) = source_with_cursor(source_template);
+
+    completion_suggestions_from_source(source, cursor_position)
+}
+
+fn completion_suggestions_from_source(source: String, cursor_position: Position) -> Vec<CompletionSuggestion> {
+    let document_state = DocumentState::new(source);
+
+    document_state.completion_suggestions(cursor_position)
 }
 
 fn normalize_inline_cursor_layout(source_template: &str) -> String {
