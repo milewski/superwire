@@ -131,6 +131,8 @@ pub enum DiagnosticCode {
     UnknownSchemaReference,
     #[serde(rename = "agent_dependency_cycle")]
     AgentDependencyCycle,
+    #[serde(rename = "workflow_compilation_error")]
+    WorkflowCompilationError,
 }
 
 #[must_use]
