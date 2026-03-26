@@ -10,20 +10,20 @@ use super::text_utils::{is_identifier, leading_identifier, trailing_reference_to
 use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
-pub(super) struct ReferenceCompletionPath {
+pub struct ReferenceCompletionPath {
     root: String,
-    pub(super) complete_accesses: Vec<String>,
-    pub(super) pending_prefix: String,
+    pub complete_accesses: Vec<String>,
+    pub pending_prefix: String,
 }
 
 impl ReferenceCompletionPath {
-    pub(super) fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let reference_token = trailing_reference_token(line_prefix)?;
 
         Self::from_token(reference_token)
     }
 
-    pub(super) fn from_token(reference_token: &str) -> Option<Self> {
+    pub fn from_token(reference_token: &str) -> Option<Self> {
         if reference_token.is_empty() || reference_token.ends_with('?') {
             return None;
         }
@@ -90,11 +90,11 @@ impl ReferenceCompletionPath {
         })
     }
 
-    pub(super) fn root_keyword(&self) -> Option<ReferenceKeyword> {
+    pub fn root_keyword(&self) -> Option<ReferenceKeyword> {
         ReferenceKeyword::from_identifier(&self.root)
     }
 
-    pub(super) fn root_identifier(&self) -> &str {
+    pub fn root_identifier(&self) -> &str {
         &self.root
     }
 
@@ -102,19 +102,19 @@ impl ReferenceCompletionPath {
         DeclarationKeyword::from_identifier(&self.root)
     }
 
-    pub(super) fn is_schema_root(&self) -> bool {
+    pub fn is_schema_root(&self) -> bool {
         self.root_declaration_keyword() == Some(DeclarationKeyword::Schema)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ReferenceCompletionConstraint {
+pub enum ReferenceCompletionConstraint {
     None,
     ForLoopIterable,
 }
 
 impl ReferenceCompletionConstraint {
-    pub(super) fn from_line_prefix(line_prefix: &str) -> Self {
+    pub fn from_line_prefix(line_prefix: &str) -> Self {
         if is_for_loop_iterable_reference_context(line_prefix) {
             return Self::ForLoopIterable;
         }
@@ -124,7 +124,7 @@ impl ReferenceCompletionConstraint {
 }
 
 impl SemanticIndex {
-    pub(super) fn reference_path_suggestions(
+    pub fn reference_path_suggestions(
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
@@ -163,7 +163,7 @@ impl SemanticIndex {
         }
     }
 
-    pub(super) fn resolve_singleton_reference_type(
+    pub fn resolve_singleton_reference_type(
         &self,
         root_fields: &BTreeMap<String, TypeExpression>,
         resolved_accesses: &[String],

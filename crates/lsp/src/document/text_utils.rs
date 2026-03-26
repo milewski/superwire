@@ -1,4 +1,4 @@
-pub(super) fn trailing_identifier(line_prefix: &str) -> Option<&str> {
+pub fn trailing_identifier(line_prefix: &str) -> Option<&str> {
     let mut start_index = line_prefix.len();
 
     for (character_index, character) in line_prefix.char_indices().rev() {
@@ -17,7 +17,7 @@ pub(super) fn trailing_identifier(line_prefix: &str) -> Option<&str> {
     Some(&line_prefix[start_index..])
 }
 
-pub(super) fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
+pub fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
     let mut start_index = line_prefix.len();
 
     for (character_index, character) in line_prefix.char_indices().rev() {
@@ -36,7 +36,7 @@ pub(super) fn trailing_reference_token(line_prefix: &str) -> Option<&str> {
     Some(&line_prefix[start_index..])
 }
 
-pub(super) fn leading_identifier(source_text: &str) -> Option<&str> {
+pub fn leading_identifier(source_text: &str) -> Option<&str> {
     let mut identifier_end = 0;
 
     for character in source_text.chars() {
@@ -61,7 +61,7 @@ pub(super) fn leading_identifier(source_text: &str) -> Option<&str> {
     Some(identifier)
 }
 
-pub(super) fn is_identifier(identifier: &str) -> bool {
+pub fn is_identifier(identifier: &str) -> bool {
     let mut characters = identifier.chars();
     let Some(first_character) = characters.next() else {
         return false;
@@ -74,20 +74,20 @@ pub(super) fn is_identifier(identifier: &str) -> bool {
     characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
-pub(super) fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
+pub fn is_inside_interpolation_expression(line_prefix: &str) -> bool {
     let open_count = line_prefix.match_indices("{{").count();
     let close_count = line_prefix.match_indices("}}").count();
 
     open_count > close_count
 }
 
-pub(super) fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
+pub fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usize) -> bool {
     let source_prefix = &source_text[..cursor_offset];
     let triple_quote_count = source_prefix.match_indices("\"\"\"").count();
 
     triple_quote_count % 2 == 1
 }
 
-pub(super) fn is_symbol_character(character: char) -> bool {
+pub fn is_symbol_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?'
 }

@@ -55,7 +55,7 @@ impl DocumentState {
 }
 
 impl SemanticIndex {
-    pub(super) fn hover_markdown(&self, hovered_symbol: &str) -> Option<String> {
+    pub fn hover_markdown(&self, hovered_symbol: &str) -> Option<String> {
         if let Some(provider_summary) = self.providers.get(hovered_symbol) {
             let provider_driver_name = provider_summary.driver.map_or("unknown", ProviderDriver::as_str);
 
@@ -216,7 +216,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
     }
 }
 
-pub(super) fn builtin_symbol_suggestions(include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
+pub fn builtin_symbol_suggestions(include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
     builtin_symbol_docs()
         .filter(|builtin_symbol_doc| include_builtin_function_suggestions || !matches!(builtin_symbol_doc.kind, CompletionKind::Function))
         .map(|builtin_symbol_doc| CompletionSuggestion {

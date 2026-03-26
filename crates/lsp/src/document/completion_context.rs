@@ -2,13 +2,13 @@ use super::text_utils::trailing_identifier;
 use engine_ai_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DeclarationHeaderCompletionContext {
+pub enum DeclarationHeaderCompletionContext {
     NamedDeclaration,
     SingletonDeclaration,
 }
 
 impl DeclarationHeaderCompletionContext {
-    pub(super) fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
 
         if trimmed_line_prefix.contains(':') || trimmed_line_prefix.contains('{') {
@@ -54,14 +54,14 @@ impl DeclarationHeaderCompletionContext {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ModelCallCompletionContext {
-    pub(super) provider_name: String,
-    pub(super) model_prefix: String,
-    pub(super) inside_string_literal: bool,
+pub struct ModelCallCompletionContext {
+    pub provider_name: String,
+    pub model_prefix: String,
+    pub inside_string_literal: bool,
 }
 
 impl ModelCallCompletionContext {
-    pub(super) fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_prefix = line_prefix.trim_end();
         let open_parenthesis_index = trimmed_prefix.rfind('(')?;
 
@@ -84,13 +84,13 @@ impl ModelCallCompletionContext {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct AgentPropertyValueCompletionContext {
-    pub(super) property_name: AgentExpressionPropertyName,
-    pub(super) value_prefix: String,
+pub struct AgentPropertyValueCompletionContext {
+    pub property_name: AgentExpressionPropertyName,
+    pub value_prefix: String,
 }
 
 impl AgentPropertyValueCompletionContext {
-    pub(super) fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
         let (line_before_value, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
         let property_name_identifier = trailing_identifier(line_before_value)?;
@@ -106,13 +106,13 @@ impl AgentPropertyValueCompletionContext {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ValueCompletionContext {
-    pub(super) value_prefix: String,
-    pub(super) inside_string_literal: bool,
+pub struct ValueCompletionContext {
+    pub value_prefix: String,
+    pub inside_string_literal: bool,
 }
 
 impl ValueCompletionContext {
-    pub(super) fn from_value_prefix(value_prefix: &str) -> Self {
+    pub fn from_value_prefix(value_prefix: &str) -> Self {
         let trimmed_value_prefix = value_prefix.trim_start();
         let quotation_count = trimmed_value_prefix.chars().filter(|character| *character == '"').count();
 
