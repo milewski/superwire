@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{DeclarationKeyword, SingletonDeclarationKind};
+use engine_ai_core::dsl::{AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, SingletonDeclarationKind};
 use engine_ai_core::runtime::InferenceSetting;
 
 use super::text_utils::trailing_identifier;
@@ -99,8 +99,12 @@ impl ScopeScannerTokenState {
         }
 
         if let Some(pending_property) = &self.pending_property {
-            if pending_property == "inference" && parent_block == Some(ScopeBlock::Agent) {
-                return ScopeBlock::Inference;
+            if parent_block == Some(ScopeBlock::Agent) {
+                if let Some(agent_expression_property_name) = AgentExpressionPropertyName::from_identifier(pending_property) {
+                    if agent_expression_property_name == AgentExpressionPropertyName::Inference {
+                        return ScopeBlock::Inference;
+                    }
+                }
             }
         }
 
@@ -171,40 +175,35 @@ impl ScopeScannerStringState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct AgentPropertyDoc {
-    name: &'static str,
-    detail: &'static str,
-    documentation: &'static str,
+trait AgentPropertyCompletionDoc {
+    fn completion_detail(self) -> &'static str;
+
+    fn completion_documentation(self) -> &'static str;
 }
 
-const AGENT_PROPERTY_DOCS: [AgentPropertyDoc; 5] = [
-    AgentPropertyDoc {
-        name: "model",
-        detail: "Model binding (required)",
-        documentation: "Selects provider and model call used by this agent.",
-    },
-    AgentPropertyDoc {
-        name: "prompt",
-        detail: "Prompt expression (required)",
-        documentation: "Defines the prompt sent to the provider.",
-    },
-    AgentPropertyDoc {
-        name: "output",
-        detail: "Output type",
-        documentation: "Declares the expected structured output type.",
-    },
-    AgentPropertyDoc {
-        name: "inference",
-        detail: "Inference settings object",
-        documentation: "Configures sampling and provider retry behavior.",
-    },
-    AgentPropertyDoc {
-        name: "context",
-        detail: "Context expression",
-        documentation: "Prepends evaluated context to the rendered prompt.",
-    },
-];
+impl AgentPropertyCompletionDoc for AgentPropertyName {
+    fn completion_detail(self) -> &'static str {
+        match self {
+            Self::Model => "Model binding (required)",
+            Self::Prompt => "Prompt expression (required)",
+            Self::Output => "Output type",
+            Self::Context => "Context expression",
+            Self::Inference => "Inference settings object",
+            Self::Tools => "Tools expression",
+        }
+    }
+
+    fn completion_documentation(self) -> &'static str {
+        match self {
+            Self::Model => "Selects provider and model call used by this agent.",
+            Self::Prompt => "Defines the prompt sent to the provider.",
+            Self::Output => "Declares the expected structured output type.",
+            Self::Context => "Prepends evaluated context to the rendered prompt.",
+            Self::Inference => "Configures sampling and provider retry behavior.",
+            Self::Tools => "Declares tool references available to this agent.",
+        }
+    }
+}
 
 trait InferenceSettingCompletionDoc {
     fn completion_detail(self) -> &'static str;
@@ -249,15 +248,15 @@ impl InferenceSettingCompletionDoc for InferenceSetting {
 pub(super) fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    AGENT_PROPERTY_DOCS
-        .iter()
-        .filter(|agent_property_doc| agent_property_doc.name.starts_with(property_prefix))
-        .map(|agent_property_doc| CompletionSuggestion {
-            label: agent_property_doc.name.to_string(),
+    AgentPropertyName::all()
+        .into_iter()
+        .filter(|agent_property_name| agent_property_name.as_str().starts_with(property_prefix))
+        .map(|agent_property_name| CompletionSuggestion {
+            label: agent_property_name.as_str().to_string(),
             kind: CompletionKind::Property,
-            detail: agent_property_doc.detail.to_string(),
-            documentation: agent_property_doc.documentation.to_string(),
-            insert_text: agent_property_doc.name.to_string(),
+            detail: agent_property_name.completion_detail().to_string(),
+            documentation: agent_property_name.completion_documentation().to_string(),
+            insert_text: agent_property_name.as_str().to_string(),
         })
         .collect()
 }

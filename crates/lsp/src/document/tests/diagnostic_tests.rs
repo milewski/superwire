@@ -55,6 +55,25 @@ fn reports_unknown_agent_property_diagnostic() {
 }
 
 #[test]
+fn reports_invalid_inference_setting_value_type_diagnostic() {
+    let (source, _cursor_position) = inline_document_with_cursor! {
+        agent writer {
+            inference: {
+                temperature: 0.2
+                max_tokens: "2_000"
+            }
+        }
+
+        <cursor>
+    };
+
+    let document_state = DocumentState::new(source);
+    let diagnostics = document_state.diagnostics();
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidInferenceSettingValueType);
+}
+
+#[test]
 fn reports_invalid_bare_tool_reference_diagnostic() {
     let (source, _cursor_position) = inline_document_with_cursor! {
         agent tooling {

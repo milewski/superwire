@@ -3,6 +3,7 @@ use super::ast::{
     StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+use crate::runtime::InferenceSetting;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet};
@@ -110,6 +111,10 @@ pub enum ValidationIssue {
         agent_name: String,
         property_name: String,
     },
+    InvalidInferenceSettingValueType {
+        agent_name: String,
+        inference_setting: InferenceSetting,
+    },
     InvalidModelExpression {
         agent_name: String,
     },
@@ -175,6 +180,7 @@ impl ValidationIssue {
             Self::DuplicateAgent { .. } => "duplicate_agent",
             Self::DuplicateSingletonDeclaration { .. } => "duplicate_singleton_declaration",
             Self::UnknownAgentProperty { .. } => "unknown_agent_property",
+            Self::InvalidInferenceSettingValueType { .. } => "invalid_inference_setting_value_type",
             Self::InvalidModelExpression { .. } => "invalid_model_expression",
             Self::UnknownProviderInModel { .. } => "unknown_provider_in_model",
             Self::UnknownModelForProvider { .. } => "unknown_model_for_provider",
@@ -209,6 +215,16 @@ impl ValidationIssue {
             }
             Self::UnknownAgentProperty { agent_name, property_name } => {
                 format!("Agent `{agent_name}` declares unsupported property `{property_name}`.")
+            }
+            Self::InvalidInferenceSettingValueType {
+                agent_name,
+                inference_setting,
+            } => {
+                format!(
+                    "Agent `{agent_name}` inference setting `{}` must be {}.",
+                    inference_setting.key(),
+                    inference_setting.expected_value_description()
+                )
             }
             Self::InvalidModelExpression { agent_name } => {
                 format!("Agent `{agent_name}` has an invalid `model` expression.")
@@ -289,6 +305,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 agent_name: _,
                 property_name: _,
             } => Self::UnknownAgentProperty,
+            ValidationIssue::InvalidInferenceSettingValueType {
+                agent_name: _,
+                inference_setting: _,
+            } => Self::InvalidInferenceSettingValueType,
             ValidationIssue::InvalidModelExpression { agent_name: _ } => Self::InvalidModelExpression,
             ValidationIssue::UnknownProviderInModel {
                 agent_name: _,
@@ -352,6 +372,7 @@ pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
 
     validate_schema_references(workflow, &validation_index, &mut validation_report);
     validate_agent_properties(workflow, &mut validation_report);
+    validate_agent_inference_settings(workflow, &mut validation_report);
     validate_agent_model_bindings(workflow, &validation_index, &mut validation_report);
     validate_agent_references(workflow, &validation_index, &mut validation_report);
     validate_agent_dependency_cycles(workflow, &validation_index, &mut validation_report);
@@ -543,6 +564,50 @@ fn validate_agent_properties(workflow: &Workflow, validation_report: &mut Valida
                 },
                 Some(agent_declaration.span),
             );
+        }
+    }
+}
+
+fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mut ValidationReport) {
+    let mut invalid_inference_setting_values = HashSet::<(String, InferenceSetting)>::new();
+
+    for declaration in workflow.declarations() {
+        let Declaration::Agent(agent_declaration) = declaration else {
+            continue;
+        };
+
+        for agent_property in &agent_declaration.properties {
+            let AgentProperty::Inference(inference_expression) = agent_property else {
+                continue;
+            };
+
+            let Expression::ObjectLiteral(inference_fields) = inference_expression else {
+                continue;
+            };
+
+            for inference_field in inference_fields {
+                let Some(inference_setting) = InferenceSetting::from_identifier(inference_field.name.as_str()) else {
+                    continue;
+                };
+
+                if inference_setting.accepts_expression(&inference_field.value) {
+                    continue;
+                }
+
+                let issue_key = (agent_declaration.name.clone(), inference_setting);
+
+                if !invalid_inference_setting_values.insert(issue_key.clone()) {
+                    continue;
+                }
+
+                validation_report.push_issue_with_span(
+                    ValidationIssue::InvalidInferenceSettingValueType {
+                        agent_name: issue_key.0,
+                        inference_setting: issue_key.1,
+                    },
+                    Some(agent_declaration.span),
+                );
+            }
         }
     }
 }
@@ -1367,6 +1432,7 @@ mod tests {
     use super::{validate_workflow, ReferenceKeyword, SingletonDeclarationKind, ValidationContext, ValidationIssue};
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::parse_workflow;
+    use crate::runtime::InferenceSetting;
 
     macro_rules! assert_issues_contain {
         ($validation_issues:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
@@ -1502,6 +1568,26 @@ mod tests {
         assert_workflow_issues_contain!(
             workflow,
             ValidationIssue::InvalidModelExpression { agent_name } if agent_name == "researcher"
+        );
+    }
+
+    #[test]
+    fn reports_invalid_inference_setting_value_type() {
+        let workflow = parse_inline_workflow! {
+            agent writer {
+                inference: {
+                    temperature: 0.2
+                    max_tokens: "2_000"
+                }
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidInferenceSettingValueType {
+                agent_name,
+                inference_setting
+            } if agent_name == "writer" && *inference_setting == InferenceSetting::MaxTokens
         );
     }
 

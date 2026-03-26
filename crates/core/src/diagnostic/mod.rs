@@ -19,6 +19,7 @@ pub enum DiagnosticCode {
     DuplicateAgent,
     DuplicateSingletonDeclaration,
     UnknownAgentProperty,
+    InvalidInferenceSettingValueType,
     InvalidModelExpression,
     UnknownProviderInModel,
     UnknownModelForProvider,

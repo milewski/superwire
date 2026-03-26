@@ -101,6 +101,8 @@ pub enum DiagnosticCode {
     DuplicateSingletonDeclaration,
     #[serde(rename = "unknown_agent_property")]
     UnknownAgentProperty,
+    #[serde(rename = "invalid_inference_setting_value_type")]
+    InvalidInferenceSettingValueType,
     #[serde(rename = "invalid_model_expression")]
     InvalidModelExpression,
     #[serde(rename = "unknown_provider_in_model")]

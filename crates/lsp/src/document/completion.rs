@@ -2,7 +2,9 @@ use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, Reference
 
 use crate::protocol::Position;
 
-use super::completion_context::{AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, ModelCallCompletionContext};
+use super::completion_context::{
+    AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, ModelCallCompletionContext, ValueCompletionContext,
+};
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
@@ -41,6 +43,16 @@ impl DocumentState {
         let semantic_index = self.semantic_index_for_completion(position);
         let line_has_property_separator = line_prefix.trim_start().contains(':');
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
+
+        if completion_scope == CompletionScope::InferenceSettings && line_has_property_separator {
+            if let Some((_, value_prefix)) = line_prefix.trim_start().split_once(':') {
+                let inference_value_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+                if inference_value_context.inside_string_literal {
+                    return Vec::new();
+                }
+            }
+        }
 
         if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
             if let Some(agent_property_value_completion_context) = AgentPropertyValueCompletionContext::from_line_prefix(&line_prefix) {
