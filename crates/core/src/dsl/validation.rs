@@ -431,11 +431,7 @@ impl ValidationIssue {
                 format!("Declare `agent {referenced_agent} {{ ... }}` before this reference, or fix the agent name.")
             }
             Self::InvalidKeywordReferenceRoot { keyword, context: _ } => {
-                format!(
-                    "Add a field path after `{}` (for example `{}.<field>`).",
-                    keyword.as_str(),
-                    keyword.as_str()
-                )
+                format!("Add a field path after `{}`.", keyword.as_str())
             }
             Self::MissingInputDeclaration { context: _ } => {
                 "Add an `input { ... }` declaration with the fields used by `input.<field>` references.".to_string()
@@ -458,9 +454,7 @@ impl ValidationIssue {
                 )
             }
             Self::MissingAgentOutputTypeForFieldReference { agent_name, context: _ } => {
-                format!(
-                    "Add `output: <type>` to `agent {agent_name}` (for example `output: string`) before referencing `agent.{agent_name}` or its fields."
-                )
+                format!("Add `output: <type>` to `agent {agent_name}` before referencing `agent.{agent_name}` or its fields.")
             }
             Self::InvalidReferencePath {
                 reference_path: _,
