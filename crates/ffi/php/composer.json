@@ -1,0 +1,40 @@
+{
+  "name": "engine-ai/ffi-php-ext",
+  "description": "Composer package for building and installing the engine_ai_ffi Rust PHP extension.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "engine-ai",
+    "ffi",
+    "php-extension",
+    "rust"
+  ],
+  "require": {
+    "php": "^8.2"
+  },
+  "suggest": {
+    "ext-engine_ai_ffi": "Native extension module provided by this package after installation scripts run."
+  },
+  "autoload": {
+    "psr-4": {
+      "EngineAi\\Ffi\\": "src/"
+    }
+  },
+  "scripts": {
+    "ffi:build": [
+      "@php scripts/extension-installer.php build"
+    ],
+    "ffi:install": [
+      "@php scripts/extension-installer.php install"
+    ],
+    "post-install-cmd": [
+      "@ffi:install"
+    ],
+    "post-update-cmd": [
+      "@ffi:install"
+    ]
+  },
+  "config": {
+    "sort-packages": true
+  }
+}
