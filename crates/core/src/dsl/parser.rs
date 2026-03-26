@@ -152,9 +152,30 @@ impl DslParseError {
                     diagnostic = diagnostic.with_note(format!("expected {}", Self::format_expected_rule_list(expected_rules)));
                 }
 
+                diagnostic = diagnostic.with_help("Check for a typo, missing `:`, or unmatched `{}` around this location.");
+
                 diagnostic
             }
-            _ => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()),
+            Self::MissingNode {
+                expected,
+                context,
+                span: _,
+            } => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
+                "Add `{expected}` while parsing {context}; this node is required by the DSL grammar."
+            )),
+            Self::UnexpectedRule { rule, context, span: _ } => {
+                Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
+                    "Remove or reposition `{}` while parsing {context}.",
+                    format!("{rule:?}").replace('_', " ")
+                ))
+            }
+            Self::InvalidIntegerLiteral {
+                literal,
+                context: _,
+                span: _,
+            } => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()).with_help(format!(
+                "Use a non-negative integer that fits within `u64`; `{literal}` is out of range or invalid."
+            )),
         }
     }
 

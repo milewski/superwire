@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan,
-    TypeExpression, TypedField, Workflow,
+    parse_workflow, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField,
+    Workflow,
 };
 use std::collections::BTreeMap;
 
