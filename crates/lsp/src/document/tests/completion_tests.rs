@@ -498,6 +498,40 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
 }
 
 #[test]
+fn suppresses_suggestions_after_singleton_declaration_keyword_header() {
+    let (source, cursor_position) = inline_document_with_cursor! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
+
+        input <cursor>
+    };
+
+    let document_state = DocumentState::new(source);
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn suppresses_suggestions_after_named_declaration_keyword_header() {
+    let (source, cursor_position) = inline_document_with_cursor! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
+
+        agent <cursor>
+    };
+
+    let document_state = DocumentState::new(source);
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn suggests_builtin_functions_in_output_expression_context() {
     let (source, cursor_position) = inline_document_with_cursor! {
         output {
