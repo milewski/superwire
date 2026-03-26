@@ -1,7 +1,7 @@
 use super::ast::{SourcePosition, SourceSpan, Workflow};
 use super::visitor::AstVisitor;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
-use pest::error::LineColLocation;
+use pest::error::{ErrorVariant, LineColLocation};
 use pest_derive::Parser;
 use thiserror::Error;
 
@@ -11,8 +11,12 @@ pub struct Parser;
 
 #[derive(Debug, Error)]
 pub enum DslParseError {
-    #[error("failed to parse DSL: {message} at {span:?}")]
-    Pest { message: String, span: SourceSpan },
+    #[error("{message}")]
+    Pest {
+        message: String,
+        expected_rules: Vec<Rule>,
+        span: SourceSpan,
+    },
 
     #[error("missing {expected} while parsing {context} at {span:?}")]
     MissingNode {
@@ -39,6 +43,11 @@ pub enum DslParseError {
 impl DslParseError {
     #[must_use]
     pub fn from_pest_error(parse_error: pest::error::Error<Rule>) -> Self {
+        let expected_rules = match &parse_error.variant {
+            ErrorVariant::ParsingError { positives, negatives: _ } => positives.clone(),
+            ErrorVariant::CustomError { message: _ } => Vec::new(),
+        };
+
         let span = match parse_error.line_col {
             LineColLocation::Pos((line, column)) => SourceSpan {
                 start: SourcePosition { line, column },
@@ -56,8 +65,17 @@ impl DslParseError {
             },
         };
 
+        let message = match parse_error.variant {
+            ErrorVariant::ParsingError {
+                positives: _,
+                negatives: _,
+            } => "failed to parse DSL".to_string(),
+            ErrorVariant::CustomError { message } => message,
+        };
+
         Self::Pest {
-            message: parse_error.to_string(),
+            message,
+            expected_rules,
             span,
         }
     }
@@ -122,7 +140,22 @@ impl DslParseError {
 
     #[must_use]
     pub fn diagnostic(&self) -> Diagnostic {
-        Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span())
+        match self {
+            Self::Pest {
+                message,
+                expected_rules,
+                span,
+            } => {
+                let mut diagnostic = Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, message.clone(), Some(*span));
+
+                if !expected_rules.is_empty() {
+                    diagnostic = diagnostic.with_note(format!("expected {}", Self::format_expected_rule_list(expected_rules)));
+                }
+
+                diagnostic
+            }
+            _ => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span()),
+        }
     }
 
     #[must_use]
@@ -134,12 +167,58 @@ impl DslParseError {
     pub fn render_with_source(&self, source_text: &str, source_name: &str) -> String {
         self.diagnostic().render_with_source(source_text, source_name)
     }
+
+    fn format_expected_rule_list(expected_rules: &[Rule]) -> String {
+        let mut rendered_rule_names = Vec::new();
+
+        for expected_rule in expected_rules {
+            let Some(rendered_rule_name) = Self::render_expected_rule_name(*expected_rule) else {
+                continue;
+            };
+
+            if rendered_rule_names.contains(&rendered_rule_name) {
+                continue;
+            }
+
+            rendered_rule_names.push(rendered_rule_name);
+        }
+
+        match rendered_rule_names.as_slice() {
+            [] => "tokens".to_string(),
+            [only_rule_name] => only_rule_name.clone(),
+            _ => {
+                let last_rule_name = rendered_rule_names.pop().expect("last rule name should exist");
+
+                format!("{} or {last_rule_name}", rendered_rule_names.join(", "))
+            }
+        }
+    }
+
+    fn render_expected_rule_name(rule: Rule) -> Option<String> {
+        let rule_name = format!("{rule:?}");
+
+        if rule_name == "custom_property" {
+            return None;
+        }
+
+        let rendered_rule_name = if let Some(property_name) = rule_name.strip_suffix("_property") {
+            property_name.replace('_', " ")
+        } else {
+            rule_name.replace('_', " ")
+        };
+
+        Some(format!("`{rendered_rule_name}`"))
+    }
 }
 
 impl From<&DslParseError> for DiagnosticCode {
     fn from(parse_error: &DslParseError) -> Self {
         match parse_error {
-            DslParseError::Pest { message: _, span: _ } => Self::ParseError,
+            DslParseError::Pest {
+                message: _,
+                expected_rules: _,
+                span: _,
+            } => Self::ParseError,
             DslParseError::MissingNode {
                 expected: _,
                 context: _,

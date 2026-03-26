@@ -420,8 +420,33 @@ mod tests {
             parse_result,
             Err(WorkflowRuntimeError::ParseFailed { details, source: _ })
                 if details.contains("parse_error")
-                    && details.contains('@')
-                    && details.contains('^')
+                    && details.contains("<workflow>:")
+                    && details.contains("here")
+                    && !details.contains("-->")
+                    && !details.contains("SourceSpan {")
+        ));
+    }
+
+    #[test]
+    fn parse_stage_formats_expected_agent_properties_without_custom_property() {
+        let broken_workflow_source = r#"
+            agent greeting {
+                a prompt: "hello"
+                output: string
+            }
+        "#;
+
+        let parse_result = WorkflowPipeline::parse(WorkflowPipelineInput::Source(broken_workflow_source));
+
+        assert!(matches!(
+            parse_result,
+            Err(WorkflowRuntimeError::ParseFailed { details, source: _ })
+                if details.contains("`model`")
+                    && details.contains("`prompt`")
+                    && details.contains("`output`")
+                    && !details.contains("`custom`")
+                    && !details.contains("property")
+                    && !details.contains("SourceSpan {")
         ));
     }
 }

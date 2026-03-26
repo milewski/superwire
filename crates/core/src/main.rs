@@ -3,7 +3,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
+    if let Err(error) = run().await {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(dead_code)]
     #[derive(Debug, Deserialize, JsonSchema)]
     struct Output {
