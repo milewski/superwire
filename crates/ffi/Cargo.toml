@@ -1,0 +1,23 @@
+[package]
+name = "ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "engine_ai_ffi"
+crate-type = ["lib", "cdylib"]
+
+[lints]
+workspace = true
+
+[features]
+default = []
+php-ext = ["dep:ext-php-rs"]
+
+[dependencies]
+engine-ai-agent = { path = "../agent" }
+engine-ai-core = { path = "../core" }
+ext-php-rs = { version = "0.14", optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
