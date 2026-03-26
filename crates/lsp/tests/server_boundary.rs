@@ -308,11 +308,7 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
     assert!(change_diagnostics_notification["params"]["diagnostics"].is_array());
 
     let completion_response = language_server_client
-        .send_request(
-            2,
-            "textDocument/completion",
-            text_document_position_params(document_uri, 6, 20),
-        )
+        .send_request(2, "textDocument/completion", text_document_position_params(document_uri, 6, 20))
         .await;
 
     assert_eq!(completion_response["jsonrpc"], "2.0");
