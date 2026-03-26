@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentProperty, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference, ReferenceKeyword, SourceSpan,
-    StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference,
+    ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::runtime::InferenceSetting;
@@ -308,7 +308,27 @@ impl ValidationIssue {
 
     #[must_use]
     pub fn diagnostic(&self, primary_span: Option<SourceSpan>) -> Diagnostic {
-        Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span)
+        match self {
+            Self::UnknownAgentProperty {
+                agent_name: _,
+                property_name,
+            } => {
+                let mut diagnostic = Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span);
+
+                if let Some(suggested_property_name) = AgentPropertyName::suggested_from_identifier(property_name) {
+                    diagnostic = diagnostic.with_help(format!(
+                        "Did you mean `{}`? Supported properties: {}.",
+                        suggested_property_name.as_str(),
+                        AgentPropertyName::rendered_values()
+                    ));
+                } else {
+                    diagnostic = diagnostic.with_help(format!("Supported properties: {}.", AgentPropertyName::rendered_values()));
+                }
+
+                diagnostic
+            }
+            _ => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span),
+        }
     }
 }
 
@@ -1642,6 +1662,34 @@ mod tests {
 
         assert_eq!(issue.code(), "unknown_agent_property");
         assert!(issue.message().contains("unsupported property `timeout`"));
+    }
+
+    #[test]
+    fn unknown_agent_property_diagnostic_suggests_closest_property_name() {
+        let issue = ValidationIssue::UnknownAgentProperty {
+            agent_name: "writer".to_string(),
+            property_name: "prom_t".to_string(),
+        };
+
+        let diagnostic = issue.diagnostic(None);
+        let help_message = diagnostic.help.expect("unknown property diagnostics should include help");
+
+        assert!(help_message.contains("Did you mean `prompt`?"));
+        assert!(help_message.contains("Supported properties:"));
+    }
+
+    #[test]
+    fn unknown_agent_property_diagnostic_lists_supported_properties_without_guess() {
+        let issue = ValidationIssue::UnknownAgentProperty {
+            agent_name: "writer".to_string(),
+            property_name: "retries".to_string(),
+        };
+
+        let diagnostic = issue.diagnostic(None);
+        let help_message = diagnostic.help.expect("unknown property diagnostics should include help");
+
+        assert!(help_message.contains("Supported properties:"));
+        assert!(!help_message.contains("Did you mean"));
     }
 
     #[test]
