@@ -24,7 +24,7 @@ struct LspProcessClient {
 }
 
 impl LspProcessClient {
-    async fn spawn() -> Self {
+    fn spawn() -> Self {
         let binary_path = engine_ai_lsp_binary_path();
 
         let mut server_process = Command::new(binary_path)
@@ -187,11 +187,11 @@ fn engine_ai_lsp_binary_path() -> PathBuf {
     let binary_file_name = if cfg!(windows) { "engine-ai-lsp.exe" } else { "engine-ai-lsp" };
 
     let binary_path = target_debug_directory.join(binary_file_name);
+    let binary_path_display = binary_path.display();
 
     assert!(
         binary_path.exists(),
-        "Failed to locate engine-ai-lsp binary at {:?}. Expected CARGO_BIN_EXE_engine-ai-lsp or CARGO_BIN_EXE_engine_ai_lsp.",
-        binary_path
+        "Failed to locate engine-ai-lsp binary at {binary_path_display}. Expected CARGO_BIN_EXE_engine-ai-lsp or CARGO_BIN_EXE_engine_ai_lsp."
     );
 
     binary_path
@@ -205,9 +205,61 @@ impl Drop for LspProcessClient {
     }
 }
 
+fn did_open_params(document_uri: &str, document_text: &str) -> Value {
+    json!({
+        "textDocument": {
+            "uri": document_uri,
+            "text": document_text,
+        }
+    })
+}
+
+fn did_change_params(document_uri: &str, document_text: &str) -> Value {
+    json!({
+        "textDocument": {
+            "uri": document_uri,
+        },
+        "contentChanges": [
+            {
+                "text": document_text,
+            }
+        ]
+    })
+}
+
+fn did_close_params(document_uri: &str) -> Value {
+    json!({
+        "textDocument": {
+            "uri": document_uri,
+        }
+    })
+}
+
+fn text_document_position_params(document_uri: &str, line: u64, character: u64) -> Value {
+    json!({
+        "textDocument": {
+            "uri": document_uri,
+        },
+        "position": {
+            "line": line,
+            "character": character,
+        }
+    })
+}
+
+async fn assert_publish_diagnostics_for_uri(language_server_client: &mut LspProcessClient, document_uri: &str) -> Value {
+    let diagnostics_notification = language_server_client.read_message().await;
+
+    assert_eq!(diagnostics_notification["jsonrpc"], "2.0");
+    assert_eq!(diagnostics_notification["method"], "textDocument/publishDiagnostics");
+    assert_eq!(diagnostics_notification["params"]["uri"], document_uri);
+
+    diagnostics_notification
+}
+
 #[tokio::test]
 async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
-    let mut language_server_client = LspProcessClient::spawn().await;
+    let mut language_server_client = LspProcessClient::spawn();
     let document_uri = "file:///workspace/workflow.engine";
 
     let initialize_response = language_server_client
@@ -229,22 +281,11 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
     };
 
     language_server_client
-        .send_notification(
-            "textDocument/didOpen",
-            json!({
-                "textDocument": {
-                    "uri": document_uri,
-                    "text": initial_document_text,
-                }
-            }),
-        )
+        .send_notification("textDocument/didOpen", did_open_params(document_uri, &initial_document_text))
         .await;
 
-    let open_diagnostics_notification = language_server_client.read_message().await;
+    let open_diagnostics_notification = assert_publish_diagnostics_for_uri(&mut language_server_client, document_uri).await;
 
-    assert_eq!(open_diagnostics_notification["jsonrpc"], "2.0");
-    assert_eq!(open_diagnostics_notification["method"], "textDocument/publishDiagnostics");
-    assert_eq!(open_diagnostics_notification["params"]["uri"], document_uri);
     assert!(open_diagnostics_notification["params"]["diagnostics"].is_array());
 
     let changed_document_text = dsl! {
@@ -259,40 +300,18 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
     };
 
     language_server_client
-        .send_notification(
-            "textDocument/didChange",
-            json!({
-                "textDocument": {
-                    "uri": document_uri,
-                },
-                "contentChanges": [
-                    {
-                        "text": changed_document_text,
-                    }
-                ]
-            }),
-        )
+        .send_notification("textDocument/didChange", did_change_params(document_uri, &changed_document_text))
         .await;
 
-    let change_diagnostics_notification = language_server_client.read_message().await;
+    let change_diagnostics_notification = assert_publish_diagnostics_for_uri(&mut language_server_client, document_uri).await;
 
-    assert_eq!(change_diagnostics_notification["jsonrpc"], "2.0");
-    assert_eq!(change_diagnostics_notification["method"], "textDocument/publishDiagnostics");
-    assert_eq!(change_diagnostics_notification["params"]["uri"], document_uri);
+    assert!(change_diagnostics_notification["params"]["diagnostics"].is_array());
 
     let completion_response = language_server_client
         .send_request(
             2,
             "textDocument/completion",
-            json!({
-                "textDocument": {
-                    "uri": document_uri,
-                },
-                "position": {
-                    "line": 6,
-                    "character": 20,
-                }
-            }),
+            text_document_position_params(document_uri, 6, 20),
         )
         .await;
 
@@ -301,19 +320,7 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
     assert!(completion_response["result"]["items"].is_array());
 
     let hover_response = language_server_client
-        .send_request(
-            3,
-            "textDocument/hover",
-            json!({
-                "textDocument": {
-                    "uri": document_uri,
-                },
-                "position": {
-                    "line": 1,
-                    "character": 12,
-                }
-            }),
-        )
+        .send_request(3, "textDocument/hover", text_document_position_params(document_uri, 1, 12))
         .await;
 
     assert_eq!(hover_response["jsonrpc"], "2.0");
@@ -321,21 +328,11 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
     assert!(hover_response.get("result").is_some());
 
     language_server_client
-        .send_notification(
-            "textDocument/didClose",
-            json!({
-                "textDocument": {
-                    "uri": document_uri,
-                }
-            }),
-        )
+        .send_notification("textDocument/didClose", did_close_params(document_uri))
         .await;
 
-    let close_diagnostics_notification = language_server_client.read_message().await;
+    let close_diagnostics_notification = assert_publish_diagnostics_for_uri(&mut language_server_client, document_uri).await;
 
-    assert_eq!(close_diagnostics_notification["jsonrpc"], "2.0");
-    assert_eq!(close_diagnostics_notification["method"], "textDocument/publishDiagnostics");
-    assert_eq!(close_diagnostics_notification["params"]["uri"], document_uri);
     assert_eq!(close_diagnostics_notification["params"]["diagnostics"], json!([]));
 
     let shutdown_response = language_server_client.send_request(4, "shutdown", Value::Null).await;
@@ -350,7 +347,7 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
 
 #[tokio::test]
 async fn reads_multiple_framed_messages_from_single_input_batch() {
-    let mut language_server_client = LspProcessClient::spawn().await;
+    let mut language_server_client = LspProcessClient::spawn();
 
     let initialize_request = json!({
         "jsonrpc": "2.0",
