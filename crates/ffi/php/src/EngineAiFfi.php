@@ -8,6 +8,11 @@ use RuntimeException;
 
 final class EngineAiFfi
 {
+    public static function createEngine(): AiEngine
+    {
+        return new AiEngine();
+    }
+
     public static function executeWorkflow(string $requestJson): string
     {
         self::assertExtensionLoaded();

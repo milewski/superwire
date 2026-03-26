@@ -49,6 +49,12 @@ pub enum WorkflowRuntimeError {
     #[error("workflow input value does not match declared input type: {message}")]
     InputValueMismatch { message: String },
 
+    #[error("workflow secrets type mismatch: expected `{expected}`, found `{found}`")]
+    SecretsTypeMismatch { expected: String, found: String },
+
+    #[error("workflow secrets value does not match declared secrets type: {message}")]
+    SecretsValueMismatch { message: String },
+
     #[error("agent `{agent_name}` output does not match declared output type: {message}")]
     AgentOutputTypeMismatch { agent_name: String, message: String },
 
@@ -148,6 +154,12 @@ impl WorkflowRuntimeError {
             Self::InputValueMismatch { message } => {
                 format!("Workflow input value does not match declared input type: {message}")
             }
+            Self::SecretsTypeMismatch { expected, found } => {
+                format!("Workflow secrets type mismatch: expected `{expected}`, found `{found}`")
+            }
+            Self::SecretsValueMismatch { message } => {
+                format!("Workflow secrets value does not match declared secrets type: {message}")
+            }
             Self::AgentOutputTypeMismatch { agent_name, message } => {
                 format!("Agent `{agent_name}` output does not match declared output type: {message}")
             }
@@ -201,6 +213,12 @@ impl WorkflowRuntimeError {
                 Some("Ensure referenced fields exist and expression types are compatible.".to_string())
             }
             Self::InputValueMismatch { message: _ } => Some("Pass input data that matches the declared workflow `input` type.".to_string()),
+            Self::SecretsTypeMismatch { expected: _, found: _ } => {
+                Some("Pass secrets data only when the workflow declares a `secrets` block.".to_string())
+            }
+            Self::SecretsValueMismatch { message: _ } => {
+                Some("Pass secrets data that matches the declared workflow `secrets` type.".to_string())
+            }
             Self::AgentOutputTypeMismatch { agent_name: _, message: _ } => {
                 Some("Make sure the agent response matches its declared `output` type.".to_string())
             }

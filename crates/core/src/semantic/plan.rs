@@ -20,6 +20,7 @@ pub struct PlannedAgent {
 pub struct ExecutionPlan {
     pub provider_index: HashMap<String, ProviderConfig>,
     pub input_type: Option<WorkflowType>,
+    pub secrets_type: Option<WorkflowType>,
     pub output_declaration: OutputDeclaration,
     pub workflow_output_type: WorkflowType,
     pub agent_execution_order: Vec<String>,
@@ -52,6 +53,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
     Ok(ExecutionPlan {
         provider_index,
         input_type: typed_workflow_ir.input_type.clone(),
+        secrets_type: typed_workflow_ir.secrets_type.clone(),
         output_declaration: typed_workflow_ir.output_declaration.clone(),
         workflow_output_type: typed_workflow_ir.workflow_output_type.clone(),
         agent_execution_order,

@@ -62,7 +62,10 @@ fn global_tool_invocation_binding() -> &'static RwLock<Option<SharedToolInvocati
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkflowExecutionRequest {
     pub workflow_file_path: String,
+    #[serde(default)]
     pub workflow_input: Value,
+    #[serde(default)]
+    pub workflow_secrets: Value,
     #[serde(default)]
     pub custom_tools: CustomToolRegistry,
 }
@@ -268,6 +271,14 @@ impl WorkflowExecutionError {
                 message: issues,
                 details: None,
             },
+            input_or_secret_request_error @ (WorkflowRuntimeError::InputTypeMismatch { expected: _, found: _ }
+            | WorkflowRuntimeError::InputValueMismatch { message: _ }
+            | WorkflowRuntimeError::SecretsTypeMismatch { expected: _, found: _ }
+            | WorkflowRuntimeError::SecretsValueMismatch { message: _ }) => Self {
+                code: WorkflowExecutionErrorCode::InvalidRequest,
+                message: input_or_secret_request_error.to_string(),
+                details: None,
+            },
             WorkflowRuntimeError::AgentExecutionFailed { agent_name, source } => Self::from_agent_execution_error(agent_name, *source),
             WorkflowRuntimeError::UnsupportedFeature { feature } if feature.contains("tools") || feature.contains("tool") => Self {
                 code: WorkflowExecutionErrorCode::ToolRegistrationFailed,
@@ -417,7 +428,7 @@ impl FfiInterface {
             let workflow_runtime = WorkflowRuntime::<Value, Value>::new(workflow).map_err(WorkflowExecutionError::from_runtime_error)?;
 
             workflow_runtime
-                .run_with_runner(request.workflow_input, &workflow_runner)
+                .run_with_runner_and_secrets(request.workflow_input, request.workflow_secrets, &workflow_runner)
                 .await
                 .map_err(WorkflowExecutionError::from_runtime_error)
         })

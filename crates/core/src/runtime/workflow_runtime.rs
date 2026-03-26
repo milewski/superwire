@@ -27,10 +27,10 @@ struct RuntimeState {
 
 impl RuntimeState {
     #[must_use]
-    fn new(input_values: Map<String, Value>) -> Self {
+    fn new(input_values: Map<String, Value>, secret_values: Map<String, Value>) -> Self {
         Self {
             input_values,
-            secret_values: Map::new(),
+            secret_values,
             agent_outputs: HashMap::new(),
             agent_contexts: HashMap::new(),
         }
@@ -98,10 +98,23 @@ where
     }
 
     pub async fn run(&self, input: Input) -> Result<Output, WorkflowRuntimeError> {
-        self.run_with_runner(input, &LoopAgentRunner).await
+        self.run_with_runner_and_secrets(input, Value::Object(Map::new()), &LoopAgentRunner)
+            .await
     }
 
     pub async fn run_with_runner<RunnerType>(&self, input: Input, runner: &RunnerType) -> Result<Output, WorkflowRuntimeError>
+    where
+        RunnerType: AgentRunner,
+    {
+        self.run_with_runner_and_secrets(input, Value::Object(Map::new()), runner).await
+    }
+
+    pub async fn run_with_runner_and_secrets<RunnerType>(
+        &self,
+        input: Input,
+        secrets: Value,
+        runner: &RunnerType,
+    ) -> Result<Output, WorkflowRuntimeError>
     where
         RunnerType: AgentRunner,
     {
@@ -111,8 +124,9 @@ where
         })?;
 
         let input_values = self.resolve_input_values(&serialized_input)?;
+        let secret_values = self.resolve_secret_values(&secrets)?;
 
-        let mut runtime_state = RuntimeState::new(input_values);
+        let mut runtime_state = RuntimeState::new(input_values, secret_values);
         let execution_order = self.resolve_agent_execution_order();
 
         for agent_name in execution_order {
@@ -168,6 +182,36 @@ where
                 found: value_kind_name(serialized_input).to_string(),
             })
         }
+    }
+
+    fn resolve_secret_values(&self, serialized_secrets: &Value) -> Result<Map<String, Value>, WorkflowRuntimeError> {
+        if let Some(secrets_type) = &self.compiled_workflow.execution_plan.secrets_type {
+            validate_value_against_type(serialized_secrets, secrets_type)
+                .map_err(|message| WorkflowRuntimeError::SecretsValueMismatch { message })?;
+
+            let Some(secret_values) = serialized_secrets.as_object() else {
+                return Err(WorkflowRuntimeError::SecretsValueMismatch {
+                    message: format!("expected secrets object, found {}", value_kind_name(serialized_secrets)),
+                });
+            };
+
+            return Ok(secret_values.clone());
+        }
+
+        if serialized_secrets.is_null() {
+            return Ok(Map::new());
+        }
+
+        if let Some(secret_values) = serialized_secrets.as_object() {
+            if secret_values.is_empty() {
+                return Ok(Map::new());
+            }
+        }
+
+        Err(WorkflowRuntimeError::SecretsTypeMismatch {
+            expected: "no secrets".to_string(),
+            found: value_kind_name(serialized_secrets).to_string(),
+        })
     }
 
     fn resolve_agent_execution_order(&self) -> Vec<String> {
