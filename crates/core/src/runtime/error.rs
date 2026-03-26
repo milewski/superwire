@@ -1,13 +1,16 @@
 use crate::dsl::DslParseError;
 use engine_ai_agent::AgentError;
+use std::fmt::{self, Debug, Display, Formatter};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum WorkflowRuntimeError {
-    #[error("workflow parse failed: {source}")]
+    #[error("workflow parse failed:\n{details}")]
     ParseFailed {
         #[source]
         source: DslParseError,
+
+        details: String,
     },
 
     #[error("workflow validation failed:\n{issues}")]
@@ -69,4 +72,10 @@ pub enum WorkflowRuntimeError {
 
     #[error("{message}")]
     Other { message: String },
+}
+
+impl Debug for WorkflowRuntimeError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, formatter)
+    }
 }

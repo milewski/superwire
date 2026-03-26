@@ -273,6 +273,54 @@ fn parse_inline_workflow_supports_composing_base_workflow_fragments() {
 }
 
 #[tokio::test]
+async fn try_workflow_macro_executes_workflow_from_path_literal_without_input() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        greeting: String,
+    }
+
+    let workflow_output: Output = crate::try_workflow!("fixtures/path_literal_output.ai")
+        .await
+        .expect("path-literal workflow should execute without input");
+
+    assert_eq!(
+        workflow_output,
+        Output {
+            greeting: "hello from path workflow".to_string(),
+        }
+    );
+}
+
+#[tokio::test]
+async fn try_workflow_macro_executes_workflow_from_path_literal_with_input() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct WorkflowInput {
+        topic: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct WorkflowOutput {
+        greeting: String,
+    }
+
+    let workflow_output: WorkflowOutput = crate::try_workflow!(
+        "fixtures/path_literal_with_input.ai",
+        WorkflowInput {
+            topic: "hello from input".to_string(),
+        }
+    )
+    .await
+    .expect("path-literal workflow should execute with input");
+
+    assert_eq!(
+        workflow_output,
+        WorkflowOutput {
+            greeting: "hello from input".to_string(),
+        }
+    );
+}
+
+#[tokio::test]
 async fn supports_all_static_input_and_output_types_in_preflight_and_execution() {
     let workflow = static_types_workflow();
 

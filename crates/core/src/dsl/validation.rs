@@ -41,6 +41,24 @@ impl ValidationReport {
             .collect()
     }
 
+    #[must_use]
+    pub fn render(&self) -> String {
+        self.diagnostics()
+            .into_iter()
+            .map(|diagnostic| diagnostic.render())
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    #[must_use]
+    pub fn render_with_source(&self, source_text: &str, source_name: &str) -> String {
+        self.diagnostics()
+            .into_iter()
+            .map(|diagnostic| diagnostic.render_with_source(source_text, source_name))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
     fn push_issue(&mut self, issue: ValidationIssue) {
         self.push_issue_with_span(issue, None);
     }

@@ -7,6 +7,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
+ariadne = "0.6.0"
 async-trait = "0.1"
 engine-ai-agent = { path = "../agent" }
 jsonschema = { workspace = true }

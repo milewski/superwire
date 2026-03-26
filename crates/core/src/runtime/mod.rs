@@ -19,6 +19,36 @@ pub use workflow_runtime::{execute_workflow, execute_workflow_without_input, Wor
 
 #[macro_export]
 macro_rules! try_workflow {
+    ($workflow_path:literal) => {{
+        async {
+            let workflow_source = include_str!($workflow_path);
+            let parsed_workflow = $crate::dsl::parse_workflow(workflow_source).map_err(|parse_error| {
+                let rendered_details = parse_error.render_with_source(workflow_source, $workflow_path);
+
+                $crate::runtime::WorkflowRuntimeError::ParseFailed {
+                    source: parse_error,
+                    details: rendered_details,
+                }
+            })?;
+
+            $crate::runtime::execute_workflow_without_input(&parsed_workflow).await
+        }
+    }};
+    ($workflow_path:literal, $input:expr) => {{
+        async {
+            let workflow_source = include_str!($workflow_path);
+            let parsed_workflow = $crate::dsl::parse_workflow(workflow_source).map_err(|parse_error| {
+                let rendered_details = parse_error.render_with_source(workflow_source, $workflow_path);
+
+                $crate::runtime::WorkflowRuntimeError::ParseFailed {
+                    source: parse_error,
+                    details: rendered_details,
+                }
+            })?;
+
+            $crate::runtime::execute_workflow(&parsed_workflow, $input).await
+        }
+    }};
     ($workflow:expr) => {{
         $crate::runtime::execute_workflow_without_input(&$workflow)
     }};
