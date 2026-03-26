@@ -583,16 +583,7 @@ impl<'source> TolerantSourceExtractor<'source> {
             let symbol_start_column =
                 leading_whitespace_characters + declaration_keyword.chars().count() + whitespace_after_keyword_characters + 1;
             let symbol_end_column = symbol_start_column + declaration_name.chars().count().saturating_sub(1);
-            let symbol_span = SourceSpan {
-                start: SourcePosition {
-                    line: line_index + 1,
-                    column: symbol_start_column,
-                },
-                end: SourcePosition {
-                    line: line_index + 1,
-                    column: symbol_end_column,
-                },
-            };
+            let symbol_span = self.declaration_symbol_span(line_index, symbol_start_column, symbol_end_column);
 
             named_symbols.push(NamedSymbolSpan {
                 category,
@@ -602,6 +593,105 @@ impl<'source> TolerantSourceExtractor<'source> {
         }
 
         named_symbols
+    }
+
+    fn declaration_symbol_span(
+        &self,
+        declaration_line_index: usize,
+        declaration_name_start_column: usize,
+        declaration_name_end_column: usize,
+    ) -> SourceSpan {
+        let declaration_end_position = self.declaration_end_position(declaration_line_index, declaration_name_end_column);
+
+        SourceSpan {
+            start: SourcePosition {
+                line: declaration_line_index + 1,
+                column: declaration_name_start_column,
+            },
+            end: declaration_end_position,
+        }
+    }
+
+    fn declaration_end_position(&self, declaration_line_index: usize, declaration_name_end_column: usize) -> SourcePosition {
+        let mut inside_string_literal = false;
+        let mut escaping_character = false;
+        let mut seen_open_brace = false;
+        let mut declaration_block_depth = 0_i32;
+        let mut last_line_position = SourcePosition {
+            line: declaration_line_index + 1,
+            column: declaration_name_end_column.max(1),
+        };
+
+        for (line_offset, source_line) in self.source_text.lines().skip(declaration_line_index).enumerate() {
+            let current_line_index = declaration_line_index + line_offset;
+            let current_line_character_count = source_line.chars().count();
+
+            last_line_position = SourcePosition {
+                line: current_line_index + 1,
+                column: current_line_character_count.max(1),
+            };
+
+            for (character_index, character) in source_line.chars().enumerate() {
+                let current_column = character_index + 1;
+
+                if current_line_index == declaration_line_index && current_column <= declaration_name_end_column {
+                    continue;
+                }
+
+                if inside_string_literal {
+                    if escaping_character {
+                        escaping_character = false;
+                        continue;
+                    }
+
+                    if character == '\\' {
+                        escaping_character = true;
+                        continue;
+                    }
+
+                    if character == '"' {
+                        inside_string_literal = false;
+                    }
+
+                    continue;
+                }
+
+                if character == '"' {
+                    inside_string_literal = true;
+                    continue;
+                }
+
+                if character == '{' {
+                    seen_open_brace = true;
+                    declaration_block_depth += 1;
+                    continue;
+                }
+
+                if character == '}' {
+                    if !seen_open_brace {
+                        continue;
+                    }
+
+                    declaration_block_depth -= 1;
+
+                    if declaration_block_depth <= 0 {
+                        return SourcePosition {
+                            line: current_line_index + 1,
+                            column: current_column,
+                        };
+                    }
+                }
+            }
+        }
+
+        if seen_open_brace {
+            return last_line_position;
+        }
+
+        SourcePosition {
+            line: declaration_line_index + 1,
+            column: declaration_name_end_column.max(1),
+        }
     }
 
     fn collect_singleton_field_types(&self, singleton_declaration_kind: SingletonDeclarationKind) -> BTreeMap<String, TypeExpression> {
@@ -795,12 +885,19 @@ mod tests {
         assert_eq!(tooling_snapshot.construction(), ToolingSnapshotConstruction::TolerantSourceFallback);
         assert_eq!(tooling_snapshot.parse_error_span(), Some(expected_parse_error_span));
         assert!(tooling_snapshot.symbol_span(ToolingSymbolCategory::Provider, "openai").is_some());
-        assert!(tooling_snapshot.symbol_span(ToolingSymbolCategory::Schema, "Report").is_some());
+        let schema_span = tooling_snapshot
+            .symbol_span(ToolingSymbolCategory::Schema, "Report")
+            .expect("schema symbol should exist");
         assert!(tooling_snapshot.symbol_span(ToolingSymbolCategory::Agent, "writer").is_some());
+        assert!(schema_span.end.line > schema_span.start.line);
 
         let topic_type = tooling_snapshot.resolve_reference_path_type(&ToolingReferencePath::input(vec!["topic".to_string()]));
 
         assert_eq!(topic_type, Some(TypeExpression::String));
+
+        let schema_name = tooling_snapshot.schema_name_at_position(SourcePosition { line: 11, column: 20 });
+
+        assert_eq!(schema_name, Some("Report"));
 
         let provider_name = tooling_snapshot.provider_name_at_position(SourcePosition { line: 2, column: 22 });
 

@@ -52,6 +52,10 @@ impl DocumentState {
                 }
                 CompletionScope::General | CompletionScope::TypedDeclarations => {}
             }
+
+            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
+                return semantic_index.root_declaration_suggestions(&line_prefix);
+            }
         }
 
         if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {

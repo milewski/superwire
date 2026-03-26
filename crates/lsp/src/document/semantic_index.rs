@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
-use engine_ai_core::dsl::{AgentProperty, Declaration, Expression, ProviderDeclaration, SourceSpan, TypeExpression, TypedField, Workflow};
+use engine_ai_core::dsl::{
+    AgentProperty, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, SingletonDeclarationKind, SourceSpan, TypeExpression,
+    TypedField, Workflow,
+};
 use engine_ai_core::runtime::ProviderDriver;
 use engine_ai_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
 
@@ -26,6 +29,9 @@ pub(super) struct SemanticIndex {
     pub(in crate::document) output_locations: Vec<SourceSpan>,
     pub(in crate::document) typed_declaration_locations: Vec<SourceSpan>,
     pub(in crate::document) agent_locations: Vec<NamedSpan>,
+    has_input_declaration: bool,
+    has_secrets_declaration: bool,
+    has_output_declaration: bool,
     pub(in crate::document) tooling_snapshot: SemanticToolingSnapshot,
 }
 
@@ -67,6 +73,9 @@ impl SemanticIndex {
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
             agent_locations: Vec::new(),
+            has_input_declaration: false,
+            has_secrets_declaration: false,
+            has_output_declaration: false,
             tooling_snapshot,
         };
 
@@ -94,6 +103,8 @@ impl SemanticIndex {
                     semantic_index.typed_declaration_locations.push(schema_declaration.span);
                 }
                 Declaration::Input(input_declaration) => {
+                    semantic_index.has_input_declaration = true;
+
                     if semantic_index.input_fields.is_empty() {
                         semantic_index.input_fields = typed_fields_to_map(&input_declaration.fields);
                     }
@@ -101,6 +112,8 @@ impl SemanticIndex {
                     semantic_index.typed_declaration_locations.push(input_declaration.span);
                 }
                 Declaration::Secrets(secrets_declaration) => {
+                    semantic_index.has_secrets_declaration = true;
+
                     if semantic_index.secrets_fields.is_empty() {
                         semantic_index.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
                     }
@@ -129,6 +142,7 @@ impl SemanticIndex {
                     });
                 }
                 Declaration::Output(output_declaration) => {
+                    semantic_index.has_output_declaration = true;
                     semantic_index.output_locations.push(output_declaration.span);
                 }
             }
@@ -145,8 +159,16 @@ impl SemanticIndex {
 
     pub(super) fn from_text_fallback(source_text: &str) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_source_tolerant(source_text);
+        let mut semantic_index = Self::from_tooling_snapshot(&tooling_snapshot);
 
-        Self::from_tooling_snapshot(&tooling_snapshot)
+        semantic_index.has_input_declaration = semantic_index.has_input_declaration
+            || Self::source_has_named_block_declaration(source_text, DeclarationKeyword::Input.as_str());
+        semantic_index.has_secrets_declaration = semantic_index.has_secrets_declaration
+            || Self::source_has_named_block_declaration(source_text, DeclarationKeyword::Secrets.as_str());
+        semantic_index.has_output_declaration = semantic_index.has_output_declaration
+            || Self::source_has_named_block_declaration(source_text, DeclarationKeyword::Output.as_str());
+
+        semantic_index
     }
 
     fn from_tooling_snapshot(tooling_snapshot: &SemanticToolingSnapshot) -> Self {
@@ -238,8 +260,30 @@ impl SemanticIndex {
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
             agent_locations,
+            has_input_declaration: !tooling_snapshot.input_fields().is_empty(),
+            has_secrets_declaration: !tooling_snapshot.secrets_fields().is_empty(),
+            has_output_declaration: false,
             tooling_snapshot: tooling_snapshot.clone(),
         }
+    }
+
+    fn source_has_named_block_declaration(source_text: &str, declaration_keyword: &str) -> bool {
+        for source_line in source_text.lines() {
+            let trimmed_line = source_line.trim_start();
+            let Some(line_after_keyword) = trimmed_line.strip_prefix(declaration_keyword) else {
+                continue;
+            };
+
+            if !line_after_keyword.starts_with(char::is_whitespace) {
+                continue;
+            }
+
+            if line_after_keyword.trim_start().starts_with('{') {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn insert_provider(&mut self, provider_declaration: &ProviderDeclaration) {
@@ -441,7 +485,13 @@ impl SemanticIndex {
     }
 
     pub(super) fn type_suggestions(&self, line_prefix: &str, current_schema_name: Option<&str>) -> Vec<CompletionSuggestion> {
-        if line_prefix.trim_end().ends_with("schema.") {
+        let trimmed_line_prefix = line_prefix.trim_end();
+
+        if trimmed_line_prefix.ends_with('.') && !trimmed_line_prefix.ends_with("schema.") {
+            return Vec::new();
+        }
+
+        if trimmed_line_prefix.ends_with("schema.") {
             return self
                 .schema_names
                 .iter()
@@ -485,6 +535,45 @@ impl SemanticIndex {
         completion_suggestions
     }
 
+    pub(super) fn root_declaration_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {
+        let declaration_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+        builtin_symbol_suggestions(false)
+            .into_iter()
+            .filter(|completion_suggestion| matches!(completion_suggestion.kind, CompletionKind::Keyword))
+            .filter(|completion_suggestion| completion_suggestion.label.starts_with(declaration_prefix))
+            .filter(|completion_suggestion| self.should_suggest_root_declaration_label(&completion_suggestion.label))
+            .collect()
+    }
+
+    fn should_suggest_root_declaration_label(&self, declaration_label: &str) -> bool {
+        if declaration_label == DeclarationKeyword::Provider.as_str() {
+            return true;
+        }
+
+        if declaration_label == DeclarationKeyword::Agent.as_str() {
+            return true;
+        }
+
+        if declaration_label == DeclarationKeyword::Schema.as_str() {
+            return true;
+        }
+
+        if declaration_label == SingletonDeclarationKind::Input.as_str() {
+            return !self.has_input_declaration;
+        }
+
+        if declaration_label == SingletonDeclarationKind::Secrets.as_str() {
+            return !self.has_secrets_declaration;
+        }
+
+        if declaration_label == SingletonDeclarationKind::Output.as_str() {
+            return !self.has_output_declaration;
+        }
+
+        false
+    }
+
     pub(super) fn default_suggestions(&self, include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = builtin_symbol_suggestions(include_builtin_function_suggestions);
 
@@ -507,6 +596,52 @@ impl SemanticIndex {
         completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 
         completion_suggestions
+    }
+
+    pub(super) fn is_root_declaration_position(&self, position: Position) -> bool {
+        if self
+            .provider_locations
+            .iter()
+            .any(|provider_location| source_span_contains_position(provider_location.span, position))
+        {
+            return false;
+        }
+
+        if self
+            .schema_locations
+            .iter()
+            .any(|schema_location| source_span_contains_position(schema_location.span, position))
+        {
+            return false;
+        }
+
+        if self
+            .agent_locations
+            .iter()
+            .any(|agent_location| source_span_contains_position(agent_location.span, position))
+        {
+            return false;
+        }
+
+        if self
+            .typed_declaration_locations
+            .iter()
+            .copied()
+            .any(|typed_declaration_span| source_span_contains_position(typed_declaration_span, position))
+        {
+            return false;
+        }
+
+        if self
+            .output_locations
+            .iter()
+            .copied()
+            .any(|output_span| source_span_contains_position(output_span, position))
+        {
+            return false;
+        }
+
+        true
     }
 
     pub(super) fn provider_name_at_position(&self, position: Position) -> Option<&str> {
