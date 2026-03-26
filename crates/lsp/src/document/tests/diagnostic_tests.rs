@@ -11,7 +11,7 @@ fn reports_parse_diagnostics_for_invalid_syntax() {
 
 #[test]
 fn reports_unknown_model_for_provider_diagnostic() {
-    let (source, _cursor_position) = inline_document_with_cursor! {
+    let diagnostics = inline_diagnostics! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini"]
@@ -22,18 +22,14 @@ fn reports_unknown_model_for_provider_diagnostic() {
             prompt: "hello"
             output: string
         }
-        <cursor>
     };
-
-    let document_state = DocumentState::new(source);
-    let diagnostics = document_state.diagnostics();
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownModelForProvider);
 }
 
 #[test]
 fn reports_unknown_agent_property_diagnostic() {
-    let (source, _cursor_position) = inline_document_with_cursor! {
+    let diagnostics = inline_diagnostics! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini"]
@@ -45,53 +41,39 @@ fn reports_unknown_agent_property_diagnostic() {
             retries: 3
             output: string
         }
-        <cursor>
     };
-
-    let document_state = DocumentState::new(source);
-    let diagnostics = document_state.diagnostics();
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownAgentProperty);
 }
 
 #[test]
 fn reports_invalid_inference_setting_value_type_diagnostic() {
-    let (source, _cursor_position) = inline_document_with_cursor! {
+    let diagnostics = inline_diagnostics! {
         agent writer {
             inference: {
                 temperature: 0.2
                 max_tokens: "2_000"
             }
         }
-
-        <cursor>
     };
-
-    let document_state = DocumentState::new(source);
-    let diagnostics = document_state.diagnostics();
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidInferenceSettingValueType);
 }
 
 #[test]
 fn reports_invalid_bare_tool_reference_diagnostic() {
-    let (source, _cursor_position) = inline_document_with_cursor! {
+    let diagnostics = inline_diagnostics! {
         agent tooling {
             tools: [tool]
         }
-
-        <cursor>
     };
-
-    let document_state = DocumentState::new(source);
-    let diagnostics = document_state.diagnostics();
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidKeywordReferenceRoot);
 }
 
 #[test]
 fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
-    let (source, _cursor_position) = inline_document_with_cursor! {
+    let diagnostics = inline_diagnostics! {
         provider openai {
             driver: "openai"
             models: ["gpt-4.1-mini"]
@@ -120,44 +102,36 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
             prompt: "example {{ agent.context_agent }} {{ input.query }} {{ schema.Payload }} {{ secrets.api_key }}"
             output: string
         }
-
-        <cursor>
     };
-
-    let document_state = DocumentState::new(source);
-    let diagnostics = document_state.diagnostics();
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::SecretReferenceInLlmContext);
 }
 
 #[test]
 fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic() {
-    let source = r#"
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4.1-mini"]
-            }
+    let diagnostics = inline_diagnostics! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
 
-            input {
-                query: string
-            }
+        input {
+            query: string
+        }
 
-            secrets {
-                api_key: string
-            }
+        secrets {
+            api_key: string
+        }
 
-            agent worker {
-                model: openai("gpt-4.1-mini")
-                prompt: """
-                    example {{ input.query }}
-                    forbidden {{ secrets.api_key }}
-                """
-                output: string
-            }
-        "#;
-
-    let document_state = DocumentState::new(source.to_string());
-    let diagnostics = document_state.diagnostics();
+        agent worker {
+            model: openai("gpt-4.1-mini")
+            prompt: """
+                example {{ input.query }}
+                forbidden {{ secrets.api_key }}
+            """
+            output: string
+        }
+    };
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::SecretReferenceInLlmContext);
 }
