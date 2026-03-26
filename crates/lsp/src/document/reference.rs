@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use engine_ai_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, TypeExpression};
 use engine_ai_core::semantic::ToolingReferencePath;
@@ -111,6 +111,8 @@ impl ReferenceCompletionPath {
 pub enum ReferenceCompletionConstraint {
     None,
     ForLoopIterable,
+    InferenceIntegerValue,
+    InferenceNumericValue,
 }
 
 impl ReferenceCompletionConstraint {
@@ -194,9 +196,7 @@ impl SemanticIndex {
             return root_fields
                 .iter()
                 .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
-                .filter(|(_, field_type)| {
-                    reference_completion_constraint == ReferenceCompletionConstraint::None || field_type.supports_for_loop_iterable()
-                })
+                .filter(|(_, field_type)| self.type_matches_reference_constraint(field_type, reference_completion_constraint))
                 .map(|(field_name, field_type)| CompletionSuggestion {
                     label: field_name.clone(),
                     kind: CompletionKind::Property,
@@ -232,10 +232,6 @@ impl SemanticIndex {
                 .filter(|agent_name| agent_name.starts_with(&reference_completion_path.pending_prefix))
                 .filter(|agent_name| current_agent_name.is_none_or(|current_name| *agent_name != current_name))
                 .filter(|agent_name| {
-                    if reference_completion_constraint == ReferenceCompletionConstraint::None {
-                        return true;
-                    }
-
                     let Some(agent_summary) = self.agents.get(*agent_name) else {
                         return false;
                     };
@@ -244,7 +240,7 @@ impl SemanticIndex {
                         return false;
                     };
 
-                    agent_output_type.supports_for_loop_iterable()
+                    self.type_matches_reference_constraint(agent_output_type, reference_completion_constraint)
                 })
                 .map(|agent_name| CompletionSuggestion {
                     label: agent_name.clone(),
@@ -332,9 +328,7 @@ impl SemanticIndex {
         available_fields
             .into_iter()
             .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
-            .filter(|(_, field_type)| {
-                reference_completion_constraint == ReferenceCompletionConstraint::None || field_type.supports_for_loop_iterable()
-            })
+            .filter(|(_, field_type)| self.type_matches_reference_constraint(field_type, reference_completion_constraint))
             .map(|(field_name, field_type)| CompletionSuggestion {
                 label: field_name.clone(),
                 kind: CompletionKind::Property,
@@ -344,6 +338,75 @@ impl SemanticIndex {
             })
             .collect()
     }
+
+    fn type_matches_reference_constraint(
+        &self,
+        field_type: &TypeExpression,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+    ) -> bool {
+        match reference_completion_constraint {
+            ReferenceCompletionConstraint::None => true,
+            ReferenceCompletionConstraint::ForLoopIterable => field_type.supports_for_loop_iterable(),
+            ReferenceCompletionConstraint::InferenceIntegerValue => {
+                self.type_supports_numeric_reference(field_type, NumericReferenceKind::Integer)
+            }
+            ReferenceCompletionConstraint::InferenceNumericValue => {
+                self.type_supports_numeric_reference(field_type, NumericReferenceKind::Numeric)
+            }
+        }
+    }
+
+    fn type_supports_numeric_reference(&self, field_type: &TypeExpression, numeric_reference_kind: NumericReferenceKind) -> bool {
+        self.type_supports_numeric_reference_with_visited(field_type, numeric_reference_kind, &mut HashSet::new())
+    }
+
+    fn type_supports_numeric_reference_with_visited(
+        &self,
+        field_type: &TypeExpression,
+        numeric_reference_kind: NumericReferenceKind,
+        visited_schema_names: &mut HashSet<String>,
+    ) -> bool {
+        match field_type {
+            TypeExpression::Number => true,
+            TypeExpression::Float => numeric_reference_kind == NumericReferenceKind::Numeric,
+            TypeExpression::Object(object_fields) => object_fields.iter().any(|typed_field| {
+                self.type_supports_numeric_reference_with_visited(&typed_field.field_type, numeric_reference_kind, visited_schema_names)
+            }),
+            TypeExpression::SchemaReference(schema_name) => {
+                if !visited_schema_names.insert(schema_name.clone()) {
+                    return false;
+                }
+
+                let supports_numeric_reference = self.schemas.get(schema_name).is_some_and(|schema_summary| {
+                    schema_summary.fields.values().any(|schema_field_type| {
+                        self.type_supports_numeric_reference_with_visited(schema_field_type, numeric_reference_kind, visited_schema_names)
+                    })
+                });
+
+                let _ = visited_schema_names.remove(schema_name);
+
+                supports_numeric_reference
+            }
+            TypeExpression::Union(union_members) => union_members.iter().any(|union_member| {
+                self.type_supports_numeric_reference_with_visited(union_member, numeric_reference_kind, visited_schema_names)
+            }),
+            TypeExpression::String
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_) => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NumericReferenceKind {
+    Integer,
+    Numeric,
 }
 
 trait ForLoopIterableType {

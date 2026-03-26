@@ -58,6 +58,20 @@ pub(in crate::document) struct NamedSpan {
 }
 
 impl SemanticIndex {
+    pub fn inference_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
+        [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+            .into_iter()
+            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+            .map(|reference_keyword| CompletionSuggestion {
+                label: reference_keyword.as_str().to_string(),
+                kind: CompletionKind::Module,
+                detail: "Inference value reference root".to_string(),
+                documentation: format!("Use `{}.<path>` for inference values.", reference_keyword.as_str()),
+                insert_text: format!("{}.", reference_keyword.as_str()),
+            })
+            .collect()
+    }
+
     pub fn interpolation_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
         [ReferenceKeyword::Agent, ReferenceKeyword::Input]
             .into_iter()

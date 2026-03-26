@@ -3,7 +3,8 @@ use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, Reference
 use crate::protocol::Position;
 
 use super::completion_context::{
-    AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, ModelCallCompletionContext, ValueCompletionContext,
+    AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, InferenceSettingValueCompletionContext,
+    ModelCallCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
@@ -11,6 +12,7 @@ use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset,
 use super::semantic_index::SemanticIndex;
 use super::text_utils::{is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_reference_token};
 use super::{CompletionSuggestion, DocumentState};
+use engine_ai_core::runtime::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
@@ -38,6 +40,8 @@ impl DocumentState {
 
         let line_has_property_separator = line_prefix.trim_start().contains(':');
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
+        let inference_setting_value_completion_context =
+            self.inference_setting_value_completion_context(line_has_property_separator, &line_prefix);
 
         if let Some(non_reference_suggestions) = self.non_reference_suggestions(
             &semantic_index,
@@ -50,9 +54,13 @@ impl DocumentState {
             return non_reference_suggestions;
         }
 
-        if let Some(reference_suggestions) =
-            self.reference_completion_suggestions(&semantic_index, &line_prefix, position, inside_interpolation_expression)
-        {
+        if let Some(reference_suggestions) = self.reference_completion_suggestions(
+            &semantic_index,
+            &line_prefix,
+            position,
+            inside_interpolation_expression,
+            inference_setting_value_completion_context.as_ref(),
+        ) {
             return reference_suggestions;
         }
 
@@ -109,11 +117,20 @@ impl DocumentState {
             return Some(Vec::new());
         }
 
-        if completion_scope == CompletionScope::InferenceSettings
-            && line_has_property_separator
-            && self.is_inside_string_literal_property_value(line_prefix)
-        {
-            return Some(Vec::new());
+        if line_has_property_separator {
+            if let Some(inference_value_completion_context) = InferenceSettingValueCompletionContext::from_line_prefix(line_prefix) {
+                if inference_value_completion_context.inside_string_literal {
+                    return Some(Vec::new());
+                }
+
+                if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
+                    if inference_value_completion_context.value_prefix.is_empty() {
+                        return Some(semantic_index.inference_value_root_suggestions(""));
+                    }
+
+                    return Some(Vec::new());
+                }
+            }
         }
 
         if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
@@ -161,16 +178,6 @@ impl DocumentState {
         None
     }
 
-    fn is_inside_string_literal_property_value(&self, line_prefix: &str) -> bool {
-        let Some((_, value_prefix)) = line_prefix.trim_start().split_once(':') else {
-            return false;
-        };
-
-        let property_value_context = ValueCompletionContext::from_value_prefix(value_prefix);
-
-        property_value_context.inside_string_literal
-    }
-
     fn context_property_value_suggestions(&self, semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
         let agent_property_value_completion_context = AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)?;
 
@@ -187,13 +194,38 @@ impl DocumentState {
         line_prefix: &str,
         position: Position,
         inside_interpolation_expression: bool,
+        inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
     ) -> Option<Vec<CompletionSuggestion>> {
         let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
-        let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(line_prefix);
+        let reference_completion_constraint = self.reference_completion_constraint(line_prefix, inference_setting_value_completion_context);
         let reference_suggestions =
             semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
         let reference_root_keyword = reference_completion_path.root_keyword();
         let schema_reference_root = reference_completion_path.is_schema_root();
+
+        if inference_setting_value_completion_context.is_some() {
+            let reference_token_has_trailing_separator =
+                trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
+            let can_suggest_inference_roots =
+                !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+
+            match reference_completion_path.root_keyword() {
+                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                    if can_suggest_inference_roots {
+                        return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(reference_suggestions);
+                }
+                Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                    if can_suggest_inference_roots {
+                        return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(Vec::new());
+                }
+            }
+        }
 
         if inside_interpolation_expression {
             let reference_token_has_trailing_separator =
@@ -236,6 +268,48 @@ impl DocumentState {
         }
 
         None
+    }
+
+    fn inference_setting_value_completion_context(
+        &self,
+        line_has_property_separator: bool,
+        line_prefix: &str,
+    ) -> Option<InferenceSettingValueCompletionContext> {
+        if !line_has_property_separator {
+            return None;
+        }
+
+        InferenceSettingValueCompletionContext::from_line_prefix(line_prefix)
+    }
+
+    fn reference_completion_constraint(
+        &self,
+        line_prefix: &str,
+        inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
+    ) -> ReferenceCompletionConstraint {
+        let line_reference_constraint = ReferenceCompletionConstraint::from_line_prefix(line_prefix);
+
+        if line_reference_constraint == ReferenceCompletionConstraint::ForLoopIterable {
+            return line_reference_constraint;
+        }
+
+        let Some(inference_value_completion_context) = inference_setting_value_completion_context else {
+            return line_reference_constraint;
+        };
+
+        match inference_value_completion_context.inference_setting {
+            InferenceSetting::MaxTokens
+            | InferenceSetting::TopK
+            | InferenceSetting::Seed
+            | InferenceSetting::StuckThreshold
+            | InferenceSetting::ProviderMaxRetries
+            | InferenceSetting::ProviderRetryBaseDelayMs => ReferenceCompletionConstraint::InferenceIntegerValue,
+            InferenceSetting::Temperature
+            | InferenceSetting::TopP
+            | InferenceSetting::FrequencyPenalty
+            | InferenceSetting::PresencePenalty
+            | InferenceSetting::RepeatPenalty => ReferenceCompletionConstraint::InferenceNumericValue,
+        }
     }
 
     fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
