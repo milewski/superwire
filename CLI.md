@@ -98,20 +98,21 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 0 - Refine Product Decisions
 
-- [ ] Confirm CLI crate, package, and binary naming and update `justfile` expectations.
-  - Recommendation: package `engine-ai-cli`, binary `engine-ai`.
+- [x] Confirm CLI crate, package, and binary naming and update `justfile` expectations.
+  - Decision: package `engine-ai-cli`, binary `engine-ai`.
 
-- [ ] Confirm formatter comment policy before coding.
-  - Recommendation: do not ship a formatter that silently deletes comments.
+- [x] Confirm formatter comment policy before coding.
+  - Decision: `fmt` must not silently delete comments.
+  - v1 policy: reject workflows that contain `//` comments with an explicit error and leave files unchanged.
 
-- [ ] Confirm `tools` support policy for v1 `run` and `build`.
-  - Recommendation: support them in `check`, fail intentionally in `run` and `build` until tool injection exists.
+- [x] Confirm `tools` support policy for v1 `run` and `build`.
+  - Decision: support them in `check`, fail intentionally in `run` and `build` until tool injection exists.
 
-- [ ] Confirm secret input UX for both the host CLI and generated executables.
-  - Recommendation: support both `--secret name=value` and `ENGINE_AI_SECRET_<NAME>` environment variables.
+- [x] Confirm secret input UX for both the host CLI and generated executables.
+  - Decision: support both `--secret name=value` and `ENGINE_AI_SECRET_<NAME>` environment variables.
 
-- [ ] Confirm build artifact strategy.
-  - Recommendation: generate a small Rust launcher that embeds the workflow and reuses `engine-ai-core`.
+- [x] Confirm build artifact strategy.
+  - Decision: generate a small Rust launcher that embeds workflow source and reuses `engine-ai-core`.
 
 ## Phase 1 - CLI Foundation and Command Skeleton
 
