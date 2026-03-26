@@ -1,4 +1,57 @@
 use super::text_utils::trailing_identifier;
+use engine_ai_core::dsl::DeclarationKeyword;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DeclarationHeaderCompletionContext {
+    NamedDeclaration,
+    SingletonDeclaration,
+}
+
+impl DeclarationHeaderCompletionContext {
+    pub(super) fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+
+        if trimmed_line_prefix.contains(':') || trimmed_line_prefix.contains('{') {
+            return None;
+        }
+
+        let declaration_keyword = Self::declaration_keyword_from_prefix(trimmed_line_prefix)?;
+        let line_after_keyword = trimmed_line_prefix.strip_prefix(declaration_keyword.as_str())?;
+
+        if !line_after_keyword.starts_with(char::is_whitespace) {
+            return None;
+        }
+
+        let trimmed_line_after_keyword = line_after_keyword.trim_start();
+
+        match declaration_keyword {
+            DeclarationKeyword::Provider | DeclarationKeyword::Schema | DeclarationKeyword::Agent => {
+                if trimmed_line_after_keyword.is_empty() {
+                    return Some(Self::NamedDeclaration);
+                }
+
+                if !trimmed_line_after_keyword.contains(char::is_whitespace) {
+                    return Some(Self::NamedDeclaration);
+                }
+
+                None
+            }
+            DeclarationKeyword::Input | DeclarationKeyword::Secrets | DeclarationKeyword::Output => {
+                if trimmed_line_after_keyword.starts_with('{') {
+                    return None;
+                }
+
+                Some(Self::SingletonDeclaration)
+            }
+        }
+    }
+
+    fn declaration_keyword_from_prefix(trimmed_line_prefix: &str) -> Option<DeclarationKeyword> {
+        let declaration_keyword_identifier = trimmed_line_prefix.split_whitespace().next().unwrap_or(trimmed_line_prefix);
+
+        DeclarationKeyword::from_identifier(declaration_keyword_identifier)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct ModelCallCompletionContext {

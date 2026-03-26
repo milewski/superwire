@@ -2,7 +2,7 @@ use engine_ai_core::dsl::{parse_workflow, ReferenceKeyword};
 
 use crate::protocol::Position;
 
-use super::completion_context::ModelCallCompletionContext;
+use super::completion_context::{DeclarationHeaderCompletionContext, ModelCallCompletionContext};
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
@@ -43,6 +43,10 @@ impl DocumentState {
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
 
         if !line_has_property_separator && !inside_interpolation_expression {
+            if DeclarationHeaderCompletionContext::from_line_prefix(&line_prefix).is_some() {
+                return Vec::new();
+            }
+
             match completion_scope {
                 CompletionScope::InferenceSettings => {
                     return inference_setting_scope_suggestions(&line_prefix);
