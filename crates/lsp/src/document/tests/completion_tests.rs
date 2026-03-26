@@ -638,6 +638,84 @@ fn suppresses_inference_suggestions_inside_string_literal_value() {
 }
 
 #[test]
+fn suggests_only_inference_value_reference_roots_for_integer_setting() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            max_tokens: number
+            label: string
+        }
+
+        schema Limits {
+            max_tokens: number
+        }
+
+        agent helper {
+            prompt: "hello"
+            output: {
+                max_tokens: number
+                label: string
+            }
+        }
+
+        agent writer {
+            inference: {
+                max_tokens: <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Agent, ReferenceKeyword::Input);
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        ReferenceKeyword::Secrets,
+        DeclarationKeyword::Schema,
+        DeclarationKeyword::Provider,
+        "string",
+        "number"
+    );
+}
+
+#[test]
+fn suggests_only_numeric_resolving_input_fields_for_integer_inference_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            max_tokens: number
+            metadata: {
+                nested_limit: number
+            }
+            label: string
+        }
+
+        agent writer {
+            inference: {
+                max_tokens: input.<cursor>
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "max_tokens", "metadata");
+    assert_completion_excludes_labels!(&completion_suggestions, "label");
+}
+
+#[test]
+fn suppresses_schema_reference_suggestions_for_integer_inference_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        schema Limits {
+            max_tokens: number
+        }
+
+        agent writer {
+            inference: {
+                max_tokens: schema.<cursor>
+            }
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn suggests_agent_properties_before_inference_block() {
     let completion_suggestions = inline_completion_suggestions! {
         agent release_analyst {
