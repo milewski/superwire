@@ -47,6 +47,7 @@ pub enum DiagnosticCode {
     InvalidReferencePath,
     UnknownSchemaReference,
     AgentDependencyCycle,
+    WorkflowCompilationError,
 }
 
 impl DiagnosticCode {
@@ -77,6 +78,7 @@ impl DiagnosticCode {
             Self::InvalidReferencePath => "invalid_reference_path",
             Self::UnknownSchemaReference => "unknown_schema_reference",
             Self::AgentDependencyCycle => "agent_dependency_cycle",
+            Self::WorkflowCompilationError => "workflow_compilation_error",
         }
     }
 }

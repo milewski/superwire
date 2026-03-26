@@ -167,7 +167,8 @@ impl ValidateStageOutput {
         Input: Serialize + JsonSchema,
         Output: DeserializeOwned + JsonSchema,
     {
-        let typed_workflow_ir = build_typed_workflow_ir::<Input, Output>(&self.workflow)?;
+        let typed_workflow_ir = build_typed_workflow_ir::<Input, Output>(&self.workflow)
+            .map_err(|runtime_error| runtime_error.into_compilation_diagnostic(&self.workflow, "<workflow>"))?;
 
         Ok(TypecheckStageOutput {
             workflow: self.workflow,
@@ -201,7 +202,8 @@ impl TypecheckStageOutput {
     }
 
     pub fn plan(self) -> Result<PlanStageOutput, WorkflowRuntimeError> {
-        let execution_plan = build_execution_plan(&self.workflow, &self.typed_workflow_ir)?;
+        let execution_plan = build_execution_plan(&self.workflow, &self.typed_workflow_ir)
+            .map_err(|runtime_error| runtime_error.into_compilation_diagnostic(&self.workflow, "<workflow>"))?;
 
         Ok(PlanStageOutput {
             workflow: self.workflow,
@@ -408,6 +410,60 @@ mod tests {
                     && issues.contains("Agent `greeting` must declare `output`")
                     && issues.contains("output declaration")
                     && issues.contains("Add `output: <type>`")
+        ));
+    }
+
+    #[test]
+    fn typecheck_stage_reports_missing_output_block_as_formatted_diagnostic() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                prompt: "Write a short welcome message."
+                output: string
+            }
+        };
+
+        let typecheck_result = WorkflowPipeline::parse(WorkflowPipelineInput::Workflow(&workflow))
+            .expect("parse stage should succeed")
+            .normalize()
+            .validate()
+            .expect("validate stage should succeed")
+            .typecheck::<Input, Output>();
+
+        assert!(matches!(
+            typecheck_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+                if issues.contains("workflow_compilation_error")
+                    && issues.contains("workflow requires an `output` block")
+                    && issues.contains("Add an `output { ... }` declaration")
+        ));
+    }
+
+    #[test]
+    fn typecheck_stage_wraps_invalid_agent_property_as_formatted_diagnostic() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                prompt: "Write a short welcome message."
+                output: string
+            }
+
+            output {
+                final_text: agent.greeting
+            }
+        };
+
+        let typecheck_result = WorkflowPipeline::parse(WorkflowPipelineInput::Workflow(&workflow))
+            .expect("parse stage should succeed")
+            .normalize()
+            .validate()
+            .expect("validate stage should succeed")
+            .typecheck::<Input, Output>();
+
+        assert!(matches!(
+            typecheck_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+                if issues.contains("workflow_compilation_error")
+                    && issues.contains("invalid `model` property")
+                    && issues.contains("Set `model` on `agent greeting`")
         ));
     }
 

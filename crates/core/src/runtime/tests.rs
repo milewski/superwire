@@ -219,7 +219,9 @@ fn fails_preflight_when_input_type_does_not_match_dsl() {
 
     assert!(matches!(
         WorkflowRuntime::<WrongInput, Output>::new(workflow),
-        Err(WorkflowRuntimeError::InputTypeMismatch { .. })
+        Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            if issues.contains("workflow_compilation_error")
+                && issues.contains("Workflow input type mismatch")
     ));
 }
 
@@ -247,7 +249,9 @@ fn fails_preflight_when_output_type_does_not_match_dsl() {
 
     assert!(matches!(
         WorkflowRuntime::<(), WrongOutput>::new(workflow),
-        Err(WorkflowRuntimeError::OutputTypeMismatch { .. })
+        Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            if issues.contains("workflow_compilation_error")
+                && issues.contains("Workflow output type mismatch")
     ));
 }
 
