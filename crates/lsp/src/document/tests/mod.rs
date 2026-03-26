@@ -131,8 +131,7 @@ where
     for label_in_group in TLabelGroup::completion_labels() {
         assert!(
             !available_labels.contains(label_in_group),
-            "unexpected completion label `{label_in_group}` from group; available labels: {:?}",
-            available_labels
+            "unexpected completion label `{label_in_group}` from group; available labels: {available_labels:?}"
         );
     }
 }
@@ -144,8 +143,7 @@ where
     for label_in_group in TLabelGroup::completion_labels() {
         assert!(
             available_labels.contains(label_in_group),
-            "expected completion label `{label_in_group}` from group; available labels: {:?}",
-            available_labels
+            "expected completion label `{label_in_group}` from group; available labels: {available_labels:?}"
         );
     }
 }
@@ -158,11 +156,11 @@ fn expected_completion_label<Label>(label_value: Label) -> &'static str
 where
     Label: CompletionLabel,
 {
-    label_value.as_completion_label()
+    label_value.completion_label()
 }
 
 trait CompletionLabel {
-    fn as_completion_label(self) -> &'static str;
+    fn completion_label(self) -> &'static str;
 }
 
 trait CompletionLabelGroup {
@@ -170,13 +168,13 @@ trait CompletionLabelGroup {
 }
 
 impl CompletionLabel for &'static str {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self
     }
 }
 
 impl CompletionLabel for InferenceSetting {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self.key()
     }
 }
@@ -200,37 +198,37 @@ impl CompletionLabelGroup for SingletonDeclarationKind {
 }
 
 impl CompletionLabel for AgentExpressionPropertyName {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self.as_str()
     }
 }
 
 impl CompletionLabel for BuiltinFunctionName {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self.as_str()
     }
 }
 
 impl CompletionLabel for ReferenceKeyword {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self.as_str()
     }
 }
 
 impl CompletionLabel for SingletonDeclarationKind {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self.as_str()
     }
 }
 
 impl CompletionLabel for DeclarationKeyword {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         self.as_str()
     }
 }
 
 impl CompletionLabel for TypeExpression {
-    fn as_completion_label(self) -> &'static str {
+    fn completion_label(self) -> &'static str {
         match self {
             TypeExpression::String => "string",
             TypeExpression::Number => "number",
