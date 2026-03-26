@@ -431,10 +431,70 @@ fn suppresses_builtin_functions_in_top_level_scope() {
     let document_state = DocumentState::new(source);
     let completion_suggestions = document_state.completion_suggestions(cursor_position);
 
-    assert_completion_contains_label_groups!(&completion_suggestions, SingletonDeclarationKind);
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        DeclarationKeyword::Schema,
+        SingletonDeclarationKind::Input,
+        SingletonDeclarationKind::Secrets
+    );
 
-    assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Agent, ReferenceKeyword::Tool);
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        SingletonDeclarationKind::Output,
+        "tool",
+        "string",
+        "number"
+    );
     assert_completion_excludes_labels!(&completion_suggestions, BuiltinFunctionName);
+    assert!(completion_suggestions
+        .iter()
+        .all(|completion_suggestion| matches!(completion_suggestion.kind, CompletionKind::Keyword)));
+}
+
+#[test]
+fn suppresses_existing_singleton_keywords_in_top_level_scope() {
+    let (source, cursor_position) = inline_document_with_cursor! {
+        <cursor>
+
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
+
+        input {
+            prompt: string
+        }
+
+        secrets {
+            api_key: string
+        }
+
+        output {
+            value: null
+        }
+    };
+
+    let document_state = DocumentState::new(source);
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        DeclarationKeyword::Schema
+    );
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        SingletonDeclarationKind::Input,
+        SingletonDeclarationKind::Secrets,
+        SingletonDeclarationKind::Output,
+        "tool",
+        "string",
+        "number"
+    );
 }
 
 #[test]
@@ -611,6 +671,37 @@ fn excludes_current_schema_from_schema_type_suggestions() {
 
     assert_completion_contains!(&completion_suggestions, "Team");
     assert_completion_excludes_labels!(&completion_suggestions, "Person");
+}
+
+#[test]
+fn excludes_current_schema_from_schema_type_suggestions_with_parse_errors() {
+    let (source, cursor_position) = inline_document_with_cursor! {
+        schema Person {
+            related: schema.<cursor>
+        }
+
+        @
+    };
+
+    let document_state = DocumentState::new(source);
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert_completion_excludes_labels!(&completion_suggestions, "Person");
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn suppresses_type_suggestions_after_non_schema_dot_access() {
+    let (source, cursor_position) = inline_document_with_cursor! {
+        schema Test {
+            test: boolean.<cursor>
+        }
+    };
+
+    let document_state = DocumentState::new(source);
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert!(completion_suggestions.is_empty());
 }
 
 #[test]
