@@ -598,6 +598,7 @@ name = "engine-ai-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "engine-ai-core",
  "thiserror 2.0.18",
 ]
 

@@ -145,17 +145,17 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 3 - `check` Command
 
-- [ ] Implement workflow file loading and source-aware diagnostics.
+- [x] Implement workflow file loading and source-aware diagnostics.
 
-- [ ] Wire `check` to the shared dynamic compile path.
+- [x] Wire `check` to the shared dynamic compile path.
 
-- [ ] Print a concise success message when the workflow is valid.
+- [x] Print a concise success message when the workflow is valid.
 
-- [ ] Print readable failures with file path, line, column, and diagnostic message.
+- [x] Print readable failures with file path, line, column, and diagnostic message.
 
-- [ ] Add integration tests for valid and invalid workflows using samples from `crates/core/workflows/`.
+- [x] Add integration tests for valid and invalid workflows using samples from `crates/core/workflows/`.
 
-- [ ] Verify non-zero exit behavior for CI and scripting use.
+- [x] Verify non-zero exit behavior for CI and scripting use.
 
 ## Phase 4 - Formatter Infrastructure and `fmt`
 

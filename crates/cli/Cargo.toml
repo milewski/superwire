@@ -13,3 +13,4 @@ workspace = true
 [dependencies]
 clap = { workspace = true }
 thiserror = { workspace = true }
+engine-ai-core = { path = "../core" }
