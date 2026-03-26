@@ -90,6 +90,8 @@ impl DocumentState {
             let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(&line_prefix);
             let reference_suggestions =
                 semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
+            let reference_root_keyword = reference_completion_path.root_keyword();
+            let schema_reference_root = reference_completion_path.is_schema_root();
 
             if inside_interpolation_expression {
                 let reference_token_has_trailing_separator =
@@ -119,7 +121,11 @@ impl DocumentState {
                 return reference_suggestions;
             }
 
-            if reference_completion_path.root_keyword() == Some(ReferenceKeyword::Tool) {
+            if reference_root_keyword == Some(ReferenceKeyword::Tool) {
+                return reference_suggestions;
+            }
+
+            if schema_reference_root || reference_root_keyword.is_some() {
                 return reference_suggestions;
             }
 
