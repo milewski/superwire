@@ -44,6 +44,14 @@ impl DocumentState {
         let line_has_property_separator = line_prefix.trim_start().contains(':');
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
 
+        if completion_scope == CompletionScope::General
+            && !line_has_property_separator
+            && !inside_interpolation_expression
+            && semantic_index.is_output_position(position)
+        {
+            return Vec::new();
+        }
+
         if completion_scope == CompletionScope::InferenceSettings && line_has_property_separator {
             if let Some((_, value_prefix)) = line_prefix.trim_start().split_once(':') {
                 let inference_value_context = ValueCompletionContext::from_value_prefix(value_prefix);

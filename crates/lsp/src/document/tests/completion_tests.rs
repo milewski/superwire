@@ -781,6 +781,19 @@ fn suppresses_key_suggestions_inside_input_block() {
 }
 
 #[test]
+fn suppresses_key_suggestions_inside_output_object_literal() {
+    let completion_suggestions = inline_completion_suggestions! {
+        output {
+            example: {
+                <cursor>
+            }
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn suggests_only_types_for_input_field_values() {
     let completion_suggestions = inline_completion_suggestions! {
         input {

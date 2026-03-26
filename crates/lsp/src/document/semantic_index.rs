@@ -573,6 +573,13 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub(super) fn is_output_position(&self, position: Position) -> bool {
+        self.output_locations
+            .iter()
+            .copied()
+            .any(|output_span| source_span_contains_position(output_span, position))
+    }
+
     fn should_suggest_root_declaration_label(&self, declaration_label: &str) -> bool {
         if declaration_label == DeclarationKeyword::Provider.as_str() {
             return true;
