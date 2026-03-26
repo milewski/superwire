@@ -534,6 +534,7 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
         &completion_suggestions,
         AgentExpressionPropertyName::Model,
         AgentExpressionPropertyName::Prompt,
+        AgentExpressionPropertyName::Tools,
         "output"
     );
 
@@ -583,6 +584,19 @@ fn suggests_only_inference_settings_inside_inference_object() {
     );
 
     assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+}
+
+#[test]
+fn suppresses_inference_suggestions_inside_string_literal_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            inference: {
+                max_tokens: "<cursor>"
+            }
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
 }
 
 #[test]

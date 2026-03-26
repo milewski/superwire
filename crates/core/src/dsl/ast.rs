@@ -225,6 +225,48 @@ pub enum AgentProperty {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentPropertyName {
+    Model,
+    Prompt,
+    Output,
+    Context,
+    Inference,
+    Tools,
+}
+
+impl AgentPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 6] {
+        [Self::Model, Self::Prompt, Self::Output, Self::Context, Self::Inference, Self::Tools]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "model" => Some(Self::Model),
+            "prompt" => Some(Self::Prompt),
+            "output" => Some(Self::Output),
+            "context" => Some(Self::Context),
+            "inference" => Some(Self::Inference),
+            "tools" => Some(Self::Tools),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Prompt => "prompt",
+            Self::Output => "output",
+            Self::Context => "context",
+            Self::Inference => "inference",
+            Self::Tools => "tools",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentExpressionPropertyName {
     Model,
     Prompt,
