@@ -94,6 +94,50 @@ Use instead: Define an enum like `Status::Success`, `Status::Fail`, `Status::Pen
 This applies to all cases where a value can only be one of a fixed set of options, including status codes, operation
 types, configuration modes, and any other categorical data.
 
+## DSL Keyword Matching (Mandatory)
+
+**Never match DSL language keywords with raw string comparisons.** Always resolve keywords through DSL enums and match
+against enum variants.
+
+Use enum parsers and renderers such as:
+
+- `DeclarationKeyword::from_identifier(...)`
+- `AgentExpressionPropertyName::from_identifier(...)`
+- `ReferenceKeyword::from_identifier(...)`
+- `BuiltinFunctionName::from_identifier(...)`
+- `*.as_str()` when rendering output
+
+Bad:
+
+```rust
+if property_name == "context" {
+    // ...
+}
+
+if root == "agent" || root == "input" {
+    // ...
+}
+```
+
+Good:
+
+```rust
+if property_name == AgentExpressionPropertyName::Context {
+    // ...
+}
+
+match ReferenceKeyword::from_identifier(root_identifier) {
+    Some(ReferenceKeyword::Agent) | Some(ReferenceKeyword::Input) => {
+        // ...
+    }
+    _ => {
+        // ...
+    }
+}
+```
+
+This rule is mandatory for all parser, validator, runtime, and LSP completion/hover logic.
+
 ## Code Quality
 
 **Always run formatting and linting after making code changes.** Use the following commands:

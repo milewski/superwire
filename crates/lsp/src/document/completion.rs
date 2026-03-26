@@ -7,7 +7,7 @@ use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
 use super::semantic_index::SemanticIndex;
-use super::text_utils::{is_inside_interpolation_expression, is_inside_multiline_string_literal};
+use super::text_utils::{is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_reference_token};
 use super::{CompletionSuggestion, DocumentState};
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
@@ -91,6 +91,30 @@ impl DocumentState {
             let reference_suggestions =
                 semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
 
+            if inside_interpolation_expression {
+                let reference_token_has_trailing_separator =
+                    trailing_reference_token(&line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
+                let can_suggest_interpolation_roots =
+                    !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+
+                match reference_completion_path.root_keyword() {
+                    Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                        if can_suggest_interpolation_roots {
+                            return semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier());
+                        }
+
+                        return reference_suggestions;
+                    }
+                    Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                        if can_suggest_interpolation_roots {
+                            return semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier());
+                        }
+
+                        return Vec::new();
+                    }
+                }
+            }
+
             if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
                 return reference_suggestions;
             }
@@ -102,6 +126,10 @@ impl DocumentState {
             if !reference_suggestions.is_empty() {
                 return reference_suggestions;
             }
+        }
+
+        if inside_interpolation_expression {
+            return semantic_index.interpolation_root_suggestions("");
         }
 
         if semantic_index.is_type_position(position, &line_prefix) {

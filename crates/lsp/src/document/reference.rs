@@ -94,6 +94,10 @@ impl ReferenceCompletionPath {
         ReferenceKeyword::from_identifier(&self.root)
     }
 
+    pub(super) fn root_identifier(&self) -> &str {
+        &self.root
+    }
+
     fn root_declaration_keyword(&self) -> Option<DeclarationKeyword> {
         DeclarationKeyword::from_identifier(&self.root)
     }

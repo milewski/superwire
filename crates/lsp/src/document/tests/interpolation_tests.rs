@@ -26,6 +26,51 @@ fn completes_agent_references_inside_prompt_string_interpolation() {
 }
 
 #[test]
+fn suggests_only_agent_and_input_roots_inside_interpolation_expression() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            customer_name: string
+        }
+
+        agent writer {
+            prompt: "Write a short welcome message. {{ <cursor> }}"
+            output: string
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Agent, ReferenceKeyword::Input);
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        ReferenceKeyword::Secrets,
+        ReferenceKeyword::Tool,
+        BuiltinFunctionName::Context,
+        BuiltinFunctionName::Template,
+        BuiltinFunctionName::Compact,
+        DeclarationKeyword::Schema,
+        DeclarationKeyword::Provider,
+        "string",
+        "number"
+    );
+}
+
+#[test]
+fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() {
+    let completion_suggestions = inline_completion_suggestions! {
+        schema Person {
+            name: string
+        }
+
+        agent writer {
+            prompt: "Write a short welcome message. {{ schema.<cursor> }}"
+            output: string
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
     let (source, cursor_position) = source_with_cursor(
         r#"
