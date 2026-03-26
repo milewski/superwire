@@ -1,6 +1,8 @@
+use crate::diagnostic::{render_diagnostics_for_cli, Diagnostic};
 use crate::dsl::{parse_workflow, validate_workflow, ValidationReport, Workflow};
 use crate::runtime::error::WorkflowRuntimeError;
-use crate::semantic::ir::{build_typed_workflow_ir, TypedWorkflowIr};
+use crate::runtime::types::WorkflowType;
+use crate::semantic::ir::{build_typed_workflow_ir, build_typed_workflow_ir_dynamic, TypedWorkflowIr};
 use crate::semantic::plan::{build_execution_plan, ExecutionPlan};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -64,6 +66,10 @@ impl WorkflowPipeline<ValidateStageOutput> {
         Output: DeserializeOwned + JsonSchema,
     {
         Ok(WorkflowPipeline::new(self.state.typecheck::<Input, Output>()?))
+    }
+
+    pub fn typecheck_dynamic(self) -> Result<WorkflowPipeline<TypecheckStageOutput>, WorkflowRuntimeError> {
+        Ok(WorkflowPipeline::new(self.state.typecheck_dynamic()?))
     }
 }
 
@@ -164,6 +170,16 @@ impl ValidateStageOutput {
             typed_workflow_ir,
         })
     }
+
+    pub fn typecheck_dynamic(self) -> Result<TypecheckStageOutput, WorkflowRuntimeError> {
+        let typed_workflow_ir = build_typed_workflow_ir_dynamic(&self.workflow)?;
+
+        Ok(TypecheckStageOutput {
+            workflow: self.workflow,
+            validation_report: self.validation_report,
+            typed_workflow_ir,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -234,6 +250,68 @@ impl PlanStageOutput {
     pub fn into_execution_plan(self) -> ExecutionPlan {
         self.execution_plan
     }
+
+    #[must_use]
+    pub fn input_type(&self) -> Option<&WorkflowType> {
+        self.typed_workflow_ir.input_type.as_ref()
+    }
+
+    #[must_use]
+    pub fn output_type(&self) -> &WorkflowType {
+        &self.typed_workflow_ir.workflow_output_type
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DynamicCompiledWorkflow {
+    plan_stage_output: PlanStageOutput,
+}
+
+impl DynamicCompiledWorkflow {
+    #[must_use]
+    pub fn workflow(&self) -> &Workflow {
+        self.plan_stage_output.workflow()
+    }
+
+    #[must_use]
+    pub fn validation_report(&self) -> &ValidationReport {
+        self.plan_stage_output.validation_report()
+    }
+
+    #[must_use]
+    pub fn validation_diagnostics(&self) -> Vec<Diagnostic> {
+        self.plan_stage_output.validation_report().diagnostics()
+    }
+
+    #[must_use]
+    pub fn typed_workflow_ir(&self) -> &TypedWorkflowIr {
+        self.plan_stage_output.typed_workflow_ir()
+    }
+
+    #[must_use]
+    pub fn execution_plan(&self) -> &ExecutionPlan {
+        self.plan_stage_output.execution_plan()
+    }
+
+    #[must_use]
+    pub fn input_type(&self) -> Option<&WorkflowType> {
+        self.plan_stage_output.input_type()
+    }
+
+    #[must_use]
+    pub fn output_type(&self) -> &WorkflowType {
+        self.plan_stage_output.output_type()
+    }
+
+    #[must_use]
+    pub fn into_plan_stage_output(self) -> PlanStageOutput {
+        self.plan_stage_output
+    }
+
+    #[must_use]
+    pub fn into_execution_plan(self) -> ExecutionPlan {
+        self.plan_stage_output.into_execution_plan()
+    }
 }
 
 pub fn compile_workflow_pipeline<Input, Output>(workflow_input: WorkflowPipelineInput<'_>) -> Result<PlanStageOutput, WorkflowRuntimeError>
@@ -249,20 +327,32 @@ where
         .map(WorkflowPipeline::into_state)
 }
 
+pub fn compile_workflow_pipeline_dynamic(workflow_input: WorkflowPipelineInput<'_>) -> Result<PlanStageOutput, WorkflowRuntimeError> {
+    WorkflowPipeline::parse(workflow_input)?
+        .normalize()
+        .validate()?
+        .typecheck_dynamic()?
+        .plan()
+        .map(WorkflowPipeline::into_state)
+}
+
+pub fn compile_dynamic_workflow(workflow_input: WorkflowPipelineInput<'_>) -> Result<DynamicCompiledWorkflow, WorkflowRuntimeError> {
+    let plan_stage_output = compile_workflow_pipeline_dynamic(workflow_input)?;
+
+    Ok(DynamicCompiledWorkflow { plan_stage_output })
+}
+
 fn render_validation_report(validation_report: &ValidationReport) -> String {
-    validation_report
-        .issues_with_spans()
-        .map(|(validation_issue, issue_span)| match issue_span {
-            Some(issue_span) => format!("- {validation_issue:?} at {}:{}", issue_span.start.line, issue_span.start.column),
-            None => format!("- {validation_issue:?}"),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let validation_diagnostics = validation_report.diagnostics();
+
+    render_diagnostics_for_cli(&validation_diagnostics, None)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_workflow_pipeline, WorkflowPipeline, WorkflowPipelineInput};
+    use super::{
+        compile_dynamic_workflow, compile_workflow_pipeline, compile_workflow_pipeline_dynamic, WorkflowPipeline, WorkflowPipelineInput,
+    };
     use crate::parse_inline_workflow;
     use crate::runtime::error::WorkflowRuntimeError;
     use schemars::JsonSchema;
@@ -377,7 +467,169 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues }) if issues.contains("UnknownInputFieldReference")
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues }) if issues.contains("unknown_input_field_reference")
         ));
+    }
+
+    #[test]
+    fn dynamic_pipeline_reports_parse_failures() {
+        let compile_result = compile_workflow_pipeline_dynamic(WorkflowPipelineInput::Source("agent broken {"));
+
+        assert!(matches!(compile_result, Err(WorkflowRuntimeError::ParseFailed { .. })));
+    }
+
+    #[test]
+    fn dynamic_pipeline_reports_validation_failures() {
+        let workflow = parse_inline_workflow! {
+            input {
+                known_field: string
+            }
+
+            output {
+                broken: input.missing_field
+            }
+        };
+
+        let compile_result = compile_workflow_pipeline_dynamic(WorkflowPipelineInput::Workflow(&workflow));
+
+        assert!(matches!(
+            compile_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues }) if issues.contains("unknown_input_field_reference")
+        ));
+    }
+
+    #[test]
+    fn dynamic_pipeline_reports_dependency_cycles_during_validation() {
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            agent first {
+                model: openai("model-a")
+                prompt: agent.second
+                output: string
+            }
+
+            agent second {
+                model: openai("model-a")
+                prompt: agent.first
+                output: string
+            }
+
+            output {
+                value: agent.first
+            }
+        };
+
+        let compile_result = compile_workflow_pipeline_dynamic(WorkflowPipelineInput::Workflow(&workflow));
+
+        assert!(matches!(
+            compile_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues }) if issues.contains("agent_dependency_cycle")
+        ));
+    }
+
+    #[test]
+    fn dynamic_pipeline_reports_typecheck_failures() {
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+                models: ["model-a", "model-b"]
+            }
+
+            agent writer {
+                model: openai("model-a", model: "model-b")
+                prompt: "hello"
+                output: string
+            }
+
+            output {
+                value: agent.writer
+            }
+        };
+
+        let compile_result = compile_workflow_pipeline_dynamic(WorkflowPipelineInput::Workflow(&workflow));
+
+        assert!(matches!(
+            compile_result,
+            Err(WorkflowRuntimeError::InvalidAgentProperty {
+                property,
+                message,
+                ..
+            }) if property == "model" && message.contains("ambiguous model name arguments")
+        ));
+    }
+
+    #[test]
+    fn dynamic_pipeline_reports_missing_output_declaration_typecheck_failures() {
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            agent writer {
+                model: openai("model-a")
+                prompt: "hello"
+                output: string
+            }
+        };
+
+        let compile_result = compile_workflow_pipeline_dynamic(WorkflowPipelineInput::Workflow(&workflow));
+
+        assert!(matches!(
+            compile_result,
+            Err(WorkflowRuntimeError::MissingDeclaration { message }) if message.contains("`output` block")
+        ));
+    }
+
+    #[test]
+    fn dynamic_pipeline_reports_plan_failures() {
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            agent writer {
+                model: openai("model-a")
+                prompt: "hello"
+                output: string
+            }
+
+            output {
+                value: agent.writer
+            }
+        };
+
+        let compile_result = compile_workflow_pipeline_dynamic(WorkflowPipelineInput::Workflow(&workflow));
+
+        assert!(matches!(
+            compile_result,
+            Err(WorkflowRuntimeError::ProviderConfiguration { provider_name, message })
+                if provider_name == "openai" && message.contains("missing `endpoint` property")
+        ));
+    }
+
+    #[test]
+    fn dynamic_compiler_returns_reusable_artifact() {
+        let compiled_workflow = compile_dynamic_workflow(WorkflowPipelineInput::Workflow(&VALID_WORKFLOW)).unwrap();
+
+        assert_eq!(
+            compiled_workflow.execution_plan().agent_execution_order,
+            vec!["first".to_string(), "second".to_string()]
+        );
+
+        assert!(compiled_workflow.input_type().is_some());
+        assert!(compiled_workflow.validation_diagnostics().is_empty());
     }
 }

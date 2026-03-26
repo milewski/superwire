@@ -131,16 +131,16 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 2 - Shared Dynamic Compiler Path in Core
 
-- [ ] Add a dynamic compile path in `engine-ai-core`.
+- [x] Add a dynamic compile path in `engine-ai-core`.
   - Goal: parse -> validate -> internal typecheck -> plan without Rust generic input/output markers.
 
-- [ ] Expose a reusable compiled artifact for CLI commands.
+- [x] Expose a reusable compiled artifact for CLI commands.
   - Suggested contents: parsed workflow, validation diagnostics, typed IR, execution plan, input type, output type.
 
-- [ ] Add CLI-ready diagnostic rendering helpers around shared diagnostics.
+- [x] Add CLI-ready diagnostic rendering helpers around shared diagnostics.
   - Reuse `crates/core/src/diagnostic/mod.rs` and source spans instead of inventing new diagnostic models in the CLI crate.
 
-- [ ] Add tests for parse, validate, typecheck, and plan failure reporting through the dynamic path.
+- [x] Add tests for parse, validate, typecheck, and plan failure reporting through the dynamic path.
   - Cover syntax failures, invalid references, missing declarations, bad model bindings, and dependency cycles.
 
 ## Phase 3 - `check` Command

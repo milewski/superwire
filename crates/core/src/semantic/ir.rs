@@ -32,6 +32,12 @@ pub struct TypedAgentIr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeCompatibilityMode {
+    EnforceRustSchema,
+    SkipRustSchema,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentPropertyName {
     Model,
 }
@@ -50,6 +56,21 @@ where
     Input: Serialize + JsonSchema,
     Output: DeserializeOwned + JsonSchema,
 {
+    build_typed_workflow_ir_with_mode::<Input, Output>(workflow, TypeCompatibilityMode::EnforceRustSchema)
+}
+
+pub fn build_typed_workflow_ir_dynamic(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowRuntimeError> {
+    build_typed_workflow_ir_with_mode::<(), serde_json::Value>(workflow, TypeCompatibilityMode::SkipRustSchema)
+}
+
+fn build_typed_workflow_ir_with_mode<Input, Output>(
+    workflow: &Workflow,
+    compatibility_mode: TypeCompatibilityMode,
+) -> Result<TypedWorkflowIr, WorkflowRuntimeError>
+where
+    Input: Serialize + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
+{
     let named_schema_types = collect_named_schema_types(workflow);
     let input_type = build_input_type(workflow.find_input(), &named_schema_types)?;
     let secrets_type = build_secrets_type(workflow.find_secrets(), &named_schema_types)?;
@@ -64,8 +85,10 @@ where
     let workflow_output_type =
         infer_workflow_output_type(&output_declaration, input_type.clone(), secrets_type.clone(), &agent_output_types)?;
 
-    validate_input_type_compatibility::<Input>(input_type.as_ref())?;
-    validate_output_type_compatibility::<Output>(&workflow_output_type)?;
+    if compatibility_mode == TypeCompatibilityMode::EnforceRustSchema {
+        validate_input_type_compatibility::<Input>(input_type.as_ref())?;
+        validate_output_type_compatibility::<Output>(&workflow_output_type)?;
+    }
 
     Ok(TypedWorkflowIr {
         input_type,
@@ -398,7 +421,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
 
 #[cfg(test)]
 mod tests {
-    use super::build_typed_workflow_ir;
+    use super::{build_typed_workflow_ir, build_typed_workflow_ir_dynamic};
     use crate::parse_inline_workflow;
     use crate::runtime::error::WorkflowRuntimeError;
     use crate::runtime::types::WorkflowType;
@@ -504,5 +527,48 @@ mod tests {
             typecheck_result,
             Err(WorkflowRuntimeError::InvalidAgentProperty { property, .. }) if property == "model"
         ));
+    }
+
+    #[test]
+    fn dynamic_ir_builder_skips_rust_schema_compatibility_checks() {
+        #[derive(Debug, Deserialize, JsonSchema)]
+        #[allow(dead_code)]
+        struct IncompatibleOutput {
+            value: i64,
+        }
+
+        let workflow = parse_inline_workflow! {
+            input {
+                topic: string
+            }
+
+            provider openai {
+                driver: "openai"
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            agent writer {
+                model: openai("model-a")
+                prompt: input.topic
+                output: string
+            }
+
+            output {
+                value: agent.writer
+            }
+        };
+
+        let generic_typecheck_result = build_typed_workflow_ir::<TestInput, IncompatibleOutput>(&workflow);
+
+        assert!(matches!(
+            generic_typecheck_result,
+            Err(WorkflowRuntimeError::OutputTypeMismatch { .. })
+        ));
+
+        let dynamic_typecheck_result = build_typed_workflow_ir_dynamic(&workflow);
+
+        assert!(dynamic_typecheck_result.is_ok());
     }
 }
