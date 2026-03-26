@@ -5,7 +5,7 @@ use thiserror::Error;
 
 #[derive(Error)]
 pub enum WorkflowRuntimeError {
-    #[error("workflow parse failed:\n{details}")]
+    #[error("{details}")]
     ParseFailed {
         #[source]
         source: DslParseError,
@@ -13,7 +13,7 @@ pub enum WorkflowRuntimeError {
         details: String,
     },
 
-    #[error("workflow validation failed:\n{issues}")]
+    #[error("{issues}")]
     InvalidWorkflow { issues: String },
 
     #[error("execution plan invariant violated: {message}")]
