@@ -308,27 +308,193 @@ impl ValidationIssue {
 
     #[must_use]
     pub fn diagnostic(&self, primary_span: Option<SourceSpan>) -> Diagnostic {
+        let mut diagnostic = Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span);
+
+        if let Some(help_message) = self.help_message() {
+            diagnostic = diagnostic.with_help(help_message);
+        }
+
+        diagnostic
+    }
+
+    #[must_use]
+    fn help_message(&self) -> Option<String> {
         match self {
+            Self::DuplicateProvider { .. }
+            | Self::DuplicateSchema { .. }
+            | Self::DuplicateAgent { .. }
+            | Self::DuplicateSingletonDeclaration { .. } => Some(self.duplicate_declaration_help_message()),
             Self::UnknownAgentProperty {
                 agent_name: _,
                 property_name,
-            } => {
-                let mut diagnostic = Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span);
-
-                if let Some(suggested_property_name) = AgentPropertyName::suggested_from_identifier(property_name) {
-                    diagnostic = diagnostic.with_help(format!(
-                        "Did you mean `{}`? Supported properties: {}.",
-                        suggested_property_name.as_str(),
-                        AgentPropertyName::rendered_values()
-                    ));
-                } else {
-                    diagnostic = diagnostic.with_help(format!("Supported properties: {}.", AgentPropertyName::rendered_values()));
-                }
-
-                diagnostic
+            } => Some(Self::unknown_agent_property_help(property_name)),
+            Self::InvalidInferenceSettingValueType {
+                agent_name: _,
+                inference_setting: _,
             }
-            _ => Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.message(), primary_span),
+            | Self::InvalidModelExpression { agent_name: _ }
+            | Self::UnknownProviderInModel {
+                agent_name: _,
+                provider_name: _,
+            }
+            | Self::UnknownModelForProvider {
+                agent_name: _,
+                provider_name: _,
+                model_name: _,
+            } => Some(self.agent_model_help_message()),
+            Self::UnknownAgentReference {
+                referenced_agent: _,
+                context: _,
+            }
+            | Self::InvalidKeywordReferenceRoot { keyword: _, context: _ }
+            | Self::UnknownInputFieldReference { field_name: _, context: _ }
+            | Self::UnknownSecretsFieldReference { field_name: _, context: _ }
+            | Self::SecretReferenceInLlmContext {
+                reference_path: _,
+                context: _,
+            }
+            | Self::MissingAgentOutputTypeForFieldReference { agent_name: _, context: _ }
+            | Self::InvalidReferencePath {
+                reference_path: _,
+                invalid_field: _,
+                context: _,
+            }
+            | Self::UnknownSchemaReference {
+                referenced_schema: _,
+                context: _,
+            }
+            | Self::AgentDependencyCycle { agent_names: _ }
+            | Self::MissingInputDeclaration { context: _ }
+            | Self::MissingSecretsDeclaration { context: _ } => Some(self.reference_resolution_help_message()),
         }
+    }
+
+    fn duplicate_declaration_help_message(&self) -> String {
+        match self {
+            Self::DuplicateProvider { provider_name } => {
+                format!("Keep a single `provider {provider_name}` declaration, or rename one provider.")
+            }
+            Self::DuplicateSchema { schema_name } => {
+                format!("Keep a single `schema {schema_name}` declaration, or rename one schema.")
+            }
+            Self::DuplicateAgent { agent_name } => {
+                format!("Keep a single `agent {agent_name}` declaration, or rename one agent.")
+            }
+            Self::DuplicateSingletonDeclaration { declaration_kind } => {
+                format!(
+                    "Only one `{}` declaration is allowed; merge fields into a single block.",
+                    declaration_kind.as_str()
+                )
+            }
+            _ => "Remove duplicate declarations to make names unique.".to_string(),
+        }
+    }
+
+    fn agent_model_help_message(&self) -> String {
+        match self {
+            Self::InvalidInferenceSettingValueType {
+                agent_name: _,
+                inference_setting,
+            } => {
+                format!(
+                    "Set `{}` to {}.",
+                    inference_setting.key(),
+                    inference_setting.expected_value_description()
+                )
+            }
+            Self::InvalidModelExpression { agent_name: _ } => {
+                "Use `model: provider_name(\"model-name\")` in the agent declaration.".to_string()
+            }
+            Self::UnknownProviderInModel {
+                agent_name: _,
+                provider_name,
+            } => {
+                format!("Declare `provider {provider_name} {{ ... }}` or update `model` to use an existing provider.")
+            }
+            Self::UnknownModelForProvider {
+                agent_name: _,
+                provider_name,
+                model_name,
+            } => {
+                format!("Add `{model_name}` to `provider {provider_name}` `models`, or choose a model already listed there.")
+            }
+            _ => "Fix agent model and inference settings to use valid values.".to_string(),
+        }
+    }
+
+    fn reference_resolution_help_message(&self) -> String {
+        match self {
+            Self::UnknownAgentReference {
+                referenced_agent,
+                context: _,
+            } => {
+                format!("Declare `agent {referenced_agent} {{ ... }}` before this reference, or fix the agent name.")
+            }
+            Self::InvalidKeywordReferenceRoot { keyword, context: _ } => {
+                format!(
+                    "Add a field path after `{}` (for example `{}.<field>`).",
+                    keyword.as_str(),
+                    keyword.as_str()
+                )
+            }
+            Self::MissingInputDeclaration { context: _ } => {
+                "Add an `input { ... }` declaration with the fields used by `input.<field>` references.".to_string()
+            }
+            Self::MissingSecretsDeclaration { context: _ } => {
+                "Add a `secrets { ... }` declaration with the fields used by `secrets.<field>` references.".to_string()
+            }
+            Self::UnknownInputFieldReference { field_name, context: _ } => {
+                format!("Add `{field_name}: <type>` to `input`, or reference an existing input field.")
+            }
+            Self::UnknownSecretsFieldReference { field_name, context: _ } => {
+                format!("Add `{field_name}: <type>` to `secrets`, or reference an existing secrets field.")
+            }
+            Self::SecretReferenceInLlmContext {
+                reference_path,
+                context: _,
+            } => {
+                format!(
+                    "Do not use `{reference_path}` in prompts/output; keep secrets in provider or tool configuration and pass safe derived values instead."
+                )
+            }
+            Self::MissingAgentOutputTypeForFieldReference { agent_name, context: _ } => {
+                format!(
+                    "Add `output: <type>` to `agent {agent_name}` (for example `output: string`) before referencing `agent.{agent_name}` or its fields."
+                )
+            }
+            Self::InvalidReferencePath {
+                reference_path: _,
+                invalid_field,
+                context: _,
+            } => {
+                format!("Ensure the referenced type contains `{invalid_field}`, or update the reference path to an existing field.")
+            }
+            Self::UnknownSchemaReference {
+                referenced_schema,
+                context: _,
+            } => {
+                format!("Declare `schema {referenced_schema} {{ ... }}` before using `schema.{referenced_schema}`.")
+            }
+            Self::AgentDependencyCycle { agent_names } => {
+                format!(
+                    "Break the cycle by removing at least one dependency among: {}.",
+                    agent_names.join(" -> ")
+                )
+            }
+            _ => "Fix reference paths and declarations so all references resolve.".to_string(),
+        }
+    }
+
+    fn unknown_agent_property_help(property_name: &str) -> String {
+        if let Some(suggested_property_name) = AgentPropertyName::suggested_from_identifier(property_name) {
+            return format!(
+                "Did you mean `{}`? Supported properties: {}.",
+                suggested_property_name.as_str(),
+                AgentPropertyName::rendered_values()
+            );
+        }
+
+        format!("Supported properties: {}.", AgentPropertyName::rendered_values())
     }
 }
 
@@ -1695,6 +1861,93 @@ mod tests {
 
         assert!(help_message.contains("Supported properties:"));
         assert!(!help_message.contains("Did you mean"));
+    }
+
+    #[test]
+    fn all_validation_issue_diagnostics_include_recovery_help() {
+        let validation_issues = vec![
+            ValidationIssue::DuplicateProvider {
+                provider_name: "openai".to_string(),
+            },
+            ValidationIssue::DuplicateSchema {
+                schema_name: "Result".to_string(),
+            },
+            ValidationIssue::DuplicateAgent {
+                agent_name: "writer".to_string(),
+            },
+            ValidationIssue::DuplicateSingletonDeclaration {
+                declaration_kind: SingletonDeclarationKind::Input,
+            },
+            ValidationIssue::UnknownAgentProperty {
+                agent_name: "writer".to_string(),
+                property_name: "prom_t".to_string(),
+            },
+            ValidationIssue::InvalidInferenceSettingValueType {
+                agent_name: "writer".to_string(),
+                inference_setting: InferenceSetting::MaxTokens,
+            },
+            ValidationIssue::InvalidModelExpression {
+                agent_name: "writer".to_string(),
+            },
+            ValidationIssue::UnknownProviderInModel {
+                agent_name: "writer".to_string(),
+                provider_name: "missing_provider".to_string(),
+            },
+            ValidationIssue::UnknownModelForProvider {
+                agent_name: "writer".to_string(),
+                provider_name: "openai".to_string(),
+                model_name: "gpt-unknown".to_string(),
+            },
+            ValidationIssue::UnknownAgentReference {
+                referenced_agent: "missing_agent".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::InvalidKeywordReferenceRoot {
+                keyword: ReferenceKeyword::Input,
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::MissingInputDeclaration {
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::MissingSecretsDeclaration {
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::UnknownInputFieldReference {
+                field_name: "topic".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::UnknownSecretsFieldReference {
+                field_name: "api_key".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::SecretReferenceInLlmContext {
+                reference_path: "secrets.api_key".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::MissingAgentOutputTypeForFieldReference {
+                agent_name: "writer".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::InvalidReferencePath {
+                reference_path: "agent.writer.score".to_string(),
+                invalid_field: "score".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::UnknownSchemaReference {
+                referenced_schema: "MissingSchema".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::AgentDependencyCycle {
+                agent_names: vec!["alpha".to_string(), "beta".to_string()],
+            },
+        ];
+
+        for validation_issue in validation_issues {
+            let diagnostic = validation_issue.diagnostic(None);
+            let help_message = diagnostic.help.expect("validation diagnostic should include recovery help");
+
+            assert!(!help_message.trim().is_empty());
+        }
     }
 
     #[test]

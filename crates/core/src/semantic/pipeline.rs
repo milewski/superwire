@@ -407,6 +407,7 @@ mod tests {
                 if issues.contains("missing_agent_output_type_for_field_reference")
                     && issues.contains("Agent `greeting` must declare `output`")
                     && issues.contains("output declaration")
+                    && issues.contains("Add `output: <type>`")
         ));
     }
 
@@ -448,6 +449,7 @@ mod tests {
                 if details.contains("parse_error")
                     && details.contains("<workflow>:")
                     && details.contains("here")
+                    && details.contains("Check for a typo")
                     && !details.contains("-->")
                     && !details.contains("SourceSpan {")
         ));
