@@ -21,6 +21,7 @@ pub enum CommandError {
 }
 
 impl CommandError {
+    #[must_use]
     pub fn runtime_not_implemented(command_name: &'static str) -> Self {
         Self::NotImplemented {
             command_name,
@@ -40,6 +41,7 @@ impl CommandError {
         Self::Runtime { message: message.into() }
     }
 
+    #[must_use]
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Self::InvalidWorkflow { .. } => ExitCode::InvalidWorkflow,
@@ -47,6 +49,11 @@ impl CommandError {
             Self::Runtime { .. } => ExitCode::RuntimeFailure,
             Self::NotImplemented { category, .. } => category.exit_code(),
         }
+    }
+
+    #[must_use]
+    pub fn exit_status_code(&self) -> i32 {
+        self.exit_code().code()
     }
 }
 
@@ -56,6 +63,7 @@ pub enum NotImplementedCategory {
 }
 
 impl NotImplementedCategory {
+    #[must_use]
     pub fn exit_code(self) -> ExitCode {
         match self {
             Self::Runtime => ExitCode::RuntimeFailure,

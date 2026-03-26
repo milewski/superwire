@@ -11,12 +11,14 @@ pub struct Application {
 }
 
 impl Application {
+    #[must_use]
     pub fn from_environment() -> Self {
         let arguments = CommandLineArguments::parse();
 
         Self { arguments }
     }
 
+    #[must_use]
     pub fn run(self) -> ExitStatus {
         let execution_result = self.arguments.command.execute();
 
@@ -67,6 +69,7 @@ pub enum ExitCode {
 }
 
 impl ExitCode {
+    #[must_use]
     pub const fn code(self) -> i32 {
         match self {
             Self::Success => 0,
@@ -83,10 +86,12 @@ pub struct ExitStatus {
 }
 
 impl ExitStatus {
+    #[must_use]
     pub const fn from_exit_code(code: ExitCode) -> Self {
         Self { code }
     }
 
+    #[must_use]
     pub const fn code(self) -> i32 {
         self.code.code()
     }

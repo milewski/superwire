@@ -2,7 +2,7 @@
 
 This document is the planning and execution checklist for adding a workflow CLI to this repository.
 
-Status: planning only. Do not start implementation until this document has been reviewed and refined.
+Status: implementation complete. Checklist reflects delivered behavior on `cli-plan`.
 
 ## How To Use This Checklist
 
@@ -219,36 +219,36 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 7 - `build` Command
 
-- [ ] Design the generated launcher layout.
+- [x] Design the generated launcher layout.
   - Recommendation: generate a small Rust project or single-file launcher that embeds the workflow source.
 
-- [ ] Reuse `clap` in the generated executable.
+- [x] Reuse `clap` in the generated executable.
   - Workflow inputs should become flags automatically from the compiled input type.
 
-- [ ] Reuse the same input coercion and secret resolution logic as `run`.
+- [x] Reuse the same input coercion and secret resolution logic as `run`.
   - Avoid duplicating parsing rules between the host CLI and generated binaries.
 
-- [ ] Implement the build pipeline.
+- [x] Implement the build pipeline.
   - Suggested flow: materialize generated source -> run `cargo build --release` -> copy the final binary to `--output`.
 
-- [ ] Define build cache and temporary directory behavior.
+- [x] Define build cache and temporary directory behavior.
   - Recommendation: use a deterministic generated directory under `target/engine-ai-cli/` unless the user overrides it.
 
-- [ ] Add integration tests that build a small sample workflow and execute the produced binary.
+- [x] Add integration tests that build a small sample workflow and execute the produced binary.
 
-- [ ] Add tests for generated `--help` output based on workflow input fields.
+- [x] Add tests for generated `--help` output based on workflow input fields.
 
 ## Phase 8 - Hardening and Release Readiness
 
-- [ ] Add end-to-end tests for `check`, `fmt`, `run`, and `build`.
+- [x] Add end-to-end tests for `check`, `fmt`, `run`, and `build`.
 
-- [ ] Add snapshot tests for diagnostics rendering and formatter output.
+- [x] Add snapshot tests for diagnostics rendering and formatter output.
 
-- [ ] Make error messages and stdout/stderr usage consistent across commands.
+- [x] Make error messages and stdout/stderr usage consistent across commands.
 
-- [ ] Validate cross-platform file path handling for generated builds.
+- [x] Validate cross-platform file path handling for generated builds.
 
-- [ ] Update local automation once the CLI exists.
+- [x] Update local automation once the CLI exists.
   - `justfile`, workspace membership, and developer scripts should not point at placeholder package names.
 
 ## Proposed File Map
@@ -278,13 +278,13 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Acceptance Criteria
 
-- [ ] `check` rejects syntax, validation, and static compilation problems with readable diagnostics.
-- [ ] `fmt` produces exactly one canonical formatting and is idempotent.
-- [ ] `run` executes supported workflows directly from `.ai` files using CLI-provided inputs.
-- [ ] `build` produces an executable whose input fields are exposed as CLI flags automatically.
-- [ ] Unsupported runtime features fail intentionally and clearly.
-- [ ] Formatter comment behavior is explicit and covered by tests.
-- [ ] Completed tasks are committed before they are marked done in this file.
+- [x] `check` rejects syntax, validation, and static compilation problems with readable diagnostics.
+- [x] `fmt` produces exactly one canonical formatting and is idempotent.
+- [x] `run` executes supported workflows directly from `.ai` files using CLI-provided inputs.
+- [x] `build` produces an executable whose input fields are exposed as CLI flags automatically.
+- [x] Unsupported runtime features fail intentionally and clearly.
+- [x] Formatter comment behavior is explicit and covered by tests.
+- [x] Completed tasks are committed before they are marked done in this file.
 
 ## Verification Commands
 

@@ -1,9 +1,4 @@
-mod app;
-mod commands;
-mod diagnostics;
-mod input;
-
-use app::Application;
+use engine_ai_cli::app::Application;
 
 fn main() {
     let application = Application::from_environment();
