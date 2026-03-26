@@ -620,22 +620,19 @@ fn suggests_agent_properties_before_inference_block() {
 
 #[test]
 fn includes_descriptive_details_for_agent_and_inference_completions() {
-    let (agent_source, agent_cursor_position) = inline_document_with_cursor! {
+    let agent_completions = inline_completion_suggestions! {
         agent writer {
             <cursor>
         }
     };
 
-    let (inference_source, inference_cursor_position) = inline_document_with_cursor! {
+    let inference_completions = inline_completion_suggestions! {
         agent writer {
             inference: {
                 <cursor>
             }
         }
     };
-
-    let agent_completions = completion_suggestions_from_source(agent_source, agent_cursor_position);
-    let inference_completions = completion_suggestions_from_source(inference_source, inference_cursor_position);
 
     let model_completion = agent_completions
         .iter()
