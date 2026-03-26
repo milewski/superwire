@@ -36,9 +36,14 @@ impl<PipelineState> WorkflowPipeline<PipelineState> {
 impl WorkflowPipeline<ParseStageOutput> {
     pub fn parse(input: WorkflowPipelineInput<'_>) -> Result<Self, WorkflowRuntimeError> {
         let workflow = match input {
-            WorkflowPipelineInput::Source(source) => {
-                parse_workflow(source).map_err(|source| WorkflowRuntimeError::ParseFailed { source })?
-            }
+            WorkflowPipelineInput::Source(source_text) => parse_workflow(source_text).map_err(|parse_error| {
+                let rendered_details = parse_error.render_with_source(source_text, "<workflow>");
+
+                WorkflowRuntimeError::ParseFailed {
+                    source: parse_error,
+                    details: rendered_details,
+                }
+            })?,
             WorkflowPipelineInput::Workflow(workflow) => workflow.clone(),
         };
 
@@ -122,8 +127,14 @@ impl NormalizeStageOutput {
         let validation_report = validate_workflow(&self.workflow);
 
         if validation_report.has_issues() {
+            let rendered_validation_issues = if let Some(source_text) = self.workflow.source_text() {
+                validation_report.render_with_source(source_text, "<workflow>")
+            } else {
+                validation_report.render()
+            };
+
             return Err(WorkflowRuntimeError::InvalidWorkflow {
-                issues: render_validation_report(&validation_report),
+                issues: rendered_validation_issues,
             });
         }
 
@@ -249,17 +260,6 @@ where
         .map(WorkflowPipeline::into_state)
 }
 
-fn render_validation_report(validation_report: &ValidationReport) -> String {
-    validation_report
-        .issues_with_spans()
-        .map(|(validation_issue, issue_span)| match issue_span {
-            Some(issue_span) => format!("- {validation_issue:?} at {}:{}", issue_span.start.line, issue_span.start.column),
-            None => format!("- {validation_issue:?}"),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{compile_workflow_pipeline, WorkflowPipeline, WorkflowPipelineInput};
@@ -377,7 +377,51 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues }) if issues.contains("UnknownInputFieldReference")
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+                if issues.contains("unknown_input_field_reference")
+                    && issues.contains("missing_field")
+                    && issues.contains("<workflow>:")
+        ));
+    }
+
+    #[test]
+    fn validation_stage_renders_source_snippet_with_arrow() {
+        let workflow_source = r#"
+            agent greeting {
+                prompt: "first"
+            }
+
+            agent greeting {
+                prompt: "second"
+            }
+        "#;
+
+        let validate_result = WorkflowPipeline::parse(WorkflowPipelineInput::Source(workflow_source))
+            .expect("parse stage should succeed")
+            .normalize()
+            .validate();
+
+        assert!(matches!(
+            validate_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+                if issues.contains("duplicate_agent")
+                    && issues.contains("agent greeting")
+                    && issues.contains("<workflow>:")
+        ));
+    }
+
+    #[test]
+    fn parse_stage_renders_source_snippet_with_arrow() {
+        let broken_workflow_source = "agent greeting {\n    prompt: \"hello\"\n}\n@\n";
+
+        let parse_result = WorkflowPipeline::parse(WorkflowPipelineInput::Source(broken_workflow_source));
+
+        assert!(matches!(
+            parse_result,
+            Err(WorkflowRuntimeError::ParseFailed { details, source: _ })
+                if details.contains("parse_error")
+                    && details.contains('@')
+                    && details.contains('^')
         ));
     }
 }

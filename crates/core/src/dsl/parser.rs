@@ -124,6 +124,16 @@ impl DslParseError {
     pub fn diagnostic(&self) -> Diagnostic {
         Diagnostic::new(DiagnosticCode::from(self), DiagnosticSeverity::Error, self.to_string(), self.span())
     }
+
+    #[must_use]
+    pub fn render(&self) -> String {
+        self.diagnostic().render()
+    }
+
+    #[must_use]
+    pub fn render_with_source(&self, source_text: &str, source_name: &str) -> String {
+        self.diagnostic().render_with_source(source_text, source_name)
+    }
 }
 
 impl From<&DslParseError> for DiagnosticCode {
@@ -156,7 +166,9 @@ pub fn parse_workflow(source: &str) -> Result<Workflow, DslParseError> {
         .next()
         .ok_or_else(|| DslParseError::missing("workflow", "workflow root"))?;
 
-    AstVisitor::new().visit_workflow(workflow_pair)
+    AstVisitor::new()
+        .visit_workflow(workflow_pair)
+        .map(|workflow| workflow.with_source_text(source.to_owned()))
 }
 
 #[cfg(test)]

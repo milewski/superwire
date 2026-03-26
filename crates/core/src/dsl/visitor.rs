@@ -33,7 +33,10 @@ impl AstVisitor {
             declarations.push(self.visit_declaration(declaration_pair)?);
         }
 
-        Ok(Workflow { declarations })
+        Ok(Workflow {
+            declarations,
+            source_text: None,
+        })
     }
 
     fn visit_declaration(&self, declaration_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {

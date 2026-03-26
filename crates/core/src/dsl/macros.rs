@@ -6,6 +6,7 @@ macro_rules! parse_inline_workflow {
     ) => {{
         let mut merged_workflow = $crate::dsl::Workflow {
             declarations: Vec::new(),
+            source_text: None,
         };
 
         $(
@@ -15,8 +16,13 @@ macro_rules! parse_inline_workflow {
                 .extend(included_workflow.declarations().iter().cloned());
         )*
 
-        let parsed_workflow = $crate::dsl::parse_workflow(stringify!($($workflow_tokens)*))
-            .unwrap_or_else(|parse_error| panic!("inline workflow failed to parse: {parse_error}"));
+        let workflow_source = stringify!($($workflow_tokens)*);
+        let parsed_workflow = $crate::dsl::parse_workflow(workflow_source).unwrap_or_else(|parse_error| {
+            panic!(
+                "inline workflow failed to parse:\n{}",
+                parse_error.render_with_source(workflow_source, "<inline workflow>")
+            )
+        });
 
         merged_workflow.declarations.extend(parsed_workflow.declarations);
 
@@ -24,8 +30,13 @@ macro_rules! parse_inline_workflow {
     }};
 
     ($($workflow_tokens:tt)*) => {{
-        $crate::dsl::parse_workflow(stringify!($($workflow_tokens)*))
-            .unwrap_or_else(|parse_error| panic!("inline workflow failed to parse: {parse_error}"))
+        let workflow_source = stringify!($($workflow_tokens)*);
+        $crate::dsl::parse_workflow(workflow_source).unwrap_or_else(|parse_error| {
+            panic!(
+                "inline workflow failed to parse:\n{}",
+                parse_error.render_with_source(workflow_source, "<inline workflow>")
+            )
+        })
     }};
 }
 

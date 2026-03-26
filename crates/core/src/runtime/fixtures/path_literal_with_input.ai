@@ -1,0 +1,7 @@
+input {
+    topic: string
+}
+
+output {
+    greeting: input.topic
+}
