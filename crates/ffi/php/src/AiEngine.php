@@ -16,9 +16,11 @@ final class AiEngine
 
     private array $customToolDefinitions = [];
 
+    private array $registeredToolInstances = [];
+
     private $toolInvocationHandler = null;
 
-    private static $activeToolInvocationHandler = null;
+    private static ?self $activeEngineInstance = null;
 
     public function withInput(array $workflowInput): self
     {
@@ -50,22 +52,34 @@ final class AiEngine
 
     public function withTools(array $customToolDefinitions): self
     {
-        $normalizedDefinitions = [];
+        $this->customToolDefinitions = [];
+        $this->registeredToolInstances = [];
 
         foreach ($customToolDefinitions as $customToolDefinition) {
-            if (!is_array($customToolDefinition)) {
-                throw new InvalidArgumentException('Every tool definition passed to withTools() must be an array.');
+            if ($customToolDefinition instanceof AiTool) {
+                $this->registerToolInstance($customToolDefinition);
+
+                continue;
             }
 
-            $normalizedDefinitions[] = $this->normalizeToolDefinition($customToolDefinition);
-        }
+            if (!is_array($customToolDefinition)) {
+                throw new InvalidArgumentException('Every tool passed to withTools() must be an AiTool or an array definition.');
+            }
 
-        $this->customToolDefinitions = $normalizedDefinitions;
+            $this->customToolDefinitions[] = $this->normalizeToolDefinition($customToolDefinition);
+        }
 
         return $this;
     }
 
-    public function withTool(string $name, string $description, array $inputSchema, ?array $outputSchema = null): self
+    public function withTool(AiTool $toolInstance): self
+    {
+        $this->registerToolInstance($toolInstance);
+
+        return $this;
+    }
+
+    public function withToolDefinition(string $name, string $description, array $inputSchema, ?array $outputSchema = null): self
     {
         $this->customToolDefinitions[] = [
             'name' => $name,
@@ -118,16 +132,15 @@ final class AiEngine
             return self::decodeJson($workflowExecutionResponseJson, 'workflow response');
         } finally {
             if ($toolCallbackRegistered) {
-                EngineAiFfi::clearToolCallback();
-                self::$activeToolInvocationHandler = null;
+                self::clearRegisteredCallback();
             }
         }
     }
 
     public static function dispatchToolInvocation(string $toolInvocationRequestJson): string
     {
-        if (!is_callable(self::$activeToolInvocationHandler)) {
-            throw new RuntimeException('No tool handler is currently registered.');
+        if (!(self::$activeEngineInstance instanceof self)) {
+            throw new RuntimeException('No active engine instance is available for tool dispatching.');
         }
 
         $toolInvocationRequest = self::decodeJson($toolInvocationRequestJson, 'tool invocation request');
@@ -135,7 +148,7 @@ final class AiEngine
         $toolInput = $toolInvocationRequest['tool_input'] ?? null;
 
         try {
-            $toolOutput = (self::$activeToolInvocationHandler)($toolName, $toolInput, $toolInvocationRequest);
+            $toolOutput = self::$activeEngineInstance->invokeTool($toolName, $toolInput, $toolInvocationRequest);
 
             return self::encodeJson([
                 'result' => [
@@ -161,30 +174,116 @@ final class AiEngine
 
     private function buildWorkflowRequest(string $workflowFilePath): array
     {
+        $allToolDefinitions = $this->customToolDefinitions;
+
+        foreach ($this->registeredToolInstances as $registeredToolInstance) {
+            $allToolDefinitions[] = $registeredToolInstance->definition();
+        }
+
         return [
             'workflow_file_path' => $workflowFilePath,
             'workflow_input' => $this->workflowInput,
             'workflow_secrets' => $this->workflowSecrets,
             'custom_tools' => [
-                'definitions' => $this->customToolDefinitions,
+                'definitions' => $allToolDefinitions,
             ],
         ];
     }
 
     private function registerToolHandlerIfNeeded(): bool
     {
-        if ($this->toolInvocationHandler === null) {
-            if ($this->customToolDefinitions !== []) {
-                throw new RuntimeException('Custom tools were configured, but no tool handler was provided.');
-            }
-
+        if (!$this->needsToolCallback()) {
             return false;
         }
 
-        self::$activeToolInvocationHandler = $this->toolInvocationHandler;
+        if ($this->registeredToolInstances !== []) {
+            self::$activeEngineInstance = $this;
+            EngineAiFfi::registerToolCallback(self::toolDispatcherCallbackName());
+
+            return true;
+        }
+
+        if ($this->toolInvocationHandler === null) {
+            throw new RuntimeException('Custom tools were configured, but no tool handler was provided.');
+        }
+
+        self::$activeEngineInstance = $this;
         EngineAiFfi::registerToolCallback(self::toolDispatcherCallbackName());
 
         return true;
+    }
+
+    private function needsToolCallback(): bool
+    {
+        if ($this->registeredToolInstances !== []) {
+            return true;
+        }
+
+        if ($this->toolInvocationHandler !== null) {
+            return true;
+        }
+
+        return $this->customToolDefinitions !== [];
+    }
+
+    private function invokeTool(string $toolName, mixed $toolInput, array $toolInvocationRequest): mixed
+    {
+        if (array_key_exists($toolName, $this->registeredToolInstances)) {
+            $registeredToolInstance = $this->registeredToolInstances[$toolName];
+            $toolInputValues = self::normalizeToolInput($toolInput, $toolName);
+
+            return $registeredToolInstance->invoke($toolInputValues, $this->workflowSecrets);
+        }
+
+        if (is_callable($this->toolInvocationHandler)) {
+            return ($this->toolInvocationHandler)($toolName, $toolInput, $toolInvocationRequest);
+        }
+
+        throw new RuntimeException(sprintf('No registered tool implementation found for `%s`.', $toolName));
+    }
+
+    private static function normalizeToolInput(mixed $toolInput, string $toolName): array
+    {
+        if ($toolInput === null) {
+            return [];
+        }
+
+        if (!is_array($toolInput)) {
+            throw new RuntimeException(sprintf('Tool `%s` expected object input but received `%s`.', $toolName, gettype($toolInput)));
+        }
+
+        return $toolInput;
+    }
+
+    private function registerToolInstance(AiTool $toolInstance): void
+    {
+        $toolName = $toolInstance->name();
+
+        if ($toolName === '') {
+            throw new InvalidArgumentException('Tool name cannot be empty.');
+        }
+
+        if (array_key_exists($toolName, $this->registeredToolInstances)) {
+            throw new InvalidArgumentException(sprintf('Duplicate tool registration for `%s`.', $toolName));
+        }
+
+        $this->registeredToolInstances[$toolName] = $toolInstance;
+    }
+
+    private static function resetActiveEngineInstance(): void
+    {
+        self::$activeEngineInstance = null;
+    }
+
+    private static function clearRegisteredCallback(): void
+    {
+        EngineAiFfi::clearToolCallback();
+        self::resetActiveEngineInstance();
+    }
+
+    private static function toolDispatcherCallbackName(): string
+    {
+        return self::class . '::dispatchToolInvocation';
     }
 
     private function normalizeToolDefinition(array $customToolDefinition): array
@@ -221,11 +320,6 @@ final class AiEngine
             'output_schema' => $outputSchema,
             'execution_contract' => $executionContract,
         ];
-    }
-
-    private static function toolDispatcherCallbackName(): string
-    {
-        return self::class . '::dispatchToolInvocation';
     }
 
     private static function decodeJson(string $jsonPayload, string $context): array
