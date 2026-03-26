@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/agent", "crates/lsp"]
+members = ["crates/core", "crates/agent", "crates/lsp", "crates/cli"]
 resolver = "2"
 exclude = ["example-project"]
 
@@ -16,6 +16,7 @@ trivially_copy_pass_by_ref = "allow"
 match_wildcard_for_single_variants = "allow"
 
 [workspace.dependencies]
+clap = { version = "4.5", features = ["derive"] }
 pest = "2.8"
 pest_derive = "2.8"
 petgraph = "0.8"

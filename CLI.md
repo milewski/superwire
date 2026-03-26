@@ -116,18 +116,18 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 1 - CLI Foundation and Command Skeleton
 
-- [ ] Add `crates/cli` as a new workspace member.
+- [x] Add `crates/cli` as a new workspace member.
   - Files: root `Cargo.toml`, new `crates/cli/Cargo.toml`, `crates/cli/src/main.rs`.
 
-- [ ] Add `clap` and create the top-level command tree.
+- [x] Add `clap` and create the top-level command tree.
   - Suggested commands: `check`, `fmt`, `run`, `build`.
 
-- [ ] Create CLI module boundaries.
+- [x] Create CLI module boundaries.
   - Suggested modules: `app.rs`, `commands/check.rs`, `commands/fmt.rs`, `commands/run.rs`, `commands/build.rs`, `diagnostics.rs`, `input.rs`.
 
-- [ ] Define stable exit code behavior for success, invalid workflow, runtime failure, and internal error.
+- [x] Define stable exit code behavior for success, invalid workflow, runtime failure, and internal error.
 
-- [ ] Align `justfile` with the real CLI package name and binary name.
+- [x] Align `justfile` with the real CLI package name and binary name.
 
 ## Phase 2 - Shared Dynamic Compiler Path in Core
 

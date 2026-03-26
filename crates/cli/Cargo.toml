@@ -1,0 +1,15 @@
+[package]
+name = "engine-ai-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "engine-ai"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+thiserror = { workspace = true }
