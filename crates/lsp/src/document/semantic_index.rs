@@ -16,7 +16,7 @@ use super::text_utils::trailing_identifier;
 use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
 
 #[derive(Debug, Clone)]
-pub(super) struct SemanticIndex {
+pub struct SemanticIndex {
     pub(in crate::document) providers: HashMap<String, ProviderSummary>,
     pub(in crate::document) provider_locations: Vec<NamedSpan>,
     pub(in crate::document) schemas: HashMap<String, SchemaSummary>,
@@ -58,7 +58,7 @@ pub(in crate::document) struct NamedSpan {
 }
 
 impl SemanticIndex {
-    pub(super) fn interpolation_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn interpolation_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
         [ReferenceKeyword::Agent, ReferenceKeyword::Input]
             .into_iter()
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
@@ -72,7 +72,7 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub(super) fn context_function_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn context_function_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
         let context_function_label = BuiltinFunctionName::Context.as_str();
 
         if !context_function_label.starts_with(value_prefix) {
@@ -85,7 +85,7 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub(super) fn from_workflow(workflow: &Workflow) -> Self {
+    pub fn from_workflow(workflow: &Workflow) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
         let mut semantic_index = Self {
             providers: HashMap::new(),
@@ -184,7 +184,7 @@ impl SemanticIndex {
         semantic_index
     }
 
-    pub(super) fn from_text_fallback(source_text: &str) -> Self {
+    pub fn from_text_fallback(source_text: &str) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_source_tolerant(source_text);
         let mut semantic_index = Self::from_tooling_snapshot(&tooling_snapshot);
 
@@ -351,7 +351,7 @@ impl SemanticIndex {
         });
     }
 
-    pub(super) fn model_call_suggestions(&self, model_call_context: &ModelCallCompletionContext) -> Vec<CompletionSuggestion> {
+    pub fn model_call_suggestions(&self, model_call_context: &ModelCallCompletionContext) -> Vec<CompletionSuggestion> {
         let Some(provider_summary) = self.providers.get(&model_call_context.provider_name) else {
             return Vec::new();
         };
@@ -382,7 +382,7 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub(super) fn provider_driver_value_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    pub fn provider_driver_value_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
         let provider_name = self.provider_name_at_position(position)?;
         let _ = provider_name;
 
@@ -420,7 +420,7 @@ impl SemanticIndex {
         Some(completion_suggestions)
     }
 
-    pub(super) fn provider_property_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    pub fn provider_property_suggestions(&self, position: Position, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
         let provider_name = self.provider_name_at_position(position)?;
 
         if line_prefix.trim_start().contains(':') {
@@ -462,7 +462,7 @@ impl SemanticIndex {
         all_provider_property_names()
     }
 
-    pub(super) fn is_type_position(&self, position: Position, line_prefix: &str) -> bool {
+    pub fn is_type_position(&self, position: Position, line_prefix: &str) -> bool {
         let trimmed_line_prefix = line_prefix.trim_end();
 
         if trimmed_line_prefix.ends_with("schema.") {
@@ -511,7 +511,7 @@ impl SemanticIndex {
         trimmed_line_prefix.contains("output:")
     }
 
-    pub(super) fn type_suggestions(&self, line_prefix: &str, current_schema_name: Option<&str>) -> Vec<CompletionSuggestion> {
+    pub fn type_suggestions(&self, line_prefix: &str, current_schema_name: Option<&str>) -> Vec<CompletionSuggestion> {
         let trimmed_line_prefix = line_prefix.trim_end();
 
         if trimmed_line_prefix.ends_with('.') && !trimmed_line_prefix.ends_with("schema.") {
@@ -562,7 +562,7 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub(super) fn root_declaration_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn root_declaration_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {
         let declaration_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
         builtin_symbol_suggestions(false)
@@ -573,7 +573,7 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub(super) fn is_output_position(&self, position: Position) -> bool {
+    pub fn is_output_position(&self, position: Position) -> bool {
         self.output_locations
             .iter()
             .copied()
@@ -608,7 +608,7 @@ impl SemanticIndex {
         false
     }
 
-    pub(super) fn default_suggestions(&self, include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
+    pub fn default_suggestions(&self, include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = builtin_symbol_suggestions(include_builtin_function_suggestions);
 
         completion_suggestions.extend(self.providers.keys().map(|provider_name| CompletionSuggestion {
@@ -632,7 +632,7 @@ impl SemanticIndex {
         completion_suggestions
     }
 
-    pub(super) fn is_root_declaration_position(&self, position: Position) -> bool {
+    pub fn is_root_declaration_position(&self, position: Position) -> bool {
         if self
             .provider_locations
             .iter()
@@ -678,21 +678,21 @@ impl SemanticIndex {
         true
     }
 
-    pub(super) fn provider_name_at_position(&self, position: Position) -> Option<&str> {
+    pub fn provider_name_at_position(&self, position: Position) -> Option<&str> {
         self.provider_locations
             .iter()
             .find(|provider_location| source_span_contains_position(provider_location.span, position))
             .map(|provider_location| provider_location.name.as_str())
     }
 
-    pub(super) fn schema_name_at_position(&self, position: Position) -> Option<&str> {
+    pub fn schema_name_at_position(&self, position: Position) -> Option<&str> {
         self.schema_locations
             .iter()
             .find(|schema_location| source_span_contains_position(schema_location.span, position))
             .map(|schema_location| schema_location.name.as_str())
     }
 
-    pub(super) fn agent_name_at_position(&self, position: Position) -> Option<&str> {
+    pub fn agent_name_at_position(&self, position: Position) -> Option<&str> {
         self.agent_locations
             .iter()
             .find(|agent_location| source_span_contains_position(agent_location.span, position))

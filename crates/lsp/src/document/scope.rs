@@ -5,7 +5,7 @@ use super::text_utils::trailing_identifier;
 use super::{CompletionKind, CompletionSuggestion};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CompletionScope {
+pub enum CompletionScope {
     General,
     AgentProperties,
     InferenceSettings,
@@ -20,7 +20,7 @@ enum ScopeBlock {
     TypedDeclaration,
 }
 
-pub(super) fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> CompletionScope {
+pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> CompletionScope {
     let mut scope_blocks = Vec::<ScopeBlock>::new();
     let mut token_state = ScopeScannerTokenState::default();
     let mut string_state = ScopeScannerStringState::default();
@@ -245,7 +245,7 @@ impl InferenceSettingCompletionDoc for InferenceSetting {
     }
 }
 
-pub(super) fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+pub fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
     AgentPropertyName::all()
@@ -261,7 +261,7 @@ pub(super) fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<Complet
         .collect()
 }
 
-pub(super) fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let setting_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
     InferenceSetting::all()

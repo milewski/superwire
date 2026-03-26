@@ -2,7 +2,7 @@ use engine_ai_core::dsl::{SourcePosition, SourceSpan};
 
 use crate::protocol::{Position, Range};
 
-pub(super) fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
+pub fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
     let target_line = position.line as usize;
     let target_character = position.character as usize;
 
@@ -36,7 +36,7 @@ pub(super) fn byte_offset_for_position(source_text: &str, position: Position) ->
     None
 }
 
-pub(super) fn source_span_to_range(source_text: &str, source_span: SourceSpan) -> Range {
+pub fn source_span_to_range(source_text: &str, source_span: SourceSpan) -> Range {
     let start = source_position_to_position(source_span.start);
     let mut end = source_position_to_position(source_span.end);
 
@@ -54,7 +54,7 @@ pub(super) fn source_span_to_range(source_text: &str, source_span: SourceSpan) -
     Range { start, end }
 }
 
-pub(super) fn source_span_contains_position(source_span: SourceSpan, position: Position) -> bool {
+pub fn source_span_contains_position(source_span: SourceSpan, position: Position) -> bool {
     let target_line = position.line as usize + 1;
     let target_column = position.character as usize + 1;
 
@@ -67,7 +67,7 @@ pub(super) fn source_span_contains_position(source_span: SourceSpan, position: P
     starts_before_or_at && ends_after_or_at
 }
 
-pub(super) fn zero_range() -> Range {
+pub fn zero_range() -> Range {
     Range {
         start: Position { line: 0, character: 0 },
         end: Position { line: 0, character: 1 },

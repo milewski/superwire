@@ -10,14 +10,14 @@ use super::semantic_index::SemanticIndex;
 use super::{DiagnosticSeverity, DocumentDiagnostic};
 
 #[derive(Debug)]
-pub(super) struct SemanticSnapshot {
-    pub(super) parse_error: Option<DslParseError>,
+pub struct SemanticSnapshot {
+    pub parse_error: Option<DslParseError>,
     diagnostics: Vec<CoreDiagnostic>,
-    pub(super) semantic_index: SemanticIndex,
+    pub semantic_index: SemanticIndex,
 }
 
 impl SemanticSnapshot {
-    pub(super) fn from_text(source_text: &str) -> Self {
+    pub fn from_text(source_text: &str) -> Self {
         match parse_workflow(source_text) {
             Ok(workflow) => {
                 let validation_report = validate_workflow(&workflow);
@@ -42,7 +42,7 @@ impl SemanticSnapshot {
         }
     }
 
-    pub(super) fn diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
+    pub fn diagnostics(&self, source_text: &str) -> Vec<DocumentDiagnostic> {
         self.diagnostics
             .iter()
             .map(|core_diagnostic| document_diagnostic_from_core(core_diagnostic, source_text))
