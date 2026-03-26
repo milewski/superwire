@@ -40,7 +40,7 @@ impl CheckCommand {
         }
 
         fs::read_to_string(&self.workflow_path).map_err(|io_error| {
-            CommandError::invalid_workflow(format!("failed to read workflow file {}: {io_error}", self.workflow_path.display()))
+            CommandError::internal(format!("failed to read workflow file {}: {io_error}", self.workflow_path.display()))
         })
     }
 

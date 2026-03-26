@@ -159,26 +159,27 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 4 - Formatter Infrastructure and `fmt`
 
-- [ ] Decide and implement the formatter source model.
-  - Preferred direction: add comment and trivia preservation rather than formatting directly from the current lossy AST.
+- [x] Decide and implement the formatter source model.
+  - Implemented v1 policy: parse AST and rebuild canonically for comment-free workflows.
+  - Implemented comment policy: reject `//` comments explicitly and leave the file unchanged.
 
-- [ ] Define the canonical style rules for DSL output.
+- [x] Define the canonical style rules for DSL output.
   - Preserve declaration order.
   - Use deterministic indentation and blank-line rules.
   - Use deterministic rendering rules for arrays, objects, call arguments, unions, tuples, string templates, and multiline strings.
 
-- [ ] Implement the DSL pretty printer.
+- [x] Implement the DSL pretty printer.
   - It must rebuild output from structured data instead of patching whitespace heuristically.
 
-- [ ] Implement in-place rewrite behavior for `fmt`.
+- [x] Implement in-place rewrite behavior for `fmt`.
 
-- [ ] Add `fmt --check` mode.
+- [x] Add `fmt --check` mode.
   - Recommended even if it is not the first user-facing flag, because it is useful for CI and generated workflows.
 
-- [ ] Add golden tests for formatter output and idempotency.
+- [x] Add golden tests for formatter output and idempotency.
   - Cover unions, tuples, multiline strings, interpolation, for-loops, tools arrays, and nested objects.
 
-- [ ] Add explicit tests for comment preservation or explicitly documented non-preservation behavior.
+- [x] Add explicit tests for comment preservation or explicitly documented non-preservation behavior.
 
 ## Phase 5 - Shared Input and Secret Binding for `run` and `build`
 
