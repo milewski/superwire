@@ -656,6 +656,50 @@ fn completes_registered_provider_models_inside_model_call() {
 }
 
 #[test]
+fn suppresses_fallback_suggestions_after_terminal_agent_output_reference() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greeting {
+            prompt: "hello"
+            output: string
+        }
+
+        output {
+            greeting: agent.greeting.<cursor>
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn suggests_agent_output_fields_for_nested_agent_output_reference() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greeting {
+            prompt: "hello"
+            output: {
+                message: string
+                language: string
+            }
+        }
+
+        output {
+            greeting: agent.greeting.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "message", "language");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        BuiltinFunctionName::Context,
+        "string",
+        "number"
+    );
+}
+
+#[test]
 fn completes_schema_references_in_type_context() {
     let completion_suggestions = inline_completion_suggestions! {
         schema Person {
