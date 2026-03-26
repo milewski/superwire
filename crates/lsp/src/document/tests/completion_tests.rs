@@ -63,6 +63,20 @@ struct CompletionMatrixCase {
 }
 
 fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    let mut completion_matrix_cases = Vec::new();
+
+    completion_matrix_cases.extend(declaration_completion_matrix_cases());
+    completion_matrix_cases.extend(agent_property_completion_matrix_cases());
+    completion_matrix_cases.extend(inference_completion_matrix_cases());
+    completion_matrix_cases.extend(typed_declaration_completion_matrix_cases());
+    completion_matrix_cases.extend(interpolation_completion_matrix_cases());
+    completion_matrix_cases.extend(for_loop_completion_matrix_cases());
+    completion_matrix_cases.extend(tools_completion_matrix_cases());
+
+    completion_matrix_cases
+}
+
+fn declaration_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
     vec![
         CompletionMatrixCase {
             case_name: "top_level_declares_keywords",
@@ -92,6 +106,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expected_absent_labels: vec![DeclarationKeyword::Provider.as_str(), DeclarationKeyword::Schema.as_str()],
             expects_empty_suggestions: false,
         },
+    ]
+}
+
+fn agent_property_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    vec![
         CompletionMatrixCase {
             case_name: "agent_block_suggests_agent_properties",
             context: CompletionMatrixContext::AgentProperties,
@@ -126,6 +145,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             ],
             expects_empty_suggestions: false,
         },
+    ]
+}
+
+fn inference_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    vec![
         CompletionMatrixCase {
             case_name: "inference_object_suggests_inference_settings",
             context: CompletionMatrixContext::InferenceBlock,
@@ -161,6 +185,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expected_absent_labels: vec![InferenceSetting::Temperature.key(), InferenceSetting::MaxTokens.key()],
             expects_empty_suggestions: false,
         },
+    ]
+}
+
+fn typed_declaration_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    vec![
         CompletionMatrixCase {
             case_name: "typed_declaration_suggests_primitive_types",
             context: CompletionMatrixContext::TypedDeclarations,
@@ -170,10 +199,7 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                     product_name: <cursor>
                 }
             },
-            expected_present_labels: vec![
-                TypeExpression::String.as_completion_label(),
-                TypeExpression::Number.as_completion_label(),
-            ],
+            expected_present_labels: vec![TypeExpression::String.completion_label(), TypeExpression::Number.completion_label()],
             expected_absent_labels: vec![],
             expects_empty_suggestions: false,
         },
@@ -187,12 +213,14 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 }
             },
             expected_present_labels: vec![],
-            expected_absent_labels: vec![
-                TypeExpression::String.as_completion_label(),
-                TypeExpression::Number.as_completion_label(),
-            ],
+            expected_absent_labels: vec![TypeExpression::String.completion_label(), TypeExpression::Number.completion_label()],
             expects_empty_suggestions: true,
         },
+    ]
+}
+
+fn interpolation_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    vec![
         CompletionMatrixCase {
             case_name: "interpolation_suggests_agent_references",
             context: CompletionMatrixContext::Interpolation,
@@ -245,6 +273,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expected_absent_labels: vec!["worker"],
             expects_empty_suggestions: false,
         },
+    ]
+}
+
+fn for_loop_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    vec![
         CompletionMatrixCase {
             case_name: "for_loop_iterable_suggests_iterable_fields",
             context: CompletionMatrixContext::ForLoopIterable,
@@ -279,6 +312,11 @@ fn completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expected_absent_labels: vec!["product_name"],
             expects_empty_suggestions: true,
         },
+    ]
+}
+
+fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
+    vec![
         CompletionMatrixCase {
             case_name: "tools_expression_suggests_tool_keyword",
             context: CompletionMatrixContext::Tools,

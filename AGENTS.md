@@ -146,7 +146,7 @@ every commit so local checks catch failures early.
 Use the following commands:
 
 ```bash
-cargo clippy --fix --allow-dirty --all-targets -- -D clippy::pedantic
+cargo clippy --fix --allow-dirty --all-targets --all-features -- -D warnings
 cargo fmt
 ```
 
