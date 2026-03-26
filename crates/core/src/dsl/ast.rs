@@ -1,4 +1,5 @@
 use std::ops::Range;
+use strsim::levenshtein;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourcePosition {
@@ -331,6 +332,59 @@ impl AgentPropertyName {
             Self::Inference => "inference",
             Self::Tools => "tools",
         }
+    }
+
+    #[must_use]
+    pub fn suggested_from_identifier(identifier: &str) -> Option<Self> {
+        if identifier.is_empty() {
+            return None;
+        }
+
+        let mut closest_property_name = None;
+        let mut closest_distance = usize::MAX;
+
+        for property_name in Self::all() {
+            let candidate_distance = levenshtein(identifier, property_name.as_str());
+
+            if candidate_distance < closest_distance {
+                closest_property_name = Some(property_name);
+                closest_distance = candidate_distance;
+            }
+        }
+
+        if closest_distance > Self::max_typo_distance(identifier) {
+            return None;
+        }
+
+        closest_property_name
+    }
+
+    #[must_use]
+    pub fn rendered_values() -> String {
+        let mut rendered_property_names = Self::all()
+            .into_iter()
+            .map(|property_name| format!("`{}`", property_name.as_str()))
+            .collect::<Vec<_>>();
+
+        let last_property_name = rendered_property_names
+            .pop()
+            .expect("agent property names should include a last value");
+
+        format!("{} or {last_property_name}", rendered_property_names.join(", "))
+    }
+
+    fn max_typo_distance(identifier: &str) -> usize {
+        let identifier_length = identifier.chars().count();
+
+        if identifier_length <= 4 {
+            return 1;
+        }
+
+        if identifier_length <= 8 {
+            return 2;
+        }
+
+        3
     }
 }
 
@@ -728,7 +782,7 @@ pub struct ReferenceAccess {
 
 #[cfg(test)]
 mod tests {
-    use super::{ForClauseKeyword, SourcePosition, SourceSpan};
+    use super::{AgentPropertyName, ForClauseKeyword, SourcePosition, SourceSpan};
 
     #[test]
     fn parses_for_clause_keywords_from_identifier() {
@@ -762,5 +816,23 @@ mod tests {
         };
 
         assert_eq!(source_span.to_byte_range(source_text), Some(6..14));
+    }
+
+    #[test]
+    fn suggests_closest_agent_property_name_for_typos() {
+        assert_eq!(
+            AgentPropertyName::suggested_from_identifier("prom_t"),
+            Some(AgentPropertyName::Prompt)
+        );
+
+        assert_eq!(
+            AgentPropertyName::suggested_from_identifier("modle"),
+            Some(AgentPropertyName::Model)
+        );
+    }
+
+    #[test]
+    fn does_not_suggest_agent_property_name_for_distant_identifier() {
+        assert_eq!(AgentPropertyName::suggested_from_identifier("retries"), None);
     }
 }
