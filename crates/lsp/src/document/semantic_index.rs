@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use engine_ai_core::dsl::{
-    AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, SingletonDeclarationKind,
-    SourceSpan, TypeExpression, TypedField, Workflow,
+    AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, ReferenceKeyword,
+    SingletonDeclarationKind, SourceSpan, TypeExpression, TypedField, Workflow,
 };
 use engine_ai_core::runtime::ProviderDriver;
 use engine_ai_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
@@ -58,6 +58,20 @@ pub(in crate::document) struct NamedSpan {
 }
 
 impl SemanticIndex {
+    pub(super) fn interpolation_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
+        [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+            .into_iter()
+            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+            .map(|reference_keyword| CompletionSuggestion {
+                label: reference_keyword.as_str().to_string(),
+                kind: CompletionKind::Module,
+                detail: "Interpolation reference root".to_string(),
+                documentation: format!("Use `{}.<path>` inside interpolation expressions.", reference_keyword.as_str()),
+                insert_text: format!("{}.", reference_keyword.as_str()),
+            })
+            .collect()
+    }
+
     pub(super) fn context_function_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
         let context_function_label = BuiltinFunctionName::Context.as_str();
 
