@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "mintilify": {
+      "type": "remote",
+      "url": "https://acme-796e8c63.mintlify.app/mcp",
+      "oauth": {}
+    }
+  }
+}
