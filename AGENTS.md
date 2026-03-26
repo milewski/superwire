@@ -140,10 +140,13 @@ This rule is mandatory for all parser, validator, runtime, and LSP completion/ho
 
 ## Code Quality
 
-**Always run formatting and linting after making code changes.** Use the following commands:
+**Always run formatting and linting after making code changes.** Run the same pedantic Clippy profile used by CI before
+every commit so local checks catch failures early.
+
+Use the following commands:
 
 ```bash
-cargo clippy --fix --allow-dirty
+cargo clippy --fix --allow-dirty --all-targets -- -D clippy::pedantic
 cargo fmt
 ```
 

@@ -28,130 +28,32 @@ impl DocumentState {
         }
 
         let completion_scope = self.completion_scope(position);
+        let semantic_index = self.semantic_index_for_completion(position);
 
-        if completion_scope == CompletionScope::TypedDeclarations {
-            if !line_prefix.contains(':') {
-                return Vec::new();
-            }
-
-            let semantic_index = self.semantic_index_for_completion(position);
-            let current_schema_name = semantic_index.schema_name_at_position(position);
-
-            return semantic_index.type_suggestions(&line_prefix, current_schema_name);
+        if let Some(typed_declaration_suggestions) =
+            self.typed_declaration_scope_suggestions(completion_scope, &line_prefix, position, &semantic_index)
+        {
+            return typed_declaration_suggestions;
         }
 
-        let semantic_index = self.semantic_index_for_completion(position);
         let line_has_property_separator = line_prefix.trim_start().contains(':');
         let should_include_builtin_function_suggestions = line_has_property_separator || inside_interpolation_expression;
 
-        if completion_scope == CompletionScope::General
-            && !line_has_property_separator
-            && !inside_interpolation_expression
-            && semantic_index.is_output_position(position)
+        if let Some(non_reference_suggestions) = self.non_reference_suggestions(
+            &semantic_index,
+            &line_prefix,
+            position,
+            completion_scope,
+            line_has_property_separator,
+            inside_interpolation_expression,
+        ) {
+            return non_reference_suggestions;
+        }
+
+        if let Some(reference_suggestions) =
+            self.reference_completion_suggestions(&semantic_index, &line_prefix, position, inside_interpolation_expression)
         {
-            return Vec::new();
-        }
-
-        if completion_scope == CompletionScope::InferenceSettings && line_has_property_separator {
-            if let Some((_, value_prefix)) = line_prefix.trim_start().split_once(':') {
-                let inference_value_context = ValueCompletionContext::from_value_prefix(value_prefix);
-
-                if inference_value_context.inside_string_literal {
-                    return Vec::new();
-                }
-            }
-        }
-
-        if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
-            if let Some(agent_property_value_completion_context) = AgentPropertyValueCompletionContext::from_line_prefix(&line_prefix) {
-                if agent_property_value_completion_context.property_name == AgentExpressionPropertyName::Context {
-                    return semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix);
-                }
-            }
-        }
-
-        if !line_has_property_separator && !inside_interpolation_expression {
-            if DeclarationHeaderCompletionContext::from_line_prefix(&line_prefix).is_some() {
-                return Vec::new();
-            }
-
-            match completion_scope {
-                CompletionScope::InferenceSettings => {
-                    return inference_setting_scope_suggestions(&line_prefix);
-                }
-                CompletionScope::AgentProperties => {
-                    return agent_property_scope_suggestions(&line_prefix);
-                }
-                CompletionScope::General | CompletionScope::TypedDeclarations => {}
-            }
-
-            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
-                return semantic_index.root_declaration_suggestions(&line_prefix);
-            }
-        }
-
-        if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {
-            let model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
-
-            if !model_suggestions.is_empty() {
-                return model_suggestions;
-            }
-        }
-
-        if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, &line_prefix) {
-            return provider_driver_suggestions;
-        }
-
-        if let Some(provider_property_suggestions) = semantic_index.provider_property_suggestions(position, &line_prefix) {
-            return provider_property_suggestions;
-        }
-
-        if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
-            let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(&line_prefix);
-            let reference_suggestions =
-                semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
-            let reference_root_keyword = reference_completion_path.root_keyword();
-            let schema_reference_root = reference_completion_path.is_schema_root();
-
-            if inside_interpolation_expression {
-                let reference_token_has_trailing_separator =
-                    trailing_reference_token(&line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
-                let can_suggest_interpolation_roots =
-                    !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
-
-                match reference_completion_path.root_keyword() {
-                    Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
-                        if can_suggest_interpolation_roots {
-                            return semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier());
-                        }
-
-                        return reference_suggestions;
-                    }
-                    Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
-                        if can_suggest_interpolation_roots {
-                            return semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier());
-                        }
-
-                        return Vec::new();
-                    }
-                }
-            }
-
-            if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
-                return reference_suggestions;
-            }
-
-            if reference_root_keyword == Some(ReferenceKeyword::Tool) {
-                return reference_suggestions;
-            }
-
-            if schema_reference_root || reference_root_keyword.is_some() {
-                return reference_suggestions;
-            }
-
-            if !reference_suggestions.is_empty() {
-                return reference_suggestions;
-            }
+            return reference_suggestions;
         }
 
         if inside_interpolation_expression {
@@ -168,6 +70,172 @@ impl DocumentState {
         }
 
         semantic_index.default_suggestions(should_include_builtin_function_suggestions)
+    }
+
+    fn typed_declaration_scope_suggestions(
+        &self,
+        completion_scope: CompletionScope,
+        line_prefix: &str,
+        position: Position,
+        semantic_index: &SemanticIndex,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if completion_scope != CompletionScope::TypedDeclarations {
+            return None;
+        }
+
+        if !line_prefix.contains(':') {
+            return Some(Vec::new());
+        }
+
+        let current_schema_name = semantic_index.schema_name_at_position(position);
+
+        Some(semantic_index.type_suggestions(line_prefix, current_schema_name))
+    }
+
+    fn non_reference_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+        completion_scope: CompletionScope,
+        line_has_property_separator: bool,
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if completion_scope == CompletionScope::General
+            && !line_has_property_separator
+            && !inside_interpolation_expression
+            && semantic_index.is_output_position(position)
+        {
+            return Some(Vec::new());
+        }
+
+        if completion_scope == CompletionScope::InferenceSettings
+            && line_has_property_separator
+            && self.is_inside_string_literal_property_value(line_prefix)
+        {
+            return Some(Vec::new());
+        }
+
+        if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
+            if let Some(context_property_suggestions) = self.context_property_value_suggestions(semantic_index, line_prefix) {
+                return Some(context_property_suggestions);
+            }
+        }
+
+        if !line_has_property_separator && !inside_interpolation_expression {
+            if DeclarationHeaderCompletionContext::from_line_prefix(line_prefix).is_some() {
+                return Some(Vec::new());
+            }
+
+            match completion_scope {
+                CompletionScope::InferenceSettings => {
+                    return Some(inference_setting_scope_suggestions(line_prefix));
+                }
+                CompletionScope::AgentProperties => {
+                    return Some(agent_property_scope_suggestions(line_prefix));
+                }
+                CompletionScope::General | CompletionScope::TypedDeclarations => {}
+            }
+
+            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
+                return Some(semantic_index.root_declaration_suggestions(line_prefix));
+            }
+        }
+
+        if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(line_prefix) {
+            let model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
+
+            if !model_suggestions.is_empty() {
+                return Some(model_suggestions);
+            }
+        }
+
+        if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, line_prefix) {
+            return Some(provider_driver_suggestions);
+        }
+
+        if let Some(provider_property_suggestions) = semantic_index.provider_property_suggestions(position, line_prefix) {
+            return Some(provider_property_suggestions);
+        }
+
+        None
+    }
+
+    fn is_inside_string_literal_property_value(&self, line_prefix: &str) -> bool {
+        let Some((_, value_prefix)) = line_prefix.trim_start().split_once(':') else {
+            return false;
+        };
+
+        let property_value_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+        property_value_context.inside_string_literal
+    }
+
+    fn context_property_value_suggestions(&self, semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+        let agent_property_value_completion_context = AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)?;
+
+        if agent_property_value_completion_context.property_name != AgentExpressionPropertyName::Context {
+            return None;
+        }
+
+        Some(semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix))
+    }
+
+    fn reference_completion_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
+        let reference_completion_constraint = ReferenceCompletionConstraint::from_line_prefix(line_prefix);
+        let reference_suggestions =
+            semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
+        let reference_root_keyword = reference_completion_path.root_keyword();
+        let schema_reference_root = reference_completion_path.is_schema_root();
+
+        if inside_interpolation_expression {
+            let reference_token_has_trailing_separator =
+                trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
+            let can_suggest_interpolation_roots =
+                !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+
+            match reference_completion_path.root_keyword() {
+                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                    if can_suggest_interpolation_roots {
+                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(reference_suggestions);
+                }
+                Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                    if can_suggest_interpolation_roots {
+                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(Vec::new());
+                }
+            }
+        }
+
+        if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
+            return Some(reference_suggestions);
+        }
+
+        if reference_root_keyword == Some(ReferenceKeyword::Tool) {
+            return Some(reference_suggestions);
+        }
+
+        if schema_reference_root || reference_root_keyword.is_some() {
+            return Some(reference_suggestions);
+        }
+
+        if !reference_suggestions.is_empty() {
+            return Some(reference_suggestions);
+        }
+
+        None
     }
 
     fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
