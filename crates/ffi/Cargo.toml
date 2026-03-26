@@ -17,7 +17,7 @@ php-ext = ["dep:ext-php-rs"]
 [dependencies]
 engine-ai-agent = { path = "../agent" }
 engine-ai-core = { path = "../core" }
-ext-php-rs = { version = "0.14", optional = true }
+ext-php-rs = { version = "=0.15.7", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

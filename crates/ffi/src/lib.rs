@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+#[cfg(feature = "php-ext")]
+const FFI_MODULE_NAME: &str = "engine_ai_ffi";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkflowExecutionRequest {
     pub workflow_file_path: String,
@@ -149,6 +152,13 @@ pub enum FfiError {
     RuntimeNotImplemented,
 }
 
+impl FfiError {
+    #[cfg(feature = "php-ext")]
+    fn php_error_message(&self) -> String {
+        self.to_string()
+    }
+}
+
 pub trait WorkflowExecutor {
     fn execute_workflow(&self, request: WorkflowExecutionRequest) -> Result<WorkflowExecutionResponse, FfiError>;
 }
@@ -172,4 +182,67 @@ impl FfiInterface {
 #[cfg(feature = "php-ext")]
 pub fn php_extension_enabled() -> bool {
     true
+}
+
+#[cfg(feature = "php-ext")]
+mod php_extension {
+    use super::{FfiError, FfiInterface, FFI_MODULE_NAME};
+    use ext_php_rs::{
+        exception::PhpException,
+        prelude::{ModuleBuilder, PhpResult},
+        wrap_function,
+    };
+    use serde_json::json;
+
+    #[derive(Debug)]
+    struct CapabilityInfo {
+        runtime_execution_enabled: bool,
+        host_callback_tools_enabled: bool,
+    }
+
+    impl CapabilityInfo {
+        fn to_json(&self) -> Result<String, FfiError> {
+            serde_json::to_string(&json!({
+                "module": FFI_MODULE_NAME,
+                "version": env!("CARGO_PKG_VERSION"),
+                "capabilities": {
+                    "runtime_execution_enabled": self.runtime_execution_enabled,
+                    "host_callback_tools_enabled": self.host_callback_tools_enabled,
+                },
+            }))
+            .map_err(FfiError::Serialization)
+        }
+    }
+
+    impl FfiError {
+        fn into_php_exception(self) -> PhpException {
+            PhpException::default(self.php_error_message())
+        }
+    }
+
+    #[ext_php_rs::php_function]
+    pub fn engine_ai_execute_workflow(request_json: &str) -> PhpResult<String> {
+        let ffi_interface = FfiInterface;
+
+        ffi_interface
+            .execute_workflow_from_json(request_json)
+            .map_err(FfiError::into_php_exception)
+    }
+
+    #[ext_php_rs::php_function]
+    pub fn engine_ai_module_info() -> PhpResult<String> {
+        let capability_info = CapabilityInfo {
+            runtime_execution_enabled: false,
+            host_callback_tools_enabled: false,
+        };
+
+        capability_info.to_json().map_err(FfiError::into_php_exception)
+    }
+
+    #[ext_php_rs::php_module]
+    pub fn get_module(module_builder: ModuleBuilder) -> ModuleBuilder {
+        module_builder
+            .function(wrap_function!(engine_ai_execute_workflow))
+            .function(wrap_function!(engine_ai_module_info))
+    }
 }
