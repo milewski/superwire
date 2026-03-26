@@ -14,7 +14,7 @@ mod tests;
 pub use error::WorkflowRuntimeError;
 pub use inference::InferenceSetting;
 pub use provider::{ProviderConfig, ProviderDriver};
-pub use runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner};
+pub use runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, AgentToolConfiguration};
 pub use workflow_runtime::{execute_workflow, execute_workflow_without_input, WorkflowRuntime};
 
 #[macro_export]

@@ -15,9 +15,12 @@ default = []
 php-ext = ["dep:ext-php-rs"]
 
 [dependencies]
+async-trait = "0.1"
 engine-ai-agent = { path = "../agent" }
 engine-ai-core = { path = "../core" }
 ext-php-rs = { version = "=0.15.7", optional = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }

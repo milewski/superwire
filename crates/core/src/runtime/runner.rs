@@ -3,7 +3,13 @@ use crate::runtime::provider::ProviderConfig;
 use async_trait::async_trait;
 use engine_ai_agent::{Agent, AgentConfig, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
 use schemars::Schema;
-use serde_json::Value;
+use serde_json::{Map, Value};
+
+#[derive(Debug, Clone)]
+pub struct AgentToolConfiguration {
+    pub tool_name: String,
+    pub bound_arguments: Map<String, Value>,
+}
 
 #[derive(Debug, Clone)]
 pub struct AgentExecutionRequest {
@@ -13,6 +19,7 @@ pub struct AgentExecutionRequest {
     pub prompt: String,
     pub config: AgentConfig,
     pub output_schema: Schema,
+    pub tool_configurations: Vec<AgentToolConfiguration>,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +39,15 @@ pub struct LoopAgentRunner;
 #[async_trait]
 impl AgentRunner for LoopAgentRunner {
     async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        if !request.tool_configurations.is_empty() {
+            return Err(WorkflowRuntimeError::UnsupportedFeature {
+                feature: format!(
+                    "agent `{}` uses `tools`, which is not supported by the default core runner",
+                    request.agent_name
+                ),
+            });
+        }
+
         match &request.provider_config {
             ProviderConfig::OpenAI(openai_provider_config) => {
                 let openai_provider = OpenAIProvider::new_with_base_url(

@@ -4,6 +4,6 @@ pub mod runtime;
 pub mod semantic;
 
 pub use runtime::{
-    execute_workflow, execute_workflow_without_input, AgentExecutionRequest, AgentExecutionResult, AgentRunner, ProviderConfig,
-    ProviderDriver, WorkflowRuntime, WorkflowRuntimeError,
+    execute_workflow, execute_workflow_without_input, AgentExecutionRequest, AgentExecutionResult, AgentRunner, AgentToolConfiguration,
+    ProviderConfig, ProviderDriver, WorkflowRuntime, WorkflowRuntimeError,
 };
