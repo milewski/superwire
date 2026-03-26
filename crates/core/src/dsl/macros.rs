@@ -41,3 +41,12 @@ macro_rules! parse_inline_workflow {
 }
 
 pub use parse_inline_workflow;
+
+#[macro_export]
+macro_rules! workflow_source {
+    ($($workflow_tokens:tt)*) => {
+        stringify!($($workflow_tokens)*)
+    };
+}
+
+pub use workflow_source;

@@ -234,9 +234,26 @@ impl SemanticToolingSnapshot {
             Err(parse_error) => {
                 let parse_error_span = parse_error.span();
 
+                if let Some(snapshot_from_prefix) = Self::from_prefix_before_parse_error(source_text, parse_error_span) {
+                    return snapshot_from_prefix;
+                }
+
                 TolerantSourceExtractor::new(source_text).into_snapshot(parse_error_span)
             }
         }
+    }
+
+    fn from_prefix_before_parse_error(source_text: &str, parse_error_span: Option<SourceSpan>) -> Option<Self> {
+        let parse_error_span = parse_error_span?;
+        let parse_error_byte_offset = parse_error_span.start.to_byte_offset(source_text)?;
+        let source_prefix = source_text.get(..parse_error_byte_offset)?;
+        let parsed_prefix_workflow = parse_workflow(source_prefix).ok()?;
+        let mut parsed_prefix_snapshot = Self::from_workflow(&parsed_prefix_workflow);
+
+        parsed_prefix_snapshot.construction = ToolingSnapshotConstruction::TolerantSourceFallback;
+        parsed_prefix_snapshot.parse_error_span = Some(parse_error_span);
+
+        Some(parsed_prefix_snapshot)
     }
 
     #[must_use]
@@ -750,12 +767,12 @@ fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpr
 #[cfg(test)]
 mod tests {
     use super::{SemanticToolingSnapshot, ToolingReferencePath, ToolingSnapshotConstruction, ToolingSymbolCategory};
-    use crate::dsl::{parse_workflow, SourcePosition, TypeExpression};
+    use crate::dsl::{parse_workflow, TypeExpression};
+    use crate::{parse_inline_workflow, workflow_source};
 
     #[test]
     fn snapshot_indexes_declaration_spans_and_position_lookups() {
-        let workflow = parse_workflow(
-            r#"
+        let workflow = parse_inline_workflow! {
             provider openai {
                 driver: "openai"
                 models: ["gpt-4o"]
@@ -774,9 +791,7 @@ mod tests {
             output {
                 value: agent.writer.title
             }
-            "#,
-        )
-        .expect("workflow should parse");
+        };
 
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(&workflow);
         let provider_span = tooling_snapshot
@@ -796,8 +811,7 @@ mod tests {
 
     #[test]
     fn snapshot_resolves_reference_path_types_for_input_agent_and_schema_paths() {
-        let workflow = parse_workflow(
-            r#"
+        let workflow = parse_inline_workflow! {
             input {
                 topic: string
             }
@@ -815,9 +829,7 @@ mod tests {
             output {
                 value: agent.writer.title
             }
-            "#,
-        )
-        .expect("workflow should parse");
+        };
 
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(&workflow);
 
@@ -841,7 +853,7 @@ mod tests {
 
     #[test]
     fn tolerant_source_snapshot_recovers_symbols_and_singleton_fields_after_parse_failure() {
-        let broken_source = r#"
+        let broken_source = workflow_source! {
             provider openai {
                 driver: "openai"
             }
@@ -860,20 +872,23 @@ mod tests {
             }
 
             @
-        "#;
+        };
 
         let expected_parse_error_span = parse_workflow(broken_source)
             .expect_err("source should fail parsing")
             .span()
             .expect("parse error should expose span");
+
         let tooling_snapshot = SemanticToolingSnapshot::from_source_tolerant(broken_source);
 
         assert_eq!(tooling_snapshot.construction(), ToolingSnapshotConstruction::TolerantSourceFallback);
         assert_eq!(tooling_snapshot.parse_error_span(), Some(expected_parse_error_span));
         assert!(tooling_snapshot.symbol_span(ToolingSymbolCategory::Provider, "openai").is_some());
+
         let schema_span = tooling_snapshot
             .symbol_span(ToolingSymbolCategory::Schema, "Report")
             .expect("schema symbol should exist");
+
         assert!(tooling_snapshot.symbol_span(ToolingSymbolCategory::Agent, "writer").is_some());
         assert!(schema_span.end.line > schema_span.start.line);
 
@@ -881,11 +896,15 @@ mod tests {
 
         assert_eq!(topic_type, Some(TypeExpression::String));
 
-        let schema_name = tooling_snapshot.schema_name_at_position(SourcePosition { line: 11, column: 20 });
+        let schema_name = tooling_snapshot.schema_name_at_position(schema_span.start);
 
         assert_eq!(schema_name, Some("Report"));
 
-        let provider_name = tooling_snapshot.provider_name_at_position(SourcePosition { line: 2, column: 22 });
+        let provider_span = tooling_snapshot
+            .symbol_span(ToolingSymbolCategory::Provider, "openai")
+            .expect("provider symbol should exist");
+
+        let provider_name = tooling_snapshot.provider_name_at_position(provider_span.start);
 
         assert_eq!(provider_name, Some("openai"));
     }
