@@ -265,8 +265,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{compile_workflow_pipeline, WorkflowPipeline, WorkflowPipelineInput};
-    use crate::parse_inline_workflow;
     use crate::runtime::error::WorkflowRuntimeError;
+    use crate::{parse_inline_workflow, workflow_source};
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
     use std::sync::LazyLock;
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn validation_stage_renders_source_snippet_with_arrow() {
-        let workflow_source = r#"
+        let workflow_source = workflow_source! {
             agent greeting {
                 prompt: "first"
             }
@@ -477,7 +477,7 @@ mod tests {
             agent greeting {
                 prompt: "second"
             }
-        "#;
+        };
 
         let validate_result = WorkflowPipeline::parse(WorkflowPipelineInput::Source(workflow_source))
             .expect("parse stage should succeed")
@@ -495,7 +495,12 @@ mod tests {
 
     #[test]
     fn parse_stage_renders_source_snippet_with_arrow() {
-        let broken_workflow_source = "agent greeting {\n    prompt: \"hello\"\n}\n@\n";
+        let broken_workflow_source = workflow_source! {
+            agent greeting {
+                prompt: "hello"
+            }
+            @
+        };
 
         let parse_result = WorkflowPipeline::parse(WorkflowPipelineInput::Source(broken_workflow_source));
 
@@ -513,12 +518,12 @@ mod tests {
 
     #[test]
     fn parse_stage_formats_expected_agent_properties_without_custom_property() {
-        let broken_workflow_source = r#"
+        let broken_workflow_source = workflow_source! {
             agent greeting {
                 a prompt: "hello"
                 output: string
             }
-        "#;
+        };
 
         let parse_result = WorkflowPipeline::parse(WorkflowPipelineInput::Source(broken_workflow_source));
 

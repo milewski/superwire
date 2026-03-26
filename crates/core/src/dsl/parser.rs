@@ -279,6 +279,7 @@ mod tests {
         AgentProperty, CallArgument, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
         TypeExpression,
     };
+    use crate::workflow_source;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -536,14 +537,14 @@ mod tests {
 
     #[test]
     fn rejects_single_brace_interpolation_in_string_literals() {
-        let parse_result = parse_workflow(
-            r#"
+        let workflow_source = workflow_source! {
             agent interpolation_test {
                 prompt: "A { agent.alpha.summary }"
                 output: string
             }
-            "#,
-        );
+        };
+
+        let parse_result = parse_workflow(workflow_source);
 
         assert!(parse_result.is_err());
     }
