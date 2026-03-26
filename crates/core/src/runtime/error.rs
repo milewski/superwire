@@ -44,6 +44,12 @@ pub enum WorkflowRuntimeError {
     #[error("workflow input value does not match declared input type: {message}")]
     InputValueMismatch { message: String },
 
+    #[error("workflow secret type mismatch: expected `{expected}`, found `{found}`")]
+    SecretTypeMismatch { expected: String, found: String },
+
+    #[error("workflow secret value does not match declared secrets type: {message}")]
+    SecretValueMismatch { message: String },
+
     #[error("agent `{agent_name}` output does not match declared output type: {message}")]
     AgentOutputTypeMismatch { agent_name: String, message: String },
 

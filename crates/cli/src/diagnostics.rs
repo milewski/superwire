@@ -10,6 +10,9 @@ pub enum CommandError {
     #[error("internal error: {message}")]
     Internal { message: String },
 
+    #[error("runtime error: {message}")]
+    Runtime { message: String },
+
     #[error("{command_name} is not implemented yet")]
     NotImplemented {
         command_name: &'static str,
@@ -33,10 +36,15 @@ impl CommandError {
         Self::Internal { message: message.into() }
     }
 
+    pub fn runtime(message: impl Into<String>) -> Self {
+        Self::Runtime { message: message.into() }
+    }
+
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Self::InvalidWorkflow { .. } => ExitCode::InvalidWorkflow,
             Self::Internal { .. } => ExitCode::InternalError,
+            Self::Runtime { .. } => ExitCode::RuntimeFailure,
             Self::NotImplemented { category, .. } => category.exit_code(),
         }
     }

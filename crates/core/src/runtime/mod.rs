@@ -15,7 +15,9 @@ pub use error::WorkflowRuntimeError;
 pub use inference::InferenceSetting;
 pub use provider::{ProviderConfig, ProviderDriver};
 pub use runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner};
-pub use workflow_runtime::{execute_workflow, execute_workflow_without_input, WorkflowRuntime};
+pub use workflow_runtime::{
+    execute_workflow, execute_workflow_dynamic, execute_workflow_without_input, DynamicWorkflowRuntime, WorkflowRuntime,
+};
 
 #[macro_export]
 macro_rules! try_workflow {

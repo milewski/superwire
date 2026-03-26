@@ -183,38 +183,38 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Phase 5 - Shared Input and Secret Binding for `run` and `build`
 
-- [ ] Add input coercion from CLI values into `WorkflowType`.
+- [x] Add input coercion from CLI values into `WorkflowType`.
   - Scalars should parse directly.
   - Complex shapes should use JSON-based input handling.
 
-- [ ] Define automatic flag mapping from workflow `input` fields.
+- [x] Define automatic flag mapping from workflow `input` fields.
   - Example: `input { topic: string }` becomes `--topic <string>`.
 
-- [ ] Define behavior for booleans, arrays, tuples, objects, unions, and null-capable fields.
+- [x] Define behavior for booleans, arrays, tuples, objects, unions, and null-capable fields.
   - Recommendation: use JSON input for non-scalar shapes.
 
-- [ ] Add a secret resolution layer shared by host CLI and generated executables.
+- [x] Add a secret resolution layer shared by host CLI and generated executables.
   - Recommendation: merge `--secret name=value` flags with `ENGINE_AI_SECRET_<NAME>` environment variables.
 
-- [ ] Decide whether provider properties may reference secrets in v1.
+- [x] Decide whether provider properties may reference secrets in v1.
   - If unsupported, fail early with a targeted diagnostic or runtime message.
 
 ## Phase 6 - `run` Command
 
-- [ ] Implement `run` on top of the shared dynamic compile artifact.
+- [x] Implement `run` on top of the shared dynamic compile artifact.
 
-- [ ] Reuse automatic input binding from Phase 5.
+- [x] Reuse automatic input binding from Phase 5.
 
-- [ ] Inject resolved secrets into runtime evaluation.
+- [x] Inject resolved secrets into runtime evaluation.
   - This may require extending runtime and provider configuration handling in `engine-ai-core`.
 
-- [ ] Print workflow output as formatted JSON to stdout.
+- [x] Print workflow output as formatted JSON to stdout.
 
-- [ ] Surface runtime errors with clear context and non-zero exit status.
+- [x] Surface runtime errors with clear context and non-zero exit status.
 
-- [ ] Add integration tests for workflows with no input and workflows with typed input.
+- [x] Add integration tests for workflows with no input and workflows with typed input.
 
-- [ ] Add explicit tests for unsupported `tools` workflows.
+- [x] Add explicit tests for unsupported `tools` workflows.
   - Expected v1 behavior: fail clearly and intentionally.
 
 ## Phase 7 - `build` Command
@@ -288,7 +288,7 @@ These findings come from the current `crates/core` implementation and should sha
 
 ## Verification Commands
 
-- [ ] `cargo test -p engine-ai-core`
-- [ ] `cargo test -p engine-ai-cli`
-- [ ] `cargo clippy --fix --allow-dirty --all-targets --all-features -- -D warnings`
-- [ ] `cargo fmt`
+- [x] `cargo test -p engine-ai-core`
+- [x] `cargo test -p engine-ai-cli`
+- [x] `cargo clippy --fix --allow-dirty --all-targets --all-features -- -D warnings`
+- [x] `cargo fmt`

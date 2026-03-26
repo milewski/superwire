@@ -1,5 +1,7 @@
 use crate::parse_inline_workflow;
-use crate::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntime, WorkflowRuntimeError};
+use crate::runtime::{
+    AgentExecutionRequest, AgentExecutionResult, AgentRunner, DynamicWorkflowRuntime, WorkflowRuntime, WorkflowRuntimeError,
+};
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -600,4 +602,51 @@ async fn executes_for_loop_agent_and_returns_array_output() {
         .expect("workflow should run successfully");
 
     assert_eq!(output, Output { values: vec![1, 2, 3] });
+}
+
+#[tokio::test]
+async fn dynamic_runtime_executes_with_valid_secrets_map() {
+    let workflow = parse_inline_workflow! {
+        secrets {
+            api_key: string
+        }
+
+        output {
+            status: "ok"
+        }
+    };
+
+    let runtime = DynamicWorkflowRuntime::new(workflow).expect("dynamic runtime should compile");
+    let workflow_output = runtime
+        .run(
+            Value::Object(serde_json::Map::new()),
+            serde_json::Map::from_iter([(String::from("api_key"), json!("secret-token"))]),
+        )
+        .await
+        .expect("dynamic runtime execution should succeed");
+
+    assert_eq!(
+        workflow_output,
+        json!({
+            "status": "ok",
+        })
+    );
+}
+
+#[tokio::test]
+async fn dynamic_runtime_rejects_invalid_secret_values() {
+    let workflow = parse_inline_workflow! {
+        secrets {
+            api_key: string
+        }
+
+        output {
+            status: "ok"
+        }
+    };
+
+    let runtime = DynamicWorkflowRuntime::new(workflow).expect("dynamic runtime should compile");
+    let execution_result = runtime.run(Value::Object(serde_json::Map::new()), serde_json::Map::new()).await;
+
+    assert!(matches!(execution_result, Err(WorkflowRuntimeError::SecretValueMismatch { .. })));
 }

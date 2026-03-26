@@ -84,6 +84,93 @@ impl WorkflowType {
             }
         }
     }
+
+    pub fn parse_cli_argument_value(&self, raw_argument_value: Option<&str>, argument_name: &str) -> Result<Value, String> {
+        let Some(raw_argument_value) = raw_argument_value else {
+            if self.supports_boolean_flag_shorthand() {
+                return Ok(Value::Bool(true));
+            }
+
+            return Err(format!("missing value for `--{argument_name}`"));
+        };
+
+        if let Some(parsed_scalar_value) = self.try_parse_scalar_cli_argument_value(raw_argument_value) {
+            if validate_value_against_type(&parsed_scalar_value, self).is_ok() {
+                return Ok(parsed_scalar_value);
+            }
+        }
+
+        let parsed_json_value = serde_json::from_str::<Value>(raw_argument_value)
+            .map_err(|error| format!("`--{argument_name}` must be a JSON value: {error}"))?;
+
+        validate_value_against_type(&parsed_json_value, self)
+            .map_err(|validation_error| format!("`--{argument_name}` value is invalid: {validation_error}"))?;
+
+        Ok(parsed_json_value)
+    }
+
+    fn supports_boolean_flag_shorthand(&self) -> bool {
+        match self {
+            Self::Boolean => true,
+            Self::Union(union_members) => union_members.iter().any(WorkflowType::supports_boolean_flag_shorthand),
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Null
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => false,
+        }
+    }
+
+    fn try_parse_scalar_cli_argument_value(&self, raw_argument_value: &str) -> Option<Value> {
+        match self {
+            Self::String | Self::StringEnum(_) => Some(Value::String(raw_argument_value.to_string())),
+            Self::Integer => {
+                if let Ok(parsed_integer) = raw_argument_value.parse::<i64>() {
+                    return Some(Value::Number(Number::from(parsed_integer)));
+                }
+
+                if let Ok(parsed_integer) = raw_argument_value.parse::<u64>() {
+                    return Some(Value::Number(Number::from(parsed_integer)));
+                }
+
+                None
+            }
+            Self::Float => {
+                let Ok(parsed_float) = raw_argument_value.parse::<f64>() else {
+                    return None;
+                };
+
+                Number::from_f64(parsed_float).map(Value::Number)
+            }
+            Self::Boolean => match raw_argument_value {
+                "true" => Some(Value::Bool(true)),
+                "false" => Some(Value::Bool(false)),
+                _ => None,
+            },
+            Self::Null => {
+                if raw_argument_value == "null" {
+                    return Some(Value::Null);
+                }
+
+                None
+            }
+            Self::Union(union_members) => union_members
+                .iter()
+                .find_map(|union_member| union_member.try_parse_scalar_cli_argument_value(raw_argument_value)),
+            Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => None,
+        }
+    }
 }
 
 impl Display for WorkflowType {

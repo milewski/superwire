@@ -13,4 +13,6 @@ workspace = true
 [dependencies]
 clap = { workspace = true }
 thiserror = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
 engine-ai-core = { path = "../core" }
