@@ -3,23 +3,12 @@ name = "ffi"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["rlib", "cdylib"]
-
-[features]
-default = []
-js = ["dep:napi", "dep:napi-derive"]
-
 [lints]
 workspace = true
 
 [dependencies]
-async-trait = "0.1"
-engine-ai-core = { path = "../core" }
-napi = { version = "2", default-features = false, features = ["napi8", "tokio_rt"], optional = true }
-napi-derive = { version = "2", optional = true }
+engine-core = { package = "engine-ai-core", path = "../core" }
+engine-agent = { package = "engine-ai-agent", path = "../agent" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-[build-dependencies]
-napi-build = "2"
+thiserror = { workspace = true }
