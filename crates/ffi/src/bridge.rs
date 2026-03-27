@@ -1,25 +1,17 @@
-use std::marker::PhantomData;
-
-use engine_agent::AgentError;
-use engine_core::WorkflowRuntimeError;
-
 use crate::error::FfiError;
-use crate::types::{FfiInvocation, FfiResult};
+use crate::types::{FfiRequestEnvelope, FfiResponseEnvelope};
 
 #[derive(Debug, Default)]
-pub struct EngineFfi {
-    workflow_runtime_marker: PhantomData<WorkflowRuntimeError>,
-    agent_marker: PhantomData<AgentError>,
-}
+pub struct EngineFfi;
 
 impl EngineFfi {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
-    pub fn invoke(&self, invocation: FfiInvocation) -> Result<FfiResult, FfiError> {
-        let operation = invocation.operation;
+    pub fn invoke(&self, request_envelope: FfiRequestEnvelope) -> Result<FfiResponseEnvelope, FfiError> {
+        let operation = request_envelope.operation();
 
         Err(FfiError::NotImplemented { operation })
     }
