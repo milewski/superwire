@@ -7,8 +7,6 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-engine-core = { package = "engine-ai-core", path = "../core" }
-engine-agent = { package = "engine-ai-agent", path = "../agent" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
