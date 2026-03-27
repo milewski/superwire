@@ -14,6 +14,20 @@ pub enum FfiErrorCode {
     ToolInvocationFailed,
 }
 
+impl FfiErrorCode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidRequest => "invalid_request",
+            Self::WorkflowParseFailed => "workflow_parse_failed",
+            Self::WorkflowValidationFailed => "workflow_validation_failed",
+            Self::WorkflowExecutionFailed => "workflow_execution_failed",
+            Self::SerializationFailed => "serialization_failed",
+            Self::ToolInvocationFailed => "tool_invocation_failed",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FfiError {
     pub code: FfiErrorCode,
@@ -74,6 +88,27 @@ impl FfiError {
             | WorkflowRuntimeError::AgentExecutionFailed { agent_name: _, source: _ }
             | WorkflowRuntimeError::Other { message: _ } => FfiErrorCode::WorkflowExecutionFailed,
         }
+    }
+
+    #[must_use]
+    pub fn to_stable_json_string(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|serialization_error| {
+            serde_json::json!({
+                "code": FfiErrorCode::SerializationFailed.as_str(),
+                "message": "Failed to serialize ffi error",
+                "details": {
+                    "original_error_code": self.code.as_str(),
+                    "source_error": serialization_error.to_string(),
+                },
+            })
+            .to_string()
+        })
+    }
+
+    #[cfg(feature = "js")]
+    #[must_use]
+    pub fn into_napi_error(self) -> napi::Error {
+        napi::Error::new(napi::Status::GenericFailure, self.to_stable_json_string())
     }
 }
 
