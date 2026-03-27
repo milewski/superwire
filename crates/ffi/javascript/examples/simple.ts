@@ -24,12 +24,25 @@ function runSimpleExample(): void {
     {
       execution_id: "typescript-example-execution",
       workflow_source: `
+        provider openai_local {
+          driver: "openai"
+          endpoint: "http://169.254.83.107:1234/v1"
+          api_key: "local-api-key"
+          models: ["qwen3.5-9b"]
+        }
+
         input {
           name: string
         }
 
+        agent greeter {
+          model: openai_local("qwen3.5-9b")
+          prompt: "Tell me a joke"
+          output: string
+        }
+
         output {
-          greeting: input.name
+          greeting: agent.greeter
         }
       `,
       input: {
