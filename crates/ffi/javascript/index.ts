@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { DataType, close, load, open, restorePointer, wrapPointer } from "ffi-rs";
@@ -198,7 +199,23 @@ function resolveDefaultLibraryPath(): string {
     return path.resolve(process.env.ENGINE_AI_FFI_LIBRARY_PATH);
   }
 
-  return path.resolve(__dirname, "..", "native", libraryFileNameForCurrentPlatform());
+  const nativeLibraryFileName = libraryFileNameForCurrentPlatform();
+  const candidatePaths = [
+    path.resolve(__dirname, "native", nativeLibraryFileName),
+    path.resolve(__dirname, "..", "native", nativeLibraryFileName),
+    path.resolve(__dirname, "..", "..", "..", "target", "release", nativeLibraryFileName),
+    path.resolve(__dirname, "..", "..", "..", "..", "target", "release", nativeLibraryFileName),
+  ];
+
+  for (const candidatePath of candidatePaths) {
+    if (fs.existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  throw new Error(
+    `Unable to locate native ffi library (${nativeLibraryFileName}). Tried: ${candidatePaths.join(", ")}. Run npm run build:native first.`,
+  );
 }
 
 function libraryFileNameForCurrentPlatform(): string {
