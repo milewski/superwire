@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::error::FfiError;
+
 pub const FFI_PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +71,32 @@ impl FfiResponseEnvelope {
     #[must_use]
     pub fn operation(&self) -> FfiOperation {
         self.response.operation()
+    }
+
+    #[must_use]
+    pub fn from_operation_error(operation: FfiOperation, request_id: Option<String>, error: &FfiError) -> Self {
+        let response = match operation {
+            FfiOperation::ExecuteWorkflow => FfiResponse::ExecuteWorkflow(WorkflowExecutionEnvelope::Failed {
+                error: WorkflowExecutionError {
+                    code: WorkflowExecutionErrorCode::Internal,
+                    message: error.to_string(),
+                    details: None,
+                },
+            }),
+            FfiOperation::InvokeTool => FfiResponse::InvokeTool(ToolInvocationEnvelope::Failed {
+                error: ToolInvocationError {
+                    code: ToolInvocationErrorCode::Internal,
+                    message: error.to_string(),
+                    details: None,
+                },
+            }),
+        };
+
+        Self {
+            protocol_version: FFI_PROTOCOL_VERSION,
+            request_id,
+            response,
+        }
     }
 }
 
