@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use engine_ai_agent::{
-    AgentError, Context, Executable, LoopExecutor, OllamaProvider, OpenAIProvider, Provider, RuntimeTool, ToolDefinition, ToolError,
-};
+use engine_ai_agent::{Agent, AgentError, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider, ToolError};
 use engine_ai_core::dsl::parse_workflow;
 use engine_ai_core::{
     AgentExecutionRequest, AgentExecutionResult, AgentRunner, AgentToolConfiguration, ProviderConfig, WorkflowRuntime, WorkflowRuntimeError,
@@ -456,12 +454,12 @@ struct RuntimeToolRegistry {
 }
 
 impl RuntimeToolRegistry {
-    fn runtime_tools_for_request(
+    fn dynamic_tools_for_request(
         &self,
         tool_configurations: &[AgentToolConfiguration],
         tool_invocation_binding: Option<SharedToolInvocationBinding>,
-    ) -> Result<Vec<Arc<dyn RuntimeTool>>, WorkflowRuntimeError> {
-        let mut runtime_tools: Vec<Arc<dyn RuntimeTool>> = Vec::new();
+    ) -> Result<Vec<DynamicTool>, WorkflowRuntimeError> {
+        let mut dynamic_tools = Vec::new();
 
         for agent_tool_configuration in tool_configurations {
             let Some(runtime_tool_definition) = self.definitions_by_name.get(&agent_tool_configuration.tool_name) else {
@@ -473,12 +471,12 @@ impl RuntimeToolRegistry {
                 });
             };
 
-            runtime_tools.push(
-                runtime_tool_definition.runtime_tool(agent_tool_configuration.bound_arguments.clone(), tool_invocation_binding.clone())?,
+            dynamic_tools.push(
+                runtime_tool_definition.dynamic_tool(agent_tool_configuration.bound_arguments.clone(), tool_invocation_binding.clone())?,
             );
         }
 
-        Ok(runtime_tools)
+        Ok(dynamic_tools)
     }
 }
 
@@ -491,11 +489,11 @@ struct RuntimeToolDefinition {
 }
 
 impl RuntimeToolDefinition {
-    fn runtime_tool(
+    fn dynamic_tool(
         &self,
         bound_arguments: Map<String, Value>,
         tool_invocation_binding: Option<SharedToolInvocationBinding>,
-    ) -> Result<Arc<dyn RuntimeTool>, WorkflowRuntimeError> {
+    ) -> Result<DynamicTool, WorkflowRuntimeError> {
         match self.execution_contract {
             CustomToolExecutionContract::HostCallback => {
                 let Some(tool_invocation_binding) = tool_invocation_binding else {
@@ -507,39 +505,67 @@ impl RuntimeToolDefinition {
                     });
                 };
 
-                Ok(Arc::new(HostCallbackRuntimeTool {
-                    name: self.name.clone(),
-                    description: self.description.clone(),
-                    parameters_schema: self.parameters_schema.clone(),
+                let tool_executor = HostCallbackDynamicToolExecutor {
+                    tool_name: self.name.clone(),
                     bound_arguments,
                     tool_invocation_binding,
-                }))
+                };
+
+                let tool_name = self.name.clone();
+                let tool_description = self.description.clone();
+                let tool_parameters_schema = self.parameters_schema.clone();
+
+                Ok(DynamicTool::from_parts(
+                    tool_name,
+                    tool_description,
+                    tool_parameters_schema,
+                    move |tool_input| {
+                        let tool_executor = tool_executor.clone();
+
+                        async move { tool_executor.execute(tool_input) }
+                    },
+                ))
             }
         }
     }
 }
 
 #[derive(Clone)]
-struct HostCallbackRuntimeTool {
-    name: String,
-    description: String,
-    parameters_schema: Schema,
+struct HostCallbackDynamicToolExecutor {
+    tool_name: String,
     bound_arguments: Map<String, Value>,
     tool_invocation_binding: SharedToolInvocationBinding,
 }
 
-impl Debug for HostCallbackRuntimeTool {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("HostCallbackRuntimeTool")
-            .field("name", &self.name)
-            .field("description", &self.description)
-            .field("bound_arguments", &self.bound_arguments)
-            .finish_non_exhaustive()
-    }
-}
+impl HostCallbackDynamicToolExecutor {
+    fn execute(&self, tool_input: Value) -> Result<Value, ToolError> {
+        let merged_tool_input = self.merged_tool_input(tool_input)?;
+        let tool_invocation_request = ToolInvocationRequest {
+            tool_name: self.tool_name.clone(),
+            tool_input: merged_tool_input,
+        };
 
-impl HostCallbackRuntimeTool {
+        let tool_invocation_response = self
+            .tool_invocation_binding
+            .invoke_tool(tool_invocation_request)
+            .map_err(|error| ToolError::new(format!("host callback failed for tool `{}`: {error}", self.tool_name)))?;
+
+        match tool_invocation_response.result {
+            ToolInvocationResult::Succeeded { tool_output } => Ok(tool_output),
+            ToolInvocationResult::Failed { error } => {
+                let mut tool_error = ToolError::new(format!("tool `{}` failed: {}", self.tool_name, error.message));
+
+                tool_error = tool_error.with_context("code", serde_json::json!(error.code));
+
+                if let Some(details_value) = error.details {
+                    tool_error = tool_error.with_context("details", details_value);
+                }
+
+                Err(tool_error)
+            }
+        }
+    }
+
     fn merged_tool_input(&self, tool_input: Value) -> Result<Value, ToolError> {
         if self.bound_arguments.is_empty() {
             return Ok(tool_input);
@@ -551,7 +577,7 @@ impl HostCallbackRuntimeTool {
             unsupported_value => {
                 return Err(ToolError::new(format!(
                     "tool `{}` expects object arguments when workflow binds named tool arguments, received `{}`",
-                    self.name, unsupported_value
+                    self.tool_name, unsupported_value
                 )));
             }
         };
@@ -561,45 +587,6 @@ impl HostCallbackRuntimeTool {
         }
 
         Ok(Value::Object(merged_arguments))
-    }
-}
-
-#[async_trait]
-impl RuntimeTool for HostCallbackRuntimeTool {
-    fn definition(&self) -> Result<ToolDefinition, ToolError> {
-        Ok(ToolDefinition {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            parameters_schema: self.parameters_schema.clone(),
-        })
-    }
-
-    async fn execute(&self, input: Value) -> Result<Value, ToolError> {
-        let tool_input = self.merged_tool_input(input)?;
-        let tool_invocation_request = ToolInvocationRequest {
-            tool_name: self.name.clone(),
-            tool_input,
-        };
-
-        let tool_invocation_response = self
-            .tool_invocation_binding
-            .invoke_tool(tool_invocation_request)
-            .map_err(|error| ToolError::new(format!("host callback failed for tool `{}`: {error}", self.name)))?;
-
-        match tool_invocation_response.result {
-            ToolInvocationResult::Succeeded { tool_output } => Ok(tool_output),
-            ToolInvocationResult::Failed { error } => {
-                let mut tool_error = ToolError::new(format!("tool `{}` failed: {}", self.name, error.message));
-
-                tool_error = tool_error.with_context("code", serde_json::json!(error.code));
-
-                if let Some(details_value) = error.details {
-                    tool_error = tool_error.with_context("details", details_value);
-                }
-
-                Err(tool_error)
-            }
-        }
     }
 }
 
@@ -618,9 +605,9 @@ impl FfiWorkflowRunner {
     where
         ProviderType: Provider + Send + Sync,
     {
-        let runtime_tools = self
+        let dynamic_tools = self
             .runtime_tool_registry
-            .runtime_tools_for_request(&request.tool_configurations, self.tool_invocation_binding.clone())?;
+            .dynamic_tools_for_request(&request.tool_configurations, self.tool_invocation_binding.clone())?;
 
         let executor = LoopExecutor::<ProviderType, Value>::new()
             .map_err(|error| WorkflowRuntimeError::Other {
@@ -631,27 +618,28 @@ impl FfiWorkflowRunner {
                 message: format!("failed to configure finalize schema for agent `{}`: {error}", request.agent_name),
             })?;
 
-        let mut execution_context = Context::new();
-        execution_context.add_user_message(request.prompt.clone());
+        let mut agent = Agent::new_without_registered_tools(executor, provider).with_config(request.config.clone());
 
-        let execution_output = executor
-            .execute(&mut execution_context, &provider, &runtime_tools, &request.config)
+        for dynamic_tool in dynamic_tools {
+            agent = agent.with_dynamic_tool(dynamic_tool);
+        }
+
+        let agent_run_result = agent
+            .run(request.prompt.clone())
             .await
             .map_err(|error| WorkflowRuntimeError::AgentExecutionFailed {
                 agent_name: request.agent_name.clone(),
-                source: Box::new(AgentError::ExecutionFailed {
-                    error,
-                    context: execution_context.clone(),
-                }),
+                source: Box::new(error),
             })?;
 
-        let serialized_context = serde_json::to_value(execution_context).map_err(|error| WorkflowRuntimeError::SerializationFailed {
-            context: format!("context for agent `{}`", request.agent_name),
-            source: error,
-        })?;
+        let serialized_context =
+            serde_json::to_value(agent_run_result.context).map_err(|error| WorkflowRuntimeError::SerializationFailed {
+                context: format!("context for agent `{}`", request.agent_name),
+                source: error,
+            })?;
 
         Ok(AgentExecutionResult {
-            output: execution_output,
+            output: agent_run_result.output,
             context: serialized_context,
         })
     }
