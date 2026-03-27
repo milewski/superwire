@@ -15,10 +15,6 @@ struct QuoteTool;
 impl Tool for QuoteTool {
     type Input = QuoteToolInput;
 
-    fn name(&self) -> &str {
-        "random_quote"
-    }
-
     fn description(&self) -> &str {
         "Return one random quote from a small hardcoded list."
     }
@@ -46,10 +42,6 @@ struct RandomNumberTool;
 #[async_trait]
 impl Tool for RandomNumberTool {
     type Input = RandomNumberToolInput;
-
-    fn name(&self) -> &str {
-        "random_number"
-    }
 
     fn description(&self) -> &str {
         "Return a random integer, optionally within a provided range."

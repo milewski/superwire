@@ -51,10 +51,6 @@ macro_rules! tool {
             impl $crate::tool::Tool for $name {
                 type Input = [<$name Input>];
 
-                fn name(&self) -> &'static str {
-                    stringify!($name)
-                }
-
                 fn description(&self) -> &'static str {
                     concat!($(stringify!($meta), " "),*)
                 }
