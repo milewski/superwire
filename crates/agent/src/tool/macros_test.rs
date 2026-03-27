@@ -84,4 +84,13 @@ mod tests {
         assert_eq!(value["expression"], "2 + 2");
         assert_eq!(value["result"], 42);
     }
+
+    #[test]
+    fn test_tool_macro_registers_tools_in_inventory() {
+        let has_registered_search_tool = crate::tool::registered_runtime_tools()
+            .into_iter()
+            .any(|runtime_tool| runtime_tool.definition().expect("tool definition should be available").name == "SearchTool");
+
+        assert!(has_registered_search_tool);
+    }
 }
