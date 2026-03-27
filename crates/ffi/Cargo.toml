@@ -10,6 +10,9 @@ crate-type = ["rlib", "cdylib"]
 workspace = true
 
 [dependencies]
+engine-ai-core = { path = "../core" }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }

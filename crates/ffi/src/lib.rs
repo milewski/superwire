@@ -7,7 +7,7 @@ use std::os::raw::c_char;
 
 use serde::Serialize;
 
-pub use bridge::EngineFfi;
+pub use bridge::{CustomToolHandler, EngineFfi};
 pub use error::FfiError;
 pub use types::{
     CustomToolDeclaration, FfiOperation, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ToolInvocationEnvelope,
