@@ -1,0 +1,24 @@
+{
+  "name": "@engine-ai/ffi-js-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JavaScript bridge for engine-ai Rust FFI runtime",
+  "main": "./index.js",
+  "type": "commonjs",
+  "files": [
+    "index.js",
+    "scripts/build-native.js",
+    "native/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build:native": "node ./scripts/build-native.js",
+    "postinstall": "npm run build:native",
+    "check": "node --check ./index.js && node --check ./scripts/build-native.js"
+  },
+  "dependencies": {
+    "ffi-rs": "^1.3.1"
+  }
+}
