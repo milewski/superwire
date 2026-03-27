@@ -2,7 +2,7 @@ use crate::context::Context;
 use crate::error::AgentError;
 use crate::error::ExecutorError;
 use crate::message::Message;
-use crate::tool::RuntimeTool;
+use crate::tool::{registered_runtime_tools, DynamicTool, RuntimeTool};
 use crate::traits::{Executable, Provider};
 use std::sync::Arc;
 
@@ -329,12 +329,34 @@ where
     P: Provider,
 {
     pub fn new(executor: E, provider: P) -> Self {
+        Self::new_without_registered_tools(executor, provider).with_registered_tools()
+    }
+
+    pub fn new_without_registered_tools(executor: E, provider: P) -> Self {
         Self {
             executor,
             provider,
             tools: Vec::new(),
             config: AgentConfig::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_registered_tools(mut self) -> Self {
+        self.tools.extend(registered_runtime_tools());
+        self
+    }
+
+    #[must_use]
+    pub fn with_runtime_tool(mut self, runtime_tool: Arc<dyn RuntimeTool>) -> Self {
+        self.tools.push(runtime_tool);
+        self
+    }
+
+    #[must_use]
+    pub fn with_dynamic_tool(mut self, dynamic_tool: DynamicTool) -> Self {
+        self.tools.push(Arc::new(dynamic_tool));
+        self
     }
 
     #[must_use]
@@ -370,5 +392,129 @@ where
             context,
             statistics,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Agent;
+    use crate::tests::executor_support::MockProvider;
+    use crate::tool::{DynamicTool, FinalizeTool, Tool, ToolError};
+    use crate::{assert_has_tool_success_content, assert_tool_result, provider, tool_call, LoopExecutor};
+    use async_trait::async_trait;
+    use schemars::schema_for;
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+    use serde::Serialize;
+    use serde_json::json;
+    use serde_json::Value;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+    struct Person {
+        name: String,
+        age: usize,
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct InventoryEchoTool;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+    struct InventoryEchoInput {
+        value: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+    struct DynamicEchoInput {
+        value: String,
+    }
+
+    #[async_trait]
+    impl Tool for InventoryEchoTool {
+        type Input = InventoryEchoInput;
+
+        fn name(&self) -> &str {
+            "inventory_echo_tool_for_agent_test"
+        }
+
+        fn description(&self) -> &str {
+            "Echo tool registered with inventory"
+        }
+
+        async fn execute(&self, input: Self::Input) -> Result<Value, ToolError> {
+            Ok(json!({ "echo": input.value }))
+        }
+    }
+
+    crate::register_tool!(InventoryEchoTool);
+
+    #[tokio::test]
+    async fn automatically_executes_inventory_registered_tools() {
+        let provider = provider!([
+            tool_call!(InventoryEchoTool, id = "inventory-echo", { "value": "hello" }),
+            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+        ]);
+
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+
+        let result = Agent::new(executor, provider)
+            .run("Use the inventory registered tool")
+            .await
+            .expect("agent should execute inventory tool");
+
+        assert_eq!(
+            result.output,
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_tool_result!(result.context, "inventory-echo");
+        assert_has_tool_success_content!(result.context, { "echo": "hello" });
+    }
+
+    #[tokio::test]
+    async fn executes_dynamic_tools_defined_at_runtime() {
+        let dynamic_tool = DynamicTool::from_parts(
+            "ffi_echo",
+            "Echoes runtime JSON input",
+            schema_for!(DynamicEchoInput),
+            |input| async move {
+                let echoed_value = input
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| ToolError::new("Expected a string field named 'value'"))?;
+
+                Ok(json!({ "echo": echoed_value }))
+            },
+        );
+
+        let provider = provider!([
+            crate::ToolCall {
+                id: "dynamic-echo".to_string(),
+                name: "ffi_echo".to_string(),
+                arguments: json!({ "value": "from ffi" }),
+            },
+            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+        ]);
+
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+
+        let result = Agent::new_without_registered_tools(executor, provider)
+            .with_dynamic_tool(dynamic_tool)
+            .run("Use the dynamic tool")
+            .await
+            .expect("agent should execute runtime dynamic tool");
+
+        assert_eq!(
+            result.output,
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_tool_result!(result.context, "dynamic-echo");
+        assert_has_tool_success_content!(result.context, { "echo": "from ffi" });
     }
 }

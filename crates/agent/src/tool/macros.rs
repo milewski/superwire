@@ -21,6 +21,15 @@
 /// }
 /// ```
 #[macro_export]
+macro_rules! register_tool {
+    ($tool_type:ty) => {
+        $crate::inventory::submit! {
+            $crate::tool::ToolRegistration::from_default::<$tool_type>()
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! tool {
     (
         $(#[$meta:meta])*
@@ -29,7 +38,7 @@ macro_rules! tool {
         } => async |$input:ident| $body:block
     ) => {
         $(#[$meta])*
-        #[derive(Clone)]
+        #[derive(Debug, Clone, Default)]
         pub struct $name;
 
         paste::paste! {
@@ -55,5 +64,7 @@ macro_rules! tool {
                 }
             }
         }
+
+        $crate::register_tool!($name);
     };
 }
