@@ -1,32 +1,25 @@
-"use strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
-const { execFileSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const packageDirectory = path.resolve(__dirname, "..");
+const packageDirectory = path.resolve(__dirname, "..", "..");
 const workspaceRootDirectory = path.resolve(packageDirectory, "..", "..", "..");
 
 const nativeLibraryDirectory = path.resolve(packageDirectory, "native");
-const sourceLibraryPath = path.resolve(
-  workspaceRootDirectory,
-  "target",
-  "release",
-  libraryFileNameForCurrentPlatform(),
-);
+const sourceLibraryPath = path.resolve(workspaceRootDirectory, "target", "release", libraryFileNameForCurrentPlatform());
 const destinationLibraryPath = path.resolve(nativeLibraryDirectory, libraryFileNameForCurrentPlatform());
 
 buildRustFfiLibrary();
 copyNativeLibrary();
 
-function buildRustFfiLibrary() {
+function buildRustFfiLibrary(): void {
   execFileSync("cargo", ["build", "-p", "ffi", "--release"], {
     cwd: workspaceRootDirectory,
     stdio: "inherit",
   });
 }
 
-function copyNativeLibrary() {
+function copyNativeLibrary(): void {
   if (!fs.existsSync(sourceLibraryPath)) {
     throw new Error(`Rust cdylib was not produced at ${sourceLibraryPath}`);
   }
@@ -37,7 +30,7 @@ function copyNativeLibrary() {
   process.stdout.write(`Copied ${sourceLibraryPath} -> ${destinationLibraryPath}\n`);
 }
 
-function libraryFileNameForCurrentPlatform() {
+function libraryFileNameForCurrentPlatform(): string {
   switch (process.platform) {
     case "darwin":
       return "libffi.dylib";

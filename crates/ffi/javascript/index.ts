@@ -1,26 +1,70 @@
-"use strict";
+import path from "node:path";
 
-const path = require("node:path");
+import { DataType, close, load, open, restorePointer, wrapPointer } from "ffi-rs";
 
-const { DataType, close, load, open, restorePointer, wrapPointer } = require("ffi-rs");
-
-const FFI_PROTOCOL_VERSION = 1;
+export const FFI_PROTOCOL_VERSION = 1;
 
 const FFI_LIBRARY_KEY = "engine_ai_ffi";
 
-const FFI_OPERATION = Object.freeze({
+export const FFI_OPERATION = Object.freeze({
   EXECUTE_WORKFLOW: "execute_workflow",
   INVOKE_TOOL: "invoke_tool",
-});
+} as const);
 
-class EngineFfiBridge {
-  constructor(options = {}) {
+export type FfiOperation = (typeof FFI_OPERATION)[keyof typeof FFI_OPERATION];
+
+export type FfiBoundaryStatus = "succeeded" | "failed";
+
+export interface FfiBoundaryError {
+  code: string;
+  message: string;
+}
+
+export interface FfiResponseEnvelope<TPayload = unknown> {
+  protocol_version: number;
+  request_id?: string;
+  operation: FfiOperation;
+  payload: TPayload;
+}
+
+export interface FfiBoundaryEnvelope<TPayload = unknown> {
+  status: FfiBoundaryStatus;
+  response?: FfiResponseEnvelope<TPayload>;
+  error?: FfiBoundaryError;
+}
+
+export interface EngineFfiBridgeOptions {
+  libraryPath?: string;
+}
+
+export interface RequestOptions {
+  requestId?: string;
+}
+
+export interface FfiInvokeRequestEnvelope<TPayload = unknown> {
+  protocol_version: number;
+  request_id?: string;
+  operation: FfiOperation;
+  payload: TPayload;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+export class EngineFfiBridge {
+  private readonly libraryPath: string;
+
+  private isLibraryOpen: boolean;
+
+  constructor(options: EngineFfiBridgeOptions = {}) {
     this.libraryPath = options.libraryPath ?? resolveDefaultLibraryPath();
     this.isLibraryOpen = false;
   }
 
-  executeWorkflow(workflowExecutionRequest, options = {}) {
-    const responseEnvelope = this.invoke({
+  executeWorkflow<TWorkflowPayload extends JsonRecord, TWorkflowResult = unknown>(
+    workflowExecutionRequest: TWorkflowPayload,
+    options: RequestOptions = {},
+  ): TWorkflowResult {
+    const responseEnvelope = this.invoke<TWorkflowResult>({
       protocol_version: FFI_PROTOCOL_VERSION,
       request_id: options.requestId,
       operation: FFI_OPERATION.EXECUTE_WORKFLOW,
@@ -34,8 +78,11 @@ class EngineFfiBridge {
     return responseEnvelope.payload;
   }
 
-  invokeTool(toolInvocationPayload, options = {}) {
-    const responseEnvelope = this.invoke({
+  invokeTool<TToolPayload extends JsonRecord, TToolResult = unknown>(
+    toolInvocationPayload: TToolPayload,
+    options: RequestOptions = {},
+  ): TToolResult {
+    const responseEnvelope = this.invoke<TToolResult>({
       protocol_version: FFI_PROTOCOL_VERSION,
       request_id: options.requestId,
       operation: FFI_OPERATION.INVOKE_TOOL,
@@ -49,10 +96,10 @@ class EngineFfiBridge {
     return responseEnvelope.payload;
   }
 
-  invoke(requestEnvelope) {
+  invoke<TPayload>(requestEnvelope: FfiInvokeRequestEnvelope): FfiResponseEnvelope<TPayload> {
     this.ensureLibraryOpen();
 
-    const boundaryEnvelope = this.invokeBoundary(requestEnvelope);
+    const boundaryEnvelope = this.invokeBoundary<TPayload>(requestEnvelope);
 
     if (boundaryEnvelope.status === "failed") {
       const boundaryErrorCode = boundaryEnvelope.error?.code ?? "unknown";
@@ -80,7 +127,7 @@ class EngineFfiBridge {
     return responseEnvelope;
   }
 
-  close() {
+  close(): void {
     if (!this.isLibraryOpen) {
       return;
     }
@@ -89,7 +136,7 @@ class EngineFfiBridge {
     this.isLibraryOpen = false;
   }
 
-  ensureLibraryOpen() {
+  private ensureLibraryOpen(): void {
     if (this.isLibraryOpen) {
       return;
     }
@@ -102,7 +149,7 @@ class EngineFfiBridge {
     this.isLibraryOpen = true;
   }
 
-  invokeBoundary(requestEnvelope) {
+  private invokeBoundary<TPayload>(requestEnvelope: FfiInvokeRequestEnvelope): FfiBoundaryEnvelope<TPayload> {
     const requestPayload = JSON.stringify(requestEnvelope);
 
     const responsePointer = load({
@@ -117,13 +164,15 @@ class EngineFfiBridge {
       throw new Error("FFI returned a null response pointer");
     }
 
-    let responsePayload;
+    let responsePayload: string;
 
     try {
-      responsePayload = restorePointer({
+      const restoredValues = restorePointer<DataType.String>({
         retType: [DataType.String],
         paramsValue: wrapPointer([responsePointer]),
       });
+
+      responsePayload = restoredValues[0] ?? "";
     } finally {
       load({
         library: FFI_LIBRARY_KEY,
@@ -135,22 +184,24 @@ class EngineFfiBridge {
     }
 
     try {
-      return JSON.parse(responsePayload);
+      return JSON.parse(responsePayload) as FfiBoundaryEnvelope<TPayload>;
     } catch (parseError) {
-      throw new Error(`Failed to parse FFI response payload: ${String(parseError.message)}`);
+      const typedError = parseError as Error;
+
+      throw new Error(`Failed to parse FFI response payload: ${String(typedError.message)}`);
     }
   }
 }
 
-function resolveDefaultLibraryPath() {
+function resolveDefaultLibraryPath(): string {
   if (process.env.ENGINE_AI_FFI_LIBRARY_PATH) {
     return path.resolve(process.env.ENGINE_AI_FFI_LIBRARY_PATH);
   }
 
-  return path.resolve(__dirname, "native", libraryFileNameForCurrentPlatform());
+  return path.resolve(__dirname, "..", "native", libraryFileNameForCurrentPlatform());
 }
 
-function libraryFileNameForCurrentPlatform() {
+function libraryFileNameForCurrentPlatform(): string {
   switch (process.platform) {
     case "darwin":
       return "libffi.dylib";
@@ -166,13 +217,6 @@ function libraryFileNameForCurrentPlatform() {
   }
 }
 
-function createEngineFfiBridge(options) {
+export function createEngineFfiBridge(options?: EngineFfiBridgeOptions): EngineFfiBridge {
   return new EngineFfiBridge(options);
 }
-
-module.exports = {
-  EngineFfiBridge,
-  FFI_OPERATION,
-  FFI_PROTOCOL_VERSION,
-  createEngineFfiBridge,
-};

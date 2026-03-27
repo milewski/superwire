@@ -2,23 +2,29 @@
   "name": "@engine-ai/ffi-js-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "JavaScript bridge for engine-ai Rust FFI runtime",
-  "main": "./index.js",
+  "description": "TypeScript bridge for engine-ai Rust FFI runtime",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "type": "commonjs",
   "files": [
-    "index.js",
-    "scripts/build-native.js",
+    "dist/",
     "native/"
   ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build:native": "node ./scripts/build-native.js",
+    "build": "tsc -p tsconfig.json",
+    "build:native": "npm run build && node ./dist/scripts/build-native.js",
     "postinstall": "npm run build:native",
-    "check": "node --check ./index.js && node --check ./scripts/build-native.js"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "example:simple": "npm run build:native && node ./dist/examples/simple.js"
   },
   "dependencies": {
     "ffi-rs": "^1.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.57",
+    "typescript": "^5.8.3"
   }
 }
