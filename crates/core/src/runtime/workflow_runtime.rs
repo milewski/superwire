@@ -197,18 +197,7 @@ where
     }
 
     fn resolve_secret_values(&self, serialized_secrets: &Value) -> Result<Map<String, Value>, WorkflowRuntimeError> {
-        if let Some(secrets_type) = &self.compiled_workflow.execution_plan.secrets_type {
-            validate_value_against_type(serialized_secrets, secrets_type)
-                .map_err(|message| WorkflowRuntimeError::InputValueMismatch { message })?;
-
-            let Some(secret_values) = serialized_secrets.as_object() else {
-                return Err(WorkflowRuntimeError::InputValueMismatch {
-                    message: format!("expected secrets object, found {}", value_kind_name(serialized_secrets)),
-                });
-            };
-
-            Ok(secret_values.clone())
-        } else {
+        let Some(secrets_type) = &self.compiled_workflow.execution_plan.secrets_type else {
             if serialized_secrets.is_null() {
                 return Ok(Map::new());
             }
@@ -219,11 +208,22 @@ where
                 }
             }
 
-            Err(WorkflowRuntimeError::InputTypeMismatch {
+            return Err(WorkflowRuntimeError::InputTypeMismatch {
                 expected: "no secrets".to_string(),
                 found: value_kind_name(serialized_secrets).to_string(),
-            })
-        }
+            });
+        };
+
+        validate_value_against_type(serialized_secrets, secrets_type)
+            .map_err(|message| WorkflowRuntimeError::InputValueMismatch { message })?;
+
+        let Some(secret_values) = serialized_secrets.as_object() else {
+            return Err(WorkflowRuntimeError::InputValueMismatch {
+                message: format!("expected secrets object, found {}", value_kind_name(serialized_secrets)),
+            });
+        };
+
+        Ok(secret_values.clone())
     }
 
     fn resolve_agent_execution_order(&self) -> Vec<String> {
