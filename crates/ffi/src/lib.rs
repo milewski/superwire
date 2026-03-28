@@ -6,6 +6,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use serde::Serialize;
+use serde_json::json;
 
 pub use bridge::{CustomToolHandler, EngineFfi};
 pub use error::FfiError;
@@ -51,21 +52,8 @@ impl FfiBoundaryEnvelope {
 
     #[must_use]
     fn into_json_payload(self) -> String {
-        match serde_json::to_string(&self) {
-            Ok(json_payload) => json_payload,
-            Err(error) => {
-                let fallback_error = FfiBoundaryEnvelope::Failed {
-                    error: FfiBoundaryError::new(FfiBoundaryErrorCode::SerializationFailed, error.to_string()),
-                };
-
-                match serde_json::to_string(&fallback_error) {
-                    Ok(json_payload) => json_payload,
-                    Err(_) => String::from(
-                        r#"{"status":"failed","error":{"code":"serialization_failed","message":"failed to serialize ffi response"}}"#,
-                    ),
-                }
-            }
-        }
+        serde_json::to_string(&self)
+            .unwrap_or_else(|error| Self::failed_json_payload(FfiBoundaryErrorCode::SerializationFailed, error.to_string()))
     }
 
     fn into_c_string_pointer_with_fallback(self) -> *mut c_char {
@@ -73,12 +61,30 @@ impl FfiBoundaryEnvelope {
 
         match CString::new(json_payload) {
             Ok(owned_c_string) => owned_c_string.into_raw(),
-            Err(_) => CString::new(
-                r#"{"status":"failed","error":{"code":"serialization_failed","message":"ffi response contains an interior NUL byte"}}"#,
-            )
+            Err(_) => CString::new(Self::failed_json_payload(
+                FfiBoundaryErrorCode::SerializationFailed,
+                String::from("ffi response contains an interior NUL byte"),
+            ))
             .map_or(std::ptr::null_mut(), CString::into_raw),
         }
     }
+
+    fn failed_json_payload(error_code: FfiBoundaryErrorCode, message: String) -> String {
+        json!({
+            "status": FfiBoundaryStatus::Failed,
+            "error": {
+                "code": error_code,
+                "message": message,
+            },
+        })
+        .to_string()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum FfiBoundaryStatus {
+    Failed,
 }
 
 #[derive(Debug, Serialize)]
@@ -153,5 +159,34 @@ pub unsafe extern "C" fn engine_ffi_free_json(owned_json_pointer: *mut c_char) {
 
     unsafe {
         let _owned_c_string = CString::from_raw(owned_json_pointer);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{FfiBoundaryEnvelope, FfiBoundaryErrorCode};
+
+    #[test]
+    fn builds_failed_payload_with_enum_serialization() {
+        let failed_payload = FfiBoundaryEnvelope::failed_json_payload(
+            FfiBoundaryErrorCode::SerializationFailed,
+            String::from("failed to serialize ffi response"),
+        );
+
+        let parsed_payload =
+            serde_json::from_str::<serde_json::Value>(&failed_payload).expect("failed payload should always be valid json");
+
+        assert_eq!(
+            parsed_payload,
+            json!({
+                "status": "failed",
+                "error": {
+                    "code": "serialization_failed",
+                    "message": "failed to serialize ffi response",
+                },
+            })
+        );
     }
 }

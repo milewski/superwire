@@ -1,35 +1,36 @@
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
-use engine_ai_agent::{AgentError, DynamicTool, ToolError};
-use engine_ai_core::dsl::{Declaration, TypeExpression, Workflow};
-use engine_ai_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
-use engine_ai_core::runtime::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
+use engine_ai_agent::{DynamicTool, ToolError};
+use engine_ai_core::dsl::Workflow;
 use engine_ai_core::runtime::WorkflowRuntimeError;
 use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, WorkflowRuntime};
-use schemars::{JsonSchema, Schema, SchemaGenerator};
-use serde::{Deserialize, Serialize};
+use schemars::Schema;
 use serde_json::Value;
 
 use crate::error::FfiError;
 use crate::types::{
-    CustomToolDeclaration, ExecutionValueName, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope,
-    ReadExecutionValueEnvelope, ReadExecutionValueRequest, ReadExecutionValueSuccess, ToolCallbackConfig, ToolInvocationEnvelope,
-    ToolInvocationError, ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult, WorkflowExecutionEnvelope,
-    WorkflowExecutionError, WorkflowExecutionErrorCode, WorkflowExecutionOutput, WorkflowExecutionRequest, FFI_PROTOCOL_VERSION,
+    CustomToolDeclaration, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ReadExecutionValueEnvelope,
+    ReadExecutionValueRequest, ReadExecutionValueSuccess, ToolCallbackConfig, ToolInvocationEnvelope, ToolInvocationError,
+    ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult, WorkflowExecutionEnvelope, WorkflowExecutionError,
+    WorkflowExecutionOutput, WorkflowExecutionRequest, FFI_PROTOCOL_VERSION,
 };
+
+mod error_mapping;
+mod execution_store;
+mod runtime_schema;
+
+use execution_store::ExecutionResultStore;
+use runtime_schema::{DynamicWorkflowInputValue, DynamicWorkflowOutputValue, FfiRuntimeSchemaContext};
 
 static TOOL_INVOCATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static EXECUTION_RESULT_STORE: OnceLock<Arc<ExecutionResultStore>> = OnceLock::new();
+static SHARED_ASYNC_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
 
-thread_local! {
-    static DYNAMIC_WORKFLOW_SCHEMA_CONTEXT: RefCell<Option<FfiRuntimeSchemaContext>> = const { RefCell::new(None) };
-}
+const MAX_REGISTERED_EXECUTIONS: usize = 256;
 
 type CustomToolHandlerFuture = Pin<Box<dyn Future<Output = Result<Value, ToolInvocationError>> + Send>>;
 
@@ -114,7 +115,7 @@ impl EngineFfi {
             }
         };
 
-        let runtime = match Self::build_runtime() {
+        let runtime = match Self::shared_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
                 return WorkflowExecutionEnvelope::Failed {
@@ -182,7 +183,7 @@ impl EngineFfi {
     }
 
     fn invoke_tool(&self, tool_invocation_payload: ToolInvocationPayload) -> ToolInvocationEnvelope {
-        let runtime = match Self::build_runtime() {
+        let runtime = match Self::shared_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
                 return ToolInvocationEnvelope::Failed {
@@ -222,72 +223,25 @@ impl EngineFfi {
         }
     }
 
-    fn build_runtime() -> Result<tokio::runtime::Runtime, FfiError> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|error| FfiError::RuntimeInitializationFailed {
-                message: error.to_string(),
-            })
+    fn shared_runtime() -> Result<&'static tokio::runtime::Runtime, FfiError> {
+        let shared_runtime_result = SHARED_ASYNC_RUNTIME.get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| error.to_string())
+        });
+
+        match shared_runtime_result {
+            Ok(runtime) => Ok(runtime),
+            Err(error_message) => Err(FfiError::RuntimeInitializationFailed {
+                message: error_message.clone(),
+            }),
+        }
     }
 }
 
 fn shared_execution_result_store() -> &'static Arc<ExecutionResultStore> {
     EXECUTION_RESULT_STORE.get_or_init(|| Arc::new(ExecutionResultStore::default()))
-}
-
-#[derive(Debug, Clone)]
-enum DeferredExecutionResult {
-    Success { output: Value, context: Value },
-    Failure { error: WorkflowExecutionError, context: Value },
-}
-
-#[derive(Default)]
-struct ExecutionResultStore {
-    results_by_execution_id: RwLock<HashMap<String, DeferredExecutionResult>>,
-}
-
-impl ExecutionResultStore {
-    fn insert_success(&self, execution_id: String, output: Value, context: Value) {
-        self.results_by_execution_id
-            .write()
-            .expect("execution result store lock should not be poisoned")
-            .insert(execution_id, DeferredExecutionResult::Success { output, context });
-    }
-
-    fn insert_failure(&self, execution_id: String, error: WorkflowExecutionError, context: Value) {
-        self.results_by_execution_id
-            .write()
-            .expect("execution result store lock should not be poisoned")
-            .insert(execution_id, DeferredExecutionResult::Failure { error, context });
-    }
-
-    fn read_value(&self, execution_id: &str, value_name: ExecutionValueName) -> Result<Value, WorkflowExecutionError> {
-        let results_by_execution_id = self
-            .results_by_execution_id
-            .read()
-            .expect("execution result store lock should not be poisoned");
-
-        let Some(deferred_result) = results_by_execution_id.get(execution_id) else {
-            return Err(WorkflowExecutionError::tool_invocation_failed(
-                format!("unknown deferred execution `{execution_id}`"),
-                None,
-            ));
-        };
-
-        match (deferred_result, value_name) {
-            (DeferredExecutionResult::Success { output, .. }, ExecutionValueName::Success) => Ok(output.clone()),
-            (DeferredExecutionResult::Failure { error, .. }, ExecutionValueName::Error) => serde_json::to_value(error).map_err(|error| {
-                WorkflowExecutionError::internal(format!("failed to serialize deferred error for `{execution_id}`: {error}"))
-            }),
-            (
-                DeferredExecutionResult::Success { context, .. } | DeferredExecutionResult::Failure { context, .. },
-                ExecutionValueName::Context,
-            ) => Ok(context.clone()),
-            (DeferredExecutionResult::Success { .. }, ExecutionValueName::Error)
-            | (DeferredExecutionResult::Failure { .. }, ExecutionValueName::Success) => Ok(Value::Null),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -370,6 +324,7 @@ impl AgentRunner for FfiAgentRunner {
 struct CustomToolRegistry {
     handlers_by_name: RwLock<HashMap<String, CustomToolHandler>>,
     declarations_by_execution: RwLock<HashMap<String, HashMap<String, CustomToolDeclaration>>>,
+    registration_order: RwLock<VecDeque<String>>,
 }
 
 impl CustomToolRegistry {
@@ -449,14 +404,46 @@ impl CustomToolRegistry {
             }
         }
 
+        self.insert_execution_declarations(execution_id.to_string(), declarations_by_name);
+
+        Ok(())
+    }
+
+    fn insert_execution_declarations(&self, execution_id: String, declarations_by_name: HashMap<String, CustomToolDeclaration>) {
         let mut declarations_by_execution = self
             .declarations_by_execution
             .write()
             .expect("custom tool declaration registry lock should not be poisoned");
+        let mut registration_order = self
+            .registration_order
+            .write()
+            .expect("custom tool registration order lock should not be poisoned");
 
-        declarations_by_execution.insert(execution_id.to_string(), declarations_by_name);
+        if let Some(existing_execution_position) = registration_order
+            .iter()
+            .position(|registered_execution_id| registered_execution_id == &execution_id)
+        {
+            registration_order.remove(existing_execution_position);
+        }
 
-        Ok(())
+        registration_order.push_back(execution_id.clone());
+        declarations_by_execution.insert(execution_id, declarations_by_name);
+
+        self.trim_registered_executions(&mut declarations_by_execution, &mut registration_order);
+    }
+
+    fn trim_registered_executions(
+        &self,
+        declarations_by_execution: &mut HashMap<String, HashMap<String, CustomToolDeclaration>>,
+        registration_order: &mut VecDeque<String>,
+    ) {
+        while declarations_by_execution.len() > MAX_REGISTERED_EXECUTIONS {
+            let Some(oldest_execution_id) = registration_order.pop_front() else {
+                break;
+            };
+
+            declarations_by_execution.remove(&oldest_execution_id);
+        }
     }
 
     async fn invoke(&self, tool_invocation_payload: ToolInvocationPayload) -> Result<Value, ToolInvocationError> {
@@ -588,261 +575,6 @@ impl CustomToolRegistry {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-struct DynamicWorkflowInputValue {
-    value: Value,
-}
-
-impl From<Value> for DynamicWorkflowInputValue {
-    fn from(value: Value) -> Self {
-        Self { value }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-struct DynamicWorkflowOutputValue {
-    value: Value,
-}
-
-impl DynamicWorkflowOutputValue {
-    fn into_inner(self) -> Value {
-        self.value
-    }
-}
-
-impl From<Value> for DynamicWorkflowOutputValue {
-    fn from(value: Value) -> Self {
-        Self { value }
-    }
-}
-
-impl JsonSchema for DynamicWorkflowInputValue {
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("DynamicWorkflowInputValue")
-    }
-
-    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
-        let _ = schema_generator;
-
-        DYNAMIC_WORKFLOW_SCHEMA_CONTEXT.with(|runtime_schema_context_cell| {
-            let runtime_schema_context = runtime_schema_context_cell.borrow();
-            let runtime_schema_context = runtime_schema_context
-                .as_ref()
-                .expect("dynamic workflow schema context must be initialized before execution");
-
-            runtime_schema_context.input_schema()
-        })
-    }
-}
-
-impl JsonSchema for DynamicWorkflowOutputValue {
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("DynamicWorkflowOutputValue")
-    }
-
-    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
-        let _ = schema_generator;
-
-        DYNAMIC_WORKFLOW_SCHEMA_CONTEXT.with(|runtime_schema_context_cell| {
-            let runtime_schema_context = runtime_schema_context_cell.borrow();
-            let runtime_schema_context = runtime_schema_context
-                .as_ref()
-                .expect("dynamic workflow schema context must be initialized before execution");
-
-            runtime_schema_context.output_schema()
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct FfiRuntimeSchemaContext {
-    input_schema: Schema,
-    output_schema: Schema,
-}
-
-impl FfiRuntimeSchemaContext {
-    fn from_workflow(workflow: &Workflow) -> Result<Self, WorkflowExecutionError> {
-        let workflow_type_inference = WorkflowTypeInference::from_workflow(workflow)?;
-
-        let inferred_input_type = workflow_type_inference
-            .input_type
-            .unwrap_or_else(|| WorkflowType::Object(BTreeMap::new()));
-        let inferred_output_type = workflow_type_inference.workflow_output_type;
-        let input_schema_value = workflow_type_to_json_schema(&inferred_input_type);
-        let output_schema_value = workflow_type_to_json_schema(&inferred_output_type);
-        let input_schema = serde_json::from_value::<Schema>(input_schema_value).map_err(|error| {
-            WorkflowExecutionError::validation_failed(format!("failed to convert inferred workflow input type into schema: {error}"), None)
-        })?;
-
-        let output_schema = serde_json::from_value::<Schema>(output_schema_value).map_err(|error| {
-            WorkflowExecutionError::validation_failed(
-                format!("failed to convert inferred workflow output type into schema: {error}"),
-                None,
-            )
-        })?;
-
-        Ok(Self {
-            input_schema,
-            output_schema,
-        })
-    }
-
-    fn input_schema(&self) -> Schema {
-        self.input_schema.clone()
-    }
-
-    fn output_schema(&self) -> Schema {
-        self.output_schema.clone()
-    }
-
-    fn with_scope<ExecutionResult>(&self, execute_with_schema_context: impl FnOnce() -> ExecutionResult) -> ExecutionResult {
-        DYNAMIC_WORKFLOW_SCHEMA_CONTEXT.with(|runtime_schema_context_cell| {
-            let previous_context = runtime_schema_context_cell.replace(Some(self.clone()));
-            let execution_result = execute_with_schema_context();
-            runtime_schema_context_cell.replace(previous_context);
-
-            execution_result
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct WorkflowTypeInference {
-    input_type: Option<WorkflowType>,
-    workflow_output_type: WorkflowType,
-}
-
-impl WorkflowTypeInference {
-    fn from_workflow(workflow: &Workflow) -> Result<Self, WorkflowExecutionError> {
-        let named_schema_types = Self::collect_named_schema_types(workflow);
-        let input_type = Self::build_input_type(workflow, &named_schema_types)?;
-        let secrets_type = Self::build_secrets_type(workflow, &named_schema_types)?;
-        let agent_output_types = Self::collect_agent_output_types(workflow, &named_schema_types)?;
-        let workflow_output_type = Self::infer_workflow_output_type(workflow, input_type.clone(), secrets_type, agent_output_types)?;
-
-        Ok(Self {
-            input_type,
-            workflow_output_type,
-        })
-    }
-
-    fn collect_named_schema_types(workflow: &Workflow) -> HashMap<String, TypeExpression> {
-        let mut named_schema_types = HashMap::new();
-
-        for declaration in workflow.declarations() {
-            let Declaration::Schema(schema_declaration) = declaration else {
-                continue;
-            };
-
-            named_schema_types.insert(
-                schema_declaration.name.clone(),
-                TypeExpression::Object(schema_declaration.fields.clone()),
-            );
-        }
-
-        named_schema_types
-    }
-
-    fn build_input_type(
-        workflow: &Workflow,
-        named_schema_types: &HashMap<String, TypeExpression>,
-    ) -> Result<Option<WorkflowType>, WorkflowExecutionError> {
-        let Some(input_declaration) = workflow.find_input() else {
-            return Ok(None);
-        };
-
-        let input_type_expression = TypeExpression::Object(input_declaration.fields.clone());
-        let input_type = workflow_type_from_dsl(&input_type_expression, named_schema_types)
-            .map_err(|runtime_error| WorkflowExecutionError::validation_failed(runtime_error.to_string(), None))?;
-
-        Ok(Some(input_type))
-    }
-
-    fn build_secrets_type(
-        workflow: &Workflow,
-        named_schema_types: &HashMap<String, TypeExpression>,
-    ) -> Result<Option<WorkflowType>, WorkflowExecutionError> {
-        let Some(secrets_declaration) = workflow.find_secrets() else {
-            return Ok(None);
-        };
-
-        let secrets_type_expression = TypeExpression::Object(secrets_declaration.fields.clone());
-        let secrets_type = workflow_type_from_dsl(&secrets_type_expression, named_schema_types)
-            .map_err(|runtime_error| WorkflowExecutionError::validation_failed(runtime_error.to_string(), None))?;
-
-        Ok(Some(secrets_type))
-    }
-
-    fn collect_agent_output_types(
-        workflow: &Workflow,
-        named_schema_types: &HashMap<String, TypeExpression>,
-    ) -> Result<HashMap<String, WorkflowType>, WorkflowExecutionError> {
-        let mut agent_output_types = HashMap::new();
-
-        for declaration in workflow.declarations() {
-            let Declaration::Agent(agent_declaration) = declaration else {
-                continue;
-            };
-
-            let iteration_output_type = if let Some(agent_output_type_expression) = agent_declaration.output_type() {
-                workflow_type_from_dsl(agent_output_type_expression, named_schema_types)
-                    .map_err(|runtime_error| WorkflowExecutionError::validation_failed(runtime_error.to_string(), None))?
-            } else {
-                WorkflowType::String
-            };
-
-            let final_output_type = if agent_declaration.for_loop.is_some() {
-                WorkflowType::Array {
-                    item_type: Box::new(iteration_output_type),
-                    fixed_length: None,
-                }
-                .normalize()
-            } else {
-                iteration_output_type
-            };
-
-            agent_output_types.insert(agent_declaration.name.clone(), final_output_type);
-        }
-
-        Ok(agent_output_types)
-    }
-
-    fn infer_workflow_output_type(
-        workflow: &Workflow,
-        input_type: Option<WorkflowType>,
-        secrets_type: Option<WorkflowType>,
-        agent_output_types: HashMap<String, WorkflowType>,
-    ) -> Result<WorkflowType, WorkflowExecutionError> {
-        let Some(output_declaration) = workflow.find_output() else {
-            return Err(WorkflowExecutionError::validation_failed(
-                String::from("workflow requires an `output` block"),
-                None,
-            ));
-        };
-
-        let type_inference_context = TypeInferenceContext {
-            input_type,
-            secrets_type,
-            agent_output_types,
-            local_binding_types: HashMap::new(),
-        };
-
-        let mut output_field_types = BTreeMap::new();
-
-        for output_field in &output_declaration.fields {
-            let output_field_type =
-                infer_expression_type(&output_field.value, &type_inference_context, "ffi workflow output type inference")
-                    .map_err(|runtime_error| WorkflowExecutionError::validation_failed(runtime_error.to_string(), None))?;
-
-            output_field_types.insert(output_field.name.clone(), output_field_type);
-        }
-
-        Ok(WorkflowType::Object(output_field_types).normalize())
-    }
-}
-
 impl WorkflowExecutionRequest {
     fn secrets_payload(&self) -> Value {
         self.secrets
@@ -931,133 +663,15 @@ impl ToolCallbackConfig {
     }
 }
 
-impl WorkflowExecutionError {
-    fn parse_failed(message: String, details: Option<Value>) -> Self {
-        Self {
-            code: WorkflowExecutionErrorCode::ParseFailed,
-            message,
-            context: None,
-            details,
-        }
-    }
-
-    fn validation_failed(message: String, details: Option<Value>) -> Self {
-        Self {
-            code: WorkflowExecutionErrorCode::ValidationFailed,
-            message,
-            context: None,
-            details,
-        }
-    }
-
-    fn runtime_failed(message: String, context: Option<Value>, details: Option<Value>) -> Self {
-        Self {
-            code: WorkflowExecutionErrorCode::RuntimeFailed,
-            message,
-            context,
-            details,
-        }
-    }
-
-    fn tool_invocation_failed(message: String, details: Option<Value>) -> Self {
-        Self {
-            code: WorkflowExecutionErrorCode::ToolInvocationFailed,
-            message,
-            context: None,
-            details,
-        }
-    }
-
-    fn internal(message: String) -> Self {
-        Self {
-            code: WorkflowExecutionErrorCode::Internal,
-            message,
-            context: None,
-            details: None,
-        }
-    }
-
-    fn from_runtime_error(runtime_error: WorkflowRuntimeError) -> Self {
-        match runtime_error {
-            WorkflowRuntimeError::ParseFailed { source: _, details } => Self::parse_failed(details, None),
-            WorkflowRuntimeError::InvalidWorkflow { issues }
-            | WorkflowRuntimeError::ExecutionPlanInvariant { message: issues }
-            | WorkflowRuntimeError::MissingDeclaration { message: issues }
-            | WorkflowRuntimeError::UnsupportedFeature { feature: issues }
-            | WorkflowRuntimeError::InputTypeMismatch {
-                expected: issues,
-                found: _,
-            }
-            | WorkflowRuntimeError::OutputTypeMismatch {
-                expected: issues,
-                found: _,
-            } => Self::validation_failed(issues, None),
-            WorkflowRuntimeError::ProviderConfiguration { provider_name, message } => {
-                Self::runtime_failed(format!("provider `{provider_name}` configuration error: {message}"), None, None)
-            }
-            WorkflowRuntimeError::ExpressionEvaluation { context, message } => {
-                Self::runtime_failed(format!("expression evaluation failed in {context}: {message}"), None, None)
-            }
-            WorkflowRuntimeError::InvalidAgentProperty {
-                agent_name,
-                property,
-                message,
-            } => Self::runtime_failed(
-                format!("agent `{agent_name}` has invalid `{property}` property: {message}"),
-                None,
-                None,
-            ),
-            WorkflowRuntimeError::InputValueMismatch { message } => Self::runtime_failed(message, None, None),
-            WorkflowRuntimeError::AgentOutputTypeMismatch { agent_name, message } => Self::runtime_failed(
-                format!("agent `{agent_name}` output does not match declared type: {message}"),
-                None,
-                None,
-            ),
-            WorkflowRuntimeError::AgentExecutionFailed { agent_name, source } => {
-                if let AgentError::ExecutionFailed { error, context } = source.as_ref() {
-                    let agent_context = serde_json::to_value(context).ok();
-
-                    Self::runtime_failed(format!("agent `{agent_name}` execution failed: {error}"), agent_context, None)
-                } else {
-                    Self::runtime_failed(format!("agent `{agent_name}` execution failed: {source}"), None, None)
-                }
-            }
-            WorkflowRuntimeError::SerializationFailed { context, source } => {
-                Self::runtime_failed(format!("serialization failed for {context}: {source}"), None, None)
-            }
-            WorkflowRuntimeError::OutputDeserializationFailed { source } => {
-                Self::runtime_failed(format!("output deserialization failed: {source}"), None, None)
-            }
-            WorkflowRuntimeError::Other { message } => Self::runtime_failed(message, None, None),
-        }
-    }
-}
-
-impl ToolInvocationError {
-    fn tool_not_found(message: String) -> Self {
-        Self {
-            code: ToolInvocationErrorCode::ToolNotFound,
-            message,
-            details: None,
-        }
-    }
-
-    fn internal(message: String) -> Self {
-        Self {
-            code: ToolInvocationErrorCode::Internal,
-            message,
-            details: None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use engine_ai_agent::{AgentError, ToolError};
     use engine_ai_core::runtime::WorkflowRuntimeError;
     use serde_json::json;
 
-    use super::EngineFfi;
+    use super::{CustomToolRegistry, EngineFfi, MAX_REGISTERED_EXECUTIONS};
     use crate::types::WorkflowExecutionError;
     use crate::types::{
         CustomToolDeclaration, FfiRequest, FfiRequestEnvelope, ToolInvocationEnvelope, ToolInvocationErrorCode, ToolInvocationPayload,
@@ -1198,6 +812,25 @@ mod tests {
         };
 
         assert_eq!(error.code, ToolInvocationErrorCode::ToolNotFound);
+    }
+
+    #[test]
+    fn trims_oldest_registered_execution_tool_declarations() {
+        let custom_tool_registry = Arc::new(CustomToolRegistry::default());
+
+        for execution_index in 0..(MAX_REGISTERED_EXECUTIONS + 4) {
+            custom_tool_registry
+                .register_execution_tools(&format!("execution-{execution_index}"), &[])
+                .expect("registration should succeed");
+        }
+
+        let removed_execution_result = custom_tool_registry.runtime_tools_for_requested_tools("execution-0", &[], &json!({}));
+        let newest_execution_result = custom_tool_registry
+            .runtime_tools_for_requested_tools(&format!("execution-{}", MAX_REGISTERED_EXECUTIONS + 3), &[], &json!({}))
+            .expect("newest execution declarations should still exist");
+
+        assert!(matches!(removed_execution_result, Err(WorkflowRuntimeError::Other { message: _ })));
+        assert!(newest_execution_result.is_empty());
     }
 
     trait ResponseEnvelopeExpectExt {
