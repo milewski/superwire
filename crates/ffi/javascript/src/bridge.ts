@@ -14,11 +14,11 @@ export class EngineFfiBridge {
         this.isLibraryOpen = false
     }
 
-    executeWorkflow<WorkflowPayload, WorkflowResult = unknown>(
+    async executeWorkflow<WorkflowPayload, WorkflowResult = unknown>(
         workflowExecutionRequest: WorkflowPayload,
         options: RequestOptions = {},
-    ): WorkflowResult {
-        const responseEnvelope = this.invoke<WorkflowResult>({
+    ): Promise<WorkflowResult> {
+        const responseEnvelope = await this.invoke<WorkflowResult>({
             protocol_version: FFI_PROTOCOL_VERSION,
             request_id: options.requestId,
             operation: FFI_OPERATION.EXECUTE_WORKFLOW,
@@ -32,11 +32,11 @@ export class EngineFfiBridge {
         return responseEnvelope.payload
     }
 
-    invokeTool<ToolPayload, ToolResult = unknown>(
+    async invokeTool<ToolPayload, ToolResult = unknown>(
         toolInvocationPayload: ToolPayload,
         options: RequestOptions = {},
-    ): ToolResult {
-        const responseEnvelope = this.invoke<ToolResult>({
+    ): Promise<ToolResult> {
+        const responseEnvelope = await this.invoke<ToolResult>({
             protocol_version: FFI_PROTOCOL_VERSION,
             request_id: options.requestId,
             operation: FFI_OPERATION.INVOKE_TOOL,
@@ -50,10 +50,10 @@ export class EngineFfiBridge {
         return responseEnvelope.payload
     }
 
-    invoke<Payload>(requestEnvelope: FfiInvokeRequestEnvelope): FfiResponseEnvelope<Payload> {
+    async invoke<Payload>(requestEnvelope: FfiInvokeRequestEnvelope): Promise<FfiResponseEnvelope<Payload>> {
         this.ensureLibraryOpen()
 
-        const boundaryEnvelope = this.invokeBoundary<Payload>(requestEnvelope)
+        const boundaryEnvelope = await this.invokeBoundary<Payload>(requestEnvelope)
 
         if (boundaryEnvelope.status === 'failed') {
             const boundaryErrorCode = boundaryEnvelope.error?.code ?? 'unknown'
@@ -103,15 +103,16 @@ export class EngineFfiBridge {
         this.isLibraryOpen = true
     }
 
-    private invokeBoundary<Payload>(requestEnvelope: FfiInvokeRequestEnvelope): FfiBoundaryEnvelope<Payload> {
+    private async invokeBoundary<Payload>(requestEnvelope: FfiInvokeRequestEnvelope): Promise<FfiBoundaryEnvelope<Payload>> {
         const requestPayload = JSON.stringify(requestEnvelope)
 
-        const responsePointer = load({
+        const responsePointer = await load({
             library: FFI_LIBRARY_KEY,
             funcName: 'engine_ffi_invoke_json',
             retType: DataType.External,
             paramsType: [ DataType.String ],
             paramsValue: [ requestPayload ],
+            runInNewThread: true,
         })
 
         if (!responsePointer) {

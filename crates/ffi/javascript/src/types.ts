@@ -51,7 +51,36 @@ export interface WorkflowExecutionRequest<Input extends JsonRecord = JsonRecord>
         payload: Input;
     };
     custom_tools: CustomToolDeclaration[];
+    tool_callback?: ToolCallbackConfig;
 }
+
+export interface ToolCallbackConfig {
+    endpoint: string;
+    auth_token?: string;
+}
+
+export interface ToolInvocationPayload {
+    execution_id: string;
+    invocation_id: string;
+    tool_name: string;
+    arguments: unknown;
+}
+
+export interface ToolInvocationResult {
+    execution_id: string;
+    invocation_id: string;
+    output: unknown;
+}
+
+export interface ToolInvocationError {
+    code: string;
+    message: string;
+    details?: unknown;
+}
+
+export type ToolInvocationEnvelope =
+    | { status: 'succeeded'; result: ToolInvocationResult }
+    | { status: 'failed'; error: ToolInvocationError };
 
 export interface WorkflowExecutionSucceededEnvelope<Output = unknown> {
     status: 'succeeded';
@@ -86,14 +115,18 @@ export interface EngineRunOptions {
 export interface EngineRunSuccess<Output = unknown> {
     readonly kind: 'success';
     readonly success: Output;
+
     isSuccess(): this is EngineRunSuccess<Output>;
+
     isError(): this is EngineRunError<Output>;
 }
 
 export interface EngineRunError<Output = never> {
     readonly kind: 'error';
     readonly error: Error;
+
     isSuccess(): this is EngineRunSuccess<Output>;
+
     isError(): this is EngineRunError<Output>;
 }
 
@@ -104,10 +137,10 @@ export function createEngineRunSuccess<Output>(success: Output): EngineRunSucces
         kind: 'success',
         success,
         isSuccess(): this is EngineRunSuccess<Output> {
-            return true;
+            return true
         },
         isError(): this is EngineRunError<Output> {
-            return false;
+            return false
         },
     }
 }
@@ -117,10 +150,10 @@ export function createEngineRunError<Output = never>(error: Error): EngineRunErr
         kind: 'error',
         error,
         isSuccess(): this is EngineRunSuccess<Output> {
-            return false;
+            return false
         },
         isError(): this is EngineRunError<Output> {
-            return true;
+            return true
         },
     }
 }

@@ -41,8 +41,8 @@ async function runSimpleExample(): Promise<void> {
 
         agent assistant {
             model: openai_local("qwen3.5-9b")
-            tools: [tool.weather]
-            prompt: "What is the weather in {{ input.country }}?"
+            tools: [tool.weather(country: input.country)]
+            prompt: "Call the weather tool first, then summarize the weather for {{ input.country }} in one sentence."
             output: string
         }
 
