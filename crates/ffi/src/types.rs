@@ -164,6 +164,9 @@ pub struct WorkflowExecutionRequest {
     pub workflow_source: String,
     pub input: WorkflowExecutionInput,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secrets: Option<WorkflowExecutionSecrets>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_tools: Vec<CustomToolDeclaration>,
 
@@ -188,6 +191,12 @@ pub struct WorkflowExecutionInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct WorkflowExecutionSecrets {
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CustomToolDeclaration {
     pub name: String,
 
@@ -207,6 +216,9 @@ pub struct ToolInvocationPayload {
     pub invocation_id: String,
     pub tool_name: String,
     pub arguments: serde_json::Value,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_context: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

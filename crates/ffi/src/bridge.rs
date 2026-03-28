@@ -115,15 +115,16 @@ impl EngineFfi {
                 let workflow_runtime =
                     WorkflowRuntime::<DynamicWorkflowInputValue, DynamicWorkflowOutputValue>::new(parsed_workflow.clone())?;
 
-                let runtime_tools = self
-                    .custom_tool_registry
-                    .runtime_tools_for_execution(&workflow_execution_request.execution_id, &workflow_execution_request.custom_tools)?;
-
-                let ffi_agent_runner = FfiAgentRunner::new(runtime_tools);
+                let ffi_agent_runner = FfiAgentRunner::new(
+                    Arc::clone(&self.custom_tool_registry),
+                    workflow_execution_request.execution_id.clone(),
+                    workflow_execution_request.input.payload.clone(),
+                );
 
                 let workflow_output = workflow_runtime
-                    .run_with_runner(
+                    .run_with_runner_and_secrets(
                         DynamicWorkflowInputValue::from(workflow_execution_request.input.payload.clone()),
+                        workflow_execution_request.secrets_payload(),
                         &ffi_agent_runner,
                     )
                     .await?;
@@ -181,17 +182,21 @@ impl EngineFfi {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct FfiAgentRunner {
     loop_runner: LoopAgentRunner,
-    runtime_tools: Vec<DynamicTool>,
+    custom_tool_registry: Arc<CustomToolRegistry>,
+    execution_id: String,
+    workflow_input: Value,
 }
 
 impl FfiAgentRunner {
-    fn new(runtime_tools: Vec<DynamicTool>) -> Self {
+    fn new(custom_tool_registry: Arc<CustomToolRegistry>, execution_id: String, workflow_input: Value) -> Self {
         Self {
             loop_runner: LoopAgentRunner,
-            runtime_tools,
+            custom_tool_registry,
+            execution_id,
+            workflow_input,
         }
     }
 }
@@ -199,8 +204,20 @@ impl FfiAgentRunner {
 #[async_trait::async_trait]
 impl AgentRunner for FfiAgentRunner {
     async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
-        let mut runtime_tools = request.runtime_tools.clone();
-        runtime_tools.extend(self.runtime_tools.clone());
+        let runtime_tools = self.custom_tool_registry.runtime_tools_for_requested_tools(
+            &self.execution_id,
+            &request.requested_tools,
+            &self.workflow_input,
+        )?;
+
+        let requested_tools_without_bound_arguments = request
+            .requested_tools
+            .iter()
+            .map(|requested_tool| engine_ai_core::runtime::RequestedAgentTool {
+                name: requested_tool.name.clone(),
+                bound_arguments: serde_json::Map::new(),
+            })
+            .collect::<Vec<_>>();
 
         let bridged_request = AgentExecutionRequest {
             agent_name: request.agent_name.clone(),
@@ -209,7 +226,7 @@ impl AgentRunner for FfiAgentRunner {
             prompt: request.prompt.clone(),
             config: request.config.clone(),
             output_schema: request.output_schema.clone(),
-            requested_tools: request.requested_tools.clone(),
+            requested_tools: requested_tools_without_bound_arguments,
             runtime_tools,
         };
 
@@ -316,10 +333,11 @@ impl CustomToolRegistry {
         custom_tool_handler(tool_invocation_payload).await
     }
 
-    fn runtime_tools_for_execution(
+    fn runtime_tools_for_requested_tools(
         self: &Arc<Self>,
         execution_id: &str,
-        custom_tools: &[CustomToolDeclaration],
+        requested_tools: &[engine_ai_core::runtime::RequestedAgentTool],
+        workflow_input: &Value,
     ) -> Result<Vec<DynamicTool>, WorkflowRuntimeError> {
         let declarations_by_execution = self
             .declarations_by_execution
@@ -334,9 +352,16 @@ impl CustomToolRegistry {
 
         let mut runtime_tools = Vec::new();
 
-        for custom_tool in custom_tools {
-            let Some(declared_tool) = declarations_by_name.get(&custom_tool.name) else {
-                continue;
+        for requested_tool in requested_tools {
+            let Some(declared_tool) = declarations_by_name.get(&requested_tool.name) else {
+                return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                    agent_name: String::from("ffi"),
+                    property: String::from("tools"),
+                    message: format!(
+                        "requested custom tool `tool.{}` was not declared for execution `{execution_id}`",
+                        requested_tool.name
+                    ),
+                });
             };
 
             let parameters_schema =
@@ -350,6 +375,8 @@ impl CustomToolRegistry {
             let registry = Arc::clone(self);
             let execution_id = execution_id.to_string();
             let tool_name = declared_tool.name.clone();
+            let bound_arguments = Value::Object(requested_tool.bound_arguments.clone());
+            let workflow_input = workflow_input.clone();
 
             let runtime_tool = DynamicTool::from_parts(
                 declared_tool.name.clone(),
@@ -362,9 +389,17 @@ impl CustomToolRegistry {
                     let registry = Arc::clone(&registry);
                     let execution_id = execution_id.clone();
                     let tool_name = tool_name.clone();
+                    let bound_arguments = bound_arguments.clone();
+                    let workflow_input = workflow_input.clone();
 
                     async move {
-                        let tool_invocation_payload = ToolInvocationPayload::from_runtime_request(execution_id, tool_name, arguments);
+                        let execution_context = serde_json::json!({
+                            "workflow_input": workflow_input,
+                            "bound_arguments": bound_arguments,
+                        });
+
+                        let tool_invocation_payload =
+                            ToolInvocationPayload::from_runtime_request(execution_id, tool_name, arguments, Some(execution_context));
 
                         registry.invoke(tool_invocation_payload).await.map_err(|error| {
                             let mut tool_error = ToolError::new(error.message);
@@ -677,6 +712,12 @@ impl WorkflowTypeInference {
 }
 
 impl WorkflowExecutionRequest {
+    fn secrets_payload(&self) -> Value {
+        self.secrets
+            .as_ref()
+            .map_or(Value::Null, |workflow_secrets| workflow_secrets.payload.clone())
+    }
+
     fn register_custom_tools(&self, custom_tool_registry: &Arc<CustomToolRegistry>) -> Result<(), WorkflowExecutionError> {
         custom_tool_registry.ensure_callback_handlers(&self.custom_tools, self.tool_callback.as_ref())?;
 
@@ -715,7 +756,7 @@ impl WorkflowExecutionRequest {
 }
 
 impl ToolInvocationPayload {
-    fn from_runtime_request(execution_id: String, tool_name: String, arguments: Value) -> Self {
+    fn from_runtime_request(execution_id: String, tool_name: String, arguments: Value, execution_context: Option<Value>) -> Self {
         let invocation_sequence = TOOL_INVOCATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
 
         Self {
@@ -723,6 +764,7 @@ impl ToolInvocationPayload {
             invocation_id: format!("invocation-{invocation_sequence}"),
             tool_name,
             arguments,
+            execution_context,
         }
     }
 }
@@ -888,6 +930,7 @@ mod tests {
             input: WorkflowExecutionInput {
                 payload: json!({ "name": "hello from ffi" }),
             },
+            secrets: None,
             custom_tools: Vec::new(),
             tool_callback: None,
         };
@@ -922,6 +965,7 @@ mod tests {
                 ",
             ),
             input: WorkflowExecutionInput { payload: json!({}) },
+            secrets: None,
             custom_tools: vec![CustomToolDeclaration {
                 name: String::from("echo"),
                 description: Some(String::from("Echo tool")),
@@ -941,6 +985,7 @@ mod tests {
             invocation_id: String::from("invocation-1"),
             tool_name: String::from("echo"),
             arguments: json!({ "message": "hello tool" }),
+            execution_context: None,
         }));
 
         let response_envelope = engine_ffi.invoke(tool_request_envelope).expect("tool invocation should not fail");
@@ -960,6 +1005,7 @@ mod tests {
             invocation_id: String::from("invocation-1"),
             tool_name: String::from("unknown"),
             arguments: json!({}),
+            execution_context: None,
         }));
 
         let response_envelope = engine_ffi

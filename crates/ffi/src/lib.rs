@@ -13,7 +13,7 @@ pub use types::{
     CustomToolDeclaration, FfiOperation, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ToolCallbackConfig,
     ToolInvocationEnvelope, ToolInvocationError, ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult,
     WorkflowExecutionEnvelope, WorkflowExecutionError, WorkflowExecutionErrorCode, WorkflowExecutionInput, WorkflowExecutionOutput,
-    WorkflowExecutionRequest, FFI_PROTOCOL_VERSION,
+    WorkflowExecutionRequest, WorkflowExecutionSecrets, FFI_PROTOCOL_VERSION,
 };
 
 #[derive(Debug, Serialize)]

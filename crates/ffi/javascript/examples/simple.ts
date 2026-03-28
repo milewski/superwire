@@ -1,14 +1,20 @@
-import { Engine, schema, Tool, Workflow } from '../src'
+import { Engine, schema, Tool, type ToolArguments, Workflow } from '../src'
 
 type WeatherInput = {
-    country: string;
+    country?: string;
+}
+
+type WeatherBoundedInput = {
+    key: string;
 }
 
 type WeatherOutput = {
     prediction: string;
 }
 
-class Weather extends Tool<WeatherInput, WeatherOutput> {
+type WeatherArguments = ToolArguments<WeatherInput, WeatherBoundedInput>
+
+class Weather extends Tool<WeatherInput, WeatherOutput, WeatherBoundedInput> {
     readonly description = 'Get weather prediction for a country'
 
     readonly inputSchema = schema.object({
@@ -19,9 +25,14 @@ class Weather extends Tool<WeatherInput, WeatherOutput> {
         super('weather')
     }
 
-    execute(input: WeatherInput): WeatherOutput {
+    execute(toolArguments: WeatherArguments): WeatherOutput {
+        const country = toolArguments.input.country
+        const apiKey = toolArguments.bounded.key
+
+        console.log('Key', apiKey)
+
         return {
-            prediction: `It is very sunny in ${ input.country }`,
+            prediction: `It is very sunny in ${ country }`,
         }
     }
 }
@@ -34,6 +45,10 @@ async function runSimpleExample(): Promise<void> {
             api_key: "local-api-key"
             models: ["qwen3.5-9b"]
         }
+        
+        secrets {
+            key: string
+        }
 
         input {
             country: string
@@ -41,8 +56,8 @@ async function runSimpleExample(): Promise<void> {
 
         agent assistant {
             model: openai_local("qwen3.5-9b")
-            tools: [tool.weather(country: input.country)]
-            prompt: "Call the weather tool first, then summarize the weather for {{ input.country }} in one sentence."
+            tools: [tool.weather(key: secrets.key)]
+            prompt: "Call the weather tool first, then summarize the weather for {{ input.country }}."
             output: string
         }
 
@@ -56,11 +71,12 @@ async function runSimpleExample(): Promise<void> {
     }
 
     const engine = new Engine()
+
     engine.registerTool(new Weather())
 
-    const response = await engine.run<Response>(workflow, {
-        country: 'China',
-    })
+    const response = await engine.run<Response>(
+        workflow, { country: 'Japan' }, { key: 'secret-key' },
+    )
 
     if (response.isError()) {
         console.error(response.error)

@@ -1,7 +1,28 @@
 import type { JsonSchema } from './schema'
 import type { CustomToolDeclaration, JsonRecord } from './types'
 
-export abstract class Tool<Input extends JsonRecord = JsonRecord, Output = unknown> {
+export interface ToolExecutionContext {
+    workflowInput?: unknown;
+    boundArguments?: unknown;
+    [key: string]: unknown;
+}
+
+export interface ToolArguments<
+    ToolInput extends JsonRecord = JsonRecord,
+    ToolBoundedInput extends JsonRecord = JsonRecord,
+    ToolContext extends ToolExecutionContext = ToolExecutionContext,
+> {
+    input: ToolInput;
+    bounded: ToolBoundedInput;
+    context: ToolContext;
+}
+
+export abstract class Tool<
+    ToolInput extends JsonRecord = JsonRecord,
+    ToolOutput = unknown,
+    ToolBoundedInput extends JsonRecord = JsonRecord,
+    ToolContext extends ToolExecutionContext = ToolExecutionContext,
+> {
     readonly name: string
 
     abstract readonly description: string
@@ -14,7 +35,7 @@ export abstract class Tool<Input extends JsonRecord = JsonRecord, Output = unkno
         this.name = name ?? this.constructor.name
     }
 
-    abstract execute(input: Input): Output | Promise<Output>
+    abstract execute(toolArguments: ToolArguments<ToolInput, ToolBoundedInput, ToolContext>): ToolOutput | Promise<ToolOutput>
 
     toDeclaration(): CustomToolDeclaration {
         return {
