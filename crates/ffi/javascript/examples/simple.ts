@@ -136,9 +136,17 @@ async function runSimpleExample(): Promise<void> {
     engine.registerTool(new Weather())
 
     const response = await engine.run<Response>(workflow, { region: 'Shanghai' })
+    const hasError = await response.isError()
 
-    if (await response.isError()) {
-        console.error(await response.error())
+    console.log('isError:', hasError)
+
+    if (hasError) {
+        const executionError = await response.error()
+
+        console.error('Error details:')
+        console.error('  code:', executionError?.code)
+        console.error('  message:', executionError?.message)
+        console.error('  context:', executionError?.context)
         engine.close()
 
         return
