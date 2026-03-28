@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use engine_ai_agent::DynamicTool;
 use engine_ai_agent::ToolError;
@@ -19,12 +19,14 @@ use serde_json::Value;
 
 use crate::error::FfiError;
 use crate::types::{
-    CustomToolDeclaration, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ToolCallbackConfig, ToolInvocationEnvelope,
+    CustomToolDeclaration, ExecutionValueName, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope,
+    ReadExecutionValueEnvelope, ReadExecutionValueRequest, ReadExecutionValueSuccess, ToolCallbackConfig, ToolInvocationEnvelope,
     ToolInvocationError, ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult, WorkflowExecutionEnvelope,
     WorkflowExecutionError, WorkflowExecutionErrorCode, WorkflowExecutionOutput, WorkflowExecutionRequest, FFI_PROTOCOL_VERSION,
 };
 
 static TOOL_INVOCATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static EXECUTION_RESULT_STORE: OnceLock<Arc<ExecutionResultStore>> = OnceLock::new();
 
 thread_local! {
     static DYNAMIC_WORKFLOW_SCHEMA_CONTEXT: RefCell<Option<FfiRuntimeSchemaContext>> = const { RefCell::new(None) };
@@ -34,15 +36,24 @@ type CustomToolHandlerFuture = Pin<Box<dyn Future<Output = Result<Value, ToolInv
 
 pub type CustomToolHandler = Arc<dyn Fn(ToolInvocationPayload) -> CustomToolHandlerFuture + Send + Sync>;
 
-#[derive(Default)]
 pub struct EngineFfi {
     custom_tool_registry: Arc<CustomToolRegistry>,
+    execution_result_store: Arc<ExecutionResultStore>,
+}
+
+impl Default for EngineFfi {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EngineFfi {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            custom_tool_registry: Arc::new(CustomToolRegistry::default()),
+            execution_result_store: Arc::clone(shared_execution_result_store()),
+        }
     }
 
     pub fn register_custom_tool_handler<Handler, HandlerFuture>(&self, tool_name: impl Into<String>, handler: Handler)
@@ -67,6 +78,9 @@ impl EngineFfi {
                 FfiResponse::ExecuteWorkflow(self.execute_workflow(workflow_execution_request))
             }
             FfiRequest::InvokeTool(tool_invocation_payload) => FfiResponse::InvokeTool(self.invoke_tool(tool_invocation_payload)),
+            FfiRequest::ReadExecutionValue(read_execution_value_request) => {
+                FfiResponse::ReadExecutionValue(self.read_execution_value(read_execution_value_request))
+            }
         };
 
         Ok(FfiResponseEnvelope {
@@ -129,20 +143,42 @@ impl EngineFfi {
                     )
                     .await?;
 
-                Ok::<DynamicWorkflowOutputValue, WorkflowRuntimeError>(workflow_output)
+                Ok::<(DynamicWorkflowOutputValue, Value), WorkflowRuntimeError>((workflow_output, ffi_agent_runner.snapshot_context()))
             })
         });
 
         match execution_result {
-            Ok(workflow_output) => WorkflowExecutionEnvelope::Succeeded {
+            Ok((workflow_output, agent_context)) => WorkflowExecutionEnvelope::Succeeded {
                 output: WorkflowExecutionOutput {
-                    execution_id: workflow_execution_request.execution_id,
-                    output: workflow_output.into_inner(),
+                    execution_id: workflow_execution_request.execution_id.clone(),
+                    output: if workflow_execution_request.defer_output {
+                        self.execution_result_store.insert_success(
+                            workflow_execution_request.execution_id,
+                            workflow_output.into_inner(),
+                            agent_context,
+                        );
+
+                        None
+                    } else {
+                        Some(workflow_output.into_inner())
+                    },
                 },
             },
-            Err(runtime_error) => WorkflowExecutionEnvelope::Failed {
-                error: WorkflowExecutionError::from_runtime_error(runtime_error),
-            },
+            Err(runtime_error) => {
+                let workflow_execution_error = WorkflowExecutionError::from_runtime_error(runtime_error);
+
+                if workflow_execution_request.defer_output {
+                    self.execution_result_store.insert_failure(
+                        workflow_execution_request.execution_id,
+                        workflow_execution_error.clone(),
+                        Value::Null,
+                    );
+                }
+
+                WorkflowExecutionEnvelope::Failed {
+                    error: workflow_execution_error,
+                }
+            }
         }
     }
 
@@ -172,6 +208,21 @@ impl EngineFfi {
         }
     }
 
+    fn read_execution_value(&self, read_execution_value_request: ReadExecutionValueRequest) -> ReadExecutionValueEnvelope {
+        match self
+            .execution_result_store
+            .read_value(&read_execution_value_request.execution_id, read_execution_value_request.value)
+        {
+            Ok(value) => ReadExecutionValueEnvelope::Succeeded {
+                result: ReadExecutionValueSuccess {
+                    execution_id: read_execution_value_request.execution_id,
+                    value,
+                },
+            },
+            Err(error) => ReadExecutionValueEnvelope::Failed { error },
+        }
+    }
+
     fn build_runtime() -> Result<tokio::runtime::Runtime, FfiError> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -182,12 +233,71 @@ impl EngineFfi {
     }
 }
 
+fn shared_execution_result_store() -> &'static Arc<ExecutionResultStore> {
+    EXECUTION_RESULT_STORE.get_or_init(|| Arc::new(ExecutionResultStore::default()))
+}
+
+#[derive(Debug, Clone)]
+enum DeferredExecutionResult {
+    Success { output: Value, context: Value },
+    Failure { error: WorkflowExecutionError, context: Value },
+}
+
+#[derive(Default)]
+struct ExecutionResultStore {
+    results_by_execution_id: RwLock<HashMap<String, DeferredExecutionResult>>,
+}
+
+impl ExecutionResultStore {
+    fn insert_success(&self, execution_id: String, output: Value, context: Value) {
+        self.results_by_execution_id
+            .write()
+            .expect("execution result store lock should not be poisoned")
+            .insert(execution_id, DeferredExecutionResult::Success { output, context });
+    }
+
+    fn insert_failure(&self, execution_id: String, error: WorkflowExecutionError, context: Value) {
+        self.results_by_execution_id
+            .write()
+            .expect("execution result store lock should not be poisoned")
+            .insert(execution_id, DeferredExecutionResult::Failure { error, context });
+    }
+
+    fn read_value(&self, execution_id: &str, value_name: ExecutionValueName) -> Result<Value, WorkflowExecutionError> {
+        let results_by_execution_id = self
+            .results_by_execution_id
+            .read()
+            .expect("execution result store lock should not be poisoned");
+
+        let Some(deferred_result) = results_by_execution_id.get(execution_id) else {
+            return Err(WorkflowExecutionError::tool_invocation_failed(
+                format!("unknown deferred execution `{execution_id}`"),
+                None,
+            ));
+        };
+
+        match (deferred_result, value_name) {
+            (DeferredExecutionResult::Success { output, .. }, ExecutionValueName::Success) => Ok(output.clone()),
+            (DeferredExecutionResult::Failure { error, .. }, ExecutionValueName::Error) => serde_json::to_value(error).map_err(|error| {
+                WorkflowExecutionError::internal(format!("failed to serialize deferred error for `{execution_id}`: {error}"))
+            }),
+            (
+                DeferredExecutionResult::Success { context, .. } | DeferredExecutionResult::Failure { context, .. },
+                ExecutionValueName::Context,
+            ) => Ok(context.clone()),
+            (DeferredExecutionResult::Success { .. }, ExecutionValueName::Error)
+            | (DeferredExecutionResult::Failure { .. }, ExecutionValueName::Success) => Ok(Value::Null),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct FfiAgentRunner {
     loop_runner: LoopAgentRunner,
     custom_tool_registry: Arc<CustomToolRegistry>,
     execution_id: String,
     workflow_input: Value,
+    captured_agent_context: Arc<RwLock<HashMap<String, Value>>>,
 }
 
 impl FfiAgentRunner {
@@ -197,7 +307,23 @@ impl FfiAgentRunner {
             custom_tool_registry,
             execution_id,
             workflow_input,
+            captured_agent_context: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    fn snapshot_context(&self) -> Value {
+        let agent_context = self
+            .captured_agent_context
+            .read()
+            .expect("captured agent context lock should not be poisoned");
+
+        let mut context_value = serde_json::Map::new();
+
+        for (agent_name, agent_context_value) in &*agent_context {
+            context_value.insert(agent_name.clone(), agent_context_value.clone());
+        }
+
+        Value::Object(context_value)
     }
 }
 
@@ -230,7 +356,14 @@ impl AgentRunner for FfiAgentRunner {
             runtime_tools,
         };
 
-        self.loop_runner.run_agent(&bridged_request).await
+        let agent_result = self.loop_runner.run_agent(&bridged_request).await?;
+
+        self.captured_agent_context
+            .write()
+            .expect("captured agent context lock should not be poisoned")
+            .insert(request.agent_name.clone(), agent_result.context.clone());
+
+        Ok(agent_result)
     }
 }
 
@@ -933,6 +1066,7 @@ mod tests {
             secrets: None,
             custom_tools: Vec::new(),
             tool_callback: None,
+            defer_output: false,
         };
 
         let request_envelope = FfiRequestEnvelope::new(FfiRequest::ExecuteWorkflow(workflow_execution_request));
@@ -943,7 +1077,7 @@ mod tests {
             panic!("workflow execution should succeed");
         };
 
-        assert_eq!(output.output, json!({ "greeting": "hello from ffi" }));
+        assert_eq!(output.output, Some(json!({ "greeting": "hello from ffi" })));
     }
 
     #[test]
@@ -973,6 +1107,7 @@ mod tests {
                 output_schema: None,
             }],
             tool_callback: None,
+            defer_output: false,
         };
 
         let workflow_request_envelope = FfiRequestEnvelope::new(FfiRequest::ExecuteWorkflow(workflow_execution_request));

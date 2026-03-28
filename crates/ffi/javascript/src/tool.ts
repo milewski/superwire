@@ -32,7 +32,7 @@ export abstract class Tool<
     readonly outputSchema?: JsonSchema
 
     constructor(name?: string) {
-        this.name = name ?? this.constructor.name
+        this.name = name ?? this.deriveToolNameFromClassName()
     }
 
     abstract execute(toolArguments: ToolArguments<ToolInput, ToolBoundedInput, ToolContext>): ToolOutput | Promise<ToolOutput>
@@ -44,5 +44,21 @@ export abstract class Tool<
             input_schema: this.inputSchema,
             output_schema: this.outputSchema,
         }
+    }
+
+    private deriveToolNameFromClassName(): string {
+        const className = this.constructor.name.trim()
+
+        if (!className) {
+            return 'tool'
+        }
+
+        const normalizedName = className
+            .replace(/Tool$/u, '')
+            .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
+            .replace(/[-\s]+/gu, '_')
+            .toLowerCase()
+
+        return normalizedName || 'tool'
     }
 }

@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 
 import { EngineFfiBridge } from './bridge'
-import { createEngineRunError, createEngineRunSuccess } from './types'
 import type {
     CustomToolDeclaration,
+    EngineExecutionResult,
     EngineFfiBridgeOptions,
     EngineRunOptions,
-    EngineRunResult,
     JsonRecord,
+    ReadExecutionValueEnvelope,
     ToolInvocationEnvelope,
     ToolInvocationPayload,
     WorkflowExecutionEnvelope,
@@ -36,6 +36,119 @@ export interface RegisterToolOptions {
 interface RegisteredTool {
     tool: Tool;
     bounded: JsonRecord;
+}
+
+class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Output> {
+    readonly executionId: string
+
+    private readonly engineFfiBridge: EngineFfiBridge
+
+    private cachedSuccessValue: Output | null | undefined
+
+    private cachedErrorValue: Error | null | undefined
+
+    private cachedContextValue: unknown
+
+    private readonly canReadDeferredValues: boolean
+
+    constructor(engineFfiBridge: EngineFfiBridge, executionId: string, eagerError: Error | null = null, canReadDeferredValues = true) {
+        this.engineFfiBridge = engineFfiBridge
+        this.executionId = executionId
+        this.cachedErrorValue = eagerError
+        this.cachedSuccessValue = eagerError ? null : undefined
+        this.canReadDeferredValues = canReadDeferredValues
+    }
+
+    async isSuccess(): Promise<boolean> {
+        const successValue = await this.success()
+
+        return successValue !== null
+    }
+
+    async isError(): Promise<boolean> {
+        const errorValue = await this.error()
+
+        return errorValue !== null
+    }
+
+    async success(): Promise<Output | null> {
+        if (this.cachedSuccessValue !== undefined) {
+            return this.cachedSuccessValue
+        }
+
+        if (!this.canReadDeferredValues) {
+            this.cachedSuccessValue = null
+
+            return this.cachedSuccessValue
+        }
+
+        const responseValue = await this.readExecutionValue('success')
+
+        this.cachedSuccessValue = responseValue as Output | null
+
+        return this.cachedSuccessValue
+    }
+
+    async error(): Promise<Error | null> {
+        if (this.cachedErrorValue !== undefined) {
+            return this.cachedErrorValue
+        }
+
+        if (!this.canReadDeferredValues) {
+            this.cachedErrorValue = null
+
+            return this.cachedErrorValue
+        }
+
+        const responseValue = await this.readExecutionValue('error')
+
+        if (!responseValue || typeof responseValue !== 'object') {
+            this.cachedErrorValue = null
+
+            return this.cachedErrorValue
+        }
+
+        const errorObject = responseValue as {
+            code?: string;
+            message?: string;
+        }
+
+        const errorCode = errorObject.code ?? 'execution_failed'
+        const errorMessage = errorObject.message ?? 'Unknown workflow execution error'
+
+        this.cachedErrorValue = new Error(`[${ errorCode }] ${ errorMessage }`)
+
+        return this.cachedErrorValue
+    }
+
+    async context(): Promise<unknown> {
+        if (this.cachedContextValue !== undefined) {
+            return this.cachedContextValue
+        }
+
+        if (!this.canReadDeferredValues) {
+            this.cachedContextValue = null
+
+            return this.cachedContextValue
+        }
+
+        this.cachedContextValue = await this.readExecutionValue('context')
+
+        return this.cachedContextValue
+    }
+
+    private async readExecutionValue(valueName: 'success' | 'error' | 'context'): Promise<unknown> {
+        const readExecutionValueEnvelope: ReadExecutionValueEnvelope = await this.engineFfiBridge.readExecutionValue({
+            execution_id: this.executionId,
+            value: valueName,
+        })
+
+        if (readExecutionValueEnvelope.status === 'failed') {
+            throw new Error(`[${ readExecutionValueEnvelope.error.code }] ${ readExecutionValueEnvelope.error.message }`)
+        }
+
+        return readExecutionValueEnvelope.result.value
+    }
 }
 
 export class Engine {
@@ -89,11 +202,12 @@ export class Engine {
         inputPayload: Input,
         secretsOrOptions: Secrets | EngineRunOptions = {},
         options: EngineRunOptions = {},
-    ): Promise<EngineRunResult<Output>> {
+    ): Promise<EngineExecutionResult<Output>> {
         const { secretsPayload, runOptions } = this.resolveRunArguments(secretsOrOptions, options)
         const executionId = runOptions.executionId ?? this.executionIdGenerator()
         const workflowExecutionRequest = workflow.toExecutionRequest(executionId, inputPayload, secretsPayload)
         workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
+        workflowExecutionRequest.defer_output = true
 
         const toolCallbackHandle = await this.startToolCallbackServer(executionId)
 
@@ -120,7 +234,7 @@ export class Engine {
 
             const executionError = error instanceof Error ? error : new Error(String(error))
 
-            return createEngineRunError<Output>(executionError)
+            return new DeferredEngineExecutionResult<Output>(this.engineFfiBridge, executionId, executionError, false)
         }
 
         if (toolCallbackHandle) {
@@ -128,14 +242,18 @@ export class Engine {
         }
 
         if (workflowExecutionEnvelope.status === 'failed') {
-            return createEngineRunError<Output>(
-                new Error(
-                    `[${ workflowExecutionEnvelope.error.code }] ${ workflowExecutionEnvelope.error.message }`,
-                ),
+            return new DeferredEngineExecutionResult<Output>(
+                this.engineFfiBridge,
+                executionId,
+                new Error(`[${ workflowExecutionEnvelope.error.code }] ${ workflowExecutionEnvelope.error.message }`),
+                true,
             )
         }
 
-        return createEngineRunSuccess(workflowExecutionEnvelope.output.output)
+        return new DeferredEngineExecutionResult<Output>(
+            this.engineFfiBridge,
+            workflowExecutionEnvelope.output.execution_id,
+        )
     }
 
     private resolveRunArguments<Secrets extends JsonRecord>(

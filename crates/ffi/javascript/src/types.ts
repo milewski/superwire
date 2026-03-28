@@ -55,6 +55,7 @@ export interface WorkflowExecutionRequest<Input extends JsonRecord = JsonRecord>
     };
     custom_tools: CustomToolDeclaration[];
     tool_callback?: ToolCallbackConfig;
+    defer_output?: boolean;
 }
 
 export interface ToolCallbackConfig {
@@ -90,7 +91,7 @@ export interface WorkflowExecutionSucceededEnvelope<Output = unknown> {
     status: 'succeeded';
     output: {
         execution_id: string;
-        output: Output;
+        output?: Output;
     };
 }
 
@@ -116,48 +117,44 @@ export interface EngineRunOptions {
     executionId?: string;
 }
 
-export interface EngineRunSuccess<Output = unknown> {
-    readonly kind: 'success';
-    readonly success: Output;
+export type ExecutionValueName = 'success' | 'error' | 'context';
 
-    isSuccess(): this is EngineRunSuccess<Output>;
-
-    isError(): this is EngineRunError<Output>;
+export interface ReadExecutionValueRequest {
+    execution_id: string;
+    value: ExecutionValueName;
 }
 
-export interface EngineRunError<Output = never> {
-    readonly kind: 'error';
-    readonly error: Error;
-
-    isSuccess(): this is EngineRunSuccess<Output>;
-
-    isError(): this is EngineRunError<Output>;
+export interface ReadExecutionValueSucceededEnvelope {
+    status: 'succeeded';
+    result: {
+        execution_id: string;
+        value: unknown;
+    };
 }
 
-export type EngineRunResult<Output = unknown> = EngineRunSuccess<Output> | EngineRunError<Output>;
-
-export function createEngineRunSuccess<Output>(success: Output): EngineRunSuccess<Output> {
-    return {
-        kind: 'success',
-        success,
-        isSuccess(): this is EngineRunSuccess<Output> {
-            return true
-        },
-        isError(): this is EngineRunError<Output> {
-            return false
-        },
-    }
+export interface ReadExecutionValueFailedEnvelope {
+    status: 'failed';
+    error: {
+        code: string;
+        message: string;
+        details?: unknown;
+    };
 }
 
-export function createEngineRunError<Output = never>(error: Error): EngineRunError<Output> {
-    return {
-        kind: 'error',
-        error,
-        isSuccess(): this is EngineRunSuccess<Output> {
-            return false
-        },
-        isError(): this is EngineRunError<Output> {
-            return true
-        },
-    }
+export type ReadExecutionValueEnvelope =
+    | ReadExecutionValueSucceededEnvelope
+    | ReadExecutionValueFailedEnvelope;
+
+export interface EngineExecutionResult<Output = unknown> {
+    readonly executionId: string;
+
+    isSuccess(): Promise<boolean>;
+
+    isError(): Promise<boolean>;
+
+    success(): Promise<Output | null>;
+
+    error(): Promise<Error | null>;
+
+    context(): Promise<unknown>;
 }
