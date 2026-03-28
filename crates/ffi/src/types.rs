@@ -84,6 +84,7 @@ impl FfiResponseEnvelope {
                 error: WorkflowExecutionError {
                     code: WorkflowExecutionErrorCode::Internal,
                     message: error.to_string(),
+                    context: None,
                     details: None,
                 },
             }),
@@ -98,6 +99,7 @@ impl FfiResponseEnvelope {
                 error: WorkflowExecutionError {
                     code: WorkflowExecutionErrorCode::Internal,
                     message: error.to_string(),
+                    context: None,
                     details: None,
                 },
             }),
@@ -319,6 +321,9 @@ pub enum ReadExecutionValueEnvelope {
 pub struct WorkflowExecutionError {
     pub code: WorkflowExecutionErrorCode,
     pub message: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<serde_json::Value>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,

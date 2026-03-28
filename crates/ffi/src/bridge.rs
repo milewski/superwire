@@ -6,8 +6,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
-use engine_ai_agent::DynamicTool;
-use engine_ai_agent::ToolError;
+use engine_ai_agent::{AgentError, DynamicTool, ToolError};
 use engine_ai_core::dsl::{Declaration, TypeExpression, Workflow};
 use engine_ai_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
 use engine_ai_core::runtime::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
@@ -937,6 +936,7 @@ impl WorkflowExecutionError {
         Self {
             code: WorkflowExecutionErrorCode::ParseFailed,
             message,
+            context: None,
             details,
         }
     }
@@ -945,14 +945,16 @@ impl WorkflowExecutionError {
         Self {
             code: WorkflowExecutionErrorCode::ValidationFailed,
             message,
+            context: None,
             details,
         }
     }
 
-    fn runtime_failed(message: String, details: Option<Value>) -> Self {
+    fn runtime_failed(message: String, context: Option<Value>, details: Option<Value>) -> Self {
         Self {
             code: WorkflowExecutionErrorCode::RuntimeFailed,
             message,
+            context,
             details,
         }
     }
@@ -961,6 +963,7 @@ impl WorkflowExecutionError {
         Self {
             code: WorkflowExecutionErrorCode::ToolInvocationFailed,
             message,
+            context: None,
             details,
         }
     }
@@ -969,6 +972,7 @@ impl WorkflowExecutionError {
         Self {
             code: WorkflowExecutionErrorCode::Internal,
             message,
+            context: None,
             details: None,
         }
     }
@@ -989,30 +993,42 @@ impl WorkflowExecutionError {
                 found: _,
             } => Self::validation_failed(issues, None),
             WorkflowRuntimeError::ProviderConfiguration { provider_name, message } => {
-                Self::runtime_failed(format!("provider `{provider_name}` configuration error: {message}"), None)
+                Self::runtime_failed(format!("provider `{provider_name}` configuration error: {message}"), None, None)
             }
             WorkflowRuntimeError::ExpressionEvaluation { context, message } => {
-                Self::runtime_failed(format!("expression evaluation failed in {context}: {message}"), None)
+                Self::runtime_failed(format!("expression evaluation failed in {context}: {message}"), None, None)
             }
             WorkflowRuntimeError::InvalidAgentProperty {
                 agent_name,
                 property,
                 message,
-            } => Self::runtime_failed(format!("agent `{agent_name}` has invalid `{property}` property: {message}"), None),
-            WorkflowRuntimeError::InputValueMismatch { message } => Self::runtime_failed(message, None),
-            WorkflowRuntimeError::AgentOutputTypeMismatch { agent_name, message } => {
-                Self::runtime_failed(format!("agent `{agent_name}` output does not match declared type: {message}"), None)
-            }
+            } => Self::runtime_failed(
+                format!("agent `{agent_name}` has invalid `{property}` property: {message}"),
+                None,
+                None,
+            ),
+            WorkflowRuntimeError::InputValueMismatch { message } => Self::runtime_failed(message, None, None),
+            WorkflowRuntimeError::AgentOutputTypeMismatch { agent_name, message } => Self::runtime_failed(
+                format!("agent `{agent_name}` output does not match declared type: {message}"),
+                None,
+                None,
+            ),
             WorkflowRuntimeError::AgentExecutionFailed { agent_name, source } => {
-                Self::runtime_failed(format!("agent `{agent_name}` execution failed: {source}"), None)
+                if let AgentError::ExecutionFailed { error, context } = source.as_ref() {
+                    let agent_context = serde_json::to_value(context).ok();
+
+                    Self::runtime_failed(format!("agent `{agent_name}` execution failed: {error}"), agent_context, None)
+                } else {
+                    Self::runtime_failed(format!("agent `{agent_name}` execution failed: {source}"), None, None)
+                }
             }
             WorkflowRuntimeError::SerializationFailed { context, source } => {
-                Self::runtime_failed(format!("serialization failed for {context}: {source}"), None)
+                Self::runtime_failed(format!("serialization failed for {context}: {source}"), None, None)
             }
             WorkflowRuntimeError::OutputDeserializationFailed { source } => {
-                Self::runtime_failed(format!("output deserialization failed: {source}"), None)
+                Self::runtime_failed(format!("output deserialization failed: {source}"), None, None)
             }
-            WorkflowRuntimeError::Other { message } => Self::runtime_failed(message, None),
+            WorkflowRuntimeError::Other { message } => Self::runtime_failed(message, None, None),
         }
     }
 }
@@ -1037,13 +1053,43 @@ impl ToolInvocationError {
 
 #[cfg(test)]
 mod tests {
+    use engine_ai_agent::{AgentError, ToolError};
+    use engine_ai_core::runtime::WorkflowRuntimeError;
     use serde_json::json;
 
     use super::EngineFfi;
+    use crate::types::WorkflowExecutionError;
     use crate::types::{
         CustomToolDeclaration, FfiRequest, FfiRequestEnvelope, ToolInvocationEnvelope, ToolInvocationErrorCode, ToolInvocationPayload,
-        WorkflowExecutionEnvelope, WorkflowExecutionInput, WorkflowExecutionRequest,
+        WorkflowExecutionEnvelope, WorkflowExecutionErrorCode, WorkflowExecutionInput, WorkflowExecutionRequest,
     };
+
+    #[test]
+    fn separates_agent_context_from_runtime_error_message() {
+        let agent_error = AgentError::from(ToolError::new("Unable to connect to the weather service"));
+
+        let runtime_error = WorkflowRuntimeError::AgentExecutionFailed {
+            agent_name: String::from("assistant"),
+            source: Box::new(agent_error),
+        };
+
+        let workflow_execution_error = WorkflowExecutionError::from_runtime_error(runtime_error);
+
+        assert_eq!(workflow_execution_error.code, WorkflowExecutionErrorCode::RuntimeFailed);
+        assert_eq!(
+            workflow_execution_error.message,
+            "agent `assistant` execution failed: Unable to connect to the weather service"
+        );
+
+        let expected_error_context = json!({
+            "messages": [],
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        });
+
+        assert_eq!(workflow_execution_error.context, Some(expected_error_context));
+    }
 
     #[test]
     fn executes_workflow_request_and_returns_json_output() {
