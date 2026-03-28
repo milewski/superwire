@@ -547,6 +547,7 @@ dependencies = [
  "ariadne",
  "async-trait",
  "engine-ai-agent",
+ "futures",
  "jsonschema",
  "pest",
  "pest_derive",

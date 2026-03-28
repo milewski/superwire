@@ -5,7 +5,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
+use tokio::time::sleep;
 
 pub static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
     parse_inline_workflow! {
@@ -71,6 +74,56 @@ impl AgentRunner for ScriptedRunner {
             context: json!({
                 "agent": request.agent_name,
                 "prompt": request.prompt,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ParallelProbeRunner {
+    current_inflight_agents: Arc<AtomicUsize>,
+    max_inflight_agents: Arc<AtomicUsize>,
+}
+
+impl ParallelProbeRunner {
+    pub fn max_inflight_agents(&self) -> usize {
+        self.max_inflight_agents.load(Ordering::SeqCst)
+    }
+
+    fn record_inflight_peak(&self, inflight_agent_count: usize) {
+        loop {
+            let current_peak = self.max_inflight_agents.load(Ordering::SeqCst);
+
+            if inflight_agent_count <= current_peak {
+                return;
+            }
+
+            if self
+                .max_inflight_agents
+                .compare_exchange(current_peak, inflight_agent_count, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return;
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl AgentRunner for ParallelProbeRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        let inflight_agent_count = self.current_inflight_agents.fetch_add(1, Ordering::SeqCst) + 1;
+
+        self.record_inflight_peak(inflight_agent_count);
+
+        sleep(Duration::from_millis(40)).await;
+
+        self.current_inflight_agents.fetch_sub(1, Ordering::SeqCst);
+
+        Ok(AgentExecutionResult {
+            output: json!(request.agent_name),
+            context: json!({
+                "agent": request.agent_name,
             }),
         })
     }
@@ -814,4 +867,49 @@ async fn evaluates_tool_bound_arguments_from_secrets_context() {
         .expect("bound arguments expectation should be an object")
         .clone()
     );
+}
+
+#[tokio::test]
+async fn executes_independent_agents_in_parallel_batches() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        review: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        agent customer_story {
+            model: openai("model-a")
+            prompt: "customer"
+            output: string
+        }
+
+        agent investor_story {
+            model: openai("model-a")
+            prompt: "investor"
+            output: string
+        }
+
+        agent review {
+            model: openai("model-a")
+            prompt: "{{ agent.customer_story }} + {{ agent.investor_story }}"
+            output: string
+        }
+
+        output {
+            review: agent.review
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = ParallelProbeRunner::default();
+
+    let output = runtime
+        .run_with_runner((), &runner)
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(output.review, "review".to_string());
+    assert!(runner.max_inflight_agents() >= 2);
 }

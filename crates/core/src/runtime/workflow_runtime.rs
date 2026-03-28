@@ -10,11 +10,12 @@ use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentR
 use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
 use engine_ai_agent::AgentConfig;
+use futures::future::try_join_all;
 use schemars::{JsonSchema, Schema};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
@@ -65,6 +66,20 @@ struct AgentToolBinding {
 struct AgentToolArgumentExpression {
     argument_name: String,
     expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+struct CompletedAgentExecution {
+    agent_name: String,
+    output: Value,
+    context: Value,
+}
+
+impl CompletedAgentExecution {
+    fn apply_to_runtime_state(self, runtime_state: &mut RuntimeState) {
+        runtime_state.agent_outputs.insert(self.agent_name.clone(), self.output);
+        runtime_state.agent_contexts.insert(self.agent_name, self.context);
+    }
 }
 
 pub struct WorkflowRuntime<Input, Output>
@@ -140,17 +155,33 @@ where
 
         let mut runtime_state = RuntimeState::new(input_values, secret_values);
         let execution_order = self.resolve_agent_execution_order();
+        let execution_batches = self.resolve_agent_execution_batches(&execution_order)?;
 
-        for agent_name in execution_order {
-            let planned_agent = self
-                .compiled_workflow
-                .execution_plan
-                .planned_agents
-                .get(&agent_name)
-                .expect("agent should exist in execution plan")
-                .clone();
+        for execution_batch in execution_batches {
+            let runtime_state_snapshot = runtime_state.clone();
+            let mut pending_executions = Vec::new();
 
-            self.execute_agent(&planned_agent, &mut runtime_state, runner).await?;
+            for agent_name in execution_batch {
+                let planned_agent = self
+                    .compiled_workflow
+                    .execution_plan
+                    .planned_agents
+                    .get(&agent_name)
+                    .expect("agent should exist in execution plan")
+                    .clone();
+
+                let runtime_state_snapshot = runtime_state_snapshot.clone();
+
+                let execution_future = async move { self.execute_agent(&planned_agent, &runtime_state_snapshot, runner).await };
+
+                pending_executions.push(execution_future);
+            }
+
+            let completed_executions = try_join_all(pending_executions).await?;
+
+            for completed_execution in completed_executions {
+                completed_execution.apply_to_runtime_state(&mut runtime_state);
+            }
         }
 
         let workflow_output_value = self.evaluate_workflow_output(&runtime_state)?;
@@ -230,12 +261,66 @@ where
         self.compiled_workflow.execution_plan.agent_execution_order.clone()
     }
 
+    fn resolve_agent_execution_batches(&self, execution_order: &[String]) -> Result<Vec<Vec<String>>, WorkflowRuntimeError> {
+        let mut unresolved_agents = execution_order.iter().cloned().collect::<HashSet<_>>();
+        let mut resolved_agents = HashSet::<String>::new();
+        let mut execution_batches = Vec::<Vec<String>>::new();
+
+        while !unresolved_agents.is_empty() {
+            let mut ready_agents = Vec::<String>::new();
+
+            for agent_name in execution_order {
+                if !unresolved_agents.contains(agent_name) {
+                    continue;
+                }
+
+                let planned_agent = self
+                    .compiled_workflow
+                    .execution_plan
+                    .planned_agents
+                    .get(agent_name)
+                    .expect("agent should exist in execution plan");
+
+                if planned_agent
+                    .dependencies
+                    .iter()
+                    .any(|dependency_name| !resolved_agents.contains(dependency_name))
+                {
+                    continue;
+                }
+
+                ready_agents.push(agent_name.clone());
+            }
+
+            if ready_agents.is_empty() {
+                let mut blocked_agent_names = unresolved_agents.into_iter().collect::<Vec<_>>();
+                blocked_agent_names.sort();
+
+                return Err(WorkflowRuntimeError::ExecutionPlanInvariant {
+                    message: format!(
+                        "failed to resolve execution batches; blocked agents: {}",
+                        blocked_agent_names.join(", ")
+                    ),
+                });
+            }
+
+            for ready_agent_name in &ready_agents {
+                unresolved_agents.remove(ready_agent_name);
+                resolved_agents.insert(ready_agent_name.clone());
+            }
+
+            execution_batches.push(ready_agents);
+        }
+
+        Ok(execution_batches)
+    }
+
     async fn execute_agent<RunnerType>(
         &self,
         planned_agent: &PlannedAgent,
-        runtime_state: &mut RuntimeState,
+        runtime_state: &RuntimeState,
         runner: &RunnerType,
-    ) -> Result<(), WorkflowRuntimeError>
+    ) -> Result<CompletedAgentExecution, WorkflowRuntimeError>
     where
         RunnerType: AgentRunner,
     {
@@ -305,9 +390,9 @@ where
         &self,
         agent_for_loop: &AgentForLoop,
         prepared_agent_execution: &PreparedAgentExecution<'_>,
-        runtime_state: &mut RuntimeState,
+        runtime_state: &RuntimeState,
         runner: &RunnerType,
-    ) -> Result<(), WorkflowRuntimeError>
+    ) -> Result<CompletedAgentExecution, WorkflowRuntimeError>
     where
         RunnerType: AgentRunner,
     {
@@ -345,23 +430,19 @@ where
             iteration_contexts.push(agent_result.context);
         }
 
-        runtime_state
-            .agent_outputs
-            .insert(prepared_agent_execution.agent_name.clone(), Value::Array(iteration_outputs));
-
-        runtime_state
-            .agent_contexts
-            .insert(prepared_agent_execution.agent_name.clone(), Value::Array(iteration_contexts));
-
-        Ok(())
+        Ok(CompletedAgentExecution {
+            agent_name: prepared_agent_execution.agent_name.clone(),
+            output: Value::Array(iteration_outputs),
+            context: Value::Array(iteration_contexts),
+        })
     }
 
     async fn execute_single_agent<RunnerType>(
         &self,
         prepared_agent_execution: &PreparedAgentExecution<'_>,
-        runtime_state: &mut RuntimeState,
+        runtime_state: &RuntimeState,
         runner: &RunnerType,
-    ) -> Result<(), WorkflowRuntimeError>
+    ) -> Result<CompletedAgentExecution, WorkflowRuntimeError>
     where
         RunnerType: AgentRunner,
     {
@@ -375,15 +456,11 @@ where
             &prepared_agent_execution.agent_name,
         )?;
 
-        runtime_state
-            .agent_outputs
-            .insert(prepared_agent_execution.agent_name.clone(), agent_result.output);
-
-        runtime_state
-            .agent_contexts
-            .insert(prepared_agent_execution.agent_name.clone(), agent_result.context);
-
-        Ok(())
+        Ok(CompletedAgentExecution {
+            agent_name: prepared_agent_execution.agent_name.clone(),
+            output: agent_result.output,
+            context: agent_result.context,
+        })
     }
 
     fn evaluate_agent_tools(
