@@ -544,6 +544,25 @@ impl FunctionCall {
     }
 
     #[must_use]
+    pub fn model_argument_expressions(&self) -> Vec<&Expression> {
+        let mut model_argument_expressions = Vec::new();
+
+        for call_argument in &self.arguments {
+            if call_argument.named_argument_name().is_none() {
+                model_argument_expressions.push(call_argument.expression());
+
+                continue;
+            }
+
+            if call_argument.named_argument_name() == Some(ModelCallArgumentName::Model.as_str()) {
+                model_argument_expressions.push(call_argument.expression());
+            }
+        }
+
+        model_argument_expressions
+    }
+
+    #[must_use]
     pub fn agent_argument_expression(&self) -> Option<&Expression> {
         for call_argument in &self.arguments {
             if call_argument.named_argument_name().is_none() {

@@ -1,4 +1,5 @@
 import { Engine, Workflow } from '../src'
+import { loadOpenAIProviderSecrets } from './env'
 
 type PersonaCampaignInput = {
     product_name: string;
@@ -20,12 +21,20 @@ type PersonaCampaignResponse = {
 }
 
 async function runAgentForLoopExample(): Promise<void> {
+    const providerSecrets = loadOpenAIProviderSecrets()
+
     const workflow = new Workflow(`
-        provider openai_local {
+        provider openai {
             driver: "openai"
-            endpoint: "http://169.254.83.107:1234/v1"
-            api_key: "local-api-key"
-            models: ["qwen/qwen3.5-35b-a3b"]
+            endpoint: secrets.openai_endpoint
+            api_key: secrets.openai_api_key
+            models: [secrets.openai_model]
+        }
+
+        secrets {
+            openai_endpoint: string
+            openai_api_key: string
+            openai_model: string
         }
 
         input {
@@ -34,7 +43,7 @@ async function runAgentForLoopExample(): Promise<void> {
         }
 
         agent persona_campaign for persona in input.personas {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai(secrets.openai_model)
             prompt: "Create a short campaign for {{ input.product_name }} targeted at persona: {{ persona }}"
             output: {
                 persona: string
@@ -44,7 +53,7 @@ async function runAgentForLoopExample(): Promise<void> {
         }
 
         agent persona_score for campaign in agent.persona_campaign {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai(secrets.openai_model)
             prompt: "Score this campaign from 1 to 10 and explain briefly: {{ campaign }}"
             output: {
                 persona: string
@@ -72,7 +81,7 @@ async function runAgentForLoopExample(): Promise<void> {
             ],
         }
 
-        const response = await engine.run<PersonaCampaignResponse>(workflow, inputPayload)
+        const response = await engine.run<PersonaCampaignResponse>(workflow, inputPayload, providerSecrets)
 
         if (await response.isError()) {
             const executionError = await response.error()

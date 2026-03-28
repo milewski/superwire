@@ -2,3 +2,4 @@ node_modules/
 native/
 package-lock.json
 dist/
+.env

@@ -1,4 +1,5 @@
 import { Engine, Workflow } from '../src'
+import { loadOpenAIProviderSecrets } from './env'
 
 type ParallelNarrativesInput = {
     product_name: string;
@@ -24,12 +25,20 @@ type ParallelNarrativesResponse = {
 }
 
 async function runParallelAgentsExample(): Promise<void> {
+    const providerSecrets = loadOpenAIProviderSecrets()
+
     const workflow = new Workflow(`
-        provider openai_local {
+        provider openai {
             driver: "openai"
-            endpoint: "http://100.118.249.48:3000/v1"
-            api_key: "sk-S2Wcfi5cJhGGhFpTHjHcClDmQoR6IwTx1PNl9cmIZF6Wtuxz"
-            models: ["qwen3.5-27b"]
+            endpoint: secrets.openai_endpoint
+            api_key: secrets.openai_api_key
+            models: [secrets.openai_model]
+        }
+        
+        secrets {
+            openai_endpoint: string
+            openai_api_key: string
+            openai_model: string
         }
 
         input {
@@ -38,7 +47,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent customer_story {
-            model: openai_local("qwen3.5-27b")
+            model: openai(secrets.openai_model)
             prompt: "Write a customer-facing announcement for {{ input.product_name }} using these highlights: {{ input.release_highlights }}"
             output: {
                 headline: string
@@ -47,7 +56,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent investor_story {
-            model: openai_local("qwen3.5-27b")
+            model: openai(secrets.openai_model)
             prompt: "Write an investor update for {{ input.product_name }} based on: {{ input.release_highlights }}"
             output: {
                 thesis: string
@@ -56,7 +65,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent social_snippets {
-            model: openai_local("qwen3.5-27b")
+            model: openai(secrets.openai_model)
             prompt: "Generate 3 short social posts for {{ input.product_name }} from: {{ input.release_highlights }}"
             output: {
                 posts: [string; 3]
@@ -64,7 +73,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent review {
-            model: openai_local("qwen3.5-27b")
+            model: openai(secrets.openai_model)
             prompt: "Check consistency across customer={{ agent.customer_story }} investor={{ agent.investor_story }} social={{ agent.social_snippets }}"
             output: {
                 approved: boolean
@@ -92,7 +101,7 @@ async function runParallelAgentsExample(): Promise<void> {
             ],
         }
 
-        const response = await engine.run<ParallelNarrativesResponse>(workflow, inputPayload)
+        const response = await engine.run<ParallelNarrativesResponse>(workflow, inputPayload, providerSecrets)
 
         if (await response.isError()) {
             const executionError = await response.error()

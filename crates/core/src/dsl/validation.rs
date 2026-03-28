@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ModelCallArgumentName, ObjectField, Reference,
-    ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentProperty, AgentPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword, SourceSpan, StringTemplatePart,
+    TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::runtime::InferenceSetting;
@@ -403,7 +403,8 @@ impl ValidationIssue {
                 )
             }
             Self::InvalidModelExpression { agent_name: _ } => {
-                "Use `model: provider_name(\"model-name\")` in the agent declaration.".to_string()
+                "Use `model: provider_name(\"model-name\")` or `model: provider_name(expression)` with exactly one model argument."
+                    .to_string()
             }
             Self::UnknownProviderInModel {
                 agent_name: _,
@@ -1026,7 +1027,9 @@ fn validate_model_expression(
         return;
     };
 
-    let Some(model_name) = extract_model_name(model_call) else {
+    let model_argument_expressions = model_call.model_argument_expressions();
+
+    if model_argument_expressions.is_empty() {
         validation_report.push_issue_with_span(
             ValidationIssue::InvalidModelExpression {
                 agent_name: agent_name.to_owned(),
@@ -1035,13 +1038,28 @@ fn validate_model_expression(
         );
 
         return;
+    }
+
+    if model_argument_expressions.len() > 1 {
+        validation_report.push_issue_with_span(
+            ValidationIssue::InvalidModelExpression {
+                agent_name: agent_name.to_owned(),
+            },
+            model_span,
+        );
+
+        return;
+    }
+
+    let Expression::StringLiteral(model_name) = model_argument_expressions[0] else {
+        return;
     };
 
     let Some(declared_models) = &provider_info.declared_models else {
         return;
     };
 
-    if declared_models.contains(&model_name) {
+    if declared_models.contains(model_name) {
         return;
     }
 
@@ -1049,34 +1067,10 @@ fn validate_model_expression(
         ValidationIssue::UnknownModelForProvider {
             agent_name: agent_name.to_owned(),
             provider_name,
-            model_name,
+            model_name: model_name.clone(),
         },
         model_span,
     );
-}
-
-fn extract_model_name(model_call: &FunctionCall) -> Option<String> {
-    for call_argument in &model_call.arguments {
-        if call_argument.named_argument_name().is_none() {
-            if let Expression::StringLiteral(model_name) = call_argument.expression() {
-                return Some(model_name.clone());
-            }
-
-            continue;
-        }
-
-        if call_argument.named_argument_name() != Some(ModelCallArgumentName::Model.as_str()) {
-            continue;
-        }
-
-        let Expression::StringLiteral(model_name) = call_argument.expression() else {
-            return None;
-        };
-
-        return Some(model_name.clone());
-    }
-
-    None
 }
 
 fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
@@ -2205,6 +2199,27 @@ mod tests {
                 model_name
             } if agent_name == "researcher" && provider_name == "openai" && model_name == "gpt-4.1"
         );
+    }
+
+    #[test]
+    fn allows_dynamic_model_expression_without_literal_lookup() {
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                models: ["gpt-4.1-mini"]
+            }
+
+            secrets {
+                selected_model: string
+            }
+
+            agent researcher {
+                model: openai(secrets.selected_model)
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::InvalidModelExpression { .. });
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::UnknownModelForProvider { .. });
     }
 
     #[test]

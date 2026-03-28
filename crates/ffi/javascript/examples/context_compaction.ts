@@ -1,0 +1,108 @@
+import { Engine, Workflow } from '../src'
+import { loadOpenAIProviderSecrets } from './env'
+
+type ContextCompactionInput = {
+    product_name: string;
+    customer_feedback: string[];
+}
+
+type ContextCompactionResponse = {
+    analysis: {
+        themes: string[];
+        risks: string[];
+        opportunities: string[];
+    };
+    full_context: unknown;
+    compacted_context: unknown;
+    summary_from_full_context: string;
+    summary_from_compact_context: {
+        summary: string;
+        top_actions: string[];
+    };
+}
+
+async function runContextCompactionExample(): Promise<void> {
+    const providerSecrets = loadOpenAIProviderSecrets()
+
+    const workflow = new Workflow(`
+        provider openai {
+            driver: "openai"
+            endpoint: secrets.openai_endpoint
+            api_key: secrets.openai_api_key
+            models: [secrets.openai_model]
+        }
+
+        secrets {
+            openai_endpoint: string
+            openai_api_key: string
+            openai_model: string
+        }
+
+        input {
+            product_name: string
+            customer_feedback: [string]
+        }
+
+        agent research_analysis {
+            model: openai(secrets.openai_model)
+            prompt: "Analyze this customer feedback for {{ input.product_name }} and extract themes, risks, and opportunities: {{ input.customer_feedback }}"
+            output: {
+                themes: [string]
+                risks: [string]
+                opportunities: [string]
+            }
+        }
+
+        agent summary_from_full_context {
+            model: openai(secrets.openai_model)
+            context: context(agent.research_analysis)
+            prompt: "Write a concise executive summary using the provided context."
+            output: string
+        }
+
+        agent summary_from_compact_context {
+            model: openai(secrets.openai_model)
+            context: compact(agent.research_analysis)
+            prompt: "Write a concise executive summary with three concrete next actions."
+            output: {
+                summary: string
+                top_actions: [string; 3]
+            }
+        }
+
+        output {
+            analysis: agent.research_analysis
+            full_context: context(agent.research_analysis)
+            compacted_context: compact(agent.research_analysis)
+            summary_from_full_context: agent.summary_from_full_context
+            summary_from_compact_context: agent.summary_from_compact_context
+        }
+    `)
+
+    const engine = new Engine()
+
+    try {
+        const inputPayload: ContextCompactionInput = {
+            product_name: 'Compass AI',
+            customer_feedback: [
+                'Teams like the speed but want clearer alert routing.',
+                'Users request stronger multilingual response consistency.',
+                'Managers want trend summaries by region and segment.',
+            ],
+        }
+
+        const response = await engine.run<ContextCompactionResponse>(workflow, inputPayload, providerSecrets)
+
+        if (await response.isError()) {
+            console.error('Error:', await response.error())
+
+            return
+        }
+
+        console.log(await response.success())
+    } finally {
+        engine.close()
+    }
+}
+
+runContextCompactionExample()
