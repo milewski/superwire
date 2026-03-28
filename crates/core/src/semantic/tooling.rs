@@ -467,7 +467,8 @@ impl TypeExpression {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
-            | TypeExpression::StringEnum(_) => {}
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_) => {}
         }
     }
 
@@ -508,7 +509,8 @@ impl TypeExpression {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
-            | TypeExpression::StringEnum(_) => {}
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_) => {}
         }
     }
 }

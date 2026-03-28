@@ -291,6 +291,11 @@ impl AstVisitor {
                 let schema_name = self.next_identifier(&mut inner_pairs, "schema name", "schema reference")?;
                 Ok(TypeExpression::SchemaReference(schema_name))
             }
+            Rule::reference => {
+                let enum_reference = self.visit_reference(type_term_pair)?;
+
+                Ok(TypeExpression::StringEnumReference(enum_reference))
+            }
             Rule::array_type => {
                 let mut inner_pairs = type_term_pair.into_inner();
 

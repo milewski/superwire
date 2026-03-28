@@ -81,6 +81,7 @@ impl RenderTypeExpression for TypeExpression {
             Self::Null => "null".to_string(),
             Self::SchemaReference(schema_name) => format!("schema.{schema_name}"),
             Self::StringEnum(enum_value) => format!("\"{enum_value}\""),
+            Self::StringEnumReference(enum_reference) => enum_reference.render_path(),
             Self::Array { item_type, fixed_length } => {
                 if let Some(fixed_length) = fixed_length {
                     return format!("[{}; {fixed_length}]", item_type.render_type());

@@ -152,6 +152,7 @@ fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
         TypeExpression::Boolean => Ok(WorkflowType::Boolean),
         TypeExpression::Null => Ok(WorkflowType::Null),
         TypeExpression::StringEnum(enum_value) => Ok(WorkflowType::StringEnum(vec![enum_value.clone()])),
+        TypeExpression::StringEnumReference(_) => Ok(WorkflowType::String),
         TypeExpression::Array { item_type, fixed_length } => Ok(WorkflowType::Array {
             item_type: Box::new(workflow_type_from_dsl_with_stack(item_type, named_schemas, resolution_stack)?),
             fixed_length: *fixed_length,

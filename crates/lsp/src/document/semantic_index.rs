@@ -58,6 +58,20 @@ pub(in crate::document) struct NamedSpan {
 }
 
 impl SemanticIndex {
+    pub fn model_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
+        [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
+            .into_iter()
+            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+            .map(|reference_keyword| CompletionSuggestion {
+                label: reference_keyword.as_str().to_string(),
+                kind: CompletionKind::Module,
+                detail: "Model expression reference root".to_string(),
+                documentation: format!("Use `{}.<path>` inside model expressions.", reference_keyword.as_str()),
+                insert_text: format!("{}.", reference_keyword.as_str()),
+            })
+            .collect()
+    }
+
     pub fn inference_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
         [ReferenceKeyword::Agent, ReferenceKeyword::Input]
             .into_iter()

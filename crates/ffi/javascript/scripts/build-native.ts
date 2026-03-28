@@ -1,47 +1,47 @@
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
 
-const packageDirectory = path.resolve(__dirname, "..", "..");
-const workspaceRootDirectory = path.resolve(packageDirectory, "..", "..", "..");
+const packageDirectory = path.resolve(__dirname, '..', '..')
+const workspaceRootDirectory = path.resolve(packageDirectory, '..', '..', '..')
 
-const nativeLibraryDirectory = path.resolve(packageDirectory, "native");
-const sourceLibraryPath = path.resolve(workspaceRootDirectory, "target", "release", libraryFileNameForCurrentPlatform());
-const destinationLibraryPath = path.resolve(nativeLibraryDirectory, libraryFileNameForCurrentPlatform());
+const nativeLibraryDirectory = path.resolve(packageDirectory, 'native')
+const sourceLibraryPath = path.resolve(workspaceRootDirectory, 'target', 'release', libraryFileNameForCurrentPlatform())
+const destinationLibraryPath = path.resolve(nativeLibraryDirectory, libraryFileNameForCurrentPlatform())
 
-buildRustFfiLibrary();
-copyNativeLibrary();
+buildRustFfiLibrary()
+copyNativeLibrary()
 
 function buildRustFfiLibrary(): void {
-  execFileSync("cargo", ["build", "-p", "ffi", "--release"], {
-    cwd: workspaceRootDirectory,
-    stdio: "inherit",
-  });
+    execFileSync('cargo', [ 'build', '-p', 'ffi', '--release' ], {
+        cwd: workspaceRootDirectory,
+        stdio: 'inherit',
+    })
 }
 
 function copyNativeLibrary(): void {
-  if (!fs.existsSync(sourceLibraryPath)) {
-    throw new Error(`Rust cdylib was not produced at ${sourceLibraryPath}`);
-  }
+    if (!fs.existsSync(sourceLibraryPath)) {
+        throw new Error(`Rust cdylib was not produced at ${ sourceLibraryPath }`)
+    }
 
-  fs.mkdirSync(nativeLibraryDirectory, { recursive: true });
-  fs.copyFileSync(sourceLibraryPath, destinationLibraryPath);
+    fs.mkdirSync(nativeLibraryDirectory, { recursive: true })
+    fs.copyFileSync(sourceLibraryPath, destinationLibraryPath)
 
-  process.stdout.write(`Copied ${sourceLibraryPath} -> ${destinationLibraryPath}\n`);
+    process.stdout.write(`Copied ${ sourceLibraryPath } -> ${ destinationLibraryPath }\n`)
 }
 
 function libraryFileNameForCurrentPlatform(): string {
-  switch (process.platform) {
-    case "darwin":
-      return "libffi.dylib";
+    switch (process.platform) {
+        case 'darwin':
+            return 'libffi.dylib'
 
-    case "linux":
-      return "libffi.so";
+        case 'linux':
+            return 'libffi.so'
 
-    case "win32":
-      return "ffi.dll";
+        case 'win32':
+            return 'ffi.dll'
 
-    default:
-      throw new Error(`Unsupported platform for engine ffi library: ${process.platform}`);
-  }
+        default:
+            throw new Error(`Unsupported platform for engine ffi library: ${ process.platform }`)
+    }
 }

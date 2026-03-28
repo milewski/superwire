@@ -394,6 +394,7 @@ impl SemanticIndex {
             | TypeExpression::Boolean
             | TypeExpression::Null
             | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
                 item_type: _,
                 fixed_length: _,
@@ -428,6 +429,7 @@ impl ForLoopIterableType for TypeExpression {
             | TypeExpression::Null
             | TypeExpression::SchemaReference(_)
             | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
             | TypeExpression::Tuple(_)
             | TypeExpression::Object(_) => false,
         }

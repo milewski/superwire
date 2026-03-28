@@ -28,6 +28,29 @@ fn reports_unknown_model_for_provider_diagnostic() {
 }
 
 #[test]
+fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
+    let diagnostics = inline_diagnostics! {
+        secrets {
+            openai_model: string
+        }
+
+        provider openai {
+            driver: "openai"
+            models: [secrets.openai_model]
+        }
+
+        agent writer {
+            model: openai(secrets.openai_model)
+            prompt: "hello"
+            output: string
+        }
+    };
+
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::InvalidModelExpression));
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::UnknownModelForProvider));
+}
+
+#[test]
 fn reports_unknown_agent_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         provider openai {
