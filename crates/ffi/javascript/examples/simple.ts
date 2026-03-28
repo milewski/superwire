@@ -21,6 +21,8 @@ type WeatherOutput = {
 type WeatherArguments = ToolArguments<WeatherInput, WeatherBoundedInput>
 
 class Weather extends Tool<WeatherInput, WeatherOutput, WeatherBoundedInput> {
+    static readonly toolName = 'weather'
+
     readonly description = 'Get current weather for a specific region'
 
     readonly inputSchema = schema.object({
