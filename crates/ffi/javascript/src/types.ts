@@ -100,6 +100,7 @@ export interface WorkflowExecutionFailedEnvelope {
     error: {
         code: string;
         message: string;
+        context?: unknown;
         details?: unknown;
     };
 }

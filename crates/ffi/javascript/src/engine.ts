@@ -272,6 +272,8 @@ export class Engine {
                     {
                         code: workflowExecutionEnvelope.error.code,
                         message: workflowExecutionEnvelope.error.message,
+                        context: workflowExecutionEnvelope.error.context,
+                        details: workflowExecutionEnvelope.error.details,
                     },
                     true,
                 )
