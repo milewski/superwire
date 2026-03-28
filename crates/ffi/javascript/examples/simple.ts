@@ -1,4 +1,30 @@
-import { Engine, Workflow } from '../src'
+import { Engine, schema, Tool, Workflow } from '../src'
+
+type WeatherInput = {
+    country: string;
+}
+
+type WeatherOutput = {
+    prediction: string;
+}
+
+class Weather extends Tool<WeatherInput, WeatherOutput> {
+    readonly description = 'Get weather prediction for a country'
+
+    readonly inputSchema = schema.object({
+        country: schema.string(),
+    })
+
+    constructor() {
+        super('weather')
+    }
+
+    execute(input: WeatherInput): WeatherOutput {
+        return {
+            prediction: `It is very sunny in ${ input.country }`,
+        }
+    }
+}
 
 async function runSimpleExample(): Promise<void> {
     const workflow = new Workflow(`
@@ -8,34 +34,41 @@ async function runSimpleExample(): Promise<void> {
             api_key: "local-api-key"
             models: ["qwen3.5-9b"]
         }
-        
+
         input {
-            topic: string
+            country: string
         }
-        
-        agent joker {
+
+        agent assistant {
             model: openai_local("qwen3.5-9b")
-            prompt: "Tell me a joke about {{ input.topic }}"
+            tools: [tool.weather]
+            prompt: "What is the weather in {{ input.country }}?"
             output: string
         }
-        
+
         output {
-            joke: agent.joker
+            weather: agent.assistant
         }
     `)
 
     type Response = {
-        joke: string;
-    };
+        weather: string;
+    }
 
     const engine = new Engine()
-    const response = await engine.run<Response>(workflow, { topic: 'Animals' })
+    engine.registerTool(new Weather())
+
+    const response = await engine.run<Response>(workflow, {
+        country: 'China',
+    })
 
     if (response.isError()) {
-        console.error(response.failure)
-    } else {
-        console.log(response.success)
+        console.error(response.error)
+        engine.close()
+        return
     }
+
+    console.log(response.success)
 
     engine.close()
 }
