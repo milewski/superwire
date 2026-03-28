@@ -47,7 +47,7 @@ struct CompiledWorkflow {
 struct PreparedAgentExecution<'workflow> {
     agent_name: String,
     provider_config: ProviderConfig,
-    model_name: String,
+    model_expression: &'workflow Expression,
     prompt_expression: &'workflow Expression,
     context_expression: Option<&'workflow Expression>,
     output_type: WorkflowType,
@@ -343,7 +343,7 @@ where
         let agent_declaration = &planned_agent.declaration;
         let agent_name = planned_agent.name.clone();
 
-        let Some(provider_config) = self
+        let Some(provider_config_template) = self
             .compiled_workflow
             .execution_plan
             .provider_index
@@ -354,6 +354,11 @@ where
                 message: "provider referenced by execution plan is not declared".to_string(),
             });
         };
+
+        let provider_config = provider_config_template.resolve(
+            &planned_agent.provider_name,
+            &runtime_state_to_evaluation_context(runtime_state, HashMap::new()),
+        )?;
 
         let prompt_expression = agent_declaration
             .required_expression_property(AgentExpressionPropertyName::Prompt)
@@ -375,8 +380,8 @@ where
 
         Ok(PreparedAgentExecution {
             agent_name,
-            provider_config: provider_config.clone(),
-            model_name: planned_agent.model_name.clone(),
+            provider_config,
+            model_expression: &planned_agent.model_expression,
             prompt_expression,
             context_expression: agent_declaration.expression_property(AgentExpressionPropertyName::Context),
             output_type,
@@ -416,9 +421,13 @@ where
             let mut local_bindings = HashMap::new();
             local_bindings.insert(agent_for_loop.iterator_name.clone(), iterable_item.clone());
 
+            let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
+
             let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings.clone())?;
             let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, local_bindings)?;
-            let agent_result = self.run_agent_request(prepared_agent_execution, prompt, tools, runner).await?;
+            let agent_result = self
+                .run_agent_request(prepared_agent_execution, model_name, prompt, tools, runner)
+                .await?;
 
             validate_agent_output_value(
                 &agent_result.output,
@@ -446,9 +455,12 @@ where
     where
         RunnerType: AgentRunner,
     {
+        let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, HashMap::new())?;
         let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, HashMap::new())?;
         let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, HashMap::new())?;
-        let agent_result = self.run_agent_request(prepared_agent_execution, prompt, tools, runner).await?;
+        let agent_result = self
+            .run_agent_request(prepared_agent_execution, model_name, prompt, tools, runner)
+            .await?;
 
         validate_agent_output_value(
             &agent_result.output,
@@ -521,9 +533,23 @@ where
         )
     }
 
+    fn evaluate_agent_model_name(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+    ) -> Result<String, WorkflowRuntimeError> {
+        prepared_agent_execution.model_expression.evaluate_as_agent_model_name(
+            &prepared_agent_execution.agent_name,
+            runtime_state,
+            local_bindings,
+        )
+    }
+
     async fn run_agent_request<RunnerType>(
         &self,
         prepared_agent_execution: &PreparedAgentExecution<'_>,
+        model_name: String,
         prompt: String,
         tools: Vec<RequestedAgentTool>,
         runner: &RunnerType,
@@ -534,7 +560,7 @@ where
         let request = AgentExecutionRequest {
             agent_name: prepared_agent_execution.agent_name.clone(),
             provider_config: prepared_agent_execution.provider_config.clone(),
-            model_name: prepared_agent_execution.model_name.clone(),
+            model_name,
             prompt,
             config: prepared_agent_execution.config.clone(),
             output_schema: prepared_agent_execution.output_schema.clone(),
@@ -559,6 +585,29 @@ where
 }
 
 impl Expression {
+    fn evaluate_as_agent_model_name(
+        &self,
+        agent_name: &str,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+    ) -> Result<String, WorkflowRuntimeError> {
+        let model_value = evaluate_expression(
+            self,
+            &runtime_state_to_evaluation_context(runtime_state, local_bindings),
+            &format!("model for agent `{agent_name}`"),
+        )?;
+
+        let Some(model_name) = model_value.as_str() else {
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_name.to_string(),
+                property: AgentExpressionPropertyName::Model.as_str().to_string(),
+                message: format!("model must resolve to a string, found {}", value_kind_name(&model_value)),
+            });
+        };
+
+        Ok(model_name.to_string())
+    }
+
     fn parse_agent_tools_expression(&self, agent_declaration: &AgentDeclaration) -> Result<Vec<AgentToolBinding>, WorkflowRuntimeError> {
         let Expression::ArrayLiteral(tool_expressions) = self else {
             return Err(WorkflowRuntimeError::InvalidAgentProperty {

@@ -1,6 +1,6 @@
-use crate::dsl::{AgentDeclaration, OutputDeclaration, Workflow};
+use crate::dsl::{AgentDeclaration, Expression, OutputDeclaration, Workflow};
 use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::provider::{build_provider_index, ProviderConfig};
+use crate::runtime::provider::{build_provider_index, ProviderConfigTemplate};
 use crate::runtime::types::WorkflowType;
 use crate::semantic::ir::TypedWorkflowIr;
 use std::collections::{HashMap, HashSet};
@@ -10,7 +10,7 @@ pub struct PlannedAgent {
     pub name: String,
     pub declaration: AgentDeclaration,
     pub provider_name: String,
-    pub model_name: String,
+    pub model_expression: Expression,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
@@ -18,7 +18,7 @@ pub struct PlannedAgent {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
-    pub provider_index: HashMap<String, ProviderConfig>,
+    pub provider_index: HashMap<String, ProviderConfigTemplate>,
     pub input_type: Option<WorkflowType>,
     pub secrets_type: Option<WorkflowType>,
     pub output_declaration: OutputDeclaration,
@@ -42,7 +42,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
                 name: typed_agent.name.clone(),
                 declaration: typed_agent.declaration.clone(),
                 provider_name: typed_agent.provider_name.clone(),
-                model_name: typed_agent.model_name.clone(),
+                model_expression: typed_agent.model_expression.clone(),
                 iteration_output_type: typed_agent.iteration_output_type.clone(),
                 final_output_type: typed_agent.final_output_type.clone(),
                 dependencies: typed_agent.dependencies.clone(),
@@ -63,7 +63,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
 
 fn validate_ir_planner_invariants(
     typed_workflow_ir: &TypedWorkflowIr,
-    provider_index: &HashMap<String, ProviderConfig>,
+    provider_index: &HashMap<String, ProviderConfigTemplate>,
 ) -> Result<(), WorkflowRuntimeError> {
     let declared_agent_names = typed_workflow_ir
         .agents

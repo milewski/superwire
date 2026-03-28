@@ -1,4 +1,5 @@
 import { Engine, Workflow } from '../src'
+import { loadOpenAIProviderSecrets } from './env'
 
 type StructuredRiskInput = {
     initiative_name: string;
@@ -19,12 +20,20 @@ type StructuredRiskResponse = {
 }
 
 async function runSchemaTypesExample(): Promise<void> {
+    const providerSecrets = loadOpenAIProviderSecrets()
+
     const workflow = new Workflow(`
-        provider openai_local {
+        provider openai {
             driver: "openai"
-            endpoint: "http://169.254.83.107:1234/v1"
-            api_key: "local-api-key"
-            models: ["qwen/qwen3.5-35b-a3b"]
+            endpoint: secrets.openai_endpoint
+            api_key: secrets.openai_api_key
+            models: [secrets.openai_model]
+        }
+
+        secrets {
+            openai_endpoint: string
+            openai_api_key: string
+            openai_model: string
         }
 
         schema RiskItem {
@@ -45,7 +54,7 @@ async function runSchemaTypesExample(): Promise<void> {
         }
 
         agent risk_report {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai(secrets.openai_model)
             prompt: "Analyze the rollout risks for {{ input.initiative_name }} with details: {{ input.change_notes }}"
             output: schema.RiskReport
         }
@@ -64,7 +73,7 @@ async function runSchemaTypesExample(): Promise<void> {
             change_notes: 'We are replacing legacy segmentation rules with model-driven scoring and deploying to all regions in one week.',
         }
 
-        const response = await engine.run<StructuredRiskResponse>(workflow, inputPayload)
+        const response = await engine.run<StructuredRiskResponse>(workflow, inputPayload, providerSecrets)
 
         if (await response.isError()) {
             const executionError = await response.error()

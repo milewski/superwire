@@ -7,7 +7,13 @@ export { Engine } from './engine'
 export type { EngineOptions, RegisterToolOptions } from './engine'
 
 export { schema } from './schema'
-export type { JsonSchema, JsonSchemaObjectProperties } from './schema'
+export type {
+    JsonSchema,
+    JsonSchemaArrayOptions,
+    JsonSchemaObjectOptions,
+    JsonSchemaObjectProperties,
+    JsonSchemaPrimitive,
+} from './schema'
 
 export { Tool } from './tool'
 export type { ToolArguments, ToolExecutionContext } from './tool'

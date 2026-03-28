@@ -1,6 +1,6 @@
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ModelCallArgumentName, OutputDeclaration,
-    SchemaDeclaration, SecretsDeclaration, TypeExpression, Workflow,
+    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, OutputDeclaration, ProviderDeclaration, SchemaDeclaration,
+    SecretsDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::collect_agent_dependencies;
@@ -25,7 +25,7 @@ pub struct TypedAgentIr {
     pub name: String,
     pub declaration: AgentDeclaration,
     pub provider_name: String,
-    pub model_name: String,
+    pub model_expression: Expression,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
@@ -146,14 +146,15 @@ fn collect_typed_agents(
             iteration_output_type.clone()
         };
 
-        let (provider_name, model_name) = parse_agent_model_binding(agent_declaration)?;
-        let dependencies = collect_dependencies_for_agent(agent_declaration);
+        let (provider_name, model_expression) = parse_agent_model_binding(agent_declaration)?;
+        let provider_declaration = workflow.find_provider(&provider_name);
+        let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration);
 
         agents.push(TypedAgentIr {
             name: agent_declaration.name.clone(),
             declaration: agent_declaration.clone(),
             provider_name,
-            model_name,
+            model_expression,
             iteration_output_type,
             final_output_type: final_output_type.clone(),
             dependencies,
@@ -165,8 +166,14 @@ fn collect_typed_agents(
     Ok((agents, agent_output_types))
 }
 
-fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration) -> Vec<String> {
+fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider_declaration: Option<&ProviderDeclaration>) -> Vec<String> {
     let mut dependencies = HashSet::new();
+
+    if let Some(provider_declaration) = provider_declaration {
+        for provider_property in &provider_declaration.properties {
+            collect_agent_dependencies(&provider_property.value, &mut dependencies);
+        }
+    }
 
     if let Some(for_loop) = &agent_declaration.for_loop {
         collect_agent_dependencies(&for_loop.iterable, &mut dependencies);
@@ -283,7 +290,7 @@ fn is_no_input_type(workflow_type: &WorkflowType) -> bool {
     }
 }
 
-fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(String, String), WorkflowRuntimeError> {
+fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(String, Expression), WorkflowRuntimeError> {
     let model_expression = required_agent_property_expression(agent_declaration, AgentPropertyName::Model)?;
     let Expression::FunctionCall(model_call) = model_expression else {
         return Err(WorkflowRuntimeError::InvalidAgentProperty {
@@ -309,35 +316,9 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
             message: "model provider name must be an identifier".to_string(),
         })?;
 
-    let provider_name = provider_name.to_string();
+    let model_argument_expressions = model_call.model_argument_expressions();
 
-    let mut detected_model_names = Vec::<String>::new();
-
-    for call_argument in &model_call.arguments {
-        if call_argument.named_argument_name().is_none() {
-            if let Expression::StringLiteral(model_name) = call_argument.expression() {
-                detected_model_names.push(model_name.clone());
-            }
-
-            continue;
-        }
-
-        if call_argument.named_argument_name() != Some(ModelCallArgumentName::Model.as_str()) {
-            continue;
-        }
-
-        let Expression::StringLiteral(model_name) = call_argument.expression() else {
-            return Err(WorkflowRuntimeError::InvalidAgentProperty {
-                agent_name: agent_declaration.name.clone(),
-                property: AgentPropertyName::Model.as_str().to_string(),
-                message: "named `model` argument must be a string".to_string(),
-            });
-        };
-
-        detected_model_names.push(model_name.clone());
-    }
-
-    if detected_model_names.is_empty() {
+    if model_argument_expressions.is_empty() {
         return Err(WorkflowRuntimeError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
@@ -345,9 +326,7 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
         });
     }
 
-    let model_name = detected_model_names[0].clone();
-
-    if detected_model_names.iter().any(|candidate_name| candidate_name != &model_name) {
+    if model_argument_expressions.len() > 1 {
         return Err(WorkflowRuntimeError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
@@ -355,7 +334,7 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
         });
     }
 
-    Ok((provider_name, model_name))
+    Ok((provider_name.to_string(), model_argument_expressions[0].clone()))
 }
 
 fn required_agent_property_expression(
@@ -467,6 +446,58 @@ mod tests {
             typed_workflow_ir.workflow_output_type,
             WorkflowType::Object(expected_output_fields).normalize()
         );
+    }
+
+    #[test]
+    fn includes_provider_expression_dependencies_in_agent_execution_dependencies() {
+        #[derive(Debug, Deserialize, JsonSchema)]
+        #[allow(dead_code)]
+        struct Output {
+            value: String,
+        }
+
+        let workflow = parse_inline_workflow! {
+            provider base_provider {
+                driver: "openai"
+                endpoint: "http://localhost:1234/v1"
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            provider dynamic_provider {
+                driver: "openai"
+                endpoint: agent.base.endpoint
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            agent base {
+                model: base_provider("model-a")
+                prompt: "base"
+                output: {
+                    endpoint: string
+                }
+            }
+
+            agent dependent {
+                model: dynamic_provider("model-a")
+                prompt: "dependent"
+                output: string
+            }
+
+            output {
+                value: agent.dependent
+            }
+        };
+
+        let typed_workflow_ir = build_typed_workflow_ir::<(), Output>(&workflow).expect("typecheck should succeed");
+        let dependent_agent = typed_workflow_ir
+            .agents
+            .iter()
+            .find(|typed_agent| typed_agent.name == "dependent")
+            .expect("dependent agent should be present");
+
+        assert_eq!(dependent_agent.dependencies, vec!["base".to_string()]);
     }
 
     #[test]

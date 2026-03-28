@@ -1,4 +1,5 @@
 import { Engine, schema, Tool, type ToolArguments, Workflow } from '../src'
+import { loadOpenAIProviderSecrets } from './env'
 
 type WeatherInput = {
     region: string;
@@ -91,12 +92,20 @@ class Weather extends Tool<WeatherInput, WeatherOutput, WeatherBoundedInput> {
 }
 
 async function runSimpleExample(): Promise<void> {
+    const providerSecrets = loadOpenAIProviderSecrets()
+
     const workflow = new Workflow(`
-        provider openai_local {
+        provider openai {
             driver: "openai"
-            endpoint: "http://169.254.83.107:1234/v1"
-            api_key: "local-api-key"
-            models: ["qwen/qwen3.5-35b-a3b"]
+            endpoint: secrets.openai_endpoint
+            api_key: secrets.openai_api_key
+            models: [secrets.openai_model]
+        }
+
+        secrets {
+            openai_endpoint: string
+            openai_api_key: string
+            openai_model: string
         }
 
         input {
@@ -104,7 +113,7 @@ async function runSimpleExample(): Promise<void> {
         }
 
         agent assistant {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai(secrets.openai_model)
             tools: [tool.weather]
             prompt: "please get the weather for the given city: {{ input.region }} and generate a prediction based on the metrics provided by the weather tool."
             output: {
@@ -135,7 +144,7 @@ async function runSimpleExample(): Promise<void> {
 
     engine.registerTool(new Weather())
 
-    const response = await engine.run<Response>(workflow, { region: 'Shanghai' })
+    const response = await engine.run<Response>(workflow, { region: 'Shanghai' }, providerSecrets)
     const hasError = await response.isError()
 
     console.log('isError:', hasError)

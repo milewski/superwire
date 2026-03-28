@@ -1,12 +1,14 @@
 use crate::dsl::{Declaration, Expression, ObjectField, ProviderDeclaration, Workflow};
 use crate::runtime::error::WorkflowRuntimeError;
+use crate::runtime::expression::{evaluate_expression, EvaluationContext};
+use crate::runtime::types::value_kind_name;
 use std::collections::HashMap;
 
 mod ollama;
 mod openai;
 
-pub use ollama::OllamaProviderConfig;
-pub use openai::OpenAIProviderConfig;
+pub use ollama::{OllamaProviderConfig, OllamaProviderConfigTemplate};
+pub use openai::{OpenAIProviderConfig, OpenAIProviderConfigTemplate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderDriver {
@@ -56,24 +58,35 @@ const OPENAI_PROVIDER_PROPERTIES: [&str; 4] = ["driver", "endpoint", "api_key", 
 const OLLAMA_PROVIDER_PROPERTIES: [&str; 3] = ["driver", "endpoint", "models"];
 
 pub trait ProviderConfigParser {
-    fn parse(provider_declaration: &ProviderDeclaration) -> Result<ProviderConfig, WorkflowRuntimeError>;
+    fn parse(provider_declaration: &ProviderDeclaration) -> Result<ProviderConfigTemplate, WorkflowRuntimeError>;
 
-    fn required_string_property(provider_declaration: &ProviderDeclaration, property_name: &str) -> Result<String, WorkflowRuntimeError> {
-        let Some(property_value) = Self::provider_property_by_name(provider_declaration.properties.as_slice(), property_name) else {
+    fn required_property_expression(
+        provider_declaration: &ProviderDeclaration,
+        property_name: &str,
+    ) -> Result<Expression, WorkflowRuntimeError> {
+        let Some(provider_property) = Self::provider_property_by_name(provider_declaration.properties.as_slice(), property_name) else {
             return Err(WorkflowRuntimeError::ProviderConfiguration {
                 provider_name: provider_declaration.name.clone(),
                 message: format!("missing `{property_name}` property"),
             });
         };
 
-        let Expression::StringLiteral(string_literal) = &property_value.value else {
+        Ok(provider_property.value.clone())
+    }
+
+    fn required_string_literal_property(
+        provider_declaration: &ProviderDeclaration,
+        property_name: &str,
+    ) -> Result<String, WorkflowRuntimeError> {
+        let property_expression = Self::required_property_expression(provider_declaration, property_name)?;
+        let Expression::StringLiteral(string_literal) = property_expression else {
             return Err(WorkflowRuntimeError::ProviderConfiguration {
                 provider_name: provider_declaration.name.clone(),
                 message: format!("`{property_name}` must be a string literal"),
             });
         };
 
-        Ok(string_literal.clone())
+        Ok(string_literal)
     }
 
     #[must_use]
@@ -88,12 +101,64 @@ pub trait ProviderConfigParser {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderConfigTemplate {
+    OpenAI(OpenAIProviderConfigTemplate),
+    Ollama(OllamaProviderConfigTemplate),
+}
+
+impl ProviderConfigTemplate {
+    pub fn resolve(&self, provider_name: &str, evaluation_context: &EvaluationContext) -> Result<ProviderConfig, WorkflowRuntimeError> {
+        match self {
+            Self::OpenAI(openai_provider_config_template) => {
+                let openai_provider_config = openai_provider_config_template.resolve(provider_name, evaluation_context)?;
+
+                Ok(ProviderConfig::OpenAI(openai_provider_config))
+            }
+            Self::Ollama(ollama_provider_config_template) => {
+                let ollama_provider_config = ollama_provider_config_template.resolve(provider_name, evaluation_context)?;
+
+                Ok(ProviderConfig::Ollama(ollama_provider_config))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderConfig {
     OpenAI(OpenAIProviderConfig),
     Ollama(OllamaProviderConfig),
 }
 
-pub fn build_provider_index(workflow: &Workflow) -> Result<HashMap<String, ProviderConfig>, WorkflowRuntimeError> {
+impl Expression {
+    fn evaluate_as_provider_string(
+        &self,
+        provider_name: &str,
+        property_name: &str,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<String, WorkflowRuntimeError> {
+        let evaluation_context_name = format!("provider `{provider_name}` property `{property_name}`");
+        let evaluated_value = evaluate_expression(self, evaluation_context, &evaluation_context_name).map_err(|error| {
+            WorkflowRuntimeError::ProviderConfiguration {
+                provider_name: provider_name.to_string(),
+                message: format!("failed to evaluate `{property_name}`: {error}"),
+            }
+        })?;
+
+        let Some(string_value) = evaluated_value.as_str() else {
+            return Err(WorkflowRuntimeError::ProviderConfiguration {
+                provider_name: provider_name.to_string(),
+                message: format!(
+                    "`{property_name}` must resolve to a string, found {}",
+                    value_kind_name(&evaluated_value)
+                ),
+            });
+        };
+
+        Ok(string_value.to_string())
+    }
+}
+
+pub fn build_provider_index(workflow: &Workflow) -> Result<HashMap<String, ProviderConfigTemplate>, WorkflowRuntimeError> {
     let mut provider_index = HashMap::new();
 
     for declaration in workflow.declarations() {
@@ -101,16 +166,16 @@ pub fn build_provider_index(workflow: &Workflow) -> Result<HashMap<String, Provi
             continue;
         };
 
-        let provider_config = parse_provider_config(provider_declaration)?;
-        provider_index.insert(provider_declaration.name.clone(), provider_config);
+        let provider_config_template = parse_provider_config(provider_declaration)?;
+        provider_index.insert(provider_declaration.name.clone(), provider_config_template);
     }
 
     Ok(provider_index)
 }
 
-fn parse_provider_config(provider_declaration: &ProviderDeclaration) -> Result<ProviderConfig, WorkflowRuntimeError> {
+fn parse_provider_config(provider_declaration: &ProviderDeclaration) -> Result<ProviderConfigTemplate, WorkflowRuntimeError> {
     let driver_name =
-        <openai::OpenAIProviderConfigParser as ProviderConfigParser>::required_string_property(provider_declaration, "driver")?;
+        <openai::OpenAIProviderConfigParser as ProviderConfigParser>::required_string_literal_property(provider_declaration, "driver")?;
 
     let Some(provider_driver) = ProviderDriver::parse(&driver_name) else {
         return Err(WorkflowRuntimeError::ProviderConfiguration {
@@ -127,8 +192,21 @@ fn parse_provider_config(provider_declaration: &ProviderDeclaration) -> Result<P
 
 #[cfg(test)]
 mod tests {
-    use super::{build_provider_index, ProviderConfig};
+    use super::{build_provider_index, ProviderConfig, ProviderConfigTemplate};
     use crate::runtime::error::WorkflowRuntimeError;
+    use crate::runtime::expression::EvaluationContext;
+    use serde_json::{Map, Value};
+    use std::collections::HashMap;
+
+    fn empty_evaluation_context() -> EvaluationContext {
+        EvaluationContext {
+            input_values: Map::new(),
+            secret_values: Map::new(),
+            agent_outputs: HashMap::new(),
+            agent_contexts: HashMap::new(),
+            local_bindings: HashMap::new(),
+        }
+    }
 
     #[test]
     fn parses_openai_provider_with_required_endpoint_and_api_key() {
@@ -144,7 +222,51 @@ mod tests {
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
         let provider = provider_index.get("openai").expect("openai provider should exist");
 
-        match provider {
+        let resolved_provider_config = provider
+            .resolve("openai", &empty_evaluation_context())
+            .expect("provider config should resolve");
+
+        match resolved_provider_config {
+            ProviderConfig::OpenAI(openai_provider_config) => {
+                assert_eq!(openai_provider_config.endpoint, "https://api.openai.com/v1");
+                assert_eq!(openai_provider_config.api_key, "test-api-key");
+            }
+            ProviderConfig::Ollama(_) => panic!("expected openai provider config"),
+        }
+    }
+
+    #[test]
+    fn resolves_openai_provider_with_secret_references() {
+        let workflow = crate::parse_inline_workflow! {
+            secrets {
+                endpoint: string
+                api_key: string
+            }
+
+            provider openai {
+                driver: "openai"
+                endpoint: secrets.endpoint
+                api_key: secrets.api_key
+                models: ["model-a"]
+            }
+        };
+
+        let provider_index = build_provider_index(&workflow).expect("provider index should build");
+        let provider = provider_index.get("openai").expect("openai provider should exist");
+
+        let mut evaluation_context = empty_evaluation_context();
+        evaluation_context
+            .secret_values
+            .insert("endpoint".to_string(), Value::String("https://api.openai.com/v1".to_string()));
+        evaluation_context
+            .secret_values
+            .insert("api_key".to_string(), Value::String("test-api-key".to_string()));
+
+        let resolved_provider_config = provider
+            .resolve("openai", &evaluation_context)
+            .expect("provider config should resolve with secrets");
+
+        match resolved_provider_config {
             ProviderConfig::OpenAI(openai_provider_config) => {
                 assert_eq!(openai_provider_config.endpoint, "https://api.openai.com/v1");
                 assert_eq!(openai_provider_config.api_key, "test-api-key");
@@ -185,7 +307,11 @@ mod tests {
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
         let provider = provider_index.get("ollama").expect("ollama provider should exist");
 
-        match provider {
+        let resolved_provider_config = provider
+            .resolve("ollama", &empty_evaluation_context())
+            .expect("provider config should resolve");
+
+        match resolved_provider_config {
             ProviderConfig::OpenAI(_) => panic!("expected ollama provider config"),
             ProviderConfig::Ollama(ollama_provider_config) => {
                 assert_eq!(ollama_provider_config.endpoint, "http://127.0.0.1:11434");
@@ -205,12 +331,37 @@ mod tests {
             }
         };
 
-        let provider_index_result = build_provider_index(&workflow);
+        let provider_index = build_provider_index(&workflow).expect("provider index should build");
+        let provider = provider_index.get("ollama").expect("ollama provider should exist");
+        let provider_result = provider.resolve("ollama", &empty_evaluation_context());
 
         assert!(matches!(
-            provider_index_result,
+            provider_result,
             Err(WorkflowRuntimeError::ProviderConfiguration { provider_name, message })
                 if provider_name == "ollama" && message.contains("explicit port")
         ));
+    }
+
+    #[test]
+    fn builds_provider_templates() {
+        let workflow = crate::parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                endpoint: "https://api.openai.com/v1"
+                api_key: "test-api-key"
+                models: ["model-a"]
+            }
+
+            provider ollama {
+                driver: "ollama"
+                endpoint: "http://127.0.0.1:11434"
+                models: ["model-b"]
+            }
+        };
+
+        let provider_index = build_provider_index(&workflow).expect("provider index should build");
+
+        assert!(matches!(provider_index.get("openai"), Some(ProviderConfigTemplate::OpenAI(_))));
+        assert!(matches!(provider_index.get("ollama"), Some(ProviderConfigTemplate::Ollama(_))));
     }
 }

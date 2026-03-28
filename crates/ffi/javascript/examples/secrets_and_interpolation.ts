@@ -1,4 +1,5 @@
 import { Engine, Workflow } from '../src'
+import { loadOpenAIProviderSecrets } from './env'
 
 type SupportReplyInput = {
     customer_question: string;
@@ -15,15 +16,20 @@ type SupportReplyResponse = {
 }
 
 async function runSecretsAndInterpolationExample(): Promise<void> {
+    const providerSecrets = loadOpenAIProviderSecrets()
+
     const workflow = new Workflow(`
-        provider openai_local {
+        provider openai {
             driver: "openai"
-            endpoint: "http://169.254.83.107:1234/v1"
-            api_key: "local-api-key"
-            models: ["qwen/qwen3.5-35b-a3b"]
+            endpoint: secrets.openai_endpoint
+            api_key: secrets.openai_api_key
+            models: [secrets.openai_model]
         }
 
         secrets {
+            openai_endpoint: string
+            openai_api_key: string
+            openai_model: string
             response_policy: string
         }
 
@@ -32,7 +38,7 @@ async function runSecretsAndInterpolationExample(): Promise<void> {
         }
 
         agent support_reply {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai(secrets.openai_model)
             prompt: "Answer this customer question: {{ input.customer_question }}. Follow this response policy exactly: {{ secrets.response_policy }}"
             output: {
                 answer: string
@@ -55,7 +61,8 @@ async function runSecretsAndInterpolationExample(): Promise<void> {
             customer_question: 'I was charged twice after upgrading. Can you fix this and tell me what happened?',
         }
 
-        const secretsPayload: SupportReplySecrets = {
+        const secretsPayload: SupportReplySecrets & typeof providerSecrets = {
+            ...providerSecrets,
             response_policy: 'Be concise, acknowledge the issue, never promise refunds instantly, and escalate billing disputes that involve duplicate charges.',
         }
 

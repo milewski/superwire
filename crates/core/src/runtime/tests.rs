@@ -129,6 +129,22 @@ impl AgentRunner for ParallelProbeRunner {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct EchoModelRunner;
+
+#[async_trait]
+impl AgentRunner for EchoModelRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        Ok(AgentExecutionResult {
+            output: json!(request.model_name),
+            context: json!({
+                "agent": request.agent_name,
+                "model": request.model_name,
+            }),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum PublicationStatus {
@@ -912,4 +928,61 @@ async fn executes_independent_agents_in_parallel_batches() {
 
     assert_eq!(output.review, "review".to_string());
     assert!(runner.max_inflight_agents() >= 2);
+}
+
+#[tokio::test]
+async fn resolves_provider_and_model_values_from_secrets() {
+    #[derive(Debug, Serialize)]
+    struct Secrets {
+        endpoint: String,
+        api_key: String,
+        model: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        resolved_model: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        secrets {
+            endpoint: string
+            api_key: string
+            model: string
+        }
+
+        provider openai {
+            driver: "openai"
+            endpoint: secrets.endpoint
+            api_key: secrets.api_key
+            models: [secrets.model]
+        }
+
+        agent resolver {
+            model: openai(secrets.model)
+            prompt: "resolve model"
+            output: string
+        }
+
+        output {
+            resolved_model: agent.resolver
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = EchoModelRunner;
+    let output = runtime
+        .run_with_runner_and_secrets(
+            (),
+            Secrets {
+                endpoint: "http://localhost:1234/v1".to_string(),
+                api_key: "test-key".to_string(),
+                model: "model-a".to_string(),
+            },
+            &runner,
+        )
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(output.resolved_model, "model-a".to_string());
 }
