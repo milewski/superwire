@@ -27,9 +27,9 @@ async function runParallelAgentsExample(): Promise<void> {
     const workflow = new Workflow(`
         provider openai_local {
             driver: "openai"
-            endpoint: "http://169.254.83.107:1234/v1"
-            api_key: "local-api-key"
-            models: ["qwen/qwen3.5-35b-a3b"]
+            endpoint: "http://100.118.249.48:3000/v1"
+            api_key: "sk-S2Wcfi5cJhGGhFpTHjHcClDmQoR6IwTx1PNl9cmIZF6Wtuxz"
+            models: ["qwen3.5-27b"]
         }
 
         input {
@@ -38,7 +38,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent customer_story {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai_local("qwen3.5-27b")
             prompt: "Write a customer-facing announcement for {{ input.product_name }} using these highlights: {{ input.release_highlights }}"
             output: {
                 headline: string
@@ -47,7 +47,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent investor_story {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai_local("qwen3.5-27b")
             prompt: "Write an investor update for {{ input.product_name }} based on: {{ input.release_highlights }}"
             output: {
                 thesis: string
@@ -56,7 +56,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent social_snippets {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai_local("qwen3.5-27b")
             prompt: "Generate 3 short social posts for {{ input.product_name }} from: {{ input.release_highlights }}"
             output: {
                 posts: [string; 3]
@@ -64,7 +64,7 @@ async function runParallelAgentsExample(): Promise<void> {
         }
 
         agent review {
-            model: openai_local("qwen/qwen3.5-35b-a3b")
+            model: openai_local("qwen3.5-27b")
             prompt: "Check consistency across customer={{ agent.customer_story }} investor={{ agent.investor_story }} social={{ agent.social_snippets }}"
             output: {
                 approved: boolean
