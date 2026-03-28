@@ -3,22 +3,28 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
+use engine_ai_agent::DynamicTool;
+use engine_ai_agent::ToolError;
 use engine_ai_core::dsl::{Declaration, TypeExpression, Workflow};
 use engine_ai_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
 use engine_ai_core::runtime::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 use engine_ai_core::runtime::WorkflowRuntimeError;
+use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, WorkflowRuntime};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::FfiError;
 use crate::types::{
-    CustomToolDeclaration, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ToolInvocationEnvelope, ToolInvocationError,
-    ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult, WorkflowExecutionEnvelope, WorkflowExecutionError,
-    WorkflowExecutionErrorCode, WorkflowExecutionOutput, WorkflowExecutionRequest, FFI_PROTOCOL_VERSION,
+    CustomToolDeclaration, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ToolCallbackConfig, ToolInvocationEnvelope,
+    ToolInvocationError, ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult, WorkflowExecutionEnvelope,
+    WorkflowExecutionError, WorkflowExecutionErrorCode, WorkflowExecutionOutput, WorkflowExecutionRequest, FFI_PROTOCOL_VERSION,
 };
+
+static TOOL_INVOCATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     static DYNAMIC_WORKFLOW_SCHEMA_CONTEXT: RefCell<Option<FfiRuntimeSchemaContext>> = const { RefCell::new(None) };
@@ -30,7 +36,7 @@ pub type CustomToolHandler = Arc<dyn Fn(ToolInvocationPayload) -> CustomToolHand
 
 #[derive(Default)]
 pub struct EngineFfi {
-    custom_tool_registry: CustomToolRegistry,
+    custom_tool_registry: Arc<CustomToolRegistry>,
 }
 
 impl EngineFfi {
@@ -106,11 +112,21 @@ impl EngineFfi {
 
         let execution_result = runtime_schema_context.with_scope(|| {
             runtime.block_on(async {
-                let workflow_output: DynamicWorkflowOutputValue = engine_ai_core::try_workflow!(
-                    parsed_workflow,
-                    DynamicWorkflowInputValue::from(workflow_execution_request.input.payload.clone())
-                )
-                .await?;
+                let workflow_runtime =
+                    WorkflowRuntime::<DynamicWorkflowInputValue, DynamicWorkflowOutputValue>::new(parsed_workflow.clone())?;
+
+                let runtime_tools = self
+                    .custom_tool_registry
+                    .runtime_tools_for_execution(&workflow_execution_request.execution_id, &workflow_execution_request.custom_tools)?;
+
+                let ffi_agent_runner = FfiAgentRunner::new(runtime_tools);
+
+                let workflow_output = workflow_runtime
+                    .run_with_runner(
+                        DynamicWorkflowInputValue::from(workflow_execution_request.input.payload.clone()),
+                        &ffi_agent_runner,
+                    )
+                    .await?;
 
                 Ok::<DynamicWorkflowOutputValue, WorkflowRuntimeError>(workflow_output)
             })
@@ -165,6 +181,42 @@ impl EngineFfi {
     }
 }
 
+#[derive(Debug, Clone)]
+struct FfiAgentRunner {
+    loop_runner: LoopAgentRunner,
+    runtime_tools: Vec<DynamicTool>,
+}
+
+impl FfiAgentRunner {
+    fn new(runtime_tools: Vec<DynamicTool>) -> Self {
+        Self {
+            loop_runner: LoopAgentRunner,
+            runtime_tools,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentRunner for FfiAgentRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        let mut runtime_tools = request.runtime_tools.clone();
+        runtime_tools.extend(self.runtime_tools.clone());
+
+        let bridged_request = AgentExecutionRequest {
+            agent_name: request.agent_name.clone(),
+            provider_config: request.provider_config.clone(),
+            model_name: request.model_name.clone(),
+            prompt: request.prompt.clone(),
+            config: request.config.clone(),
+            output_schema: request.output_schema.clone(),
+            requested_tools: request.requested_tools.clone(),
+            runtime_tools,
+        };
+
+        self.loop_runner.run_agent(&bridged_request).await
+    }
+}
+
 #[derive(Default)]
 struct CustomToolRegistry {
     handlers_by_name: RwLock<HashMap<String, CustomToolHandler>>,
@@ -188,6 +240,52 @@ impl CustomToolRegistry {
             .expect("custom tool handler registry lock should not be poisoned");
 
         handlers_by_name.contains_key(tool_name)
+    }
+
+    fn ensure_callback_handlers(
+        &self,
+        custom_tools: &[CustomToolDeclaration],
+        tool_callback: Option<&ToolCallbackConfig>,
+    ) -> Result<(), WorkflowExecutionError> {
+        let Some(tool_callback) = tool_callback else {
+            return Ok(());
+        };
+
+        for custom_tool in custom_tools {
+            if self.has_handler(&custom_tool.name) {
+                continue;
+            }
+
+            let callback_tool_name = custom_tool.name.clone();
+            let callback_config = tool_callback.clone();
+
+            self.register_handler(
+                custom_tool.name.clone(),
+                Arc::new(move |tool_invocation_payload: ToolInvocationPayload| {
+                    let callback_tool_name = callback_tool_name.clone();
+                    let callback_config = callback_config.clone();
+
+                    Box::pin(async move {
+                        callback_config.invoke_tool(&tool_invocation_payload).await.map_err(|error| {
+                            if error.code == ToolInvocationErrorCode::ToolNotFound {
+                                return error;
+                            }
+
+                            ToolInvocationError {
+                                code: ToolInvocationErrorCode::ExecutionFailed,
+                                message: format!(
+                                    "failed to invoke callback handler for custom tool `{}`: {}",
+                                    callback_tool_name, error.message
+                                ),
+                                details: error.details,
+                            }
+                        })
+                    })
+                }),
+            );
+        }
+
+        Ok(())
     }
 
     fn register_execution_tools(&self, execution_id: &str, custom_tools: &[CustomToolDeclaration]) -> Result<(), WorkflowExecutionError> {
@@ -216,6 +314,75 @@ impl CustomToolRegistry {
         let custom_tool_handler = self.resolve_handler(&tool_invocation_payload)?;
 
         custom_tool_handler(tool_invocation_payload).await
+    }
+
+    fn runtime_tools_for_execution(
+        self: &Arc<Self>,
+        execution_id: &str,
+        custom_tools: &[CustomToolDeclaration],
+    ) -> Result<Vec<DynamicTool>, WorkflowRuntimeError> {
+        let declarations_by_execution = self
+            .declarations_by_execution
+            .read()
+            .expect("custom tool declaration registry lock should not be poisoned");
+
+        let Some(declarations_by_name) = declarations_by_execution.get(execution_id) else {
+            return Err(WorkflowRuntimeError::Other {
+                message: format!("unknown execution `{execution_id}` when preparing custom runtime tools"),
+            });
+        };
+
+        let mut runtime_tools = Vec::new();
+
+        for custom_tool in custom_tools {
+            let Some(declared_tool) = declarations_by_name.get(&custom_tool.name) else {
+                continue;
+            };
+
+            let parameters_schema =
+                serde_json::from_value::<Schema>(declared_tool.input_schema.clone()).map_err(|error| WorkflowRuntimeError::Other {
+                    message: format!(
+                        "failed to parse input schema for custom tool `{}` in execution `{execution_id}`: {error}",
+                        declared_tool.name
+                    ),
+                })?;
+
+            let registry = Arc::clone(self);
+            let execution_id = execution_id.to_string();
+            let tool_name = declared_tool.name.clone();
+
+            let runtime_tool = DynamicTool::from_parts(
+                declared_tool.name.clone(),
+                declared_tool
+                    .description
+                    .clone()
+                    .unwrap_or_else(|| format!("Custom tool `{}` registered through FFI", declared_tool.name)),
+                parameters_schema,
+                move |arguments| {
+                    let registry = Arc::clone(&registry);
+                    let execution_id = execution_id.clone();
+                    let tool_name = tool_name.clone();
+
+                    async move {
+                        let tool_invocation_payload = ToolInvocationPayload::from_runtime_request(execution_id, tool_name, arguments);
+
+                        registry.invoke(tool_invocation_payload).await.map_err(|error| {
+                            let mut tool_error = ToolError::new(error.message);
+
+                            if let Some(error_details) = error.details {
+                                tool_error = tool_error.with_context("details", error_details);
+                            }
+
+                            tool_error
+                        })
+                    }
+                },
+            );
+
+            runtime_tools.push(runtime_tool);
+        }
+
+        Ok(runtime_tools)
     }
 
     fn resolve_handler(&self, tool_invocation_payload: &ToolInvocationPayload) -> Result<CustomToolHandler, ToolInvocationError> {
@@ -510,7 +677,9 @@ impl WorkflowTypeInference {
 }
 
 impl WorkflowExecutionRequest {
-    fn register_custom_tools(&self, custom_tool_registry: &CustomToolRegistry) -> Result<(), WorkflowExecutionError> {
+    fn register_custom_tools(&self, custom_tool_registry: &Arc<CustomToolRegistry>) -> Result<(), WorkflowExecutionError> {
+        custom_tool_registry.ensure_callback_handlers(&self.custom_tools, self.tool_callback.as_ref())?;
+
         let missing_tool_handlers = self
             .custom_tools
             .iter()
@@ -542,6 +711,49 @@ impl WorkflowExecutionRequest {
                 })),
             )
         })
+    }
+}
+
+impl ToolInvocationPayload {
+    fn from_runtime_request(execution_id: String, tool_name: String, arguments: Value) -> Self {
+        let invocation_sequence = TOOL_INVOCATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+
+        Self {
+            execution_id,
+            invocation_id: format!("invocation-{invocation_sequence}"),
+            tool_name,
+            arguments,
+        }
+    }
+}
+
+impl ToolCallbackConfig {
+    async fn invoke_tool(&self, tool_invocation_payload: &ToolInvocationPayload) -> Result<Value, ToolInvocationError> {
+        let mut http_request_builder = reqwest::Client::new().post(&self.endpoint).json(tool_invocation_payload);
+
+        if let Some(auth_token) = &self.auth_token {
+            http_request_builder = http_request_builder.header("x-engine-ai-tool-callback-token", auth_token);
+        }
+
+        let http_response = http_request_builder.send().await.map_err(|error| ToolInvocationError {
+            code: ToolInvocationErrorCode::ExecutionFailed,
+            message: format!("callback request failed: {error}"),
+            details: None,
+        })?;
+
+        let callback_response_envelope = http_response
+            .json::<ToolInvocationEnvelope>()
+            .await
+            .map_err(|error| ToolInvocationError {
+                code: ToolInvocationErrorCode::ExecutionFailed,
+                message: format!("callback response parsing failed: {error}"),
+                details: None,
+            })?;
+
+        match callback_response_envelope {
+            ToolInvocationEnvelope::Succeeded { result } => Ok(result.output),
+            ToolInvocationEnvelope::Failed { error } => Err(error),
+        }
     }
 }
 
@@ -677,6 +889,7 @@ mod tests {
                 payload: json!({ "name": "hello from ffi" }),
             },
             custom_tools: Vec::new(),
+            tool_callback: None,
         };
 
         let request_envelope = FfiRequestEnvelope::new(FfiRequest::ExecuteWorkflow(workflow_execution_request));
@@ -715,6 +928,7 @@ mod tests {
                 input_schema: json!({ "type": "object" }),
                 output_schema: None,
             }],
+            tool_callback: None,
         };
 
         let workflow_request_envelope = FfiRequestEnvelope::new(FfiRequest::ExecuteWorkflow(workflow_execution_request));

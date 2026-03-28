@@ -10,7 +10,10 @@ crate-type = ["rlib", "cdylib"]
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
+engine-ai-agent = { path = "../agent" }
 engine-ai-core = { path = "../core" }
+reqwest = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,9 +1,12 @@
-use crate::dsl::{AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, Expression, Workflow};
+use crate::dsl::{
+    AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, CallArgument, Expression, FunctionCall, Reference, ReferenceKeyword,
+    Workflow,
+};
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
 use crate::runtime::inference::InferenceSetting;
 use crate::runtime::provider::ProviderConfig;
-use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner};
+use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
 use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
 use engine_ai_agent::AgentConfig;
@@ -49,6 +52,19 @@ struct PreparedAgentExecution<'workflow> {
     output_type: WorkflowType,
     output_schema: Schema,
     config: AgentConfig,
+    tools: Vec<AgentToolBinding>,
+}
+
+#[derive(Debug, Clone)]
+struct AgentToolBinding {
+    tool_name: String,
+    argument_expressions: Vec<AgentToolArgumentExpression>,
+}
+
+#[derive(Debug, Clone)]
+struct AgentToolArgumentExpression {
+    argument_name: String,
+    expression: Expression,
 }
 
 pub struct WorkflowRuntime<Input, Output>
@@ -206,11 +222,11 @@ where
                 message: "property is required".to_string(),
             })?;
 
-        if agent_declaration.expression_property(AgentExpressionPropertyName::Tools).is_some() {
-            return Err(WorkflowRuntimeError::UnsupportedFeature {
-                feature: format!("agent `{agent_name}` uses `tools`, which is not supported yet"),
-            });
-        }
+        let tools = if let Some(tools_expression) = agent_declaration.expression_property(AgentExpressionPropertyName::Tools) {
+            tools_expression.parse_agent_tools_expression(agent_declaration)?
+        } else {
+            Vec::new()
+        };
 
         let output_type = planned_agent.iteration_output_type.clone();
         let output_schema = workflow_type_to_schemars_schema(&output_type)?;
@@ -225,6 +241,7 @@ where
             output_type,
             output_schema,
             config,
+            tools,
         })
     }
 
@@ -258,8 +275,9 @@ where
             let mut local_bindings = HashMap::new();
             local_bindings.insert(agent_for_loop.iterator_name.clone(), iterable_item.clone());
 
-            let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings)?;
-            let agent_result = self.run_agent_request(prepared_agent_execution, prompt, runner).await?;
+            let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings.clone())?;
+            let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, local_bindings)?;
+            let agent_result = self.run_agent_request(prepared_agent_execution, prompt, tools, runner).await?;
 
             validate_agent_output_value(
                 &agent_result.output,
@@ -292,7 +310,8 @@ where
         RunnerType: AgentRunner,
     {
         let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, HashMap::new())?;
-        let agent_result = self.run_agent_request(prepared_agent_execution, prompt, runner).await?;
+        let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, HashMap::new())?;
+        let agent_result = self.run_agent_request(prepared_agent_execution, prompt, tools, runner).await?;
 
         validate_agent_output_value(
             &agent_result.output,
@@ -309,6 +328,41 @@ where
             .insert(prepared_agent_execution.agent_name.clone(), agent_result.context);
 
         Ok(())
+    }
+
+    fn evaluate_agent_tools(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+    ) -> Result<Vec<RequestedAgentTool>, WorkflowRuntimeError> {
+        let mut resolved_tools = Vec::new();
+
+        let evaluation_context = runtime_state_to_evaluation_context(runtime_state, local_bindings);
+
+        for tool_binding in &prepared_agent_execution.tools {
+            let mut resolved_bound_arguments = Map::new();
+
+            for argument_expression in &tool_binding.argument_expressions {
+                let argument_value = evaluate_expression(
+                    &argument_expression.expression,
+                    &evaluation_context,
+                    &format!(
+                        "tool `tool.{}` argument `{}` for agent `{}`",
+                        tool_binding.tool_name, argument_expression.argument_name, prepared_agent_execution.agent_name
+                    ),
+                )?;
+
+                resolved_bound_arguments.insert(argument_expression.argument_name.clone(), argument_value);
+            }
+
+            resolved_tools.push(RequestedAgentTool {
+                name: tool_binding.tool_name.clone(),
+                bound_arguments: resolved_bound_arguments,
+            });
+        }
+
+        Ok(resolved_tools)
     }
 
     fn evaluate_agent_prompt(
@@ -338,6 +392,7 @@ where
         &self,
         prepared_agent_execution: &PreparedAgentExecution<'_>,
         prompt: String,
+        tools: Vec<RequestedAgentTool>,
         runner: &RunnerType,
     ) -> Result<AgentExecutionResult, WorkflowRuntimeError>
     where
@@ -350,6 +405,8 @@ where
             prompt,
             config: prepared_agent_execution.config.clone(),
             output_schema: prepared_agent_execution.output_schema.clone(),
+            requested_tools: tools,
+            runtime_tools: Vec::new(),
         };
 
         runner.run_agent(&request).await
@@ -365,6 +422,108 @@ where
         }
 
         Ok(Value::Object(output_fields))
+    }
+}
+
+impl Expression {
+    fn parse_agent_tools_expression(&self, agent_declaration: &AgentDeclaration) -> Result<Vec<AgentToolBinding>, WorkflowRuntimeError> {
+        let Expression::ArrayLiteral(tool_expressions) = self else {
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                message: "tools must be an array literal like [tool.weather, tool.weather(country: input.country)]".to_string(),
+            });
+        };
+
+        let mut parsed_tools = Vec::new();
+
+        for tool_expression in tool_expressions {
+            parsed_tools.push(tool_expression.parse_agent_tool_binding(agent_declaration)?);
+        }
+
+        Ok(parsed_tools)
+    }
+
+    fn parse_agent_tool_binding(&self, agent_declaration: &AgentDeclaration) -> Result<AgentToolBinding, WorkflowRuntimeError> {
+        match self {
+            Self::Reference(reference) => {
+                let tool_name = reference.parse_agent_tool_name(agent_declaration)?;
+
+                Ok(AgentToolBinding {
+                    tool_name,
+                    argument_expressions: Vec::new(),
+                })
+            }
+            Self::FunctionCall(function_call) => function_call.parse_agent_tool_call(agent_declaration),
+            _ => Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                message: "each tools entry must be either `tool.name` or `tool.name(arg: expression, ...)`".to_string(),
+            }),
+        }
+    }
+}
+
+impl Reference {
+    fn parse_agent_tool_name(&self, agent_declaration: &AgentDeclaration) -> Result<String, WorkflowRuntimeError> {
+        if self.root_keyword() != Some(ReferenceKeyword::Tool) {
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                message: "tools entries must reference the `tool` namespace".to_string(),
+            });
+        }
+
+        if self.accesses.len() != 1 || self.accesses[0].optional {
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                message: "tools entries must use a direct tool reference like `tool.weather`".to_string(),
+            });
+        }
+
+        Ok(self.accesses[0].field.clone())
+    }
+}
+
+impl FunctionCall {
+    fn parse_agent_tool_call(&self, agent_declaration: &AgentDeclaration) -> Result<AgentToolBinding, WorkflowRuntimeError> {
+        let tool_name = self.callee.parse_agent_tool_name(agent_declaration)?;
+        let mut argument_expressions = Vec::new();
+        let mut seen_argument_names = std::collections::HashSet::<String>::new();
+
+        for call_argument in &self.arguments {
+            let CallArgument::Named(named_argument) = call_argument else {
+                return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                    agent_name: agent_declaration.name.clone(),
+                    property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                    message: format!(
+                        "tool call `tool.{tool_name}(...)` only supports named arguments (for example `tool.{tool_name}(country: input.country)` )"
+                    ),
+                });
+            };
+
+            if !seen_argument_names.insert(named_argument.name.clone()) {
+                return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                    agent_name: agent_declaration.name.clone(),
+                    property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                    message: format!(
+                        "tool call `tool.{tool_name}(...)` has duplicate named argument `{}`",
+                        named_argument.name
+                    ),
+                });
+            }
+
+            argument_expressions.push(AgentToolArgumentExpression {
+                argument_name: named_argument.name.clone(),
+                expression: named_argument.value.clone(),
+            });
+        }
+
+        Ok(AgentToolBinding {
+            tool_name,
+            argument_expressions,
+        })
     }
 }
 

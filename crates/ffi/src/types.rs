@@ -166,6 +166,18 @@ pub struct WorkflowExecutionRequest {
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_tools: Vec<CustomToolDeclaration>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_callback: Option<ToolCallbackConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolCallbackConfig {
+    pub endpoint: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

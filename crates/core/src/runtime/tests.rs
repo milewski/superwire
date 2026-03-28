@@ -1,5 +1,5 @@
 use crate::parse_inline_workflow;
-use crate::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntime, WorkflowRuntimeError};
+use crate::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, RequestedAgentTool, WorkflowRuntime, WorkflowRuntimeError};
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ pub static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::ne
 pub struct ScriptedRunner {
     queued_outputs: Arc<Mutex<VecDeque<Value>>>,
     captured_prompts: Arc<Mutex<Vec<String>>>,
+    captured_tools: Arc<Mutex<Vec<Vec<RequestedAgentTool>>>>,
 }
 
 impl ScriptedRunner {
@@ -29,11 +30,19 @@ impl ScriptedRunner {
         Self {
             queued_outputs: Arc::new(Mutex::new(VecDeque::from(outputs))),
             captured_prompts: Arc::new(Mutex::new(Vec::new())),
+            captured_tools: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn prompts(&self) -> Vec<String> {
         self.captured_prompts.lock().expect("prompt lock should not be poisoned").clone()
+    }
+
+    pub fn captured_tools(&self) -> Vec<Vec<RequestedAgentTool>> {
+        self.captured_tools
+            .lock()
+            .expect("captured tools lock should not be poisoned")
+            .clone()
     }
 }
 
@@ -44,6 +53,11 @@ impl AgentRunner for ScriptedRunner {
             .lock()
             .expect("prompt lock should not be poisoned")
             .push(request.prompt.clone());
+
+        self.captured_tools
+            .lock()
+            .expect("captured tools lock should not be poisoned")
+            .push(request.requested_tools.clone());
 
         let output = self
             .queued_outputs
@@ -652,4 +666,75 @@ async fn executes_for_loop_agent_and_returns_array_output() {
         .expect("workflow should run successfully");
 
     assert_eq!(output, Output { values: vec![1, 2, 3] });
+}
+
+#[tokio::test]
+async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        country: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        weather: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        input {
+            country: string
+        }
+
+        agent assistant {
+            model: openai("model-a")
+            tools: [
+                tool.weather,
+                tool.lookup_weather(country: input.country, static_mode: true)
+            ]
+            prompt: "Use tools"
+            output: string
+        }
+
+        output {
+            weather: agent.assistant
+        }
+    };
+
+    let runtime = WorkflowRuntime::<Input, Output>::new(workflow).expect("runtime should compile");
+    let runner = ScriptedRunner::from_outputs(vec![json!("sunny")]);
+    let output = runtime
+        .run_with_runner(
+            Input {
+                country: "Spain".to_string(),
+            },
+            &runner,
+        )
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(
+        output,
+        Output {
+            weather: "sunny".to_string(),
+        }
+    );
+
+    let captured_tools = runner.captured_tools();
+    assert_eq!(captured_tools.len(), 1);
+    assert_eq!(captured_tools[0].len(), 2);
+    assert_eq!(captured_tools[0][0].name, "weather");
+    assert_eq!(captured_tools[0][0].bound_arguments, serde_json::Map::new());
+    assert_eq!(captured_tools[0][1].name, "lookup_weather");
+    assert_eq!(
+        captured_tools[0][1].bound_arguments,
+        json!({
+            "country": "Spain",
+            "static_mode": true
+        })
+        .as_object()
+        .expect("bound arguments expectation should be an object")
+        .clone()
+    );
 }
