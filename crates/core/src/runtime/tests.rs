@@ -738,3 +738,80 @@ async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
         .clone()
     );
 }
+
+#[tokio::test]
+async fn evaluates_tool_bound_arguments_from_secrets_context() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        country: String,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct Secrets {
+        key: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        weather: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        input {
+            country: string
+        }
+
+        secrets {
+            key: string
+        }
+
+        agent assistant {
+            model: openai("model-a")
+            tools: [tool.weather(key: secrets.key)]
+            prompt: "Use tools"
+            output: string
+        }
+
+        output {
+            weather: agent.assistant
+        }
+    };
+
+    let runtime = WorkflowRuntime::<Input, Output>::new(workflow).expect("runtime should compile");
+    let runner = ScriptedRunner::from_outputs(vec![json!("sunny")]);
+    let output = runtime
+        .run_with_runner_and_secrets(
+            Input {
+                country: "Spain".to_string(),
+            },
+            Secrets {
+                key: "secret-key".to_string(),
+            },
+            &runner,
+        )
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(
+        output,
+        Output {
+            weather: "sunny".to_string(),
+        }
+    );
+
+    let captured_tools = runner.captured_tools();
+    assert_eq!(captured_tools.len(), 1);
+    assert_eq!(captured_tools[0].len(), 1);
+    assert_eq!(captured_tools[0][0].name, "weather");
+    assert_eq!(
+        captured_tools[0][0].bound_arguments,
+        json!({
+            "key": "secret-key"
+        })
+        .as_object()
+        .expect("bound arguments expectation should be an object")
+        .clone()
+    );
+}

@@ -50,6 +50,9 @@ export interface WorkflowExecutionRequest<Input extends JsonRecord = JsonRecord>
     input: {
         payload: Input;
     };
+    secrets?: {
+        payload: JsonRecord;
+    };
     custom_tools: CustomToolDeclaration[];
     tool_callback?: ToolCallbackConfig;
 }
@@ -64,6 +67,7 @@ export interface ToolInvocationPayload {
     invocation_id: string;
     tool_name: string;
     arguments: unknown;
+    execution_context?: unknown;
 }
 
 export interface ToolInvocationResult {

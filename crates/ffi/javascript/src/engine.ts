@@ -14,7 +14,7 @@ import type {
     WorkflowExecutionEnvelope,
     WorkflowExecutionRequest,
 } from './types'
-import type { Tool } from './tool'
+import type { Tool, ToolArguments, ToolExecutionContext } from './tool'
 import { Workflow } from './workflow'
 
 interface ToolCallbackHandle {
@@ -29,12 +29,21 @@ export interface EngineOptions {
     executionIdGenerator?: () => string;
 }
 
+export interface RegisterToolOptions {
+    bounded?: JsonRecord;
+}
+
+interface RegisteredTool {
+    tool: Tool;
+    bounded: JsonRecord;
+}
+
 export class Engine {
     private readonly engineFfiBridge: EngineFfiBridge
 
     private readonly executionIdGenerator: () => string
 
-    private readonly registeredToolsByName: Map<string, Tool>
+    private readonly registeredToolsByName: Map<string, RegisteredTool>
 
     constructor(options: EngineOptions = {}) {
         this.engineFfiBridge = options.bridge ?? new EngineFfiBridge(options.bridgeOptions)
@@ -42,8 +51,11 @@ export class Engine {
         this.registeredToolsByName = new Map()
     }
 
-    registerTool(tool: Tool): this {
-        this.registeredToolsByName.set(tool.name, tool)
+    registerTool(tool: Tool, options: RegisterToolOptions = {}): this {
+        this.registeredToolsByName.set(tool.name, {
+            tool,
+            bounded: options.bounded ?? {},
+        })
 
         return this
     }
@@ -53,28 +65,34 @@ export class Engine {
     }
 
     registeredTools(): Tool[] {
-        return [ ...this.registeredToolsByName.values() ]
+        return [ ...this.registeredToolsByName.values() ].map((registeredTool) => registeredTool.tool)
     }
 
     async invokeTool<Input extends JsonRecord = JsonRecord, Output = unknown>(toolName: string, input: Input): Promise<Output> {
-        const tool = this.registeredToolsByName.get(toolName)
+        const registeredTool = this.registeredToolsByName.get(toolName)
 
-        if (!tool) {
+        if (!registeredTool) {
             throw new Error(`Tool \`${ toolName }\` is not registered. Call engine.registerTool(...) first.`)
         }
 
-        const toolOutput = await tool.execute(input)
+        const toolOutput = await registeredTool.tool.execute({
+            input,
+            bounded: registeredTool.bounded,
+            context: {},
+        })
 
         return toolOutput as Output
     }
 
-    async run<Output = unknown, Input extends JsonRecord = JsonRecord>(
+    async run<Output = unknown, Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord>(
         workflow: Workflow,
         inputPayload: Input,
+        secretsOrOptions: Secrets | EngineRunOptions = {},
         options: EngineRunOptions = {},
     ): Promise<EngineRunResult<Output>> {
-        const executionId = options.executionId ?? this.executionIdGenerator()
-        const workflowExecutionRequest = workflow.toExecutionRequest(executionId, inputPayload)
+        const { secretsPayload, runOptions } = this.resolveRunArguments(secretsOrOptions, options)
+        const executionId = runOptions.executionId ?? this.executionIdGenerator()
+        const workflowExecutionRequest = workflow.toExecutionRequest(executionId, inputPayload, secretsPayload)
         workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
 
         const toolCallbackHandle = await this.startToolCallbackServer(executionId)
@@ -93,7 +111,7 @@ export class Engine {
                 WorkflowExecutionRequest<Input>,
                 WorkflowExecutionEnvelope<Output>
             >(workflowExecutionRequest, {
-                requestId: options.requestId,
+                requestId: runOptions.requestId,
             })
         } catch (error) {
             if (toolCallbackHandle) {
@@ -118,6 +136,45 @@ export class Engine {
         }
 
         return createEngineRunSuccess(workflowExecutionEnvelope.output.output)
+    }
+
+    private resolveRunArguments<Secrets extends JsonRecord>(
+        secretsOrOptions: Secrets | EngineRunOptions,
+        options: EngineRunOptions,
+    ): {
+        secretsPayload?: Secrets;
+        runOptions: EngineRunOptions;
+    } {
+        if (this.isEngineRunOptions(secretsOrOptions) && Object.keys(options).length === 0) {
+            return {
+                runOptions: secretsOrOptions,
+            }
+        }
+
+        return {
+            secretsPayload: secretsOrOptions as Secrets,
+            runOptions: options,
+        }
+    }
+
+    private isEngineRunOptions(value: JsonRecord | EngineRunOptions): value is EngineRunOptions {
+        const valueRecord = value as Record<string, unknown>
+
+        const hasOnlyRunOptionFields = Object.keys(valueRecord).every((key) => key === 'requestId' || key === 'executionId')
+
+        if (!hasOnlyRunOptionFields) {
+            return false
+        }
+
+        if ('requestId' in valueRecord && valueRecord.requestId !== undefined && typeof valueRecord.requestId !== 'string') {
+            return false
+        }
+
+        if ('executionId' in valueRecord && valueRecord.executionId !== undefined && typeof valueRecord.executionId !== 'string') {
+            return false
+        }
+
+        return true
     }
 
     close(): void {
@@ -252,9 +309,9 @@ export class Engine {
             return
         }
 
-        const tool = this.registeredToolsByName.get(toolInvocationPayload.tool_name)
+        const registeredTool = this.registeredToolsByName.get(toolInvocationPayload.tool_name)
 
-        if (!tool) {
+        if (!registeredTool) {
             this.writeToolCallbackResponse(response, 404, {
                 status: 'failed',
                 error: {
@@ -281,7 +338,18 @@ export class Engine {
         }
 
         try {
-            const output = await tool.execute(toolArguments as JsonRecord)
+            const executionContext = this.normalizeExecutionContext(toolInvocationPayload.execution_context)
+            const boundedFromWorkflow = this.normalizeBoundedArguments(executionContext?.boundArguments)
+            const executionArguments: ToolArguments<JsonRecord, JsonRecord, ToolExecutionContext> = {
+                input: toolArguments as JsonRecord,
+                bounded: {
+                    ...boundedFromWorkflow,
+                    ...registeredTool.bounded,
+                },
+                context: executionContext ?? {},
+            }
+
+            const output = await registeredTool.tool.execute(executionArguments)
 
             this.writeToolCallbackResponse(response, 200, {
                 status: 'succeeded',
@@ -308,5 +376,30 @@ export class Engine {
         response.statusCode = statusCode
         response.setHeader('content-type', 'application/json')
         response.end(JSON.stringify(envelope))
+    }
+
+    private normalizeExecutionContext(rawExecutionContext: unknown): ToolExecutionContext | undefined {
+        if (!rawExecutionContext || typeof rawExecutionContext !== 'object' || Array.isArray(rawExecutionContext)) {
+            return undefined
+        }
+
+        const contextObject = rawExecutionContext as Record<string, unknown>
+
+        if ('workflow_input' in contextObject || 'bound_arguments' in contextObject) {
+            return {
+                workflowInput: contextObject.workflow_input,
+                boundArguments: contextObject.bound_arguments,
+            }
+        }
+
+        return contextObject
+    }
+
+    private normalizeBoundedArguments(rawBoundedArguments: unknown): JsonRecord {
+        if (!rawBoundedArguments || typeof rawBoundedArguments !== 'object' || Array.isArray(rawBoundedArguments)) {
+            return {}
+        }
+
+        return rawBoundedArguments as JsonRecord
     }
 }
