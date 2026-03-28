@@ -145,6 +145,13 @@ export type ReadExecutionValueEnvelope =
     | ReadExecutionValueSucceededEnvelope
     | ReadExecutionValueFailedEnvelope;
 
+export interface EngineExecutionError {
+    readonly code: string;
+    readonly message: string;
+    readonly context?: unknown;
+    readonly details?: unknown;
+}
+
 export interface EngineExecutionResult<Output = unknown> {
     readonly executionId: string;
 
@@ -154,7 +161,7 @@ export interface EngineExecutionResult<Output = unknown> {
 
     success(): Promise<Output | null>;
 
-    error(): Promise<Error | null>;
+    error(): Promise<EngineExecutionError | null>;
 
     context(): Promise<unknown>;
 }

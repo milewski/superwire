@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { EngineFfiBridge } from './bridge'
 import type {
     CustomToolDeclaration,
+    EngineExecutionError,
     EngineExecutionResult,
     EngineFfiBridgeOptions,
     EngineRunOptions,
@@ -45,13 +46,13 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
 
     private cachedSuccessValue: Output | null | undefined
 
-    private cachedErrorValue: Error | null | undefined
+    private cachedErrorValue: EngineExecutionError | null | undefined
 
     private cachedContextValue: unknown
 
     private readonly canReadDeferredValues: boolean
 
-    constructor(engineFfiBridge: EngineFfiBridge, executionId: string, eagerError: Error | null = null, canReadDeferredValues = true) {
+    constructor(engineFfiBridge: EngineFfiBridge, executionId: string, eagerError: EngineExecutionError | null = null, canReadDeferredValues = true) {
         this.engineFfiBridge = engineFfiBridge
         this.executionId = executionId
         this.cachedErrorValue = eagerError
@@ -88,7 +89,10 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
             responseValue = await this.readExecutionValue('success')
         } catch (error) {
             if (this.cachedErrorValue === undefined) {
-                this.cachedErrorValue = error instanceof Error ? error : new Error(String(error))
+                this.cachedErrorValue = {
+                    code: 'execution_failed',
+                    message: error instanceof Error ? error.message : String(error),
+                }
             }
 
             this.cachedSuccessValue = null
@@ -101,7 +105,7 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
         return this.cachedSuccessValue
     }
 
-    async error(): Promise<Error | null> {
+    async error(): Promise<EngineExecutionError | null> {
         if (this.cachedErrorValue !== undefined) {
             return this.cachedErrorValue
         }
@@ -117,7 +121,10 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
         try {
             responseValue = await this.readExecutionValue('error')
         } catch (error) {
-            this.cachedErrorValue = error instanceof Error ? error : new Error(String(error))
+            this.cachedErrorValue = {
+                code: 'execution_failed',
+                message: error instanceof Error ? error.message : String(error),
+            }
 
             return this.cachedErrorValue
         }
@@ -131,12 +138,16 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
         const errorObject = responseValue as {
             code?: string;
             message?: string;
+            context?: unknown;
+            details?: unknown;
         }
 
-        const errorCode = errorObject.code ?? 'execution_failed'
-        const errorMessage = errorObject.message ?? 'Unknown workflow execution error'
-
-        this.cachedErrorValue = new Error(`[${ errorCode }] ${ errorMessage }`)
+        this.cachedErrorValue = {
+            code: errorObject.code ?? 'execution_failed',
+            message: errorObject.message ?? 'Unknown workflow execution error',
+            context: errorObject.context,
+            details: errorObject.details,
+        }
 
         return this.cachedErrorValue
     }
@@ -258,7 +269,10 @@ export class Engine {
                 return new DeferredEngineExecutionResult<Output>(
                     this.engineFfiBridge,
                     executionId,
-                    new Error(`[${ workflowExecutionEnvelope.error.code }] ${ workflowExecutionEnvelope.error.message }`),
+                    {
+                        code: workflowExecutionEnvelope.error.code,
+                        message: workflowExecutionEnvelope.error.message,
+                    },
                     true,
                 )
             }
@@ -268,7 +282,10 @@ export class Engine {
                 workflowExecutionEnvelope.output.execution_id,
             )
         } catch (error) {
-            const executionError = error instanceof Error ? error : new Error(String(error))
+            const executionError: EngineExecutionError = {
+                code: 'execution_failed',
+                message: error instanceof Error ? error.message : String(error),
+            }
 
             const fallbackExecutionId = executionId || this.executionIdGenerator()
 
