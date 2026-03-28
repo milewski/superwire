@@ -23,6 +23,8 @@ export abstract class Tool<
     ToolBoundedInput extends JsonRecord = JsonRecord,
     ToolContext extends ToolExecutionContext = ToolExecutionContext,
 > {
+    static readonly toolName?: string
+
     readonly name: string
 
     abstract readonly description: string
@@ -32,7 +34,7 @@ export abstract class Tool<
     readonly outputSchema?: JsonSchema
 
     constructor(name?: string) {
-        this.name = name ?? this.deriveToolNameFromClassName()
+        this.name = name ?? this.resolveToolName()
     }
 
     abstract execute(toolArguments: ToolArguments<ToolInput, ToolBoundedInput, ToolContext>): ToolOutput | Promise<ToolOutput>
@@ -44,6 +46,17 @@ export abstract class Tool<
             input_schema: this.inputSchema,
             output_schema: this.outputSchema,
         }
+    }
+
+    private resolveToolName(): string {
+        const toolConstructor = this.constructor as typeof Tool
+        const staticToolName = toolConstructor.toolName?.trim()
+
+        if (staticToolName) {
+            return staticToolName
+        }
+
+        return this.deriveToolNameFromClassName()
     }
 
     private deriveToolNameFromClassName(): string {
