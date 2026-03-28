@@ -82,7 +82,19 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
             return this.cachedSuccessValue
         }
 
-        const responseValue = await this.readExecutionValue('success')
+        let responseValue: unknown
+
+        try {
+            responseValue = await this.readExecutionValue('success')
+        } catch (error) {
+            if (this.cachedErrorValue === undefined) {
+                this.cachedErrorValue = error instanceof Error ? error : new Error(String(error))
+            }
+
+            this.cachedSuccessValue = null
+
+            return this.cachedSuccessValue
+        }
 
         this.cachedSuccessValue = responseValue as Output | null
 
@@ -100,7 +112,15 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
             return this.cachedErrorValue
         }
 
-        const responseValue = await this.readExecutionValue('error')
+        let responseValue: unknown
+
+        try {
+            responseValue = await this.readExecutionValue('error')
+        } catch (error) {
+            this.cachedErrorValue = error instanceof Error ? error : new Error(String(error))
+
+            return this.cachedErrorValue
+        }
 
         if (!responseValue || typeof responseValue !== 'object') {
             this.cachedErrorValue = null
@@ -132,7 +152,11 @@ class DeferredEngineExecutionResult<Output> implements EngineExecutionResult<Out
             return this.cachedContextValue
         }
 
-        this.cachedContextValue = await this.readExecutionValue('context')
+        try {
+            this.cachedContextValue = await this.readExecutionValue('context')
+        } catch {
+            this.cachedContextValue = null
+        }
 
         return this.cachedContextValue
     }
@@ -203,57 +227,66 @@ export class Engine {
         secretsOrOptions: Secrets | EngineRunOptions = {},
         options: EngineRunOptions = {},
     ): Promise<EngineExecutionResult<Output>> {
-        const { secretsPayload, runOptions } = this.resolveRunArguments(secretsOrOptions, options)
-        const executionId = runOptions.executionId ?? this.executionIdGenerator()
-        const workflowExecutionRequest = workflow.toExecutionRequest(executionId, inputPayload, secretsPayload)
-        workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
-        workflowExecutionRequest.defer_output = true
-
-        const toolCallbackHandle = await this.startToolCallbackServer(executionId)
-
-        if (toolCallbackHandle) {
-            workflowExecutionRequest.tool_callback = {
-                endpoint: toolCallbackHandle.endpoint,
-                auth_token: toolCallbackHandle.authToken,
-            }
-        }
-
-        let workflowExecutionEnvelope: WorkflowExecutionEnvelope<Output>
+        let executionId = ''
+        let toolCallbackHandle: ToolCallbackHandle | null = null
 
         try {
-            workflowExecutionEnvelope = await this.engineFfiBridge.executeWorkflow<
+            const { secretsPayload, runOptions } = this.resolveRunArguments(secretsOrOptions, options)
+            executionId = runOptions.executionId ?? this.executionIdGenerator()
+
+            const workflowExecutionRequest = workflow.toExecutionRequest(executionId, inputPayload, secretsPayload)
+            workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
+            workflowExecutionRequest.defer_output = true
+
+            toolCallbackHandle = await this.startToolCallbackServer(executionId)
+
+            if (toolCallbackHandle) {
+                workflowExecutionRequest.tool_callback = {
+                    endpoint: toolCallbackHandle.endpoint,
+                    auth_token: toolCallbackHandle.authToken,
+                }
+            }
+
+            const workflowExecutionEnvelope = await this.engineFfiBridge.executeWorkflow<
                 WorkflowExecutionRequest<Input>,
                 WorkflowExecutionEnvelope<Output>
             >(workflowExecutionRequest, {
                 requestId: runOptions.requestId,
             })
-        } catch (error) {
-            if (toolCallbackHandle) {
-                await toolCallbackHandle.close()
+
+            if (workflowExecutionEnvelope.status === 'failed') {
+                return new DeferredEngineExecutionResult<Output>(
+                    this.engineFfiBridge,
+                    executionId,
+                    new Error(`[${ workflowExecutionEnvelope.error.code }] ${ workflowExecutionEnvelope.error.message }`),
+                    true,
+                )
             }
 
-            const executionError = error instanceof Error ? error : new Error(String(error))
-
-            return new DeferredEngineExecutionResult<Output>(this.engineFfiBridge, executionId, executionError, false)
-        }
-
-        if (toolCallbackHandle) {
-            await toolCallbackHandle.close()
-        }
-
-        if (workflowExecutionEnvelope.status === 'failed') {
             return new DeferredEngineExecutionResult<Output>(
                 this.engineFfiBridge,
-                executionId,
-                new Error(`[${ workflowExecutionEnvelope.error.code }] ${ workflowExecutionEnvelope.error.message }`),
-                true,
+                workflowExecutionEnvelope.output.execution_id,
             )
-        }
+        } catch (error) {
+            const executionError = error instanceof Error ? error : new Error(String(error))
 
-        return new DeferredEngineExecutionResult<Output>(
-            this.engineFfiBridge,
-            workflowExecutionEnvelope.output.execution_id,
-        )
+            const fallbackExecutionId = executionId || this.executionIdGenerator()
+
+            return new DeferredEngineExecutionResult<Output>(
+                this.engineFfiBridge,
+                fallbackExecutionId,
+                executionError,
+                false,
+            )
+        } finally {
+            if (toolCallbackHandle) {
+                try {
+                    await toolCallbackHandle.close()
+                } catch {
+                    // no-op: run() must remain non-throwing
+                }
+            }
+        }
     }
 
     private resolveRunArguments<Secrets extends JsonRecord>(

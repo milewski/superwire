@@ -4,7 +4,8 @@ import type { CustomToolDeclaration, JsonRecord } from './types'
 export interface ToolExecutionContext {
     workflowInput?: unknown;
     boundArguments?: unknown;
-    [key: string]: unknown;
+
+    [ key: string ]: unknown;
 }
 
 export interface ToolArguments<
@@ -63,15 +64,22 @@ export abstract class Tool<
         const className = this.constructor.name.trim()
 
         if (!className) {
-            return 'tool'
+            throw new Error(
+                'Tool name could not be inferred from class name. Provide a static `toolName` or pass a name to `super(name)`.',
+            )
         }
 
         const normalizedName = className
-            .replace(/Tool$/u, '')
             .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
             .replace(/[-\s]+/gu, '_')
             .toLowerCase()
 
-        return normalizedName || 'tool'
+        if (!normalizedName) {
+            throw new Error(
+                'Tool name normalization produced an empty value. Provide a static `toolName` or pass a name to `super(name)`.',
+            )
+        }
+
+        return normalizedName
     }
 }
