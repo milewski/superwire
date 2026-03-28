@@ -83,36 +83,44 @@ export interface EngineRunOptions {
     executionId?: string;
 }
 
-export class EngineRunSuccess<Output = unknown> {
+export interface EngineRunSuccess<Output = unknown> {
+    readonly kind: 'success';
     readonly success: Output;
+    isSuccess(): this is EngineRunSuccess<Output>;
+    isError(): this is EngineRunError<Output>;
+}
 
-    constructor(success: Output) {
-        this.success = success;
-    }
+export interface EngineRunError<Output = never> {
+    readonly kind: 'error';
+    readonly error: Error;
+    isSuccess(): this is EngineRunSuccess<Output>;
+    isError(): this is EngineRunError<Output>;
+}
 
-    isSuccess(): this is EngineRunSuccess<Output> {
-        return true;
-    }
+export type EngineRunResult<Output = unknown> = EngineRunSuccess<Output> | EngineRunError<Output>;
 
-    isError(): this is EngineRunFailure {
-        return false;
+export function createEngineRunSuccess<Output>(success: Output): EngineRunSuccess<Output> {
+    return {
+        kind: 'success',
+        success,
+        isSuccess(): this is EngineRunSuccess<Output> {
+            return true;
+        },
+        isError(): this is EngineRunError<Output> {
+            return false;
+        },
     }
 }
 
-export class EngineRunFailure {
-    readonly failure: Error;
-
-    constructor(failure: Error) {
-        this.failure = failure;
-    }
-
-    isSuccess(): this is EngineRunSuccess<never> {
-        return false;
-    }
-
-    isError(): this is EngineRunFailure {
-        return true;
+export function createEngineRunError<Output = never>(error: Error): EngineRunError<Output> {
+    return {
+        kind: 'error',
+        error,
+        isSuccess(): this is EngineRunSuccess<Output> {
+            return false;
+        },
+        isError(): this is EngineRunError<Output> {
+            return true;
+        },
     }
 }
-
-export type EngineRunResult<Output = unknown> = EngineRunSuccess<Output> | EngineRunFailure;

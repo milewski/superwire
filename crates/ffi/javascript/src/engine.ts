@@ -1,13 +1,14 @@
 import { EngineFfiBridge } from './bridge'
-import { EngineRunFailure, EngineRunSuccess } from './types'
+import { createEngineRunError, createEngineRunSuccess } from './types'
 import type {
     EngineFfiBridgeOptions,
     EngineRunOptions,
-    EngineRunResult,
     JsonRecord,
+    EngineRunResult,
     WorkflowExecutionEnvelope,
     WorkflowExecutionRequest,
 } from './types'
+import type { Tool } from './tool'
 import { Workflow } from './workflow'
 
 export interface EngineOptions {
@@ -21,9 +22,38 @@ export class Engine {
 
     private readonly executionIdGenerator: () => string
 
+    private readonly registeredToolsByName: Map<string, Tool>
+
     constructor(options: EngineOptions = {}) {
         this.engineFfiBridge = options.bridge ?? new EngineFfiBridge(options.bridgeOptions)
         this.executionIdGenerator = options.executionIdGenerator ?? (() => this.generateExecutionId())
+        this.registeredToolsByName = new Map()
+    }
+
+    registerTool(tool: Tool): this {
+        this.registeredToolsByName.set(tool.name, tool)
+
+        return this
+    }
+
+    unregisterTool(toolName: string): boolean {
+        return this.registeredToolsByName.delete(toolName)
+    }
+
+    registeredTools(): Tool[] {
+        return [ ...this.registeredToolsByName.values() ]
+    }
+
+    async invokeTool<Input extends JsonRecord = JsonRecord, Output = unknown>(toolName: string, input: Input): Promise<Output> {
+        const tool = this.registeredToolsByName.get(toolName)
+
+        if (!tool) {
+            throw new Error(`Tool \`${ toolName }\` is not registered. Call engine.registerTool(...) first.`)
+        }
+
+        const toolOutput = await tool.execute(input)
+
+        return toolOutput as Output
     }
 
     async run<Output = unknown, Input extends JsonRecord = JsonRecord>(
@@ -46,18 +76,18 @@ export class Engine {
         } catch (error) {
             const executionError = error instanceof Error ? error : new Error(String(error))
 
-            return new EngineRunFailure(executionError)
+            return createEngineRunError<Output>(executionError)
         }
 
         if (workflowExecutionEnvelope.status === 'failed') {
-            return new EngineRunFailure(
+            return createEngineRunError<Output>(
                 new Error(
                     `[${ workflowExecutionEnvelope.error.code }] ${ workflowExecutionEnvelope.error.message }`,
                 ),
             )
         }
 
-        return new EngineRunSuccess(workflowExecutionEnvelope.output.output)
+        return createEngineRunSuccess(workflowExecutionEnvelope.output.output)
     }
 
     close(): void {
