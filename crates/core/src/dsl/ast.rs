@@ -456,6 +456,7 @@ pub enum TypeExpression {
     Null,
     SchemaReference(String),
     StringEnum(String),
+    StringEnumReference(Reference),
     Array {
         item_type: Box<TypeExpression>,
         fixed_length: Option<u64>,

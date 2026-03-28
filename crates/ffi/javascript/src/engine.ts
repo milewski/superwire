@@ -2,19 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 
 import { EngineFfiBridge } from './bridge'
-import type {
-    CustomToolDeclaration,
-    EngineExecutionError,
-    EngineExecutionResult,
-    EngineFfiBridgeOptions,
-    EngineRunOptions,
-    JsonRecord,
-    ReadExecutionValueEnvelope,
-    ToolInvocationEnvelope,
-    ToolInvocationPayload,
-    WorkflowExecutionEnvelope,
-    WorkflowExecutionRequest,
-} from './types'
+import type { CustomToolDeclaration, EngineExecutionError, EngineExecutionResult, EngineFfiBridgeOptions, EngineRunOptions, JsonRecord, ReadExecutionValueEnvelope, ToolInvocationEnvelope, ToolInvocationPayload, WorkflowExecutionEnvelope, WorkflowExecutionRequest } from './types'
 import type { Tool, ToolArguments, ToolExecutionContext } from './tool'
 import { Workflow } from './workflow'
 
@@ -431,7 +419,7 @@ export class Engine {
             return
         }
 
-        const callbackToken = request.headers['x-engine-ai-tool-callback-token']
+        const callbackToken = request.headers[ 'x-engine-ai-tool-callback-token' ]
 
         if (callbackToken !== authToken) {
             this.writeToolCallbackResponse(response, 401, {

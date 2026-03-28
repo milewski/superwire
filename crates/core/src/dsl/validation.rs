@@ -933,7 +933,8 @@ fn validate_type_expression_for_schemas(
         | TypeExpression::Float
         | TypeExpression::Boolean
         | TypeExpression::Null
-        | TypeExpression::StringEnum(_) => {}
+        | TypeExpression::StringEnum(_)
+        | TypeExpression::StringEnumReference(_) => {}
     }
 }
 
@@ -1453,6 +1454,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             | TypeExpression::Boolean
             | TypeExpression::Null
             | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
                 item_type: _,
                 fixed_length: _,

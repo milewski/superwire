@@ -3,7 +3,7 @@ export type JsonSchema = Record<string, unknown>;
 export type JsonSchemaPrimitive = string | number | boolean | null;
 
 export interface JsonSchemaObjectProperties {
-    [propertyName: string]: JsonSchema;
+    [ propertyName: string ]: JsonSchema;
 }
 
 export interface JsonSchemaObjectOptions {
@@ -18,55 +18,55 @@ export interface JsonSchemaArrayOptions {
 
 export const schema = {
     string(): JsonSchema {
-        return { type: 'string' };
+        return { type: 'string' }
     },
 
     number(): JsonSchema {
-        return { type: 'number' };
+        return { type: 'number' }
     },
 
     boolean(): JsonSchema {
-        return { type: 'boolean' };
+        return { type: 'boolean' }
     },
 
     integer(): JsonSchema {
-        return { type: 'integer' };
+        return { type: 'integer' }
     },
 
     null(): JsonSchema {
-        return { type: 'null' };
+        return { type: 'null' }
     },
 
     literal(value: JsonSchemaPrimitive): JsonSchema {
-        return { const: value };
+        return { const: value }
     },
 
     enumeration(values: JsonSchemaPrimitive[]): JsonSchema {
-        return { enum: values };
+        return { enum: values }
     },
 
     array(items: JsonSchema, options: JsonSchemaArrayOptions = {}): JsonSchema {
         const arraySchema: JsonSchema = {
             type: 'array',
             items,
-        };
+        }
 
         if (options.minItems !== undefined) {
-            arraySchema.minItems = options.minItems;
+            arraySchema.minItems = options.minItems
         }
 
         if (options.maxItems !== undefined) {
-            arraySchema.maxItems = options.maxItems;
+            arraySchema.maxItems = options.maxItems
         }
 
-        return arraySchema;
+        return arraySchema
     },
 
     fixedArray(items: JsonSchema, size: number): JsonSchema {
         return this.array(items, {
             minItems: size,
             maxItems: size,
-        });
+        })
     },
 
     tuple(items: JsonSchema[]): JsonSchema {
@@ -75,17 +75,17 @@ export const schema = {
             prefixItems: items,
             minItems: items.length,
             maxItems: items.length,
-        };
+        }
     },
 
     union(variants: JsonSchema[]): JsonSchema {
         return {
             anyOf: variants,
-        };
+        }
     },
 
     nullable(inner: JsonSchema): JsonSchema {
-        return this.union([ inner, this.null() ]);
+        return this.union([ inner, this.null() ])
     },
 
     object(
@@ -96,13 +96,13 @@ export const schema = {
             ? {
                 required: requiredOrOptions,
             }
-            : requiredOrOptions;
+            : requiredOrOptions
 
         return {
             type: 'object',
             properties,
             required: objectOptions.required ?? Object.keys(properties),
             additionalProperties: objectOptions.additionalProperties ?? false,
-        };
+        }
     },
-};
+}

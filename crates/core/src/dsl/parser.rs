@@ -479,6 +479,52 @@ mod tests {
     }
 
     #[test]
+    fn parses_output_string_enum_references() {
+        let workflow = parse_inline_workflow! {
+            input {
+                models: {
+                    large: string
+                    small: string
+                }
+            }
+
+            agent router {
+                output: {
+                    model: input.models.large | input.models.small
+                }
+            }
+        };
+
+        let router_agent = workflow.find_agent("router").expect("missing agent declaration: router");
+        let output_type = router_agent.output_type().expect("router output type should exist");
+
+        let TypeExpression::Object(output_fields) = output_type else {
+            panic!("router output type should be object");
+        };
+
+        let model_field = output_fields
+            .iter()
+            .find(|typed_field| typed_field.name == "model")
+            .expect("model field should exist");
+
+        let TypeExpression::Union(union_members) = &model_field.field_type else {
+            panic!("model field type should be union");
+        };
+
+        assert_eq!(union_members.len(), 2);
+        assert!(matches!(
+            &union_members[0],
+            TypeExpression::StringEnumReference(reference)
+                if reference.root == ReferenceRoot::Keyword(ReferenceKeyword::Input)
+        ));
+        assert!(matches!(
+            &union_members[1],
+            TypeExpression::StringEnumReference(reference)
+                if reference.root == ReferenceRoot::Keyword(ReferenceKeyword::Input)
+        ));
+    }
+
+    #[test]
     fn parses_string_interpolation_as_structured_template_parts() {
         let workflow = parse_inline_workflow! {
             agent interpolation_test {

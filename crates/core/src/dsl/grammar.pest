@@ -46,6 +46,7 @@ type_expression = { type_term ~ ("|" ~ type_term)* }
 type_term = _{
     scalar_type
     | schema_reference
+    | reference
     | array_type
     | tuple_type
     | type_object

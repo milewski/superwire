@@ -237,6 +237,7 @@ impl CompletionLabel for TypeExpression {
             TypeExpression::Null => "null",
             TypeExpression::SchemaReference(_)
             | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
                 item_type: _,
                 fixed_length: _,

@@ -160,7 +160,22 @@ impl DocumentState {
         }
 
         if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(line_prefix) {
-            let model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
+            let mut model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
+
+            if !model_call_context.inside_string_literal {
+                model_suggestions.extend(semantic_index.model_value_root_suggestions(&model_call_context.model_prefix));
+                model_suggestions.sort_by(|left_suggestion, right_suggestion| {
+                    left_suggestion
+                        .label
+                        .cmp(&right_suggestion.label)
+                        .then_with(|| left_suggestion.insert_text.cmp(&right_suggestion.insert_text))
+                });
+                model_suggestions.dedup_by(|left_suggestion, right_suggestion| {
+                    left_suggestion.label == right_suggestion.label
+                        && left_suggestion.insert_text == right_suggestion.insert_text
+                        && left_suggestion.detail == right_suggestion.detail
+                });
+            }
 
             if !model_suggestions.is_empty() {
                 return Some(model_suggestions);
