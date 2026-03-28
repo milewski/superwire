@@ -6,8 +6,6 @@ export { createEngineFfiBridge, EngineFfiBridge } from './bridge'
 export { Engine } from './engine'
 export type { EngineOptions, RegisterToolOptions } from './engine'
 
-export { createEngineRunError, createEngineRunSuccess } from './types'
-
 export { schema } from './schema'
 export type { JsonSchema, JsonSchemaObjectProperties } from './schema'
 
@@ -18,17 +16,18 @@ export { Workflow } from './workflow'
 
 export type {
     CustomToolDeclaration,
-    EngineRunError,
+    EngineExecutionResult,
     EngineFfiBridgeOptions,
     EngineRunOptions,
-    EngineRunResult,
-    EngineRunSuccess,
+    ExecutionValueName,
     FfiBoundaryEnvelope,
     FfiBoundaryError,
     FfiBoundaryStatus,
     FfiInvokeRequestEnvelope,
     FfiResponseEnvelope,
     JsonRecord,
+    ReadExecutionValueEnvelope,
+    ReadExecutionValueRequest,
     RequestOptions,
     WorkflowExecutionEnvelope,
     WorkflowExecutionFailedEnvelope,

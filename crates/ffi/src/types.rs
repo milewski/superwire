@@ -4,6 +4,10 @@ use crate::error::FfiError;
 
 pub const FFI_PROTOCOL_VERSION: u32 = 1;
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FfiRequestEnvelope {
@@ -90,6 +94,13 @@ impl FfiResponseEnvelope {
                     details: None,
                 },
             }),
+            FfiOperation::ReadExecutionValue => FfiResponse::ReadExecutionValue(ReadExecutionValueEnvelope::Failed {
+                error: WorkflowExecutionError {
+                    code: WorkflowExecutionErrorCode::Internal,
+                    message: error.to_string(),
+                    details: None,
+                },
+            }),
         };
 
         Self {
@@ -105,6 +116,7 @@ impl FfiResponseEnvelope {
 pub enum FfiOperation {
     ExecuteWorkflow,
     InvokeTool,
+    ReadExecutionValue,
 }
 
 impl FfiOperation {
@@ -113,6 +125,7 @@ impl FfiOperation {
         match self {
             Self::ExecuteWorkflow => "execute_workflow",
             Self::InvokeTool => "invoke_tool",
+            Self::ReadExecutionValue => "read_execution_value",
         }
     }
 }
@@ -128,6 +141,7 @@ impl std::fmt::Display for FfiOperation {
 pub enum FfiRequest {
     ExecuteWorkflow(WorkflowExecutionRequest),
     InvokeTool(ToolInvocationPayload),
+    ReadExecutionValue(ReadExecutionValueRequest),
 }
 
 impl FfiRequest {
@@ -136,6 +150,7 @@ impl FfiRequest {
         match self {
             Self::ExecuteWorkflow(_) => FfiOperation::ExecuteWorkflow,
             Self::InvokeTool(_) => FfiOperation::InvokeTool,
+            Self::ReadExecutionValue(_) => FfiOperation::ReadExecutionValue,
         }
     }
 }
@@ -145,6 +160,7 @@ impl FfiRequest {
 pub enum FfiResponse {
     ExecuteWorkflow(WorkflowExecutionEnvelope),
     InvokeTool(ToolInvocationEnvelope),
+    ReadExecutionValue(ReadExecutionValueEnvelope),
 }
 
 impl FfiResponse {
@@ -153,6 +169,7 @@ impl FfiResponse {
         match self {
             Self::ExecuteWorkflow(_) => FfiOperation::ExecuteWorkflow,
             Self::InvokeTool(_) => FfiOperation::InvokeTool,
+            Self::ReadExecutionValue(_) => FfiOperation::ReadExecutionValue,
         }
     }
 }
@@ -172,6 +189,9 @@ pub struct WorkflowExecutionRequest {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_callback: Option<ToolCallbackConfig>,
+
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub defer_output: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,7 +280,38 @@ pub enum ToolInvocationEnvelope {
 #[serde(deny_unknown_fields)]
 pub struct WorkflowExecutionOutput {
     pub execution_id: String,
-    pub output: serde_json::Value,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadExecutionValueRequest {
+    pub execution_id: String,
+    pub value: ExecutionValueName,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionValueName {
+    Success,
+    Error,
+    Context,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadExecutionValueSuccess {
+    pub execution_id: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ReadExecutionValueEnvelope {
+    Succeeded { result: ReadExecutionValueSuccess },
+    Failed { error: WorkflowExecutionError },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

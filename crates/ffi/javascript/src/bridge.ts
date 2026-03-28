@@ -2,7 +2,15 @@ import { close, DataType, load, open, restorePointer, wrapPointer } from 'ffi-rs
 
 import { FFI_LIBRARY_KEY, FFI_OPERATION, FFI_PROTOCOL_VERSION } from './constants'
 import { resolveDefaultLibraryPath } from './library-path'
-import type { EngineFfiBridgeOptions, FfiBoundaryEnvelope, FfiInvokeRequestEnvelope, FfiResponseEnvelope, RequestOptions } from './types'
+import type {
+    EngineFfiBridgeOptions,
+    FfiBoundaryEnvelope,
+    FfiInvokeRequestEnvelope,
+    FfiResponseEnvelope,
+    ReadExecutionValueEnvelope,
+    ReadExecutionValueRequest,
+    RequestOptions,
+} from './types'
 
 export class EngineFfiBridge {
     private readonly libraryPath: string
@@ -44,6 +52,24 @@ export class EngineFfiBridge {
         })
 
         if (responseEnvelope.operation !== FFI_OPERATION.INVOKE_TOOL) {
+            throw new Error(`Unexpected FFI response operation: ${ responseEnvelope.operation }`)
+        }
+
+        return responseEnvelope.payload
+    }
+
+    async readExecutionValue(
+        readExecutionValueRequest: ReadExecutionValueRequest,
+        options: RequestOptions = {},
+    ): Promise<ReadExecutionValueEnvelope> {
+        const responseEnvelope = await this.invoke<ReadExecutionValueEnvelope>({
+            protocol_version: FFI_PROTOCOL_VERSION,
+            request_id: options.requestId,
+            operation: FFI_OPERATION.READ_EXECUTION_VALUE,
+            payload: readExecutionValueRequest,
+        })
+
+        if (responseEnvelope.operation !== FFI_OPERATION.READ_EXECUTION_VALUE) {
             throw new Error(`Unexpected FFI response operation: ${ responseEnvelope.operation }`)
         }
 

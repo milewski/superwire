@@ -10,10 +10,11 @@ use serde::Serialize;
 pub use bridge::{CustomToolHandler, EngineFfi};
 pub use error::FfiError;
 pub use types::{
-    CustomToolDeclaration, FfiOperation, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope, ToolCallbackConfig,
-    ToolInvocationEnvelope, ToolInvocationError, ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult,
-    WorkflowExecutionEnvelope, WorkflowExecutionError, WorkflowExecutionErrorCode, WorkflowExecutionInput, WorkflowExecutionOutput,
-    WorkflowExecutionRequest, WorkflowExecutionSecrets, FFI_PROTOCOL_VERSION,
+    CustomToolDeclaration, ExecutionValueName, FfiOperation, FfiRequest, FfiRequestEnvelope, FfiResponse, FfiResponseEnvelope,
+    ReadExecutionValueEnvelope, ReadExecutionValueRequest, ReadExecutionValueSuccess, ToolCallbackConfig, ToolInvocationEnvelope,
+    ToolInvocationError, ToolInvocationErrorCode, ToolInvocationPayload, ToolInvocationResult, WorkflowExecutionEnvelope,
+    WorkflowExecutionError, WorkflowExecutionErrorCode, WorkflowExecutionInput, WorkflowExecutionOutput, WorkflowExecutionRequest,
+    WorkflowExecutionSecrets, FFI_PROTOCOL_VERSION,
 };
 
 #[derive(Debug, Serialize)]
