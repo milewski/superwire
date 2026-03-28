@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::types::{ToolInvocationError, ToolInvocationErrorCode, WorkflowExecutionError, WorkflowExecutionErrorCode};
 
 impl WorkflowExecutionError {
+    #[must_use]
     pub fn parse_failed(message: String, details: Option<Value>) -> Self {
         Self {
             code: WorkflowExecutionErrorCode::ParseFailed,
@@ -14,6 +15,7 @@ impl WorkflowExecutionError {
         }
     }
 
+    #[must_use]
     pub fn validation_failed(message: String, details: Option<Value>) -> Self {
         Self {
             code: WorkflowExecutionErrorCode::ValidationFailed,
@@ -23,6 +25,7 @@ impl WorkflowExecutionError {
         }
     }
 
+    #[must_use]
     pub fn runtime_failed(message: String, context: Option<Value>, details: Option<Value>) -> Self {
         Self {
             code: WorkflowExecutionErrorCode::RuntimeFailed,
@@ -32,6 +35,7 @@ impl WorkflowExecutionError {
         }
     }
 
+    #[must_use]
     pub fn tool_invocation_failed(message: String, details: Option<Value>) -> Self {
         Self {
             code: WorkflowExecutionErrorCode::ToolInvocationFailed,
@@ -41,6 +45,7 @@ impl WorkflowExecutionError {
         }
     }
 
+    #[must_use]
     pub fn internal(message: String) -> Self {
         Self {
             code: WorkflowExecutionErrorCode::Internal,
@@ -50,6 +55,7 @@ impl WorkflowExecutionError {
         }
     }
 
+    #[must_use]
     pub fn from_runtime_error(runtime_error: WorkflowRuntimeError) -> Self {
         match runtime_error {
             WorkflowRuntimeError::ParseFailed { source: _, details } => Self::parse_failed(details, None),
@@ -107,6 +113,7 @@ impl WorkflowExecutionError {
 }
 
 impl ToolInvocationError {
+    #[must_use]
     pub fn tool_not_found(message: String) -> Self {
         Self {
             code: ToolInvocationErrorCode::ToolNotFound,
@@ -115,6 +122,7 @@ impl ToolInvocationError {
         }
     }
 
+    #[must_use]
     pub fn internal(message: String) -> Self {
         Self {
             code: ToolInvocationErrorCode::Internal,
