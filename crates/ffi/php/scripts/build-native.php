@@ -7,8 +7,15 @@ $workspaceRootDirectory = resolveWorkspaceRootDirectory($packageDirectory);
 $nativeDirectory = $packageDirectory . '/native';
 $sourceLibraryPath = $workspaceRootDirectory . '/target/release/' . libraryFileNameForCurrentPlatform();
 $destinationLibraryPath = $nativeDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
+$phpConfigPath = resolvePhpConfigPath();
 
-runCommand(['cargo', 'build', '-p', 'ffi', '--release', '--features', 'php-ext'], $workspaceRootDirectory);
+runCommand(
+    ['cargo', 'build', '-p', 'ffi', '--release', '--features', 'php-ext'],
+    $workspaceRootDirectory,
+    [
+        'PHP_CONFIG' => $phpConfigPath,
+    ],
+);
 
 if (!\is_file($sourceLibraryPath)) {
     throw new RuntimeException("Rust PHP extension artifact was not produced at {$sourceLibraryPath}");
@@ -23,6 +30,43 @@ if (!\copy($sourceLibraryPath, $destinationLibraryPath)) {
 }
 
 print "Built native extension at {$destinationLibraryPath}\n";
+
+function resolvePhpConfigPath(): string
+{
+    $configuredPhpConfigPath = \getenv('PHP_CONFIG');
+
+    if (\is_string($configuredPhpConfigPath) && $configuredPhpConfigPath !== '') {
+        if (!isExecutableFile($configuredPhpConfigPath)) {
+            throw new RuntimeException('PHP_CONFIG is set but does not point to an executable file.');
+        }
+
+        return $configuredPhpConfigPath;
+    }
+
+    $phpMajorVersion = PHP_MAJOR_VERSION;
+    $phpMinorVersion = PHP_MINOR_VERSION;
+
+    $candidatePhpConfigPaths = [
+        findBinaryInPath('php-config'),
+        findBinaryInPath("php-config{$phpMajorVersion}.{$phpMinorVersion}"),
+        findBinaryInPath("php-config{$phpMajorVersion}{$phpMinorVersion}"),
+        findBinaryInPath("php{$phpMajorVersion}.{$phpMinorVersion}-config"),
+        findBinaryInPath("php{$phpMajorVersion}{$phpMinorVersion}-config"),
+    ];
+
+    foreach ($candidatePhpConfigPaths as $candidatePhpConfigPath) {
+        if ($candidatePhpConfigPath === null) {
+            continue;
+        }
+
+        return $candidatePhpConfigPath;
+    }
+
+    throw new RuntimeException(
+        'Could not find `php-config`. Install PHP development headers (for Ubuntu/Debian: `sudo apt install php-dev` ' .
+            'or `sudo apt install php8.3-dev`) or set PHP_CONFIG=/path/to/php-config.',
+    );
+}
 
 function resolveWorkspaceRootDirectory(string $packageDirectory): string
 {
@@ -63,10 +107,51 @@ function libraryFileNameForCurrentPlatform(): string
     };
 }
 
+function findBinaryInPath(string $binaryName): ?string
+{
+    $descriptorSpecification = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = \proc_open(['sh', '-lc', "command -v {$binaryName}"], $descriptorSpecification, $pipes);
+
+    if (!\is_resource($process)) {
+        return null;
+    }
+
+    \fclose($pipes[0]);
+    $standardOutput = \stream_get_contents($pipes[1]);
+    \stream_get_contents($pipes[2]);
+    \fclose($pipes[1]);
+    \fclose($pipes[2]);
+
+    $exitCode = \proc_close($process);
+
+    if ($exitCode !== 0 || $standardOutput === false) {
+        return null;
+    }
+
+    $resolvedPath = \trim($standardOutput);
+
+    if ($resolvedPath === '' || !isExecutableFile($resolvedPath)) {
+        return null;
+    }
+
+    return $resolvedPath;
+}
+
+function isExecutableFile(string $filePath): bool
+{
+    return \is_file($filePath) && \is_executable($filePath);
+}
+
 /**
  * @param array<int, string> $commandParts
+ * @param array<string, string> $additionalEnvironment
  */
-function runCommand(array $commandParts, string $workingDirectory): void
+function runCommand(array $commandParts, string $workingDirectory, array $additionalEnvironment = []): void
 {
     $descriptors = [
         0 => ['pipe', 'r'],
@@ -74,7 +159,14 @@ function runCommand(array $commandParts, string $workingDirectory): void
         2 => ['pipe', 'w'],
     ];
 
-    $process = \proc_open($commandParts, $descriptors, $pipes, $workingDirectory);
+    $baseEnvironment = \getenv();
+
+    if (!\is_array($baseEnvironment)) {
+        $baseEnvironment = [];
+    }
+
+    $commandEnvironment = [...$baseEnvironment, ...$additionalEnvironment];
+    $process = \proc_open($commandParts, $descriptors, $pipes, $workingDirectory, $commandEnvironment);
 
     if (!\is_resource($process)) {
         throw new RuntimeException('Unable to start build command process.');
