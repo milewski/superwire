@@ -26,9 +26,12 @@
     "psr-4": {
       "EngineAi\\Ffi\\": "src/"
     },
+    "classmap": [
+      "src/"
+    ],
     "files": [
-      "src/constants.php",
-      "src/functions.php"
+      "src/Protocol/constants.php",
+      "src/Bridge/functions.php"
     ]
   },
   "scripts": {
