@@ -23,18 +23,26 @@ function installNativeExtension(): void
     $packageDirectory = \dirname(__DIR__);
     $nativeDirectory = $packageDirectory . '/native';
     $localBuiltBinaryPath = $nativeDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
-    $prebuiltBinaryPath = $nativeDirectory . '/prebuilt/' . platformKey() . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
+    $prebuiltPlatformKey = platformKey();
+    $prebuiltBinaryPath = $nativeDirectory . '/prebuilt/' . $prebuiltPlatformKey . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
+    $legacyPrebuiltBinaryPath = $nativeDirectory . '/prebuilt/' . legacyPlatformKey() . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
     $resolvedSourceBinaryPath = '';
 
     if (\is_file($prebuiltBinaryPath)) {
         $resolvedSourceBinaryPath = $prebuiltBinaryPath;
 
-        print "Found prebuilt native extension for " . platformKey() . "\n";
+        print "Found prebuilt native extension for {$prebuiltPlatformKey}\n";
+    }
+
+    if ($resolvedSourceBinaryPath === '' && \is_file($legacyPrebuiltBinaryPath)) {
+        $resolvedSourceBinaryPath = $legacyPrebuiltBinaryPath;
+
+        print "Found legacy prebuilt native extension for " . legacyPlatformKey() . "\n";
     }
 
     if ($resolvedSourceBinaryPath === '') {
         if (!\is_file($localBuiltBinaryPath)) {
-            print "No prebuilt binary found for " . platformKey() . ". Building extension from source...\n";
+            print "No prebuilt binary found for {$prebuiltPlatformKey}. Building extension from source...\n";
             require __DIR__ . '/build-native.php';
         }
 
@@ -111,6 +119,19 @@ function platformKey(): string
 {
     $normalizedOperatingSystem = \strtolower(PHP_OS_FAMILY);
     $normalizedArchitecture = normalizeArchitecture(\php_uname('m'));
+    $libcVariant = normalizeLibcVariant();
+
+    if ($normalizedOperatingSystem !== 'linux') {
+        return "{$normalizedOperatingSystem}-{$normalizedArchitecture}";
+    }
+
+    return "{$normalizedOperatingSystem}-{$normalizedArchitecture}-{$libcVariant}";
+}
+
+function legacyPlatformKey(): string
+{
+    $normalizedOperatingSystem = \strtolower(PHP_OS_FAMILY);
+    $normalizedArchitecture = normalizeArchitecture(\php_uname('m'));
 
     return "{$normalizedOperatingSystem}-{$normalizedArchitecture}";
 }
@@ -149,6 +170,32 @@ function installBinary(string $sourcePath): string
     $extensionDirectory = resolvePhpExtensionDirectory();
 
     return copyBinaryToDirectory($sourcePath, $extensionDirectory);
+}
+
+function normalizeLibcVariant(): string
+{
+    $detectedLibcVersionString = \function_exists('phpversion') ? \phpversion('libc') : false;
+
+    if (\is_string($detectedLibcVersionString) && $detectedLibcVersionString !== '') {
+        $normalizedLibcVersionString = \strtolower($detectedLibcVersionString);
+
+        if (\str_contains($normalizedLibcVersionString, 'musl')) {
+            return 'musl';
+        }
+
+        if (\str_contains($normalizedLibcVersionString, 'gnu') || \str_contains($normalizedLibcVersionString, 'glibc')) {
+            return 'gnu';
+        }
+    }
+
+    $libcVersionCommandOutput = trim((string) @\shell_exec('ldd --version 2>&1'));
+    $normalizedCommandOutput = \strtolower($libcVersionCommandOutput);
+
+    if (\str_contains($normalizedCommandOutput, 'musl')) {
+        return 'musl';
+    }
+
+    return 'gnu';
 }
 
 function copyBinaryToDirectory(string $sourcePath, string $targetDirectory): string
