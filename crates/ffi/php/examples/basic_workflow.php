@@ -10,12 +10,14 @@ require __DIR__ . '/../vendor/autoload.php';
 $engine = new Engine();
 
 try {
-    $workflow = Workflow::fromFile(__DIR__ . '/workflows/basic_workflow.ai', [
-        'inputs' => [
+    $workflow = Workflow::fromFile(
+        path: __DIR__ . '/workflows/basic_workflow.ai',
+        inputs: [
             'customer_name' => 'Rafael',
             'order_total' => 149.90,
         ],
-    ]);
+        secrets: [],
+    );
 
     $response = $engine->run($workflow);
 
