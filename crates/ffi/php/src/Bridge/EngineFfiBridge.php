@@ -19,7 +19,7 @@ class EngineFfiBridge
     public function executeWorkflow(array $workflowExecutionRequest, array $options = []): array
     {
         $responseEnvelope = $this->invoke([
-            'protocol_version' => Constants::FFI_PROTOCOL_VERSION,
+            'protocol_version' => FFI_PROTOCOL_VERSION,
             'request_id' => $options['requestId'] ?? null,
             'operation' => FfiOperation::EXECUTE_WORKFLOW,
             'payload' => $workflowExecutionRequest,
@@ -39,7 +39,7 @@ class EngineFfiBridge
     public function invokeTool(array $toolInvocationPayload, array $options = []): array
     {
         $responseEnvelope = $this->invoke([
-            'protocol_version' => Constants::FFI_PROTOCOL_VERSION,
+            'protocol_version' => FFI_PROTOCOL_VERSION,
             'request_id' => $options['requestId'] ?? null,
             'operation' => FfiOperation::INVOKE_TOOL,
             'payload' => $toolInvocationPayload,
@@ -59,7 +59,7 @@ class EngineFfiBridge
     public function readExecutionValue(array $readExecutionValueRequest, array $options = []): array
     {
         $responseEnvelope = $this->invoke([
-            'protocol_version' => Constants::FFI_PROTOCOL_VERSION,
+            'protocol_version' => FFI_PROTOCOL_VERSION,
             'request_id' => $options['requestId'] ?? null,
             'operation' => FfiOperation::READ_EXECUTION_VALUE,
             'payload' => $readExecutionValueRequest,
@@ -101,7 +101,7 @@ class EngineFfiBridge
 
         $responseEnvelope = $boundaryEnvelope['response'];
 
-        if (($responseEnvelope['protocol_version'] ?? null) !== Constants::FFI_PROTOCOL_VERSION) {
+        if (($responseEnvelope['protocol_version'] ?? null) !== FFI_PROTOCOL_VERSION) {
             throw new RuntimeException('Unsupported FFI protocol version in response envelope.');
         }
 
