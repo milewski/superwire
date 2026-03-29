@@ -1,5 +1,7 @@
 pub mod bridge;
 pub mod error;
+#[cfg(feature = "php-ext")]
+pub mod php_extension;
 pub mod types;
 
 use std::ffi::{CStr, CString};
@@ -57,16 +59,7 @@ impl FfiBoundaryEnvelope {
     }
 
     fn into_c_string_pointer_with_fallback(self) -> *mut c_char {
-        let json_payload = self.into_json_payload();
-
-        match CString::new(json_payload) {
-            Ok(owned_c_string) => owned_c_string.into_raw(),
-            Err(_) => CString::new(Self::failed_json_payload(
-                FfiBoundaryErrorCode::SerializationFailed,
-                String::from("ffi response contains an interior NUL byte"),
-            ))
-            .map_or(std::ptr::null_mut(), CString::into_raw),
-        }
+        json_payload_into_c_string_pointer_with_fallback(self.into_json_payload())
     }
 
     fn failed_json_payload(error_code: FfiBoundaryErrorCode, message: String) -> String {
@@ -78,6 +71,22 @@ impl FfiBoundaryEnvelope {
             },
         })
         .to_string()
+    }
+}
+
+#[must_use]
+pub fn invoke_ffi_json_payload(request_payload: &str) -> String {
+    FfiBoundaryEnvelope::from_request_payload(request_payload).into_json_payload()
+}
+
+fn json_payload_into_c_string_pointer_with_fallback(json_payload: String) -> *mut c_char {
+    match CString::new(json_payload) {
+        Ok(owned_c_string) => owned_c_string.into_raw(),
+        Err(_) => CString::new(FfiBoundaryEnvelope::failed_json_payload(
+            FfiBoundaryErrorCode::SerializationFailed,
+            String::from("ffi response contains an interior NUL byte"),
+        ))
+        .map_or(std::ptr::null_mut(), CString::into_raw),
     }
 }
 
@@ -142,7 +151,9 @@ pub unsafe extern "C" fn engine_ffi_invoke_json(request_json_pointer: *const c_c
         }
     };
 
-    FfiBoundaryEnvelope::from_request_payload(request_payload).into_c_string_pointer_with_fallback()
+    let response_payload = invoke_ffi_json_payload(request_payload);
+
+    json_payload_into_c_string_pointer_with_fallback(response_payload)
 }
 
 /// Frees a JSON response pointer returned by `engine_ffi_invoke_json`.

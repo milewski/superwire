@@ -1,0 +1,12 @@
+input {
+    department: string
+    active_incidents: number
+}
+
+output {
+    summary: {
+        team: input.department
+        incidents_open: input.active_incidents
+        generated_by: "ffi_direct_bridge"
+    }
+}
