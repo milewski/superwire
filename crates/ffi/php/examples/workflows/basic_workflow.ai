@@ -1,0 +1,12 @@
+input {
+    customer_name: string
+    order_total: number
+}
+
+output {
+    receipt: {
+        customer: input.customer_name
+        amount: input.order_total
+        status: "pending_review"
+    }
+}

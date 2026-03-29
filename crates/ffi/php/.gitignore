@@ -1,0 +1,5 @@
+vendor/
+composer.lock
+native/*.so
+native/*.dylib
+native/*.dll
