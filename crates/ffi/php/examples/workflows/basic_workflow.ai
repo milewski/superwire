@@ -1,12 +1,27 @@
+provider openai {
+    driver: "openai"
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
+}
+
 input {
     customer_name: string
     order_total: number
 }
 
+agent greeting {
+    model: openai(secrets.openai_model)
+    prompt: "Generate a warm greeting"
+    output: string
+}
+
 output {
-    receipt: {
-        customer: input.customer_name
-        amount: input.order_total
-        status: "pending_review"
-    }
+    greeting: agent.greeting
 }

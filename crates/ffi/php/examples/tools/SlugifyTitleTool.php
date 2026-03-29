@@ -1,47 +1,60 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi\Examples\Tools;
 
-use EngineAi\Ffi\Schema;
+use EngineAi\Ffi\Attributes\Description;
 use EngineAi\Ffi\Tool;
 
 final class SlugifyTitleTool extends Tool
 {
+    public string $input = SlugifyTitleInput::class;
+
+    public string $bounded = SlugifyTitleBounded::class;
+
     public function description(): string
     {
         return 'Converts a title into a lowercase slug';
     }
 
-    public function inputSchema(): array
+    public function execute(SlugifyTitleInput $input, SlugifyTitleBounded $bounded): SlugifyTitleOutput
     {
-        return Schema::object([
-            'title' => Schema::string(),
-        ]);
+        $title = $input->title;
+        $prefix = $bounded->prefix;
+
+        $normalizedTitle = strtolower($title);
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $normalizedTitle);
+        $slug = trim((string) $slug, '-');
+
+        return new SlugifyTitleOutput(
+            slug: "$prefix-$slug",
+        );
     }
+}
 
-    public function outputSchema(): ?array
-    {
-        return Schema::object([
-            'slug' => Schema::string(),
-        ]);
+final class SlugifyTitleOutput
+{
+    public function __construct(
+        #[Description('Lowercase slug generated from the given title.')]
+        public string $slug,
+    ) {
     }
+}
 
-    public function execute(array $toolArguments): array
-    {
-        $input = \is_array($toolArguments['input'] ?? null) ? $toolArguments['input'] : [];
-        $boundedArguments = \is_array($toolArguments['bounded'] ?? null) ? $toolArguments['bounded'] : [];
+final class SlugifyTitleInput
+{
+    public function __construct(
+        #[Description('Title text to transform into a slug.')]
+        public string $title,
+    ) {
+    }
+}
 
-        $title = \is_string($input['title'] ?? null) ? $input['title'] : '';
-        $prefix = \is_string($boundedArguments['prefix'] ?? null) ? $boundedArguments['prefix'] : 'article';
-
-        $normalizedTitle = \strtolower($title);
-        $slug = \preg_replace('/[^a-z0-9]+/', '-', $normalizedTitle);
-        $slug = \trim((string) $slug, '-');
-
-        return [
-            'slug' => "{$prefix}-{$slug}",
-        ];
+final class SlugifyTitleBounded
+{
+    public function __construct(
+        public string $prefix = 'article',
+    ) {
     }
 }
