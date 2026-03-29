@@ -1,0 +1,42 @@
+provider openai {
+    driver: "openai"
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [input.models.large, input.models.small]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+}
+
+input {
+    request: string
+    models: {
+        large: string
+        small: string
+    }
+}
+
+agent router {
+    model: openai(input.models.small)
+    prompt: """
+        Choose the best model for this request: {{ input.request }}.
+        You must pick exactly one model from [{{ input.models.large }}, {{ input.models.small }}].
+    """
+    output: {
+        model: input.models.large | input.models.small
+        rationale: string
+    }
+}
+
+agent specialist {
+    model: openai(agent.router.model)
+    prompt: "Answer this request in under 180 words: {{ input.request }}"
+    output: string
+}
+
+output {
+    routing: agent.router
+    response: agent.specialist
+}

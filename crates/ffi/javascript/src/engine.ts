@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 
 import { EngineFfiBridge } from './bridge'
-import type { CustomToolDeclaration, EngineExecutionError, EngineExecutionResult, EngineFfiBridgeOptions, EngineRunOptions, JsonRecord, ReadExecutionValueEnvelope, ToolInvocationEnvelope, ToolInvocationPayload, WorkflowExecutionEnvelope, WorkflowExecutionRequest } from './types'
+import type { CustomToolDeclaration, EngineExecutionError, EngineExecutionResult, EngineFfiBridgeOptions, JsonRecord, ReadExecutionValueEnvelope, ToolInvocationEnvelope, ToolInvocationPayload, WorkflowExecutionEnvelope, WorkflowExecutionRequest } from './types'
 import type { Tool, ToolArguments, ToolExecutionContext } from './tool'
 import { Workflow } from './workflow'
 
@@ -187,7 +187,7 @@ export class Engine {
         this.registeredToolsByName = new Map()
     }
 
-    registerTool(tool: Tool, options: RegisterToolOptions = {}): this {
+    registerGlobalTool(tool: Tool, options: RegisterToolOptions = {}): this {
         this.registeredToolsByName.set(tool.name, {
             tool,
             bounded: options.bounded ?? {},
@@ -196,19 +196,31 @@ export class Engine {
         return this
     }
 
+    registerTool(tool: Tool, options: RegisterToolOptions = {}): this {
+        return this.registerGlobalTool(tool, options)
+    }
+
     unregisterTool(toolName: string): boolean {
         return this.registeredToolsByName.delete(toolName)
+    }
+
+    unregisterGlobalTool(toolName: string): boolean {
+        return this.unregisterTool(toolName)
     }
 
     registeredTools(): Tool[] {
         return [ ...this.registeredToolsByName.values() ].map((registeredTool) => registeredTool.tool)
     }
 
+    registeredGlobalTools(): Tool[] {
+        return this.registeredTools()
+    }
+
     async invokeTool<Input extends JsonRecord = JsonRecord, Output = unknown>(toolName: string, input: Input): Promise<Output> {
         const registeredTool = this.registeredToolsByName.get(toolName)
 
         if (!registeredTool) {
-            throw new Error(`Tool \`${ toolName }\` is not registered. Call engine.registerTool(...) first.`)
+            throw new Error(`Tool \`${ toolName }\` is not registered. Call engine.registerGlobalTool(...) first.`)
         }
 
         const toolOutput = await registeredTool.tool.execute({
@@ -220,44 +232,25 @@ export class Engine {
         return toolOutput as Output
     }
 
-    async run<Output = unknown>(workflow: Workflow): Promise<EngineExecutionResult<Output>>
-
-    async run<Output = unknown, Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord>(
-        workflow: Workflow,
-        inputPayload: Input,
-        secretsOrOptions: Secrets | EngineRunOptions = {},
-        options: EngineRunOptions = {},
-    ): Promise<EngineExecutionResult<Output>>
-
-    async run<Output = unknown, Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord>(
-        workflow: Workflow,
-        inputPayload?: Input,
-        secretsOrOptions: Secrets | EngineRunOptions = {},
-        options: EngineRunOptions = {},
-    ): Promise<EngineExecutionResult<Output>> {
+    async run<
+        Output = unknown,
+        Input extends JsonRecord = JsonRecord,
+        Secrets extends JsonRecord = JsonRecord,
+    >(workflow: Workflow<Input, Secrets, Output>): Promise<EngineExecutionResult<Output>> {
         let executionId = ''
         let toolCallbackHandle: ToolCallbackHandle | null = null
 
         try {
-            const shouldUseWorkflowOwnedExecution = inputPayload === undefined
             const defaultExecutionId = this.executionIdGenerator()
 
-            executionId = shouldUseWorkflowOwnedExecution
-                ? workflow.executionId(defaultExecutionId)
-                : options.executionId ?? defaultExecutionId
+            executionId = workflow.executionId(defaultExecutionId)
 
-            const workflowExecutionRequest = shouldUseWorkflowOwnedExecution
-                ? workflow.toExecutionRequest(executionId)
-                : workflow.toExecutionRequest(
-                    executionId,
-                    inputPayload,
-                    this.resolveLegacySecretsPayload(secretsOrOptions, options),
-                )
+            const workflowExecutionRequest = workflow.toExecutionRequest(executionId)
 
             workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
             workflowExecutionRequest.defer_output = true
 
-            toolCallbackHandle = await this.startToolCallbackServer(executionId)
+            toolCallbackHandle = await this.startToolCallbackServer(executionId, workflow.scopedToolsByName)
 
             if (toolCallbackHandle) {
                 workflowExecutionRequest.tool_callback = {
@@ -270,9 +263,7 @@ export class Engine {
                 WorkflowExecutionRequest,
                 WorkflowExecutionEnvelope<Output>
             >(workflowExecutionRequest, {
-                requestId: shouldUseWorkflowOwnedExecution
-                    ? workflow.requestId()
-                    : this.resolveLegacyRequestId(secretsOrOptions, options),
+                requestId: workflow.requestId(),
             })
 
             if (workflowExecutionEnvelope.status === 'failed') {
@@ -318,42 +309,6 @@ export class Engine {
         }
     }
 
-    private resolveLegacySecretsPayload<Secrets extends JsonRecord>(secretsOrOptions: Secrets | EngineRunOptions, options: EngineRunOptions): Secrets | undefined {
-        if (this.isEngineRunOptions(secretsOrOptions) && Object.keys(options).length === 0) {
-            return undefined
-        }
-
-        return secretsOrOptions as Secrets
-    }
-
-    private resolveLegacyRequestId<Secrets extends JsonRecord>(secretsOrOptions: Secrets | EngineRunOptions, options: EngineRunOptions): string | undefined {
-        if (this.isEngineRunOptions(secretsOrOptions) && Object.keys(options).length === 0) {
-            return secretsOrOptions.requestId
-        }
-
-        return options.requestId
-    }
-
-    private isEngineRunOptions(value: JsonRecord | EngineRunOptions): value is EngineRunOptions {
-        const valueRecord = value as Record<string, unknown>
-
-        const hasOnlyRunOptionFields = Object.keys(valueRecord).every((key) => key === 'requestId' || key === 'executionId')
-
-        if (!hasOnlyRunOptionFields) {
-            return false
-        }
-
-        if ('requestId' in valueRecord && valueRecord.requestId !== undefined && typeof valueRecord.requestId !== 'string') {
-            return false
-        }
-
-        if ('executionId' in valueRecord && valueRecord.executionId !== undefined && typeof valueRecord.executionId !== 'string') {
-            return false
-        }
-
-        return true
-    }
-
     close(): void {
         this.engineFfiBridge.close()
     }
@@ -368,25 +323,25 @@ export class Engine {
     private resolveCustomToolDeclarations(workflowDeclaredTools: CustomToolDeclaration[]): CustomToolDeclaration[] {
         const customToolDeclarationsByName = new Map<string, CustomToolDeclaration>()
 
-        for (const customToolDeclaration of workflowDeclaredTools) {
-            customToolDeclarationsByName.set(customToolDeclaration.name, customToolDeclaration)
-        }
-
         for (const registeredTool of this.registeredTools()) {
             customToolDeclarationsByName.set(registeredTool.name, registeredTool.toDeclaration())
+        }
+
+        for (const customToolDeclaration of workflowDeclaredTools) {
+            customToolDeclarationsByName.set(customToolDeclaration.name, customToolDeclaration)
         }
 
         return [ ...customToolDeclarationsByName.values() ]
     }
 
-    private async startToolCallbackServer(executionId: string): Promise<ToolCallbackHandle | null> {
-        if (this.registeredToolsByName.size === 0) {
+    private async startToolCallbackServer(executionId: string, scopedToolsByName: Map<string, Tool>): Promise<ToolCallbackHandle | null> {
+        if (this.registeredToolsByName.size === 0 && scopedToolsByName.size === 0) {
             return null
         }
 
         const authToken = randomUUID()
         const callbackServer = createServer((request, response) => {
-            void this.handleToolCallbackRequest(request, response, executionId, authToken)
+            void this.handleToolCallbackRequest(request, response, executionId, authToken, scopedToolsByName)
         })
 
         await new Promise<void>((resolve, reject) => {
@@ -425,6 +380,7 @@ export class Engine {
         response: ServerResponse,
         executionId: string,
         authToken: string,
+        scopedToolsByName: Map<string, Tool>,
     ): Promise<void> {
         if (request.method !== 'POST') {
             this.writeToolCallbackResponse(response, 405, {
@@ -486,7 +442,7 @@ export class Engine {
             return
         }
 
-        const registeredTool = this.registeredToolsByName.get(toolInvocationPayload.tool_name)
+        const registeredTool = this.resolveRegisteredTool(toolInvocationPayload.tool_name, scopedToolsByName)
 
         if (!registeredTool) {
             this.writeToolCallbackResponse(response, 404, {
@@ -547,6 +503,19 @@ export class Engine {
                 },
             })
         }
+    }
+
+    private resolveRegisteredTool(toolName: string, scopedToolsByName: Map<string, Tool>): RegisteredTool | undefined {
+        const workflowScopedTool = scopedToolsByName.get(toolName)
+
+        if (workflowScopedTool) {
+            return {
+                tool: workflowScopedTool,
+                bounded: {},
+            }
+        }
+
+        return this.registeredToolsByName.get(toolName)
     }
 
     private writeToolCallbackResponse(response: ServerResponse, statusCode: number, envelope: ToolInvocationEnvelope): void {

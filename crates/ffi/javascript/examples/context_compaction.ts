@@ -1,3 +1,9 @@
+/**
+ * Context compaction example.
+ *
+ * Shows the difference between full context (`context(...)`) and compacted context
+ * (`compact(...)`) and how each affects downstream agent summarization.
+ */
 import { Engine, Workflow } from '../src'
 import { loadOpenAIProviderSecrets } from './env'
 
@@ -24,61 +30,6 @@ type ContextCompactionResponse = {
 async function runContextCompactionExample(): Promise<void> {
     const providerSecrets = loadOpenAIProviderSecrets()
 
-    const workflow = new Workflow(`
-        provider openai {
-            driver: "openai"
-            endpoint: secrets.openai_endpoint
-            api_key: secrets.openai_api_key
-            models: [secrets.openai_model]
-        }
-
-        secrets {
-            openai_endpoint: string
-            openai_api_key: string
-            openai_model: string
-        }
-
-        input {
-            product_name: string
-            customer_feedback: [string]
-        }
-
-        agent research_analysis {
-            model: openai(secrets.openai_model)
-            prompt: "Analyze this customer feedback for {{ input.product_name }} and extract themes, risks, and opportunities: {{ input.customer_feedback }}"
-            output: {
-                themes: [string]
-                risks: [string]
-                opportunities: [string]
-            }
-        }
-
-        agent summary_from_full_context {
-            model: openai(secrets.openai_model)
-            context: context(agent.research_analysis)
-            prompt: "Write a concise executive summary using the provided context."
-            output: string
-        }
-
-        agent summary_from_compact_context {
-            model: openai(secrets.openai_model)
-            context: compact(agent.research_analysis)
-            prompt: "Write a concise executive summary with three concrete next actions."
-            output: {
-                summary: string
-                top_actions: [string; 3]
-            }
-        }
-
-        output {
-            analysis: agent.research_analysis
-            full_context: context(agent.research_analysis)
-            compacted_context: compact(agent.research_analysis)
-            summary_from_full_context: agent.summary_from_full_context
-            summary_from_compact_context: agent.summary_from_compact_context
-        }
-    `)
-
     const engine = new Engine()
 
     try {
@@ -91,7 +42,12 @@ async function runContextCompactionExample(): Promise<void> {
             ],
         }
 
-        const response = await engine.run<ContextCompactionResponse>(workflow, inputPayload, providerSecrets)
+        const workflow = Workflow.fromFile('./examples/workflows/context_compaction.ai', {
+            inputs: inputPayload,
+            secrets: providerSecrets,
+        })
+
+        const response = await engine.run<ContextCompactionResponse>(workflow)
 
         if (await response.isError()) {
             console.error('Error:', await response.error())

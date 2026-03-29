@@ -1,3 +1,9 @@
+/**
+ * Structured output example.
+ *
+ * Shows how workflow outputs can produce a stable nested JSON shape with
+ * constants and model-produced values combined in one response object.
+ */
 import { Engine, Workflow } from '../src'
 import { loadOpenAIProviderSecrets } from './env'
 
@@ -19,49 +25,15 @@ type StructuredOutputResponse = {
 async function runStructuredOutputExample(): Promise<void> {
     const providerSecrets = loadOpenAIProviderSecrets()
 
-    const workflow = new Workflow(`
-        provider openai {
-            driver: "openai"
-            endpoint: secrets.openai_endpoint
-            api_key: secrets.openai_api_key
-            models: [secrets.openai_model]
-        }
-
-        secrets {
-            openai_endpoint: string
-            openai_api_key: string
-            openai_model: string
-        }
-
-        agent summary {
-            model: openai(secrets.openai_model)
-            prompt: "Write a short project status summary and confidence score."
-            output: {
-                text: string
-                confidence: number
-            }
-        }
-
-        output {
-            version: 2
-            generated_by: "status_summary_workflow"
-            report: {
-                source: "workflow"
-                overview: {
-                    text: agent.summary.text
-                }
-                metrics: {
-                    confidence: agent.summary.confidence
-                    status: "ok"
-                }
-            }
-        }
-    `)
-
     const engine = new Engine()
 
     try {
-        const response = await engine.run<StructuredOutputResponse>(workflow, {}, providerSecrets)
+        const workflow = Workflow.fromFile('./examples/workflows/structured_output.ai', {
+            inputs: {},
+            secrets: providerSecrets,
+        })
+
+        const response = await engine.run<StructuredOutputResponse>(workflow)
 
         if (await response.isError()) {
             console.error('Error:', await response.error())
