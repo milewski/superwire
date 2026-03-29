@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+const ENGINE_AI_FFI_PHP_INSTALL_MODE_LOCAL = 'local';
+const ENGINE_AI_FFI_PHP_INSTALL_MODE_SYSTEM = 'system';
+
 try {
     installNativeExtension();
 } catch (\Throwable $throwable) {
@@ -38,8 +41,8 @@ function installNativeExtension(): void
         $resolvedSourceBinaryPath = $localBuiltBinaryPath;
     }
 
-    $resolvedExtensionDirectory = resolvePhpExtensionDirectory();
-    $installedBinaryPath = installBinary($resolvedSourceBinaryPath, $resolvedExtensionDirectory);
+    $installedBinaryPath = installBinary($resolvedSourceBinaryPath);
+    validateBinaryCanLoad($installedBinaryPath);
     $resolvedIniFilePath = installIniFile($installedBinaryPath);
 
     print "Native extension binary ready at {$installedBinaryPath}\n";
@@ -84,6 +87,26 @@ function resolvePhpExtensionDirectory(): string
     return $extensionDirectory;
 }
 
+function resolveInstallMode(): string
+{
+    $rawInstallMode = \getenv('ENGINE_AI_FFI_PHP_INSTALL_MODE');
+
+    if (!\is_string($rawInstallMode) || $rawInstallMode === '') {
+        return ENGINE_AI_FFI_PHP_INSTALL_MODE_LOCAL;
+    }
+
+    $normalizedInstallMode = \strtolower(\trim($rawInstallMode));
+
+    if ($normalizedInstallMode !== ENGINE_AI_FFI_PHP_INSTALL_MODE_LOCAL
+        && $normalizedInstallMode !== ENGINE_AI_FFI_PHP_INSTALL_MODE_SYSTEM) {
+        print "Unknown ENGINE_AI_FFI_PHP_INSTALL_MODE={$rawInstallMode}. Falling back to local mode.\n";
+
+        return ENGINE_AI_FFI_PHP_INSTALL_MODE_LOCAL;
+    }
+
+    return $normalizedInstallMode;
+}
+
 function platformKey(): string
 {
     $normalizedOperatingSystem = \strtolower(PHP_OS_FAMILY);
@@ -103,16 +126,43 @@ function normalizeArchitecture(string $architecture): string
     };
 }
 
-function installBinary(string $sourcePath, string $extensionDirectory): string
+function installBinary(string $sourcePath): string
 {
     if (!\is_file($sourcePath)) {
         throw new RuntimeException("Native extension binary does not exist: {$sourcePath}");
     }
 
-    $targetPath = $extensionDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
+    $overrideExtensionDirectory = \getenv('ENGINE_AI_FFI_PHP_EXTENSION_DIR');
 
-    if (!\is_writable($extensionDirectory)) {
-        print "PHP extension directory is not writable ({$extensionDirectory}); using package-local binary path.\n";
+    if (\is_string($overrideExtensionDirectory) && $overrideExtensionDirectory !== '') {
+        return copyBinaryToDirectory($sourcePath, $overrideExtensionDirectory);
+    }
+
+    $installMode = resolveInstallMode();
+
+    if ($installMode === ENGINE_AI_FFI_PHP_INSTALL_MODE_LOCAL) {
+        print "Using package-local extension binary path. Set ENGINE_AI_FFI_PHP_INSTALL_MODE=system to copy into extension_dir.\n";
+
+        return $sourcePath;
+    }
+
+    $extensionDirectory = resolvePhpExtensionDirectory();
+
+    return copyBinaryToDirectory($sourcePath, $extensionDirectory);
+}
+
+function copyBinaryToDirectory(string $sourcePath, string $targetDirectory): string
+{
+    if (!\is_dir($targetDirectory)) {
+        if (!@\mkdir($targetDirectory, 0o755, true) && !\is_dir($targetDirectory)) {
+            throw new RuntimeException("Extension directory does not exist: {$targetDirectory}");
+        }
+    }
+
+    $targetPath = $targetDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
+
+    if (!\is_writable($targetDirectory)) {
+        print "Extension directory is not writable ({$targetDirectory}); using package-local binary path.\n";
 
         return $sourcePath;
     }
@@ -124,6 +174,48 @@ function installBinary(string $sourcePath, string $extensionDirectory): string
     }
 
     return $targetPath;
+}
+
+function validateBinaryCanLoad(string $binaryPath): void
+{
+    $descriptorSpecification = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = \proc_open([PHP_BINARY, '-n', '-d', "extension={$binaryPath}", '-m'], $descriptorSpecification, $pipes);
+
+    if (!\is_resource($process)) {
+        throw new RuntimeException('Unable to validate native extension loading.');
+    }
+
+    \fclose($pipes[0]);
+    $standardOutput = \stream_get_contents($pipes[1]);
+    $standardError = \stream_get_contents($pipes[2]);
+    \fclose($pipes[1]);
+    \fclose($pipes[2]);
+
+    $exitCode = \proc_close($process);
+
+    if ($exitCode === 0) {
+        return;
+    }
+
+    $errorMessageParts = [
+        "Native extension binary failed to load: {$binaryPath}",
+        'This usually means ABI mismatch (for example glibc binary on Alpine/musl) or missing shared libraries.',
+    ];
+
+    if ($standardError !== false && \trim($standardError) !== '') {
+        $errorMessageParts[] = 'Loader error: ' . \trim($standardError);
+    }
+
+    if ($standardOutput !== false && \trim($standardOutput) !== '') {
+        $errorMessageParts[] = 'Loader output: ' . \trim($standardOutput);
+    }
+
+    throw new RuntimeException(\implode(' ', $errorMessageParts));
 }
 
 function installIniFile(string $installedBinaryPath): ?string
