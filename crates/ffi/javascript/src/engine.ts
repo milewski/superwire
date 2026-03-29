@@ -220,9 +220,18 @@ export class Engine {
         return toolOutput as Output
     }
 
+    async run<Output = unknown>(workflow: Workflow): Promise<EngineExecutionResult<Output>>
+
     async run<Output = unknown, Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord>(
         workflow: Workflow,
         inputPayload: Input,
+        secretsOrOptions: Secrets | EngineRunOptions = {},
+        options: EngineRunOptions = {},
+    ): Promise<EngineExecutionResult<Output>>
+
+    async run<Output = unknown, Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord>(
+        workflow: Workflow,
+        inputPayload?: Input,
         secretsOrOptions: Secrets | EngineRunOptions = {},
         options: EngineRunOptions = {},
     ): Promise<EngineExecutionResult<Output>> {
@@ -230,10 +239,21 @@ export class Engine {
         let toolCallbackHandle: ToolCallbackHandle | null = null
 
         try {
-            const { secretsPayload, runOptions } = this.resolveRunArguments(secretsOrOptions, options)
-            executionId = runOptions.executionId ?? this.executionIdGenerator()
+            const shouldUseWorkflowOwnedExecution = inputPayload === undefined
+            const defaultExecutionId = this.executionIdGenerator()
 
-            const workflowExecutionRequest = workflow.toExecutionRequest(executionId, inputPayload, secretsPayload)
+            executionId = shouldUseWorkflowOwnedExecution
+                ? workflow.executionId(defaultExecutionId)
+                : options.executionId ?? defaultExecutionId
+
+            const workflowExecutionRequest = shouldUseWorkflowOwnedExecution
+                ? workflow.toExecutionRequest(executionId)
+                : workflow.toExecutionRequest(
+                    executionId,
+                    inputPayload,
+                    this.resolveLegacySecretsPayload(secretsOrOptions, options),
+                )
+
             workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
             workflowExecutionRequest.defer_output = true
 
@@ -247,10 +267,12 @@ export class Engine {
             }
 
             const workflowExecutionEnvelope = await this.engineFfiBridge.executeWorkflow<
-                WorkflowExecutionRequest<Input>,
+                WorkflowExecutionRequest,
                 WorkflowExecutionEnvelope<Output>
             >(workflowExecutionRequest, {
-                requestId: runOptions.requestId,
+                requestId: shouldUseWorkflowOwnedExecution
+                    ? workflow.requestId()
+                    : this.resolveLegacyRequestId(secretsOrOptions, options),
             })
 
             if (workflowExecutionEnvelope.status === 'failed') {
@@ -296,23 +318,20 @@ export class Engine {
         }
     }
 
-    private resolveRunArguments<Secrets extends JsonRecord>(
-        secretsOrOptions: Secrets | EngineRunOptions,
-        options: EngineRunOptions,
-    ): {
-        secretsPayload?: Secrets;
-        runOptions: EngineRunOptions;
-    } {
+    private resolveLegacySecretsPayload<Secrets extends JsonRecord>(secretsOrOptions: Secrets | EngineRunOptions, options: EngineRunOptions): Secrets | undefined {
         if (this.isEngineRunOptions(secretsOrOptions) && Object.keys(options).length === 0) {
-            return {
-                runOptions: secretsOrOptions,
-            }
+            return undefined
         }
 
-        return {
-            secretsPayload: secretsOrOptions as Secrets,
-            runOptions: options,
+        return secretsOrOptions as Secrets
+    }
+
+    private resolveLegacyRequestId<Secrets extends JsonRecord>(secretsOrOptions: Secrets | EngineRunOptions, options: EngineRunOptions): string | undefined {
+        if (this.isEngineRunOptions(secretsOrOptions) && Object.keys(options).length === 0) {
+            return secretsOrOptions.requestId
         }
+
+        return options.requestId
     }
 
     private isEngineRunOptions(value: JsonRecord | EngineRunOptions): value is EngineRunOptions {

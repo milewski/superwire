@@ -109,13 +109,16 @@ export type WorkflowExecutionEnvelope<Output = unknown> =
     | WorkflowExecutionSucceededEnvelope<Output>
     | WorkflowExecutionFailedEnvelope;
 
-export interface WorkflowOptions {
-    customTools?: CustomToolDeclaration[];
-}
-
 export interface EngineRunOptions {
     requestId?: string;
     executionId?: string;
+}
+
+export interface WorkflowOptions<Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord> {
+    inputPayload?: Input;
+    secretsPayload?: Secrets;
+    customTools?: CustomToolDeclaration[];
+    runOptions?: EngineRunOptions;
 }
 
 export type ExecutionValueName = 'success' | 'error' | 'context';

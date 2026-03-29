@@ -1,19 +1,48 @@
-import type { CustomToolDeclaration, JsonRecord, WorkflowExecutionRequest, WorkflowOptions } from './types'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-export class Workflow {
+import type { CustomToolDeclaration, EngineRunOptions, JsonRecord, WorkflowExecutionRequest, WorkflowOptions } from './types'
+
+export class Workflow<Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord> {
     readonly source: string
+
+    readonly inputPayload: Input
+
+    readonly secretsPayload?: Secrets
 
     readonly customTools: CustomToolDeclaration[]
 
-    constructor(source: string, options: WorkflowOptions = {}) {
+    readonly runOptions: EngineRunOptions
+
+    constructor(source: string, options: WorkflowOptions<Input, Secrets> = {}) {
         this.source = source
+        this.inputPayload = (options.inputPayload ?? {}) as Input
+        this.secretsPayload = options.secretsPayload
         this.customTools = options.customTools ?? []
+        this.runOptions = options.runOptions ?? {}
     }
 
-    toExecutionRequest<Input extends JsonRecord>(
+    static fromFile<Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord>(
+        filePath: string,
+        options: WorkflowOptions<Input, Secrets> = {},
+    ): Workflow<Input, Secrets> {
+        const workflowSource = readFileSync(resolve(filePath), 'utf8')
+
+        return new Workflow<Input, Secrets>(workflowSource, options)
+    }
+
+    executionId(fallbackExecutionId: string): string {
+        return this.runOptions.executionId ?? fallbackExecutionId
+    }
+
+    requestId(): string | undefined {
+        return this.runOptions.requestId
+    }
+
+    toExecutionRequest(
         executionId: string,
-        inputPayload: Input,
-        secretsPayload?: JsonRecord,
+        inputPayload: Input = this.inputPayload,
+        secretsPayload: Secrets | undefined = this.secretsPayload,
     ): WorkflowExecutionRequest<Input> {
         const workflowExecutionRequest: WorkflowExecutionRequest<Input> = {
             execution_id: executionId,
