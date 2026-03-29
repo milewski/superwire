@@ -9,7 +9,6 @@ pub fn engine_ai_ffi_invoke_json(request_payload: String) -> String {
 }
 
 #[php_module]
-#[php(name = "engine_ai_ffi")]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module
         .name("engine_ai_ffi")

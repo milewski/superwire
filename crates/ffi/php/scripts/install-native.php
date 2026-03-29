@@ -42,6 +42,16 @@ function installNativeExtension(): void
 
 function resolvePhpExtensionDirectory(): string
 {
+    $overrideExtensionDirectory = \getenv('ENGINE_AI_FFI_PHP_EXTENSION_DIR');
+
+    if (\is_string($overrideExtensionDirectory) && $overrideExtensionDirectory !== '') {
+        if (!\is_dir($overrideExtensionDirectory)) {
+            throw new RuntimeException("ENGINE_AI_FFI_PHP_EXTENSION_DIR does not exist: {$overrideExtensionDirectory}");
+        }
+
+        return $overrideExtensionDirectory;
+    }
+
     $extensionDirectory = \ini_get('extension_dir');
 
     if (!\is_string($extensionDirectory) || $extensionDirectory === '') {
@@ -82,7 +92,17 @@ function installBinary(string $sourcePath, string $extensionDirectory): void
 
     $targetPath = $extensionDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
 
-    if (!\copy($sourcePath, $targetPath)) {
-        throw new RuntimeException("Unable to copy native extension binary to {$targetPath}");
+    if (!\is_writable($extensionDirectory)) {
+        throw new RuntimeException(
+            "The PHP extension directory is not writable: {$extensionDirectory}. " .
+                "Copy manually with sudo: sudo cp {$sourcePath} {$targetPath}",
+        );
+    }
+
+    if (!@\copy($sourcePath, $targetPath)) {
+        throw new RuntimeException(
+            "Unable to copy native extension binary to {$targetPath}. " .
+                "Try: sudo cp {$sourcePath} {$targetPath}",
+        );
     }
 }
