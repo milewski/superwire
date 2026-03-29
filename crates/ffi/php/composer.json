@@ -1,7 +1,7 @@
 {
   "name": "engine-ai/ffi-php-bridge",
   "description": "PHP bridge for the engine-ai Rust FFI runtime",
-  "type": "library",
+  "type": "composer-plugin",
   "license": "MIT",
   "keywords": [
     "engine-ai",
@@ -17,7 +17,8 @@
   },
   "require": {
     "php": "^8.2",
-    "ext-json": "*"
+    "ext-json": "*",
+    "composer-plugin-api": "^2.0"
   },
   "suggest": {
     "ext-engine_ai_ffi": "Native extension installed by composer scripts"
@@ -38,18 +39,13 @@
     "lint": "php scripts/lint.php",
     "build-native": "php scripts/build-native.php",
     "package-prebuilt": "php scripts/package-prebuilt.php",
-    "install-native": "php scripts/install-native.php",
-    "post-install-cmd": [
-      "@install-native"
-    ],
-    "post-update-cmd": [
-      "@install-native"
-    ]
+    "install-native": "php scripts/install-native.php"
   },
   "config": {
     "sort-packages": true
   },
   "extra": {
+    "class": "EngineAi\\Ffi\\Composer\\NativeInstallerPlugin",
     "branch-alias": {
       "dev-main": "0.1.x-dev"
     }
