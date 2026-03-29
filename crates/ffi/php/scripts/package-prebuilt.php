@@ -26,8 +26,13 @@ function platformKey(): string
 {
     $normalizedOperatingSystem = \strtolower(PHP_OS_FAMILY);
     $normalizedArchitecture = normalizeArchitecture(\php_uname('m'));
+    $libcVariant = normalizeLibcVariant();
 
-    return "{$normalizedOperatingSystem}-{$normalizedArchitecture}";
+    if ($normalizedOperatingSystem !== 'linux') {
+        return "{$normalizedOperatingSystem}-{$normalizedArchitecture}";
+    }
+
+    return "{$normalizedOperatingSystem}-{$normalizedArchitecture}-{$libcVariant}";
 }
 
 function normalizeArchitecture(string $architecture): string
@@ -39,4 +44,30 @@ function normalizeArchitecture(string $architecture): string
         'arm64' => 'aarch64',
         default => $normalizedArchitecture,
     };
+}
+
+function normalizeLibcVariant(): string
+{
+    $detectedLibcVersionString = \function_exists('phpversion') ? \phpversion('libc') : false;
+
+    if (\is_string($detectedLibcVersionString) && $detectedLibcVersionString !== '') {
+        $normalizedLibcVersionString = \strtolower($detectedLibcVersionString);
+
+        if (\str_contains($normalizedLibcVersionString, 'musl')) {
+            return 'musl';
+        }
+
+        if (\str_contains($normalizedLibcVersionString, 'gnu') || \str_contains($normalizedLibcVersionString, 'glibc')) {
+            return 'gnu';
+        }
+    }
+
+    $libcVersionCommandOutput = trim((string) @\shell_exec('ldd --version 2>&1'));
+    $normalizedCommandOutput = \strtolower($libcVersionCommandOutput);
+
+    if (\str_contains($normalizedCommandOutput, 'musl')) {
+        return 'musl';
+    }
+
+    return 'gnu';
 }
