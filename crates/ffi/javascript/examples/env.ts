@@ -1,4 +1,10 @@
-type OpenAIProviderSecrets = {
+/**
+ * Shared environment loader for all examples.
+ *
+ * Centralizes required provider environment variables so each example can focus
+ * on workflow and runtime behavior.
+ */
+export type OpenAIProviderSecrets = {
     openai_endpoint: string;
     openai_api_key: string;
     openai_model: string;

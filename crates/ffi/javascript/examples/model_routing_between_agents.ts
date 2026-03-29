@@ -1,3 +1,9 @@
+/**
+ * Model routing example.
+ *
+ * Shows a small router agent choosing which model to use, followed by a
+ * specialist agent that runs with the selected model.
+ */
 import { Engine, Workflow } from '../src'
 import { loadOpenAIProviderSecrets } from './env'
 
@@ -20,51 +26,6 @@ type ModelRoutingResponse = {
 async function runModelRoutingBetweenAgentsExample(): Promise<void> {
     const providerSecrets = loadOpenAIProviderSecrets()
 
-    const workflow = new Workflow(`
-        provider openai {
-            driver: "openai"
-            endpoint: secrets.openai_endpoint
-            api_key: secrets.openai_api_key
-            models: [input.models.large, input.models.small]
-        }
-
-        secrets {
-            openai_endpoint: string
-            openai_api_key: string
-        }
-
-        input {
-            request: string
-            models: {
-                large: string
-                small: string
-            }
-        }
-
-        agent router {
-            model: openai(input.models.small)
-            prompt: """
-                Choose the best model for this request: {{ input.request }}. 
-                You must pick exactly one model from [{{ input.models.large }}, {{ input.models.small }}].
-            """
-            output: {
-                model: input.models.large | input.models.small
-                rationale: string
-            }
-        }
-
-        agent specialist {
-            model: openai(agent.router.model)
-            prompt: "Answer this request in under 180 words: {{ input.request }}"
-            output: string
-        }
-
-        output {
-            routing: agent.router
-            response: agent.specialist
-        }
-    `)
-
     const engine = new Engine()
 
     try {
@@ -81,7 +42,12 @@ async function runModelRoutingBetweenAgentsExample(): Promise<void> {
             openai_api_key: providerSecrets.openai_api_key,
         }
 
-        const response = await engine.run<ModelRoutingResponse>(workflow, inputPayload, secretsPayload)
+        const workflow = Workflow.fromFile('./examples/workflows/model_routing_between_agents.ai', {
+            inputs: inputPayload,
+            secrets: secretsPayload,
+        })
+
+        const response = await engine.run<ModelRoutingResponse>(workflow)
 
         if (await response.isError()) {
             console.error('Error:', await response.error())

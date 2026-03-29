@@ -1,4 +1,5 @@
 import type { FfiOperation } from './constants'
+import type { Tool } from './tool'
 
 export type JsonRecord = Record<string, unknown>;
 
@@ -115,10 +116,12 @@ export interface EngineRunOptions {
 }
 
 export interface WorkflowOptions<Input extends JsonRecord = JsonRecord, Secrets extends JsonRecord = JsonRecord> {
-    inputPayload?: Input;
-    secretsPayload?: Secrets;
-    customTools?: CustomToolDeclaration[];
-    runOptions?: EngineRunOptions;
+    inputs?: Input;
+    secrets?: Secrets;
+    tools?: Array<CustomToolDeclaration | Tool>;
+    requestId?: string;
+    executionId?: string;
+    options?: EngineRunOptions;
 }
 
 export type ExecutionValueName = 'success' | 'error' | 'context';

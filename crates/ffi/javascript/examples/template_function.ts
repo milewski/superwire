@@ -1,3 +1,9 @@
+/**
+ * Template function example.
+ *
+ * Shows how to keep prompts in external markdown files and render them with
+ * runtime data using the DSL `template(...)` helper.
+ */
 import { Engine, Workflow } from '../src'
 import { loadOpenAIProviderSecrets } from './env'
 
@@ -15,45 +21,6 @@ type TemplateFunctionResponse = {
 async function runTemplateFunctionExample(): Promise<void> {
     const providerSecrets = loadOpenAIProviderSecrets()
 
-    const workflow = new Workflow(`
-        provider openai {
-            driver: "openai"
-            endpoint: secrets.openai_endpoint
-            api_key: secrets.openai_api_key
-            models: [secrets.openai_model]
-        }
-
-        secrets {
-            openai_endpoint: string
-            openai_api_key: string
-            openai_model: string
-        }
-
-        input {
-            study_name: string
-            audience: string
-            findings: [string]
-        }
-
-        agent research_brief {
-            model: openai(secrets.openai_model)
-            prompt: template("examples/research_brief_prompt.md", {
-                study_name: input.study_name
-                audience: input.audience
-                findings: input.findings
-            })
-            output: {
-                summary: string
-                top_actions: [string; 3]
-            }
-        }
-
-        output {
-            summary: agent.research_brief.summary
-            top_actions: agent.research_brief.top_actions
-        }
-    `)
-
     const engine = new Engine()
 
     try {
@@ -67,7 +34,12 @@ async function runTemplateFunctionExample(): Promise<void> {
             ],
         }
 
-        const response = await engine.run<TemplateFunctionResponse>(workflow, inputPayload, providerSecrets)
+        const workflow = Workflow.fromFile('./examples/workflows/template_function.ai', {
+            inputs: inputPayload,
+            secrets: providerSecrets,
+        })
+
+        const response = await engine.run<TemplateFunctionResponse>(workflow)
 
         if (await response.isError()) {
             console.error('Error:', await response.error())

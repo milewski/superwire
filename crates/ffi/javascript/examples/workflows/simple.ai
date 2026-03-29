@@ -1,0 +1,39 @@
+provider openai {
+    driver: "openai"
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
+}
+
+input {
+    region: string
+}
+
+agent assistant {
+    model: openai(secrets.openai_model)
+    tools: [tool.weather]
+    prompt: "please get the weather for the given city: {{ input.region }} and generate a prediction based on the metrics provided by the weather tool."
+    output: {
+        prediction: string
+        region_name: string
+        region_label: string
+        location: {
+            latitude: float
+            longitude: float
+        }
+        temperature_2m: number
+        weather_code: number
+        weather_description: string
+        wind_speed_10m: number
+    }
+}
+
+output {
+    weather: agent.assistant
+}

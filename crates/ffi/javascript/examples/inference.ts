@@ -1,3 +1,9 @@
+/**
+ * Inference settings example.
+ *
+ * Shows how to configure model inference options (temperature, max tokens)
+ * directly in workflow DSL while keeping runtime execution in TypeScript simple.
+ */
 import { Engine, Workflow } from '../src'
 import { loadOpenAIProviderSecrets } from './env'
 
@@ -12,41 +18,6 @@ type ReleaseReadinessResponse = {
 async function runInferenceExample(): Promise<void> {
     const providerSecrets = loadOpenAIProviderSecrets()
 
-    const workflow = new Workflow(`
-        provider openai {
-            driver: "openai"
-            endpoint: secrets.openai_endpoint
-            api_key: secrets.openai_api_key
-            models: [secrets.openai_model]
-        }
-
-        secrets {
-            openai_endpoint: string
-            openai_api_key: string
-            openai_model: string
-        }
-
-        input {
-            release_scope: string
-        }
-
-        agent release_analyst {
-            model: openai(secrets.openai_model)
-
-            inference: {
-                temperature: 0.2
-                max_tokens: 1_500
-            }
-
-            prompt: "Write a short release-readiness note for: {{ input.release_scope }}"
-            output: string
-        }
-
-        output {
-            note: agent.release_analyst
-        }
-    `)
-
     const engine = new Engine()
 
     try {
@@ -54,7 +25,12 @@ async function runInferenceExample(): Promise<void> {
             release_scope: 'Checkout reliability and retry handling improvements',
         }
 
-        const response = await engine.run<ReleaseReadinessResponse>(workflow, inputPayload, providerSecrets)
+        const workflow = Workflow.fromFile('./examples/workflows/inference.ai', {
+            inputs: inputPayload,
+            secrets: providerSecrets,
+        })
+
+        const response = await engine.run<ReleaseReadinessResponse>(workflow)
 
         if (await response.isError()) {
             console.error('Error:', await response.error())
