@@ -247,6 +247,31 @@ fn text_document_position_params(document_uri: &str, line: u64, character: u64) 
     })
 }
 
+fn text_document_params(document_uri: &str) -> Value {
+    json!({
+        "textDocument": {
+            "uri": document_uri,
+        }
+    })
+}
+
+fn line_index_with_fragments(source_text: &str, fragments: &[&str]) -> u64 {
+    source_text
+        .lines()
+        .position(|source_line| fragments.iter().all(|fragment| source_line.contains(fragment)))
+        .and_then(|line_index| u64::try_from(line_index).ok())
+        .expect("source should contain expected fragments")
+}
+
+fn character_index_for_fragment(source_text: &str, line_index: u64, fragment: &str) -> u64 {
+    let line_index = usize::try_from(line_index).expect("line index should fit usize");
+    let source_line = source_text.lines().nth(line_index).expect("source should include requested line");
+
+    let byte_index = source_line.find(fragment).expect("source line should include expected fragment");
+
+    u64::try_from(source_line[..byte_index].chars().count()).expect("character index should fit u64")
+}
+
 async fn assert_publish_diagnostics_for_uri(language_server_client: &mut LspProcessClient, document_uri: &str) -> Value {
     let diagnostics_notification = language_server_client.read_message().await;
 
@@ -383,5 +408,150 @@ async fn reads_multiple_framed_messages_from_single_input_batch() {
     assert_eq!(shutdown_response["id"], 102);
     assert_eq!(shutdown_response["result"], Value::Null);
 
+    language_server_client.wait_for_exit().await;
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn supports_definition_symbols_folding_formatting_and_code_lens_requests() {
+    let mut language_server_client = LspProcessClient::spawn();
+    let document_uri = "file:///workspace/workflow.engine";
+
+    let initialize_response = language_server_client
+        .send_request(201, "initialize", json!({ "capabilities": {} }))
+        .await;
+
+    assert_eq!(initialize_response["jsonrpc"], "2.0");
+    assert_eq!(initialize_response["id"], 201);
+    assert_eq!(initialize_response["result"]["capabilities"]["definitionProvider"], true);
+    assert_eq!(initialize_response["result"]["capabilities"]["documentSymbolProvider"], true);
+    assert_eq!(initialize_response["result"]["capabilities"]["workspaceSymbolProvider"], true);
+    assert_eq!(initialize_response["result"]["capabilities"]["foldingRangeProvider"], true);
+    assert_eq!(initialize_response["result"]["capabilities"]["documentFormattingProvider"], true);
+
+    let document_text = dsl! {
+        provider openai {
+        driver: "openai"
+        models: ["gpt-4o"]
+        }
+
+        schema Report {
+        title: string
+        }
+
+        agent writer {
+        model: openai("gpt-4o")
+        prompt: "Write report"
+        output: schema.Report
+        }
+
+        output {
+        report: agent.writer
+        }
+    };
+
+    let output_reference_line = line_index_with_fragments(&document_text, &["report", "agent", "writer"]);
+    let agent_declaration_line = line_index_with_fragments(&document_text, &["agent", "writer", "{"]);
+    let writer_character = character_index_for_fragment(&document_text, output_reference_line, "writer");
+
+    language_server_client
+        .send_notification("textDocument/didOpen", did_open_params(document_uri, &document_text))
+        .await;
+
+    let _diagnostics_notification = assert_publish_diagnostics_for_uri(&mut language_server_client, document_uri).await;
+
+    let definition_response = language_server_client
+        .send_request(
+            202,
+            "textDocument/definition",
+            text_document_position_params(document_uri, output_reference_line, writer_character),
+        )
+        .await;
+
+    assert_eq!(definition_response["jsonrpc"], "2.0");
+    assert_eq!(definition_response["id"], 202);
+    assert_eq!(definition_response["result"][0]["uri"], document_uri);
+    assert_eq!(definition_response["result"][0]["range"]["start"]["line"], agent_declaration_line);
+
+    let document_symbol_response = language_server_client
+        .send_request(203, "textDocument/documentSymbol", text_document_params(document_uri))
+        .await;
+
+    let document_symbol_names = document_symbol_response["result"]
+        .as_array()
+        .expect("document symbol result should be an array")
+        .iter()
+        .filter_map(|symbol| symbol["name"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(document_symbol_names.contains(&"openai"));
+    assert!(document_symbol_names.contains(&"Report"));
+    assert!(document_symbol_names.contains(&"writer"));
+
+    let workspace_symbol_response = language_server_client
+        .send_request(204, "workspace/symbol", json!({ "query": "wri" }))
+        .await;
+
+    let workspace_symbol_names = workspace_symbol_response["result"]
+        .as_array()
+        .expect("workspace symbol result should be an array")
+        .iter()
+        .filter_map(|symbol| symbol["name"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(workspace_symbol_names.contains(&"writer"));
+
+    let folding_range_response = language_server_client
+        .send_request(205, "textDocument/foldingRange", text_document_params(document_uri))
+        .await;
+
+    assert!(folding_range_response["result"].is_array());
+
+    let formatting_response = language_server_client
+        .send_request(206, "textDocument/formatting", text_document_params(document_uri))
+        .await;
+
+    assert!(!formatting_response["result"]
+        .as_array()
+        .expect("formatting result should be an array")
+        .is_empty());
+
+    let code_lens_response = language_server_client
+        .send_request(207, "textDocument/codeLens", text_document_params(document_uri))
+        .await;
+
+    let code_lens_titles = code_lens_response["result"]
+        .as_array()
+        .expect("code lens result should be an array")
+        .iter()
+        .filter_map(|code_lens| code_lens["command"]["title"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(code_lens_titles.contains(&"Generated output"));
+
+    let execute_command_response = language_server_client
+        .send_request(
+            208,
+            "workspace/executeCommand",
+            json!({
+                "command": "engine-ai.generated.output",
+                "arguments": []
+            }),
+        )
+        .await;
+
+    assert_eq!(execute_command_response["result"], Value::Null);
+
+    language_server_client
+        .send_notification("textDocument/didClose", did_close_params(document_uri))
+        .await;
+
+    let _close_diagnostics_notification = assert_publish_diagnostics_for_uri(&mut language_server_client, document_uri).await;
+
+    let shutdown_response = language_server_client.send_request(209, "shutdown", Value::Null).await;
+
+    assert_eq!(shutdown_response["result"], Value::Null);
+
+    language_server_client.send_notification("exit", Value::Null).await;
     language_server_client.wait_for_exit().await;
 }

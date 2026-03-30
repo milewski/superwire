@@ -4,10 +4,12 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
 
-use crate::document::{CompletionSuggestion, DocumentState};
+use crate::document::{CodeLensHint, CompletionSuggestion, DocumentState, DocumentSymbolNode, FoldingRangeBlock, WorkspaceSymbolMatch};
 use crate::protocol::{
-    error_response, publish_diagnostics_notification, success_response, Diagnostic, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, JsonRpcRequest, TextDocumentPositionParams,
+    error_response, publish_diagnostics_notification, success_response, CodeLens, CodeLensParams, Command, Diagnostic,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
+    DocumentSymbol as ProtocolDocumentSymbol, DocumentSymbolParams, ExecuteCommandParams, FoldingRange, FoldingRangeParams, JsonRpcRequest,
+    Location, SymbolInformation, TextDocumentPositionParams, TextEdit, WorkspaceSymbolParams,
 };
 
 #[derive(Debug, Error)]
@@ -72,6 +74,13 @@ impl LanguageServer {
             "textDocument/didClose" => self.handle_did_close(request.params),
             "textDocument/completion" => self.handle_completion(request.id, request.params),
             "textDocument/hover" => self.handle_hover(request.id, request.params),
+            "textDocument/definition" => self.handle_definition(request.id, request.params),
+            "textDocument/documentSymbol" => self.handle_document_symbols(request.id, request.params),
+            "workspace/symbol" => self.handle_workspace_symbols(request.id, request.params),
+            "textDocument/foldingRange" => self.handle_folding_ranges(request.id, request.params),
+            "textDocument/formatting" => self.handle_formatting(request.id, request.params),
+            "textDocument/codeLens" => self.handle_code_lens(request.id, request.params),
+            "workspace/executeCommand" => self.handle_execute_command(request.id, request.params),
             _ => Ok(self.method_not_found_outcome(request.id)),
         }
     }
@@ -168,6 +177,94 @@ impl LanguageServer {
         })
     }
 
+    fn handle_definition(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let definition_params: TextDocumentPositionParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.definition_result(&definition_params).unwrap_or(Value::Null),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_document_symbols(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let symbol_params: DocumentSymbolParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.document_symbols_result(&symbol_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_workspace_symbols(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let workspace_symbol_params: WorkspaceSymbolParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.workspace_symbols_result(&workspace_symbol_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_folding_ranges(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let folding_range_params: FoldingRangeParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.folding_ranges_result(&folding_range_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_formatting(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let formatting_params: DocumentFormattingParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.formatting_result(&formatting_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_code_lens(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let code_lens_params: CodeLensParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.code_lens_result(&code_lens_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
+    fn handle_execute_command(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let _execute_command_params: ExecuteCommandParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(request_id.unwrap_or(Value::Null), Value::Null)),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
     fn publish_document_diagnostics(&self, document_uri: &str) -> Option<Value> {
         let document_state = self.documents.get(document_uri)?;
         let diagnostics = document_state
@@ -210,6 +307,93 @@ impl LanguageServer {
         let hover_markdown = document_state.hover_markdown(hover_params.position)?;
 
         Some(markdown_hover(&hover_markdown))
+    }
+
+    fn definition_result(&self, definition_params: &TextDocumentPositionParams) -> Option<Value> {
+        let document_state = self.documents.get(&definition_params.text_document.uri)?;
+        let definition_range = document_state.definition_range(definition_params.position)?;
+
+        let location = Location {
+            uri: definition_params.text_document.uri.clone(),
+            range: definition_range,
+        };
+
+        Some(json!([location]))
+    }
+
+    fn document_symbols_result(&self, symbol_params: &DocumentSymbolParams) -> Value {
+        let Some(document_state) = self.documents.get(&symbol_params.text_document.uri) else {
+            return json!([]);
+        };
+
+        let symbol_nodes = document_state.document_symbols();
+        let document_symbols = symbol_nodes.into_iter().map(document_symbol_node_to_protocol).collect::<Vec<_>>();
+
+        json!(document_symbols)
+    }
+
+    fn workspace_symbols_result(&self, workspace_symbol_params: &WorkspaceSymbolParams) -> Value {
+        let mut workspace_symbols = self
+            .documents
+            .iter()
+            .flat_map(|(document_uri, document_state)| {
+                document_state.workspace_symbols(document_uri, workspace_symbol_params.query.as_str())
+            })
+            .collect::<Vec<_>>();
+
+        workspace_symbols.sort_by(|left_symbol, right_symbol| left_symbol.name.cmp(&right_symbol.name));
+
+        let symbol_information = workspace_symbols
+            .into_iter()
+            .map(workspace_symbol_match_to_information)
+            .collect::<Vec<_>>();
+
+        json!(symbol_information)
+    }
+
+    fn folding_ranges_result(&self, folding_range_params: &FoldingRangeParams) -> Value {
+        let Some(document_state) = self.documents.get(&folding_range_params.text_document.uri) else {
+            return json!([]);
+        };
+
+        let folding_ranges = document_state
+            .folding_ranges()
+            .into_iter()
+            .map(folding_range_block_to_protocol)
+            .collect::<Vec<_>>();
+
+        json!(folding_ranges)
+    }
+
+    fn formatting_result(&self, formatting_params: &DocumentFormattingParams) -> Value {
+        let Some(document_state) = self.documents.get(&formatting_params.text_document.uri) else {
+            return json!([]);
+        };
+
+        let Some(formatting_edit) = document_state.formatting_edit() else {
+            return json!([]);
+        };
+
+        let text_edit = TextEdit {
+            range: formatting_edit.range,
+            new_text: formatting_edit.new_text,
+        };
+
+        json!([text_edit])
+    }
+
+    fn code_lens_result(&self, code_lens_params: &CodeLensParams) -> Value {
+        let Some(document_state) = self.documents.get(&code_lens_params.text_document.uri) else {
+            return json!([]);
+        };
+
+        let code_lenses = document_state
+            .generated_output_marks()
+            .into_iter()
+            .map(code_lens_hint_to_protocol)
+            .collect::<Vec<_>>();
+
+        json!(code_lenses)
     }
 }
 
@@ -313,9 +497,20 @@ fn initialize_result() -> Value {
                 "change": 1
             },
             "hoverProvider": true,
+            "definitionProvider": true,
+            "documentSymbolProvider": true,
+            "workspaceSymbolProvider": true,
+            "foldingRangeProvider": true,
+            "documentFormattingProvider": true,
             "completionProvider": {
                 "resolveProvider": false,
                 "triggerCharacters": [".", ":", "\""]
+            },
+            "codeLensProvider": {
+                "resolveProvider": false
+            },
+            "executeCommandProvider": {
+                "commands": ["engine-ai.generated.output"]
             }
         },
         "serverInfo": {
@@ -323,6 +518,54 @@ fn initialize_result() -> Value {
             "version": "0.2.0"
         }
     })
+}
+
+fn document_symbol_node_to_protocol(document_symbol_node: DocumentSymbolNode) -> ProtocolDocumentSymbol {
+    ProtocolDocumentSymbol {
+        name: document_symbol_node.name,
+        detail: document_symbol_node.detail,
+        kind: document_symbol_node.kind.as_lsp_kind(),
+        range: document_symbol_node.range,
+        selection_range: document_symbol_node.selection_range,
+        children: document_symbol_node
+            .children
+            .into_iter()
+            .map(document_symbol_node_to_protocol)
+            .collect(),
+    }
+}
+
+fn workspace_symbol_match_to_information(workspace_symbol_match: WorkspaceSymbolMatch) -> SymbolInformation {
+    SymbolInformation {
+        name: workspace_symbol_match.name,
+        kind: workspace_symbol_match.kind.as_lsp_kind(),
+        location: Location {
+            uri: workspace_symbol_match.document_uri,
+            range: workspace_symbol_match.range,
+        },
+        container_name: workspace_symbol_match.container_name,
+    }
+}
+
+fn folding_range_block_to_protocol(folding_range_block: FoldingRangeBlock) -> FoldingRange {
+    FoldingRange {
+        start_line: folding_range_block.start_line,
+        start_character: Some(folding_range_block.start_character),
+        end_line: folding_range_block.end_line,
+        end_character: Some(folding_range_block.end_character),
+        kind: Some("region".to_string()),
+    }
+}
+
+fn code_lens_hint_to_protocol(code_lens_hint: CodeLensHint) -> CodeLens {
+    CodeLens {
+        range: code_lens_hint.range,
+        command: Command {
+            title: code_lens_hint.title,
+            command: code_lens_hint.command,
+            arguments: Vec::new(),
+        },
+    }
 }
 
 fn completion_item_to_value(completion_suggestion: CompletionSuggestion) -> Value {

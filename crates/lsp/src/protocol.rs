@@ -72,6 +72,42 @@ pub struct DidCloseTextDocumentParams {
     pub text_document: TextDocumentIdentifier,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DocumentSymbolParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkspaceSymbolParams {
+    pub query: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DocumentFormattingParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FoldingRangeParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CodeLensParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExecuteCommandParams {
+    pub command: String,
+    #[serde(default)]
+    pub arguments: Vec<Value>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Diagnostic {
     pub range: Range,
@@ -133,6 +169,69 @@ pub enum DiagnosticCode {
     AgentDependencyCycle,
     #[serde(rename = "workflow_compilation_error")]
     WorkflowCompilationError,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Location {
+    pub uri: String,
+    pub range: Range,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextEdit {
+    pub range: Range,
+    #[serde(rename = "newText")]
+    pub new_text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FoldingRange {
+    #[serde(rename = "startLine")]
+    pub start_line: u32,
+    #[serde(rename = "startCharacter")]
+    pub start_character: Option<u32>,
+    #[serde(rename = "endLine")]
+    pub end_line: u32,
+    #[serde(rename = "endCharacter")]
+    pub end_character: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DocumentSymbol {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub kind: u32,
+    pub range: Range,
+    #[serde(rename = "selectionRange")]
+    pub selection_range: Range,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<DocumentSymbol>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SymbolInformation {
+    pub name: String,
+    pub kind: u32,
+    pub location: Location,
+    #[serde(rename = "containerName", skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Command {
+    pub title: String,
+    pub command: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CodeLens {
+    pub range: Range,
+    pub command: Command,
 }
 
 #[must_use]

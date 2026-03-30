@@ -1,0 +1,55 @@
+<idea-plugin>
+    <id>com.engineai.intellij</id>
+    <name>Engine AI</name>
+    <vendor email="support@engine-ai.dev" url="https://github.com/milewski/engine-ai">Engine AI</vendor>
+
+    <description>
+        <![CDATA[
+        <h1>Engine AI language support for IntelliJ IDEs</h1>
+        <ul>
+            <li>Syntax highlighting powered by the shared TextMate grammar.</li>
+            <li>Compiler checking and diagnostics from the Engine AI language server.</li>
+            <li>Completion for workflow declarations, properties, references, and builtins.</li>
+            <li>Hover, go to definition, document/workspace symbol search, and code folding.</li>
+            <li>Document formatting and generated-output code lens markers.</li>
+        </ul>
+        ]]>
+    </description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.textmate</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType
+                name="Engine AI"
+                implementationClass="com.engineai.intellij.EngineAiFileType"
+                fieldName="INSTANCE"
+                language="EngineAI"
+                extensions="ai"/>
+
+        <textmate.bundleProvider implementation="com.engineai.intellij.EngineAiTextMateBundleProvider"/>
+
+        <editorHighlighterProvider
+                filetype="Engine AI"
+                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
+
+        <lang.syntaxHighlighterFactory
+                language="EngineAI"
+                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="engine-ai"
+                name="Engine AI"
+                factoryClass="com.engineai.intellij.EngineAiLanguageServerFactory">
+            <description>
+                <![CDATA[
+                Engine AI language server integration for IntelliJ.
+                ]]>
+            </description>
+        </server>
+
+        <languageMapping language="EngineAI" serverId="engine-ai"/>
+    </extensions>
+</idea-plugin>

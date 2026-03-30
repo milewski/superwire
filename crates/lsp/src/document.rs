@@ -2,17 +2,25 @@ use std::collections::HashSet;
 
 mod completion;
 mod completion_context;
+mod definition;
+mod folding;
+mod formatting;
 mod hover;
 mod position;
 mod reference;
 mod scope;
 mod semantic_index;
 mod snapshot;
+mod symbol;
 mod text_utils;
 mod types;
 
 use snapshot::SemanticSnapshot;
-pub use types::{CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic};
+use text_utils::is_symbol_character;
+pub use types::{
+    CodeLensHint, CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic, DocumentFormattingEdit, DocumentSymbolNode,
+    FoldingRangeBlock, SymbolKind, WorkspaceSymbolMatch,
+};
 
 use engine_ai_core::dsl::TypeExpression;
 use engine_ai_core::runtime::ProviderDriver;
@@ -49,6 +57,39 @@ impl DocumentState {
         let cursor_index = usize::min(position.character as usize, line_characters.len());
 
         Some(line_characters.into_iter().take(cursor_index).collect())
+    }
+
+    fn symbol_token_at(&self, position: Position) -> Option<String> {
+        let line_text = self.text.lines().nth(position.line as usize)?;
+        let line_characters: Vec<char> = line_text.chars().collect();
+
+        if line_characters.is_empty() {
+            return None;
+        }
+
+        let mut cursor_index = usize::min(position.character as usize, line_characters.len().saturating_sub(1));
+
+        if !is_symbol_character(line_characters[cursor_index]) {
+            if cursor_index == 0 || !is_symbol_character(line_characters[cursor_index - 1]) {
+                return None;
+            }
+
+            cursor_index -= 1;
+        }
+
+        let mut start_index = cursor_index;
+
+        while start_index > 0 && is_symbol_character(line_characters[start_index - 1]) {
+            start_index -= 1;
+        }
+
+        let mut end_index = cursor_index + 1;
+
+        while end_index < line_characters.len() && is_symbol_character(line_characters[end_index]) {
+            end_index += 1;
+        }
+
+        Some(line_characters[start_index..end_index].iter().collect())
     }
 }
 
