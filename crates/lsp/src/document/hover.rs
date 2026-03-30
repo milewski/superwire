@@ -5,52 +5,18 @@ use crate::protocol::Position;
 
 use super::reference::ReferenceCompletionPath;
 use super::semantic_index::SemanticIndex;
-use super::text_utils::is_symbol_character;
 use super::{CompletionKind, CompletionSuggestion, DocumentState, RenderTypeExpression};
 
 impl DocumentState {
     #[must_use]
     pub fn hover_markdown(&self, position: Position) -> Option<String> {
-        let hovered_symbol = self.symbol_at(position)?;
+        let hovered_symbol = self.symbol_token_at(position)?;
 
         if let Some(symbol_markdown) = builtin_symbol_markdown(&hovered_symbol) {
             return Some(symbol_markdown);
         }
 
         self.semantic_snapshot.semantic_index.hover_markdown(&hovered_symbol)
-    }
-
-    fn symbol_at(&self, position: Position) -> Option<String> {
-        let line_text = self.text.lines().nth(position.line as usize)?;
-        let line_characters: Vec<char> = line_text.chars().collect();
-
-        if line_characters.is_empty() {
-            return None;
-        }
-
-        let mut cursor_index = usize::min(position.character as usize, line_characters.len().saturating_sub(1));
-
-        if !is_symbol_character(line_characters[cursor_index]) {
-            if cursor_index == 0 || !is_symbol_character(line_characters[cursor_index - 1]) {
-                return None;
-            }
-
-            cursor_index -= 1;
-        }
-
-        let mut start_index = cursor_index;
-
-        while start_index > 0 && is_symbol_character(line_characters[start_index - 1]) {
-            start_index -= 1;
-        }
-
-        let mut end_index = cursor_index + 1;
-
-        while end_index < line_characters.len() && is_symbol_character(line_characters[end_index]) {
-            end_index += 1;
-        }
-
-        Some(line_characters[start_index..end_index].iter().collect())
     }
 }
 
