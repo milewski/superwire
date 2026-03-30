@@ -17,6 +17,8 @@ use UnitEnum;
 final class ToolSchemaReflector
 {
     private const DATA_COLLECTION_OF_ATTRIBUTE = 'Spatie\\LaravelData\\Attributes\\DataCollectionOf';
+    private const MAP_OUTPUT_NAME_ATTRIBUTE = 'Spatie\\LaravelData\\Attributes\\MapOutputName';
+    private const SNAKE_CASE_MAPPER = 'Spatie\\LaravelData\\Mappers\\SnakeCaseMapper';
 
     public static function fromToolInput(Tool $tool): ?array
     {
@@ -171,6 +173,7 @@ final class ToolSchemaReflector
 
         $schemaProperties = [];
         $requiredProperties = [];
+        $mapOutputToSnakeCase = self::classUsesSnakeCaseOutput($reflectionClass);
 
         foreach ($properties as $property) {
             if ($property->isStatic()) {
@@ -191,14 +194,18 @@ final class ToolSchemaReflector
                 $propertySchema['description'] = $propertyDescription;
             }
 
-            $schemaProperties[$property->getName()] = $propertySchema;
+            $propertySchemaName = $mapOutputToSnakeCase
+                ? self::snakeCase($property->getName())
+                : $property->getName();
+
+            $schemaProperties[$propertySchemaName] = $propertySchema;
 
             if (
                 $propertyType !== null
                 && !$propertyType->allowsNull()
                 && !$property->hasDefaultValue()
             ) {
-                $requiredProperties[] = $property->getName();
+                $requiredProperties[] = $propertySchemaName;
             }
         }
 
@@ -214,6 +221,32 @@ final class ToolSchemaReflector
         }
 
         return $schema;
+    }
+
+    private static function classUsesSnakeCaseOutput(ReflectionClass $reflectionClass): bool
+    {
+        for ($currentClass = $reflectionClass; $currentClass !== false; $currentClass = $currentClass->getParentClass()) {
+            $mapOutputAttribute = $currentClass->getAttributes(self::MAP_OUTPUT_NAME_ATTRIBUTE)[0] ?? null;
+
+            if ($mapOutputAttribute === null) {
+                continue;
+            }
+
+            $attributeArguments = $mapOutputAttribute->getArguments();
+            $mapper = $attributeArguments[0]
+                ?? $attributeArguments['output']
+                ?? $attributeArguments['mapper']
+                ?? null;
+
+            return $mapper === self::SNAKE_CASE_MAPPER;
+        }
+
+        return false;
+    }
+
+    private static function snakeCase(string $value): string
+    {
+        return strtolower((string) preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $value));
     }
 
     private static function dataCollectionPropertyToSchema(ReflectionProperty $property, array $visitedClasses): ?array
