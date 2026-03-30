@@ -16,6 +16,8 @@ use UnitEnum;
 
 final class ToolSchemaReflector
 {
+    private const DATA_COLLECTION_OF_ATTRIBUTE = 'Spatie\\LaravelData\\Attributes\\DataCollectionOf';
+
     public static function fromToolInput(Tool $tool): ?array
     {
         $inputType = $tool->inputType();
@@ -97,6 +99,7 @@ final class ToolSchemaReflector
             'int' => Schema::integer(),
             'float' => Schema::number(),
             'bool' => Schema::boolean(),
+            'array' => Schema::array([]),
             'null' => [ 'type' => 'null' ],
             default => null,
         };
@@ -175,7 +178,8 @@ final class ToolSchemaReflector
             }
 
             $propertyType = $property->getType();
-            $propertySchema = self::fromType($propertyType, $visitedClasses);
+            $propertySchema = self::dataCollectionPropertyToSchema($property, $visitedClasses)
+                ?? self::fromType($propertyType, $visitedClasses);
 
             if ($propertySchema === null) {
                 return null;
@@ -210,6 +214,33 @@ final class ToolSchemaReflector
         }
 
         return $schema;
+    }
+
+    private static function dataCollectionPropertyToSchema(ReflectionProperty $property, array $visitedClasses): ?array
+    {
+        $collectionAttribute = $property->getAttributes(self::DATA_COLLECTION_OF_ATTRIBUTE)[0] ?? null;
+
+        if ($collectionAttribute === null) {
+            return null;
+        }
+
+        $collectionAttributeArguments = $collectionAttribute->getArguments();
+
+        $itemClass = $collectionAttributeArguments[0]
+            ?? $collectionAttributeArguments['class']
+            ?? null;
+
+        if (!is_string($itemClass) || $itemClass === '' || !class_exists($itemClass)) {
+            return Schema::array([]);
+        }
+
+        $itemSchema = self::classToSchema($itemClass, $visitedClasses);
+
+        if ($itemSchema === null) {
+            return Schema::array([]);
+        }
+
+        return Schema::array($itemSchema);
     }
 
     private static function backedEnumToSchema(ReflectionClass $reflectionClass): array
