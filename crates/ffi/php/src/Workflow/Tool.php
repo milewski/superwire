@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace EngineAi\Ffi;
 
+use EngineAi\Ffi\Contracts\ToolBounded;
+use EngineAi\Ffi\Contracts\ToolInput;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
@@ -46,12 +48,51 @@ abstract class Tool
 
     public function inputType(): ?string
     {
-        return $this->resolvePayloadType('input');
+        return $this->resolvePayloadType(
+            property: 'input',
+            fallbackParameterPosition: 0,
+            fallbackInterface: ToolInput::class,
+        );
     }
 
     public function boundedType(): ?string
     {
-        return $this->resolvePayloadType('bounded');
+        return $this->resolvePayloadType(
+            property: 'bounded',
+            fallbackParameterPosition: 1,
+            fallbackInterface: ToolBounded::class,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $bounded
+     * @param array<string, mixed> $context
+     */
+    public function executeForTesting(array $input = [], array $bounded = [], array $context = []): mixed
+    {
+        $toolData = new ToolData(
+            input: $input,
+            bounded: $bounded,
+            context: $context,
+            inputType: $this->inputType(),
+            boundedType: $this->boundedType(),
+        );
+
+        $executeMethod = $this->resolveExecuteMethod();
+        $executeArguments = $this->resolveExecuteArguments($executeMethod, $toolData);
+
+        return $executeMethod->invokeArgs($this, $executeArguments);
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $bounded
+     * @param array<string, mixed> $context
+     */
+    public function invokeForTesting(array $input = [], array $bounded = [], array $context = []): mixed
+    {
+        return ToolOutputNormalizer::normalize($this->executeForTesting($input, $bounded, $context));
     }
 
     public function invoke(ToolData $toolData): mixed
@@ -100,16 +141,16 @@ abstract class Tool
         return $this->deriveToolNameFromClassName();
     }
 
-    private function resolvePayloadType(string $property): ?string
+    private function resolvePayloadType(string $property, int $fallbackParameterPosition, string $fallbackInterface): ?string
     {
         if (!property_exists($this, $property)) {
-            return null;
+            return $this->inferPayloadTypeFromExecuteSignature($fallbackParameterPosition, $fallbackInterface);
         }
 
         $type = $this->{$property};
 
         if (!is_string($type) || $type === '') {
-            return null;
+            return $this->inferPayloadTypeFromExecuteSignature($fallbackParameterPosition, $fallbackInterface);
         }
 
         if (!class_exists($type)) {
@@ -117,6 +158,77 @@ abstract class Tool
         }
 
         return $type;
+    }
+
+    private function inferPayloadTypeFromExecuteSignature(int $position, string $interface): ?string
+    {
+        $executeMethod = $this->resolveExecuteMethod();
+        $parameters = $executeMethod->getParameters();
+        $parameter = $parameters[$position] ?? null;
+
+        if ($parameter instanceof ReflectionParameter) {
+            $payloadType = $this->resolvePayloadTypeFromParameter($parameter, $interface);
+
+            if ($payloadType !== null) {
+                return $payloadType;
+            }
+        }
+
+        foreach ($parameters as $candidate) {
+            if (!$candidate instanceof ReflectionParameter) {
+                continue;
+            }
+
+            $payloadType = $this->resolvePayloadTypeFromParameter($candidate, $interface);
+
+            if ($payloadType !== null) {
+                return $payloadType;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolvePayloadTypeFromParameter(ReflectionParameter $parameter, string $interface): ?string
+    {
+        $type = $parameter->getType();
+
+        if ($type === null) {
+            return null;
+        }
+
+        if ($type instanceof ReflectionUnionType) {
+            foreach ($type->getTypes() as $unionType) {
+                $payloadType = $this->resolvePayloadTypeNameFromNamedType($unionType, $interface);
+
+                if ($payloadType !== null) {
+                    return $payloadType;
+                }
+            }
+
+            return null;
+        }
+
+        return $this->resolvePayloadTypeNameFromNamedType($type, $interface);
+    }
+
+    private function resolvePayloadTypeNameFromNamedType(ReflectionType $type, string $interface): ?string
+    {
+        if (!$type instanceof ReflectionNamedType || $type->isBuiltin()) {
+            return null;
+        }
+
+        $typeName = $type->getName();
+
+        if ($typeName === ToolData::class || $typeName === ToolValueBag::class) {
+            return null;
+        }
+
+        if (!class_exists($typeName) || !is_subclass_of($typeName, $interface)) {
+            return null;
+        }
+
+        return $typeName;
     }
 
     private function deriveToolNameFromClassName(): string
