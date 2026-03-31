@@ -2,20 +2,9 @@ FROM rust:1.94-bookworm
 
 ARG PHP_VERSION=8.4.19
 
-#ENV PATH="/usr/local/cargo/bin:${PATH}"
-
-#RUN apt-get update && apt-get install -y --no-install-recommends \
-#    autoconf \
-#    bison \
-#    build-essential \
-#    ca-certificates \
-#    clang \
-#    composer \
-#    libxml2-dev \
-#    pkg-config \
-#    re2c \
-#    wget \
-#    && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y --no-install-recommends \
+    clang build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN cd /tmp \
     && wget "https://www.php.net/distributions/php-${PHP_VERSION}.tar.gz" \
@@ -29,7 +18,3 @@ RUN cd /tmp \
 WORKDIR /workspace/crates/ffi/php
 
 RUN rustup target add x86_64-unknown-linux-gnu
-
-RUN apt update && apt install -y --no-install-recommends \
-    clang build-essential \
-    && rm -rf /var/lib/apt/lists/*
