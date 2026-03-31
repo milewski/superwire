@@ -1,21 +1,21 @@
-FROM rust:1.86-bookworm
+FROM rust:1.94-bookworm
 
 ARG PHP_VERSION=8.4.19
 
-ENV PATH="/usr/local/cargo/bin:${PATH}"
+#ENV PATH="/usr/local/cargo/bin:${PATH}"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    autoconf \
-    bison \
-    build-essential \
-    ca-certificates \
-    clang \
-    composer \
-    libxml2-dev \
-    pkg-config \
-    re2c \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+#RUN apt-get update && apt-get install -y --no-install-recommends \
+#    autoconf \
+#    bison \
+#    build-essential \
+#    ca-certificates \
+#    clang \
+#    composer \
+#    libxml2-dev \
+#    pkg-config \
+#    re2c \
+#    wget \
+#    && rm -rf /var/lib/apt/lists/*
 
 RUN cd /tmp \
     && wget "https://www.php.net/distributions/php-${PHP_VERSION}.tar.gz" \
@@ -26,15 +26,10 @@ RUN cd /tmp \
     && make install \
     && rm -rf "/tmp/php-${PHP_VERSION}" "/tmp/php-${PHP_VERSION}.tar.gz"
 
-ENV COMPOSER_ALLOW_SUPERUSER=1
-
 WORKDIR /workspace/crates/ffi/php
 
-COPY docker/entrypoint.sh /usr/local/bin/engine-ai-php-entrypoint
+RUN rustup target add x86_64-unknown-linux-gnu
 
-RUN rustup toolchain install nightly
-
-RUN chmod +x /usr/local/bin/engine-ai-php-entrypoint
-
-ENTRYPOINT ["/usr/local/bin/engine-ai-php-entrypoint"]
-CMD ["sleep", "infinity"]
+RUN apt update && apt install -y --no-install-recommends \
+    clang build-essential \
+    && rm -rf /var/lib/apt/lists/*
