@@ -1,8 +1,11 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi;
+
+use RuntimeException;
+use Throwable;
 
 class EngineExecutionResult
 {
@@ -58,27 +61,35 @@ class EngineExecutionResult
         }
 
         if (!$this->canReadDeferredValues) {
+
             $this->hasCachedSuccessValue = true;
             $this->cachedSuccessValue = null;
 
             return $this->cachedSuccessValue;
+
         }
 
         try {
+
             $responseValue = $this->readExecutionValue(ExecutionValueName::SUCCESS);
-        } catch (\Throwable $throwable) {
+
+        } catch (Throwable $throwable) {
+
             if (!$this->hasCachedErrorValue) {
+
                 $this->hasCachedErrorValue = true;
                 $this->cachedErrorValue = [
                     'code' => 'execution_failed',
                     'message' => $throwable->getMessage(),
                 ];
+
             }
 
             $this->hasCachedSuccessValue = true;
             $this->cachedSuccessValue = null;
 
             return $this->cachedSuccessValue;
+
         }
 
         $this->hasCachedSuccessValue = true;
@@ -94,15 +105,20 @@ class EngineExecutionResult
         }
 
         if (!$this->canReadDeferredValues) {
+
             $this->hasCachedErrorValue = true;
             $this->cachedErrorValue = null;
 
             return $this->cachedErrorValue;
+
         }
 
         try {
+
             $responseValue = $this->readExecutionValue(ExecutionValueName::ERROR);
-        } catch (\Throwable $throwable) {
+
+        } catch (Throwable $throwable) {
+
             $this->hasCachedErrorValue = true;
             $this->cachedErrorValue = [
                 'code' => 'execution_failed',
@@ -110,23 +126,26 @@ class EngineExecutionResult
             ];
 
             return $this->cachedErrorValue;
+
         }
 
         if (!\is_array($responseValue)) {
+
             $this->hasCachedErrorValue = true;
             $this->cachedErrorValue = null;
 
             return $this->cachedErrorValue;
+
         }
 
         $this->hasCachedErrorValue = true;
         $this->cachedErrorValue = [
-            'code' => \is_string($responseValue['code'] ?? null) ? $responseValue['code'] : 'execution_failed',
-            'message' => \is_string($responseValue['message'] ?? null)
-                ? $responseValue['message']
+            'code' => \is_string($responseValue[ 'code' ] ?? null) ? $responseValue[ 'code' ] : 'execution_failed',
+            'message' => \is_string($responseValue[ 'message' ] ?? null)
+                ? $responseValue[ 'message' ]
                 : 'Unknown workflow execution error',
-            'context' => $responseValue['context'] ?? null,
-            'details' => $responseValue['details'] ?? null,
+            'context' => $responseValue[ 'context' ] ?? null,
+            'details' => $responseValue[ 'details' ] ?? null,
         ];
 
         return $this->cachedErrorValue;
@@ -139,16 +158,22 @@ class EngineExecutionResult
         }
 
         if (!$this->canReadDeferredValues) {
+
             $this->hasCachedContextValue = true;
             $this->cachedContextValue = null;
 
             return $this->cachedContextValue;
+
         }
 
         try {
+
             $this->cachedContextValue = $this->readExecutionValue(ExecutionValueName::CONTEXT);
-        } catch (\Throwable) {
+
+        } catch (Throwable) {
+
             $this->cachedContextValue = null;
+
         }
 
         $this->hasCachedContextValue = true;
@@ -163,18 +188,20 @@ class EngineExecutionResult
             'value' => $valueName,
         ]);
 
-        if (($readExecutionValueEnvelope['status'] ?? null) === 'failed') {
-            $error = \is_array($readExecutionValueEnvelope['error'] ?? null) ? $readExecutionValueEnvelope['error'] : [];
-            $errorCode = \is_string($error['code'] ?? null) ? $error['code'] : 'execution_failed';
-            $errorMessage = \is_string($error['message'] ?? null) ? $error['message'] : 'Unknown deferred execution error.';
+        if (($readExecutionValueEnvelope[ 'status' ] ?? null) === 'failed') {
 
-            throw new \RuntimeException("[{$errorCode}] {$errorMessage}");
+            $error = \is_array($readExecutionValueEnvelope[ 'error' ] ?? null) ? $readExecutionValueEnvelope[ 'error' ] : [];
+            $errorCode = \is_string($error[ 'code' ] ?? null) ? $error[ 'code' ] : 'execution_failed';
+            $errorMessage = \is_string($error[ 'message' ] ?? null) ? $error[ 'message' ] : 'Unknown deferred execution error.';
+
+            throw new RuntimeException("[{$errorCode}] {$errorMessage}");
+
         }
 
-        if (!\is_array($readExecutionValueEnvelope['result'] ?? null)) {
-            throw new \RuntimeException('Deferred execution result envelope is missing `result`.');
+        if (!\is_array($readExecutionValueEnvelope[ 'result' ] ?? null)) {
+            throw new RuntimeException('Deferred execution result envelope is missing `result`.');
         }
 
-        return $readExecutionValueEnvelope['result']['value'] ?? null;
+        return $readExecutionValueEnvelope[ 'result' ][ 'value' ] ?? null;
     }
 }

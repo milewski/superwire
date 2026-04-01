@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi;
 
@@ -30,7 +30,7 @@ final class ToolValueBag
 
     public function get(string $key, mixed $default = null): mixed
     {
-        return $this->has($key) ? $this->values[$key] : $default;
+        return $this->has($key) ? $this->values[ $key ] : $default;
     }
 
     public function string(string $key, ?string $default = null): ?string
@@ -64,7 +64,7 @@ final class ToolValueBag
             return $default;
         }
 
-        $value = $this->values[$key];
+        $value = $this->values[ $key ];
 
         if ($guard($value)) {
             return $value;

@@ -40,9 +40,11 @@ final class WorkflowExecutionRequest extends Data
         ];
 
         if ($this->secretsPayload !== null) {
-            $request['secrets'] = [
+
+            $request[ 'secrets' ] = [
                 'payload' => $this->secretsPayload,
             ];
+
         }
 
         return $request;

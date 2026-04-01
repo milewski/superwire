@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 use EngineAi\Ffi\EngineFfiBridge;
 use EngineAi\Ffi\ExecutionValueName;
@@ -26,7 +26,7 @@ $workflowExecutionEnvelope = $bridge->executeWorkflow([
     'requestId' => 'example-request-1',
 ]);
 
-print "Workflow execute response:\n";
+echo "Workflow execute response:\n";
 print_r($workflowExecutionEnvelope);
 
 $readExecutionEnvelope = $bridge->readExecutionValue([
@@ -34,7 +34,7 @@ $readExecutionEnvelope = $bridge->readExecutionValue([
     'value' => ExecutionValueName::SUCCESS,
 ]);
 
-print "Read deferred execution value response:\n";
+echo "Read deferred execution value response:\n";
 print_r($readExecutionEnvelope);
 
 $bridge->close();

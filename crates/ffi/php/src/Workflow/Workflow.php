@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi;
 
@@ -38,17 +38,17 @@ class Workflow
     )
     {
         $options = self::resolveWorkflowOptions($inputs, $secrets, $tools, $requestId, $executionId);
-        $legacyRunOptions = \is_array($options['options'] ?? null) ? $options['options'] : [];
-        $tools = $this->normalizeTools($options['tools'] ?? []);
+        $legacyRunOptions = \is_array($options[ 'options' ] ?? null) ? $options[ 'options' ] : [];
+        $tools = $this->normalizeTools($options[ 'tools' ] ?? []);
 
         $this->source = $source;
-        $this->inputPayload = \is_array($options['inputs'] ?? null) ? $options['inputs'] : [];
-        $this->secretsPayload = \is_array($options['secrets'] ?? null) ? $options['secrets'] : null;
+        $this->inputPayload = \is_array($options[ 'inputs' ] ?? null) ? $options[ 'inputs' ] : [];
+        $this->secretsPayload = \is_array($options[ 'secrets' ] ?? null) ? $options[ 'secrets' ] : null;
         $this->customTools = $this->resolveCustomTools($tools);
         $this->scopedToolsByName = $this->resolveScopedToolsByName($tools);
         $this->runOptions = [
-            'requestId' => $this->normalizeNullableString($options['requestId'] ?? $legacyRunOptions['requestId'] ?? null),
-            'executionId' => $this->normalizeNullableString($options['executionId'] ?? $legacyRunOptions['executionId'] ?? null),
+            'requestId' => $this->normalizeNullableString($options[ 'requestId' ] ?? $legacyRunOptions[ 'requestId' ] ?? null),
+            'executionId' => $this->normalizeNullableString($options[ 'executionId' ] ?? $legacyRunOptions[ 'executionId' ] ?? null),
         ];
     }
 
@@ -123,12 +123,12 @@ class Workflow
 
     public function executionId(string $fallbackExecutionId): string
     {
-        return $this->runOptions['executionId'] ?? $fallbackExecutionId;
+        return $this->runOptions[ 'executionId' ] ?? $fallbackExecutionId;
     }
 
     public function requestId(): ?string
     {
-        return $this->runOptions['requestId'];
+        return $this->runOptions[ 'requestId' ];
     }
 
     /**
@@ -161,9 +161,11 @@ class Workflow
         $resolvedSecretsPayload = $secretsPayload ?? $this->secretsPayload;
 
         if ($resolvedSecretsPayload !== null) {
-            $workflowExecutionRequest['secrets'] = [
+
+            $workflowExecutionRequest[ 'secrets' ] = [
                 'payload' => $resolvedSecretsPayload,
             ];
+
         }
 
         return $workflowExecutionRequest;
@@ -183,19 +185,25 @@ class Workflow
         $normalizedTools = [];
 
         foreach ($tools as $toolOrClass) {
+
             if ($toolOrClass instanceof Tool) {
+
                 $normalizedTools[] = $toolOrClass;
 
                 continue;
+
             }
 
             if (\is_string($toolOrClass)) {
+
                 $normalizedTools[] = $this->instantiateTool($toolOrClass);
 
                 continue;
+
             }
 
             throw new InvalidArgumentException('Every workflow tool must be a Tool instance or a Tool class-string.');
+
         }
 
         return $normalizedTools;
@@ -227,7 +235,7 @@ class Workflow
         $scopedToolsByName = [];
 
         foreach ($tools as $tool) {
-            $scopedToolsByName[$tool->name] = $tool;
+            $scopedToolsByName[ $tool->name ] = $tool;
         }
 
         return $scopedToolsByName;
@@ -256,9 +264,11 @@ class Workflow
         $constructor = $reflectionClass->getConstructor();
 
         if ($constructor !== null && $constructor->getNumberOfRequiredParameters() > 0) {
+
             throw new InvalidArgumentException(
                 "Workflow tool class `{$toolClass}` constructor must not require parameters when passed as a class-string.",
             );
+
         }
 
         return $reflectionClass->newInstance();

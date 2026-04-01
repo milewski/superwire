@@ -1,11 +1,12 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi;
 
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 
 class Engine
 {
@@ -23,15 +24,15 @@ class Engine
 
     public function __construct(array $options = [])
     {
-        $providedBridge = $options['bridge'] ?? null;
+        $providedBridge = $options[ 'bridge' ] ?? null;
 
         if ($providedBridge !== null && !$providedBridge instanceof EngineFfiBridge) {
             throw new InvalidArgumentException('Engine `bridge` must be an EngineFfiBridge instance when provided.');
         }
 
-        $this->engineFfiBridge = $providedBridge ?? new EngineFfiBridge($options['bridgeOptions'] ?? []);
+        $this->engineFfiBridge = $providedBridge ?? new EngineFfiBridge($options[ 'bridgeOptions' ] ?? []);
 
-        $providedExecutionIdGenerator = $options['executionIdGenerator'] ?? null;
+        $providedExecutionIdGenerator = $options[ 'executionIdGenerator' ] ?? null;
 
         if ($providedExecutionIdGenerator !== null && !\is_callable($providedExecutionIdGenerator)) {
             throw new InvalidArgumentException('Engine `executionIdGenerator` must be callable when provided.');
@@ -43,9 +44,9 @@ class Engine
 
     public function registerGlobalTool(Tool $tool, array $options = []): self
     {
-        $boundedArguments = \is_array($options['bounded'] ?? null) ? $options['bounded'] : [];
+        $boundedArguments = \is_array($options[ 'bounded' ] ?? null) ? $options[ 'bounded' ] : [];
 
-        $this->registeredToolsByName[$tool->name] = [
+        $this->registeredToolsByName[ $tool->name ] = [
             'tool' => $tool,
             'bounded' => $boundedArguments,
         ];
@@ -64,7 +65,7 @@ class Engine
             return false;
         }
 
-        unset($this->registeredToolsByName[$toolName]);
+        unset($this->registeredToolsByName[ $toolName ]);
 
         return true;
     }
@@ -82,7 +83,7 @@ class Engine
         $registeredTools = [];
 
         foreach ($this->registeredToolsByName as $registeredToolEntry) {
-            $registeredTools[] = $registeredToolEntry['tool'];
+            $registeredTools[] = $registeredToolEntry[ 'tool' ];
         }
 
         return $registeredTools;
@@ -98,18 +99,18 @@ class Engine
 
     public function invokeTool(string $toolName, array $input): mixed
     {
-        $registeredTool = $this->registeredToolsByName[$toolName] ?? null;
+        $registeredTool = $this->registeredToolsByName[ $toolName ] ?? null;
 
-        if (!\is_array($registeredTool) || !$registeredTool['tool'] instanceof Tool) {
-            throw new \RuntimeException("Tool `{$toolName}` is not registered. Call engine->registerGlobalTool(...) first.");
+        if (!\is_array($registeredTool) || !$registeredTool[ 'tool' ] instanceof Tool) {
+            throw new RuntimeException("Tool `{$toolName}` is not registered. Call engine->registerGlobalTool(...) first.");
         }
 
-        return $registeredTool['tool']->invoke(new ToolData(
+        return $registeredTool[ 'tool' ]->invoke(new ToolData(
             input: $input,
-            bounded: $registeredTool['bounded'],
+            bounded: $registeredTool[ 'bounded' ],
             context: [],
-            inputType: $registeredTool['tool']->inputType(),
-            boundedType: $registeredTool['tool']->boundedType(),
+            inputType: $registeredTool[ 'tool' ]->inputType(),
+            boundedType: $registeredTool[ 'tool' ]->boundedType(),
         ));
     }
 
@@ -118,64 +119,73 @@ class Engine
         $executionId = '';
 
         try {
+
             $defaultExecutionId = ($this->executionIdGenerator)();
 
             if (!\is_string($defaultExecutionId) || $defaultExecutionId === '') {
-                throw new \RuntimeException('Execution ID generator must return a non-empty string.');
+                throw new RuntimeException('Execution ID generator must return a non-empty string.');
             }
 
             $executionId = $workflow->executionId($defaultExecutionId);
             $workflowExecutionRequest = $workflow->toExecutionRequest($executionId);
-            $workflowExecutionRequest['custom_tools'] = $this->resolveCustomToolDeclarations($workflowExecutionRequest['custom_tools']);
-            $workflowExecutionRequest['defer_output'] = true;
+            $workflowExecutionRequest[ 'custom_tools' ] = $this->resolveCustomToolDeclarations($workflowExecutionRequest[ 'custom_tools' ]);
+            $workflowExecutionRequest[ 'defer_output' ] = true;
 
             $runtimeToolsByName = $this->resolveRuntimeToolsByName($workflow);
             $runtimeToolCallbackServer = null;
 
             if ($runtimeToolsByName !== []) {
+
                 $runtimeToolCallbackServer = $this->startRuntimeToolCallbackServer($runtimeToolsByName);
 
-                $workflowExecutionRequest['tool_callback'] = [
-                    'endpoint' => $runtimeToolCallbackServer['endpoint'],
-                    'auth_token' => $runtimeToolCallbackServer['authToken'],
+                $workflowExecutionRequest[ 'tool_callback' ] = [
+                    'endpoint' => $runtimeToolCallbackServer[ 'endpoint' ],
+                    'auth_token' => $runtimeToolCallbackServer[ 'authToken' ],
                 ];
+
             }
 
             try {
+
                 $workflowExecutionEnvelope = $this->engineFfiBridge->executeWorkflow($workflowExecutionRequest, [
                     'requestId' => $workflow->requestId(),
                 ]);
+
             } finally {
                 if ($runtimeToolCallbackServer !== null) {
                     $this->stopRuntimeToolCallbackServer($runtimeToolCallbackServer);
                 }
             }
 
-            if (($workflowExecutionEnvelope['status'] ?? null) === 'failed') {
-                $workflowError = \is_array($workflowExecutionEnvelope['error'] ?? null) ? $workflowExecutionEnvelope['error'] : [];
+            if (($workflowExecutionEnvelope[ 'status' ] ?? null) === 'failed') {
+
+                $workflowError = \is_array($workflowExecutionEnvelope[ 'error' ] ?? null) ? $workflowExecutionEnvelope[ 'error' ] : [];
 
                 return new EngineExecutionResult(
                     $this->engineFfiBridge,
                     $executionId,
                     [
-                        'code' => \is_string($workflowError['code'] ?? null) ? $workflowError['code'] : 'execution_failed',
-                        'message' => \is_string($workflowError['message'] ?? null)
-                            ? $workflowError['message']
+                        'code' => \is_string($workflowError[ 'code' ] ?? null) ? $workflowError[ 'code' ] : 'execution_failed',
+                        'message' => \is_string($workflowError[ 'message' ] ?? null)
+                            ? $workflowError[ 'message' ]
                             : 'Unknown workflow execution error.',
-                        'context' => $workflowError['context'] ?? null,
-                        'details' => $workflowError['details'] ?? null,
+                        'context' => $workflowError[ 'context' ] ?? null,
+                        'details' => $workflowError[ 'details' ] ?? null,
                     ],
                     true,
                 );
+
             }
 
-            $outputEnvelope = \is_array($workflowExecutionEnvelope['output'] ?? null)
-                ? $workflowExecutionEnvelope['output']
+            $outputEnvelope = \is_array($workflowExecutionEnvelope[ 'output' ] ?? null)
+                ? $workflowExecutionEnvelope[ 'output' ]
                 : [];
-            $resultExecutionId = \is_string($outputEnvelope['execution_id'] ?? null) ? $outputEnvelope['execution_id'] : $executionId;
+            $resultExecutionId = \is_string($outputEnvelope[ 'execution_id' ] ?? null) ? $outputEnvelope[ 'execution_id' ] : $executionId;
 
             return new EngineExecutionResult($this->engineFfiBridge, $resultExecutionId);
-        } catch (\Throwable $throwable) {
+
+        } catch (Throwable $throwable) {
+
             $fallbackExecutionId = $executionId !== '' ? $executionId : ($this->executionIdGenerator)();
 
             return new EngineExecutionResult(
@@ -187,6 +197,7 @@ class Engine
                 ],
                 false,
             );
+
         }
     }
 
@@ -213,15 +224,17 @@ class Engine
         $customToolDeclarationsByName = [];
 
         foreach ($this->registeredTools() as $registeredTool) {
-            $customToolDeclarationsByName[$registeredTool->name] = $registeredTool->toDeclaration();
+            $customToolDeclarationsByName[ $registeredTool->name ] = $registeredTool->toDeclaration();
         }
 
         foreach ($workflowDeclaredTools as $customToolDeclaration) {
-            if (!\is_array($customToolDeclaration) || !\is_string($customToolDeclaration['name'] ?? null)) {
+
+            if (!\is_array($customToolDeclaration) || !\is_string($customToolDeclaration[ 'name' ] ?? null)) {
                 continue;
             }
 
-            $customToolDeclarationsByName[$customToolDeclaration['name']] = $customToolDeclaration;
+            $customToolDeclarationsByName[ $customToolDeclaration[ 'name' ]] = $customToolDeclaration;
+
         }
 
         return \array_values($customToolDeclarationsByName);
@@ -240,10 +253,12 @@ class Engine
         $runtimeToolsByName = $this->registeredToolsByName;
 
         foreach ($workflow->scopedToolsByName() as $toolName => $tool) {
-            $runtimeToolsByName[$toolName] = [
+
+            $runtimeToolsByName[ $toolName ] = [
                 'tool' => $tool,
                 'bounded' => [],
             ];
+
         }
 
         return $runtimeToolsByName;
@@ -269,23 +284,29 @@ class Engine
         $socketAddress = \stream_socket_get_name($socketServer, false);
 
         if (!\is_string($socketAddress) || !\str_contains($socketAddress, ':')) {
+
             \fclose($socketServer);
 
             throw new RuntimeException('Unable to resolve runtime tool callback socket address.');
+
         }
 
         $authToken = \bin2hex(\random_bytes(16));
         $forkedProcessId = \pcntl_fork();
 
         if ($forkedProcessId === -1) {
+
             \fclose($socketServer);
 
             throw new RuntimeException('Unable to fork runtime tool callback server process.');
+
         }
 
         if ($forkedProcessId === 0) {
+
             $this->runRuntimeToolCallbackServer($socketServer, $runtimeToolsByName, $authToken);
             exit(0);
+
         }
 
         \fclose($socketServer);
@@ -302,7 +323,7 @@ class Engine
      */
     private function stopRuntimeToolCallbackServer(array $runtimeToolCallbackServer): void
     {
-        $pid = $runtimeToolCallbackServer['pid'];
+        $pid = $runtimeToolCallbackServer[ 'pid' ];
 
         if (\function_exists('posix_kill')) {
             @\posix_kill($pid, SIGTERM);
@@ -315,6 +336,7 @@ class Engine
         $startTime = \microtime(true);
 
         do {
+
             $waitResult = @\pcntl_waitpid($pid, $status, WNOHANG);
 
             if ($waitResult === $pid) {
@@ -322,6 +344,7 @@ class Engine
             }
 
             \usleep(10_000);
+
         } while ((\microtime(true) - $startTime) < 2.0);
 
         if (\function_exists('posix_kill')) {
@@ -344,6 +367,7 @@ class Engine
         $running = true;
 
         if (\function_exists('pcntl_signal')) {
+
             \pcntl_signal(SIGTERM, static function () use (&$running): void {
                 $running = false;
             });
@@ -351,9 +375,11 @@ class Engine
             \pcntl_signal(SIGINT, static function () use (&$running): void {
                 $running = false;
             });
+
         }
 
         while ($running) {
+
             $connection = @\stream_socket_accept($socketServer, 1);
 
             if (!\is_resource($connection)) {
@@ -363,6 +389,7 @@ class Engine
             $responseBody = $this->handleRuntimeToolCallbackConnection($connection, $runtimeToolsByName, $authToken);
             $this->writeRuntimeToolCallbackHttpResponse($connection, $responseBody);
             \fclose($connection);
+
         }
 
         \fclose($socketServer);
@@ -377,70 +404,86 @@ class Engine
     private function handleRuntimeToolCallbackConnection($connection, array $runtimeToolsByName, string $authToken): array
     {
         try {
+
             $request = $this->readRuntimeToolCallbackHttpRequest($connection);
-        } catch (\Throwable $throwable) {
+
+        } catch (Throwable $throwable) {
+
             return $this->runtimeToolInvocationFailed(
                 code: 'execution_failed',
                 message: 'Failed to parse callback request: ' . $throwable->getMessage(),
             );
+
         }
 
-        $providedAuthToken = $request['headers']['x-engine-ai-tool-callback-token'] ?? null;
+        $providedAuthToken = $request[ 'headers' ][ 'x-engine-ai-tool-callback-token' ] ?? null;
 
         if (!\is_string($providedAuthToken) || $providedAuthToken !== $authToken) {
+
             return $this->runtimeToolInvocationFailed(
                 code: 'execution_failed',
                 message: 'Unauthorized runtime tool callback request.',
             );
+
         }
 
-        $payload = \json_decode($request['body'], true);
+        $payload = \json_decode($request[ 'body' ], true);
 
         if (!\is_array($payload)) {
+
             return $this->runtimeToolInvocationFailed(
                 code: 'invalid_arguments',
                 message: 'Runtime tool callback payload must be a JSON object.',
             );
+
         }
 
-        $toolName = \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : '';
-        $executionId = \is_string($payload['execution_id'] ?? null) ? $payload['execution_id'] : '';
-        $invocationId = \is_string($payload['invocation_id'] ?? null) ? $payload['invocation_id'] : '';
+        $toolName = \is_string($payload[ 'tool_name' ] ?? null) ? $payload[ 'tool_name' ] : '';
+        $executionId = \is_string($payload[ 'execution_id' ] ?? null) ? $payload[ 'execution_id' ] : '';
+        $invocationId = \is_string($payload[ 'invocation_id' ] ?? null) ? $payload[ 'invocation_id' ] : '';
 
         if ($toolName === '') {
+
             return $this->runtimeToolInvocationFailed(
                 code: 'invalid_arguments',
                 message: 'Runtime tool callback payload is missing `tool_name`.',
             );
+
         }
 
-        $runtimeToolEntry = $runtimeToolsByName[$toolName] ?? null;
+        $runtimeToolEntry = $runtimeToolsByName[ $toolName ] ?? null;
 
-        if (!\is_array($runtimeToolEntry) || !$runtimeToolEntry['tool'] instanceof Tool) {
+        if (!\is_array($runtimeToolEntry) || !$runtimeToolEntry[ 'tool' ] instanceof Tool) {
+
             return $this->runtimeToolInvocationFailed(
                 code: 'tool_not_found',
                 message: "No runtime tool handler registered for `{$toolName}`.",
             );
+
         }
 
-        $inputArguments = \is_array($payload['arguments'] ?? null) ? $payload['arguments'] : [];
-        $executionContext = \is_array($payload['execution_context'] ?? null) ? $payload['execution_context'] : [];
-        $boundArguments = \is_array($executionContext['bound_arguments'] ?? null) ? $executionContext['bound_arguments'] : [];
-        $boundedArguments = \array_merge($runtimeToolEntry['bounded'], $boundArguments);
+        $inputArguments = \is_array($payload[ 'arguments' ] ?? null) ? $payload[ 'arguments' ] : [];
+        $executionContext = \is_array($payload[ 'execution_context' ] ?? null) ? $payload[ 'execution_context' ] : [];
+        $boundArguments = \is_array($executionContext[ 'bound_arguments' ] ?? null) ? $executionContext[ 'bound_arguments' ] : [];
+        $boundedArguments = \array_merge($runtimeToolEntry[ 'bounded' ], $boundArguments);
 
         try {
-            $toolOutput = $runtimeToolEntry['tool']->invoke(new ToolData(
+
+            $toolOutput = $runtimeToolEntry[ 'tool' ]->invoke(new ToolData(
                 input: $inputArguments,
                 bounded: $boundedArguments,
                 context: $executionContext,
-                inputType: $runtimeToolEntry['tool']->inputType(),
-                boundedType: $runtimeToolEntry['tool']->boundedType(),
+                inputType: $runtimeToolEntry[ 'tool' ]->inputType(),
+                boundedType: $runtimeToolEntry[ 'tool' ]->boundedType(),
             ));
-        } catch (\Throwable $throwable) {
+
+        } catch (Throwable $throwable) {
+
             return $this->runtimeToolInvocationFailed(
                 code: 'execution_failed',
                 message: $throwable->getMessage(),
             );
+
         }
 
         return [
@@ -463,6 +506,7 @@ class Engine
         $rawRequest = '';
 
         while (!\str_contains($rawRequest, "\r\n\r\n")) {
+
             $chunk = \fread($connection, 8192);
 
             if ($chunk === false || $chunk === '') {
@@ -474,6 +518,7 @@ class Engine
             if (\strlen($rawRequest) > 1_048_576) {
                 throw new RuntimeException('Request headers are too large.');
             }
+
         }
 
         if (!\str_contains($rawRequest, "\r\n\r\n")) {
@@ -497,23 +542,26 @@ class Engine
         $headers = [];
 
         foreach ($headerLines as $headerLine) {
+
             $headerParts = \explode(':', $headerLine, 2);
 
             if (\count($headerParts) !== 2) {
                 continue;
             }
 
-            $headerName = \strtolower(\trim($headerParts[0]));
-            $headerValue = \trim($headerParts[1]);
+            $headerName = \strtolower(\trim($headerParts[ 0 ]));
+            $headerValue = \trim($headerParts[ 1 ]);
 
             if ($headerName !== '') {
-                $headers[$headerName] = $headerValue;
+                $headers[ $headerName ] = $headerValue;
             }
+
         }
 
-        $contentLength = isset($headers['content-length']) ? (int) $headers['content-length'] : 0;
+        $contentLength = isset($headers[ 'content-length' ]) ? (int) $headers[ 'content-length' ] : 0;
 
         while (\strlen($body) < $contentLength) {
+
             $chunk = \fread($connection, $contentLength - \strlen($body));
 
             if ($chunk === false || $chunk === '') {
@@ -521,11 +569,12 @@ class Engine
             }
 
             $body .= $chunk;
+
         }
 
         return [
-            'method' => (string) $requestLineParts[0],
-            'path' => (string) $requestLineParts[1],
+            'method' => (string) $requestLineParts[ 0 ],
+            'path' => (string) $requestLineParts[ 1 ],
             'headers' => $headers,
             'body' => $body,
         ];

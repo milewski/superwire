@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 $packageDirectory = \dirname(__DIR__);
 $phpFiles = [];
@@ -13,7 +13,7 @@ foreach ($phpFiles as $phpFilePath) {
     lintFile($phpFilePath);
 }
 
-print 'Lint completed for ' . \count($phpFiles) . " files.\n";
+echo 'Lint completed for ' . \count($phpFiles) . " files.\n";
 
 /**
  * @param array<int, string> $phpFiles
@@ -28,6 +28,7 @@ function collectPhpFiles(string $directory, array &$phpFiles): void
     $iterator = new RecursiveIteratorIterator($directoryIterator);
 
     foreach ($iterator as $fileInfo) {
+
         if (!$fileInfo instanceof SplFileInfo) {
             continue;
         }
@@ -41,16 +42,17 @@ function collectPhpFiles(string $directory, array &$phpFiles): void
         }
 
         $phpFiles[] = $fileInfo->getPathname();
+
     }
 }
 
 function lintFile(string $phpFilePath): void
 {
-    $commandParts = ['php', '-l', $phpFilePath];
+    $commandParts = [ 'php', '-l', $phpFilePath ];
     $descriptorSpecification = [
-        0 => ['pipe', 'r'],
-        1 => ['pipe', 'w'],
-        2 => ['pipe', 'w'],
+        0 => [ 'pipe', 'r' ],
+        1 => [ 'pipe', 'w' ],
+        2 => [ 'pipe', 'w' ],
     ];
 
     $process = \proc_open($commandParts, $descriptorSpecification, $pipes);
@@ -59,17 +61,18 @@ function lintFile(string $phpFilePath): void
         throw new RuntimeException("Unable to lint file: {$phpFilePath}");
     }
 
-    \fclose($pipes[0]);
-    $standardOutput = \stream_get_contents($pipes[1]);
-    $standardError = \stream_get_contents($pipes[2]);
-    \fclose($pipes[1]);
-    \fclose($pipes[2]);
+    \fclose($pipes[ 0 ]);
+    $standardOutput = \stream_get_contents($pipes[ 1 ]);
+    $standardError = \stream_get_contents($pipes[ 2 ]);
+    \fclose($pipes[ 1 ]);
+    \fclose($pipes[ 2 ]);
 
     $exitCode = \proc_close($process);
 
     if ($exitCode !== 0) {
+
         if ($standardOutput !== false && $standardOutput !== '') {
-            print $standardOutput;
+            echo $standardOutput;
         }
 
         if ($standardError !== false && $standardError !== '') {
@@ -77,5 +80,6 @@ function lintFile(string $phpFilePath): void
         }
 
         throw new RuntimeException("PHP lint failed for {$phpFilePath}");
+
     }
 }
