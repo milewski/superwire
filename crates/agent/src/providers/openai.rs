@@ -6,6 +6,7 @@ use crate::AgentConfig;
 use async_trait::async_trait;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
+use std::sync::Mutex;
 
 struct HttpResponseData {
     status_code: StatusCode,
@@ -15,11 +16,26 @@ struct HttpResponseData {
 
 const DEFAULT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreferredApi {
+    Unknown,
+    Responses,
+    ChatCompletions,
+}
+
+#[derive(Debug, Default)]
+struct ResponsesSessionState {
+    last_response_id: Option<String>,
+    last_context_message_count: usize,
+}
+
 pub struct OpenAIProvider {
     http_client: reqwest::Client,
     base_url: String,
     api_key: String,
     model: String,
+    preferred_api: Mutex<PreferredApi>,
+    responses_session_state: Mutex<ResponsesSessionState>,
 }
 
 impl OpenAIProvider {
@@ -35,6 +51,8 @@ impl OpenAIProvider {
             base_url: normalized_base_url,
             api_key: api_key.into(),
             model: model.into(),
+            preferred_api: Mutex::new(PreferredApi::Unknown),
+            responses_session_state: Mutex::new(ResponsesSessionState::default()),
         }
     }
 
@@ -423,10 +441,12 @@ impl OpenAIProvider {
         }
     }
 
-    fn parse_responses_response(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
+    fn parse_responses_response_with_id(&self, response_body: &str) -> Result<(ProviderResponse, Option<String>), ProviderError> {
         let response_json: Value = serde_json::from_str(response_body).map_err(|error| ProviderError::ResponseParseFailed {
             message: format!("Failed to parse /responses response JSON: {error}. Body: {response_body}"),
         })?;
+
+        let response_id = response_json.get("id").and_then(Value::as_str).map(str::to_string);
 
         let mut text_parts = Vec::new();
         let mut tool_calls = Vec::new();
@@ -480,12 +500,15 @@ impl OpenAIProvider {
         let stop_reason = Self::convert_responses_status_to_stop_reason(status, !tool_calls.is_empty());
         let usage = Self::parse_responses_usage(&response_json);
 
-        Ok(ProviderResponse {
-            tool_calls,
-            text,
-            stop_reason,
-            usage,
-        })
+        Ok((
+            ProviderResponse {
+                tool_calls,
+                text,
+                stop_reason,
+                usage,
+            },
+            response_id,
+        ))
     }
 
     fn parse_responses_usage(response_json: &Value) -> Option<TokenUsage> {
@@ -543,7 +566,7 @@ impl OpenAIProvider {
         }))
     }
 
-    fn parse_responses_sse_response(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
+    fn parse_responses_sse_response_with_id(&self, response_body: &str) -> Result<(ProviderResponse, Option<String>), ProviderError> {
         let mut text_parts = Vec::new();
         let mut tool_calls = Vec::new();
         let mut completed_response_payload: Option<Value> = None;
@@ -614,7 +637,7 @@ impl OpenAIProvider {
         }
 
         if let Some(completed_response) = completed_response_payload {
-            return self.parse_responses_response(&completed_response.to_string());
+            return self.parse_responses_response_with_id(&completed_response.to_string());
         }
 
         let text = if text_parts.is_empty() { None } else { Some(text_parts.join("")) };
@@ -626,12 +649,15 @@ impl OpenAIProvider {
                 StopReason::ToolCalls
             };
 
-            return Ok(ProviderResponse {
-                tool_calls,
-                text,
-                stop_reason,
-                usage: None,
-            });
+            return Ok((
+                ProviderResponse {
+                    tool_calls,
+                    text,
+                    stop_reason,
+                    usage: None,
+                },
+                None,
+            ));
         }
 
         Err(ProviderError::ResponseParseFailed {
@@ -639,12 +665,12 @@ impl OpenAIProvider {
         })
     }
 
-    fn parse_responses_response_or_stream(&self, response_body: &str) -> Result<ProviderResponse, ProviderError> {
+    fn parse_responses_response_or_stream_with_id(&self, response_body: &str) -> Result<(ProviderResponse, Option<String>), ProviderError> {
         if response_body.trim_start().starts_with('{') {
-            return self.parse_responses_response(response_body);
+            return self.parse_responses_response_with_id(response_body);
         }
 
-        self.parse_responses_sse_response(response_body)
+        self.parse_responses_sse_response_with_id(response_body)
     }
 
     fn build_chat_request_body(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<Value, String> {
@@ -695,10 +721,30 @@ impl OpenAIProvider {
         Ok(request_body)
     }
 
-    fn build_responses_request_body(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<Value, String> {
+    fn build_responses_request_body(
+        &self,
+        context: &Context,
+        tools: &[ToolDefinition],
+        config: &AgentConfig,
+        previous_response_id: Option<&str>,
+        previous_context_message_count: usize,
+    ) -> Result<Value, String> {
+        let (messages_to_serialize, resolved_previous_response_id) = if let Some(previous_response_id) = previous_response_id {
+            if previous_context_message_count > 0 && context.messages.len() > previous_context_message_count {
+                (
+                    &context.messages[previous_context_message_count..],
+                    Some(previous_response_id.to_string()),
+                )
+            } else {
+                (context.messages.as_slice(), None)
+            }
+        } else {
+            (context.messages.as_slice(), None)
+        };
+
         let mut input_items = Vec::new();
 
-        for message in &context.messages {
+        for message in messages_to_serialize {
             let mut items_for_message = self.convert_message_to_responses_items(message)?;
             input_items.append(&mut items_for_message);
         }
@@ -707,9 +753,13 @@ impl OpenAIProvider {
             "model": self.model,
             "input": input_items,
             "parallel_tool_calls": true,
-            "store": false,
+            "store": true,
             "stream": true,
         });
+
+        if let Some(previous_response_id) = resolved_previous_response_id {
+            request_body["previous_response_id"] = json!(previous_response_id);
+        }
 
         if let Some(temperature) = config.temperature {
             request_body["temperature"] = json!(temperature);
@@ -750,12 +800,76 @@ impl OpenAIProvider {
 #[async_trait]
 impl Provider for OpenAIProvider {
     async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, ProviderError> {
+        let preferred_api = *self.preferred_api.lock().expect("preferred api lock should not be poisoned");
+
+        if preferred_api != PreferredApi::ChatCompletions {
+            let (previous_response_id, previous_context_message_count) = {
+                let responses_session_state = self
+                    .responses_session_state
+                    .lock()
+                    .expect("responses session state lock should not be poisoned");
+
+                (
+                    responses_session_state.last_response_id.clone(),
+                    responses_session_state.last_context_message_count,
+                )
+            };
+
+            let responses_request_body = self
+                .build_responses_request_body(
+                    context,
+                    tools,
+                    config,
+                    previous_response_id.as_deref(),
+                    previous_context_message_count,
+                )
+                .map_err(|message| ProviderError::InvalidRequest { message })?;
+            let responses_response = self.send_request("/responses", &responses_request_body).await?;
+
+            if responses_response.status_code.is_success() {
+                let (provider_response, response_id) =
+                    self.parse_responses_response_or_stream_with_id(&responses_response.response_body)?;
+
+                {
+                    *self.preferred_api.lock().expect("preferred api lock should not be poisoned") = PreferredApi::Responses;
+
+                    let mut responses_session_state = self
+                        .responses_session_state
+                        .lock()
+                        .expect("responses session state lock should not be poisoned");
+
+                    responses_session_state.last_response_id = response_id;
+                    responses_session_state.last_context_message_count = context.messages.len();
+                }
+
+                return Ok(provider_response);
+            }
+
+            if preferred_api == PreferredApi::Responses || responses_response.status_code != StatusCode::NOT_FOUND {
+                return Err(self.map_http_error(
+                    "/responses",
+                    responses_response.status_code,
+                    responses_response.response_body,
+                    responses_response.retry_after_seconds,
+                ));
+            }
+        }
+
         let chat_request_body = self
             .build_chat_request_body(context, tools, config)
             .map_err(|message| ProviderError::InvalidRequest { message })?;
         let chat_response = self.send_request("/chat/completions", &chat_request_body).await?;
 
         if chat_response.status_code.is_success() {
+            *self.preferred_api.lock().expect("preferred api lock should not be poisoned") = PreferredApi::ChatCompletions;
+
+            let mut responses_session_state = self
+                .responses_session_state
+                .lock()
+                .expect("responses session state lock should not be poisoned");
+            responses_session_state.last_response_id = None;
+            responses_session_state.last_context_message_count = 0;
+
             return self.parse_chat_response(&chat_response.response_body);
         }
 
@@ -769,12 +883,24 @@ impl Provider for OpenAIProvider {
         }
 
         let responses_request_body = self
-            .build_responses_request_body(context, tools, config)
+            .build_responses_request_body(context, tools, config, None, 0)
             .map_err(|message| ProviderError::InvalidRequest { message })?;
         let responses_response = self.send_request("/responses", &responses_request_body).await?;
 
         if responses_response.status_code.is_success() {
-            return self.parse_responses_response_or_stream(&responses_response.response_body);
+            let (provider_response, response_id) = self.parse_responses_response_or_stream_with_id(&responses_response.response_body)?;
+
+            *self.preferred_api.lock().expect("preferred api lock should not be poisoned") = PreferredApi::Responses;
+
+            let mut responses_session_state = self
+                .responses_session_state
+                .lock()
+                .expect("responses session state lock should not be poisoned");
+
+            responses_session_state.last_response_id = response_id;
+            responses_session_state.last_context_message_count = context.messages.len();
+
+            return Ok(provider_response);
         }
 
         Err(self.map_http_error(
@@ -783,5 +909,104 @@ impl Provider for OpenAIProvider {
             responses_response.response_body,
             responses_response.retry_after_seconds,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenAIProvider;
+    use crate::context::Context;
+    use crate::message::{Message, ToolCall, ToolResult};
+    use crate::traits::ToolDefinition;
+    use crate::AgentConfig;
+    use schemars::Schema;
+    use serde_json::json;
+
+    #[test]
+    fn builds_responses_request_with_previous_response_id_and_delta_messages() {
+        let provider = OpenAIProvider::new_local("http://localhost:1234/v1", "model-a");
+        let mut context = Context::new();
+
+        context.add_message(Message::User {
+            content: "first".to_string(),
+        });
+        context.add_message(Message::Assistant {
+            content: "reply".to_string(),
+        });
+        context.add_message(Message::ToolResult {
+            result: ToolResult::Success {
+                tool_call_id: "call_1".to_string(),
+                content: json!({ "ok": true }),
+            },
+        });
+
+        let request_body = provider
+            .build_responses_request_body(&context, &[], &AgentConfig::default(), Some("resp_123"), 2)
+            .expect("request body should build");
+
+        assert_eq!(request_body.get("previous_response_id"), Some(&json!("resp_123")));
+        assert_eq!(request_body.get("store"), Some(&json!(true)));
+
+        let input_items = request_body
+            .get("input")
+            .and_then(serde_json::Value::as_array)
+            .expect("input should be an array");
+
+        assert_eq!(input_items.len(), 1);
+        assert_eq!(input_items[0].get("type"), Some(&json!("function_call_output")));
+    }
+
+    #[test]
+    fn builds_responses_request_without_previous_response_id_when_context_did_not_advance() {
+        let provider = OpenAIProvider::new_local("http://localhost:1234/v1", "model-a");
+        let mut context = Context::new();
+
+        context.add_message(Message::User {
+            content: "first".to_string(),
+        });
+
+        let request_body = provider
+            .build_responses_request_body(&context, &[], &AgentConfig::default(), Some("resp_123"), 1)
+            .expect("request body should build");
+
+        assert!(request_body.get("previous_response_id").is_none());
+
+        let input_items = request_body
+            .get("input")
+            .and_then(serde_json::Value::as_array)
+            .expect("input should be an array");
+
+        assert_eq!(input_items.len(), 1);
+        assert_eq!(input_items[0].get("role"), Some(&json!("user")));
+    }
+
+    #[test]
+    fn keeps_tool_serialization_stable_for_responses_requests() {
+        let provider = OpenAIProvider::new_local("http://localhost:1234/v1", "model-a");
+        let context = Context {
+            messages: vec![Message::AssistantToolCall {
+                tool: ToolCall {
+                    id: "call-1".to_string(),
+                    name: "lookup_weather".to_string(),
+                    arguments: json!({ "country": "PT" }),
+                },
+            }],
+            ..Context::default()
+        };
+
+        let tools = vec![ToolDefinition {
+            name: "lookup_weather".to_string(),
+            description: "lookup weather".to_string(),
+            parameters_schema: Schema::from(true),
+        }];
+
+        let request_body = provider
+            .build_responses_request_body(&context, &tools, &AgentConfig::default(), None, 0)
+            .expect("request body should build");
+
+        assert_eq!(request_body.get("parallel_tool_calls"), Some(&json!(true)));
+        assert_eq!(request_body.get("stream"), Some(&json!(true)));
+        assert_eq!(request_body.get("store"), Some(&json!(true)));
+        assert!(request_body.get("tools").is_some());
     }
 }

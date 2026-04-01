@@ -423,11 +423,12 @@ where
             let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
 
             let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings.clone())?;
+            let context = self.evaluate_agent_context(prepared_agent_execution, runtime_state, local_bindings.clone())?;
             let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, local_bindings)?;
 
             let pending_iteration_execution = async move {
                 let agent_result = self
-                    .run_agent_request(prepared_agent_execution, model_name, prompt, tools, runner)
+                    .run_agent_request(prepared_agent_execution, model_name, prompt, context, tools, runner)
                     .await?;
 
                 validate_agent_output_value(
@@ -469,9 +470,10 @@ where
     {
         let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, HashMap::new())?;
         let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, HashMap::new())?;
+        let context = self.evaluate_agent_context(prepared_agent_execution, runtime_state, HashMap::new())?;
         let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, HashMap::new())?;
         let agent_result = self
-            .run_agent_request(prepared_agent_execution, model_name, prompt, tools, runner)
+            .run_agent_request(prepared_agent_execution, model_name, prompt, context, tools, runner)
             .await?;
 
         validate_agent_output_value(
@@ -534,15 +536,26 @@ where
             &format!("prompt for agent `{}`", prepared_agent_execution.agent_name),
         )?;
 
-        let prompt = normalize_prompt(prompt_value);
+        Ok(normalize_prompt(prompt_value))
+    }
 
-        apply_optional_context_prefix(
-            prompt,
-            prepared_agent_execution.context_expression,
-            runtime_state,
-            local_bindings,
-            &prepared_agent_execution.agent_name,
-        )
+    fn evaluate_agent_context(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+    ) -> Result<Option<Value>, WorkflowRuntimeError> {
+        let Some(context_expression) = prepared_agent_execution.context_expression else {
+            return Ok(None);
+        };
+
+        let context_value = evaluate_expression(
+            context_expression,
+            &runtime_state_to_evaluation_context(runtime_state, local_bindings),
+            &format!("context for agent `{}`", prepared_agent_execution.agent_name),
+        )?;
+
+        Ok(Some(context_value))
     }
 
     fn evaluate_agent_model_name(
@@ -563,6 +576,7 @@ where
         prepared_agent_execution: &PreparedAgentExecution<'_>,
         model_name: String,
         prompt: String,
+        context: Option<Value>,
         tools: Vec<RequestedAgentTool>,
         runner: &RunnerType,
     ) -> Result<AgentExecutionResult, WorkflowRuntimeError>
@@ -574,6 +588,7 @@ where
             provider_config: prepared_agent_execution.provider_config.clone(),
             model_name,
             prompt,
+            context,
             config: prepared_agent_execution.config.clone(),
             output_schema: prepared_agent_execution.output_schema.clone(),
             requested_tools: tools,
@@ -793,28 +808,6 @@ fn normalize_prompt(prompt_value: Value) -> String {
     }
 
     serde_json::to_string(&prompt_value).unwrap_or_else(|_| prompt_value.to_string())
-}
-
-fn apply_optional_context_prefix(
-    prompt: String,
-    context_expression: Option<&Expression>,
-    runtime_state: &RuntimeState,
-    local_bindings: HashMap<String, Value>,
-    agent_name: &str,
-) -> Result<String, WorkflowRuntimeError> {
-    let Some(context_expression) = context_expression else {
-        return Ok(prompt);
-    };
-
-    let context_value = evaluate_expression(
-        context_expression,
-        &runtime_state_to_evaluation_context(runtime_state, local_bindings),
-        &format!("context for agent `{agent_name}`"),
-    )?;
-
-    let context_text = serde_json::to_string_pretty(&context_value).unwrap_or_else(|_| context_value.to_string());
-
-    Ok(format!("Context:\n{context_text}\n\nTask:\n{prompt}"))
 }
 
 fn runtime_state_to_evaluation_context(runtime_state: &RuntimeState, local_bindings: HashMap<String, Value>) -> EvaluationContext {

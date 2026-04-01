@@ -117,9 +117,17 @@ mod tests {
         );
 
         let prompts = runner.prompts();
+        let contexts = runner.contexts();
 
-        assert!(prompts[1].contains("Context:"));
-        assert!(prompts[1].contains("\"prompt\": \"generate source\""));
+        assert_eq!(prompts[1], "finalize");
+
+        assert_eq!(
+            contexts[1],
+            Some(json!({
+                "agent": "first",
+                "prompt": "generate source",
+            }))
+        );
     }
 
     #[tokio::test]

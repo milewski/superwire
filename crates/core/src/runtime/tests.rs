@@ -25,6 +25,7 @@ pub static BASE_PROVIDER_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::ne
 pub struct ScriptedRunner {
     queued_outputs: Arc<Mutex<VecDeque<Value>>>,
     captured_prompts: Arc<Mutex<Vec<String>>>,
+    captured_contexts: Arc<Mutex<Vec<Option<Value>>>>,
     captured_tools: Arc<Mutex<Vec<Vec<RequestedAgentTool>>>>,
 }
 
@@ -33,6 +34,7 @@ impl ScriptedRunner {
         Self {
             queued_outputs: Arc::new(Mutex::new(VecDeque::from(outputs))),
             captured_prompts: Arc::new(Mutex::new(Vec::new())),
+            captured_contexts: Arc::new(Mutex::new(Vec::new())),
             captured_tools: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -47,6 +49,13 @@ impl ScriptedRunner {
             .expect("captured tools lock should not be poisoned")
             .clone()
     }
+
+    pub fn contexts(&self) -> Vec<Option<Value>> {
+        self.captured_contexts
+            .lock()
+            .expect("captured contexts lock should not be poisoned")
+            .clone()
+    }
 }
 
 #[async_trait]
@@ -56,6 +65,11 @@ impl AgentRunner for ScriptedRunner {
             .lock()
             .expect("prompt lock should not be poisoned")
             .push(request.prompt.clone());
+
+        self.captured_contexts
+            .lock()
+            .expect("captured contexts lock should not be poisoned")
+            .push(request.context.clone());
 
         self.captured_tools
             .lock()

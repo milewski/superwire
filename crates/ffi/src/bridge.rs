@@ -303,6 +303,7 @@ impl AgentRunner for FfiAgentRunner {
             provider_config: request.provider_config.clone(),
             model_name: request.model_name.clone(),
             prompt: request.prompt.clone(),
+            context: request.context.clone(),
             config: request.config.clone(),
             output_schema: request.output_schema.clone(),
             requested_tools: requested_tools_without_bound_arguments,
