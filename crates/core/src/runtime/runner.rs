@@ -2,7 +2,7 @@ use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::provider::ProviderConfig;
 use async_trait::async_trait;
 use engine_ai_agent::tool::{registered_runtime_tools, RuntimeTool, ToolError};
-use engine_ai_agent::{Agent, AgentConfig, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
+use engine_ai_agent::{Agent, AgentConfig, Context as AgentContext, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
 use schemars::Schema;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -81,6 +81,7 @@ pub struct AgentExecutionRequest {
     pub provider_config: ProviderConfig,
     pub model_name: String,
     pub prompt: String,
+    pub context: Option<Value>,
     pub config: AgentConfig,
     pub output_schema: Schema,
     pub requested_tools: Vec<RequestedAgentTool>,
@@ -154,7 +155,7 @@ impl LoopAgentRunner {
         }
 
         let execution_result = agent
-            .run(request.prompt.clone())
+            .run_with_context(resolve_agent_context(request)?, request.prompt.clone())
             .await
             .map_err(|source| WorkflowRuntimeError::AgentExecutionFailed {
                 agent_name: request.agent_name.clone(),
@@ -245,4 +246,14 @@ impl LoopAgentRunner {
 
         Ok(resolved_tools)
     }
+}
+
+fn resolve_agent_context(request: &AgentExecutionRequest) -> Result<AgentContext, WorkflowRuntimeError> {
+    let Some(context_value) = &request.context else {
+        return Ok(AgentContext::new());
+    };
+
+    serde_json::from_value(context_value.clone()).map_err(|source| WorkflowRuntimeError::Other {
+        message: format!("failed to deserialize context for agent `{}`: {source}", request.agent_name),
+    })
 }

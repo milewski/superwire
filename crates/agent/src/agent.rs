@@ -372,7 +372,10 @@ where
     }
 
     pub async fn run(&self, prompt: impl Into<String>) -> Result<AgentRunResult<E::Output>, AgentError> {
-        let mut context = Context::new();
+        self.run_with_context(Context::new(), prompt).await
+    }
+
+    pub async fn run_with_context(&self, mut context: Context, prompt: impl Into<String>) -> Result<AgentRunResult<E::Output>, AgentError> {
         context.add_user_message(prompt);
 
         let output = match self.executor.execute(&mut context, &self.provider, &self.tools, &self.config).await {
