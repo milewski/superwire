@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 $packageDirectory = \dirname(__DIR__);
 $nativeDirectory = $packageDirectory . '/native';
@@ -20,7 +20,7 @@ if (!\copy($sourceBinaryPath, $targetBinaryPath)) {
     throw new RuntimeException("Unable to package prebuilt binary at {$targetBinaryPath}");
 }
 
-print "Packaged prebuilt binary at {$targetBinaryPath}\n";
+echo "Packaged prebuilt binary at {$targetBinaryPath}\n";
 
 function platformKey(): string
 {
@@ -51,6 +51,7 @@ function normalizeLibcVariant(): string
     $detectedLibcVersionString = \function_exists('phpversion') ? \phpversion('libc') : false;
 
     if (\is_string($detectedLibcVersionString) && $detectedLibcVersionString !== '') {
+
         $normalizedLibcVersionString = \strtolower($detectedLibcVersionString);
 
         if (\str_contains($normalizedLibcVersionString, 'musl')) {
@@ -60,6 +61,7 @@ function normalizeLibcVariant(): string
         if (\str_contains($normalizedLibcVersionString, 'gnu') || \str_contains($normalizedLibcVersionString, 'glibc')) {
             return 'gnu';
         }
+
     }
 
     $libcVersionCommandOutput = trim((string) @\shell_exec('ldd --version 2>&1'));

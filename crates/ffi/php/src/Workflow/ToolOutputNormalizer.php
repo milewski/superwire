@@ -21,22 +21,27 @@ final class ToolOutputNormalizer
         }
 
         if (is_array($value)) {
+
             $normalized = [];
 
             foreach ($value as $key => $item) {
-                $normalized[$key] = self::normalize($item);
+                $normalized[ $key ] = self::normalize($item);
             }
 
             return $normalized;
+
         }
 
         if (is_object($value)) {
+
             if (method_exists($value, 'toArray')) {
+
                 $arrayValue = $value->toArray();
 
                 if (is_array($arrayValue)) {
                     return self::normalize($arrayValue);
                 }
+
             }
 
             if ($value instanceof JsonSerializable) {
@@ -44,6 +49,7 @@ final class ToolOutputNormalizer
             }
 
             return self::normalize(get_object_vars($value));
+
         }
 
         return $value;

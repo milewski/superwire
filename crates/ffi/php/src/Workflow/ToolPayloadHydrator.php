@@ -79,9 +79,11 @@ final class ToolPayloadHydrator
             : $method->invoke(null, $payload);
 
         if (!is_object($instance)) {
+
             throw new RuntimeException(
                 "Factory {$reflectionClass->getName()}::{$factoryMethod}() must return an object.",
             );
+
         }
 
         return $instance;
@@ -95,11 +97,13 @@ final class ToolPayloadHydrator
         $parameterName = $parameter->getName();
 
         if (array_key_exists($parameterName, $payload)) {
+
             return self::coerceType(
-                value: $payload[$parameterName],
+                value: $payload[ $parameterName ],
                 type: $parameter->getType(),
                 context: "{$className}::\${$parameterName}",
             );
+
         }
 
         if ($parameter->isDefaultValueAvailable()) {
@@ -120,11 +124,16 @@ final class ToolPayloadHydrator
         }
 
         if ($type instanceof ReflectionUnionType) {
+
             foreach ($type->getTypes() as $unionType) {
+
                 try {
+
                     return self::coerceType($value, $unionType, $context);
+
                 } catch (RuntimeException|TypeError) {
                 }
+
             }
 
             $typeDescription = implode('|', array_map(
@@ -133,6 +142,7 @@ final class ToolPayloadHydrator
             ));
 
             throw new RuntimeException("Value for `{$context}` does not match union type `{$typeDescription}`.");
+
         }
 
         if (!$type instanceof ReflectionNamedType) {
@@ -154,31 +164,39 @@ final class ToolPayloadHydrator
         }
 
         if (is_subclass_of($typeName, BackedEnum::class)) {
+
             if (!is_string($value) && !is_int($value)) {
                 throw new RuntimeException("Value for `{$context}` must be scalar to hydrate backed enum `{$typeName}`.");
             }
 
             return $typeName::from($value);
+
         }
 
         if (is_subclass_of($typeName, UnitEnum::class)) {
+
             if (!is_string($value)) {
                 throw new RuntimeException("Value for `{$context}` must be string to hydrate enum `{$typeName}`.");
             }
 
             foreach ($typeName::cases() as $enumCase) {
+
                 if ($enumCase->name === $value) {
                     return $enumCase;
                 }
+
             }
 
             throw new RuntimeException("Invalid enum case `{$value}` for enum `{$typeName}` at `{$context}`.");
+
         }
 
         if (!is_array($value)) {
+
             $receivedType = get_debug_type($value);
 
             throw new RuntimeException("Value for `{$context}` must be object-compatible payload array, got {$receivedType}.");
+
         }
 
         return self::hydrate($typeName, $value);

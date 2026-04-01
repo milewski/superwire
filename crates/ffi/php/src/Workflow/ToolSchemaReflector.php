@@ -45,9 +45,11 @@ final class ToolSchemaReflector
         }
 
         if ($type instanceof ReflectionUnionType) {
+
             $variants = [];
 
             foreach ($type->getTypes() as $unionType) {
+
                 $variant = self::fromType($unionType, $visitedClasses);
 
                 if ($variant === null) {
@@ -55,11 +57,13 @@ final class ToolSchemaReflector
                 }
 
                 $variants[] = $variant;
+
             }
 
             return [
                 'anyOf' => $variants,
             ];
+
         }
 
         if (!$type instanceof ReflectionNamedType) {
@@ -79,12 +83,14 @@ final class ToolSchemaReflector
         }
 
         if ($type->allowsNull() && $namedType !== 'null') {
+
             return [
                 'anyOf' => [
                     $schema,
                     [ 'type' => 'null' ],
                 ],
             ];
+
         }
 
         return $schema;
@@ -125,27 +131,35 @@ final class ToolSchemaReflector
         }
 
         if ($reflectionClass->hasMethod('outputSchema')) {
+
             $schemaMethod = $reflectionClass->getMethod('outputSchema');
 
             if ($schemaMethod->isStatic() && $schemaMethod->isPublic() && $schemaMethod->getNumberOfRequiredParameters() === 0) {
+
                 $schema = $schemaMethod->invoke(null);
 
                 if (is_array($schema)) {
                     return $schema;
                 }
+
             }
+
         }
 
         if ($reflectionClass->hasMethod('schema')) {
+
             $schemaMethod = $reflectionClass->getMethod('schema');
 
             if ($schemaMethod->isStatic() && $schemaMethod->isPublic() && $schemaMethod->getNumberOfRequiredParameters() === 0) {
+
                 $schema = $schemaMethod->invoke(null);
 
                 if (is_array($schema)) {
                     return $schema;
                 }
+
             }
+
         }
 
         return self::objectPropertiesToSchema($reflectionClass, $visitedClasses);
@@ -157,6 +171,7 @@ final class ToolSchemaReflector
         $classDescription = self::reflectorDescription($reflectionClass);
 
         if ($properties === []) {
+
             $schema = [
                 'type' => 'object',
                 'properties' => [],
@@ -165,10 +180,11 @@ final class ToolSchemaReflector
             ];
 
             if ($classDescription !== null) {
-                $schema['description'] = $classDescription;
+                $schema[ 'description' ] = $classDescription;
             }
 
             return $schema;
+
         }
 
         $schemaProperties = [];
@@ -176,6 +192,7 @@ final class ToolSchemaReflector
         $mapOutputToSnakeCase = self::classUsesSnakeCaseOutput($reflectionClass);
 
         foreach ($properties as $property) {
+
             if ($property->isStatic()) {
                 continue;
             }
@@ -191,14 +208,14 @@ final class ToolSchemaReflector
             $propertyDescription = self::reflectorDescription($property);
 
             if ($propertyDescription !== null && !array_key_exists('description', $propertySchema)) {
-                $propertySchema['description'] = $propertyDescription;
+                $propertySchema[ 'description' ] = $propertyDescription;
             }
 
             $propertySchemaName = $mapOutputToSnakeCase
                 ? self::snakeCase($property->getName())
                 : $property->getName();
 
-            $schemaProperties[$propertySchemaName] = $propertySchema;
+            $schemaProperties[ $propertySchemaName ] = $propertySchema;
 
             if (
                 $propertyType !== null
@@ -207,6 +224,7 @@ final class ToolSchemaReflector
             ) {
                 $requiredProperties[] = $propertySchemaName;
             }
+
         }
 
         $schema = [
@@ -217,7 +235,7 @@ final class ToolSchemaReflector
         ];
 
         if ($classDescription !== null) {
-            $schema['description'] = $classDescription;
+            $schema[ 'description' ] = $classDescription;
         }
 
         return $schema;
@@ -226,19 +244,21 @@ final class ToolSchemaReflector
     private static function classUsesSnakeCaseOutput(ReflectionClass $reflectionClass): bool
     {
         for ($currentClass = $reflectionClass; $currentClass !== false; $currentClass = $currentClass->getParentClass()) {
-            $mapOutputAttribute = $currentClass->getAttributes(self::MAP_OUTPUT_NAME_ATTRIBUTE)[0] ?? null;
+
+            $mapOutputAttribute = $currentClass->getAttributes(self::MAP_OUTPUT_NAME_ATTRIBUTE)[ 0 ] ?? null;
 
             if ($mapOutputAttribute === null) {
                 continue;
             }
 
             $attributeArguments = $mapOutputAttribute->getArguments();
-            $mapper = $attributeArguments[0]
-                ?? $attributeArguments['output']
-                ?? $attributeArguments['mapper']
+            $mapper = $attributeArguments[ 0 ]
+                ?? $attributeArguments[ 'output' ]
+                ?? $attributeArguments[ 'mapper' ]
                 ?? null;
 
             return $mapper === self::SNAKE_CASE_MAPPER;
+
         }
 
         return false;
@@ -251,7 +271,7 @@ final class ToolSchemaReflector
 
     private static function dataCollectionPropertyToSchema(ReflectionProperty $property, array $visitedClasses): ?array
     {
-        $collectionAttribute = $property->getAttributes(self::DATA_COLLECTION_OF_ATTRIBUTE)[0] ?? null;
+        $collectionAttribute = $property->getAttributes(self::DATA_COLLECTION_OF_ATTRIBUTE)[ 0 ] ?? null;
 
         if ($collectionAttribute === null) {
             return null;
@@ -259,8 +279,8 @@ final class ToolSchemaReflector
 
         $collectionAttributeArguments = $collectionAttribute->getArguments();
 
-        $itemClass = $collectionAttributeArguments[0]
-            ?? $collectionAttributeArguments['class']
+        $itemClass = $collectionAttributeArguments[ 0 ]
+            ?? $collectionAttributeArguments[ 'class' ]
             ?? null;
 
         if (!is_string($itemClass) || $itemClass === '' || !class_exists($itemClass)) {
@@ -284,7 +304,7 @@ final class ToolSchemaReflector
             return [ 'type' => 'string', 'enum' => [] ];
         }
 
-        $firstCase = $enumCases[0]->getValue();
+        $firstCase = $enumCases[ 0 ]->getValue();
         $firstCaseValue = $firstCase instanceof BackedEnum ? $firstCase->value : null;
         $enumType = is_int($firstCaseValue) ? 'integer' : 'string';
 
@@ -310,7 +330,7 @@ final class ToolSchemaReflector
 
     private static function reflectorDescription(ReflectionClass|ReflectionProperty $reflector): ?string
     {
-        $descriptionAttribute = $reflector->getAttributes(Description::class)[0] ?? null;
+        $descriptionAttribute = $reflector->getAttributes(Description::class)[ 0 ] ?? null;
 
         if ($descriptionAttribute === null) {
             return null;

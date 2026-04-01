@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi;
 
@@ -8,37 +8,37 @@ final class Schema
 {
     public static function string(): array
     {
-        return ['type' => 'string'];
+        return [ 'type' => 'string' ];
     }
 
     public static function number(): array
     {
-        return ['type' => 'number'];
+        return [ 'type' => 'number' ];
     }
 
     public static function boolean(): array
     {
-        return ['type' => 'boolean'];
+        return [ 'type' => 'boolean' ];
     }
 
     public static function integer(): array
     {
-        return ['type' => 'integer'];
+        return [ 'type' => 'integer' ];
     }
 
     public static function null(): array
     {
-        return ['type' => 'null'];
+        return [ 'type' => 'null' ];
     }
 
     public static function literal(string|int|float|bool|null $value): array
     {
-        return ['const' => $value];
+        return [ 'const' => $value ];
     }
 
     public static function enumeration(array $values): array
     {
-        return ['enum' => $values];
+        return [ 'enum' => $values ];
     }
 
     public static function array(array $items, array $options = []): array
@@ -49,11 +49,11 @@ final class Schema
         ];
 
         if (\array_key_exists('minItems', $options)) {
-            $arraySchema['minItems'] = $options['minItems'];
+            $arraySchema[ 'minItems' ] = $options[ 'minItems' ];
         }
 
         if (\array_key_exists('maxItems', $options)) {
-            $arraySchema['maxItems'] = $options['maxItems'];
+            $arraySchema[ 'maxItems' ] = $options[ 'maxItems' ];
         }
 
         return $arraySchema;
@@ -79,33 +79,39 @@ final class Schema
 
     public static function union(array $variants): array
     {
-        return ['anyOf' => $variants];
+        return [ 'anyOf' => $variants ];
     }
 
     public static function nullable(array $inner): array
     {
-        return self::union([$inner, self::null()]);
+        return self::union([ $inner, self::null() ]);
     }
 
     public static function object(array $properties, array|null $requiredOrOptions = null): array
     {
         if ($requiredOrOptions === null) {
+
             $objectOptions = [
                 'required' => \array_keys($properties),
             ];
+
         } elseif (self::isListOfStrings($requiredOrOptions)) {
+
             $objectOptions = [
                 'required' => $requiredOrOptions,
             ];
+
         } else {
+
             $objectOptions = $requiredOrOptions;
+
         }
 
         return [
             'type' => 'object',
             'properties' => $properties,
-            'required' => $objectOptions['required'] ?? \array_keys($properties),
-            'additionalProperties' => $objectOptions['additionalProperties'] ?? false,
+            'required' => $objectOptions[ 'required' ] ?? \array_keys($properties),
+            'additionalProperties' => $objectOptions[ 'additionalProperties' ] ?? false,
         ];
     }
 
@@ -120,9 +126,11 @@ final class Schema
         }
 
         foreach ($value as $itemValue) {
+
             if (!\is_string($itemValue)) {
                 return false;
             }
+
         }
 
         return true;

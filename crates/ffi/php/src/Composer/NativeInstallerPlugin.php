@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi\Composer;
 
@@ -8,15 +8,15 @@ use Composer\Composer;
 use Composer\DependencyResolver\Operation\InstallOperation;
 use Composer\DependencyResolver\Operation\UpdateOperation;
 use Composer\EventDispatcher\EventSubscriberInterface;
-use Composer\IO\IOInterface;
 use Composer\Installer\PackageEvent;
 use Composer\Installer\PackageEvents;
+use Composer\IO\IOInterface;
 use Composer\Package\PackageInterface;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event;
 use Composer\Script\ScriptEvents;
 
-final class NativeInstallerPlugin implements PluginInterface, EventSubscriberInterface
+final class NativeInstallerPlugin implements EventSubscriberInterface, PluginInterface
 {
     private const PACKAGE_NAME = 'engine-ai/ffi-php-bridge';
 
@@ -107,46 +107,52 @@ final class NativeInstallerPlugin implements PluginInterface, EventSubscriberInt
         $installerScriptPath = $packageRootDirectory . '/scripts/install-native.php';
 
         if (!\is_file($installerScriptPath)) {
+
             $this->io->writeError(
                 '<warning>[engine-ai/ffi-php-bridge] Native installer script not found; skipping extension installation.</warning>',
             );
 
             return;
+
         }
 
         $this->io->writeError('<info>[engine-ai/ffi-php-bridge] Installing native extension...</info>');
         $exitCode = $this->runPhpScript($installerScriptPath, $packageRootDirectory);
 
         if ($exitCode !== 0) {
+
             $this->io->writeError(
                 '<warning>[engine-ai/ffi-php-bridge] Native installer finished with non-zero exit code.</warning>',
             );
+
         }
     }
 
     private function runPhpScript(string $scriptPath, string $workingDirectory): int
     {
         $descriptorSpecification = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            0 => [ 'pipe', 'r' ],
+            1 => [ 'pipe', 'w' ],
+            2 => [ 'pipe', 'w' ],
         ];
 
-        $process = \proc_open([PHP_BINARY, $scriptPath], $descriptorSpecification, $pipes, $workingDirectory);
+        $process = \proc_open([ PHP_BINARY, $scriptPath ], $descriptorSpecification, $pipes, $workingDirectory);
 
         if (!\is_resource($process)) {
+
             $this->io->writeError(
                 '<warning>[engine-ai/ffi-php-bridge] Could not start native installer process.</warning>',
             );
 
             return 1;
+
         }
 
-        \fclose($pipes[0]);
-        $standardOutput = \stream_get_contents($pipes[1]);
-        $standardError = \stream_get_contents($pipes[2]);
-        \fclose($pipes[1]);
-        \fclose($pipes[2]);
+        \fclose($pipes[ 0 ]);
+        $standardOutput = \stream_get_contents($pipes[ 1 ]);
+        $standardError = \stream_get_contents($pipes[ 2 ]);
+        \fclose($pipes[ 1 ]);
+        \fclose($pipes[ 2 ]);
 
         $exitCode = \proc_close($process);
 

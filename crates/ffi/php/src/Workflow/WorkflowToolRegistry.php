@@ -49,9 +49,11 @@ final class WorkflowToolRegistry extends Data
         $toolDeclarations = [];
 
         foreach ($tools as $toolOrClass) {
+
             $tool = self::resolveTool($toolOrClass);
-            $toolsByName[$tool->name] = $tool;
+            $toolsByName[ $tool->name ] = $tool;
             $toolDeclarations[] = $tool->toDeclaration();
+
         }
 
         return new self($toolsByName, $toolDeclarations);
@@ -113,9 +115,11 @@ final class WorkflowToolRegistry extends Data
         $constructor = $reflectionClass->getConstructor();
 
         if ($constructor !== null && $constructor->getNumberOfRequiredParameters() > 0) {
+
             throw new InvalidArgumentException(
                 "Workflow tool class `{$toolClass}` constructor must not require parameters when passed as a class-string.",
             );
+
         }
 
         return $reflectionClass->newInstance();

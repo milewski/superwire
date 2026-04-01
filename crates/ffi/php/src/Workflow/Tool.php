@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace EngineAi\Ffi;
 
@@ -33,12 +33,14 @@ abstract class Tool
         }
 
         if ($this->canInferEmptyInputSchema()) {
+
             return [
                 'type' => 'object',
                 'properties' => (object) [],
                 'required' => [],
                 'additionalProperties' => false,
             ];
+
         }
 
         throw new RuntimeException(
@@ -119,7 +121,7 @@ abstract class Tool
         $outputSchema = $this->outputSchema();
 
         if ($outputSchema !== null) {
-            $declaration['output_schema'] = $outputSchema;
+            $declaration[ 'output_schema' ] = $outputSchema;
         }
 
         return $declaration;
@@ -131,11 +133,13 @@ abstract class Tool
         $toolNameConstant = $toolClassName . '::TOOL_NAME';
 
         if (\defined($toolNameConstant)) {
+
             $staticToolName = \trim((string) \constant($toolNameConstant));
 
             if ($staticToolName !== '') {
                 return $staticToolName;
             }
+
         }
 
         return $this->deriveToolNameFromClassName();
@@ -164,17 +168,20 @@ abstract class Tool
     {
         $executeMethod = $this->resolveExecuteMethod();
         $parameters = $executeMethod->getParameters();
-        $parameter = $parameters[$position] ?? null;
+        $parameter = $parameters[ $position ] ?? null;
 
         if ($parameter instanceof ReflectionParameter) {
+
             $payloadType = $this->resolvePayloadTypeFromParameter($parameter, $interface);
 
             if ($payloadType !== null) {
                 return $payloadType;
             }
+
         }
 
         foreach ($parameters as $candidate) {
+
             if (!$candidate instanceof ReflectionParameter) {
                 continue;
             }
@@ -184,6 +191,7 @@ abstract class Tool
             if ($payloadType !== null) {
                 return $payloadType;
             }
+
         }
 
         return null;
@@ -198,15 +206,19 @@ abstract class Tool
         }
 
         if ($type instanceof ReflectionUnionType) {
+
             foreach ($type->getTypes() as $unionType) {
+
                 $payloadType = $this->resolvePayloadTypeNameFromNamedType($unionType, $interface);
 
                 if ($payloadType !== null) {
                     return $payloadType;
                 }
+
             }
 
             return null;
+
         }
 
         return $this->resolvePayloadTypeNameFromNamedType($type, $interface);
@@ -276,11 +288,12 @@ abstract class Tool
             return true;
         }
 
-        if (count($parameters) === 1 && $this->parameterAcceptsType($parameters[0], ToolData::class)) {
+        if (count($parameters) === 1 && $this->parameterAcceptsType($parameters[ 0 ], ToolData::class)) {
             return false;
         }
 
         foreach ($parameters as $position => $parameter) {
+
             $parameterName = strtolower($parameter->getName());
 
             if ($parameterName === 'bounded' || $parameterName === 'context') {
@@ -292,6 +305,7 @@ abstract class Tool
             }
 
             return false;
+
         }
 
         return true;
@@ -304,13 +318,14 @@ abstract class Tool
     {
         $parameters = $executeMethod->getParameters();
 
-        if (count($parameters) === 1 && $this->parameterAcceptsType($parameters[0], ToolData::class)) {
+        if (count($parameters) === 1 && $this->parameterAcceptsType($parameters[ 0 ], ToolData::class)) {
             return [ $toolData ];
         }
 
         $arguments = [];
 
         foreach ($parameters as $position => $parameter) {
+
             $value = $this->resolveParameterValue($parameter, $position, $toolData);
 
             if ($value === null && $parameter->isDefaultValueAvailable()) {
@@ -318,6 +333,7 @@ abstract class Tool
             }
 
             $arguments[] = $value;
+
         }
 
         return $arguments;
@@ -355,13 +371,17 @@ abstract class Tool
         }
 
         if ($type instanceof ReflectionUnionType) {
+
             foreach ($type->getTypes() as $unionType) {
+
                 if ($this->typeAcceptsClass($unionType, $class)) {
                     return true;
                 }
+
             }
 
             return false;
+
         }
 
         if (!$type instanceof ReflectionNamedType) {

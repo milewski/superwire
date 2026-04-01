@@ -12,14 +12,14 @@ use crate::types::{
 };
 
 #[derive(Default)]
-pub(super) struct CustomToolRegistry {
+pub struct CustomToolRegistry {
     handlers_by_name: RwLock<HashMap<String, CustomToolHandler>>,
     declarations_by_execution: RwLock<HashMap<String, HashMap<String, CustomToolDeclaration>>>,
     registration_order: RwLock<VecDeque<String>>,
 }
 
 impl CustomToolRegistry {
-    pub(super) fn register_handler(&self, tool_name: String, custom_tool_handler: CustomToolHandler) {
+    pub fn register_handler(&self, tool_name: String, custom_tool_handler: CustomToolHandler) {
         let mut handlers_by_name = self
             .handlers_by_name
             .write()
@@ -28,7 +28,7 @@ impl CustomToolRegistry {
         handlers_by_name.insert(tool_name, custom_tool_handler);
     }
 
-    pub(super) fn has_handler(&self, tool_name: &str) -> bool {
+    pub fn has_handler(&self, tool_name: &str) -> bool {
         let handlers_by_name = self
             .handlers_by_name
             .read()
@@ -37,7 +37,7 @@ impl CustomToolRegistry {
         handlers_by_name.contains_key(tool_name)
     }
 
-    pub(super) fn ensure_callback_handlers(
+    pub fn ensure_callback_handlers(
         &self,
         custom_tools: &[CustomToolDeclaration],
         tool_callback: Option<&ToolCallbackConfig>,
@@ -83,7 +83,7 @@ impl CustomToolRegistry {
         Ok(())
     }
 
-    pub(super) fn register_execution_tools(
+    pub fn register_execution_tools(
         &self,
         execution_id: &str,
         custom_tools: &[CustomToolDeclaration],
@@ -104,13 +104,13 @@ impl CustomToolRegistry {
         Ok(())
     }
 
-    pub(super) async fn invoke(&self, tool_invocation_payload: ToolInvocationPayload) -> Result<Value, ToolInvocationError> {
+    pub async fn invoke(&self, tool_invocation_payload: ToolInvocationPayload) -> Result<Value, ToolInvocationError> {
         let custom_tool_handler = self.resolve_handler(&tool_invocation_payload)?;
 
         custom_tool_handler(tool_invocation_payload).await
     }
 
-    pub(super) fn runtime_tools_for_requested_tools(
+    pub fn runtime_tools_for_requested_tools(
         self: &Arc<Self>,
         execution_id: &str,
         requested_tools: &[engine_ai_core::runtime::RequestedAgentTool],
