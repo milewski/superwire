@@ -738,6 +738,39 @@ async fn executes_for_loop_agent_and_returns_array_output() {
 }
 
 #[tokio::test]
+async fn executes_for_loop_iterations_in_parallel() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        values: Vec<String>,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        agent collect_values for item in [1, 2, 3] {
+            model: openai("model-a")
+            prompt: "echo {{ item }}"
+            output: string
+        }
+
+        output {
+            values: agent.collect_values
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = ParallelProbeRunner::default();
+
+    let output = runtime
+        .run_with_runner((), &runner)
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(output.values, vec!["collect_values", "collect_values", "collect_values"]);
+    assert!(runner.max_inflight_agents() >= 2);
+}
+
+#[tokio::test]
 async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
     #[derive(Debug, Serialize, JsonSchema)]
     struct Input {

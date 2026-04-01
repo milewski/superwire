@@ -414,8 +414,7 @@ where
             });
         };
 
-        let mut iteration_outputs = Vec::new();
-        let mut iteration_contexts = Vec::new();
+        let mut pending_iteration_executions = Vec::new();
 
         for iterable_item in iterable_items {
             let mut local_bindings = HashMap::new();
@@ -425,18 +424,31 @@ where
 
             let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings.clone())?;
             let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, local_bindings)?;
-            let agent_result = self
-                .run_agent_request(prepared_agent_execution, model_name, prompt, tools, runner)
-                .await?;
 
-            validate_agent_output_value(
-                &agent_result.output,
-                &prepared_agent_execution.output_type,
-                &prepared_agent_execution.agent_name,
-            )?;
+            let pending_iteration_execution = async move {
+                let agent_result = self
+                    .run_agent_request(prepared_agent_execution, model_name, prompt, tools, runner)
+                    .await?;
 
-            iteration_outputs.push(agent_result.output);
-            iteration_contexts.push(agent_result.context);
+                validate_agent_output_value(
+                    &agent_result.output,
+                    &prepared_agent_execution.output_type,
+                    &prepared_agent_execution.agent_name,
+                )?;
+
+                Ok::<AgentExecutionResult, WorkflowRuntimeError>(agent_result)
+            };
+
+            pending_iteration_executions.push(pending_iteration_execution);
+        }
+
+        let completed_iteration_executions = try_join_all(pending_iteration_executions).await?;
+        let mut iteration_outputs = Vec::with_capacity(completed_iteration_executions.len());
+        let mut iteration_contexts = Vec::with_capacity(completed_iteration_executions.len());
+
+        for completed_iteration_execution in completed_iteration_executions {
+            iteration_outputs.push(completed_iteration_execution.output);
+            iteration_contexts.push(completed_iteration_execution.context);
         }
 
         Ok(CompletedAgentExecution {
