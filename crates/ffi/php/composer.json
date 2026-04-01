@@ -39,6 +39,7 @@
     "lint": "php scripts/lint.php",
     "build-native": "php scripts/build-native.php",
     "build-prebuilt-matrix": "bash scripts/build-prebuilt-matrix.sh",
+    "build-prebuilt-docker": "bash scripts/build-prebuilt-docker.sh",
     "package-prebuilt": "php scripts/package-prebuilt.php",
     "install-native": "php scripts/install-native.php"
   },

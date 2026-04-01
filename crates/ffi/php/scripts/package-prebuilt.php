@@ -1,11 +1,11 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 $packageDirectory = \dirname(__DIR__);
 $nativeDirectory = $packageDirectory . '/native';
 $sourceBinaryPath = $nativeDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
-$targetDirectory = $nativeDirectory . '/prebuilt/' . platformKey();
+$targetDirectory = $nativeDirectory . '/prebuilt/' . runtimePlatformKey();
 $targetBinaryPath = $targetDirectory . '/engine_ai_ffi.' . PHP_SHLIB_SUFFIX;
 
 if (!\is_file($sourceBinaryPath)) {
@@ -20,7 +20,34 @@ if (!\copy($sourceBinaryPath, $targetBinaryPath)) {
     throw new RuntimeException("Unable to package prebuilt binary at {$targetBinaryPath}");
 }
 
-echo "Packaged prebuilt binary at {$targetBinaryPath}\n";
+$checksumPath = $targetBinaryPath . '.sha256';
+$checksum = \hash_file('sha256', $targetBinaryPath);
+
+if (!\is_string($checksum) || $checksum === '') {
+    throw new RuntimeException("Unable to compute checksum for {$targetBinaryPath}");
+}
+
+$checksumContents = $checksum . '  ' . \basename($targetBinaryPath) . "\n";
+
+if (\file_put_contents($checksumPath, $checksumContents) === false) {
+    throw new RuntimeException("Unable to write checksum file at {$checksumPath}");
+}
+
+print "Packaged prebuilt binary at {$targetBinaryPath}\n";
+print "Wrote checksum at {$checksumPath}\n";
+
+function runtimePlatformKey(): string
+{
+    return platformKey() . '-' . phpRuntimeKey();
+}
+
+function phpRuntimeKey(): string
+{
+    $phpVersionKey = 'php' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+    $threadingKey = PHP_ZTS === 1 ? 'zts' : 'nts';
+
+    return "{$phpVersionKey}-{$threadingKey}";
+}
 
 function platformKey(): string
 {
@@ -51,7 +78,6 @@ function normalizeLibcVariant(): string
     $detectedLibcVersionString = \function_exists('phpversion') ? \phpversion('libc') : false;
 
     if (\is_string($detectedLibcVersionString) && $detectedLibcVersionString !== '') {
-
         $normalizedLibcVersionString = \strtolower($detectedLibcVersionString);
 
         if (\str_contains($normalizedLibcVersionString, 'musl')) {
@@ -61,7 +87,6 @@ function normalizeLibcVariant(): string
         if (\str_contains($normalizedLibcVersionString, 'gnu') || \str_contains($normalizedLibcVersionString, 'glibc')) {
             return 'gnu';
         }
-
     }
 
     $libcVersionCommandOutput = trim((string) @\shell_exec('ldd --version 2>&1'));
