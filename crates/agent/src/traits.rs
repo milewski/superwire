@@ -47,7 +47,6 @@ pub enum StopReason {
 pub struct ProviderResponse {
     pub tool_calls: Vec<ToolCall>,
     pub text: Option<String>,
-    pub provider_message_id: Option<String>,
     pub stop_reason: StopReason,
     pub usage: Option<TokenUsage>,
 }

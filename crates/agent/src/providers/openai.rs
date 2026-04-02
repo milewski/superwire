@@ -66,15 +66,15 @@ impl OpenAIProvider {
 
     fn convert_message_to_chat_json(&self, message: &Message) -> Result<Value, String> {
         match message {
-            Message::User { id: _, content } => Ok(json!({
+            Message::User { content } => Ok(json!({
                 "role": "user",
                 "content": content,
             })),
-            Message::Assistant { id: _, content } => Ok(json!({
+            Message::Assistant { content } => Ok(json!({
                 "role": "assistant",
                 "content": content,
             })),
-            Message::AssistantToolCall { id: _, tool: tool_call } => {
+            Message::AssistantToolCall { tool: tool_call } => {
                 let mut assistant_message = json!({
                     "role": "assistant",
                     "content": "",
@@ -93,14 +93,11 @@ impl OpenAIProvider {
 
                 Ok(assistant_message)
             }
-            Message::System { id: _, content } => Ok(json!({
+            Message::System { content } => Ok(json!({
                 "role": "system",
                 "content": content,
             })),
-            Message::ToolResult {
-                id: _,
-                result: tool_result,
-            } => {
+            Message::ToolResult { result: tool_result } => {
                 let content = serde_json::to_string(tool_result.content()).unwrap_or_else(|_| tool_result.content().to_string());
 
                 Ok(json!({
@@ -136,21 +133,21 @@ impl OpenAIProvider {
         let mut response_items = Vec::new();
 
         match message {
-            Message::User { id: _, content } => {
+            Message::User { content } => {
                 response_items.push(json!({
                     "type": "message",
                     "role": "user",
                     "content": content,
                 }));
             }
-            Message::Assistant { id: _, content } => {
+            Message::Assistant { content } => {
                 response_items.push(json!({
                     "type": "message",
                     "role": "assistant",
                     "content": content,
                 }));
             }
-            Message::AssistantToolCall { id: _, tool: tool_call } => {
+            Message::AssistantToolCall { tool: tool_call } => {
                 let function_call_item_id = if tool_call.id.starts_with("fc") {
                     tool_call.id.clone()
                 } else {
@@ -166,17 +163,14 @@ impl OpenAIProvider {
                     "status": "completed",
                 }));
             }
-            Message::System { id: _, content } => {
+            Message::System { content } => {
                 response_items.push(json!({
                     "type": "message",
                     "role": "system",
                     "content": content,
                 }));
             }
-            Message::ToolResult {
-                id: _,
-                result: tool_result,
-            } => {
+            Message::ToolResult { result: tool_result } => {
                 let content = serde_json::to_string(tool_result.content()).unwrap_or_else(|_| tool_result.content().to_string());
 
                 response_items.push(json!({
@@ -333,8 +327,6 @@ impl OpenAIProvider {
             message: format!("Failed to parse /chat/completions response JSON: {error}. Body: {response_body}"),
         })?;
 
-        let provider_message_id = response_json.get("id").and_then(Value::as_str).map(str::to_string);
-
         let choices = response_json
             .get("choices")
             .and_then(Value::as_array)
@@ -394,7 +386,6 @@ impl OpenAIProvider {
         Ok(ProviderResponse {
             tool_calls,
             text,
-            provider_message_id,
             stop_reason,
             usage,
         })
@@ -456,7 +447,6 @@ impl OpenAIProvider {
         })?;
 
         let response_id = response_json.get("id").and_then(Value::as_str).map(str::to_string);
-        let mut provider_message_id = None;
 
         let mut text_parts = Vec::new();
         let mut tool_calls = Vec::new();
@@ -499,10 +489,6 @@ impl OpenAIProvider {
                 }
 
                 if output_item_type == "message" {
-                    if provider_message_id.is_none() {
-                        provider_message_id = output_item.get("id").and_then(Value::as_str).map(str::to_string);
-                    }
-
                     Self::parse_responses_message_text(output_item, &mut text_parts);
                 }
             }
@@ -518,7 +504,6 @@ impl OpenAIProvider {
             ProviderResponse {
                 tool_calls,
                 text,
-                provider_message_id: provider_message_id.or_else(|| response_id.clone()),
                 stop_reason,
                 usage,
             },
@@ -668,7 +653,6 @@ impl OpenAIProvider {
                 ProviderResponse {
                     tool_calls,
                     text,
-                    provider_message_id: None,
                     stop_reason,
                     usage: None,
                 },
@@ -973,11 +957,17 @@ mod tests {
         let provider = OpenAIProvider::new_local("http://localhost:1234/v1", "model-a");
         let mut context = Context::new();
 
-        context.add_user_message("first");
-        context.add_assistant_message("reply");
-        context.add_tool_result(ToolResult::Success {
-            tool_call_id: "call_1".to_string(),
-            content: json!({ "ok": true }),
+        context.add_message(Message::User {
+            content: "first".to_string(),
+        });
+        context.add_message(Message::Assistant {
+            content: "reply".to_string(),
+        });
+        context.add_message(Message::ToolResult {
+            result: ToolResult::Success {
+                tool_call_id: "call_1".to_string(),
+                content: json!({ "ok": true }),
+            },
         });
 
         let request_body = provider
@@ -1008,7 +998,9 @@ mod tests {
         let provider = OpenAIProvider::new_local("http://localhost:1234/v1", "model-a");
         let mut context = Context::new();
 
-        context.add_user_message("first");
+        context.add_message(Message::User {
+            content: "first".to_string(),
+        });
 
         let request_body = provider
             .build_responses_request_body(
@@ -1037,7 +1029,6 @@ mod tests {
         let provider = OpenAIProvider::new_local("http://localhost:1234/v1", "model-a");
         let context = Context {
             messages: vec![Message::AssistantToolCall {
-                id: "assistant_tool_call_message_1".to_string(),
                 tool: ToolCall {
                     id: "call-1".to_string(),
                     name: "lookup_weather".to_string(),

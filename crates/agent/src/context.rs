@@ -36,10 +36,6 @@ impl Context {
         self.add_message(Message::assistant(content));
     }
 
-    pub fn add_assistant_message_with_id(&mut self, id: impl Into<String>, content: impl Into<String>) {
-        self.add_message(Message::assistant_with_id(id, content));
-    }
-
     pub fn add_system_message(&mut self, content: impl Into<String>) {
         self.add_message(Message::system(content));
     }
@@ -48,7 +44,6 @@ impl Context {
         let system_message_content = content.into();
 
         if let Some(Message::System {
-            id: _,
             content: first_system_message_content,
         }) = self.messages.first()
         {
@@ -75,10 +70,6 @@ impl Context {
         let start = self.messages.len() - window;
         let recent = &self.messages[start..];
 
-        let first_message = &recent[0];
-
-        recent
-            .iter()
-            .all(|candidate_message| candidate_message.has_same_content_as(first_message))
+        recent.iter().all(|message| message == &recent[0])
     }
 }
