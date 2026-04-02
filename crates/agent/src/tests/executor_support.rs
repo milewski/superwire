@@ -16,6 +16,7 @@ pub fn build_provider_response(tool_calls: Vec<ToolCall>) -> ProviderResponse {
     ProviderResponse {
         tool_calls,
         text: None,
+        provider_message_id: None,
         stop_reason: StopReason::ToolCalls,
         usage: None,
     }
@@ -25,6 +26,7 @@ pub fn build_assistant_response(text: Option<String>, stop_reason: StopReason, t
     ProviderResponse {
         tool_calls,
         text,
+        provider_message_id: None,
         stop_reason,
         usage: None,
     }
@@ -39,6 +41,7 @@ pub fn build_assistant_response_with_usage(
     ProviderResponse {
         tool_calls,
         text,
+        provider_message_id: None,
         stop_reason,
         usage,
     }
@@ -231,6 +234,7 @@ impl Tool for EchoTool {
 pub fn failure_message_for_tool_call(context: &Context, tool_call_id: &str) -> Option<String> {
     for message in &context.messages {
         if let Message::ToolResult {
+            id: _,
             result: ToolResult::Failure {
                 tool_call_id: failure_tool_call_id,
                 content,
@@ -250,7 +254,7 @@ pub fn failure_message_for_tool_call(context: &Context, tool_call_id: &str) -> O
 
 pub fn has_tool_result_for_call(context: &Context, tool_call_id: &str) -> bool {
     for message in &context.messages {
-        if let Message::ToolResult { result } = message {
+        if let Message::ToolResult { id: _, result } = message {
             if result.tool_call_id() == tool_call_id {
                 return true;
             }
@@ -263,6 +267,7 @@ pub fn has_tool_result_for_call(context: &Context, tool_call_id: &str) -> bool {
 pub fn has_tool_success_content(context: &Context, expected_content: &Value) -> bool {
     for message in &context.messages {
         if let Message::ToolResult {
+            id: _,
             result: ToolResult::Success { content, .. },
         } = message
         {

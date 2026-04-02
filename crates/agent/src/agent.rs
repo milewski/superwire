@@ -2,9 +2,13 @@ use crate::context::Context;
 use crate::error::AgentError;
 use crate::error::ExecutorError;
 use crate::message::Message;
+use crate::recovery_instruction::RecoveryInstruction;
 use crate::tool::{registered_runtime_tools, DynamicTool, RuntimeTool};
 use crate::traits::{Executable, Provider};
 use std::sync::Arc;
+
+const FINALIZE_SUCCESS_TOOL_NAME: &str = "finalize_success";
+const FINALIZE_ERROR_TOOL_NAME: &str = "finalize_error";
 
 /// Configuration for the agent
 #[derive(Debug, Clone)]
@@ -248,19 +252,19 @@ impl AgentRunStatistics {
 
         for message in &context.messages {
             match message {
-                Message::User { content: _ } => {
+                Message::User { id: _, content: _ } => {
                     user_messages += 1;
                 }
 
-                Message::Assistant { content: _ } => {
+                Message::Assistant { id: _, content: _ } => {
                     assistant_messages += 1;
                 }
 
-                Message::AssistantToolCall { tool: _ } => {
+                Message::AssistantToolCall { id: _, tool: _ } => {
                     assistant_tool_call_messages += 1;
                 }
 
-                Message::ToolResult { result } => {
+                Message::ToolResult { id: _, result } => {
                     tool_result_messages += 1;
 
                     match result {
@@ -280,7 +284,7 @@ impl AgentRunStatistics {
                     }
                 }
 
-                Message::System { content: _ } => {
+                Message::System { id: _, content: _ } => {
                     system_messages += 1;
                 }
             }
@@ -376,6 +380,11 @@ where
     }
 
     pub async fn run_with_context(&self, mut context: Context, prompt: impl Into<String>) -> Result<AgentRunResult<E::Output>, AgentError> {
+        context.ensure_first_system_message(RecoveryInstruction::CompletionWorkflow {
+            success_tool_name: FINALIZE_SUCCESS_TOOL_NAME,
+            error_tool_name: FINALIZE_ERROR_TOOL_NAME,
+        });
+
         context.add_user_message(prompt);
 
         let output = match self.executor.execute(&mut context, &self.provider, &self.tools, &self.config).await {
@@ -401,9 +410,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::Agent;
+    use super::{FINALIZE_ERROR_TOOL_NAME, FINALIZE_SUCCESS_TOOL_NAME};
+    use crate::recovery_instruction::RecoveryInstruction;
     use crate::tests::executor_support::MockProvider;
     use crate::tool::{DynamicTool, FinalizeSuccessTool, Tool, ToolError};
-    use crate::{assert_has_tool_success_content, assert_tool_result, provider, tool_call, LoopExecutor};
+    use crate::{assert_has_tool_success_content, assert_tool_result, provider, tool_call, Context, LoopExecutor, Message};
     use async_trait::async_trait;
     use schemars::schema_for;
     use schemars::JsonSchema;
@@ -519,5 +530,73 @@ mod tests {
 
         assert_tool_result!(result.context, "dynamic-echo");
         assert_has_tool_success_content!(result.context, { "echo": "from ffi" });
+    }
+
+    #[tokio::test]
+    async fn injects_completion_workflow_instruction_as_first_message() {
+        let provider = provider!([tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]);
+
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+
+        let mut context = Context::new();
+        context.add_user_message("Existing user message");
+
+        let result = Agent::new_without_registered_tools(executor, provider)
+            .run_with_context(context, "New user message")
+            .await
+            .expect("agent should complete successfully");
+
+        let first_message = result
+            .context
+            .messages
+            .first()
+            .expect("context should contain at least one message");
+
+        match first_message {
+            Message::System { id: _, content } => {
+                assert!(content.contains("Completion workflow requirement"));
+                assert!(content.contains(FINALIZE_SUCCESS_TOOL_NAME));
+                assert!(content.contains(FINALIZE_ERROR_TOOL_NAME));
+            }
+
+            other_message => panic!("expected first message to be system instruction, got {other_message:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn does_not_duplicate_completion_workflow_instruction_when_already_present_first() {
+        let provider = provider!([tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]);
+
+        let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
+
+        let completion_workflow_instruction = RecoveryInstruction::CompletionWorkflow {
+            success_tool_name: FINALIZE_SUCCESS_TOOL_NAME,
+            error_tool_name: FINALIZE_ERROR_TOOL_NAME,
+        }
+        .to_string();
+
+        let mut context = Context::new();
+        context.add_system_message(completion_workflow_instruction.clone());
+        context.add_user_message("Existing user message");
+
+        let result = Agent::new_without_registered_tools(executor, provider)
+            .run_with_context(context, "New user message")
+            .await
+            .expect("agent should complete successfully");
+
+        let matching_system_message_count = result
+            .context
+            .messages
+            .iter()
+            .filter(|message| {
+                matches!(
+                    message,
+                    Message::System { id: _, content }
+                        if content == &completion_workflow_instruction
+                )
+            })
+            .count();
+
+        assert_eq!(matching_system_message_count, 1);
     }
 }
