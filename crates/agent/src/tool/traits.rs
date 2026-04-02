@@ -105,8 +105,8 @@ mod tests {
 
     #[test]
     fn infers_name_from_generic_type_without_module_path() {
-        type GenericInferredNameTool = crate::tool::FinalizeTool<Value>;
+        type GenericInferredNameTool = crate::tool::FinalizeSuccessTool<Value>;
 
-        assert_eq!(<GenericInferredNameTool as Tool>::inferred_name(), "FinalizeTool");
+        assert_eq!(<GenericInferredNameTool as Tool>::inferred_name(), "FinalizeSuccessTool");
     }
 }

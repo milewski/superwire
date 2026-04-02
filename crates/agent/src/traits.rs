@@ -15,6 +15,16 @@ pub struct ToolDefinition {
     pub parameters_schema: Schema,
 }
 
+/// Tool-selection mode requested by the executor for a provider turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderToolChoice {
+    /// Provider can decide whether to call tools or return plain text.
+    Auto,
+
+    /// Provider must return at least one tool call.
+    Required,
+}
+
 /// Reason why the provider stopped generating
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StopReason {
@@ -52,7 +62,13 @@ pub struct TokenUsage {
 /// Trait for LLM providers that can generate responses
 #[async_trait::async_trait]
 pub trait Provider {
-    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, ProviderError>;
+    async fn generate(
+        &self,
+        context: &Context,
+        tools: &[ToolDefinition],
+        tool_choice: ProviderToolChoice,
+        config: &AgentConfig,
+    ) -> Result<ProviderResponse, ProviderError>;
 }
 
 /// Trait for operations that can be executed by the agent

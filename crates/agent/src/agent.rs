@@ -402,7 +402,7 @@ where
 mod tests {
     use super::Agent;
     use crate::tests::executor_support::MockProvider;
-    use crate::tool::{DynamicTool, FinalizeTool, Tool, ToolError};
+    use crate::tool::{DynamicTool, FinalizeSuccessTool, Tool, ToolError};
     use crate::{assert_has_tool_success_content, assert_tool_result, provider, tool_call, LoopExecutor};
     use async_trait::async_trait;
     use schemars::schema_for;
@@ -454,7 +454,7 @@ mod tests {
     async fn automatically_executes_inventory_registered_tools() {
         let provider = provider!([
             tool_call!(InventoryEchoTool, id = "inventory-echo", { "value": "hello" }),
-            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 
         let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");
@@ -498,7 +498,7 @@ mod tests {
                 name: "ffi_echo".to_string(),
                 arguments: json!({ "value": "from ffi" }),
             },
-            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 
         let executor = LoopExecutor::<MockProvider, Person>::new().expect("executor should build");

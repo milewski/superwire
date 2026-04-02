@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::error::ProviderError;
 use crate::message::{Message, ToolCall};
-use crate::traits::{Provider, ProviderResponse, StopReason, TokenUsage, ToolDefinition};
+use crate::traits::{Provider, ProviderResponse, ProviderToolChoice, StopReason, TokenUsage, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use reqwest::StatusCode;
@@ -673,7 +673,13 @@ impl OpenAIProvider {
         self.parse_responses_sse_response_with_id(response_body)
     }
 
-    fn build_chat_request_body(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<Value, String> {
+    fn build_chat_request_body(
+        &self,
+        context: &Context,
+        tools: &[ToolDefinition],
+        tool_choice: ProviderToolChoice,
+        config: &AgentConfig,
+    ) -> Result<Value, String> {
         let messages: Result<Vec<Value>, String> = context
             .messages
             .iter()
@@ -716,15 +722,31 @@ impl OpenAIProvider {
 
         if !tools.is_empty() {
             request_body["tools"] = json!(self.convert_tools_to_chat_json(tools)?);
+            request_body["tool_choice"] = Self::convert_tool_choice_to_chat_json(tool_choice);
         }
 
         Ok(request_body)
+    }
+
+    fn convert_tool_choice_to_chat_json(tool_choice: ProviderToolChoice) -> Value {
+        match tool_choice {
+            ProviderToolChoice::Auto => json!("auto"),
+            ProviderToolChoice::Required => json!("required"),
+        }
+    }
+
+    fn convert_tool_choice_to_responses_json(tool_choice: ProviderToolChoice) -> Value {
+        match tool_choice {
+            ProviderToolChoice::Auto => json!("auto"),
+            ProviderToolChoice::Required => json!("required"),
+        }
     }
 
     fn build_responses_request_body(
         &self,
         context: &Context,
         tools: &[ToolDefinition],
+        tool_choice: ProviderToolChoice,
         config: &AgentConfig,
         previous_response_id: Option<&str>,
         previous_context_message_count: usize,
@@ -791,6 +813,7 @@ impl OpenAIProvider {
 
         if !tools.is_empty() {
             request_body["tools"] = json!(self.convert_tools_to_responses_json(tools)?);
+            request_body["tool_choice"] = Self::convert_tool_choice_to_responses_json(tool_choice);
         }
 
         Ok(request_body)
@@ -799,7 +822,13 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-    async fn generate(&self, context: &Context, tools: &[ToolDefinition], config: &AgentConfig) -> Result<ProviderResponse, ProviderError> {
+    async fn generate(
+        &self,
+        context: &Context,
+        tools: &[ToolDefinition],
+        tool_choice: ProviderToolChoice,
+        config: &AgentConfig,
+    ) -> Result<ProviderResponse, ProviderError> {
         let preferred_api = *self.preferred_api.lock().expect("preferred api lock should not be poisoned");
 
         if preferred_api != PreferredApi::ChatCompletions {
@@ -819,6 +848,7 @@ impl Provider for OpenAIProvider {
                 .build_responses_request_body(
                     context,
                     tools,
+                    tool_choice,
                     config,
                     previous_response_id.as_deref(),
                     previous_context_message_count,
@@ -856,7 +886,7 @@ impl Provider for OpenAIProvider {
         }
 
         let chat_request_body = self
-            .build_chat_request_body(context, tools, config)
+            .build_chat_request_body(context, tools, tool_choice, config)
             .map_err(|message| ProviderError::InvalidRequest { message })?;
         let chat_response = self.send_request("/chat/completions", &chat_request_body).await?;
 
@@ -883,7 +913,7 @@ impl Provider for OpenAIProvider {
         }
 
         let responses_request_body = self
-            .build_responses_request_body(context, tools, config, None, 0)
+            .build_responses_request_body(context, tools, tool_choice, config, None, 0)
             .map_err(|message| ProviderError::InvalidRequest { message })?;
         let responses_response = self.send_request("/responses", &responses_request_body).await?;
 
@@ -917,7 +947,7 @@ mod tests {
     use super::OpenAIProvider;
     use crate::context::Context;
     use crate::message::{Message, ToolCall, ToolResult};
-    use crate::traits::ToolDefinition;
+    use crate::traits::{ProviderToolChoice, ToolDefinition};
     use crate::AgentConfig;
     use schemars::Schema;
     use serde_json::json;
@@ -941,7 +971,14 @@ mod tests {
         });
 
         let request_body = provider
-            .build_responses_request_body(&context, &[], &AgentConfig::default(), Some("resp_123"), 2)
+            .build_responses_request_body(
+                &context,
+                &[],
+                ProviderToolChoice::Auto,
+                &AgentConfig::default(),
+                Some("resp_123"),
+                2,
+            )
             .expect("request body should build");
 
         assert_eq!(request_body.get("previous_response_id"), Some(&json!("resp_123")));
@@ -966,7 +1003,14 @@ mod tests {
         });
 
         let request_body = provider
-            .build_responses_request_body(&context, &[], &AgentConfig::default(), Some("resp_123"), 1)
+            .build_responses_request_body(
+                &context,
+                &[],
+                ProviderToolChoice::Auto,
+                &AgentConfig::default(),
+                Some("resp_123"),
+                1,
+            )
             .expect("request body should build");
 
         assert!(request_body.get("previous_response_id").is_none());
@@ -1001,12 +1045,13 @@ mod tests {
         }];
 
         let request_body = provider
-            .build_responses_request_body(&context, &tools, &AgentConfig::default(), None, 0)
+            .build_responses_request_body(&context, &tools, ProviderToolChoice::Required, &AgentConfig::default(), None, 0)
             .expect("request body should build");
 
         assert_eq!(request_body.get("parallel_tool_calls"), Some(&json!(true)));
         assert_eq!(request_body.get("stream"), Some(&json!(true)));
         assert_eq!(request_body.get("store"), Some(&json!(true)));
+        assert_eq!(request_body.get("tool_choice"), Some(&json!("required")));
         assert!(request_body.get("tools").is_some());
     }
 }

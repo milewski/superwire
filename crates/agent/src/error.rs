@@ -19,8 +19,8 @@ pub enum AgentError {
 #[derive(Debug, Clone, Error)]
 pub enum ExecutorError {
     /// Returned when the executor reaches its maximum iteration budget
-    /// before a finalize tool call completes the task.
-    #[error("Maximum iterations ({max_iterations}) reached without calling finalize tool")]
+    /// before a completion tool call completes the task.
+    #[error("Maximum iterations ({max_iterations}) reached without calling a completion tool")]
     MaxIterationsReached { max_iterations: usize },
 
     /// Returned when the provider call fails.

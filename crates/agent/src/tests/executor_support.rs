@@ -2,8 +2,8 @@ use crate::agent::AgentConfig;
 use crate::context::Context;
 use crate::error::{ExecutorError, ProviderError};
 use crate::message::{Message, ToolCall, ToolResult};
-use crate::tool::{FinalizeTool, RuntimeTool, Tool, ToolError};
-use crate::traits::{Executable, Provider, ProviderResponse, StopReason, TokenUsage, ToolDefinition};
+use crate::tool::{FinalizeErrorTool, FinalizeSuccessTool, RuntimeTool, Tool, ToolError};
+use crate::traits::{Executable, Provider, ProviderResponse, ProviderToolChoice, StopReason, TokenUsage, ToolDefinition};
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -70,7 +70,7 @@ pub trait ToolCallFactory {
     fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall;
 
     fn build_failure_tool_call(_identifier: String, _reason: String) -> ToolCall {
-        panic!("failure tool calls are only supported for finalize tool")
+        panic!("failure tool calls are only supported for finalize error tool")
     }
 }
 
@@ -101,36 +101,55 @@ where
     }
 }
 
-impl<OutputType> ToolCallFactory for FinalizeTool<OutputType>
+impl<OutputType> ToolCallFactory for FinalizeSuccessTool<OutputType>
 where
     OutputType: Send + Sync + Serialize + DeserializeOwned + JsonSchema,
 {
     fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall {
-        let finalize_tool = FinalizeTool::<OutputType>::new().expect("finalize tool should build");
+        let finalize_tool = FinalizeSuccessTool::<OutputType>::new().expect("finalize success tool should build");
 
         ToolCall {
             id: identifier,
             name: finalize_tool.name().to_string(),
             arguments: serde_json::json!({
-                "output": {
-                    "type": "success",
-                    "answer": arguments,
-                }
+                "answer": arguments,
+            }),
+        }
+    }
+
+    fn build_failure_tool_call(_identifier: String, _reason: String) -> ToolCall {
+        panic!("failure tool calls are only supported for finalize error tool")
+    }
+}
+
+impl ToolCallFactory for FinalizeErrorTool {
+    fn build_success_tool_call(identifier: String, arguments: Value) -> ToolCall {
+        let finalize_tool = FinalizeErrorTool::new().expect("finalize error tool should build");
+
+        let reason = arguments
+            .as_object()
+            .and_then(|arguments_object| arguments_object.get("reason"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| arguments.to_string());
+
+        ToolCall {
+            id: identifier,
+            name: finalize_tool.name().to_string(),
+            arguments: serde_json::json!({
+                "reason": reason,
             }),
         }
     }
 
     fn build_failure_tool_call(identifier: String, reason: String) -> ToolCall {
-        let finalize_tool = FinalizeTool::<OutputType>::new().expect("finalize tool should build");
+        let finalize_tool = FinalizeErrorTool::new().expect("finalize error tool should build");
 
         ToolCall {
             id: identifier,
             name: finalize_tool.name().to_string(),
             arguments: serde_json::json!({
-                "output": {
-                    "type": "failure",
-                    "reason": reason,
-                }
+                "reason": reason,
             }),
         }
     }
@@ -139,13 +158,22 @@ where
 #[derive(Debug)]
 pub struct MockProvider {
     queued_results: Mutex<VecDeque<Result<ProviderResponse, ProviderError>>>,
+    requested_tool_choices: Mutex<Vec<ProviderToolChoice>>,
 }
 
 impl MockProvider {
     pub fn from_results(results: Vec<Result<ProviderResponse, ProviderError>>) -> Self {
         Self {
             queued_results: Mutex::new(VecDeque::from(results)),
+            requested_tool_choices: Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn requested_tool_choices(&self) -> Vec<ProviderToolChoice> {
+        self.requested_tool_choices
+            .lock()
+            .expect("mock provider tool choice lock should not be poisoned")
+            .clone()
     }
 }
 
@@ -159,9 +187,15 @@ impl Provider for MockProvider {
         &self,
         _context: &Context,
         _tools: &[ToolDefinition],
+        tool_choice: ProviderToolChoice,
         _config: &AgentConfig,
     ) -> Result<ProviderResponse, ProviderError> {
         let mut queued_results = self.queued_results.lock().expect("mock provider queue lock should not be poisoned");
+
+        self.requested_tool_choices
+            .lock()
+            .expect("mock provider tool choice lock should not be poisoned")
+            .push(tool_choice);
 
         queued_results
             .pop_front()
