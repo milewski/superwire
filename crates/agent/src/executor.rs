@@ -323,6 +323,8 @@ where
                 .generate_with_retry(context, provider, provider_tools, provider_tool_choice, config)
                 .await?;
 
+            let was_completion_phase_enabled = completion_phase_enabled;
+
             if let Some(usage) = response.usage {
                 context.add_token_usage(usage);
             }
@@ -349,7 +351,7 @@ where
             // Switch to completion mode when the model tries to stop without completion.
             // The next turn forces a tool call and exposes only success/error completion tools,
             // which creates an explicit binary finish decision.
-            if response.stop_reason == StopReason::EndOfSequence {
+            if response.stop_reason == StopReason::EndOfSequence && !completion_phase_enabled {
                 completion_phase_enabled = true;
 
                 context.add_user_message(RecoveryInstruction::MustExitByCallingCompletionTool {
@@ -360,6 +362,10 @@ where
 
             // This executor is tool-driven: progress is only made through tool calls.
             if response.tool_calls.is_empty() {
+                if was_completion_phase_enabled {
+                    return Err(ExecutorError::ProviderIgnoredRequiredToolChoice);
+                }
+
                 iteration += 1;
                 continue;
             }
@@ -1031,6 +1037,43 @@ mod tests {
                 age: 40,
             }
         );
+
+        assert_eq!(
+            provider.requested_tool_choices(),
+            vec![ProviderToolChoice::Auto, ProviderToolChoice::Required]
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_error_when_provider_ignores_required_tool_choice() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            assistant_message!(text = "I am done", stop = StopReason::EndOfSequence),
+            assistant_message!(text = "still no tool", stop = StopReason::EndOfSequence)
+        ]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert!(matches!(output, Err(ExecutorError::ProviderIgnoredRequiredToolChoice)));
+
+        let recovery_instruction_count = context
+            .messages
+            .iter()
+            .filter(|message| {
+                matches!(
+                    message,
+                    Message::User { content }
+                        if content.contains("You must finish by calling one completion tool")
+                )
+            })
+            .count();
+
+        assert_eq!(recovery_instruction_count, 1);
 
         assert_eq!(
             provider.requested_tool_choices(),
