@@ -4,6 +4,7 @@ use crate::types::FfiOperation;
 use crate::{invoke_ffi_json_payload, FFI_PROTOCOL_VERSION};
 
 #[php_function]
+#[must_use]
 pub fn engine_ai_ffi_invoke_json(request_payload: String) -> String {
     invoke_ffi_json_payload(&request_payload)
 }
