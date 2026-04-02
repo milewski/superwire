@@ -20,4 +20,4 @@ RUN cd /tmp \
 
 WORKDIR /workspace/crates/ffi/php
 
-RUN rustup target add ${TARGET_TRIPLE}
+RUN rustup +nightly target add ${TARGET_TRIPLE}
