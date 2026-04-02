@@ -31,6 +31,10 @@ pub enum ExecutorError {
     #[error("Agent is stuck in a repeated loop")]
     StuckLoopDetected,
 
+    /// Returned when a provider ignores required tool-call mode and returns no tools.
+    #[error("Provider ignored required tool choice and returned no tool calls")]
+    ProviderIgnoredRequiredToolChoice,
+
     /// Returned when the provider stops due to token limit.
     #[error("Provider reached maximum token limit")]
     MaxTokensReached,
