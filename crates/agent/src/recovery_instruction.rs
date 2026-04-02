@@ -3,11 +3,15 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy)]
 pub enum RecoveryInstruction<'a> {
-    MustExitByCallingCompletionTool {
+    CompletionWorkflow {
         success_tool_name: &'a str,
         error_tool_name: &'a str,
     },
-    MustCallCompletionToolAloneToFinish {
+    ExitByCallingCompletionTool {
+        success_tool_name: &'a str,
+        error_tool_name: &'a str,
+    },
+    CallCompletionToolAloneToFinish {
         success_tool_name: &'a str,
         error_tool_name: &'a str,
     },
@@ -22,7 +26,34 @@ impl<'a> From<RecoveryInstruction<'a>> for String {
 impl Display for RecoveryInstruction<'_> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MustExitByCallingCompletionTool {
+            Self::CompletionWorkflow {
+                success_tool_name,
+                error_tool_name,
+            } => {
+                let message = formatdoc! {
+                    "
+                    Completion workflow requirement:
+
+                    You must finish every task by calling exactly one completion tool:
+                    either '{success_tool_name}' or '{error_tool_name}'.
+
+                    Use '{success_tool_name}' only when the request is fully completed
+                    with a definitive, confident result.
+
+                    Use '{error_tool_name}' when required information is missing,
+                    you are blocked, or you cannot safely satisfy any requirement.
+
+                    Do not finish with plain text alone. Continue until one completion
+                    tool is called.
+                    ",
+                    success_tool_name = success_tool_name,
+                    error_tool_name = error_tool_name,
+                };
+
+                write!(formatter, "{message}")
+            }
+
+            Self::ExitByCallingCompletionTool {
                 success_tool_name,
                 error_tool_name,
             } => {
@@ -44,7 +75,7 @@ impl Display for RecoveryInstruction<'_> {
                 write!(formatter, "{message}")
             }
 
-            Self::MustCallCompletionToolAloneToFinish {
+            Self::CallCompletionToolAloneToFinish {
                 success_tool_name,
                 error_tool_name,
             } => {

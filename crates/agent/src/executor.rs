@@ -298,6 +298,8 @@ where
 
         let mut iteration = 0;
         let mut completion_phase_enabled = false;
+        let mut consecutive_required_tool_choice_ignores = 0;
+        let max_consecutive_required_tool_choice_ignores = 2;
 
         let (finalize_success_tool_name, finalize_error_tool_name) = self.completion_tool_names();
 
@@ -334,7 +336,11 @@ where
                 let trimmed = text.trim_matches(|char| char == '\n' || char == '\r' || char == '\t' || char == ' ');
 
                 if !trimmed.is_empty() {
-                    context.add_assistant_message(trimmed);
+                    if let Some(provider_message_id) = &response.provider_message_id {
+                        context.add_assistant_message_with_id(provider_message_id, trimmed);
+                    } else {
+                        context.add_assistant_message(trimmed);
+                    }
                 }
             }
 
@@ -354,7 +360,7 @@ where
             if response.stop_reason == StopReason::EndOfSequence && !completion_phase_enabled {
                 completion_phase_enabled = true;
 
-                context.add_user_message(RecoveryInstruction::MustExitByCallingCompletionTool {
+                context.add_user_message(RecoveryInstruction::ExitByCallingCompletionTool {
                     success_tool_name: finalize_success_tool_name,
                     error_tool_name: finalize_error_tool_name,
                 });
@@ -363,12 +369,23 @@ where
             // This executor is tool-driven: progress is only made through tool calls.
             if response.tool_calls.is_empty() {
                 if was_completion_phase_enabled {
-                    return Err(ExecutorError::ProviderIgnoredRequiredToolChoice);
+                    consecutive_required_tool_choice_ignores += 1;
+
+                    if consecutive_required_tool_choice_ignores >= max_consecutive_required_tool_choice_ignores {
+                        return Err(ExecutorError::ProviderIgnoredRequiredToolChoice);
+                    }
+
+                    context.add_user_message(RecoveryInstruction::ExitByCallingCompletionTool {
+                        success_tool_name: finalize_success_tool_name,
+                        error_tool_name: finalize_error_tool_name,
+                    });
                 }
 
                 iteration += 1;
                 continue;
             }
+
+            consecutive_required_tool_choice_ignores = 0;
 
             // Persist every requested tool call before executing so the history remains authoritative
             for tool_call in &response.tool_calls {
@@ -409,7 +426,7 @@ where
                         context.add_tool_result(ToolResult::Failure {
                             tool_call_id: ignored_completion_call.id.clone(),
                             content: Value::String(
-                                RecoveryInstruction::MustCallCompletionToolAloneToFinish {
+                                RecoveryInstruction::CallCompletionToolAloneToFinish {
                                     success_tool_name: finalize_success_tool_name,
                                     error_tool_name: finalize_error_tool_name,
                                 }
@@ -524,12 +541,51 @@ mod tests {
             .messages
             .iter()
             .filter_map(|message| match message {
-                Message::Assistant { content } => Some(content.clone()),
+                Message::Assistant { id: _, content } => Some(content.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
 
         assert_eq!(assistant_messages, vec!["done with output".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn stores_provider_message_id_for_assistant_text_message() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider_from_results(vec![Ok(ProviderResponse {
+            tool_calls: vec![tool_call!(FinalizeSuccessTool::<Person>, { "name": "John Snow", "age": 25 })],
+            text: Some("final answer preview".to_string()),
+            provider_message_id: Some("provider_message_123".to_string()),
+            stop_reason: StopReason::ToolCalls,
+            usage: None,
+        })]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "John Snow".to_string(),
+                age: 25,
+            }
+        );
+
+        let provider_assistant_message = context.messages.iter().find(|message| {
+            matches!(
+                message,
+                Message::Assistant {
+                    id,
+                    content: _
+                } if id == "provider_message_123"
+            )
+        });
+
+        assert!(provider_assistant_message.is_some());
     }
 
     #[tokio::test]
@@ -1009,7 +1065,7 @@ mod tests {
         assert!(context.messages.iter().any(|message| {
             matches!(
                 message,
-                Message::User { content }
+                Message::User { id: _, content }
                     if content.contains("You must finish by calling one completion tool")
             )
         }));
@@ -1045,7 +1101,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn returns_error_when_provider_ignores_required_tool_choice() {
+    async fn retries_once_when_provider_ignores_required_tool_choice_then_recovers() {
         #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
         struct Person {
             name: String,
@@ -1054,7 +1110,52 @@ mod tests {
 
         let provider = provider!([
             assistant_message!(text = "I am done", stop = StopReason::EndOfSequence),
-            assistant_message!(text = "still no tool", stop = StopReason::EndOfSequence)
+            assistant_message!(text = "still no tool", stop = StopReason::EndOfSequence),
+            tool_call!(FinalizeSuccessTool::<Person>, { "name": "Maria", "age": 40 })
+        ]);
+
+        let (context, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed after one required-tool retry"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        let recovery_instruction_count = context
+            .messages
+            .iter()
+            .filter(|message| {
+                matches!(
+                    message,
+                    Message::User { id: _, content }
+                        if content.contains("You must finish by calling one completion tool")
+                )
+            })
+            .count();
+
+        assert_eq!(recovery_instruction_count, 2);
+
+        assert_eq!(
+            provider.requested_tool_choices(),
+            vec![ProviderToolChoice::Auto, ProviderToolChoice::Required, ProviderToolChoice::Required]
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_error_when_provider_repeatedly_ignores_required_tool_choice() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            assistant_message!(text = "I am done", stop = StopReason::EndOfSequence),
+            assistant_message!(text = "still no tool", stop = StopReason::EndOfSequence),
+            assistant_message!(text = "still no tool again", stop = StopReason::EndOfSequence)
         ]);
 
         let (context, output) = run_executor!(provider => Person);
@@ -1067,17 +1168,17 @@ mod tests {
             .filter(|message| {
                 matches!(
                     message,
-                    Message::User { content }
+                    Message::User { id: _, content }
                         if content.contains("You must finish by calling one completion tool")
                 )
             })
             .count();
 
-        assert_eq!(recovery_instruction_count, 1);
+        assert_eq!(recovery_instruction_count, 2);
 
         assert_eq!(
             provider.requested_tool_choices(),
-            vec![ProviderToolChoice::Auto, ProviderToolChoice::Required]
+            vec![ProviderToolChoice::Auto, ProviderToolChoice::Required, ProviderToolChoice::Required]
         );
     }
 
@@ -1109,7 +1210,7 @@ mod tests {
             .messages
             .iter()
             .filter_map(|message| match message {
-                Message::Assistant { content } => Some(content.clone()),
+                Message::Assistant { id: _, content } => Some(content.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();

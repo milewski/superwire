@@ -26,11 +26,11 @@ impl OllamaProvider {
 
     fn convert_message_to_ollama(&self, message: &Message) -> Result<ChatMessage, String> {
         match message {
-            Message::User { content } => Ok(ChatMessage::user(content.clone())),
-            Message::Assistant { content } => Ok(ChatMessage::assistant(content.clone())),
-            Message::AssistantToolCall { tool: _ } => Ok(ChatMessage::assistant(String::new())),
-            Message::ToolResult { result } => Ok(ChatMessage::assistant(result.content().to_string())),
-            Message::System { content } => Ok(ChatMessage::system(content.clone())),
+            Message::User { id: _, content } => Ok(ChatMessage::user(content.clone())),
+            Message::Assistant { id: _, content } => Ok(ChatMessage::assistant(content.clone())),
+            Message::AssistantToolCall { id: _, tool: _ } => Ok(ChatMessage::assistant(String::new())),
+            Message::ToolResult { id: _, result } => Ok(ChatMessage::assistant(result.content().to_string())),
+            Message::System { id: _, content } => Ok(ChatMessage::system(content.clone())),
         }
     }
 
@@ -159,6 +159,7 @@ impl Provider for OllamaProvider {
         Ok(ProviderResponse {
             tool_calls,
             text,
+            provider_message_id: None,
             stop_reason,
             usage,
         })
