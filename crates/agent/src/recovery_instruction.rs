@@ -3,8 +3,14 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy)]
 pub enum RecoveryInstruction<'a> {
-    MustExitByCallingTool { tool_name: &'a str },
-    MustCallToolAloneToFinish { tool_name: &'a str },
+    MustExitByCallingCompletionTool {
+        success_tool_name: &'a str,
+        error_tool_name: &'a str,
+    },
+    MustCallCompletionToolAloneToFinish {
+        success_tool_name: &'a str,
+        error_tool_name: &'a str,
+    },
 }
 
 impl<'a> From<RecoveryInstruction<'a>> for String {
@@ -16,33 +22,41 @@ impl<'a> From<RecoveryInstruction<'a>> for String {
 impl Display for RecoveryInstruction<'_> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MustExitByCallingTool { tool_name } => {
+            Self::MustExitByCallingCompletionTool {
+                success_tool_name,
+                error_tool_name,
+            } => {
                 let message = formatdoc! {
                     "
-                    You must finish by calling '{tool_name}'.
+                    You must finish by calling one completion tool: either '{success_tool_name}' or '{error_tool_name}'.
 
                     Critical rule: do not return success unless you have a definitive,
                     confident answer that fully satisfies the user's request.
 
                     If you are missing information, unsure, blocked, or unable to complete
-                    any requirement, call '{tool_name}' with failure and include a clear
-                    reason describing what prevented completion.
+                    any requirement, call '{error_tool_name}' and include a clear reason
+                    describing what prevented completion.
                     ",
-                    tool_name = tool_name,
+                    success_tool_name = success_tool_name,
+                    error_tool_name = error_tool_name,
                 };
 
                 write!(formatter, "{message}")
             }
 
-            Self::MustCallToolAloneToFinish { tool_name } => {
+            Self::MustCallCompletionToolAloneToFinish {
+                success_tool_name,
+                error_tool_name,
+            } => {
                 let message = formatdoc! {
                     "
-                    Ignored '{tool_name}' tool call because it was returned together
-                    with other tool calls.
+                    Ignored completion tool call because it was returned together with
+                    other tool calls.
 
-                    Call '{tool_name}' alone to finish.
+                    Call either '{success_tool_name}' or '{error_tool_name}' alone to finish.
                     ",
-                    tool_name = tool_name,
+                    success_tool_name = success_tool_name,
+                    error_tool_name = error_tool_name,
                 };
 
                 write!(formatter, "{message}")

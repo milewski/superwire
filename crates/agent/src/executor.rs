@@ -3,8 +3,8 @@ use crate::error::{ExecutorError, ProviderError};
 use crate::json_validation::validate_json_against_schema_with_context;
 use crate::message::{ToolCall, ToolResult};
 use crate::recovery_instruction::RecoveryInstruction;
-use crate::tool::{FinalizeArguments, FinalizeOutput, FinalizeTool, RuntimeTool, Tool, ToolError};
-use crate::traits::{Executable, Provider, ProviderResponse, StopReason, ToolDefinition};
+use crate::tool::{FinalizeErrorArguments, FinalizeErrorTool, FinalizeSuccessArguments, FinalizeSuccessTool, RuntimeTool, Tool, ToolError};
+use crate::traits::{Executable, Provider, ProviderResponse, ProviderToolChoice, StopReason, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use futures::future::join_all;
@@ -21,10 +21,11 @@ use tokio::time::sleep;
 type ToolRegistry<'a> = HashMap<String, &'a Arc<dyn RuntimeTool>>;
 
 enum ToolCallExecution<'a> {
-    Complete(&'a ToolCall),
+    CompleteWithSuccess(&'a ToolCall),
+    CompleteWithError(&'a ToolCall),
     Continue {
         tool_calls: Vec<&'a ToolCall>,
-        ignored_finalize_calls: Vec<&'a ToolCall>,
+        ignored_completion_calls: Vec<&'a ToolCall>,
     },
 }
 
@@ -35,8 +36,10 @@ where
     O: Send + Sync + 'static,
 {
     max_iterations: usize,
-    finalize_tool: FinalizeTool<O>,
-    finalize_parameters_schema: Schema,
+    finalize_success_tool: FinalizeSuccessTool<O>,
+    finalize_success_parameters_schema: Schema,
+    finalize_error_tool: FinalizeErrorTool,
+    finalize_error_parameters_schema: Schema,
     phantom: PhantomData<(P, O)>,
 }
 
@@ -46,12 +49,15 @@ where
     O: Send + Sync + Serialize + DeserializeOwned + JsonSchema + 'static,
 {
     pub fn new() -> Result<Self, ToolError> {
-        let finalize_tool = FinalizeTool::<O>::new()?;
+        let finalize_success_tool = FinalizeSuccessTool::<O>::new()?;
+        let finalize_error_tool = FinalizeErrorTool::new()?;
 
         Ok(Self {
             max_iterations: 5,
-            finalize_parameters_schema: finalize_tool.parameters_schema().clone(),
-            finalize_tool,
+            finalize_success_parameters_schema: finalize_success_tool.parameters_schema().clone(),
+            finalize_error_parameters_schema: finalize_error_tool.parameters_schema().clone(),
+            finalize_success_tool,
+            finalize_error_tool,
             phantom: PhantomData,
         })
     }
@@ -63,20 +69,27 @@ where
     }
 
     pub fn with_finalize_answer_schema(mut self, answer_schema: Schema) -> Result<Self, ToolError> {
-        self.finalize_parameters_schema = FinalizeTool::<O>::parameters_schema_for_answer_schema(&answer_schema)?;
+        self.finalize_success_parameters_schema = FinalizeSuccessTool::<O>::parameters_schema_for_answer_schema(&answer_schema)?;
         Ok(self)
     }
 
-    fn prepare_tools<'a>(&self, tools: &'a [Arc<dyn RuntimeTool>]) -> Result<(Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
-        let mut definitions = Vec::with_capacity(tools.len() + 1);
+    fn completion_tool_names(&self) -> (&str, &str) {
+        (self.finalize_success_tool.name(), self.finalize_error_tool.name())
+    }
+
+    fn prepare_tools<'a>(
+        &self,
+        tools: &'a [Arc<dyn RuntimeTool>],
+    ) -> Result<(Vec<ToolDefinition>, Vec<ToolDefinition>, ToolRegistry<'a>), ExecutorError> {
+        let mut definitions = Vec::with_capacity(tools.len() + 2);
         let mut registry = HashMap::with_capacity(tools.len());
-        let finalize_tool_name = self.finalize_tool.name();
+        let (finalize_success_tool_name, finalize_error_tool_name) = self.completion_tool_names();
 
         for tool in tools {
             let definition = tool.definition()?;
 
-            if definition.name == finalize_tool_name {
-                return Err(ToolError::new(format!("Tool name '{}' is reserved for finalize tool", definition.name)).into());
+            if definition.name == finalize_success_tool_name || definition.name == finalize_error_tool_name {
+                return Err(ToolError::new(format!("Tool name '{}' is reserved for completion tools", definition.name)).into());
             }
 
             if registry.contains_key(&definition.name) {
@@ -87,23 +100,38 @@ where
             definitions.push(definition);
         }
 
-        definitions.push(ToolDefinition {
-            name: self.finalize_tool.name().to_string(),
-            description: self.finalize_tool.description().to_string(),
-            parameters_schema: self.finalize_parameters_schema.clone(),
-        });
+        let completion_tool_definitions = vec![
+            ToolDefinition {
+                name: self.finalize_success_tool.name().to_string(),
+                description: self.finalize_success_tool.description().to_string(),
+                parameters_schema: self.finalize_success_parameters_schema.clone(),
+            },
+            ToolDefinition {
+                name: self.finalize_error_tool.name().to_string(),
+                description: self.finalize_error_tool.description().to_string(),
+                parameters_schema: self.finalize_error_parameters_schema.clone(),
+            },
+        ];
 
-        Ok((definitions, registry))
+        definitions.extend(completion_tool_definitions.clone());
+
+        Ok((definitions, completion_tool_definitions, registry))
     }
 
     fn classify_tool_calls<'a>(&self, response: &'a ProviderResponse) -> ToolCallExecution<'a> {
-        let finalize_name = self.finalize_tool.name();
-        let mut finalize_tool_calls = Vec::new();
+        let (finalize_success_tool_name, finalize_error_tool_name) = self.completion_tool_names();
+        let mut finalize_success_tool_calls = Vec::new();
+        let mut finalize_error_tool_calls = Vec::new();
         let mut other_tool_calls = Vec::new();
 
         for tool_call in &response.tool_calls {
-            if tool_call.name == finalize_name {
-                finalize_tool_calls.push(tool_call);
+            if tool_call.name == finalize_success_tool_name {
+                finalize_success_tool_calls.push(tool_call);
+                continue;
+            }
+
+            if tool_call.name == finalize_error_tool_name {
+                finalize_error_tool_calls.push(tool_call);
                 continue;
             }
 
@@ -111,22 +139,34 @@ where
         }
 
         if other_tool_calls.is_empty() {
-            if let Some(finalize_tool_call) = finalize_tool_calls.last() {
-                return ToolCallExecution::Complete(finalize_tool_call);
+            if let Some(finalize_success_tool_call) = finalize_success_tool_calls.last() {
+                if finalize_error_tool_calls.is_empty() {
+                    return ToolCallExecution::CompleteWithSuccess(finalize_success_tool_call);
+                }
+            }
+
+            if let Some(finalize_error_tool_call) = finalize_error_tool_calls.last() {
+                if finalize_success_tool_calls.is_empty() {
+                    return ToolCallExecution::CompleteWithError(finalize_error_tool_call);
+                }
             }
         }
 
+        let mut ignored_completion_calls = Vec::new();
+        ignored_completion_calls.extend(finalize_success_tool_calls);
+        ignored_completion_calls.extend(finalize_error_tool_calls);
+
         ToolCallExecution::Continue {
             tool_calls: other_tool_calls,
-            ignored_finalize_calls: finalize_tool_calls,
+            ignored_completion_calls,
         }
     }
 
-    async fn process_finalize_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
+    async fn process_finalize_success_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
         if let Err(error) = validate_json_against_schema_with_context(
             &tool_call.arguments,
-            &self.finalize_parameters_schema,
-            "Finalize tool arguments do not match schema",
+            &self.finalize_success_parameters_schema,
+            "Finalize success tool arguments do not match schema",
         ) {
             context.add_tool_result(ToolResult::Failure {
                 tool_call_id: tool_call.id.clone(),
@@ -136,29 +176,55 @@ where
             return Ok(None);
         }
 
-        let input_result: Result<FinalizeArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
+        let input_result: Result<FinalizeSuccessArguments<O>, _> = serde_json::from_value(tool_call.arguments.clone());
 
         match input_result {
-            Ok(arguments) => match arguments.output {
-                FinalizeOutput::Success { answer } => {
-                    context.add_tool_result(ToolResult::Success {
-                        tool_call_id: tool_call.id.clone(),
-                        content: serde_json::to_value(&answer).map_err(|error| ExecutorError::FinalizeOutputSerializationFailed {
-                            message: error.to_string(),
-                        })?,
-                    });
+            Ok(arguments) => {
+                context.add_tool_result(ToolResult::Success {
+                    tool_call_id: tool_call.id.clone(),
+                    content: serde_json::to_value(&arguments.answer).map_err(|error| ExecutorError::FinalizeOutputSerializationFailed {
+                        message: error.to_string(),
+                    })?,
+                });
 
-                    Ok(Some(answer))
-                }
-                FinalizeOutput::Failure { reason } => {
-                    context.add_tool_result(ToolResult::Failure {
-                        tool_call_id: tool_call.id.clone(),
-                        content: Value::String(reason.to_string()),
-                    });
+                Ok(Some(arguments.answer))
+            }
+            Err(error) => {
+                context.add_tool_result(ToolResult::Failure {
+                    tool_call_id: tool_call.id.clone(),
+                    content: Value::String(error.to_string()),
+                });
 
-                    Err(ExecutorError::FinalizeFailure { reason })
-                }
-            },
+                Ok(None)
+            }
+        }
+    }
+
+    async fn process_finalize_error_tool_call(&self, context: &mut Context, tool_call: &ToolCall) -> Result<Option<O>, ExecutorError> {
+        if let Err(error) = validate_json_against_schema_with_context(
+            &tool_call.arguments,
+            &self.finalize_error_parameters_schema,
+            "Finalize error tool arguments do not match schema",
+        ) {
+            context.add_tool_result(ToolResult::Failure {
+                tool_call_id: tool_call.id.clone(),
+                content: Value::String(error.to_string()),
+            });
+
+            return Ok(None);
+        }
+
+        let input_result: Result<FinalizeErrorArguments, _> = serde_json::from_value(tool_call.arguments.clone());
+
+        match input_result {
+            Ok(arguments) => {
+                context.add_tool_result(ToolResult::Failure {
+                    tool_call_id: tool_call.id.clone(),
+                    content: Value::String(arguments.reason.to_string()),
+                });
+
+                Err(ExecutorError::FinalizeFailure { reason: arguments.reason })
+            }
             Err(error) => {
                 context.add_tool_result(ToolResult::Failure {
                     tool_call_id: tool_call.id.clone(),
@@ -191,12 +257,13 @@ where
         context: &Context,
         provider: &P,
         tools: &[ToolDefinition],
+        tool_choice: ProviderToolChoice,
         config: &AgentConfig,
     ) -> Result<ProviderResponse, ExecutorError> {
         let mut attempt = 0;
 
         loop {
-            match provider.generate(context, tools, config).await {
+            match provider.generate(context, tools, tool_choice, config).await {
                 Ok(response) => break Ok(response),
                 Err(error) if error.is_retriable() && attempt < config.provider_max_retries => {
                     sleep(self.retry_delay_for_provider_error(&error, attempt, config.provider_retry_base_delay_ms)).await;
@@ -227,9 +294,12 @@ where
         tools: &[Arc<dyn RuntimeTool>],
         config: &AgentConfig,
     ) -> Result<Self::Output, ExecutorError> {
-        let (tools, registry) = self.prepare_tools(tools)?;
+        let (all_tools, completion_tools, registry) = self.prepare_tools(tools)?;
 
         let mut iteration = 0;
+        let mut completion_phase_enabled = false;
+
+        let (finalize_success_tool_name, finalize_error_tool_name) = self.completion_tool_names();
 
         loop {
             // Stop runaway conversations once the iteration budget is exhausted
@@ -239,8 +309,19 @@ where
                 });
             }
 
-            // Ask the provider to extend the conversation using the current context and tools
-            let response = self.generate_with_retry(context, provider, &tools, config).await?;
+            // Ask the provider to extend the conversation using the current context and tools.
+            // Once completion mode is enabled, only completion tools are exposed and tool calls are required.
+            let provider_tools = if completion_phase_enabled { &completion_tools } else { &all_tools };
+
+            let provider_tool_choice = if completion_phase_enabled {
+                ProviderToolChoice::Required
+            } else {
+                ProviderToolChoice::Auto
+            };
+
+            let response = self
+                .generate_with_retry(context, provider, provider_tools, provider_tool_choice, config)
+                .await?;
 
             if let Some(usage) = response.usage {
                 context.add_token_usage(usage);
@@ -265,17 +346,19 @@ where
                 return Err(ExecutorError::MaxTokensReached);
             }
 
-            // Nudge the model toward the finalize tool when it tries to stop without completing
+            // Switch to completion mode when the model tries to stop without completion.
+            // The next turn forces a tool call and exposes only success/error completion tools,
+            // which creates an explicit binary finish decision.
             if response.stop_reason == StopReason::EndOfSequence {
-                context.add_user_message(RecoveryInstruction::MustExitByCallingTool {
-                    tool_name: self.finalize_tool.name(),
+                completion_phase_enabled = true;
+
+                context.add_user_message(RecoveryInstruction::MustExitByCallingCompletionTool {
+                    success_tool_name: finalize_success_tool_name,
+                    error_tool_name: finalize_error_tool_name,
                 });
             }
 
             // This executor is tool-driven: progress is only made through tool calls.
-            // If the model replies without calling a tool, it has not executed any
-            // actionable step toward completion, so the turn is treated as incomplete
-            // and retried on the next iteration.
             if response.tool_calls.is_empty() {
                 iteration += 1;
                 continue;
@@ -287,13 +370,23 @@ where
             }
 
             // Completion rule:
-            // - If the model returns ONLY the finalize tool call, execution is complete.
-            // - If finalize is mixed with other tool calls, finalize is ignored for this turn.
-            // - If only non-finalize tools are returned, execute them and continue looping.
-            // The loop ends only when finalize is requested by itself.
+            // - If the model returns ONLY finalize_success, execution succeeds.
+            // - If the model returns ONLY finalize_error, execution fails with the reason.
+            // - If completion tools are mixed with other tools, completion calls are ignored.
+            // - If both completion tools are returned together, both are ignored and retried.
             match self.classify_tool_calls(&response) {
-                ToolCallExecution::Complete(finalize_tool_call) => {
-                    let output = match self.process_finalize_tool_call(context, finalize_tool_call).await {
+                ToolCallExecution::CompleteWithSuccess(finalize_success_tool_call) => {
+                    let output = match self.process_finalize_success_tool_call(context, finalize_success_tool_call).await {
+                        Ok(output) => output,
+                        Err(error) => break Err(error),
+                    };
+
+                    if let Some(result) = output {
+                        break Ok(result);
+                    }
+                }
+                ToolCallExecution::CompleteWithError(finalize_error_tool_call) => {
+                    let output = match self.process_finalize_error_tool_call(context, finalize_error_tool_call).await {
                         Ok(output) => output,
                         Err(error) => break Err(error),
                     };
@@ -304,14 +397,15 @@ where
                 }
                 ToolCallExecution::Continue {
                     tool_calls,
-                    ignored_finalize_calls,
+                    ignored_completion_calls,
                 } => {
-                    for ignored_finalize_call in ignored_finalize_calls {
+                    for ignored_completion_call in ignored_completion_calls {
                         context.add_tool_result(ToolResult::Failure {
-                            tool_call_id: ignored_finalize_call.id.clone(),
+                            tool_call_id: ignored_completion_call.id.clone(),
                             content: Value::String(
-                                RecoveryInstruction::MustCallToolAloneToFinish {
-                                    tool_name: self.finalize_tool.name(),
+                                RecoveryInstruction::MustCallCompletionToolAloneToFinish {
+                                    success_tool_name: finalize_success_tool_name,
+                                    error_tool_name: finalize_error_tool_name,
                                 }
                                 .to_string(),
                             ),
@@ -378,7 +472,7 @@ mod tests {
             age: usize,
         }
 
-        let provider = provider!([tool_call!(FinalizeTool::<Person>, { "age": 25, "name": "John Snow" })]);
+        let provider = provider!([tool_call!(FinalizeSuccessTool::<Person>, { "age": 25, "name": "John Snow" })]);
         let (_, output) = run_executor!(provider => Person);
 
         assert_eq!(
@@ -405,7 +499,7 @@ mod tests {
                 text = "\n  done with output  \t",
                 stop = StopReason::ToolCalls,
                 tools = [
-                    tool_call!(FinalizeTool::<Person>, { "name": "John Snow", "age": 25 })
+                    tool_call!(FinalizeSuccessTool::<Person>, { "name": "John Snow", "age": 25 })
                 ]
             )
         ]);
@@ -511,7 +605,7 @@ mod tests {
             assistant_message!(
                 stop = StopReason::ToolCalls,
                 tools = [
-                    tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+                    tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
                 ]
             )
         ]);
@@ -546,7 +640,7 @@ mod tests {
             }),
             assistant_message!(
                 stop = StopReason::ToolCalls,
-                tools = [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
+                tools = [tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })]
             )
         ]);
 
@@ -645,7 +739,7 @@ mod tests {
             ),
             assistant_message!(
                 stop = StopReason::ToolCalls,
-                tools = [tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })],
+                tools = [tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })],
                 usage = TokenUsage {
                     total_tokens: 7,
                     input_tokens: 2,
@@ -679,7 +773,7 @@ mod tests {
 
         let provider = provider!([
             tool_call!(EchoTool, id = "echo-invalid", { "value": 123 }),
-            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
@@ -766,7 +860,7 @@ mod tests {
 
         let provider = provider!([
             tool_call!(AlwaysFailTool, id = "fail", { "value": "x" }),
-            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [AlwaysFailTool]);
@@ -800,7 +894,7 @@ mod tests {
                     arguments: json!({ "value": 1 }),
                 }]
             ),
-            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
@@ -893,7 +987,7 @@ mod tests {
         #[rustfmt::skip]
         let provider = provider!([
             assistant_message!(text = "stopping early", stop = StopReason::EndOfSequence),
-            tool_call!(FinalizeTool::<Person>, { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, { "name": "Maria", "age": 40 })
         ]);
 
         let (context, output) = run_executor!(provider => Person);
@@ -909,9 +1003,39 @@ mod tests {
         assert!(context.messages.iter().any(|message| {
             matches!(
                 message,
-                Message::User { content } if content.contains("You must finish by calling 'finalize'.")
+                Message::User { content }
+                    if content.contains("You must finish by calling one completion tool")
             )
         }));
+    }
+
+    #[tokio::test]
+    async fn forces_required_tool_choice_during_completion_phase() {
+        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+        struct Person {
+            name: String,
+            age: usize,
+        }
+
+        let provider = provider!([
+            assistant_message!(text = "done thinking", stop = StopReason::EndOfSequence),
+            tool_call!(FinalizeSuccessTool::<Person>, { "name": "Maria", "age": 40 })
+        ]);
+
+        let (_, output) = run_executor!(provider => Person);
+
+        assert_eq!(
+            output.expect("execution should succeed"),
+            Person {
+                name: "Maria".to_string(),
+                age: 40,
+            }
+        );
+
+        assert_eq!(
+            provider.requested_tool_choices(),
+            vec![ProviderToolChoice::Auto, ProviderToolChoice::Required]
+        );
     }
 
     #[tokio::test]
@@ -925,7 +1049,7 @@ mod tests {
         #[rustfmt::skip]
         let provider = provider!([
             assistant_message!(text = "   preparing final answer   ", stop = StopReason::ToolCalls),
-            tool_call!(FinalizeTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool::<Person>, id = "final", { "name": "Maria", "age": 40 })
         ]);
 
         let (context, output) = run_executor!(provider => Person);
@@ -1008,12 +1132,9 @@ mod tests {
 
             ToolCall {
                 id: case_id.to_string(),
-                name: "finalize".to_string(),
+                name: "finalize_success".to_string(),
                 arguments: json!({
-                    "output": {
-                        "type": "success",
-                        "answer": answer,
-                    }
+                    "answer": answer,
                 }),
             }
         }
@@ -1040,24 +1161,24 @@ mod tests {
 
         #[rustfmt::skip]
         let invalid_cases: Vec<InvalidCase> = vec![
-            invalid_case!("u8_type", { "u8": "30" }, ["output.answer.u8", "integer"]),
-            invalid_case!("u16_max", { "u16": 70000 }, ["output.answer.u16", "maximum"]),
+            invalid_case!("u8_type", { "u8": "30" }, ["answer.u8", "integer"]),
+            invalid_case!("u16_max", { "u16": 70000 }, ["answer.u16", "maximum"]),
             invalid_case!("u32_max", { "u32": 5000000000u64 }, ["expected u32"]),
-            invalid_case!("u64_type", { "u64": "500" }, ["output.answer.u64", "integer"]),
-            invalid_case!("usize_min", { "usize": -1 }, ["output.answer.usize", "minimum"]),
-            invalid_case!("i8_max", { "i8": 200 }, ["output.answer.i8", "maximum"]),
-            invalid_case!("i16_max", { "i16": 40000 }, ["output.answer.i16", "maximum"]),
+            invalid_case!("u64_type", { "u64": "500" }, ["answer.u64", "integer"]),
+            invalid_case!("usize_min", { "usize": -1 }, ["answer.usize", "minimum"]),
+            invalid_case!("i8_max", { "i8": 200 }, ["answer.i8", "maximum"]),
+            invalid_case!("i16_max", { "i16": 40000 }, ["answer.i16", "maximum"]),
             invalid_case!("i32_max", { "i32": 3000000000i64 }, ["expected i32"]),
-            invalid_case!("i64_type", { "i64": "10" }, ["output.answer.i64", "integer"]),
+            invalid_case!("i64_type", { "i64": "10" }, ["answer.i64", "integer"]),
             invalid_case!("isize_max", { "isize": 9223372036854775808u64 }, ["expected isize"]),
-            invalid_case!("boolean_type", { "boolean": "true" }, ["output.answer.boolean", "boolean"]),
-            invalid_case!("nullable_type", { "nullable": 123 }, ["output.answer.nullable", "string"]),
-            invalid_case!("vec_string_type", { "vec_string": ["a", 1] }, ["output.answer.vec_string", "string"]),
-            invalid_case!("vec_string_array_type", { "vec_string": "a" }, ["output.answer.vec_string", "array"]),
-            invalid_case!("vec_u16_max", { "vec_u16": [1, 70000] }, ["output.answer.vec_u16", "maximum"]),
-            invalid_case!("fixed_u8_3_len", { "fixed_u8_3": [1, 2, 3, 4] }, ["output.answer.fixed_u8_3", "more than"]),
-            invalid_case!("mixed_tuple_type", { "mixed_tuple": ["hello", "7", 1.5, true, null] }, ["output.answer.mixed_tuple", "integer"]),
-            invalid_case!("string_required", {}, remove = ["string"], ["output.answer.string is required"]),
+            invalid_case!("boolean_type", { "boolean": "true" }, ["answer.boolean", "boolean"]),
+            invalid_case!("nullable_type", { "nullable": 123 }, ["answer.nullable", "string"]),
+            invalid_case!("vec_string_type", { "vec_string": ["a", 1] }, ["answer.vec_string", "string"]),
+            invalid_case!("vec_string_array_type", { "vec_string": "a" }, ["answer.vec_string", "array"]),
+            invalid_case!("vec_u16_max", { "vec_u16": [1, 70000] }, ["answer.vec_u16", "maximum"]),
+            invalid_case!("fixed_u8_3_len", { "fixed_u8_3": [1, 2, 3, 4] }, ["answer.fixed_u8_3", "more than"]),
+            invalid_case!("mixed_tuple_type", { "mixed_tuple": ["hello", "7", 1.5, true, null] }, ["answer.mixed_tuple", "integer"]),
+            invalid_case!("string_required", {}, remove = ["string"], ["answer.string is required"]),
         ];
 
         let mut provider_results = invalid_cases
@@ -1119,24 +1240,18 @@ mod tests {
         let provider = provider!([
             ToolCall {
                 id: "invalid".to_string(),
-                name: "finalize".to_string(),
+                name: "finalize_success".to_string(),
                 arguments: json!({
-                    "output": {
-                        "type": "success",
-                        "answer": {
-                            "random_number": 42
-                        }
+                    "answer": {
+                        "random_number": 42
                     }
                 }),
             },
             ToolCall {
                 id: "valid".to_string(),
-                name: "finalize".to_string(),
+                name: "finalize_success".to_string(),
                 arguments: json!({
-                    "output": {
-                        "type": "success",
-                        "answer": 42
-                    }
+                    "answer": 42
                 }),
             }
         ]);
@@ -1155,7 +1270,11 @@ mod tests {
             .expect("execution should succeed after invalid finalize is rejected");
 
         assert_eq!(output, json!(42));
-        assert_tool_failure_contains!(context, "invalid", ["Finalize tool arguments do not match schema", "output.answer"]);
+        assert_tool_failure_contains!(
+            context,
+            "invalid",
+            ["Finalize success tool arguments do not match schema", "answer"]
+        );
         assert_tool_result!(context, "valid");
     }
 
@@ -1171,11 +1290,11 @@ mod tests {
         let provider = provider!([
             assistant_message!(
                 tools = [
-                    tool_call!(FinalizeTool<Person>, id = "a", { "name": "Ignored User", "age": 99 }),
+                    tool_call!(FinalizeSuccessTool<Person>, id = "a", { "name": "Ignored User", "age": 99 }),
                     tool_call!(EchoTool, { "value": "hello" })
                 ]
             ),
-            tool_call!(FinalizeTool<Person>, id = "b", { "name": "Maria", "age": 40 })
+            tool_call!(FinalizeSuccessTool<Person>, id = "b", { "name": "Maria", "age": 40 })
         ]);
 
         let (context, output) = run_executor!(provider => Person, tools = [EchoTool]);
@@ -1188,7 +1307,11 @@ mod tests {
             }
         );
 
-        assert_tool_failure_contains!(context, "a", ["Call 'finalize' alone to finish."]);
+        assert_tool_failure_contains!(
+            context,
+            "a",
+            ["Call either 'finalize_success' or 'finalize_error' alone to finish."]
+        );
         assert_has_tool_success_content!(context, { "echo": "hello" });
         assert_tool_result!(context, "b");
     }
@@ -1203,7 +1326,7 @@ mod tests {
 
         #[rustfmt::skip]
         let provider = provider!([
-            tool_call!(FinalizeTool::<Person>, id = "finalize", failure = "Not enough information")
+            tool_call!(FinalizeErrorTool, id = "finalize", failure = "Not enough information")
         ]);
 
         let (context, response) = run_executor!(provider => Person);

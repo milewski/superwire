@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::error::ProviderError;
 use crate::message::{Message, ToolCall};
-use crate::traits::{Provider, ProviderResponse, StopReason, TokenUsage, ToolDefinition};
+use crate::traits::{Provider, ProviderResponse, ProviderToolChoice, StopReason, TokenUsage, ToolDefinition};
 use crate::AgentConfig;
 use async_trait::async_trait;
 use ollama_rs::generation::chat::request::ChatMessageRequest;
@@ -90,6 +90,7 @@ impl Provider for OllamaProvider {
         &self,
         context: &Context,
         _tools: &[ToolDefinition],
+        _tool_choice: ProviderToolChoice,
         config: &AgentConfig,
     ) -> Result<ProviderResponse, ProviderError> {
         let messages: Result<Vec<ChatMessage>, String> = context
