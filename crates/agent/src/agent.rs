@@ -252,19 +252,19 @@ impl AgentRunStatistics {
 
         for message in &context.messages {
             match message {
-                Message::User { id: _, content: _ } => {
+                Message::User { content: _ } => {
                     user_messages += 1;
                 }
 
-                Message::Assistant { id: _, content: _ } => {
+                Message::Assistant { content: _ } => {
                     assistant_messages += 1;
                 }
 
-                Message::AssistantToolCall { id: _, tool: _ } => {
+                Message::AssistantToolCall { tool: _ } => {
                     assistant_tool_call_messages += 1;
                 }
 
-                Message::ToolResult { id: _, result } => {
+                Message::ToolResult { result } => {
                     tool_result_messages += 1;
 
                     match result {
@@ -284,7 +284,7 @@ impl AgentRunStatistics {
                     }
                 }
 
-                Message::System { id: _, content: _ } => {
+                Message::System { content: _ } => {
                     system_messages += 1;
                 }
             }
@@ -553,7 +553,7 @@ mod tests {
             .expect("context should contain at least one message");
 
         match first_message {
-            Message::System { id: _, content } => {
+            Message::System { content } => {
                 assert!(content.contains("Completion workflow requirement"));
                 assert!(content.contains(FINALIZE_SUCCESS_TOOL_NAME));
                 assert!(content.contains(FINALIZE_ERROR_TOOL_NAME));
@@ -591,7 +591,7 @@ mod tests {
             .filter(|message| {
                 matches!(
                     message,
-                    Message::System { id: _, content }
+                    Message::System { content }
                         if content == &completion_workflow_instruction
                 )
             })

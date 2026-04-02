@@ -336,11 +336,7 @@ where
                 let trimmed = text.trim_matches(|char| char == '\n' || char == '\r' || char == '\t' || char == ' ');
 
                 if !trimmed.is_empty() {
-                    if let Some(provider_message_id) = &response.provider_message_id {
-                        context.add_assistant_message_with_id(provider_message_id, trimmed);
-                    } else {
-                        context.add_assistant_message(trimmed);
-                    }
+                    context.add_assistant_message(trimmed);
                 }
             }
 
@@ -541,51 +537,12 @@ mod tests {
             .messages
             .iter()
             .filter_map(|message| match message {
-                Message::Assistant { id: _, content } => Some(content.clone()),
+                Message::Assistant { content } => Some(content.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
 
         assert_eq!(assistant_messages, vec!["done with output".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn stores_provider_message_id_for_assistant_text_message() {
-        #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
-        struct Person {
-            name: String,
-            age: usize,
-        }
-
-        let provider = provider_from_results(vec![Ok(ProviderResponse {
-            tool_calls: vec![tool_call!(FinalizeSuccessTool::<Person>, { "name": "John Snow", "age": 25 })],
-            text: Some("final answer preview".to_string()),
-            provider_message_id: Some("provider_message_123".to_string()),
-            stop_reason: StopReason::ToolCalls,
-            usage: None,
-        })]);
-
-        let (context, output) = run_executor!(provider => Person);
-
-        assert_eq!(
-            output.expect("execution should succeed"),
-            Person {
-                name: "John Snow".to_string(),
-                age: 25,
-            }
-        );
-
-        let provider_assistant_message = context.messages.iter().find(|message| {
-            matches!(
-                message,
-                Message::Assistant {
-                    id,
-                    content: _
-                } if id == "provider_message_123"
-            )
-        });
-
-        assert!(provider_assistant_message.is_some());
     }
 
     #[tokio::test]
@@ -1065,7 +1022,7 @@ mod tests {
         assert!(context.messages.iter().any(|message| {
             matches!(
                 message,
-                Message::User { id: _, content }
+                Message::User { content }
                     if content.contains("You must finish by calling one completion tool")
             )
         }));
@@ -1130,7 +1087,7 @@ mod tests {
             .filter(|message| {
                 matches!(
                     message,
-                    Message::User { id: _, content }
+                    Message::User { content }
                         if content.contains("You must finish by calling one completion tool")
                 )
             })
@@ -1168,7 +1125,7 @@ mod tests {
             .filter(|message| {
                 matches!(
                     message,
-                    Message::User { id: _, content }
+                    Message::User { content }
                         if content.contains("You must finish by calling one completion tool")
                 )
             })
@@ -1210,7 +1167,7 @@ mod tests {
             .messages
             .iter()
             .filter_map(|message| match message {
-                Message::Assistant { id: _, content } => Some(content.clone()),
+                Message::Assistant { content } => Some(content.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
