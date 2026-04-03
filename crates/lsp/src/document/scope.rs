@@ -1,7 +1,7 @@
-use engine_ai_core::dsl::{AgentPropertyName, DeclarationKeyword, SingletonDeclarationKind};
+use engine_ai_core::dsl::{AgentPropertyName, DeclarationKeyword, ForClauseKeyword, SingletonDeclarationKind};
 use engine_ai_core::runtime::InferenceSetting;
 
-use super::text_utils::trailing_identifier;
+use super::text_utils::{is_identifier, trailing_identifier};
 use super::{CompletionKind, CompletionSuggestion};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +81,12 @@ impl ScopeScannerTokenState {
             return;
         }
 
+        if !is_identifier(&self.current_identifier) {
+            self.current_identifier.clear();
+
+            return;
+        }
+
         self.recent_identifiers.push(self.current_identifier.clone());
         self.current_identifier.clear();
 
@@ -116,15 +122,31 @@ impl ScopeScannerTokenState {
             return ScopeBlock::TypedDeclaration;
         }
 
-        if self.recent_identifiers.len() >= 2 {
-            let penultimate_identifier = &self.recent_identifiers[self.recent_identifiers.len() - 2];
-
-            if penultimate_identifier == DeclarationKeyword::Agent.as_str() && last_identifier != DeclarationKeyword::Agent.as_str() {
-                return ScopeBlock::Agent;
+        if let Some(agent_keyword_index) = self
+            .recent_identifiers
+            .iter()
+            .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Agent))
+        {
+            if let Some(agent_name_identifier) = self.recent_identifiers.get(agent_keyword_index + 1) {
+                if ForClauseKeyword::from_identifier(agent_name_identifier).is_none()
+                    && DeclarationKeyword::from_identifier(agent_name_identifier).is_none()
+                {
+                    return ScopeBlock::Agent;
+                }
             }
+        }
 
-            if penultimate_identifier == DeclarationKeyword::Schema.as_str() && last_identifier != DeclarationKeyword::Schema.as_str() {
-                return ScopeBlock::TypedDeclaration;
+        if let Some(schema_keyword_index) = self
+            .recent_identifiers
+            .iter()
+            .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Schema))
+        {
+            if let Some(schema_name_identifier) = self.recent_identifiers.get(schema_keyword_index + 1) {
+                if ForClauseKeyword::from_identifier(schema_name_identifier).is_none()
+                    && DeclarationKeyword::from_identifier(schema_name_identifier).is_none()
+                {
+                    return ScopeBlock::TypedDeclaration;
+                }
             }
         }
 
