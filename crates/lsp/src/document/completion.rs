@@ -3,8 +3,8 @@ use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, Reference
 use crate::protocol::Position;
 
 use super::completion_context::{
-    AgentPropertyValueCompletionContext, DeclarationHeaderCompletionContext, InferenceSettingValueCompletionContext,
-    ModelCallCompletionContext,
+    AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
+    InferenceSettingValueCompletionContext, ModelCallCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
@@ -92,6 +92,10 @@ impl DocumentState {
         }
 
         if !line_prefix.contains(':') {
+            return Some(Vec::new());
+        }
+
+        if ArrayFixedLengthCompletionContext::from_line_prefix(line_prefix).is_some() {
             return Some(Vec::new());
         }
 
