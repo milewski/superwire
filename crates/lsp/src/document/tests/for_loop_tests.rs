@@ -45,6 +45,20 @@ fn suggests_agent_properties_inside_for_loop_agent_block() {
 }
 
 #[test]
+fn suggests_inference_settings_inside_for_loop_agent_inference_object() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent number_note for number in [1, 2, 3, 4] {
+            inference: {
+                <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_all_inference_settings!(&completion_suggestions);
+    assert_completion_excludes_labels!(&completion_suggestions, AgentExpressionPropertyName::Tools);
+}
+
+#[test]
 fn suggests_for_keyword_after_agent_name_in_agent_header() {
     let source = ["agent remediation_plan  {", "}"].join("\n");
     let cursor_offset = source
