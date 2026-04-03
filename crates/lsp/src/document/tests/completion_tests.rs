@@ -1017,6 +1017,44 @@ fn suggests_only_types_inside_agent_output_object_field_value() {
 }
 
 #[test]
+fn suppresses_agent_property_suggestions_inside_agent_output_object_field_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: {
+                property: <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        AgentExpressionPropertyName::Tools,
+        AgentExpressionPropertyName::Prompt
+    );
+}
+
+#[test]
+fn suggests_only_types_inside_nested_agent_output_object_field_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: {
+                property: {
+                    id: <cursor>
+                }
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        AgentExpressionPropertyName::Tools,
+        DeclarationKeyword::Provider
+    );
+}
+
+#[test]
 fn suggests_only_types_for_input_field_values() {
     let completion_suggestions = inline_completion_suggestions! {
         input {
