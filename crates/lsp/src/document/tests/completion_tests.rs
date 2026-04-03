@@ -783,6 +783,46 @@ fn completes_registered_provider_models_inside_model_call() {
 }
 
 #[test]
+fn suggests_only_declared_providers_for_model_property_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
+
+        provider anthropic {
+            driver: "anthropic"
+            models: ["claude-3-7-sonnet-latest"]
+        }
+
+        agent writer {
+            model: <cursor>
+            prompt: "hello"
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "openai", "anthropic");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        BuiltinFunctionName::Context,
+        ReferenceKeyword::Agent,
+        AgentExpressionPropertyName::Prompt,
+        DeclarationKeyword::Provider,
+        InferenceSetting::MaxTokens,
+        "string"
+    );
+
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Keyword);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Module);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Property);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Variable);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Type);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Value);
+}
+
+#[test]
 fn suggests_reference_roots_inside_model_call_expression() {
     let source = [
         "provider openai {",

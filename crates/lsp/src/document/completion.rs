@@ -133,32 +133,6 @@ impl DocumentState {
             }
         }
 
-        if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
-            if let Some(context_property_suggestions) = self.context_property_value_suggestions(semantic_index, line_prefix) {
-                return Some(context_property_suggestions);
-            }
-        }
-
-        if !line_has_property_separator && !inside_interpolation_expression {
-            if DeclarationHeaderCompletionContext::from_line_prefix(line_prefix).is_some() {
-                return Some(Vec::new());
-            }
-
-            match completion_scope {
-                CompletionScope::InferenceSettings => {
-                    return Some(inference_setting_scope_suggestions(line_prefix));
-                }
-                CompletionScope::AgentProperties => {
-                    return Some(agent_property_scope_suggestions(line_prefix));
-                }
-                CompletionScope::General | CompletionScope::TypedDeclarations => {}
-            }
-
-            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
-                return Some(semantic_index.root_declaration_suggestions(line_prefix));
-            }
-        }
-
         if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(line_prefix) {
             let mut model_suggestions = semantic_index.model_call_suggestions(&model_call_context);
 
@@ -182,6 +156,32 @@ impl DocumentState {
             }
         }
 
+        if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
+            if let Some(agent_property_suggestions) = self.agent_property_value_suggestions(semantic_index, line_prefix) {
+                return Some(agent_property_suggestions);
+            }
+        }
+
+        if !line_has_property_separator && !inside_interpolation_expression {
+            if DeclarationHeaderCompletionContext::from_line_prefix(line_prefix).is_some() {
+                return Some(Vec::new());
+            }
+
+            match completion_scope {
+                CompletionScope::InferenceSettings => {
+                    return Some(inference_setting_scope_suggestions(line_prefix));
+                }
+                CompletionScope::AgentProperties => {
+                    return Some(agent_property_scope_suggestions(line_prefix));
+                }
+                CompletionScope::General | CompletionScope::TypedDeclarations => {}
+            }
+
+            if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
+                return Some(semantic_index.root_declaration_suggestions(line_prefix));
+            }
+        }
+
         if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, line_prefix) {
             return Some(provider_driver_suggestions);
         }
@@ -193,14 +193,18 @@ impl DocumentState {
         None
     }
 
-    fn context_property_value_suggestions(&self, semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    fn agent_property_value_suggestions(&self, semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
         let agent_property_value_completion_context = AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)?;
 
-        if agent_property_value_completion_context.property_name != AgentExpressionPropertyName::Context {
-            return None;
+        match agent_property_value_completion_context.property_name {
+            AgentExpressionPropertyName::Context => {
+                Some(semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix))
+            }
+            AgentExpressionPropertyName::Model => {
+                Some(semantic_index.provider_call_suggestions(&agent_property_value_completion_context.value_prefix))
+            }
+            AgentExpressionPropertyName::Prompt | AgentExpressionPropertyName::Inference | AgentExpressionPropertyName::Tools => None,
         }
-
-        Some(semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix))
     }
 
     fn reference_completion_suggestions(
