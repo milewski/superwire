@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, SingletonDeclarationKind};
+use engine_ai_core::dsl::{AgentPropertyName, DeclarationKeyword, SingletonDeclarationKind};
 use engine_ai_core::runtime::InferenceSetting;
 
 use super::text_utils::trailing_identifier;
@@ -100,9 +100,13 @@ impl ScopeScannerTokenState {
 
         if let Some(pending_property) = &self.pending_property {
             if parent_block == Some(ScopeBlock::Agent) {
-                if let Some(agent_expression_property_name) = AgentExpressionPropertyName::from_identifier(pending_property) {
-                    if agent_expression_property_name == AgentExpressionPropertyName::Inference {
+                if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
+                    if agent_property_name == AgentPropertyName::Inference {
                         return ScopeBlock::Inference;
+                    }
+
+                    if agent_property_name == AgentPropertyName::Output {
+                        return ScopeBlock::TypedDeclaration;
                     }
                 }
             }
