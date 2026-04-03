@@ -1055,6 +1055,19 @@ fn suggests_only_types_inside_nested_agent_output_object_field_value() {
 }
 
 #[test]
+fn suppresses_suggestions_inside_agent_output_array_fixed_length_slot() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: {
+                items: [string; <cursor>]
+            }
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn suggests_only_types_for_input_field_values() {
     let completion_suggestions = inline_completion_suggestions! {
         input {

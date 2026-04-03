@@ -232,6 +232,9 @@ pub struct InferenceSettingValueCompletionContext {
     pub inside_string_literal: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ArrayFixedLengthCompletionContext;
+
 impl InferenceSettingValueCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
@@ -266,5 +269,35 @@ impl ValueCompletionContext {
             value_prefix: trimmed_value_prefix.to_string(),
             inside_string_literal: false,
         }
+    }
+}
+
+impl ArrayFixedLengthCompletionContext {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        let trimmed_line_prefix = line_prefix.trim_end();
+        let mut unmatched_array_open_offsets = Vec::<usize>::new();
+
+        for (character_offset, character) in trimmed_line_prefix.char_indices() {
+            if character == '[' {
+                unmatched_array_open_offsets.push(character_offset);
+
+                continue;
+            }
+
+            if character == ']' {
+                let _ = unmatched_array_open_offsets.pop();
+            }
+        }
+
+        let array_open_offset = *unmatched_array_open_offsets.last()?;
+        let array_contents_before_cursor = &trimmed_line_prefix[array_open_offset + 1..];
+
+        let (_, fixed_length_prefix) = array_contents_before_cursor.rsplit_once(';')?;
+
+        if fixed_length_prefix.contains(':') {
+            return None;
+        }
+
+        Some(Self)
     }
 }
