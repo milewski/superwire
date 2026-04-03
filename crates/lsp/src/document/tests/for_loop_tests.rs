@@ -59,6 +59,26 @@ fn suggests_inference_settings_inside_for_loop_agent_inference_object() {
 }
 
 #[test]
+fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            numbers: [number]
+        }
+
+        agent input_number_note for n in input.numbers {
+            model: ollama("qwen3:8b")
+            prompt: "Write a short note for input number {{ <cursor> }}"
+            output: {
+                number: number
+                note: string
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "n");
+}
+
+#[test]
 fn suggests_for_keyword_after_agent_name_in_agent_header() {
     let source = ["agent remediation_plan  {", "}"].join("\n");
     let cursor_offset = source

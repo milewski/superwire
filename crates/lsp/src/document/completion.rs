@@ -65,7 +65,7 @@ impl DocumentState {
         }
 
         if inside_interpolation_expression {
-            return semantic_index.interpolation_root_suggestions("");
+            return semantic_index.interpolation_root_suggestions("", position);
         }
 
         if semantic_index.is_type_position(position, &line_prefix) {
@@ -255,14 +255,14 @@ impl DocumentState {
             match reference_completion_path.root_keyword() {
                 Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
                     if can_suggest_interpolation_roots {
-                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier()));
+                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
                     }
 
                     return Some(reference_suggestions);
                 }
                 Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
                     if can_suggest_interpolation_roots {
-                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier()));
+                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
                     }
 
                     return Some(Vec::new());
