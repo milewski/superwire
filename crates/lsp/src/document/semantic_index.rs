@@ -25,6 +25,7 @@ pub struct SemanticIndex {
     pub(in crate::document) input_fields: BTreeMap<String, TypeExpression>,
     pub(in crate::document) secrets_fields: BTreeMap<String, TypeExpression>,
     pub(in crate::document) agents: HashMap<String, AgentSummary>,
+    pub(in crate::document) agent_for_loop_iterators: HashMap<String, String>,
     pub(in crate::document) agent_names: Vec<String>,
     pub(in crate::document) output_locations: Vec<SourceSpan>,
     pub(in crate::document) typed_declaration_locations: Vec<SourceSpan>,
@@ -105,8 +106,8 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn interpolation_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
-        [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+    pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input]
             .into_iter()
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
             .map(|reference_keyword| CompletionSuggestion {
@@ -116,7 +117,21 @@ impl SemanticIndex {
                 documentation: format!("Use `{}.<path>` inside interpolation expressions.", reference_keyword.as_str()),
                 insert_text: format!("{}.", reference_keyword.as_str()),
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        if let Some(for_loop_iterator_name) = self.for_loop_iterator_name_at_position(position) {
+            if for_loop_iterator_name.starts_with(root_prefix) {
+                completion_suggestions.push(CompletionSuggestion {
+                    label: for_loop_iterator_name.to_string(),
+                    kind: CompletionKind::Variable,
+                    detail: "For-loop iterator variable".to_string(),
+                    documentation: "Iterator binding declared in the current agent for-clause.".to_string(),
+                    insert_text: for_loop_iterator_name.to_string(),
+                });
+            }
+        }
+
+        completion_suggestions
     }
 
     pub fn context_function_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
@@ -143,6 +158,7 @@ impl SemanticIndex {
             input_fields: BTreeMap::new(),
             secrets_fields: BTreeMap::new(),
             agents: HashMap::new(),
+            agent_for_loop_iterators: HashMap::new(),
             agent_names: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -208,6 +224,12 @@ impl SemanticIndex {
                     semantic_index
                         .agents
                         .insert(agent_declaration.name.clone(), AgentSummary { output_type });
+
+                    if let Some(agent_for_loop) = &agent_declaration.for_loop {
+                        semantic_index
+                            .agent_for_loop_iterators
+                            .insert(agent_declaration.name.clone(), agent_for_loop.iterator_name.clone());
+                    }
 
                     semantic_index.agent_names.push(agent_declaration.name.clone());
                     semantic_index.agent_locations.push(NamedSpan {
@@ -330,6 +352,7 @@ impl SemanticIndex {
             input_fields: tooling_snapshot.input_fields().clone(),
             secrets_fields: tooling_snapshot.secrets_fields().clone(),
             agents,
+            agent_for_loop_iterators: HashMap::new(),
             agent_names,
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -744,6 +767,12 @@ impl SemanticIndex {
             .iter()
             .find(|agent_location| source_span_contains_position(agent_location.span, position))
             .map(|agent_location| agent_location.name.as_str())
+    }
+
+    fn for_loop_iterator_name_at_position(&self, position: Position) -> Option<&str> {
+        let agent_name = self.agent_name_at_position(position)?;
+
+        self.agent_for_loop_iterators.get(agent_name).map(String::as_str)
     }
 }
 
