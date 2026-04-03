@@ -163,8 +163,8 @@ impl DocumentState {
         }
 
         if !line_has_property_separator && !inside_interpolation_expression {
-            if DeclarationHeaderCompletionContext::from_line_prefix(line_prefix).is_some() {
-                return Some(Vec::new());
+            if let Some(declaration_header_completion_context) = DeclarationHeaderCompletionContext::from_line_prefix(line_prefix) {
+                return Some(declaration_header_completion_context.completion_suggestions());
             }
 
             match completion_scope {

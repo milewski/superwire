@@ -1,23 +1,37 @@
 use super::text_utils::trailing_identifier;
-use engine_ai_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword};
+use super::{CompletionKind, CompletionSuggestion};
+use engine_ai_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
 use engine_ai_core::runtime::InferenceSetting;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclarationHeaderCompletionContext {
     NamedDeclaration,
     SingletonDeclaration,
+    AgentForKeyword { keyword_prefix: String },
+    AgentForIteratorName,
+    AgentInKeyword { keyword_prefix: String },
 }
 
 impl DeclarationHeaderCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
 
-        if trimmed_line_prefix.contains(':') || trimmed_line_prefix.contains('{') {
+        let declaration_line_prefix = if let Some((prefix_before_brace, suffix_after_brace)) = trimmed_line_prefix.split_once('{') {
+            if !suffix_after_brace.trim().is_empty() {
+                return None;
+            }
+
+            prefix_before_brace.trim_end()
+        } else {
+            trimmed_line_prefix
+        };
+
+        if declaration_line_prefix.contains(':') {
             return None;
         }
 
-        let declaration_keyword = Self::declaration_keyword_from_prefix(trimmed_line_prefix)?;
-        let line_after_keyword = trimmed_line_prefix.strip_prefix(declaration_keyword.as_str())?;
+        let declaration_keyword = Self::declaration_keyword_from_prefix(declaration_line_prefix)?;
+        let line_after_keyword = declaration_line_prefix.strip_prefix(declaration_keyword.as_str())?;
 
         if !line_after_keyword.starts_with(char::is_whitespace) {
             return None;
@@ -27,11 +41,11 @@ impl DeclarationHeaderCompletionContext {
 
         match declaration_keyword {
             DeclarationKeyword::Provider | DeclarationKeyword::Schema | DeclarationKeyword::Agent => {
-                if trimmed_line_after_keyword.is_empty() {
-                    return Some(Self::NamedDeclaration);
+                if declaration_keyword == DeclarationKeyword::Agent {
+                    return Self::agent_header_completion_context(trimmed_line_after_keyword);
                 }
 
-                if !trimmed_line_after_keyword.contains(char::is_whitespace) {
+                if trimmed_line_after_keyword.is_empty() || !trimmed_line_after_keyword.contains(char::is_whitespace) {
                     return Some(Self::NamedDeclaration);
                 }
 
@@ -45,6 +59,105 @@ impl DeclarationHeaderCompletionContext {
                 Some(Self::SingletonDeclaration)
             }
         }
+    }
+
+    pub fn completion_suggestions(self) -> Vec<CompletionSuggestion> {
+        match self {
+            Self::NamedDeclaration | Self::SingletonDeclaration | Self::AgentForIteratorName => Vec::new(),
+            Self::AgentForKeyword { keyword_prefix } => Self::for_clause_keyword_suggestions(ForClauseKeyword::For, &keyword_prefix),
+            Self::AgentInKeyword { keyword_prefix } => Self::for_clause_keyword_suggestions(ForClauseKeyword::In, &keyword_prefix),
+        }
+    }
+
+    fn agent_header_completion_context(trimmed_line_after_keyword: &str) -> Option<Self> {
+        if trimmed_line_after_keyword.is_empty() {
+            return Some(Self::NamedDeclaration);
+        }
+
+        let mut declaration_segments = trimmed_line_after_keyword.split_whitespace().collect::<Vec<_>>();
+        let line_has_trailing_whitespace = trimmed_line_after_keyword.ends_with(char::is_whitespace);
+
+        if declaration_segments.is_empty() {
+            return Some(Self::NamedDeclaration);
+        }
+
+        if declaration_segments.len() == 1 {
+            if line_has_trailing_whitespace {
+                return Some(Self::AgentForKeyword {
+                    keyword_prefix: String::new(),
+                });
+            }
+
+            return Some(Self::NamedDeclaration);
+        }
+
+        let for_clause_segment = declaration_segments[1];
+
+        if declaration_segments.len() == 2 {
+            if ForClauseKeyword::from_identifier(for_clause_segment) == Some(ForClauseKeyword::For) {
+                if line_has_trailing_whitespace {
+                    return Some(Self::AgentForIteratorName);
+                }
+
+                return None;
+            }
+
+            return Some(Self::AgentForKeyword {
+                keyword_prefix: for_clause_segment.to_string(),
+            });
+        }
+
+        if ForClauseKeyword::from_identifier(for_clause_segment) != Some(ForClauseKeyword::For) {
+            return None;
+        }
+
+        if declaration_segments.len() == 3 {
+            if line_has_trailing_whitespace {
+                return Some(Self::AgentInKeyword {
+                    keyword_prefix: String::new(),
+                });
+            }
+
+            return Some(Self::AgentForIteratorName);
+        }
+
+        if declaration_segments.len() == 4 {
+            let in_clause_segment = declaration_segments.pop().unwrap_or_default();
+
+            if line_has_trailing_whitespace {
+                if ForClauseKeyword::from_identifier(in_clause_segment) == Some(ForClauseKeyword::In) {
+                    return None;
+                }
+
+                return Some(Self::AgentInKeyword {
+                    keyword_prefix: in_clause_segment.to_string(),
+                });
+            }
+
+            if ForClauseKeyword::from_identifier(in_clause_segment).is_some() {
+                return None;
+            }
+
+            return Some(Self::AgentInKeyword {
+                keyword_prefix: in_clause_segment.to_string(),
+            });
+        }
+
+        None
+    }
+
+    fn for_clause_keyword_suggestions(for_clause_keyword: ForClauseKeyword, keyword_prefix: &str) -> Vec<CompletionSuggestion> {
+        if !for_clause_keyword.as_str().starts_with(keyword_prefix) {
+            return Vec::new();
+        }
+
+        vec![CompletionSuggestion {
+            label: for_clause_keyword.as_str().to_string(),
+            kind: CompletionKind::Keyword,
+            detail: "For-clause keyword".to_string(),
+            documentation: "Agent for-loop declaration keyword.".to_string(),
+            insert_text: for_clause_keyword.as_str().to_string(),
+        }]
     }
 
     fn declaration_keyword_from_prefix(trimmed_line_prefix: &str) -> Option<DeclarationKeyword> {
