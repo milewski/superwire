@@ -58,6 +58,25 @@ pub(in crate::document) struct NamedSpan {
 }
 
 impl SemanticIndex {
+    pub fn provider_call_suggestions(&self, provider_prefix: &str) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = self
+            .providers
+            .keys()
+            .filter(|provider_name| provider_name.starts_with(provider_prefix))
+            .map(|provider_name| CompletionSuggestion {
+                label: provider_name.clone(),
+                kind: CompletionKind::Function,
+                detail: "Declared provider".to_string(),
+                documentation: "Provider call used in `model` properties.".to_string(),
+                insert_text: format!("{provider_name}("),
+            })
+            .collect::<Vec<_>>();
+
+        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
+
+        completion_suggestions
+    }
+
     pub fn model_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
         [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
             .into_iter()
