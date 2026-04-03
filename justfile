@@ -20,3 +20,7 @@ build-example:
 # Build the current workspace for Windows GNU target
 build-windows-gnu:
     cargo build -p engine-ai-lsp --release --target x86_64-pc-windows-gnu
+
+# Build IntelliJ plugin (bundles LSP binaries)
+intellij-build:
+    cd editors/intellij && ./gradlew clean buildPlugin
