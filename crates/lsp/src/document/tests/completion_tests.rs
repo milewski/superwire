@@ -990,6 +990,33 @@ fn suppresses_key_suggestions_inside_output_object_literal() {
 }
 
 #[test]
+fn suppresses_key_suggestions_inside_agent_output_object_literal() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: {
+                <cursor>
+            }
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn suggests_only_types_inside_agent_output_object_field_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: {
+                result: <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
+    assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider, DeclarationKeyword::Agent);
+}
+
+#[test]
 fn suggests_only_types_for_input_field_values() {
     let completion_suggestions = inline_completion_suggestions! {
         input {
