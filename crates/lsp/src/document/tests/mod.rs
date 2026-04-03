@@ -1,7 +1,7 @@
 use super::{CompletionKind, CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, TypeExpression};
 use crate::protocol::DiagnosticCode;
 use engine_ai_core::dsl::{
-    AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind,
+    AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, SingletonDeclarationKind,
 };
 use engine_ai_core::runtime::InferenceSetting;
 
@@ -222,6 +222,12 @@ impl CompletionLabel for SingletonDeclarationKind {
 }
 
 impl CompletionLabel for DeclarationKeyword {
+    fn completion_label(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+impl CompletionLabel for ForClauseKeyword {
     fn completion_label(self) -> &'static str {
         self.as_str()
     }
