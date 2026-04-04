@@ -711,6 +711,22 @@ impl FunctionCall {
             }
         }
 
+        if self.arguments.len() == 2
+            && self.arguments.first().is_some_and(CallArgument::is_inline_friendly)
+            && self
+                .arguments
+                .get(1)
+                .is_some_and(CallArgument::is_multiline_object_literal_argument)
+        {
+            formatter.output.push('(');
+            formatter.output.push_str(&self.arguments[0].render_inline(formatter));
+            formatter.output.push_str(", ");
+            self.arguments[1].push_to_formatter(formatter, ExpressionFormat::Canonical);
+            formatter.output.push(')');
+
+            return;
+        }
+
         formatter.output.push('(');
         formatter.push_newline();
         formatter.indentation_depth += 1;
@@ -768,6 +784,29 @@ impl CallArgument {
             Self::Named(named_argument) => {
                 format!("{}: {}", named_argument.name, formatter.inline_expression(&named_argument.value))
             }
+        }
+    }
+
+    fn is_multiline_object_literal_argument(&self) -> bool {
+        match self {
+            Self::Positional(expression) => expression.is_multiline_object_literal(),
+            Self::Named(named_argument) => named_argument.value.is_multiline_object_literal(),
+        }
+    }
+}
+
+impl Expression {
+    fn is_multiline_object_literal(&self) -> bool {
+        match self {
+            Self::ObjectLiteral(object_fields) => object_fields.len() > 1,
+            Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::Reference(_)
+            | Self::FunctionCall(_)
+            | Self::ArrayLiteral(_) => false,
         }
     }
 }
