@@ -5,7 +5,7 @@ use engine_ai_core::semantic::ToolingReferencePath;
 
 use crate::protocol::Position;
 
-use super::semantic_index::SemanticIndex;
+use super::semantic_index::{FieldMetadata, SemanticIndex};
 use super::text_utils::{is_identifier, leading_identifier, trailing_reference_token};
 use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
 
@@ -152,6 +152,7 @@ impl SemanticIndex {
         match reference_completion_path.root_keyword() {
             Some(ReferenceKeyword::Input) => self.singleton_reference_suggestions(
                 &self.input_fields,
+                Some(&self.input_field_metadata),
                 &reference_completion_path.complete_accesses,
                 &reference_completion_path.pending_prefix,
                 "Input field",
@@ -159,6 +160,7 @@ impl SemanticIndex {
             ),
             Some(ReferenceKeyword::Secrets) => self.singleton_reference_suggestions(
                 &self.secrets_fields,
+                Some(&self.secrets_field_metadata),
                 &reference_completion_path.complete_accesses,
                 &reference_completion_path.pending_prefix,
                 "Secrets field",
@@ -224,6 +226,7 @@ impl SemanticIndex {
     fn singleton_reference_suggestions(
         &self,
         root_fields: &BTreeMap<String, TypeExpression>,
+        root_field_metadata: Option<&BTreeMap<String, FieldMetadata>>,
         complete_accesses: &[String],
         pending_prefix: &str,
         detail_prefix: &str,
@@ -238,7 +241,10 @@ impl SemanticIndex {
                     label: field_name.clone(),
                     kind: CompletionKind::Property,
                     detail: format!("{detail_prefix}: {}", field_type.render_type()),
-                    documentation: "Field in singleton declaration.".to_string(),
+                    documentation: root_field_metadata
+                        .and_then(|metadata_map| metadata_map.get(field_name))
+                        .and_then(|field_metadata| field_metadata.description.clone())
+                        .unwrap_or_else(|| "Field in singleton declaration.".to_string()),
                     insert_text: field_name.clone(),
                 })
                 .collect();
@@ -360,20 +366,71 @@ impl SemanticIndex {
         pending_prefix: &str,
         reference_completion_constraint: ReferenceCompletionConstraint,
     ) -> Vec<CompletionSuggestion> {
-        let available_fields = self.tooling_snapshot.available_fields_for_types(candidate_types);
+        let available_fields = self.available_fields_for_types(candidate_types);
 
         available_fields
             .into_iter()
             .filter(|(field_name, _)| field_name.starts_with(pending_prefix))
-            .filter(|(_, field_type)| self.type_matches_reference_constraint(field_type, reference_completion_constraint))
-            .map(|(field_name, field_type)| CompletionSuggestion {
+            .filter(|(_, field_metadata)| {
+                self.type_matches_reference_constraint(&field_metadata.field_type, reference_completion_constraint)
+            })
+            .map(|(field_name, field_metadata)| CompletionSuggestion {
                 label: field_name.clone(),
                 kind: CompletionKind::Property,
-                detail: format!("Field: {}", field_type.render_type()),
-                documentation: "Field available at this reference path.".to_string(),
+                detail: format!("Field: {}", field_metadata.field_type.render_type()),
+                documentation: field_metadata
+                    .description
+                    .unwrap_or_else(|| "Field available at this reference path.".to_string()),
                 insert_text: field_name,
             })
             .collect()
+    }
+
+    fn available_fields_for_types(&self, candidate_types: &[TypeExpression]) -> BTreeMap<String, FieldMetadata> {
+        let mut available_fields = BTreeMap::<String, FieldMetadata>::new();
+
+        for candidate_type in candidate_types {
+            self.collect_available_fields(candidate_type, &mut available_fields);
+        }
+
+        available_fields
+    }
+
+    fn collect_available_fields(&self, candidate_type: &TypeExpression, available_fields: &mut BTreeMap<String, FieldMetadata>) {
+        match candidate_type {
+            TypeExpression::Object(typed_fields) => {
+                for typed_field in typed_fields {
+                    available_fields.entry(typed_field.name.clone()).or_insert_with(|| FieldMetadata {
+                        field_type: typed_field.field_type.clone(),
+                        description: typed_field.description.clone(),
+                    });
+                }
+            }
+            TypeExpression::SchemaReference(schema_name) => {
+                if let Some(schema_summary) = self.schemas.get(schema_name) {
+                    for (field_name, field_metadata) in &schema_summary.field_metadata {
+                        available_fields.entry(field_name.clone()).or_insert_with(|| field_metadata.clone());
+                    }
+                }
+            }
+            TypeExpression::Union(union_members) => {
+                for union_member in union_members {
+                    self.collect_available_fields(union_member, available_fields);
+                }
+            }
+            TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_)
+            | TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_) => {}
+        }
     }
 
     fn type_matches_reference_constraint(

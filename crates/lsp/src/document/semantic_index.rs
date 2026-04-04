@@ -23,7 +23,9 @@ pub struct SemanticIndex {
     pub schema_names: Vec<String>,
     pub schema_locations: Vec<NamedSpan>,
     pub input_fields: BTreeMap<String, TypeExpression>,
+    pub input_field_metadata: BTreeMap<String, FieldMetadata>,
     pub secrets_fields: BTreeMap<String, TypeExpression>,
+    pub secrets_field_metadata: BTreeMap<String, FieldMetadata>,
     pub agents: HashMap<String, AgentSummary>,
     pub agent_for_loop_iterators: HashMap<String, String>,
     pub agent_for_loop_iterator_types: HashMap<String, TypeExpression>,
@@ -46,11 +48,18 @@ pub struct ProviderSummary {
 #[derive(Debug, Clone)]
 pub struct SchemaSummary {
     pub fields: BTreeMap<String, TypeExpression>,
+    pub field_metadata: BTreeMap<String, FieldMetadata>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AgentSummary {
     pub output_type: Option<TypeExpression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldMetadata {
+    pub field_type: TypeExpression,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -269,7 +278,9 @@ impl SemanticIndex {
             schema_names: Vec::new(),
             schema_locations: Vec::new(),
             input_fields: BTreeMap::new(),
+            input_field_metadata: BTreeMap::new(),
             secrets_fields: BTreeMap::new(),
+            secrets_field_metadata: BTreeMap::new(),
             agents: HashMap::new(),
             agent_for_loop_iterators: HashMap::new(),
             agent_for_loop_iterator_types: HashMap::new(),
@@ -295,9 +306,15 @@ impl SemanticIndex {
                         .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
                         .collect::<BTreeMap<_, _>>();
 
-                    semantic_index
-                        .schemas
-                        .insert(schema_declaration.name.clone(), SchemaSummary { fields: schema_fields });
+                    let schema_field_metadata = typed_fields_to_metadata_map(&schema_declaration.fields);
+
+                    semantic_index.schemas.insert(
+                        schema_declaration.name.clone(),
+                        SchemaSummary {
+                            fields: schema_fields,
+                            field_metadata: schema_field_metadata,
+                        },
+                    );
 
                     semantic_index.schema_names.push(schema_declaration.name.clone());
                     semantic_index.schema_locations.push(NamedSpan {
@@ -311,6 +328,7 @@ impl SemanticIndex {
 
                     if semantic_index.input_fields.is_empty() {
                         semantic_index.input_fields = typed_fields_to_map(&input_declaration.fields);
+                        semantic_index.input_field_metadata = typed_fields_to_metadata_map(&input_declaration.fields);
                     }
 
                     semantic_index.typed_declaration_locations.push(input_declaration.span);
@@ -320,6 +338,7 @@ impl SemanticIndex {
 
                     if semantic_index.secrets_fields.is_empty() {
                         semantic_index.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
+                        semantic_index.secrets_field_metadata = typed_fields_to_metadata_map(&secrets_declaration.fields);
                     }
 
                     semantic_index.typed_declaration_locations.push(secrets_declaration.span);
@@ -429,6 +448,7 @@ impl SemanticIndex {
                     schema_name.clone(),
                     SchemaSummary {
                         fields: schema_fields.clone(),
+                        field_metadata: field_metadata_from_type_map(schema_fields),
                     },
                 )
             })
@@ -480,7 +500,9 @@ impl SemanticIndex {
             schema_names,
             schema_locations,
             input_fields: tooling_snapshot.input_fields().clone(),
+            input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
             secrets_fields: tooling_snapshot.secrets_fields().clone(),
+            secrets_field_metadata: field_metadata_from_type_map(tooling_snapshot.secrets_fields()),
             agents,
             agent_for_loop_iterators: HashMap::new(),
             agent_for_loop_iterator_types: HashMap::new(),
@@ -1045,5 +1067,35 @@ fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpr
     typed_fields
         .iter()
         .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
+        .collect()
+}
+
+fn typed_fields_to_metadata_map(typed_fields: &[TypedField]) -> BTreeMap<String, FieldMetadata> {
+    typed_fields
+        .iter()
+        .map(|typed_field| {
+            (
+                typed_field.name.clone(),
+                FieldMetadata {
+                    field_type: typed_field.field_type.clone(),
+                    description: typed_field.description.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn field_metadata_from_type_map(type_map: &BTreeMap<String, TypeExpression>) -> BTreeMap<String, FieldMetadata> {
+    type_map
+        .iter()
+        .map(|(field_name, field_type)| {
+            (
+                field_name.clone(),
+                FieldMetadata {
+                    field_type: field_type.clone(),
+                    description: None,
+                },
+            )
+        })
         .collect()
 }
