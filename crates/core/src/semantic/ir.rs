@@ -185,11 +185,7 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
             | AgentProperty::Prompt(expression)
             | AgentProperty::Context(expression)
             | AgentProperty::Inference(expression)
-            | AgentProperty::Tools(expression)
-            | AgentProperty::Custom {
-                name: _,
-                value: expression,
-            } => {
+            | AgentProperty::Tools(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
             }
             AgentProperty::Output {
@@ -363,8 +359,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
-            | AgentProperty::Custom { name: _, value: _ } => {}
+            | AgentProperty::Tools(_) => {}
         }
     }
 

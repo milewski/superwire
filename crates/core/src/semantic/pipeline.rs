@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_stage_formats_expected_agent_properties_without_custom_property() {
+    fn parse_stage_formats_expected_agent_properties() {
         let broken_workflow_source = workflow_source! {
             agent greeting {
                 a prompt: "hello"
@@ -533,8 +533,6 @@ mod tests {
                 if details.contains("`model`")
                     && details.contains("`prompt`")
                     && details.contains("`output`")
-                    && !details.contains("`custom`")
-                    && !details.contains("property")
                     && !details.contains("SourceSpan {")
         ));
     }

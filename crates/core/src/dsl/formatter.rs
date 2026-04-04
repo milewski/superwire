@@ -336,7 +336,6 @@ impl AgentProperty {
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
             Self::Tools(expression) => formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression),
-            Self::Custom { name, value } => formatter.push_agent_property_expression(name, value),
         }
     }
 

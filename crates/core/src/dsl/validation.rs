@@ -570,7 +570,6 @@ pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
     let validation_index = build_validation_index(workflow, &mut validation_report);
 
     validate_schema_references(workflow, &validation_index, &mut validation_report);
-    validate_agent_properties(workflow, &mut validation_report);
     validate_agent_inference_settings(workflow, &mut validation_report);
     validate_agent_model_bindings(workflow, &validation_index, &mut validation_report);
     validate_agent_references(workflow, &validation_index, &mut validation_report);
@@ -721,40 +720,6 @@ fn extract_declared_provider_models(provider_properties: &[ObjectField]) -> Opti
     }
 
     Some(declared_models)
-}
-
-fn validate_agent_properties(workflow: &Workflow, validation_report: &mut ValidationReport) {
-    let mut unknown_agent_properties = HashSet::<(String, String)>::new();
-
-    for declaration in workflow.declarations() {
-        let Declaration::Agent(agent_declaration) = declaration else {
-            continue;
-        };
-
-        for agent_property in &agent_declaration.properties {
-            let AgentProperty::Custom {
-                name: property_name,
-                value: _,
-            } = agent_property
-            else {
-                continue;
-            };
-
-            let issue_key = (agent_declaration.name.clone(), property_name.clone());
-
-            if !unknown_agent_properties.insert(issue_key.clone()) {
-                continue;
-            }
-
-            validation_report.push_issue_with_span(
-                ValidationIssue::UnknownAgentProperty {
-                    agent_name: issue_key.0,
-                    property_name: issue_key.1,
-                },
-                Some(agent_declaration.span),
-            );
-        }
-    }
 }
 
 fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mut ValidationReport) {
@@ -1116,11 +1081,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         }
                         AgentProperty::Model(model_expression)
                         | AgentProperty::Inference(model_expression)
-                        | AgentProperty::Tools(model_expression)
-                        | AgentProperty::Custom {
-                            name: _,
-                            value: model_expression,
-                        } => {
+                        | AgentProperty::Tools(model_expression) => {
                             keyword_reference_validation_state.validate_expression(
                                 model_expression,
                                 agent_context.clone(),
@@ -1540,11 +1501,7 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                 | AgentProperty::Prompt(model_expression)
                 | AgentProperty::Context(model_expression)
                 | AgentProperty::Inference(model_expression)
-                | AgentProperty::Tools(model_expression)
-                | AgentProperty::Custom {
-                    name: _,
-                    value: model_expression,
-                } => {
+                | AgentProperty::Tools(model_expression) => {
                     collect_agent_dependencies_from_expression(model_expression, &mut referenced_agents);
                 }
                 AgentProperty::Output {
@@ -1641,6 +1598,7 @@ mod tests {
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::parse_workflow;
     use crate::runtime::InferenceSetting;
+    use crate::workflow_source;
 
     macro_rules! assert_issues_contain {
         ($validation_issues:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
@@ -1801,8 +1759,8 @@ mod tests {
     }
 
     #[test]
-    fn reports_unknown_agent_properties() {
-        let workflow = parse_inline_workflow! {
+    fn rejects_unknown_agent_properties_at_parse_time() {
+        let workflow_source = workflow_source! {
             provider openai {
                 driver: "openai"
                 models: ["gpt-4.1-mini"]
@@ -1815,13 +1773,9 @@ mod tests {
             }
         };
 
-        assert_workflow_issues_contain!(
-            workflow,
-            ValidationIssue::UnknownAgentProperty {
-                agent_name,
-                property_name
-            } if agent_name == "researcher" && property_name == "retries"
-        );
+        let parse_result = parse_workflow(workflow_source);
+
+        assert!(parse_result.is_err(), "unknown agent properties should fail parsing");
     }
 
     #[test]

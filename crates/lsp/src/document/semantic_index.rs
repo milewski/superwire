@@ -388,8 +388,7 @@ impl SemanticIndex {
             | AgentProperty::Prompt(_)
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
-            | AgentProperty::Custom { name: _, value: _ } => None,
+            | AgentProperty::Tools(_) => None,
         });
 
         self.agents.insert(
