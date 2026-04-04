@@ -138,3 +138,24 @@ fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
 
     assert!(completion_suggestions.is_empty());
 }
+
+#[test]
+fn uses_agent_output_field_description_for_interpolation_completion() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greetings {
+            output: {
+                message: string "some description of the message"
+            }
+        }
+
+        agent greetings2 {
+            prompt: "Explain: {{ agent.greetings.<cursor> }}."
+            output: string
+        }
+    };
+
+    let message_completion = completion_suggestion_by_label(&completion_suggestions, "message");
+
+    assert_eq!(message_completion.detail, "some description of the message");
+    assert_eq!(message_completion.documentation, "some description of the message");
+}
