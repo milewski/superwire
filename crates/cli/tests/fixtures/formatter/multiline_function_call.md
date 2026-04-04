@@ -9,9 +9,7 @@ output { plan:agent.planner }
 ```ai
 provider openai {
     driver: "openai"
-    models: [
-        "gpt-4o-mini",
-    ]
+    models: ["gpt-4o-mini"]
 }
 
 agent planner {
@@ -19,10 +17,7 @@ agent planner {
     prompt: tool.compose(
         data: {
             topic: "engine-ai"
-            tags: [
-                "dsl",
-                "fmt",
-            ]
+            tags: ["dsl", "fmt"]
         },
         meta: {
             priority: 1

@@ -9,9 +9,7 @@ output { plan:agent.planner }
 ```ai
 provider openai {
     driver: "openai"
-    models: [
-        "gpt-4o-mini",
-    ]
+    models: ["gpt-4o-mini"]
 }
 
 agent planner {
@@ -22,11 +20,7 @@ agent planner {
             owner: "core"
             active: true
         }
-        ids: [
-            1,
-            2,
-            3,
-        ]
+        ids: [1, 2, 3]
     }
     prompt: "Plan"
     output: string
