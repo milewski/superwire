@@ -115,8 +115,8 @@ fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
     let completion_suggestions = inline_completion_suggestions! {
         agent number_note for number in [1, 2, 3, 4] {
             output: {
-                number: number
-                note: string
+                number: number "numeric message index"
+                note: string "generated note text"
             }
         }
 
@@ -130,6 +130,19 @@ fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
     };
 
     assert_completion_contains!(&completion_suggestions, "number", "note");
+
+    let number_field_completion = completion_suggestions
+        .iter()
+        .find(|completion_suggestion| completion_suggestion.label == "number")
+        .expect("number field completion should exist");
+
+    let note_field_completion = completion_suggestions
+        .iter()
+        .find(|completion_suggestion| completion_suggestion.label == "note")
+        .expect("note field completion should exist");
+
+    assert_eq!(number_field_completion.documentation, "numeric message index");
+    assert_eq!(note_field_completion.documentation, "generated note text");
 }
 
 #[test]

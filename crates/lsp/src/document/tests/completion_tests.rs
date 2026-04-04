@@ -1013,6 +1013,32 @@ fn completes_schema_references_in_type_context() {
 }
 
 #[test]
+fn uses_schema_field_description_in_reference_completion_documentation() {
+    let completion_suggestions = inline_completion_suggestions! {
+        schema Person {
+            first_name: string "first name from schema"
+            age: number
+        }
+
+        input {
+            profile: schema.Person
+        }
+
+        agent writer {
+            prompt: "hello {{ input.profile.<cursor> }}"
+            output: string
+        }
+    };
+
+    let first_name_completion = completion_suggestions
+        .iter()
+        .find(|completion_suggestion| completion_suggestion.label == "first_name")
+        .expect("first_name completion should exist");
+
+    assert_eq!(first_name_completion.documentation, "first name from schema");
+}
+
+#[test]
 fn excludes_current_schema_from_schema_type_suggestions() {
     let completion_suggestions = inline_completion_suggestions! {
         schema Person {
