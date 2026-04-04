@@ -32,6 +32,13 @@ impl FormatCommand {
 
     fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {
         if self.target_path.is_file() {
+            if !is_workflow_file_path(&self.target_path) {
+                return Err(CommandError::invalid_input(format!(
+                    "expected a .ai workflow file, got {}",
+                    self.target_path.display()
+                )));
+            }
+
             return Ok(vec![self.target_path.clone()]);
         }
 
@@ -82,6 +89,10 @@ impl FormatCommand {
             )),
         }
     }
+}
+
+fn is_workflow_file_path(file_path: &Path) -> bool {
+    file_path.extension().and_then(|extension| extension.to_str()) == Some("ai")
 }
 
 fn collect_ai_files_recursively(directory_path: &Path, workflow_paths: &mut Vec<PathBuf>) -> Result<(), CommandError> {
