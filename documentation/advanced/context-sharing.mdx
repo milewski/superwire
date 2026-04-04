@@ -58,12 +58,16 @@ agent summary_from_custom_compact_context {
 - `compact(agent.name)` means derive a reduced context view
 - named arguments allow the DSL to describe a custom compaction step
 
-<Warning>
-  The parser accepts these function calls and the validator traverses them for
-  references and dependency edges, but the current default runtime does not
-  evaluate generic function calls yet.
-</Warning>
+## Runtime behavior
+
+`context(...)` and `compact(...)` are fully evaluated at runtime when used in an agent's `context:` property. The `context(...)` function returns the full prior context from the referenced agent. The `compact(...)` function currently returns the same context value as `context(...)` -- the distinction is in type inference, where `compact(...)` is restricted to agent context expressions only.
+
+<Tip>
+  Named arguments on `compact(...)` (model, inference, prompt) are parsed and
+  validated, but the current runtime does not use them to perform a separate
+  compaction model call. They are reserved for future use.
+</Tip>
 
 ## When to use this page
 
-Use this page as the language reference for context-related syntax. If you are writing production workflows for the current default runtime, stay with plain `prompt`, `model`, and `output` until context execution support lands.
+Use this page as the language reference for context-related syntax. Both `context(...)` and `compact(...)` are executed at runtime when used in agent `context:` properties.

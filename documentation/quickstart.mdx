@@ -137,12 +137,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 5. Know the current runtime boundary
 
-The default runtime executes `model`, `prompt`, `output`, `context`, `inference`, and `for` loop agents.
+The default runtime executes `model`, `prompt`, `output`, `context`, `inference`, `tools`, `for` loop agents, `context(...)`, `compact(...)`, and `template(...)`.
 
-<Warning>
-  `tools` and `tool.*` references are still not executed by the runtime and
-  return `UnsupportedFeature` when reached.
-</Warning>
+<Info>
+  `tool.*` references are executed within the `tools:` property. Using
+  `tool.*` in general expressions (such as prompts, output, or interpolation)
+  returns `UnsupportedFeature` at runtime.
+</Info>
 
 ## Continue reading
 

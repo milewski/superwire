@@ -84,13 +84,19 @@ agent remediation_plan for finding in agent.findings.items {
 
 ## Current runtime behavior
 
-The default runtime currently consumes these agent fields directly:
+The default runtime executes all six agent properties:
 
 - `model`
 - `prompt`
 - `output`
 - `context`
 - `inference`
-- optional `for` loop iteration
+- `tools`
 
-It parses and validates the rest, but does not yet execute `tools` / `tool.*` references.
+It also fully evaluates `for` loop iteration (with parallel execution per iteration), `context(...)`, `compact(...)`, and `template(...)` function calls.
+
+<Info>
+  <code>tool.*</code> references are only executed within the <code>tools:</code>
+  property. Using <code>tool.*</code> in general expressions returns
+  <code>UnsupportedFeature</code> at runtime.
+</Info>
