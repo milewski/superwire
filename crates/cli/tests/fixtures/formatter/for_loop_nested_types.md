@@ -12,9 +12,7 @@ output { reviews:agent.reviewer }
 ```ai
 provider openai {
     driver: "openai"
-    models: [
-        "gpt-4o-mini",
-    ]
+    models: ["gpt-4o-mini"]
 }
 
 input {

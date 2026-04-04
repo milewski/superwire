@@ -9,9 +9,7 @@ output { notes:agent . number_note }
 ```ai
 provider openai {
     driver: "openai"
-    models: [
-        "gpt-4o-mini",
-    ]
+    models: ["gpt-4o-mini"]
 }
 
 agent number_note for n in [1, 2, 3, 4] {

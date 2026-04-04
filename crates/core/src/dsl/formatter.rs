@@ -9,6 +9,8 @@ use super::ast::{
 use super::parse_workflow;
 use super::parser::DslParseError;
 
+const MAX_LINE_WIDTH: usize = 120;
+
 #[derive(Debug, Error)]
 pub enum DslFormatError {
     #[error("failed to parse DSL while formatting: {0}")]
@@ -122,6 +124,64 @@ impl DslFormatter {
         self.indentation_depth -= 1;
         self.push_indent();
         self.output.push_str("\"\"\"");
+    }
+
+    fn push_multiline_string_block_from_lines(&mut self, multiline_content_lines: &[String]) {
+        self.output.push_str("\"\"\"");
+        self.push_newline();
+        self.indentation_depth += 1;
+
+        for multiline_content_line in multiline_content_lines {
+            self.push_indent();
+            self.output.push_str(multiline_content_line);
+            self.push_newline();
+        }
+
+        self.indentation_depth -= 1;
+        self.push_indent();
+        self.output.push_str("\"\"\"");
+    }
+
+    fn can_fit_inline_text(&self, inline_text: &str) -> bool {
+        !inline_text.contains('\n') && self.current_line_width() + inline_text.chars().count() <= MAX_LINE_WIDTH
+    }
+
+    fn current_line_width(&self) -> usize {
+        self.output.rsplit('\n').next().map_or(0, |line_text| line_text.chars().count())
+    }
+
+    fn wrap_multiline_string_value(&self, raw_string: &str) -> Vec<String> {
+        let content_width_limit = MAX_LINE_WIDTH.saturating_sub((self.indentation_depth + 1) * 4);
+        let effective_width_limit = content_width_limit.max(20);
+
+        let mut wrapped_lines = Vec::new();
+        let mut remaining_text = raw_string.trim().to_owned();
+
+        while remaining_text.chars().count() > effective_width_limit {
+            let split_character_index = find_wrap_split_index(&remaining_text, effective_width_limit)
+                .unwrap_or_else(|| effective_width_limit.min(remaining_text.chars().count()));
+
+            let mut current_line = remaining_text.chars().take(split_character_index).collect::<String>();
+            current_line = current_line.trim_end().to_owned();
+
+            if current_line.is_empty() {
+                break;
+            }
+
+            wrapped_lines.push(escape_multiline_string_text(&current_line));
+
+            let wrapped_remainder = remaining_text
+                .chars()
+                .skip(split_character_index)
+                .collect::<String>()
+                .trim_start()
+                .to_owned();
+
+            wrapped_remainder.clone_into(&mut remaining_text);
+        }
+
+        wrapped_lines.push(escape_multiline_string_text(&remaining_text));
+        wrapped_lines
     }
 
     fn normalize_multiline_string_lines(multiline_contents: &str) -> Vec<String> {
@@ -358,6 +418,15 @@ impl Expression {
             Self::StringLiteral(string_value) => {
                 if string_value.contains('\n') {
                     formatter.push_multiline_string_block(&escape_multiline_string_text(string_value));
+                } else if expression_format == ExpressionFormat::Canonical {
+                    let quoted_string_literal = render_expression_string_literal(string_value);
+
+                    if formatter.can_fit_inline_text(&quoted_string_literal) {
+                        formatter.output.push_str(&quoted_string_literal);
+                    } else {
+                        let wrapped_multiline_lines = formatter.wrap_multiline_string_value(string_value);
+                        formatter.push_multiline_string_block_from_lines(&wrapped_multiline_lines);
+                    }
                 } else {
                     formatter.output.push_str(&render_expression_string_literal(string_value));
                 }
@@ -394,6 +463,13 @@ impl Expression {
                 if array_items.is_empty() {
                     formatter.output.push_str("[]");
                     return;
+                }
+
+                if let Some(inline_array_literal) = self.inline_array_literal(formatter) {
+                    if formatter.can_fit_inline_text(&inline_array_literal) {
+                        formatter.output.push_str(&inline_array_literal);
+                        return;
+                    }
                 }
 
                 formatter.output.push('[');
@@ -470,6 +546,30 @@ impl Expression {
             | Self::FunctionCall(_) => true,
         }
     }
+
+    fn inline_array_literal(&self, formatter: &DslFormatter) -> Option<String> {
+        let Self::ArrayLiteral(array_items) = self else {
+            return None;
+        };
+
+        if array_items.iter().any(|array_item| !array_item.is_inline_friendly()) {
+            return None;
+        }
+
+        let mut inline_array_literal = String::from("[");
+        let mut array_item_iterator = array_items.iter().peekable();
+
+        while let Some(array_item) = array_item_iterator.next() {
+            inline_array_literal.push_str(&formatter.inline_expression(array_item));
+
+            if array_item_iterator.peek().is_some() {
+                inline_array_literal.push_str(", ");
+            }
+        }
+
+        inline_array_literal.push(']');
+        Some(inline_array_literal)
+    }
 }
 
 impl StringTemplate {
@@ -534,19 +634,13 @@ impl FunctionCall {
         }
 
         if self.arguments.iter().all(CallArgument::is_inline_friendly) {
-            formatter.output.push('(');
+            let inline_arguments = self.inline_argument_list(formatter);
+            let inline_call_suffix = format!("({inline_arguments})");
 
-            let mut argument_iterator = self.arguments.iter().peekable();
-            while let Some(call_argument) = argument_iterator.next() {
-                call_argument.push_to_formatter(formatter, ExpressionFormat::Inline);
-
-                if argument_iterator.peek().is_some() {
-                    formatter.output.push_str(", ");
-                }
+            if formatter.can_fit_inline_text(&inline_call_suffix) {
+                formatter.output.push_str(&inline_call_suffix);
+                return;
             }
-
-            formatter.output.push(')');
-            return;
         }
 
         formatter.output.push('(');
@@ -563,6 +657,21 @@ impl FunctionCall {
         formatter.indentation_depth -= 1;
         formatter.push_indent();
         formatter.output.push(')');
+    }
+
+    fn inline_argument_list(&self, formatter: &DslFormatter) -> String {
+        let mut inline_argument_list = String::new();
+        let mut argument_iterator = self.arguments.iter().peekable();
+
+        while let Some(call_argument) = argument_iterator.next() {
+            inline_argument_list.push_str(&call_argument.render_inline(formatter));
+
+            if argument_iterator.peek().is_some() {
+                inline_argument_list.push_str(", ");
+            }
+        }
+
+        inline_argument_list
     }
 }
 
@@ -584,6 +693,31 @@ impl CallArgument {
             Self::Named(named_argument) => named_argument.value.is_inline_friendly(),
         }
     }
+
+    fn render_inline(&self, formatter: &DslFormatter) -> String {
+        match self {
+            Self::Positional(expression) => formatter.inline_expression(expression),
+            Self::Named(named_argument) => {
+                format!("{}: {}", named_argument.name, formatter.inline_expression(&named_argument.value))
+            }
+        }
+    }
+}
+
+fn find_wrap_split_index(text: &str, width_limit: usize) -> Option<usize> {
+    let mut last_whitespace_character_index = None;
+
+    for (character_count, character) in text.chars().enumerate() {
+        if character_count >= width_limit {
+            break;
+        }
+
+        if character.is_whitespace() {
+            last_whitespace_character_index = Some(character_count);
+        }
+    }
+
+    last_whitespace_character_index
 }
 
 fn render_expression_string_literal(raw_string: &str) -> String {
@@ -713,6 +847,7 @@ struct SourceLineAnalysis {
     line_number: usize,
     code_text: String,
     comment: Option<CommentFragment>,
+    is_within_multiline_string: bool,
 }
 
 impl SourceLineAnalysis {
@@ -721,6 +856,10 @@ impl SourceLineAnalysis {
     }
 
     fn code_signature(&self) -> Option<String> {
+        if self.is_within_multiline_string {
+            return None;
+        }
+
         line_signature(&self.code_text)
     }
 }
@@ -746,7 +885,9 @@ impl<'source> SourceLineAnalyzer<'source> {
         let mut string_scan_state = StringScanState::Normal;
 
         for (line_index, source_line) in self.source_text.lines().enumerate() {
+            let starts_inside_multiline_string = string_scan_state == StringScanState::MultilineString;
             let comment_start_byte_index = find_comment_start_byte_index(source_line, &mut string_scan_state);
+            let contains_multiline_delimiter = source_line.contains("\"\"\"");
 
             let (code_text, comment) = if let Some(comment_start) = comment_start_byte_index {
                 let code_text = source_line[..comment_start].to_owned();
@@ -772,6 +913,7 @@ impl<'source> SourceLineAnalyzer<'source> {
                 line_number: line_index + 1,
                 code_text,
                 comment,
+                is_within_multiline_string: starts_inside_multiline_string || contains_multiline_delimiter,
             });
         }
 
@@ -876,8 +1018,16 @@ struct FormattedCodeSignatureLine {
 impl FormattedCodeSignatureLine {
     fn collect(formatted_lines: &[String]) -> Vec<Self> {
         let mut formatted_code_signature_lines = Vec::new();
+        let mut is_inside_multiline_string = false;
 
         for (line_index, line_text) in formatted_lines.iter().enumerate() {
+            let is_current_line_within_multiline = is_inside_multiline_string || line_text.contains("\"\"\"");
+            is_inside_multiline_string = update_multiline_string_state(is_inside_multiline_string, line_text);
+
+            if is_current_line_within_multiline {
+                continue;
+            }
+
             let Some(signature) = line_signature(line_text) else {
                 continue;
             };
@@ -994,7 +1144,9 @@ fn apply_standalone_comments(
         let (target_formatted_line_index, insert_after_target) = if let Some(next_line) = next_mapped_line {
             (next_line, false)
         } else if let Some(previous_line) = previous_mapped_line {
-            if let Some(next_non_empty_line) = find_first_non_empty_formatted_line_after(previous_line, formatted_lines) {
+            if let Some(next_non_empty_line) =
+                find_first_non_empty_formatted_line_outside_multiline_strings_after(previous_line, formatted_lines)
+            {
                 (next_non_empty_line, false)
             } else {
                 (previous_line, true)
@@ -1070,13 +1222,28 @@ fn find_previous_mapped_formatted_line(source_line_number: usize, source_to_form
     None
 }
 
-fn find_first_non_empty_formatted_line_after(start_line_index: usize, formatted_lines: &[String]) -> Option<usize> {
+fn find_first_non_empty_formatted_line_outside_multiline_strings_after(
+    start_line_index: usize,
+    formatted_lines: &[String],
+) -> Option<usize> {
+    let mut is_inside_multiline_string = false;
+
+    for line_text in formatted_lines.iter().take(start_line_index.saturating_add(1)) {
+        is_inside_multiline_string = update_multiline_string_state(is_inside_multiline_string, line_text);
+    }
+
     let first_candidate_index = start_line_index.saturating_add(1);
 
     for line_index in first_candidate_index..formatted_lines.len() {
         let Some(line_text) = formatted_lines.get(line_index) else {
             continue;
         };
+
+        is_inside_multiline_string = update_multiline_string_state(is_inside_multiline_string, line_text);
+
+        if is_inside_multiline_string || line_text.trim() == "\"\"\"" {
+            continue;
+        }
 
         if line_text.trim().is_empty() {
             continue;
@@ -1086,6 +1253,16 @@ fn find_first_non_empty_formatted_line_after(start_line_index: usize, formatted_
     }
 
     None
+}
+
+fn update_multiline_string_state(current_state: bool, line_text: &str) -> bool {
+    let triple_quote_occurrences = line_text.matches("\"\"\"").count();
+
+    if triple_quote_occurrences.is_multiple_of(2) {
+        return current_state;
+    }
+
+    !current_state
 }
 
 fn leading_whitespace(line_text: &str) -> String {
@@ -1126,7 +1303,8 @@ mod tests {
     fn formatter_matches_expected_output_for_representative_source() {
         let source_text = "provider openai   {driver:\"openai\" models:[\"gpt-4o-mini\",]}\n\noutput { result: \"ok\" }\n";
 
-        let expected_output = "provider openai {\n    driver: \"openai\"\n    models: [\n        \"gpt-4o-mini\",\n    ]\n}\n\noutput {\n    result: \"ok\"\n}\n";
+        let expected_output =
+            "provider openai {\n    driver: \"openai\"\n    models: [\"gpt-4o-mini\"]\n}\n\noutput {\n    result: \"ok\"\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("representative workflow should format successfully");
 
