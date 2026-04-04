@@ -8,9 +8,15 @@ Providers are named blocks that hold backend settings.
 ```ai
 provider openai {
     driver: "openai"
-    endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-    models: ["gpt-4.1-mini", "gpt-4.1"]
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
 }
 ```
 
@@ -60,9 +66,9 @@ Validation checks these provider-related conditions:
 ```ai
 provider openai {
     driver: "openai"
-    endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
 }
 ```
 
@@ -106,9 +112,15 @@ provider ollama_local {
 
 provider openai_cloud {
     driver: "openai"
-    endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
 }
 
 agent redact_notes {
@@ -127,8 +139,8 @@ agent synthesize {
 }
 ```
 
-<Info>
-  Provider configuration fields currently need string literals for runtime parsing.
-  Secret references inside provider blocks are validated by the DSL, but runtime
-  provider parsing expects literal `endpoint` and `api_key` values.
-</Info>
+<Tip>
+  Use secrets to store API keys and endpoints. This keeps credentials separate
+  from workflow code and allows different configurations for development
+  and production environments.
+</Tip>

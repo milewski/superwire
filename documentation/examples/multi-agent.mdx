@@ -6,9 +6,15 @@ description: Build a small dependency chain where one agent summarizes and anoth
 ```ai
 provider openai {
     driver: "openai"
-    endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
 }
 
 input {
@@ -16,7 +22,7 @@ input {
 }
 
 agent summarize_notes {
-    model: openai("gpt-4.1-mini")
+    model: openai(secrets.openai_model)
     prompt: "Summarize these interview notes into three findings: {{ input.interview_notes }}"
     output: {
         findings: [string; 3]
@@ -25,7 +31,7 @@ agent summarize_notes {
 }
 
 agent review_findings {
-    model: openai("gpt-4.1-mini")
+    model: openai(secrets.openai_model)
     prompt: "Review this summary and call out the biggest research risk: {{ agent.summarize_notes.summary }}"
     output: {
         biggest_risk: string
@@ -47,3 +53,4 @@ output {
 - `agent.*` references in the second agent
 - automatic dependency ordering
 - structured output validation on both agents
+- secrets for provider configuration

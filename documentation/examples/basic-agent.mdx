@@ -6,15 +6,26 @@ description: "The smallest useful workflow shape: provider, agent, and output."
 This example mirrors `crates/core/workflows/minimum.ai`.
 
 ```ai
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["qwen3.5:32b"]
+provider openai {
+    driver: "openai"
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
+}
+
+input {
+    name: string
 }
 
 agent greeting {
-    model: ollama("qwen3.5:32b")
-    prompt: "Write a short welcome message."
+    model: openai(secrets.openai_model)
+    prompt: "Write a short welcome message for {{ input.name }}."
     output: string
 }
 
@@ -27,6 +38,7 @@ output {
 
 - it shows the minimum valid provider-to-agent-to-output path
 - it demonstrates the current `model:` provider call syntax
+- it uses secrets for configuration to keep credentials separate from workflow code
 - it keeps the public workflow result explicit through the `output` block
 
 ## Expected output shape

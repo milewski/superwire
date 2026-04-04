@@ -6,9 +6,15 @@ description: Use schemas, enums, arrays, and nested objects to keep agent output
 ```ai
 provider openai {
     driver: "openai"
-    endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+    endpoint: secrets.openai_endpoint
+    api_key: secrets.openai_api_key
+    models: [secrets.openai_model]
+}
+
+secrets {
+    openai_endpoint: string
+    openai_api_key: string
+    openai_model: string
 }
 
 schema ReleaseSummary {
@@ -27,7 +33,7 @@ input {
 }
 
 agent summarize_release {
-    model: openai("gpt-4.1-mini")
+    model: openai(secrets.openai_model)
     prompt: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
     output: schema.ReleaseSummary
 }
@@ -45,3 +51,4 @@ output {
 - string enums inside output types
 - fixed-length arrays
 - nested object access in the final output
+- secrets for provider configuration

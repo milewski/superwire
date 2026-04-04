@@ -2,6 +2,8 @@ import type { JsonSchema } from '../Schema/schema'
 import type { CustomToolDeclaration, JsonRecord } from '../types'
 import { ToolData } from './ToolData'
 import { ToolOutputNormalizer } from './ToolValueBag'
+import type { ToolInput } from '../Contracts/ToolInput'
+import type { ToolBounded } from '../Contracts/ToolBounded'
 
 export interface ToolExecutionContext {
     workflowInput?: unknown;
