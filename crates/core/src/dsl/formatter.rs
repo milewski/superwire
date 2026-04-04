@@ -105,6 +105,58 @@ impl DslFormatter {
         type_expression.push_to_formatter(self);
         self.push_newline();
     }
+
+    fn push_multiline_string_block(&mut self, escaped_multiline_contents: &str) {
+        let normalized_multiline_lines = Self::normalize_multiline_string_lines(escaped_multiline_contents);
+
+        self.output.push_str("\"\"\"");
+        self.push_newline();
+        self.indentation_depth += 1;
+
+        for multiline_content_line in normalized_multiline_lines {
+            self.push_indent();
+            self.output.push_str(&multiline_content_line);
+            self.push_newline();
+        }
+
+        self.indentation_depth -= 1;
+        self.push_indent();
+        self.output.push_str("\"\"\"");
+    }
+
+    fn normalize_multiline_string_lines(multiline_contents: &str) -> Vec<String> {
+        let mut content_lines = multiline_contents.split('\n').map(ToOwned::to_owned).collect::<Vec<_>>();
+
+        while content_lines.first().is_some_and(|line_text| line_text.trim().is_empty()) {
+            let _ = content_lines.remove(0);
+        }
+
+        while content_lines.last().is_some_and(|line_text| line_text.trim().is_empty()) {
+            let _ = content_lines.pop();
+        }
+
+        if content_lines.is_empty() {
+            return content_lines;
+        }
+
+        let minimum_indentation = content_lines
+            .iter()
+            .filter(|line_text| !line_text.trim().is_empty())
+            .map(|line_text| line_text.chars().take_while(|character| character.is_whitespace()).count())
+            .min()
+            .unwrap_or(0);
+
+        content_lines
+            .into_iter()
+            .map(|line_text| {
+                if line_text.trim().is_empty() {
+                    return String::new();
+                }
+
+                line_text.chars().skip(minimum_indentation).collect::<String>()
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl Declaration {
@@ -303,7 +355,13 @@ enum ExpressionFormat {
 impl Expression {
     fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
         match self {
-            Self::StringLiteral(string_value) => formatter.output.push_str(&render_expression_string_literal(string_value)),
+            Self::StringLiteral(string_value) => {
+                if string_value.contains('\n') {
+                    formatter.push_multiline_string_block(&escape_multiline_string_text(string_value));
+                } else {
+                    formatter.output.push_str(&render_expression_string_literal(string_value));
+                }
+            }
             Self::StringTemplate(string_template) => string_template.push_to_formatter(formatter),
             Self::NumberLiteral(number_literal) => formatter.output.push_str(number_literal),
             Self::BooleanLiteral(boolean_value) => {
@@ -422,20 +480,7 @@ impl StringTemplate {
             .any(|string_template_part| matches!(string_template_part, StringTemplatePart::Text(text) if text.contains('\n')));
 
         if is_multiline {
-            formatter.output.push_str("\"\"\"");
-
-            for string_template_part in &self.parts {
-                match string_template_part {
-                    StringTemplatePart::Text(text) => formatter.output.push_str(&escape_multiline_string_text(text)),
-                    StringTemplatePart::Interpolation(expression) => {
-                        formatter.output.push_str("{{ ");
-                        expression.push_to_formatter(formatter, ExpressionFormat::Inline);
-                        formatter.output.push_str(" }}");
-                    }
-                }
-            }
-
-            formatter.output.push_str("\"\"\"");
+            formatter.push_multiline_string_block(&self.render_multiline_contents(formatter));
             return;
         }
 
@@ -453,6 +498,23 @@ impl StringTemplate {
         }
 
         formatter.output.push('"');
+    }
+
+    fn render_multiline_contents(&self, formatter: &DslFormatter) -> String {
+        let mut rendered_contents = String::new();
+
+        for string_template_part in &self.parts {
+            match string_template_part {
+                StringTemplatePart::Text(text) => rendered_contents.push_str(&escape_multiline_string_text(text)),
+                StringTemplatePart::Interpolation(expression) => {
+                    rendered_contents.push_str("{{ ");
+                    rendered_contents.push_str(&formatter.inline_expression(expression));
+                    rendered_contents.push_str(" }}");
+                }
+            }
+        }
+
+        rendered_contents
     }
 }
 
