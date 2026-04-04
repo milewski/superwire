@@ -110,12 +110,13 @@ impl DslFormatter {
 
     fn push_multiline_string_block(&mut self, escaped_multiline_contents: &str) {
         let normalized_multiline_lines = Self::normalize_multiline_string_lines(escaped_multiline_contents);
+        let wrapped_multiline_lines = self.wrap_multiline_lines_to_width(&normalized_multiline_lines);
 
         self.output.push_str("\"\"\"");
         self.push_newline();
         self.indentation_depth += 1;
 
-        for multiline_content_line in normalized_multiline_lines {
+        for multiline_content_line in wrapped_multiline_lines {
             self.push_indent();
             self.output.push_str(&multiline_content_line);
             self.push_newline();
@@ -142,8 +143,28 @@ impl DslFormatter {
         self.output.push_str("\"\"\"");
     }
 
+    fn wrap_multiline_lines_to_width(&self, multiline_content_lines: &[String]) -> Vec<String> {
+        let line_width_limit = self.multiline_content_width_limit();
+        let mut wrapped_multiline_lines = Vec::new();
+
+        for multiline_content_line in multiline_content_lines {
+            if multiline_content_line.trim().is_empty() {
+                wrapped_multiline_lines.push(String::new());
+                continue;
+            }
+
+            wrapped_multiline_lines.extend(wrap_text_line_by_words(multiline_content_line, line_width_limit));
+        }
+
+        wrapped_multiline_lines
+    }
+
     fn can_fit_inline_text(&self, inline_text: &str) -> bool {
         !inline_text.contains('\n') && self.current_line_width() + inline_text.chars().count() <= MAX_LINE_WIDTH
+    }
+
+    fn multiline_content_width_limit(&self) -> usize {
+        MAX_LINE_WIDTH.saturating_sub((self.indentation_depth + 1) * 4).max(20)
     }
 
     fn current_line_width(&self) -> usize {
@@ -151,37 +172,10 @@ impl DslFormatter {
     }
 
     fn wrap_multiline_string_value(&self, raw_string: &str) -> Vec<String> {
-        let content_width_limit = MAX_LINE_WIDTH.saturating_sub((self.indentation_depth + 1) * 4);
-        let effective_width_limit = content_width_limit.max(20);
-
-        let mut wrapped_lines = Vec::new();
-        let mut remaining_text = raw_string.trim().to_owned();
-
-        while remaining_text.chars().count() > effective_width_limit {
-            let split_character_index = find_wrap_split_index(&remaining_text, effective_width_limit)
-                .unwrap_or_else(|| effective_width_limit.min(remaining_text.chars().count()));
-
-            let mut current_line = remaining_text.chars().take(split_character_index).collect::<String>();
-            current_line = current_line.trim_end().to_owned();
-
-            if current_line.is_empty() {
-                break;
-            }
-
-            wrapped_lines.push(escape_multiline_string_text(&current_line));
-
-            let wrapped_remainder = remaining_text
-                .chars()
-                .skip(split_character_index)
-                .collect::<String>()
-                .trim_start()
-                .to_owned();
-
-            wrapped_remainder.clone_into(&mut remaining_text);
-        }
-
-        wrapped_lines.push(escape_multiline_string_text(&remaining_text));
-        wrapped_lines
+        wrap_text_line_by_words(raw_string.trim(), self.multiline_content_width_limit())
+            .into_iter()
+            .map(|wrapped_line| escape_multiline_string_text(&wrapped_line))
+            .collect::<Vec<_>>()
     }
 
     fn normalize_multiline_string_lines(multiline_contents: &str) -> Vec<String> {
@@ -623,20 +617,15 @@ impl StringTemplate {
             return;
         }
 
-        formatter.output.push('"');
+        let inline_template_contents = self.render_inline_contents(formatter);
+        let quoted_inline_template = format!("\"{inline_template_contents}\"");
 
-        for string_template_part in &self.parts {
-            match string_template_part {
-                StringTemplatePart::Text(text) => formatter.output.push_str(&escape_quoted_string_text(text)),
-                StringTemplatePart::Interpolation(expression) => {
-                    formatter.output.push_str("{{ ");
-                    expression.push_to_formatter(formatter, ExpressionFormat::Inline);
-                    formatter.output.push_str(" }}");
-                }
-            }
+        if formatter.can_fit_inline_text(&quoted_inline_template) {
+            formatter.output.push_str(&quoted_inline_template);
+            return;
         }
 
-        formatter.output.push('"');
+        formatter.push_multiline_string_block(&self.render_multiline_contents(formatter));
     }
 
     fn render_multiline_contents(&self, formatter: &DslFormatter) -> String {
@@ -660,6 +649,23 @@ impl StringTemplate {
         self.parts
             .iter()
             .any(|string_template_part| matches!(string_template_part, StringTemplatePart::Text(text) if text.contains('\n')))
+    }
+
+    fn render_inline_contents(&self, formatter: &DslFormatter) -> String {
+        let mut rendered_inline_contents = String::new();
+
+        for string_template_part in &self.parts {
+            match string_template_part {
+                StringTemplatePart::Text(text) => rendered_inline_contents.push_str(&escape_quoted_string_text(text)),
+                StringTemplatePart::Interpolation(expression) => {
+                    rendered_inline_contents.push_str("{{ ");
+                    rendered_inline_contents.push_str(&formatter.inline_expression(expression));
+                    rendered_inline_contents.push_str(" }}");
+                }
+            }
+        }
+
+        rendered_inline_contents
     }
 }
 
@@ -763,6 +769,48 @@ fn find_wrap_split_index(text: &str, width_limit: usize) -> Option<usize> {
     }
 
     last_whitespace_character_index
+}
+
+fn wrap_text_line_by_words(text_line: &str, width_limit: usize) -> Vec<String> {
+    let trimmed_text_line = text_line.trim();
+
+    if trimmed_text_line.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut wrapped_lines = Vec::new();
+    let mut remaining_text = trimmed_text_line.to_owned();
+
+    while remaining_text.chars().count() > width_limit {
+        let Some(split_character_index) = find_wrap_split_index(&remaining_text, width_limit) else {
+            break;
+        };
+
+        let wrapped_line = remaining_text
+            .chars()
+            .take(split_character_index)
+            .collect::<String>()
+            .trim_end()
+            .to_owned();
+
+        if wrapped_line.is_empty() {
+            break;
+        }
+
+        wrapped_lines.push(wrapped_line);
+
+        let wrapped_remainder = remaining_text
+            .chars()
+            .skip(split_character_index)
+            .collect::<String>()
+            .trim_start()
+            .to_owned();
+
+        wrapped_remainder.clone_into(&mut remaining_text);
+    }
+
+    wrapped_lines.push(remaining_text.trim_end().to_owned());
+    wrapped_lines
 }
 
 fn render_expression_string_literal(raw_string: &str) -> String {
