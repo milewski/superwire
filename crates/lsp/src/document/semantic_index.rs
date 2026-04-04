@@ -175,6 +175,49 @@ impl SemanticIndex {
         completion_suggestions
     }
 
+    pub fn prompt_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
+        [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+            .into_iter()
+            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+            .map(|reference_keyword| CompletionSuggestion {
+                label: reference_keyword.as_str().to_string(),
+                kind: CompletionKind::Module,
+                detail: "Prompt value reference root".to_string(),
+                documentation: format!("Use `{}.<path>` in prompt expressions.", reference_keyword.as_str()),
+                insert_text: format!("{}.", reference_keyword.as_str()),
+            })
+            .collect()
+    }
+
+    pub fn prompt_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = self.prompt_value_root_suggestions(value_prefix);
+        let single_line_literal = "\"\"";
+
+        if single_line_literal.starts_with(value_prefix) {
+            completion_suggestions.push(CompletionSuggestion {
+                label: single_line_literal.to_string(),
+                kind: CompletionKind::Value,
+                detail: "String literal".to_string(),
+                documentation: "Literal prompt expression.".to_string(),
+                insert_text: single_line_literal.to_string(),
+            });
+        }
+
+        let multiline_literal_label = "\"\"\"";
+
+        if multiline_literal_label.starts_with(value_prefix) {
+            completion_suggestions.push(CompletionSuggestion {
+                label: multiline_literal_label.to_string(),
+                kind: CompletionKind::Value,
+                detail: "Multiline string literal".to_string(),
+                documentation: "Literal prompt expression.".to_string(),
+                insert_text: "\"\"\"\n\"\"\"".to_string(),
+            });
+        }
+
+        completion_suggestions
+    }
+
     pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input]
             .into_iter()

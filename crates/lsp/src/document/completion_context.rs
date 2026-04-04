@@ -201,6 +201,7 @@ impl ModelCallCompletionContext {
 pub struct AgentPropertyValueCompletionContext {
     pub property_name: AgentExpressionPropertyName,
     pub value_prefix: String,
+    pub inside_string_literal: bool,
 }
 
 impl AgentPropertyValueCompletionContext {
@@ -215,6 +216,7 @@ impl AgentPropertyValueCompletionContext {
         Some(Self {
             property_name,
             value_prefix: value_completion_context.value_prefix,
+            inside_string_literal: value_completion_context.inside_string_literal,
         })
     }
 }
