@@ -52,21 +52,27 @@ Runtime execution can still fail after validation, for example when:
 | Agent dependency graph | yes | yes | yes |
 | Output object construction | yes | yes | yes |
 | Optional chaining `?.` | yes | yes | yes |
-| Agent `for` loops | yes | yes | no |
-| Generic function calls | yes | partially | no |
-| `context(...)` and `compact(...)` | yes | partially | no |
-| `template(...)` | yes | partially | no |
-| `tool.*` references | yes | partially | no |
-| `tools:` property execution | yes | partially | no |
-| `inference:` execution | yes | partially | no |
-| `context:` execution | yes | partially | no |
+| Agent `for` loops | yes | yes | yes |
+| `context(...)` and `compact(...)` | yes | partially | yes |
+| `template(...)` | yes | partially | yes |
+| `tool.*` references in `tools:` | yes | partially | yes |
+| `tools:` property execution | yes | partially | yes |
+| `inference:` execution | yes | yes | yes |
+| `context:` execution | yes | partially | yes |
+| `tool.*` in general expressions | yes | partially | no |
 | custom agent properties | yes | yes | preserved only |
 
 <Info>
   "Partially" means the validator understands the syntax enough to walk
   references, detect dependency edges, and enforce some safety rules, but it
-  does not guarantee runtime support.
+  does not guarantee full semantic validation.
 </Info>
+
+<Warning>
+  `tool.*` references are only executed within the `tools:` property. Using
+  `tool.*` in general expressions (such as prompts, output, or interpolation)
+  returns `UnsupportedFeature` at runtime.
+</Warning>
 
 ## Recommended workflow
 

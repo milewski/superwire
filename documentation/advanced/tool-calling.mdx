@@ -35,10 +35,14 @@ agent assistant_with_tools {
 - tool expressions still participate in dependency scanning
 - secret references are allowed inside `tools:` because they are configuration data, not prompt text
 
+## Runtime behavior
+
+The `tools:` property is fully evaluated at runtime. Tool references within `tools:` are resolved, bound with their named arguments, and passed to the agent executor. Tools must be registered with the runtime via `registered_runtime_tools()` on the `LoopAgentRunner`.
+
 <Warning>
-  The current default runtime does not evaluate `tool.*` expressions or the
-  `tools:` property yet. Tool syntax is part of the DSL surface area, but not
-  yet part of runtime execution in `engine-ai-core`.
+  `tool.*` references are only executed within the `tools:` property. Using
+  `tool.*` in general expressions (such as prompts, output, or interpolation)
+  returns `UnsupportedFeature` at runtime.
 </Warning>
 
 ## Practical guidance

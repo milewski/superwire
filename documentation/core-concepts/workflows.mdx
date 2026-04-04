@@ -74,7 +74,7 @@ The language distinguishes normal input from secret declarations:
 
 Validation prevents `secrets.*` references from being used in prompts, context, and workflow output.
 
-The current public runtime API accepts typed input values directly. Secret declaration support is available in the DSL and validator.
+The current runtime API accepts typed input and secrets values. The `WorkflowRuntime::run_with_secrets` and `run_with_runner_and_secrets` methods pass secrets through the execution pipeline.
 
 ## Optional output declaration
 

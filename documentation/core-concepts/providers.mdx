@@ -127,8 +127,8 @@ agent synthesize {
 }
 ```
 
-<Info>
-  Provider configuration fields currently need string literals for runtime parsing.
-  Secret references inside provider blocks are validated by the DSL, but runtime
-  provider parsing expects literal `endpoint` and `api_key` values.
-</Info>
+<Tip>
+  Provider configuration fields can use string literals or secret references
+  (e.g., <code>api_key: secrets.openai_key</code>). The runtime resolves secret
+  references in provider <code>endpoint</code> and <code>api_key</code> values.
+</Tip>

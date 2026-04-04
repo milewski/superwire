@@ -54,9 +54,12 @@ Engine AI has three useful layers:
 3. **Runtime**: executes validated workflows with built-in OpenAI and Ollama drivers.
 
 <Info>
-  The runtime executes `for` loops, `context(...)`, `compact(...)`, and
-  `template(...)`. `tools` / `tool.*` references are still unsupported at
-  execution time.
+  The runtime executes all agent properties: <code>model</code>, <code>prompt</code>,
+  <code>output</code>, <code>context</code>, <code>inference</code>, and <code>tools</code>.
+  Built-in functions <code>context(...)</code>, <code>compact(...)</code>, and
+  <code>template(...)</code> are also evaluated. Agent <code>for</code> loops run
+  iterations in parallel. <code>tool.*</code> references are only supported within
+  the <code>tools:</code> property.
 </Info>
 
 ## Why this DSL is useful
