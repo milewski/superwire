@@ -80,13 +80,10 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
 
 #[test]
 fn suggests_only_valid_iterable_values_after_for_in_clause() {
-    let source = ["agent remediation_plan for something in  {", "}"].join("\n");
-    let cursor_offset = source
-        .find("agent remediation_plan for something in ")
-        .expect("test source should contain for-loop iterable prefix")
-        + "agent remediation_plan for something in ".len();
-    let cursor_position = position_from_source_offset(&source, cursor_offset);
-    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+    let completion_suggestions = inline_completion_suggestions! {
+        agent remediation_plan for something in <cursor> {
+        }
+    };
 
     assert_completion_contains!(
         &completion_suggestions,
@@ -107,13 +104,10 @@ fn suggests_only_valid_iterable_values_after_for_in_clause() {
 
 #[test]
 fn suggests_for_keyword_after_agent_name_in_agent_header() {
-    let source = ["agent remediation_plan  {", "}"].join("\n");
-    let cursor_offset = source
-        .find("agent remediation_plan ")
-        .expect("test source should contain agent declaration prefix")
-        + "agent remediation_plan ".len();
-    let cursor_position = position_from_source_offset(&source, cursor_offset);
-    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+    let completion_suggestions = inline_completion_suggestions! {
+        agent remediation_plan <cursor> {
+        }
+    };
 
     assert_completion_contains_labels!(&completion_suggestions, ForClauseKeyword::For);
     assert_completion_excludes_labels!(
@@ -132,13 +126,10 @@ fn suggests_for_keyword_after_agent_name_in_agent_header() {
 
 #[test]
 fn suggests_in_keyword_after_for_iterator_name_in_agent_header() {
-    let source = ["agent remediation_plan for item  {", "}"].join("\n");
-    let cursor_offset = source
-        .find("agent remediation_plan for item ")
-        .expect("test source should contain for-loop binding prefix")
-        + "agent remediation_plan for item ".len();
-    let cursor_position = position_from_source_offset(&source, cursor_offset);
-    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+    let completion_suggestions = inline_completion_suggestions! {
+        agent remediation_plan for item <cursor> {
+        }
+    };
 
     assert_completion_contains_labels!(&completion_suggestions, ForClauseKeyword::In);
     assert_completion_excludes_labels!(&completion_suggestions, ForClauseKeyword::For, DeclarationKeyword::Agent);
@@ -149,22 +140,4 @@ fn suggests_in_keyword_after_for_iterator_name_in_agent_header() {
         .expect("in keyword completion should exist");
 
     assert!(matches!(in_keyword_completion.kind, CompletionKind::Keyword));
-}
-
-fn position_from_source_offset(source_text: &str, source_offset: usize) -> Position {
-    let mut line = 0_u32;
-    let mut character = 0_u32;
-
-    for character_in_source in source_text[..source_offset].chars() {
-        if character_in_source == '\n' {
-            line += 1;
-            character = 0;
-
-            continue;
-        }
-
-        character += 1;
-    }
-
-    Position { line, character }
 }
