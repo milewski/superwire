@@ -3,7 +3,9 @@ use super::*;
 #[test]
 fn reports_parse_diagnostics_for_invalid_syntax() {
     let diagnostics = inline_diagnostics! {
-        @
+        agent broken {
+            prompt
+        } @
     };
 
     assert_eq!(diagnostics.len(), 1);
