@@ -243,7 +243,11 @@ impl FormatterFixtureCase {
     }
 
     fn normalize_block_contents(block_lines: &[String]) -> String {
-        let mut normalized_contents = block_lines.join("\n");
+        let normalized_lines = block_lines
+            .iter()
+            .map(|line_text| line_text.trim_end().to_owned())
+            .collect::<Vec<_>>();
+        let mut normalized_contents = normalized_lines.join("\n");
 
         if !normalized_contents.ends_with('\n') {
             normalized_contents.push('\n');

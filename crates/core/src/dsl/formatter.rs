@@ -862,6 +862,10 @@ impl SourceLineAnalysis {
 
         line_signature(&self.code_text)
     }
+
+    fn is_blank_line(&self) -> bool {
+        self.comment.is_none() && self.code_text.trim().is_empty()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1117,6 +1121,8 @@ struct StandaloneCommentInsertion {
     source_line_number: usize,
     target_formatted_line_index: usize,
     insert_after_target: bool,
+    preserve_blank_line_before: bool,
+    preserve_blank_line_after: bool,
     comment_text: String,
 }
 
@@ -1128,7 +1134,7 @@ fn apply_standalone_comments(
     let mut standalone_comment_insertions = Vec::new();
     let source_line_count = source_line_analyses.len();
 
-    for source_line_analysis in source_line_analyses {
+    for (analysis_index, source_line_analysis) in source_line_analyses.iter().enumerate() {
         let Some(comment) = &source_line_analysis.comment else {
             continue;
         };
@@ -1160,11 +1166,19 @@ fn apply_standalone_comments(
         let indentation = indentation_source_line
             .map(|line_text| leading_whitespace(line_text.as_str()))
             .unwrap_or_default();
+        let preserve_blank_line_before = source_line_analyses
+            .get(analysis_index.saturating_sub(1))
+            .is_some_and(SourceLineAnalysis::is_blank_line);
+        let preserve_blank_line_after = source_line_analyses
+            .get(analysis_index + 1)
+            .is_some_and(SourceLineAnalysis::is_blank_line);
 
         standalone_comment_insertions.push(StandaloneCommentInsertion {
             source_line_number: source_line_analysis.line_number,
             target_formatted_line_index,
             insert_after_target,
+            preserve_blank_line_before,
+            preserve_blank_line_after,
             comment_text: format!("{indentation}{}", comment.text.trim_start()),
         });
     }
@@ -1177,17 +1191,83 @@ fn apply_standalone_comments(
         )
     });
 
-    for (insertion_offset, standalone_comment_insertion) in standalone_comment_insertions.into_iter().enumerate() {
+    let mut insertion_offset = 0_usize;
+
+    for standalone_comment_insertion in standalone_comment_insertions {
         let base_insertion_index = if standalone_comment_insertion.insert_after_target {
             standalone_comment_insertion.target_formatted_line_index.saturating_add(1)
         } else {
             standalone_comment_insertion.target_formatted_line_index
         };
 
-        let insertion_index = base_insertion_index.saturating_add(insertion_offset).min(formatted_lines.len());
+        let mut insertion_index = base_insertion_index.saturating_add(insertion_offset).min(formatted_lines.len());
+
+        let should_preserve_or_insert_blank_line_before = standalone_comment_insertion.preserve_blank_line_before
+            || should_insert_visual_separator_before_comment(insertion_index, formatted_lines);
+
+        if should_preserve_or_insert_blank_line_before && !has_blank_line_before_index(insertion_index, formatted_lines) {
+            formatted_lines.insert(insertion_index, String::new());
+            insertion_offset += 1;
+            insertion_index += 1;
+        }
 
         formatted_lines.insert(insertion_index, standalone_comment_insertion.comment_text);
+        insertion_offset += 1;
+        insertion_index += 1;
+
+        if standalone_comment_insertion.preserve_blank_line_after && !has_blank_line_at_index(insertion_index, formatted_lines) {
+            formatted_lines.insert(insertion_index, String::new());
+            insertion_offset += 1;
+        }
     }
+}
+
+fn has_blank_line_before_index(insertion_index: usize, formatted_lines: &[String]) -> bool {
+    if insertion_index == 0 {
+        return false;
+    }
+
+    formatted_lines
+        .get(insertion_index.saturating_sub(1))
+        .is_some_and(|line_text| line_text.trim().is_empty())
+}
+
+fn has_blank_line_at_index(insertion_index: usize, formatted_lines: &[String]) -> bool {
+    formatted_lines
+        .get(insertion_index)
+        .is_some_and(|line_text| line_text.trim().is_empty())
+}
+
+fn should_insert_visual_separator_before_comment(insertion_index: usize, formatted_lines: &[String]) -> bool {
+    let mut previous_line_index = insertion_index;
+
+    while previous_line_index > 0 {
+        previous_line_index = previous_line_index.saturating_sub(1);
+
+        let Some(previous_line_text) = formatted_lines.get(previous_line_index) else {
+            continue;
+        };
+
+        if previous_line_text.trim().is_empty() {
+            continue;
+        }
+
+        let previous_line_without_indent = previous_line_text.trim_start();
+
+        if previous_line_without_indent.starts_with("//") {
+            return false;
+        }
+
+        let previous_line_without_trailing_whitespace = previous_line_text.trim_end();
+
+        if previous_line_without_trailing_whitespace.ends_with('{') || previous_line_without_trailing_whitespace.ends_with('[') {
+            return false;
+        }
+
+        return true;
+    }
+
+    false
 }
 
 fn find_next_mapped_formatted_line(
