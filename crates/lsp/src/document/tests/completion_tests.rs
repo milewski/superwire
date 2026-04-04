@@ -550,6 +550,31 @@ fn suppresses_suggestions_after_named_declaration_keyword_header() {
 }
 
 #[test]
+fn suggests_only_block_braces_after_named_schema_declaration_name() {
+    let source = "schema test ".to_string();
+    let completion_suggestions = completion_suggestions_from_source(
+        source,
+        Position {
+            line: 0,
+            character: "schema test ".len() as u32,
+        },
+    );
+
+    assert_completion_contains!(&completion_suggestions, "{}");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Schema,
+        ReferenceKeyword::Tool,
+        "number",
+        "string"
+    );
+
+    assert_eq!(completion_suggestions.len(), 1);
+}
+
+#[test]
 fn suggests_only_valid_output_value_roots_and_literals_in_output_expression_context() {
     let completion_suggestions = inline_completion_suggestions! {
         output {
