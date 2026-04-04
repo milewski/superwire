@@ -1,0 +1,1174 @@
+use std::collections::HashMap;
+
+use thiserror::Error;
+
+use super::ast::{
+    AgentDeclaration, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, Expression, ForClauseKeyword,
+    FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, TypeExpression, TypedField, Workflow,
+};
+use super::parse_workflow;
+use super::parser::DslParseError;
+
+#[derive(Debug, Error)]
+pub enum DslFormatError {
+    #[error("failed to parse DSL while formatting: {0}")]
+    Parse(#[from] DslParseError),
+}
+
+pub fn format_workflow_source(source_text: &str) -> Result<String, DslFormatError> {
+    let workflow = parse_workflow(source_text)?;
+    let mut formatter = DslFormatter::new();
+    formatter.push_workflow(&workflow);
+
+    let formatted_without_comments = formatter.finish();
+
+    Ok(CommentPreserver::new(source_text, formatted_without_comments).with_preserved_comments())
+}
+
+struct DslFormatter {
+    output: String,
+    indentation_depth: usize,
+}
+
+impl DslFormatter {
+    fn new() -> Self {
+        Self {
+            output: String::new(),
+            indentation_depth: 0,
+        }
+    }
+
+    fn finish(mut self) -> String {
+        if !self.output.ends_with('\n') {
+            self.output.push('\n');
+        }
+
+        self.output
+    }
+
+    fn push_workflow(&mut self, workflow: &Workflow) {
+        let mut declaration_iterator = workflow.declarations.iter().peekable();
+
+        while let Some(declaration) = declaration_iterator.next() {
+            declaration.push_to_formatter(self);
+
+            if declaration_iterator.peek().is_some() {
+                self.push_newline();
+            }
+        }
+    }
+
+    fn push_declaration_block_start(&mut self, header: &str) {
+        self.push_line(&format!("{header} {{"));
+        self.indentation_depth += 1;
+    }
+
+    fn push_declaration_block_end(&mut self) {
+        self.indentation_depth -= 1;
+        self.push_line("}");
+    }
+
+    fn push_indent(&mut self) {
+        for _ in 0..self.indentation_depth {
+            self.output.push_str("    ");
+        }
+    }
+
+    fn push_line(&mut self, line: &str) {
+        self.push_indent();
+        self.output.push_str(line);
+        self.push_newline();
+    }
+
+    fn push_newline(&mut self) {
+        self.output.push('\n');
+    }
+
+    fn inline_expression(&self, expression: &Expression) -> String {
+        let mut inline_formatter = DslFormatter::new();
+        expression.push_to_formatter(&mut inline_formatter, ExpressionFormat::Inline);
+        inline_formatter.output
+    }
+
+    fn push_agent_property_expression(&mut self, property_name: &str, expression: &Expression) {
+        self.push_indent();
+        self.output.push_str(property_name);
+        self.output.push_str(": ");
+        expression.push_to_formatter(self, ExpressionFormat::Canonical);
+        self.push_newline();
+    }
+
+    fn push_agent_property_type(&mut self, property_name: &str, type_expression: &TypeExpression) {
+        self.push_indent();
+        self.output.push_str(property_name);
+        self.output.push_str(": ");
+        type_expression.push_to_formatter(self);
+        self.push_newline();
+    }
+}
+
+impl Declaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        match self {
+            Self::Provider(provider_declaration) => {
+                formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Provider.as_str(), provider_declaration.name));
+
+                for object_field in &provider_declaration.properties {
+                    object_field.push_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
+            Self::Secrets(secrets_declaration) => {
+                formatter.push_declaration_block_start(DeclarationKeyword::Secrets.as_str());
+
+                for typed_field in &secrets_declaration.fields {
+                    typed_field.push_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
+            Self::Input(input_declaration) => {
+                formatter.push_declaration_block_start(DeclarationKeyword::Input.as_str());
+
+                for typed_field in &input_declaration.fields {
+                    typed_field.push_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
+            Self::Schema(schema_declaration) => {
+                formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Schema.as_str(), schema_declaration.name));
+
+                for typed_field in &schema_declaration.fields {
+                    typed_field.push_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
+            Self::Agent(agent_declaration) => {
+                agent_declaration.push_to_formatter(formatter);
+            }
+            Self::Output(output_declaration) => {
+                formatter.push_declaration_block_start(DeclarationKeyword::Output.as_str());
+
+                for object_field in &output_declaration.fields {
+                    object_field.push_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
+        }
+    }
+}
+
+impl AgentDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let mut declaration_header = format!("{} {}", DeclarationKeyword::Agent.as_str(), self.name);
+
+        if let Some(loop_declaration) = &self.for_loop {
+            declaration_header.push(' ');
+            declaration_header.push_str(ForClauseKeyword::For.as_str());
+            declaration_header.push(' ');
+            declaration_header.push_str(&loop_declaration.iterator_name);
+            declaration_header.push(' ');
+            declaration_header.push_str(ForClauseKeyword::In.as_str());
+            declaration_header.push(' ');
+            declaration_header.push_str(&formatter.inline_expression(&loop_declaration.iterable));
+        }
+
+        formatter.push_declaration_block_start(&declaration_header);
+
+        for agent_property in &self.properties {
+            agent_property.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
+    }
+}
+
+impl AgentProperty {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        match self {
+            Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
+            Self::Prompt(expression) => formatter.push_agent_property_expression(AgentPropertyName::Prompt.as_str(), expression),
+            Self::Output(type_expression) => formatter.push_agent_property_type(AgentPropertyName::Output.as_str(), type_expression),
+            Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
+            Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
+            Self::Tools(expression) => formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression),
+            Self::Custom { name, value } => formatter.push_agent_property_expression(name, value),
+        }
+    }
+}
+
+impl TypedField {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_indent();
+        formatter.output.push_str(&self.name);
+        formatter.output.push_str(": ");
+        self.field_type.push_to_formatter(formatter);
+
+        if let Some(description) = &self.description {
+            formatter.output.push(' ');
+            formatter.output.push_str(&render_plain_string_literal(description));
+        }
+
+        formatter.push_newline();
+    }
+}
+
+impl TypeExpression {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        match self {
+            Self::String => formatter.output.push_str("string"),
+            Self::Number => formatter.output.push_str("number"),
+            Self::Float => formatter.output.push_str("float"),
+            Self::Boolean => formatter.output.push_str("boolean"),
+            Self::Null => formatter.output.push_str("null"),
+            Self::SchemaReference(schema_name) => {
+                formatter.output.push_str("schema.");
+                formatter.output.push_str(schema_name);
+            }
+            Self::StringEnum(enum_value) => formatter.output.push_str(&render_plain_string_literal(enum_value)),
+            Self::StringEnumReference(reference) => reference.push_to_formatter(formatter),
+            Self::Array { item_type, fixed_length } => {
+                formatter.output.push('[');
+                item_type.push_to_formatter(formatter);
+
+                if let Some(array_length) = fixed_length {
+                    formatter.output.push_str("; ");
+                    formatter.output.push_str(&array_length.to_string());
+                }
+
+                formatter.output.push(']');
+            }
+            Self::Tuple(tuple_items) => {
+                formatter.output.push('(');
+                let mut tuple_item_iterator = tuple_items.iter().peekable();
+
+                while let Some(tuple_item) = tuple_item_iterator.next() {
+                    tuple_item.push_to_formatter(formatter);
+
+                    if tuple_item_iterator.peek().is_some() {
+                        formatter.output.push_str(", ");
+                    }
+                }
+
+                formatter.output.push(')');
+            }
+            Self::Object(object_fields) => {
+                formatter.output.push('{');
+                formatter.push_newline();
+                formatter.indentation_depth += 1;
+
+                for typed_field in object_fields {
+                    typed_field.push_to_formatter(formatter);
+                }
+
+                formatter.indentation_depth -= 1;
+                formatter.push_indent();
+                formatter.output.push('}');
+            }
+            Self::Union(union_members) => {
+                let mut union_member_iterator = union_members.iter().peekable();
+
+                while let Some(union_member) = union_member_iterator.next() {
+                    union_member.push_to_formatter(formatter);
+
+                    if union_member_iterator.peek().is_some() {
+                        formatter.output.push_str(" | ");
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl ObjectField {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_indent();
+        formatter.output.push_str(&self.name);
+        formatter.output.push_str(": ");
+        self.value.push_to_formatter(formatter, ExpressionFormat::Canonical);
+        formatter.push_newline();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExpressionFormat {
+    Canonical,
+    Inline,
+}
+
+impl Expression {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
+        match self {
+            Self::StringLiteral(string_value) => formatter.output.push_str(&render_expression_string_literal(string_value)),
+            Self::StringTemplate(string_template) => string_template.push_to_formatter(formatter),
+            Self::NumberLiteral(number_literal) => formatter.output.push_str(number_literal),
+            Self::BooleanLiteral(boolean_value) => {
+                if *boolean_value {
+                    formatter.output.push_str("true");
+                } else {
+                    formatter.output.push_str("false");
+                }
+            }
+            Self::NullLiteral => formatter.output.push_str("null"),
+            Self::Reference(reference) => reference.push_to_formatter(formatter),
+            Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
+            Self::ArrayLiteral(array_items) => {
+                if expression_format == ExpressionFormat::Inline {
+                    formatter.output.push('[');
+
+                    let mut array_item_iterator = array_items.iter().peekable();
+                    while let Some(array_item) = array_item_iterator.next() {
+                        array_item.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+                        if array_item_iterator.peek().is_some() {
+                            formatter.output.push_str(", ");
+                        }
+                    }
+
+                    formatter.output.push(']');
+                    return;
+                }
+
+                if array_items.is_empty() {
+                    formatter.output.push_str("[]");
+                    return;
+                }
+
+                formatter.output.push('[');
+                formatter.push_newline();
+                formatter.indentation_depth += 1;
+
+                for array_item in array_items {
+                    formatter.push_indent();
+                    array_item.push_to_formatter(formatter, ExpressionFormat::Canonical);
+                    formatter.output.push(',');
+                    formatter.push_newline();
+                }
+
+                formatter.indentation_depth -= 1;
+                formatter.push_indent();
+                formatter.output.push(']');
+            }
+            Self::ObjectLiteral(object_fields) => {
+                if expression_format == ExpressionFormat::Inline {
+                    formatter.output.push('{');
+
+                    if !object_fields.is_empty() {
+                        formatter.output.push(' ');
+                    }
+
+                    let mut object_field_iterator = object_fields.iter().peekable();
+                    while let Some(object_field) = object_field_iterator.next() {
+                        formatter.output.push_str(&object_field.name);
+                        formatter.output.push_str(": ");
+                        object_field.value.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+                        if object_field_iterator.peek().is_some() {
+                            formatter.output.push(' ');
+                        }
+                    }
+
+                    if !object_fields.is_empty() {
+                        formatter.output.push(' ');
+                    }
+
+                    formatter.output.push('}');
+                    return;
+                }
+
+                if object_fields.is_empty() {
+                    formatter.output.push_str("{}");
+                    return;
+                }
+
+                formatter.output.push('{');
+                formatter.push_newline();
+                formatter.indentation_depth += 1;
+
+                for object_field in object_fields {
+                    object_field.push_to_formatter(formatter);
+                }
+
+                formatter.indentation_depth -= 1;
+                formatter.push_indent();
+                formatter.output.push('}');
+            }
+        }
+    }
+
+    fn is_inline_friendly(&self) -> bool {
+        match self {
+            Self::ArrayLiteral(_) | Self::ObjectLiteral(_) => false,
+            Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::Reference(_)
+            | Self::FunctionCall(_) => true,
+        }
+    }
+}
+
+impl StringTemplate {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let is_multiline = self
+            .parts
+            .iter()
+            .any(|string_template_part| matches!(string_template_part, StringTemplatePart::Text(text) if text.contains('\n')));
+
+        if is_multiline {
+            formatter.output.push_str("\"\"\"");
+
+            for string_template_part in &self.parts {
+                match string_template_part {
+                    StringTemplatePart::Text(text) => formatter.output.push_str(&escape_multiline_string_text(text)),
+                    StringTemplatePart::Interpolation(expression) => {
+                        formatter.output.push_str("{{ ");
+                        expression.push_to_formatter(formatter, ExpressionFormat::Inline);
+                        formatter.output.push_str(" }}");
+                    }
+                }
+            }
+
+            formatter.output.push_str("\"\"\"");
+            return;
+        }
+
+        formatter.output.push('"');
+
+        for string_template_part in &self.parts {
+            match string_template_part {
+                StringTemplatePart::Text(text) => formatter.output.push_str(&escape_quoted_string_text(text)),
+                StringTemplatePart::Interpolation(expression) => {
+                    formatter.output.push_str("{{ ");
+                    expression.push_to_formatter(formatter, ExpressionFormat::Inline);
+                    formatter.output.push_str(" }}");
+                }
+            }
+        }
+
+        formatter.output.push('"');
+    }
+}
+
+impl Reference {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.output.push_str(&self.render_path());
+    }
+}
+
+impl FunctionCall {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        self.callee.push_to_formatter(formatter);
+
+        if self.arguments.is_empty() {
+            formatter.output.push_str("()");
+            return;
+        }
+
+        if self.arguments.iter().all(CallArgument::is_inline_friendly) {
+            formatter.output.push('(');
+
+            let mut argument_iterator = self.arguments.iter().peekable();
+            while let Some(call_argument) = argument_iterator.next() {
+                call_argument.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+                if argument_iterator.peek().is_some() {
+                    formatter.output.push_str(", ");
+                }
+            }
+
+            formatter.output.push(')');
+            return;
+        }
+
+        formatter.output.push('(');
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for call_argument in &self.arguments {
+            formatter.push_indent();
+            call_argument.push_to_formatter(formatter, ExpressionFormat::Canonical);
+            formatter.output.push(',');
+            formatter.push_newline();
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push(')');
+    }
+}
+
+impl CallArgument {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
+        match self {
+            Self::Positional(expression) => expression.push_to_formatter(formatter, expression_format),
+            Self::Named(named_argument) => {
+                formatter.output.push_str(&named_argument.name);
+                formatter.output.push_str(": ");
+                named_argument.value.push_to_formatter(formatter, expression_format);
+            }
+        }
+    }
+
+    fn is_inline_friendly(&self) -> bool {
+        match self {
+            Self::Positional(expression) => expression.is_inline_friendly(),
+            Self::Named(named_argument) => named_argument.value.is_inline_friendly(),
+        }
+    }
+}
+
+fn render_expression_string_literal(raw_string: &str) -> String {
+    if raw_string.contains('\n') {
+        return format!("\"\"\"{}\"\"\"", escape_multiline_string_text(raw_string));
+    }
+
+    format!("\"{}\"", escape_quoted_string_text(raw_string))
+}
+
+fn render_plain_string_literal(raw_string: &str) -> String {
+    if raw_string.contains('\n') {
+        return format!("\"\"\"{}\"\"\"", escape_multiline_plain_string_text(raw_string));
+    }
+
+    format!("\"{}\"", escape_plain_string_text(raw_string))
+}
+
+fn escape_quoted_string_text(raw_string: &str) -> String {
+    let mut escaped_string = String::new();
+
+    for character in raw_string.chars() {
+        match character {
+            '\\' => escaped_string.push_str("\\\\"),
+            '"' => escaped_string.push_str("\\\""),
+            '\n' => escaped_string.push_str("\\n"),
+            '\r' => escaped_string.push_str("\\r"),
+            '\t' => escaped_string.push_str("\\t"),
+            '{' => escaped_string.push_str("\\{"),
+            '}' => escaped_string.push_str("\\}"),
+            _ => escaped_string.push(character),
+        }
+    }
+
+    escaped_string
+}
+
+fn escape_plain_string_text(raw_string: &str) -> String {
+    let mut escaped_string = String::new();
+
+    for character in raw_string.chars() {
+        match character {
+            '\\' => escaped_string.push_str("\\\\"),
+            '"' => escaped_string.push_str("\\\""),
+            '\n' => escaped_string.push_str("\\n"),
+            '\r' => escaped_string.push_str("\\r"),
+            '\t' => escaped_string.push_str("\\t"),
+            _ => escaped_string.push(character),
+        }
+    }
+
+    escaped_string
+}
+
+fn escape_multiline_string_text(raw_string: &str) -> String {
+    let mut escaped_string = String::new();
+
+    for character in raw_string.chars() {
+        match character {
+            '\\' => escaped_string.push_str("\\\\"),
+            '{' => escaped_string.push_str("\\{"),
+            '}' => escaped_string.push_str("\\}"),
+            _ => escaped_string.push(character),
+        }
+    }
+
+    escaped_string.replace("\"\"\"", "\\\"\\\"\\\"")
+}
+
+fn escape_multiline_plain_string_text(raw_string: &str) -> String {
+    raw_string.replace("\"\"\"", "\\\"\\\"\\\"")
+}
+
+struct CommentPreserver<'source> {
+    source_text: &'source str,
+    formatted_without_comments: String,
+}
+
+impl<'source> CommentPreserver<'source> {
+    fn new(source_text: &'source str, formatted_without_comments: String) -> Self {
+        Self {
+            source_text,
+            formatted_without_comments,
+        }
+    }
+
+    fn with_preserved_comments(self) -> String {
+        let source_line_analyses = SourceLineAnalyzer::new(self.source_text).analyze();
+
+        if !source_line_analyses.iter().any(SourceLineAnalysis::has_comment) {
+            return self.formatted_without_comments;
+        }
+
+        let mut formatted_lines = self.formatted_without_comments.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
+
+        let source_code_signature_lines = SourceCodeSignatureLine::collect(&source_line_analyses);
+        let formatted_code_signature_lines = FormattedCodeSignatureLine::collect(&formatted_lines);
+        let source_to_formatted_map = map_source_lines_to_formatted_lines(&source_code_signature_lines, &formatted_code_signature_lines);
+
+        apply_inline_comments(&source_line_analyses, &source_to_formatted_map, &mut formatted_lines);
+        apply_standalone_comments(&source_line_analyses, &source_to_formatted_map, &mut formatted_lines);
+
+        let mut formatted_with_comments = formatted_lines.join("\n");
+
+        if self.formatted_without_comments.ends_with('\n') {
+            formatted_with_comments.push('\n');
+        }
+
+        formatted_with_comments
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CommentKind {
+    Inline,
+    Standalone,
+}
+
+#[derive(Clone, Debug)]
+struct CommentFragment {
+    text: String,
+    comment_kind: CommentKind,
+}
+
+#[derive(Clone, Debug)]
+struct SourceLineAnalysis {
+    line_number: usize,
+    code_text: String,
+    comment: Option<CommentFragment>,
+}
+
+impl SourceLineAnalysis {
+    fn has_comment(&self) -> bool {
+        self.comment.is_some()
+    }
+
+    fn code_signature(&self) -> Option<String> {
+        line_signature(&self.code_text)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StringScanState {
+    Normal,
+    QuotedString,
+    MultilineString,
+}
+
+struct SourceLineAnalyzer<'source> {
+    source_text: &'source str,
+}
+
+impl<'source> SourceLineAnalyzer<'source> {
+    fn new(source_text: &'source str) -> Self {
+        Self { source_text }
+    }
+
+    fn analyze(&self) -> Vec<SourceLineAnalysis> {
+        let mut source_line_analyses = Vec::new();
+        let mut string_scan_state = StringScanState::Normal;
+
+        for (line_index, source_line) in self.source_text.lines().enumerate() {
+            let comment_start_byte_index = find_comment_start_byte_index(source_line, &mut string_scan_state);
+
+            let (code_text, comment) = if let Some(comment_start) = comment_start_byte_index {
+                let code_text = source_line[..comment_start].to_owned();
+                let comment_text = source_line[comment_start..].to_owned();
+                let comment_kind = if code_text.trim().is_empty() {
+                    CommentKind::Standalone
+                } else {
+                    CommentKind::Inline
+                };
+
+                (
+                    code_text,
+                    Some(CommentFragment {
+                        text: comment_text,
+                        comment_kind,
+                    }),
+                )
+            } else {
+                (source_line.to_owned(), None)
+            };
+
+            source_line_analyses.push(SourceLineAnalysis {
+                line_number: line_index + 1,
+                code_text,
+                comment,
+            });
+        }
+
+        source_line_analyses
+    }
+}
+
+fn find_comment_start_byte_index(source_line: &str, string_scan_state: &mut StringScanState) -> Option<usize> {
+    let mut byte_index = 0;
+
+    while byte_index < source_line.len() {
+        let remaining_source = &source_line[byte_index..];
+
+        if *string_scan_state == StringScanState::Normal && remaining_source.starts_with("\"\"\"") {
+            *string_scan_state = StringScanState::MultilineString;
+            byte_index += 3;
+            continue;
+        }
+
+        if *string_scan_state == StringScanState::MultilineString && remaining_source.starts_with("\"\"\"") {
+            *string_scan_state = StringScanState::Normal;
+            byte_index += 3;
+            continue;
+        }
+
+        if *string_scan_state == StringScanState::Normal && remaining_source.starts_with("//") {
+            return Some(byte_index);
+        }
+
+        let current_character = remaining_source
+            .chars()
+            .next()
+            .expect("remaining source should include a character");
+
+        match string_scan_state {
+            StringScanState::Normal => {
+                if current_character == '"' {
+                    *string_scan_state = StringScanState::QuotedString;
+                }
+            }
+            StringScanState::QuotedString => {
+                if current_character == '\\' {
+                    byte_index += current_character.len_utf8();
+
+                    if byte_index < source_line.len() {
+                        let escaped_character = source_line[byte_index..].chars().next().expect("escaped character should exist");
+
+                        byte_index += escaped_character.len_utf8();
+                    }
+
+                    continue;
+                }
+
+                if current_character == '"' {
+                    *string_scan_state = StringScanState::Normal;
+                }
+            }
+            StringScanState::MultilineString => {}
+        }
+
+        byte_index += current_character.len_utf8();
+    }
+
+    if *string_scan_state == StringScanState::QuotedString {
+        *string_scan_state = StringScanState::Normal;
+    }
+
+    None
+}
+
+#[derive(Clone, Debug)]
+struct SourceCodeSignatureLine {
+    source_line_number: usize,
+    signature: String,
+}
+
+impl SourceCodeSignatureLine {
+    fn collect(source_line_analyses: &[SourceLineAnalysis]) -> Vec<Self> {
+        let mut source_code_signature_lines = Vec::new();
+
+        for source_line_analysis in source_line_analyses {
+            let Some(signature) = source_line_analysis.code_signature() else {
+                continue;
+            };
+
+            source_code_signature_lines.push(Self {
+                source_line_number: source_line_analysis.line_number,
+                signature,
+            });
+        }
+
+        source_code_signature_lines
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FormattedCodeSignatureLine {
+    formatted_line_index: usize,
+    signature: String,
+}
+
+impl FormattedCodeSignatureLine {
+    fn collect(formatted_lines: &[String]) -> Vec<Self> {
+        let mut formatted_code_signature_lines = Vec::new();
+
+        for (line_index, line_text) in formatted_lines.iter().enumerate() {
+            let Some(signature) = line_signature(line_text) else {
+                continue;
+            };
+
+            formatted_code_signature_lines.push(Self {
+                formatted_line_index: line_index,
+                signature,
+            });
+        }
+
+        formatted_code_signature_lines
+    }
+}
+
+fn line_signature(line_text: &str) -> Option<String> {
+    let signature = line_text.chars().filter(|character| !character.is_whitespace()).collect::<String>();
+
+    if signature.is_empty() {
+        return None;
+    }
+
+    Some(signature)
+}
+
+fn map_source_lines_to_formatted_lines(
+    source_code_signature_lines: &[SourceCodeSignatureLine],
+    formatted_code_signature_lines: &[FormattedCodeSignatureLine],
+) -> HashMap<usize, usize> {
+    let mut source_to_formatted_map = HashMap::new();
+    let mut formatted_cursor = 0_usize;
+
+    for source_code_signature_line in source_code_signature_lines {
+        while formatted_cursor < formatted_code_signature_lines.len() {
+            let formatted_code_signature_line = &formatted_code_signature_lines[formatted_cursor];
+
+            if formatted_code_signature_line.signature == source_code_signature_line.signature {
+                source_to_formatted_map.insert(
+                    source_code_signature_line.source_line_number,
+                    formatted_code_signature_line.formatted_line_index,
+                );
+
+                formatted_cursor += 1;
+                break;
+            }
+
+            formatted_cursor += 1;
+        }
+    }
+
+    source_to_formatted_map
+}
+
+fn apply_inline_comments(
+    source_line_analyses: &[SourceLineAnalysis],
+    source_to_formatted_map: &HashMap<usize, usize>,
+    formatted_lines: &mut [String],
+) {
+    for source_line_analysis in source_line_analyses {
+        let Some(comment) = &source_line_analysis.comment else {
+            continue;
+        };
+
+        if comment.comment_kind != CommentKind::Inline {
+            continue;
+        }
+
+        let Some(formatted_line_index) = source_to_formatted_map.get(&source_line_analysis.line_number) else {
+            continue;
+        };
+
+        let Some(formatted_line) = formatted_lines.get_mut(*formatted_line_index) else {
+            continue;
+        };
+
+        if formatted_line.trim().is_empty() {
+            comment.text.trim_start().clone_into(formatted_line);
+            continue;
+        }
+
+        formatted_line.push(' ');
+        formatted_line.push_str(comment.text.trim_start());
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StandaloneCommentInsertion {
+    source_line_number: usize,
+    target_formatted_line_index: usize,
+    insert_after_target: bool,
+    comment_text: String,
+}
+
+fn apply_standalone_comments(
+    source_line_analyses: &[SourceLineAnalysis],
+    source_to_formatted_map: &HashMap<usize, usize>,
+    formatted_lines: &mut Vec<String>,
+) {
+    let mut standalone_comment_insertions = Vec::new();
+    let source_line_count = source_line_analyses.len();
+
+    for source_line_analysis in source_line_analyses {
+        let Some(comment) = &source_line_analysis.comment else {
+            continue;
+        };
+
+        if comment.comment_kind != CommentKind::Standalone {
+            continue;
+        }
+
+        let next_mapped_line =
+            find_next_mapped_formatted_line(source_line_analysis.line_number, source_line_count, source_to_formatted_map);
+        let previous_mapped_line = find_previous_mapped_formatted_line(source_line_analysis.line_number, source_to_formatted_map);
+
+        let (target_formatted_line_index, insert_after_target) = if let Some(next_line) = next_mapped_line {
+            (next_line, false)
+        } else if let Some(previous_line) = previous_mapped_line {
+            (previous_line, true)
+        } else {
+            (0, false)
+        };
+
+        let indentation_source_line = formatted_lines.get(target_formatted_line_index);
+
+        let indentation = indentation_source_line
+            .map(|line_text| leading_whitespace(line_text.as_str()))
+            .unwrap_or_default();
+
+        standalone_comment_insertions.push(StandaloneCommentInsertion {
+            source_line_number: source_line_analysis.line_number,
+            target_formatted_line_index,
+            insert_after_target,
+            comment_text: format!("{indentation}{}", comment.text.trim_start()),
+        });
+    }
+
+    standalone_comment_insertions.sort_by_key(|comment_insertion| {
+        (
+            comment_insertion.target_formatted_line_index,
+            comment_insertion.insert_after_target,
+            comment_insertion.source_line_number,
+        )
+    });
+
+    for (insertion_offset, standalone_comment_insertion) in standalone_comment_insertions.into_iter().enumerate() {
+        let base_insertion_index = if standalone_comment_insertion.insert_after_target {
+            standalone_comment_insertion.target_formatted_line_index.saturating_add(1)
+        } else {
+            standalone_comment_insertion.target_formatted_line_index
+        };
+
+        let insertion_index = base_insertion_index.saturating_add(insertion_offset).min(formatted_lines.len());
+
+        formatted_lines.insert(insertion_index, standalone_comment_insertion.comment_text);
+    }
+}
+
+fn find_next_mapped_formatted_line(
+    source_line_number: usize,
+    source_line_count: usize,
+    source_to_formatted_map: &HashMap<usize, usize>,
+) -> Option<usize> {
+    for line_number in source_line_number + 1..=source_line_count {
+        let Some(formatted_line_index) = source_to_formatted_map.get(&line_number) else {
+            continue;
+        };
+
+        return Some(*formatted_line_index);
+    }
+
+    None
+}
+
+fn find_previous_mapped_formatted_line(source_line_number: usize, source_to_formatted_map: &HashMap<usize, usize>) -> Option<usize> {
+    if source_line_number <= 1 {
+        return None;
+    }
+
+    for line_number in (1..source_line_number).rev() {
+        let Some(formatted_line_index) = source_to_formatted_map.get(&line_number) else {
+            continue;
+        };
+
+        return Some(*formatted_line_index);
+    }
+
+    None
+}
+
+fn leading_whitespace(line_text: &str) -> String {
+    line_text
+        .chars()
+        .take_while(|character| character.is_whitespace())
+        .collect::<String>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_workflow_source;
+    use indoc::indoc;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    macro_rules! inline_formatter_source {
+        ($source_text:literal) => {{
+            normalize_inline_workflow_source(indoc!($source_text))
+        }};
+    }
+
+    #[test]
+    fn formatter_is_idempotent_for_all_workflow_examples() {
+        for workflow_path in discover_workflow_examples() {
+            let workflow_source = fs::read_to_string(&workflow_path)
+                .unwrap_or_else(|read_error| panic!("failed to read {}: {read_error}", workflow_path.display()));
+
+            let first_formatted_output = format_workflow_source(&workflow_source)
+                .unwrap_or_else(|format_error| panic!("failed to format {}: {format_error}", workflow_path.display()));
+
+            let second_formatted_output = format_workflow_source(&first_formatted_output)
+                .unwrap_or_else(|format_error| panic!("failed to re-format {}: {format_error}", workflow_path.display()));
+
+            assert_eq!(
+                first_formatted_output,
+                second_formatted_output,
+                "formatter output should be stable for {}",
+                workflow_path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn formatter_produces_canonical_layout_for_compact_source() {
+        let source_text = inline_formatter_source!(
+            "
+                provider openai   {driver:\"openai\" endpoint:\"https://api.openai.com/v1\" models:[\"gpt-4o-mini\",\"gpt-4o\",]}
+
+                agent planner {model:openai(\"gpt-4o-mini\") prompt:\"Plan for {{input.topic}}\" context:{tags:input.tags nested:{level:2}} output:string}
+
+                output {plan:agent.planner}
+            "
+        );
+
+        let expected_text = inline_formatter_source!(
+            "
+                provider openai {
+                    driver: \"openai\"
+                    endpoint: \"https://api.openai.com/v1\"
+                    models: [
+                        \"gpt-4o-mini\",
+                        \"gpt-4o\",
+                    ]
+                }
+
+                agent planner {
+                    model: openai(\"gpt-4o-mini\")
+                    prompt: \"Plan for {{ input.topic }}\"
+                    context: {
+                        tags: input.tags
+                        nested: {
+                            level: 2
+                        }
+                    }
+                    output: string
+                }
+
+                output {
+                    plan: agent.planner
+                }
+            "
+        );
+
+        let formatted_text = format_workflow_source(&source_text).expect("formatting should succeed");
+
+        assert_eq!(formatted_text, expected_text);
+    }
+
+    #[test]
+    fn formatter_preserves_standalone_and_inline_comments() {
+        let source_text = inline_formatter_source!(
+            "
+                // top comment
+                provider openai {
+                // provider driver
+                    driver:\"openai\" // inline driver comment
+                }
+
+                // output heading
+                output {
+                    value: agent.writer // inline output comment
+                }
+            "
+        );
+
+        let expected_text = inline_formatter_source!(
+            "
+                // top comment
+                provider openai {
+                    // provider driver
+                    driver: \"openai\" // inline driver comment
+                }
+
+                // output heading
+                output {
+                    value: agent.writer // inline output comment
+                }
+            "
+        );
+
+        let formatted_text = format_workflow_source(&source_text).expect("formatting should succeed");
+
+        assert_eq!(formatted_text, expected_text);
+    }
+
+    fn discover_workflow_examples() -> Vec<PathBuf> {
+        let workflows_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("workflows");
+        let mut workflow_paths = Vec::new();
+
+        collect_workflow_paths(&workflows_directory, &mut workflow_paths);
+        workflow_paths.sort();
+
+        workflow_paths
+    }
+
+    fn collect_workflow_paths(current_directory: &Path, workflow_paths: &mut Vec<PathBuf>) {
+        let directory_entries = fs::read_dir(current_directory)
+            .unwrap_or_else(|read_error| panic!("failed to read directory {}: {read_error}", current_directory.display()));
+
+        for directory_entry_result in directory_entries {
+            let directory_entry = directory_entry_result
+                .unwrap_or_else(|read_error| panic!("failed to read entry in {}: {read_error}", current_directory.display()));
+
+            let entry_path = directory_entry.path();
+
+            if entry_path.is_dir() {
+                collect_workflow_paths(&entry_path, workflow_paths);
+
+                continue;
+            }
+
+            if entry_path.extension().and_then(|extension| extension.to_str()) != Some("ai") {
+                continue;
+            }
+
+            workflow_paths.push(entry_path);
+        }
+    }
+
+    fn normalize_inline_workflow_source(source_template: &str) -> String {
+        let mut normalized_source = source_template.to_owned();
+
+        if !normalized_source.ends_with('\n') {
+            normalized_source.push('\n');
+        }
+
+        normalized_source
+    }
+}
