@@ -375,7 +375,7 @@ where
         };
 
         let output_type = planned_agent.iteration_output_type.clone();
-        let output_schema = workflow_type_to_schemars_schema(&output_type)?;
+        let output_schema = workflow_type_to_schemars_schema(&output_type, agent_declaration.output_description())?;
         let config = build_agent_config(agent_declaration, runtime_state)?;
 
         Ok(PreparedAgentExecution {

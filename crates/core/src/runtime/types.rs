@@ -539,8 +539,17 @@ pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
     }
 }
 
-pub fn workflow_type_to_schemars_schema(workflow_type: &WorkflowType) -> Result<Schema, WorkflowRuntimeError> {
-    let json_schema_value = workflow_type_to_json_schema(workflow_type);
+pub fn workflow_type_to_schemars_schema(
+    workflow_type: &WorkflowType,
+    schema_description: Option<&str>,
+) -> Result<Schema, WorkflowRuntimeError> {
+    let mut json_schema_value = workflow_type_to_json_schema(workflow_type);
+
+    if let Some(schema_description) = schema_description {
+        if let Some(schema_object) = json_schema_value.as_object_mut() {
+            schema_object.insert("description".to_string(), Value::String(schema_description.to_string()));
+        }
+    }
 
     serde_json::from_value::<Schema>(json_schema_value).map_err(|error| WorkflowRuntimeError::Other {
         message: format!("failed to convert workflow type into schemars schema: {error}"),

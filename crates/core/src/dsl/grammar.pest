@@ -30,7 +30,7 @@ agent_property = _{
 
 model_property = { "model" ~ ":" ~ expression }
 prompt_property = { "prompt" ~ ":" ~ expression }
-output_property = { "output" ~ ":" ~ type_expression }
+output_property = { "output" ~ ":" ~ type_expression ~ plain_string_literal? }
 context_property = { "context" ~ ":" ~ expression }
 inference_property = { "inference" ~ ":" ~ expression }
 tools_property = { "tools" ~ ":" ~ expression }

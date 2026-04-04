@@ -101,11 +101,22 @@ impl DslFormatter {
         self.push_newline();
     }
 
-    fn push_agent_property_type(&mut self, property_name: &str, type_expression: &TypeExpression) {
+    fn push_agent_property_type_with_description(
+        &mut self,
+        property_name: &str,
+        type_expression: &TypeExpression,
+        description: Option<&str>,
+    ) {
         self.push_indent();
         self.output.push_str(property_name);
         self.output.push_str(": ");
         type_expression.push_to_formatter(self);
+
+        if let Some(property_description) = description {
+            self.output.push(' ');
+            self.output.push_str(&render_plain_string_literal(property_description));
+        }
+
         self.push_newline();
     }
 
@@ -314,7 +325,14 @@ impl AgentProperty {
         match self {
             Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
             Self::Prompt(expression) => formatter.push_agent_property_expression(AgentPropertyName::Prompt.as_str(), expression),
-            Self::Output(type_expression) => formatter.push_agent_property_type(AgentPropertyName::Output.as_str(), type_expression),
+            Self::Output {
+                output_type_expression,
+                description,
+            } => formatter.push_agent_property_type_with_description(
+                AgentPropertyName::Output.as_str(),
+                output_type_expression,
+                description.as_deref(),
+            ),
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
             Self::Tools(expression) => formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression),
@@ -339,7 +357,13 @@ impl AgentProperty {
         RenderedAgentProperty {
             text: property_formatter.output,
             is_multiline: property_is_multiline,
-            is_output_property: matches!(self, Self::Output(_)),
+            is_output_property: matches!(
+                self,
+                Self::Output {
+                    output_type_expression: _,
+                    description: _,
+                }
+            ),
         }
     }
 }
