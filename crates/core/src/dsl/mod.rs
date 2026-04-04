@@ -1,4 +1,5 @@
 mod ast;
+mod formatter;
 pub mod macros;
 mod parser;
 mod validation;
@@ -11,5 +12,6 @@ pub use ast::{
     ReferenceKeyword, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart,
     TypeExpression, TypedField, Workflow,
 };
+pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};
 pub use validation::{validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport};
