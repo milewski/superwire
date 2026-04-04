@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, ReferenceKeyword};
+use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword};
 
 use crate::protocol::Position;
 
@@ -261,7 +261,15 @@ impl DocumentState {
         inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
     ) -> Option<Vec<CompletionSuggestion>> {
         let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
-        let reference_completion_constraint = self.reference_completion_constraint(line_prefix, inference_setting_value_completion_context);
+        let for_loop_iterable_reference_context = matches!(
+            reference_completion_path.root_keyword(),
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets)
+        ) && Self::is_for_loop_iterable_clause_context(line_prefix);
+        let reference_completion_constraint = if for_loop_iterable_reference_context {
+            ReferenceCompletionConstraint::ForLoopIterable
+        } else {
+            self.reference_completion_constraint(line_prefix, inference_setting_value_completion_context)
+        };
         let reference_suggestions =
             semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
         let reference_root_keyword = reference_completion_path.root_keyword();
@@ -414,6 +422,10 @@ impl DocumentState {
         line_prefix: &str,
         inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
     ) -> ReferenceCompletionConstraint {
+        if Self::is_for_loop_iterable_clause_context(line_prefix) {
+            return ReferenceCompletionConstraint::ForLoopIterable;
+        }
+
         let line_reference_constraint = ReferenceCompletionConstraint::from_line_prefix(line_prefix);
 
         if line_reference_constraint == ReferenceCompletionConstraint::ForLoopIterable {
@@ -437,6 +449,23 @@ impl DocumentState {
             | InferenceSetting::PresencePenalty
             | InferenceSetting::RepeatPenalty => ReferenceCompletionConstraint::InferenceNumericValue,
         }
+    }
+
+    fn is_for_loop_iterable_clause_context(line_prefix: &str) -> bool {
+        if ForLoopIterableValueCompletionContext::from_line_prefix(line_prefix).is_some() {
+            return true;
+        }
+
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let agent_keyword_with_space = format!("{} ", DeclarationKeyword::Agent.as_str());
+        let Some(after_agent_keyword) = trimmed_line_prefix.strip_prefix(agent_keyword_with_space.as_str()) else {
+            return false;
+        };
+
+        let for_keyword_with_spaces = format!(" {} ", ForClauseKeyword::For.as_str());
+        let in_keyword_with_spaces = format!(" {} ", ForClauseKeyword::In.as_str());
+
+        after_agent_keyword.contains(for_keyword_with_spaces.as_str()) && after_agent_keyword.contains(in_keyword_with_spaces.as_str())
     }
 
     fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
