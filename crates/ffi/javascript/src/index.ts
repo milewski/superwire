@@ -1,22 +1,24 @@
-export { FFI_LIBRARY_KEY, FFI_OPERATION, FFI_PROTOCOL_VERSION } from './Protocol/constants'
-export type { FfiOperation } from './Protocol/constants'
+export { FFI_LIBRARY_KEY, FFI_OPERATION, FFI_PROTOCOL_VERSION } from './constants'
+export type { FfiOperation } from './constants'
 
-export { createEngineFfiBridge, EngineFfiBridge } from './Bridge'
+export { createEngineFfiBridge, EngineFfiBridge } from './bridge'
 
-export { Engine } from './Engine'
-export type { EngineOptions, RegisterToolOptions } from './Engine'
+export { Engine } from './engine'
+export type { EngineOptions, RegisterToolOptions } from './engine'
 
-export { schema } from './Schema/schema'
+export { schema } from './schema'
 export type {
     JsonSchema,
     JsonSchemaArrayOptions,
     JsonSchemaObjectOptions,
     JsonSchemaObjectProperties,
     JsonSchemaPrimitive,
-} from './Schema/schema'
+} from './schema'
 
-export { Tool, Workflow, ToolData, ToolValueBag, ToolOutputNormalizer } from './Workflow'
-export type { ToolArguments, ToolExecutionContext } from './Workflow'
+export { Tool } from './tool'
+export type { ToolArguments, ToolExecutionContext } from './tool'
+
+export { Workflow } from './workflow'
 
 export type {
     CustomToolDeclaration,
