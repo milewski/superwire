@@ -106,6 +106,33 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn for_loop_iterable_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let root_prefix = trailing_identifier(value_prefix).unwrap_or_default();
+        let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
+            .into_iter()
+            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+            .map(|reference_keyword| CompletionSuggestion {
+                label: reference_keyword.as_str().to_string(),
+                kind: CompletionKind::Module,
+                detail: "For-loop iterable reference root".to_string(),
+                documentation: format!("Use `{}.<path>` in for-loop iterable expressions.", reference_keyword.as_str()),
+                insert_text: format!("{}.", reference_keyword.as_str()),
+            })
+            .collect::<Vec<_>>();
+
+        if value_prefix.trim().is_empty() {
+            completion_suggestions.push(CompletionSuggestion {
+                label: "[]".to_string(),
+                kind: CompletionKind::Value,
+                detail: "Array literal".to_string(),
+                documentation: "Inline array literal iterable expression.".to_string(),
+                insert_text: "[]".to_string(),
+            });
+        }
+
+        completion_suggestions
+    }
+
     pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input]
             .into_iter()

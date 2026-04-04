@@ -1,4 +1,4 @@
-use super::text_utils::trailing_identifier;
+use super::text_utils::{leading_identifier, trailing_identifier};
 use super::{CompletionKind, CompletionSuggestion};
 use engine_ai_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
 use engine_ai_core::runtime::InferenceSetting;
@@ -235,6 +235,11 @@ pub struct InferenceSettingValueCompletionContext {
 #[derive(Debug, Clone, Copy)]
 pub struct ArrayFixedLengthCompletionContext;
 
+#[derive(Debug, Clone)]
+pub struct ForLoopIterableValueCompletionContext {
+    pub value_prefix: String,
+}
+
 impl InferenceSettingValueCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
@@ -299,5 +304,28 @@ impl ArrayFixedLengthCompletionContext {
         }
 
         Some(Self)
+    }
+}
+
+impl ForLoopIterableValueCompletionContext {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        if line_prefix.contains(':') {
+            return None;
+        }
+
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let for_clause_separator = format!(" {} ", ForClauseKeyword::For.as_str());
+        let (_, after_for_clause_separator) = trimmed_line_prefix.split_once(for_clause_separator.as_str())?;
+        let iterator_name = leading_identifier(after_for_clause_separator)?;
+        let after_iterator_name = after_for_clause_separator[iterator_name.len()..].trim_start();
+        let after_in_keyword = after_iterator_name.strip_prefix(ForClauseKeyword::In.as_str())?;
+
+        if !after_in_keyword.starts_with(char::is_whitespace) {
+            return None;
+        }
+
+        Some(Self {
+            value_prefix: after_in_keyword.trim_start().to_string(),
+        })
     }
 }

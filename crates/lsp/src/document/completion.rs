@@ -4,7 +4,7 @@ use crate::protocol::Position;
 
 use super::completion_context::{
     AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
-    InferenceSettingValueCompletionContext, ModelCallCompletionContext,
+    ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext, ModelCallCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
@@ -167,6 +167,14 @@ impl DocumentState {
         }
 
         if !line_has_property_separator && !inside_interpolation_expression {
+            if let Some(for_loop_iterable_value_completion_context) = ForLoopIterableValueCompletionContext::from_line_prefix(line_prefix) {
+                if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
+                    return Some(
+                        semantic_index.for_loop_iterable_value_suggestions(&for_loop_iterable_value_completion_context.value_prefix),
+                    );
+                }
+            }
+
             if let Some(declaration_header_completion_context) = DeclarationHeaderCompletionContext::from_line_prefix(line_prefix) {
                 return Some(declaration_header_completion_context.completion_suggestions());
             }
