@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 
-import { EngineFfiBridge } from './bridge'
-import type { CustomToolDeclaration, EngineExecutionError, EngineExecutionResult, EngineFfiBridgeOptions, JsonRecord, ReadExecutionValueEnvelope, ToolInvocationEnvelope, ToolInvocationPayload, WorkflowExecutionEnvelope, WorkflowExecutionRequest } from './types'
-import type { Tool, ToolArguments, ToolExecutionContext } from './tool'
-import { Workflow } from './workflow'
+import { EngineFfiBridge } from '../Bridge'
+import type { CustomToolDeclaration, EngineExecutionError, EngineExecutionResult, EngineFfiBridgeOptions, JsonRecord, ReadExecutionValueEnvelope, ToolInvocationEnvelope, ToolInvocationPayload, WorkflowExecutionEnvelope, WorkflowExecutionRequest } from '../types'
+import type { Tool } from '../Workflow'
+import { Workflow } from '../Workflow'
 
 interface ToolCallbackHandle {
     endpoint: string;
@@ -216,14 +216,14 @@ export class Engine {
         return this.registeredTools()
     }
 
-    async invokeTool<Input extends JsonRecord = JsonRecord, Output = unknown>(toolName: string, input: Input): Promise<Output> {
+    invokeTool<Input extends JsonRecord = JsonRecord, Output = unknown>(toolName: string, input: Input): Output {
         const registeredTool = this.registeredToolsByName.get(toolName)
 
         if (!registeredTool) {
             throw new Error(`Tool \`${ toolName }\` is not registered. Call engine.registerGlobalTool(...) first.`)
         }
 
-        const toolOutput = await registeredTool.tool.execute({
+        const toolOutput = registeredTool.tool.invokeForTesting({
             input,
             bounded: registeredTool.bounded,
             context: {},
@@ -250,7 +250,7 @@ export class Engine {
             workflowExecutionRequest.custom_tools = this.resolveCustomToolDeclarations(workflowExecutionRequest.custom_tools)
             workflowExecutionRequest.defer_output = true
 
-            toolCallbackHandle = await this.startToolCallbackServer(executionId, workflow.scopedToolsByName)
+            toolCallbackHandle = await this.startToolCallbackServer(executionId, workflow.scopedToolsByName())
 
             if (toolCallbackHandle) {
                 workflowExecutionRequest.tool_callback = {
@@ -263,7 +263,7 @@ export class Engine {
                 WorkflowExecutionRequest,
                 WorkflowExecutionEnvelope<Output>
             >(workflowExecutionRequest, {
-                requestId: workflow.requestId(),
+                requestId: workflow.requestId() ?? undefined,
             })
 
             if (workflowExecutionEnvelope.status === 'failed') {
@@ -473,16 +473,15 @@ export class Engine {
         try {
             const executionContext = this.normalizeExecutionContext(toolInvocationPayload.execution_context)
             const boundedFromWorkflow = this.normalizeBoundedArguments(executionContext?.boundArguments)
-            const executionArguments: ToolArguments<JsonRecord, JsonRecord, ToolExecutionContext> = {
+
+            const output = registeredTool.tool.invokeForTesting({
                 input: toolArguments as JsonRecord,
                 bounded: {
                     ...boundedFromWorkflow,
                     ...registeredTool.bounded,
                 },
                 context: executionContext ?? {},
-            }
-
-            const output = await registeredTool.tool.execute(executionArguments)
+            })
 
             this.writeToolCallbackResponse(response, 200, {
                 status: 'succeeded',
@@ -524,7 +523,7 @@ export class Engine {
         response.end(JSON.stringify(envelope))
     }
 
-    private normalizeExecutionContext(rawExecutionContext: unknown): ToolExecutionContext | undefined {
+    private normalizeExecutionContext(rawExecutionContext: unknown): Record<string, unknown> | undefined {
         if (!rawExecutionContext || typeof rawExecutionContext !== 'object' || Array.isArray(rawExecutionContext)) {
             return undefined
         }
