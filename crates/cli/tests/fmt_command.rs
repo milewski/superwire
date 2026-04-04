@@ -152,12 +152,18 @@ fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
             directory_entry_result.unwrap_or_else(|read_error| panic!("failed to read formatter fixture entry: {read_error}"));
         let fixture_path = directory_entry.path();
 
-        if fixture_path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+        if !fixture_path.is_file() {
             continue;
         }
 
         fixture_paths.push(fixture_path);
     }
+
+    assert!(
+        !fixture_paths.is_empty(),
+        "formatter fixture directory {} should contain at least one fixture file",
+        formatter_fixture_directory.display()
+    );
 
     fixture_paths.sort();
     fixture_paths
