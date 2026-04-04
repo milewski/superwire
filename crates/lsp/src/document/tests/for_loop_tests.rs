@@ -79,6 +79,33 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
 }
 
 #[test]
+fn suggests_only_valid_iterable_values_after_for_in_clause() {
+    let source = ["agent remediation_plan for something in  {", "}"].join("\n");
+    let cursor_offset = source
+        .find("agent remediation_plan for something in ")
+        .expect("test source should contain for-loop iterable prefix")
+        + "agent remediation_plan for something in ".len();
+    let cursor_position = position_from_source_offset(&source, cursor_offset);
+    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+
+    assert_completion_contains!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Input,
+        ReferenceKeyword::Secrets,
+        "[]"
+    );
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "boolean",
+        "number",
+        ReferenceKeyword::Tool,
+        BuiltinFunctionName::Context
+    );
+}
+
+#[test]
 fn suggests_for_keyword_after_agent_name_in_agent_header() {
     let source = ["agent remediation_plan  {", "}"].join("\n");
     let cursor_offset = source
