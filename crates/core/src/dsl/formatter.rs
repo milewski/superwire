@@ -561,6 +561,13 @@ impl Expression {
                     return;
                 }
 
+                if let Some(inline_object_literal) = self.inline_object_literal(formatter) {
+                    if formatter.can_fit_inline_text(&inline_object_literal) {
+                        formatter.output.push_str(&inline_object_literal);
+                        return;
+                    }
+                }
+
                 formatter.output.push('{');
                 formatter.push_newline();
                 formatter.indentation_depth += 1;
@@ -614,6 +621,28 @@ impl Expression {
 
         inline_array_literal.push(']');
         Some(inline_array_literal)
+    }
+
+    fn inline_object_literal(&self, formatter: &DslFormatter) -> Option<String> {
+        let Self::ObjectLiteral(object_fields) = self else {
+            return None;
+        };
+
+        if object_fields.len() != 1 {
+            return None;
+        }
+
+        let object_field = &object_fields[0];
+
+        if !object_field.value.is_inline_friendly() {
+            return None;
+        }
+
+        Some(format!(
+            "{{ {}: {} }}",
+            object_field.name,
+            formatter.inline_expression(&object_field.value)
+        ))
     }
 }
 

@@ -56,11 +56,7 @@ agent greeting_prompt_multiline {
 
 agent greeting_inference_multiline {
     model: ollama("qwen3.5:8b")
-
-    inference: {
-        temperature: 0.7
-    }
-
+    inference: { temperature: 0.7 }
     prompt: "test"
     output: string
 }
@@ -68,11 +64,7 @@ agent greeting_inference_multiline {
 agent greeting_tools_then_inference {
     model: ollama("qwen3.5:8b")
     tools: [tool.calculator]
-
-    inference: {
-        temperature: 0.7
-    }
-
+    inference: { temperature: 0.7 }
     prompt: "test"
     output: string
 }
@@ -93,10 +85,7 @@ agent greeting_multiline_tools_then_inference {
         tool.calculator5,
     ]
 
-    inference: {
-        temperature: 0.7
-    }
-
+    inference: { temperature: 0.7 }
     prompt: "test"
     output: string
 }

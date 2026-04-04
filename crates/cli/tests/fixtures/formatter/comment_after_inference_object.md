@@ -17,10 +17,7 @@ agent greeting {
 ```ai
 agent greeting {
     model: ollama("qwen3.5:8b")
-
-    inference: {
-        temperature: 0.7
-    }
+    inference: { temperature: 0.7 }
 
     // Leading indentation in this multiline string is neutralized.
     prompt: """
