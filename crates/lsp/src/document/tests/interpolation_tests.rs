@@ -120,3 +120,21 @@ fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
 
     assert!(completion_suggestions.is_empty());
 }
+
+#[test]
+fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini"]
+        }
+
+        agent worker {
+            model: openai("gpt-4.1-mini")
+            prompt: "hello <cursor>world"
+            output: string
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
