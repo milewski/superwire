@@ -15,8 +15,8 @@ provider openai {
     // provider driver
     driver: "openai" // inline driver comment
 }
-// output heading
 
+// output heading
 output {
     value: "ok"
 }
