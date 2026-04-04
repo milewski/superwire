@@ -5,6 +5,7 @@ use crate::protocol::Position;
 use super::completion_context::{
     AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
     ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext, ModelCallCompletionContext,
+    OutputValueCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
@@ -59,6 +60,7 @@ impl DocumentState {
             &line_prefix,
             position,
             inside_interpolation_expression,
+            line_has_property_separator,
             inference_setting_value_completion_context.as_ref(),
         ) {
             return reference_suggestions;
@@ -133,6 +135,14 @@ impl DocumentState {
                     }
 
                     return Some(Vec::new());
+                }
+            }
+
+            if semantic_index.is_output_position(position) && !inside_interpolation_expression {
+                if let Some(output_value_completion_context) = OutputValueCompletionContext::from_line_prefix(line_prefix) {
+                    if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
+                        return Some(semantic_index.output_value_suggestions(&output_value_completion_context.value_prefix));
+                    }
                 }
             }
         }
@@ -225,6 +235,7 @@ impl DocumentState {
         line_prefix: &str,
         position: Position,
         inside_interpolation_expression: bool,
+        line_has_property_separator: bool,
         inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
     ) -> Option<Vec<CompletionSuggestion>> {
         let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
@@ -275,6 +286,30 @@ impl DocumentState {
                 Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
                     if can_suggest_interpolation_roots {
                         return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
+                    }
+
+                    return Some(Vec::new());
+                }
+            }
+        }
+
+        if line_has_property_separator && semantic_index.is_output_position(position) {
+            let reference_token_has_trailing_separator =
+                trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
+            let can_suggest_output_roots =
+                !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+
+            match reference_completion_path.root_keyword() {
+                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets) => {
+                    if can_suggest_output_roots {
+                        return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(reference_suggestions);
+                }
+                Some(ReferenceKeyword::Tool) | None => {
+                    if can_suggest_output_roots {
+                        return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
                     }
 
                     return Some(Vec::new());

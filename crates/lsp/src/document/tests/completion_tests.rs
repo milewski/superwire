@@ -550,14 +550,61 @@ fn suppresses_suggestions_after_named_declaration_keyword_header() {
 }
 
 #[test]
-fn suggests_builtin_functions_in_output_expression_context() {
+fn suggests_only_valid_output_value_roots_and_literals_in_output_expression_context() {
     let completion_suggestions = inline_completion_suggestions! {
         output {
             value: <cursor>
         }
     };
 
-    assert_completion_contains_label_groups!(&completion_suggestions, BuiltinFunctionName);
+    assert_completion_contains!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Input,
+        ReferenceKeyword::Secrets
+    );
+    assert_completion_contains!(&completion_suggestions, "{}", "[]", "\"\"", "0", "true", "false", "null");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Schema,
+        ReferenceKeyword::Tool
+    );
+}
+
+#[test]
+fn suppresses_invalid_reference_roots_in_output_expression_context() {
+    let completion_suggestions = inline_completion_suggestions! {
+        output {
+            value: schema.<cursor>
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn suggests_only_valid_output_values_for_root_output_field() {
+    let completion_suggestions = inline_completion_suggestions! {
+        output {
+            manual_numbers: <cursor>
+        }
+    };
+
+    assert_completion_contains!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Input,
+        ReferenceKeyword::Secrets
+    );
+    assert_completion_contains!(&completion_suggestions, "{}", "[]", "\"\"", "0");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "number",
+        "string",
+        ReferenceKeyword::Tool,
+        DeclarationKeyword::Provider
+    );
 }
 
 #[test]
