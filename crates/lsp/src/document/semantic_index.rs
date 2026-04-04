@@ -17,45 +17,45 @@ use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind
 
 #[derive(Debug, Clone)]
 pub struct SemanticIndex {
-    pub(in crate::document) providers: HashMap<String, ProviderSummary>,
-    pub(in crate::document) provider_locations: Vec<NamedSpan>,
-    pub(in crate::document) schemas: HashMap<String, SchemaSummary>,
-    pub(in crate::document) schema_names: Vec<String>,
-    pub(in crate::document) schema_locations: Vec<NamedSpan>,
-    pub(in crate::document) input_fields: BTreeMap<String, TypeExpression>,
-    pub(in crate::document) secrets_fields: BTreeMap<String, TypeExpression>,
-    pub(in crate::document) agents: HashMap<String, AgentSummary>,
-    pub(in crate::document) agent_for_loop_iterators: HashMap<String, String>,
-    pub(in crate::document) agent_names: Vec<String>,
-    pub(in crate::document) output_locations: Vec<SourceSpan>,
-    pub(in crate::document) typed_declaration_locations: Vec<SourceSpan>,
-    pub(in crate::document) agent_locations: Vec<NamedSpan>,
+    pub providers: HashMap<String, ProviderSummary>,
+    pub provider_locations: Vec<NamedSpan>,
+    pub schemas: HashMap<String, SchemaSummary>,
+    pub schema_names: Vec<String>,
+    pub schema_locations: Vec<NamedSpan>,
+    pub input_fields: BTreeMap<String, TypeExpression>,
+    pub secrets_fields: BTreeMap<String, TypeExpression>,
+    pub agents: HashMap<String, AgentSummary>,
+    pub agent_for_loop_iterators: HashMap<String, String>,
+    pub agent_names: Vec<String>,
+    pub output_locations: Vec<SourceSpan>,
+    pub typed_declaration_locations: Vec<SourceSpan>,
+    pub agent_locations: Vec<NamedSpan>,
     has_input_declaration: bool,
     has_secrets_declaration: bool,
     has_output_declaration: bool,
-    pub(in crate::document) tooling_snapshot: SemanticToolingSnapshot,
+    pub tooling_snapshot: SemanticToolingSnapshot,
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::document) struct ProviderSummary {
-    pub(in crate::document) driver: Option<ProviderDriver>,
-    pub(in crate::document) models: Vec<String>,
+pub struct ProviderSummary {
+    pub driver: Option<ProviderDriver>,
+    pub models: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::document) struct SchemaSummary {
-    pub(in crate::document) fields: BTreeMap<String, TypeExpression>,
+pub struct SchemaSummary {
+    pub fields: BTreeMap<String, TypeExpression>,
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::document) struct AgentSummary {
-    pub(in crate::document) output_type: Option<TypeExpression>,
+pub struct AgentSummary {
+    pub output_type: Option<TypeExpression>,
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::document) struct NamedSpan {
-    pub(in crate::document) name: String,
-    pub(in crate::document) span: SourceSpan,
+pub struct NamedSpan {
+    pub name: String,
+    pub span: SourceSpan,
 }
 
 impl SemanticIndex {
