@@ -578,7 +578,10 @@ impl Expression {
 
     fn is_inline_friendly(&self) -> bool {
         match self {
-            Self::ArrayLiteral(_) | Self::ObjectLiteral(_) => false,
+            Self::ArrayLiteral(_) => false,
+            Self::ObjectLiteral(object_fields) => {
+                object_fields.len() <= 1 && object_fields.iter().all(|object_field| object_field.value.is_inline_friendly())
+            }
             Self::StringLiteral(_)
             | Self::StringTemplate(_)
             | Self::NumberLiteral(_)
