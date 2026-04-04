@@ -33,6 +33,7 @@ agent writer {
         Write about {{ input.topic }}
         Keep it short and clear.
     """
+
     output: string
 }
 
@@ -42,6 +43,7 @@ agent writer2 {
         Write about {{ input.topic }}
         Keep it short and clear.
     """
+
     output: string
 }
 

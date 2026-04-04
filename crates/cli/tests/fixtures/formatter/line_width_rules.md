@@ -15,6 +15,7 @@ agent formatter_checks {
         This is a very long prompt sentence that should exceed the formatter line width limit and therefore be wrapped
         into a multiline string block automatically by the formatter.
     """
+
     short_numbers: [1, 2, 3]
     long_numbers: [
         1,

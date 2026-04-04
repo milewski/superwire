@@ -184,6 +184,14 @@ impl DslFormatter {
         wrapped_lines
     }
 
+    fn prompt_line_exceeds_width_for_string_literal(&self, string_value: &str) -> bool {
+        let quoted_string_literal = render_expression_string_literal(string_value);
+        let projected_line_width =
+            self.indentation_depth * 4 + AgentPropertyName::Prompt.as_str().chars().count() + 2 + quoted_string_literal.chars().count();
+
+        projected_line_width > MAX_LINE_WIDTH
+    }
+
     fn normalize_multiline_string_lines(multiline_contents: &str) -> Vec<String> {
         let mut content_lines = multiline_contents.split('\n').map(ToOwned::to_owned).collect::<Vec<_>>();
 
@@ -291,8 +299,15 @@ impl AgentDeclaration {
 
         formatter.push_declaration_block_start(&declaration_header);
 
-        for agent_property in &self.properties {
+        let mut property_iterator = self.properties.iter().peekable();
+
+        while let Some(agent_property) = property_iterator.next() {
+            let should_insert_trailing_visual_separator = agent_property.should_have_trailing_visual_separator(formatter);
             agent_property.push_to_formatter(formatter);
+
+            if property_iterator.peek().is_some() && should_insert_trailing_visual_separator {
+                formatter.push_newline();
+            }
         }
 
         formatter.push_declaration_block_end();
@@ -309,6 +324,18 @@ impl AgentProperty {
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
             Self::Tools(expression) => formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression),
             Self::Custom { name, value } => formatter.push_agent_property_expression(name, value),
+        }
+    }
+
+    fn should_have_trailing_visual_separator(&self, formatter: &DslFormatter) -> bool {
+        match self {
+            Self::Prompt(expression) => expression.is_multiline_prompt_expression(formatter),
+            Self::Model(_)
+            | Self::Output(_)
+            | Self::Context(_)
+            | Self::Inference(_)
+            | Self::Tools(_)
+            | Self::Custom { name: _, value: _ } => false,
         }
     }
 }
@@ -570,14 +597,27 @@ impl Expression {
         inline_array_literal.push(']');
         Some(inline_array_literal)
     }
+
+    fn is_multiline_prompt_expression(&self, formatter: &DslFormatter) -> bool {
+        match self {
+            Self::StringLiteral(string_value) => {
+                string_value.contains('\n') || formatter.prompt_line_exceeds_width_for_string_literal(string_value)
+            }
+            Self::StringTemplate(string_template) => string_template.is_multiline(),
+            Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::Reference(_)
+            | Self::FunctionCall(_)
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => false,
+        }
+    }
 }
 
 impl StringTemplate {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
-        let is_multiline = self
-            .parts
-            .iter()
-            .any(|string_template_part| matches!(string_template_part, StringTemplatePart::Text(text) if text.contains('\n')));
+        let is_multiline = self.is_multiline();
 
         if is_multiline {
             formatter.push_multiline_string_block(&self.render_multiline_contents(formatter));
@@ -615,6 +655,12 @@ impl StringTemplate {
         }
 
         rendered_contents
+    }
+
+    fn is_multiline(&self) -> bool {
+        self.parts
+            .iter()
+            .any(|string_template_part| matches!(string_template_part, StringTemplatePart::Text(text) if text.contains('\n')))
     }
 }
 
@@ -891,7 +937,6 @@ impl<'source> SourceLineAnalyzer<'source> {
         for (line_index, source_line) in self.source_text.lines().enumerate() {
             let starts_inside_multiline_string = string_scan_state == StringScanState::MultilineString;
             let comment_start_byte_index = find_comment_start_byte_index(source_line, &mut string_scan_state);
-            let contains_multiline_delimiter = source_line.contains("\"\"\"");
 
             let (code_text, comment) = if let Some(comment_start) = comment_start_byte_index {
                 let code_text = source_line[..comment_start].to_owned();
@@ -917,7 +962,7 @@ impl<'source> SourceLineAnalyzer<'source> {
                 line_number: line_index + 1,
                 code_text,
                 comment,
-                is_within_multiline_string: starts_inside_multiline_string || contains_multiline_delimiter,
+                is_within_multiline_string: starts_inside_multiline_string,
             });
         }
 
@@ -1025,10 +1070,10 @@ impl FormattedCodeSignatureLine {
         let mut is_inside_multiline_string = false;
 
         for (line_index, line_text) in formatted_lines.iter().enumerate() {
-            let is_current_line_within_multiline = is_inside_multiline_string || line_text.contains("\"\"\"");
+            let is_current_line_within_multiline = is_inside_multiline_string;
             is_inside_multiline_string = update_multiline_string_state(is_inside_multiline_string, line_text);
 
-            if is_current_line_within_multiline {
+            if is_current_line_within_multiline || line_text.trim() == "\"\"\"" {
                 continue;
             }
 
