@@ -298,6 +298,9 @@ impl DocumentState {
 
         if inside_interpolation_expression {
             let can_suggest_interpolation_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
+            let for_loop_iterator_reference_root = semantic_index
+                .for_loop_iterator_name_at_position(position)
+                .is_some_and(|iterator_name| iterator_name == reference_completion_path.root_identifier());
 
             match reference_completion_path.root_keyword() {
                 Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
@@ -308,6 +311,10 @@ impl DocumentState {
                     return Some(reference_suggestions);
                 }
                 Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                    if for_loop_iterator_reference_root {
+                        return Some(reference_suggestions);
+                    }
+
                     if can_suggest_interpolation_roots {
                         return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
                     }

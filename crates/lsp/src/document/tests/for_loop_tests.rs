@@ -111,6 +111,47 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
 }
 
 #[test]
+fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent number_note for number in [1, 2, 3, 4] {
+            output: {
+                number: number
+                note: string
+            }
+        }
+
+        agent input_number_note for n in agent.number_note {
+            prompt: "Write a short note for input number {{ n.<cursor> }}"
+            output: {
+                number: number
+                note: string
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "number", "note");
+}
+
+#[test]
+fn suggests_iterator_name_for_agent_iterable_for_loop() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent number_note for number in [1, 2, 3, 4] {
+            output: {
+                number: number
+                note: string
+            }
+        }
+
+        agent input_number_note for n in agent.number_note {
+            prompt: "Write a short note {{ <cursor> }}"
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "n");
+}
+
+#[test]
 fn suggests_only_valid_iterable_values_after_for_in_clause() {
     let completion_suggestions = inline_completion_suggestions! {
         agent remediation_plan for something in <cursor> {
