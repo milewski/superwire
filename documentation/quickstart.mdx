@@ -124,15 +124,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## 5. Know the current runtime boundary
+### Expected output
 
-The default runtime executes `model`, `prompt`, `output`, `context`, `inference`, `tools`, `for` loop agents, `context(...)`, `compact(...)`, and `template(...)`.
+When you run the workflow above, the output will be a JSON object like:
 
-<Info>
-  `tool.*` references are executed within the `tools:` property. Using
-  `tool.*` in general expressions (such as prompts, output, or interpolation)
-  returns `UnsupportedFeature` at runtime.
-</Info>
+```json
+{
+  "title": "Understanding Agent Workflows",
+  "summary": "Agent workflows are declarative pipelines for orchestrating AI agents..."
+}
+```
 
 ## Continue reading
 
