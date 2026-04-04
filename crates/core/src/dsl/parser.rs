@@ -218,10 +218,6 @@ impl DslParseError {
     fn render_expected_rule_name(rule: Rule) -> Option<String> {
         let rule_name = format!("{rule:?}");
 
-        if rule_name == "custom_property" {
-            return None;
-        }
-
         let rendered_rule_name = if let Some(property_name) = rule_name.strip_suffix("_property") {
             property_name.replace('_', " ")
         } else {

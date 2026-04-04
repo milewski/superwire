@@ -25,7 +25,6 @@ agent <name> [for <item> in <expression>] {
     context: <expression>
     inference: <expression>
     tools: <expression>
-    <custom_property>: <expression>
 }
 ```
 
@@ -37,7 +36,6 @@ agent <name> [for <item> in <expression>] {
 - **`context`**: reserved property for explicit context wiring
 - **`inference`**: structured generation settings such as temperature and token limits
 - **`tools`**: list of tool references such as `tool.search` or `tool.search(query: input.topic)`
-- **custom properties**: additional named expressions preserved in the AST
 
 ## A full example
 

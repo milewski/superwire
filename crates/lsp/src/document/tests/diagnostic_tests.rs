@@ -54,7 +54,7 @@ fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
 }
 
 #[test]
-fn reports_unknown_agent_property_diagnostic() {
+fn reports_parse_error_for_unknown_agent_property() {
     let diagnostics = inline_diagnostics! {
         provider openai {
             driver: "openai"
@@ -69,7 +69,7 @@ fn reports_unknown_agent_property_diagnostic() {
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownAgentProperty);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::ParseError);
 }
 
 #[test]

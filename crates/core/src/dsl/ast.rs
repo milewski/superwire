@@ -263,8 +263,7 @@ impl AgentDeclaration {
                 }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
-                | AgentProperty::Tools(_)
-                | AgentProperty::Custom { name: _, value: _ } => {}
+                | AgentProperty::Tools(_) => {}
             }
         }
 
@@ -326,10 +325,6 @@ pub enum AgentProperty {
     Context(Expression),
     Inference(Expression),
     Tools(Expression),
-    Custom {
-        name: String,
-        value: Expression,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

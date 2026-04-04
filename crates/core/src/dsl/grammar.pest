@@ -25,7 +25,6 @@ agent_property = _{
     | context_property
     | inference_property
     | tools_property
-    | custom_property
 }
 
 model_property = { "model" ~ ":" ~ expression }
@@ -34,7 +33,6 @@ output_property = { "output" ~ ":" ~ type_expression ~ plain_string_literal? }
 context_property = { "context" ~ ":" ~ expression }
 inference_property = { "inference" ~ ":" ~ expression }
 tools_property = { "tools" ~ ":" ~ expression }
-custom_property = { identifier ~ ":" ~ expression }
 
 output_declaration = { "output" ~ object_expression }
 

@@ -201,17 +201,6 @@ impl AstVisitor {
                 let expression_pair = self.first_inner_pair(property_pair, "tools property")?;
                 Ok(AgentProperty::Tools(self.visit_expression(expression_pair)?))
             }
-            Rule::custom_property => {
-                let mut inner_pairs = property_pair.into_inner();
-                let property_name = self.next_identifier(&mut inner_pairs, "custom property name", "custom property")?;
-                let expression_pair = self.next_pair(&mut inner_pairs, "custom property value", "custom property")?;
-                let value = self.visit_expression(expression_pair)?;
-
-                Ok(AgentProperty::Custom {
-                    name: property_name,
-                    value,
-                })
-            }
             _ => unreachable!("agent block should contain only valid agent property rules"),
         }
     }
