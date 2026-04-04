@@ -1,5 +1,5 @@
-import type { FfiOperation } from './constants'
-import type { Tool } from './tool'
+import type { FfiOperation } from './Protocol/constants'
+import type { Tool } from './Workflow/Tool'
 
 export type JsonRecord = Record<string, unknown>;
 

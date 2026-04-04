@@ -47,13 +47,12 @@ async function runToolSchemaExample(): Promise<void> {
             fingerprint_salt: 'demo-fingerprint-salt-change-me',
         }
 
-        const workflow = Workflow.fromFile<WorkflowOutput, Input, Secrets>('./examples/workflows/tool_schema.ai', {
+        const workflow = Workflow.fromFile<WorkflowOutput, Input, Secrets>(
+            './examples/workflows/tool_schema.ai',
             inputs,
             secrets,
-            tools: [
-                new ContentFingerprint(),
-            ],
-        })
+            [ new ContentFingerprint() ],
+        )
 
         const response = await engine.run(workflow)
 
