@@ -42,6 +42,16 @@
         <lang.parserDefinition
                 language="EngineAI"
                 implementationClass="com.engineai.intellij.EngineAiParserDefinition"/>
+
+        <lang.foldingBuilder
+                language="EngineAI"
+                implementationClass="com.redhat.devtools.lsp4ij.features.foldingRange.LSPFoldingRangeBuilder"
+                order="first"/>
+
+        <codeBlockProvider
+                language="EngineAI"
+                implementationClass="com.redhat.devtools.lsp4ij.features.codeBlockProvider.LSPCodeBlockProvider"
+                order="first"/>
     </extensions>
 
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
