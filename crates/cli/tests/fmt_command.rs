@@ -4,19 +4,27 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
-fn formats_single_workflow_file_from_markdown_fixture() {
-    let fixture_case = FormatterFixtureCase::from_path(&formatter_fixture_path("basic_spacing.md"));
+fn formats_all_markdown_fixtures_as_individual_files() {
+    for fixture_case in discover_formatter_fixture_cases() {
+        let temporary_workspace = TemporaryWorkspace::new();
+        let workflow_file_path = temporary_workspace.write_file("single.ai", &fixture_case.before_source);
 
-    let temporary_workspace = TemporaryWorkspace::new();
-    let workflow_path = temporary_workspace.write_file("single.ai", &fixture_case.before_source);
+        let command_output = run_fmt_command(workflow_file_path.as_path());
 
-    let command_output = run_fmt_command(workflow_path.as_path());
+        assert!(
+            command_output.status.success(),
+            "fmt command should succeed for fixture {}",
+            fixture_case.fixture_name
+        );
 
-    assert!(command_output.status.success(), "fmt command should succeed");
+        let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
 
-    let formatted_source = fs::read_to_string(&workflow_path).expect("formatted workflow should be readable");
-
-    assert_eq!(formatted_source, fixture_case.expected_after_source);
+        assert_eq!(
+            formatted_source, fixture_case.expected_after_source,
+            "formatted output mismatch for fixture {}",
+            fixture_case.fixture_name
+        );
+    }
 }
 
 #[test]
@@ -27,8 +35,7 @@ fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
 
     let mut created_workflow_cases = Vec::new();
 
-    for (fixture_index, fixture_path) in discover_formatter_fixture_paths().into_iter().enumerate() {
-        let fixture_case = FormatterFixtureCase::from_path(&fixture_path);
+    for (fixture_index, fixture_case) in discover_formatter_fixture_cases().into_iter().enumerate() {
         let target_directory = if fixture_index % 2 == 0 {
             &source_directory
         } else {
@@ -55,22 +62,37 @@ fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
 }
 
 #[test]
-fn preserves_comments_while_formatting() {
-    let fixture_case = FormatterFixtureCase::from_path(&formatter_fixture_path("comments_preserved.md"));
+fn preserves_comments_for_fixture_cases_that_contain_comments() {
+    for fixture_case in discover_formatter_fixture_cases() {
+        if !fixture_case.before_source.contains("//") {
+            continue;
+        }
 
-    let temporary_workspace = TemporaryWorkspace::new();
-    let workflow_path = temporary_workspace.write_file("comments.ai", &fixture_case.before_source);
+        let temporary_workspace = TemporaryWorkspace::new();
+        let workflow_file_path = temporary_workspace.write_file("comments.ai", &fixture_case.before_source);
 
-    let command_output = run_fmt_command(workflow_path.as_path());
+        let command_output = run_fmt_command(workflow_file_path.as_path());
 
-    assert!(command_output.status.success(), "fmt command should succeed");
+        assert!(
+            command_output.status.success(),
+            "fmt command should succeed for fixture {}",
+            fixture_case.fixture_name
+        );
 
-    let formatted_source = fs::read_to_string(&workflow_path).expect("formatted workflow should be readable");
+        let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
 
-    assert_eq!(formatted_source, fixture_case.expected_after_source);
-    assert!(formatted_source.contains("// provider declaration"));
-    assert!(formatted_source.contains("// provider driver"));
-    assert!(formatted_source.contains("// inline driver comment"));
+        assert_eq!(
+            formatted_source, fixture_case.expected_after_source,
+            "formatted output mismatch for fixture {}",
+            fixture_case.fixture_name
+        );
+
+        assert!(
+            formatted_source.contains("//"),
+            "expected comments to be preserved for fixture {}",
+            fixture_case.fixture_name
+        );
+    }
 }
 
 #[test]
@@ -115,10 +137,6 @@ fn cli_binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cli"))
 }
 
-fn formatter_fixture_path(fixture_file_name: &str) -> PathBuf {
-    formatter_fixture_directory().join(fixture_file_name)
-}
-
 fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
     let formatter_fixture_directory = formatter_fixture_directory();
     let directory_entries = fs::read_dir(&formatter_fixture_directory).unwrap_or_else(|read_error| {
@@ -143,6 +161,13 @@ fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
 
     fixture_paths.sort();
     fixture_paths
+}
+
+fn discover_formatter_fixture_cases() -> Vec<FormatterFixtureCase> {
+    discover_formatter_fixture_paths()
+        .into_iter()
+        .map(|fixture_path| FormatterFixtureCase::from_path(&fixture_path))
+        .collect::<Vec<_>>()
 }
 
 fn formatter_fixture_directory() -> PathBuf {
