@@ -297,6 +297,16 @@ fn completion_suggestions_from_source(source: String, cursor_position: Position)
     document_state.completion_suggestions(cursor_position)
 }
 
+fn completion_suggestion_by_label<'completion>(
+    completion_suggestions: &'completion [CompletionSuggestion],
+    label: &str,
+) -> &'completion CompletionSuggestion {
+    completion_suggestions
+        .iter()
+        .find(|completion_suggestion| completion_suggestion.label == label)
+        .unwrap_or_else(|| panic!("expected completion label `{label}` to exist"))
+}
+
 fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
     let source = normalize_inline_cursor_layout(source_template);
     let document_state = DocumentState::new(source);

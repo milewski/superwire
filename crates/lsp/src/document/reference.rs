@@ -240,7 +240,10 @@ impl SemanticIndex {
                 .map(|(field_name, field_type)| CompletionSuggestion {
                     label: field_name.clone(),
                     kind: CompletionKind::Property,
-                    detail: format!("{detail_prefix}: {}", field_type.render_type()),
+                    detail: root_field_metadata
+                        .and_then(|metadata_map| metadata_map.get(field_name))
+                        .and_then(|field_metadata| field_metadata.description.clone())
+                        .unwrap_or_else(|| format!("{detail_prefix}: {}", field_type.render_type())),
                     documentation: root_field_metadata
                         .and_then(|metadata_map| metadata_map.get(field_name))
                         .and_then(|field_metadata| field_metadata.description.clone())
@@ -377,7 +380,10 @@ impl SemanticIndex {
             .map(|(field_name, field_metadata)| CompletionSuggestion {
                 label: field_name.clone(),
                 kind: CompletionKind::Property,
-                detail: format!("Field: {}", field_metadata.field_type.render_type()),
+                detail: field_metadata
+                    .description
+                    .clone()
+                    .unwrap_or_else(|| format!("Field: {}", field_metadata.field_type.render_type())),
                 documentation: field_metadata
                     .description
                     .unwrap_or_else(|| "Field available at this reference path.".to_string()),
