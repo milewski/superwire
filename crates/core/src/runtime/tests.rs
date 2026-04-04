@@ -159,6 +159,39 @@ impl AgentRunner for EchoModelRunner {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SchemaProbeRunner {
+    captured_output_schemas: Arc<Mutex<Vec<Value>>>,
+}
+
+impl SchemaProbeRunner {
+    pub fn captured_output_schemas(&self) -> Vec<Value> {
+        self.captured_output_schemas
+            .lock()
+            .expect("captured output schemas lock should not be poisoned")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl AgentRunner for SchemaProbeRunner {
+    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        let output_schema_value = serde_json::to_value(&request.output_schema).expect("output schema should serialize to JSON value");
+
+        self.captured_output_schemas
+            .lock()
+            .expect("captured output schemas lock should not be poisoned")
+            .push(output_schema_value);
+
+        Ok(AgentExecutionResult {
+            output: json!("ok"),
+            context: json!({
+                "agent": request.agent_name,
+            }),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum PublicationStatus {
@@ -1032,4 +1065,43 @@ async fn resolves_provider_and_model_values_from_secrets() {
         .expect("workflow should run successfully");
 
     assert_eq!(output.resolved_model, "model-a".to_string());
+}
+
+#[tokio::test]
+async fn includes_agent_output_description_in_generated_output_schema() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        value: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        agent greeting {
+            model: openai("model-a")
+            prompt: "test"
+            output: string "example"
+        }
+
+        output {
+            value: agent.greeting
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = SchemaProbeRunner::default();
+
+    let workflow_output = runtime
+        .run_with_runner((), &runner)
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(workflow_output.value, "ok".to_string());
+
+    let captured_output_schemas = runner.captured_output_schemas();
+    let first_agent_output_schema = captured_output_schemas
+        .first()
+        .expect("schema probe runner should capture at least one output schema");
+
+    assert_eq!(first_agent_output_schema.get("description"), Some(&json!("example")));
 }

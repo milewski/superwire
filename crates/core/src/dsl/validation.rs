@@ -848,9 +848,13 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
                 for agent_property in &agent_declaration.properties {
-                    if let AgentProperty::Output(output_type) = agent_property {
+                    if let AgentProperty::Output {
+                        output_type_expression,
+                        description: _,
+                    } = agent_property
+                    {
                         validate_type_expression_for_schemas(
-                            output_type,
+                            output_type_expression,
                             agent_context.clone(),
                             Some(agent_declaration.span),
                             validation_index,
@@ -1123,7 +1127,10 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                 SecretReferencePolicy::Allow,
                             );
                         }
-                        AgentProperty::Output(_) => {}
+                        AgentProperty::Output {
+                            output_type_expression: _,
+                            description: _,
+                        } => {}
                     }
                 }
             }
@@ -1540,7 +1547,10 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                 } => {
                     collect_agent_dependencies_from_expression(model_expression, &mut referenced_agents);
                 }
-                AgentProperty::Output(_) => {}
+                AgentProperty::Output {
+                    output_type_expression: _,
+                    description: _,
+                } => {}
             }
         }
 

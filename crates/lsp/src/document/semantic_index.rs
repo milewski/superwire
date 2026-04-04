@@ -380,7 +380,10 @@ impl SemanticIndex {
 
     fn insert_agent_declaration(&mut self, agent_declaration: &engine_ai_core::dsl::AgentDeclaration) {
         let output_type = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
-            AgentProperty::Output(type_expression) => Some(type_expression.clone()),
+            AgentProperty::Output {
+                output_type_expression,
+                description: _,
+            } => Some(output_type_expression.clone()),
             AgentProperty::Model(_)
             | AgentProperty::Prompt(_)
             | AgentProperty::Context(_)

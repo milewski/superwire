@@ -257,7 +257,10 @@ impl AgentDeclaration {
                 AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
                 AgentProperty::Model(_)
                 | AgentProperty::Prompt(_)
-                | AgentProperty::Output(_)
+                | AgentProperty::Output {
+                    output_type_expression: _,
+                    description: _,
+                }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
                 | AgentProperty::Tools(_)
@@ -278,8 +281,27 @@ impl AgentDeclaration {
     #[must_use]
     pub fn output_type(&self) -> Option<&TypeExpression> {
         for agent_property in &self.properties {
-            if let AgentProperty::Output(output_type_expression) = agent_property {
+            if let AgentProperty::Output {
+                output_type_expression,
+                description: _,
+            } = agent_property
+            {
                 return Some(output_type_expression);
+            }
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn output_description(&self) -> Option<&str> {
+        for agent_property in &self.properties {
+            if let AgentProperty::Output {
+                output_type_expression: _,
+                description: Some(output_description),
+            } = agent_property
+            {
+                return Some(output_description.as_str());
             }
         }
 
@@ -297,11 +319,17 @@ pub struct AgentForLoop {
 pub enum AgentProperty {
     Model(Expression),
     Prompt(Expression),
-    Output(TypeExpression),
+    Output {
+        output_type_expression: TypeExpression,
+        description: Option<String>,
+    },
     Context(Expression),
     Inference(Expression),
     Tools(Expression),
-    Custom { name: String, value: Expression },
+    Custom {
+        name: String,
+        value: Expression,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

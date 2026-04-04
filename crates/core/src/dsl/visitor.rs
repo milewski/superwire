@@ -176,8 +176,18 @@ impl AstVisitor {
                 Ok(AgentProperty::Prompt(self.visit_expression(expression_pair)?))
             }
             Rule::output_property => {
-                let type_pair = self.first_inner_pair(property_pair, "agent output property")?;
-                Ok(AgentProperty::Output(self.visit_type_expression(type_pair)?))
+                let mut inner_pairs = property_pair.into_inner();
+                let type_pair = self.next_pair(&mut inner_pairs, "agent output type", "agent output property")?;
+                let output_type_expression = self.visit_type_expression(type_pair)?;
+                let description = inner_pairs
+                    .next()
+                    .map(|description_pair| self.parse_string_literal(description_pair))
+                    .transpose()?;
+
+                Ok(AgentProperty::Output {
+                    output_type_expression,
+                    description,
+                })
             }
             Rule::context_property => {
                 let expression_pair = self.first_inner_pair(property_pair, "context property")?;
