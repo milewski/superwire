@@ -20,9 +20,7 @@ agent planner {
             topic: "engine-ai"
             tags: ["dsl", "fmt"]
         },
-        meta: {
-            priority: 1
-        },
+        meta: { priority: 1 },
     )
 
     output: string
