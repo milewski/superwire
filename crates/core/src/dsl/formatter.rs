@@ -299,11 +299,17 @@ impl AgentDeclaration {
 
         formatter.push_declaration_block_start(&declaration_header);
 
+        let mut has_written_any_property = false;
         let mut property_iterator = self.properties.iter().peekable();
 
         while let Some(agent_property) = property_iterator.next() {
+            if has_written_any_property && agent_property.should_have_leading_visual_separator() {
+                formatter.push_newline();
+            }
+
             let should_insert_trailing_visual_separator = agent_property.should_have_trailing_visual_separator(formatter);
             agent_property.push_to_formatter(formatter);
+            has_written_any_property = true;
 
             if property_iterator.peek().is_some() && should_insert_trailing_visual_separator {
                 formatter.push_newline();
@@ -336,6 +342,15 @@ impl AgentProperty {
             | Self::Inference(_)
             | Self::Tools(_)
             | Self::Custom { name: _, value: _ } => false,
+        }
+    }
+
+    fn should_have_leading_visual_separator(&self) -> bool {
+        match self {
+            Self::Inference(expression) => expression.is_non_empty_object_literal(),
+            Self::Model(_) | Self::Prompt(_) | Self::Output(_) | Self::Context(_) | Self::Tools(_) | Self::Custom { name: _, value: _ } => {
+                false
+            }
         }
     }
 }
@@ -611,6 +626,20 @@ impl Expression {
             | Self::FunctionCall(_)
             | Self::ArrayLiteral(_)
             | Self::ObjectLiteral(_) => false,
+        }
+    }
+
+    fn is_non_empty_object_literal(&self) -> bool {
+        match self {
+            Self::ObjectLiteral(object_fields) => !object_fields.is_empty(),
+            Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::Reference(_)
+            | Self::FunctionCall(_)
+            | Self::ArrayLiteral(_) => false,
         }
     }
 }
@@ -1109,21 +1138,23 @@ fn map_source_lines_to_formatted_lines(
     let mut formatted_cursor = 0_usize;
 
     for source_code_signature_line in source_code_signature_lines {
-        while formatted_cursor < formatted_code_signature_lines.len() {
-            let formatted_code_signature_line = &formatted_code_signature_lines[formatted_cursor];
+        let relative_match_index = formatted_code_signature_lines[formatted_cursor..]
+            .iter()
+            .position(|formatted_code_signature_line| formatted_code_signature_line.signature == source_code_signature_line.signature);
 
-            if formatted_code_signature_line.signature == source_code_signature_line.signature {
-                source_to_formatted_map.insert(
-                    source_code_signature_line.source_line_number,
-                    formatted_code_signature_line.formatted_line_index,
-                );
+        let Some(relative_match_index) = relative_match_index else {
+            continue;
+        };
 
-                formatted_cursor += 1;
-                break;
-            }
+        let absolute_match_index = formatted_cursor + relative_match_index;
+        let formatted_code_signature_line = &formatted_code_signature_lines[absolute_match_index];
 
-            formatted_cursor += 1;
-        }
+        source_to_formatted_map.insert(
+            source_code_signature_line.source_line_number,
+            formatted_code_signature_line.formatted_line_index,
+        );
+
+        formatted_cursor = absolute_match_index + 1;
     }
 
     source_to_formatted_map
