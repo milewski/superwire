@@ -146,7 +146,7 @@ fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
 }
 
 fn formatter_fixture_directory() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/workflows/formatter_fixtures")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/formatter")
 }
 
 struct FormatterFixtureCase {

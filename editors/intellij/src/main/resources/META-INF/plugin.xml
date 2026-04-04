@@ -18,6 +18,7 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.plugins.textmate</depends>
+    <depends>org.intellij.plugins.markdown</depends>
     <depends>com.redhat.devtools.lsp4ij</depends>
 
     <extensions defaultExtensionNs="com.intellij">
@@ -51,5 +52,9 @@
         </server>
 
         <languageMapping language="EngineAI" serverId="engine-ai"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="org.intellij.markdown">
+        <fenceLanguageProvider implementation="com.engineai.intellij.EngineAiCodeFenceLanguageProvider"/>
     </extensions>
 </idea-plugin>

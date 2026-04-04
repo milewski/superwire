@@ -1039,36 +1039,24 @@ mod tests {
     }
 
     #[test]
-    fn formatter_matches_markdown_fixtures() {
-        for fixture_path in discover_formatter_fixture_paths() {
-            let fixture_case = FormatterFixtureCase::from_path(&fixture_path);
+    fn formatter_matches_expected_output_for_representative_source() {
+        let source_text = "provider openai   {driver:\"openai\" models:[\"gpt-4o-mini\",]}\n\noutput { result: \"ok\" }\n";
 
-            fixture_case.assert_matches_expected_output();
-        }
+        let expected_output = "provider openai {\n    driver: \"openai\"\n    models: [\n        \"gpt-4o-mini\",\n    ]\n}\n\noutput {\n    result: \"ok\"\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("representative workflow should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
     }
 
     fn discover_workflow_examples() -> Vec<PathBuf> {
         let workflows_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("workflows");
         let mut workflow_paths = Vec::new();
 
-        collect_workflow_paths(&workflows_directory, &mut workflow_paths);
+        collect_paths_by_extension(&workflows_directory, "ai", &mut workflow_paths);
         workflow_paths.sort();
 
         workflow_paths
-    }
-
-    fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
-        let formatter_fixture_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("workflows/formatter_fixtures");
-        let mut fixture_paths = Vec::new();
-
-        collect_paths_by_extension(&formatter_fixture_directory, "md", &mut fixture_paths);
-        fixture_paths.sort();
-
-        fixture_paths
-    }
-
-    fn collect_workflow_paths(current_directory: &Path, workflow_paths: &mut Vec<PathBuf>) {
-        collect_paths_by_extension(current_directory, "ai", workflow_paths);
     }
 
     fn collect_paths_by_extension(current_directory: &Path, extension: &str, collected_paths: &mut Vec<PathBuf>) {
@@ -1092,89 +1080,6 @@ mod tests {
             }
 
             collected_paths.push(entry_path);
-        }
-    }
-
-    struct FormatterFixtureCase {
-        fixture_path: PathBuf,
-        before_source: String,
-        expected_after_source: String,
-    }
-
-    impl FormatterFixtureCase {
-        fn from_path(fixture_path: &Path) -> Self {
-            let fixture_contents = fs::read_to_string(fixture_path)
-                .unwrap_or_else(|read_error| panic!("failed to read fixture {}: {read_error}", fixture_path.display()));
-            let ai_code_blocks = Self::extract_ai_code_blocks(&fixture_contents);
-
-            assert_eq!(
-                ai_code_blocks.len(),
-                2,
-                "fixture {} must contain exactly two ```ai code blocks (before and after)",
-                fixture_path.display()
-            );
-
-            Self {
-                fixture_path: fixture_path.to_path_buf(),
-                before_source: ai_code_blocks[0].clone(),
-                expected_after_source: ai_code_blocks[1].clone(),
-            }
-        }
-
-        fn assert_matches_expected_output(&self) {
-            let formatted_source = format_workflow_source(&self.before_source)
-                .unwrap_or_else(|format_error| panic!("failed to format fixture {}: {format_error}", self.fixture_path.display()));
-
-            assert_eq!(
-                formatted_source,
-                self.expected_after_source,
-                "formatter output mismatch for fixture {}",
-                self.fixture_path.display()
-            );
-        }
-
-        fn extract_ai_code_blocks(markdown_text: &str) -> Vec<String> {
-            let mut extracted_blocks = Vec::new();
-            let mut current_block_lines = Vec::new();
-            let mut is_inside_ai_block = false;
-
-            for markdown_line in markdown_text.lines() {
-                let line_without_carriage_return = markdown_line.trim_end_matches('\r');
-                let trimmed_line = line_without_carriage_return.trim();
-
-                if !is_inside_ai_block && trimmed_line == "```ai" {
-                    is_inside_ai_block = true;
-                    current_block_lines.clear();
-
-                    continue;
-                }
-
-                if is_inside_ai_block && trimmed_line == "```" {
-                    let block_contents = Self::normalize_block_contents(&current_block_lines);
-                    extracted_blocks.push(block_contents);
-                    is_inside_ai_block = false;
-
-                    continue;
-                }
-
-                if is_inside_ai_block {
-                    current_block_lines.push(line_without_carriage_return.to_owned());
-                }
-            }
-
-            assert!(!is_inside_ai_block, "unclosed ```ai block in markdown fixture");
-
-            extracted_blocks
-        }
-
-        fn normalize_block_contents(block_lines: &[String]) -> String {
-            let mut normalized_contents = block_lines.join("\n");
-
-            if !normalized_contents.ends_with('\n') {
-                normalized_contents.push('\n');
-            }
-
-            normalized_contents
         }
     }
 }

@@ -47,7 +47,7 @@ kotlin {
 intellij {
     version.set("2024.1")
     type.set("IC")
-    plugins.set(listOf("com.redhat.devtools.lsp4ij:0.10.0", "org.jetbrains.plugins.textmate"))
+    plugins.set(listOf("com.redhat.devtools.lsp4ij:0.10.0", "org.jetbrains.plugins.textmate", "org.intellij.plugins.markdown"))
 }
 
 val buildLspBinaries by tasks.registering {
