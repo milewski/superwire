@@ -69,6 +69,18 @@ template("prompts/research_brief.md", {
 })
 ```
 
+### Tool calls with bounded arguments
+
+Tool calls can include named arguments for bounded values:
+
+```ai
+tool.weather(city: "Shanghai")
+tool.content_fingerprint(
+    collection_id: input.collection_id,
+    signing_salt: secrets.fingerprint_salt
+)
+```
+
 ## `{}` objects and blocks
 
 Braces are used for:
@@ -78,6 +90,7 @@ Braces are used for:
 - agent blocks
 - object expressions
 - inline object type expressions
+- tool call arguments
 
 ## `[]` arrays
 
@@ -85,6 +98,7 @@ Brackets are used for:
 
 - array expressions: `[1, 2, 3]`
 - array types: `[string]`
+- tool lists: `tools: [tool.search, tool.weather]`
 
 ## `,` commas
 

@@ -46,8 +46,47 @@ output {
 }
 ```
 
-## Current runtime status
+## Current runtime behavior
 
 Looped agents execute in the default runtime.
 
 Each loop iteration produces one output item, and referencing the looped agent returns the full output array.
+
+## Parallel iteration
+
+The runtime executes loop iterations in parallel when possible:
+
+```ai
+agent persona_campaign for persona in input.personas {
+    model: openai("gpt-4.1-mini")
+    prompt: "Create a campaign for persona: {{ persona }}"
+    output: {
+        persona: string
+        tagline: string
+    }
+}
+```
+
+## Nested loop references
+
+You can chain looped agents:
+
+```ai
+agent persona_campaign for persona in input.personas {
+    model: openai("gpt-4.1-mini")
+    prompt: "Create a campaign for {{ persona }}"
+    output: {
+        persona: string
+        tagline: string
+    }
+}
+
+agent persona_score for campaign in agent.persona_campaign {
+    model: openai("gpt-4.1-mini")
+    prompt: "Score this campaign: {{ campaign }}"
+    output: {
+        persona: string
+        score: number
+    }
+}
+```
