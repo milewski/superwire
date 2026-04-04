@@ -240,6 +240,11 @@ pub struct ForLoopIterableValueCompletionContext {
     pub value_prefix: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct OutputValueCompletionContext {
+    pub value_prefix: String,
+}
+
 impl InferenceSettingValueCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
@@ -326,6 +331,18 @@ impl ForLoopIterableValueCompletionContext {
 
         Some(Self {
             value_prefix: after_in_keyword.trim_start().to_string(),
+        })
+    }
+}
+
+impl OutputValueCompletionContext {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let (_, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
+        let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+        Some(Self {
+            value_prefix: value_completion_context.value_prefix,
         })
     }
 }
