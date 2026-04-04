@@ -96,6 +96,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::UnknownSecretsFieldReference => Self::UnknownSecretsFieldReference,
             CoreDiagnosticCode::SecretReferenceInLlmContext => Self::SecretReferenceInLlmContext,
             CoreDiagnosticCode::MissingAgentOutputTypeForFieldReference => Self::MissingAgentOutputTypeForFieldReference,
+            CoreDiagnosticCode::MissingOptionalReferenceAccess => Self::MissingOptionalReferenceAccess,
             CoreDiagnosticCode::InvalidReferencePath => Self::InvalidReferencePath,
             CoreDiagnosticCode::UnknownSchemaReference => Self::UnknownSchemaReference,
             CoreDiagnosticCode::AgentDependencyCycle => Self::AgentDependencyCycle,

@@ -489,6 +489,29 @@ pub enum TypeExpression {
     Union(Vec<TypeExpression>),
 }
 
+impl TypeExpression {
+    #[must_use]
+    pub fn can_be_null(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::Union(type_expressions) => type_expressions.iter().any(Self::can_be_null),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::SchemaReference(_)
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     StringLiteral(String),

@@ -14,6 +14,7 @@ pub struct ReferenceCompletionPath {
     root: String,
     pub complete_accesses: Vec<String>,
     pub pending_prefix: String,
+    pub pending_access_is_optional: bool,
 }
 
 impl ReferenceCompletionPath {
@@ -48,6 +49,7 @@ impl ReferenceCompletionPath {
                 root,
                 complete_accesses: Vec::new(),
                 pending_prefix: String::new(),
+                pending_access_is_optional: false,
             });
         }
 
@@ -66,6 +68,7 @@ impl ReferenceCompletionPath {
                 root,
                 complete_accesses,
                 pending_prefix: String::new(),
+                pending_access_is_optional: reference_token.ends_with("?."),
             });
         }
 
@@ -83,11 +86,32 @@ impl ReferenceCompletionPath {
             return None;
         }
 
+        let pending_access_is_optional = Self::pending_access_is_optional(reference_token, pending_prefix.as_str())?;
+
         Some(Self {
             root,
             complete_accesses,
             pending_prefix,
+            pending_access_is_optional,
         })
+    }
+
+    fn pending_access_is_optional(reference_token: &str, pending_prefix: &str) -> Option<bool> {
+        if pending_prefix.is_empty() {
+            return Some(false);
+        }
+
+        let pending_prefix_start = reference_token.len().checked_sub(pending_prefix.len())?;
+
+        if pending_prefix_start >= 2 && &reference_token[pending_prefix_start - 2..pending_prefix_start] == "?." {
+            return Some(true);
+        }
+
+        if pending_prefix_start >= 1 && &reference_token[pending_prefix_start - 1..pending_prefix_start] == "." {
+            return Some(false);
+        }
+
+        None
     }
 
     pub fn root_keyword(&self) -> Option<ReferenceKeyword> {
@@ -153,18 +177,16 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Input) => self.singleton_reference_suggestions(
                 &self.input_fields,
                 Some(&self.input_field_metadata),
-                &reference_completion_path.complete_accesses,
-                &reference_completion_path.pending_prefix,
                 "Input field",
                 reference_completion_constraint,
+                reference_completion_path,
             ),
             Some(ReferenceKeyword::Secrets) => self.singleton_reference_suggestions(
                 &self.secrets_fields,
                 Some(&self.secrets_field_metadata),
-                &reference_completion_path.complete_accesses,
-                &reference_completion_path.pending_prefix,
                 "Secrets field",
                 reference_completion_constraint,
+                reference_completion_path,
             ),
             Some(ReferenceKeyword::Agent) => {
                 self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint, current_agent_name)
@@ -197,6 +219,10 @@ impl SemanticIndex {
                 .resolve_access_path_types(vec![iterator_type], &reference_completion_path.complete_accesses)
         };
 
+        if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
+            return Some(Vec::new());
+        }
+
         Some(self.field_suggestions_from_types(
             candidate_types.as_slice(),
             &reference_completion_path.pending_prefix,
@@ -227,11 +253,13 @@ impl SemanticIndex {
         &self,
         root_fields: &BTreeMap<String, TypeExpression>,
         root_field_metadata: Option<&BTreeMap<String, FieldMetadata>>,
-        complete_accesses: &[String],
-        pending_prefix: &str,
         detail_prefix: &str,
         reference_completion_constraint: ReferenceCompletionConstraint,
+        reference_completion_path: &ReferenceCompletionPath,
     ) -> Vec<CompletionSuggestion> {
+        let complete_accesses = reference_completion_path.complete_accesses.as_slice();
+        let pending_prefix = reference_completion_path.pending_prefix.as_str();
+
         if complete_accesses.is_empty() {
             return root_fields
                 .iter()
@@ -261,6 +289,10 @@ impl SemanticIndex {
         let candidate_types = self
             .tooling_snapshot
             .resolve_access_path_types(vec![root_field_type], &complete_accesses[1..]);
+
+        if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
+            return Vec::new();
+        }
 
         self.field_suggestions_from_types(candidate_types.as_slice(), pending_prefix, reference_completion_constraint)
     }
@@ -317,6 +349,10 @@ impl SemanticIndex {
             .tooling_snapshot
             .resolve_access_path_types(vec![agent_output_type], remaining_accesses);
 
+        if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
+            return Vec::new();
+        }
+
         self.field_suggestions_from_types(
             candidate_types.as_slice(),
             &reference_completion_path.pending_prefix,
@@ -356,11 +392,27 @@ impl SemanticIndex {
             .tooling_snapshot
             .resolve_reference_path_types(&ToolingReferencePath::schema(schema_name.clone(), remaining_accesses));
 
+        if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
+            return Vec::new();
+        }
+
         self.field_suggestions_from_types(
             candidate_types.as_slice(),
             &reference_completion_path.pending_prefix,
             ReferenceCompletionConstraint::None,
         )
+    }
+
+    fn requires_optional_access_for_field_completion(
+        &self,
+        candidate_types: &[TypeExpression],
+        reference_completion_path: &ReferenceCompletionPath,
+    ) -> bool {
+        if reference_completion_path.pending_access_is_optional {
+            return false;
+        }
+
+        candidate_types.iter().any(TypeExpression::can_be_null)
     }
 
     fn field_suggestions_from_types(
