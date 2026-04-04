@@ -750,7 +750,6 @@ dependencies = [
  "async-trait",
  "engine-ai-agent",
  "futures",
- "indoc",
  "jsonschema",
  "pest",
  "pest_derive",

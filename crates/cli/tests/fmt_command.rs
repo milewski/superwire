@@ -3,26 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use engine_ai_core::dsl::format_workflow_source;
-
-macro_rules! inline_cli_workflow {
-    ($($workflow_tokens:tt)*) => {{
-        normalize_inline_workflow_source(stringify!($($workflow_tokens)*))
-    }};
-}
-
 #[test]
-fn formats_single_workflow_file_in_place() {
-    let unformatted_source = inline_cli_workflow! {
-        provider openai   {driver:"openai" models:["gpt-4o-mini",]}
-
-        output { result: "ok" }
-    };
-
-    let expected_source = format_workflow_source(&unformatted_source).expect("formatter should build expected canonical source");
+fn formats_single_workflow_file_from_markdown_fixture() {
+    let fixture_case = FormatterFixtureCase::from_path(&formatter_fixture_path("basic_spacing.md"));
 
     let temporary_workspace = TemporaryWorkspace::new();
-    let workflow_path = temporary_workspace.write_file("single.ai", &unformatted_source);
+    let workflow_path = temporary_workspace.write_file("single.ai", &fixture_case.before_source);
 
     let command_output = run_fmt_command(workflow_path.as_path());
 
@@ -30,54 +16,50 @@ fn formats_single_workflow_file_in_place() {
 
     let formatted_source = fs::read_to_string(&workflow_path).expect("formatted workflow should be readable");
 
-    assert_eq!(formatted_source, expected_source);
+    assert_eq!(formatted_source, fixture_case.expected_after_source);
 }
 
 #[test]
-fn formats_all_workflow_files_inside_directory() {
+fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
     let temporary_workspace = TemporaryWorkspace::new();
-
     let source_directory = temporary_workspace.create_directory("workflows");
     let nested_directory = temporary_workspace.create_directory("workflows/nested");
 
-    let first_source = inline_cli_workflow! {
-        provider openai   {driver:"openai" models:["gpt-4o-mini",]}
+    let mut created_workflow_cases = Vec::new();
 
-        output { greeting: "hello" }
-    };
+    for (fixture_index, fixture_path) in discover_formatter_fixture_paths().into_iter().enumerate() {
+        let fixture_case = FormatterFixtureCase::from_path(&fixture_path);
+        let target_directory = if fixture_index % 2 == 0 {
+            &source_directory
+        } else {
+            &nested_directory
+        };
 
-    let second_source = inline_cli_workflow! {
-        output { value: 1 }
-    };
+        let workflow_file_name = format!("{}.ai", fixture_case.fixture_name);
+        let workflow_file_path = target_directory.join(workflow_file_name);
 
-    let expected_first_source = format_workflow_source(&first_source).expect("first formatter output should be canonical");
-    let expected_second_source = format_workflow_source(&second_source).expect("second formatter output should be canonical");
+        fs::write(&workflow_file_path, &fixture_case.before_source).expect("workflow source should be written");
 
-    let first_workflow_path = source_directory.join("first.ai");
-    let second_workflow_path = nested_directory.join("second.ai");
-
-    fs::write(&first_workflow_path, first_source).expect("first workflow should be created");
-    fs::write(&second_workflow_path, second_source).expect("second workflow should be created");
+        created_workflow_cases.push((workflow_file_path, fixture_case.expected_after_source));
+    }
 
     let command_output = run_fmt_command(source_directory.as_path());
 
     assert!(command_output.status.success(), "fmt command should succeed");
 
-    let formatted_first_source = fs::read_to_string(&first_workflow_path).expect("first formatted workflow should be readable");
-    let formatted_second_source = fs::read_to_string(&second_workflow_path).expect("second formatted workflow should be readable");
+    for (workflow_file_path, expected_after_source) in created_workflow_cases {
+        let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
 
-    assert_eq!(formatted_first_source, expected_first_source);
-    assert_eq!(formatted_second_source, expected_second_source);
+        assert_eq!(formatted_source, expected_after_source);
+    }
 }
 
 #[test]
 fn preserves_comments_while_formatting() {
-    let source_with_comments = include_str!("fixtures/comments_workflow.ai");
-    let expected_source =
-        format_workflow_source(source_with_comments).expect("formatter should preserve comments when building expected source");
+    let fixture_case = FormatterFixtureCase::from_path(&formatter_fixture_path("comments_preserved.md"));
 
     let temporary_workspace = TemporaryWorkspace::new();
-    let workflow_path = temporary_workspace.write_file("comments.ai", source_with_comments);
+    let workflow_path = temporary_workspace.write_file("comments.ai", &fixture_case.before_source);
 
     let command_output = run_fmt_command(workflow_path.as_path());
 
@@ -85,10 +67,10 @@ fn preserves_comments_while_formatting() {
 
     let formatted_source = fs::read_to_string(&workflow_path).expect("formatted workflow should be readable");
 
-    assert_eq!(formatted_source, expected_source);
+    assert_eq!(formatted_source, fixture_case.expected_after_source);
     assert!(formatted_source.contains("// provider declaration"));
     assert!(formatted_source.contains("// provider driver"));
-    assert!(formatted_source.contains("// inline comment"));
+    assert!(formatted_source.contains("// inline driver comment"));
 }
 
 #[test]
@@ -116,6 +98,7 @@ fn rejects_directory_without_workflow_files() {
         !command_output.status.success(),
         "fmt command should fail when no workflow files are found"
     );
+
     assert_eq!(command_output.status.code(), Some(2));
     assert!(stderr_text.contains("no workflow files (.ai) found"));
 }
@@ -130,6 +113,113 @@ fn run_fmt_command(target_path: &Path) -> Output {
 
 fn cli_binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cli"))
+}
+
+fn formatter_fixture_path(fixture_file_name: &str) -> PathBuf {
+    formatter_fixture_directory().join(fixture_file_name)
+}
+
+fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
+    let formatter_fixture_directory = formatter_fixture_directory();
+    let directory_entries = fs::read_dir(&formatter_fixture_directory).unwrap_or_else(|read_error| {
+        panic!(
+            "failed to read formatter fixture directory {}: {read_error}",
+            formatter_fixture_directory.display()
+        )
+    });
+    let mut fixture_paths = Vec::new();
+
+    for directory_entry_result in directory_entries {
+        let directory_entry =
+            directory_entry_result.unwrap_or_else(|read_error| panic!("failed to read formatter fixture entry: {read_error}"));
+        let fixture_path = directory_entry.path();
+
+        if fixture_path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+            continue;
+        }
+
+        fixture_paths.push(fixture_path);
+    }
+
+    fixture_paths.sort();
+    fixture_paths
+}
+
+fn formatter_fixture_directory() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/workflows/formatter_fixtures")
+}
+
+struct FormatterFixtureCase {
+    fixture_name: String,
+    before_source: String,
+    expected_after_source: String,
+}
+
+impl FormatterFixtureCase {
+    fn from_path(fixture_path: &Path) -> Self {
+        let fixture_contents = fs::read_to_string(fixture_path)
+            .unwrap_or_else(|read_error| panic!("failed to read fixture {}: {read_error}", fixture_path.display()));
+        let ai_code_blocks = Self::extract_ai_code_blocks(&fixture_contents);
+
+        assert_eq!(
+            ai_code_blocks.len(),
+            2,
+            "fixture {} must contain exactly two ```ai blocks",
+            fixture_path.display()
+        );
+
+        Self {
+            fixture_name: fixture_path
+                .file_stem()
+                .and_then(|file_stem| file_stem.to_str())
+                .expect("fixture file name should have valid UTF-8 stem")
+                .to_owned(),
+            before_source: ai_code_blocks[0].clone(),
+            expected_after_source: ai_code_blocks[1].clone(),
+        }
+    }
+
+    fn extract_ai_code_blocks(markdown_text: &str) -> Vec<String> {
+        let mut extracted_blocks = Vec::new();
+        let mut current_block_lines = Vec::new();
+        let mut is_inside_ai_block = false;
+
+        for markdown_line in markdown_text.lines() {
+            let line_without_carriage_return = markdown_line.trim_end_matches('\r');
+            let trimmed_line = line_without_carriage_return.trim();
+
+            if !is_inside_ai_block && trimmed_line == "```ai" {
+                is_inside_ai_block = true;
+                current_block_lines.clear();
+
+                continue;
+            }
+
+            if is_inside_ai_block && trimmed_line == "```" {
+                extracted_blocks.push(Self::normalize_block_contents(&current_block_lines));
+                is_inside_ai_block = false;
+
+                continue;
+            }
+
+            if is_inside_ai_block {
+                current_block_lines.push(line_without_carriage_return.to_owned());
+            }
+        }
+
+        assert!(!is_inside_ai_block, "unclosed ```ai block in fixture markdown");
+        extracted_blocks
+    }
+
+    fn normalize_block_contents(block_lines: &[String]) -> String {
+        let mut normalized_contents = block_lines.join("\n");
+
+        if !normalized_contents.ends_with('\n') {
+            normalized_contents.push('\n');
+        }
+
+        normalized_contents
+    }
 }
 
 struct TemporaryWorkspace {
@@ -178,14 +268,4 @@ fn unique_suffix() -> String {
         .as_nanos();
 
     format!("{}-{unix_timestamp}", std::process::id())
-}
-
-fn normalize_inline_workflow_source(source_template: &str) -> String {
-    let mut normalized_source = source_template.to_owned();
-
-    if !normalized_source.ends_with('\n') {
-        normalized_source.push('\n');
-    }
-
-    normalized_source
 }
