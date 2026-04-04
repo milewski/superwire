@@ -161,6 +161,8 @@ pub enum DiagnosticCode {
     SecretReferenceInLlmContext,
     #[serde(rename = "missing_agent_output_type_for_field_reference")]
     MissingAgentOutputTypeForFieldReference,
+    #[serde(rename = "missing_optional_reference_access")]
+    MissingOptionalReferenceAccess,
     #[serde(rename = "invalid_reference_path")]
     InvalidReferencePath,
     #[serde(rename = "unknown_schema_reference")]

@@ -998,6 +998,44 @@ fn suggests_agent_output_fields_for_nested_agent_output_reference() {
 }
 
 #[test]
+fn suppresses_field_completion_after_dot_access_on_nullable_reference_path() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greeting {
+            output: {
+                nested: {
+                    value: string
+                } | null
+            }
+        }
+
+        output {
+            greeting: agent.greeting.nested.<cursor>
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn suggests_field_completion_after_optional_access_on_nullable_reference_path() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greeting {
+            output: {
+                nested: {
+                    value: string
+                } | null
+            }
+        }
+
+        output {
+            greeting: agent.greeting.nested?.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "value");
+}
+
+#[test]
 fn completes_schema_references_in_type_context() {
     let completion_suggestions = inline_completion_suggestions! {
         schema Person {

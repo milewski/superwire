@@ -175,6 +175,11 @@ pub enum ValidationIssue {
         agent_name: String,
         context: ValidationContext,
     },
+    MissingOptionalReferenceAccess {
+        reference_path: String,
+        field_name: String,
+        context: ValidationContext,
+    },
     InvalidReferencePath {
         reference_path: String,
         invalid_field: String,
@@ -210,6 +215,7 @@ impl ValidationIssue {
             Self::UnknownSecretsFieldReference { .. } => "unknown_secrets_field_reference",
             Self::SecretReferenceInLlmContext { .. } => "secret_reference_in_llm_context",
             Self::MissingAgentOutputTypeForFieldReference { .. } => "missing_agent_output_type_for_field_reference",
+            Self::MissingOptionalReferenceAccess { .. } => "missing_optional_reference_access",
             Self::InvalidReferencePath { .. } => "invalid_reference_path",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
@@ -284,6 +290,16 @@ impl ValidationIssue {
                     context.describe()
                 )
             }
+            Self::MissingOptionalReferenceAccess {
+                reference_path,
+                field_name,
+                context,
+            } => {
+                format!(
+                    "Reference `{reference_path}` must use `?.{field_name}` in {} because the path can be `null`.",
+                    context.describe()
+                )
+            }
             Self::InvalidReferencePath {
                 reference_path,
                 invalid_field,
@@ -354,6 +370,11 @@ impl ValidationIssue {
                 context: _,
             }
             | Self::MissingAgentOutputTypeForFieldReference { agent_name: _, context: _ }
+            | Self::MissingOptionalReferenceAccess {
+                reference_path: _,
+                field_name: _,
+                context: _,
+            }
             | Self::InvalidReferencePath {
                 reference_path: _,
                 invalid_field: _,
@@ -457,6 +478,13 @@ impl ValidationIssue {
             Self::MissingAgentOutputTypeForFieldReference { agent_name, context: _ } => {
                 format!("Add `output: <type>` to `agent {agent_name}` before referencing `agent.{agent_name}` or its fields.")
             }
+            Self::MissingOptionalReferenceAccess {
+                reference_path: _,
+                field_name,
+                context: _,
+            } => {
+                format!("Use `?.{field_name}` for this access, or refine the type so the preceding path cannot be `null`.")
+            }
             Self::InvalidReferencePath {
                 reference_path: _,
                 invalid_field,
@@ -534,6 +562,11 @@ impl From<&ValidationIssue> for DiagnosticCode {
             ValidationIssue::MissingAgentOutputTypeForFieldReference { agent_name: _, context: _ } => {
                 Self::MissingAgentOutputTypeForFieldReference
             }
+            ValidationIssue::MissingOptionalReferenceAccess {
+                reference_path: _,
+                field_name: _,
+                context: _,
+            } => Self::MissingOptionalReferenceAccess,
             ValidationIssue::InvalidReferencePath {
                 reference_path: _,
                 invalid_field: _,
@@ -1122,6 +1155,7 @@ struct KeywordReferenceValidationState<'validation> {
     invalid_keyword_reference_roots: HashSet<(ValidationContext, ReferenceKeyword)>,
     secret_reference_leaks: HashSet<(ValidationContext, String)>,
     missing_agent_output_type_references: HashSet<(ValidationContext, String)>,
+    missing_optional_reference_accesses: HashSet<(ValidationContext, String, String)>,
     invalid_reference_paths: HashSet<(ValidationContext, String, String)>,
     missing_input_declaration_contexts: HashSet<ValidationContext>,
     missing_secrets_declaration_contexts: HashSet<ValidationContext>,
@@ -1138,6 +1172,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             invalid_keyword_reference_roots: HashSet::new(),
             secret_reference_leaks: HashSet::new(),
             missing_agent_output_type_references: HashSet::new(),
+            missing_optional_reference_accesses: HashSet::new(),
             invalid_reference_paths: HashSet::new(),
             missing_input_declaration_contexts: HashSet::new(),
             missing_secrets_declaration_contexts: HashSet::new(),
@@ -1362,10 +1397,20 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let mut candidate_types = vec![start_type];
 
         for reference_access in reference.accesses.iter().skip(path_start_index) {
+            if candidate_types.iter().any(TypeExpression::can_be_null) && !reference_access.optional {
+                self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
+
+                return;
+            }
+
             let mut next_candidate_types = Vec::new();
 
             for candidate_type in &candidate_types {
                 self.collect_next_types_for_field(candidate_type, reference_access.field.as_str(), &mut next_candidate_types);
+            }
+
+            if reference_access.optional {
+                next_candidate_types.push(TypeExpression::Null);
             }
 
             if next_candidate_types.is_empty() {
@@ -1387,6 +1432,22 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             candidate_types = next_candidate_types;
+        }
+    }
+
+    fn push_missing_optional_reference_access(&mut self, reference: &Reference, field_name: &str, context: ValidationContext) {
+        let reference_path = self.reference_to_string(reference);
+        let issue_key = (context.clone(), reference_path.clone(), field_name.to_owned());
+
+        if self.missing_optional_reference_accesses.insert(issue_key) {
+            self.validation_report.push_issue_with_span(
+                ValidationIssue::MissingOptionalReferenceAccess {
+                    reference_path,
+                    field_name: field_name.to_owned(),
+                    context,
+                },
+                Some(reference.span),
+            );
         }
     }
 
@@ -1882,6 +1943,11 @@ mod tests {
                 agent_name: "writer".to_string(),
                 context: ValidationContext::Output,
             },
+            ValidationIssue::MissingOptionalReferenceAccess {
+                reference_path: "agent.writer.payload.value".to_string(),
+                field_name: "value".to_string(),
+                context: ValidationContext::Output,
+            },
             ValidationIssue::InvalidReferencePath {
                 reference_path: "agent.writer.score".to_string(),
                 invalid_field: "score".to_string(),
@@ -2271,6 +2337,53 @@ mod tests {
                 && invalid_field == "score"
                 && *context == ValidationContext::Output
         );
+    }
+
+    #[test]
+    fn reports_missing_optional_reference_access_for_nullable_agent_output_path() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                output: {
+                    nested: {
+                        value: string
+                    } | null
+                }
+            }
+
+            output {
+                greeting: agent.greeting.nested.value
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::MissingOptionalReferenceAccess {
+                reference_path,
+                field_name,
+                context
+            } if reference_path == "agent.greeting.nested.value"
+                && field_name == "value"
+                && *context == ValidationContext::Output
+        );
+    }
+
+    #[test]
+    fn accepts_optional_reference_access_for_nullable_agent_output_path() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                output: {
+                    nested: {
+                        value: string
+                    } | null
+                }
+            }
+
+            output {
+                greeting: agent.greeting.nested?.value
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::MissingOptionalReferenceAccess { .. });
     }
 
     #[test]

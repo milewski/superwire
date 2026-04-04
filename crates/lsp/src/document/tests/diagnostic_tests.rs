@@ -161,3 +161,22 @@ fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic(
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::SecretReferenceInLlmContext);
 }
+
+#[test]
+fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
+    let diagnostics = inline_diagnostics! {
+        agent greeting {
+            output: {
+                nested: {
+                    value: string
+                } | null
+            }
+        }
+
+        output {
+            greeting: agent.greeting.nested.value
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::MissingOptionalReferenceAccess);
+}
