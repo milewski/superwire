@@ -462,7 +462,12 @@ impl Expression {
                         formatter.output.push_str(&quoted_string_literal);
                     } else {
                         let wrapped_multiline_lines = formatter.wrap_multiline_string_value(string_value);
-                        formatter.push_multiline_string_block_from_lines(&wrapped_multiline_lines);
+
+                        if wrapped_multiline_lines.len() > 1 {
+                            formatter.push_multiline_string_block_from_lines(&wrapped_multiline_lines);
+                        } else {
+                            formatter.output.push_str(&quoted_string_literal);
+                        }
                     }
                 } else {
                     formatter.output.push_str(&render_expression_string_literal(string_value));
@@ -626,7 +631,15 @@ impl StringTemplate {
             return;
         }
 
-        formatter.push_multiline_string_block(&self.render_multiline_contents(formatter));
+        let multiline_contents = self.render_multiline_contents(formatter);
+        let normalized_multiline_lines = DslFormatter::normalize_multiline_string_lines(&multiline_contents);
+        let wrapped_multiline_lines = formatter.wrap_multiline_lines_to_width(&normalized_multiline_lines);
+
+        if wrapped_multiline_lines.len() > 1 {
+            formatter.push_multiline_string_block_from_lines(&wrapped_multiline_lines);
+        } else {
+            formatter.output.push_str(&quoted_inline_template);
+        }
     }
 
     fn render_multiline_contents(&self, formatter: &DslFormatter) -> String {
