@@ -135,6 +135,12 @@ impl SemanticIndex {
         let current_schema_name = self.schema_name_at_position(position);
         let current_agent_name = self.agent_name_at_position(position);
 
+        if let Some(iterator_reference_suggestions) =
+            self.for_loop_iterator_reference_suggestions(reference_completion_path, reference_completion_constraint, position)
+        {
+            return iterator_reference_suggestions;
+        }
+
         if reference_completion_path.is_schema_root() {
             if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
                 return Vec::new();
@@ -163,6 +169,37 @@ impl SemanticIndex {
             }
             Some(ReferenceKeyword::Tool) | None => Vec::new(),
         }
+    }
+
+    fn for_loop_iterator_reference_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+        position: Position,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if reference_completion_path.root_keyword().is_some() {
+            return None;
+        }
+
+        let iterator_name = self.for_loop_iterator_name_at_position(position)?;
+
+        if reference_completion_path.root_identifier() != iterator_name {
+            return None;
+        }
+
+        let iterator_type = self.for_loop_iterator_type_at_position(position)?.clone();
+        let candidate_types = if reference_completion_path.complete_accesses.is_empty() {
+            vec![iterator_type]
+        } else {
+            self.tooling_snapshot
+                .resolve_access_path_types(vec![iterator_type], &reference_completion_path.complete_accesses)
+        };
+
+        Some(self.field_suggestions_from_types(
+            candidate_types.as_slice(),
+            &reference_completion_path.pending_prefix,
+            reference_completion_constraint,
+        ))
     }
 
     pub fn resolve_singleton_reference_type(

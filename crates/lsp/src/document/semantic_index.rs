@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use engine_ai_core::dsl::{
     AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, ReferenceKeyword,
-    SingletonDeclarationKind, SourceSpan, TypeExpression, TypedField, Workflow,
+    SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
 };
 use engine_ai_core::runtime::ProviderDriver;
 use engine_ai_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
@@ -26,6 +26,7 @@ pub struct SemanticIndex {
     pub secrets_fields: BTreeMap<String, TypeExpression>,
     pub agents: HashMap<String, AgentSummary>,
     pub agent_for_loop_iterators: HashMap<String, String>,
+    pub agent_for_loop_iterator_types: HashMap<String, TypeExpression>,
     pub agent_names: Vec<String>,
     pub output_locations: Vec<SourceSpan>,
     pub typed_declaration_locations: Vec<SourceSpan>,
@@ -271,6 +272,7 @@ impl SemanticIndex {
             secrets_fields: BTreeMap::new(),
             agents: HashMap::new(),
             agent_for_loop_iterators: HashMap::new(),
+            agent_for_loop_iterator_types: HashMap::new(),
             agent_names: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -333,14 +335,30 @@ impl SemanticIndex {
                         | AgentProperty::Custom { name: _, value: _ } => None,
                     });
 
-                    semantic_index
-                        .agents
-                        .insert(agent_declaration.name.clone(), AgentSummary { output_type });
+                    semantic_index.agents.insert(
+                        agent_declaration.name.clone(),
+                        AgentSummary {
+                            output_type: if agent_declaration.for_loop.is_some() {
+                                output_type.map(|agent_output_type| TypeExpression::Array {
+                                    item_type: Box::new(agent_output_type),
+                                    fixed_length: None,
+                                })
+                            } else {
+                                output_type
+                            },
+                        },
+                    );
 
                     if let Some(agent_for_loop) = &agent_declaration.for_loop {
                         semantic_index
                             .agent_for_loop_iterators
                             .insert(agent_declaration.name.clone(), agent_for_loop.iterator_name.clone());
+
+                        if let Some(iterator_type) = semantic_index.iterable_item_type(&agent_for_loop.iterable) {
+                            semantic_index
+                                .agent_for_loop_iterator_types
+                                .insert(agent_declaration.name.clone(), iterator_type);
+                        }
                     }
 
                     semantic_index.agent_names.push(agent_declaration.name.clone());
@@ -465,6 +483,7 @@ impl SemanticIndex {
             secrets_fields: tooling_snapshot.secrets_fields().clone(),
             agents,
             agent_for_loop_iterators: HashMap::new(),
+            agent_for_loop_iterator_types: HashMap::new(),
             agent_names,
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -881,10 +900,126 @@ impl SemanticIndex {
             .map(|agent_location| agent_location.name.as_str())
     }
 
-    fn for_loop_iterator_name_at_position(&self, position: Position) -> Option<&str> {
+    pub(in crate::document) fn for_loop_iterator_name_at_position(&self, position: Position) -> Option<&str> {
         let agent_name = self.agent_name_at_position(position)?;
 
         self.agent_for_loop_iterators.get(agent_name).map(String::as_str)
+    }
+
+    pub fn for_loop_iterator_type_at_position(&self, position: Position) -> Option<&TypeExpression> {
+        let agent_name = self.agent_name_at_position(position)?;
+
+        self.agent_for_loop_iterator_types.get(agent_name)
+    }
+
+    fn iterable_item_type(&self, iterable_expression: &Expression) -> Option<TypeExpression> {
+        let iterable_type = self.expression_type(iterable_expression)?;
+
+        match iterable_type {
+            TypeExpression::Array {
+                item_type,
+                fixed_length: _,
+            } => Some(*item_type),
+            TypeExpression::Tuple(tuple_member_types) => Some(TypeExpression::Union(tuple_member_types)),
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::Object(_)
+            | TypeExpression::SchemaReference(_)
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
+            | TypeExpression::Union(_) => None,
+        }
+    }
+
+    fn expression_type(&self, expression: &Expression) -> Option<TypeExpression> {
+        match expression {
+            Expression::StringLiteral(_) | Expression::StringTemplate(_) => Some(TypeExpression::String),
+            Expression::NumberLiteral(number_literal) => {
+                if number_literal.contains('.') {
+                    return Some(TypeExpression::Float);
+                }
+
+                Some(TypeExpression::Number)
+            }
+            Expression::BooleanLiteral(_) => Some(TypeExpression::Boolean),
+            Expression::NullLiteral => Some(TypeExpression::Null),
+            Expression::Reference(reference) => self.reference_expression_type(reference),
+            Expression::FunctionCall(_) => None,
+            Expression::ArrayLiteral(array_items) => {
+                let mut array_item_types = array_items
+                    .iter()
+                    .filter_map(|array_item| self.expression_type(array_item))
+                    .collect::<Vec<_>>();
+
+                if array_item_types.is_empty() {
+                    return None;
+                }
+
+                if array_item_types.len() == 1 {
+                    return Some(TypeExpression::Array {
+                        item_type: Box::new(array_item_types.remove(0)),
+                        fixed_length: None,
+                    });
+                }
+
+                Some(TypeExpression::Array {
+                    item_type: Box::new(TypeExpression::Union(array_item_types)),
+                    fixed_length: None,
+                })
+            }
+            Expression::ObjectLiteral(object_fields) => {
+                let typed_fields = object_fields
+                    .iter()
+                    .filter_map(|object_field| {
+                        let field_type = self.expression_type(&object_field.value)?;
+
+                        Some(TypedField {
+                            name: object_field.name.clone(),
+                            field_type,
+                            description: None,
+                            span: SourceSpan {
+                                start: SourcePosition { line: 1, column: 1 },
+                                end: SourcePosition { line: 1, column: 1 },
+                            },
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                Some(TypeExpression::Object(typed_fields))
+            }
+        }
+    }
+
+    fn reference_expression_type(&self, reference: &engine_ai_core::dsl::Reference) -> Option<TypeExpression> {
+        let reference_keyword = reference.root_keyword()?;
+        let reference_accesses = reference
+            .accesses
+            .iter()
+            .map(|reference_access| reference_access.field.clone())
+            .collect::<Vec<_>>();
+
+        match reference_keyword {
+            ReferenceKeyword::Input => self.resolve_singleton_reference_type(&self.input_fields, &reference_accesses),
+            ReferenceKeyword::Secrets => self.resolve_singleton_reference_type(&self.secrets_fields, &reference_accesses),
+            ReferenceKeyword::Agent => {
+                let agent_name = reference_accesses.first()?;
+                let agent_output_type = self.agents.get(agent_name)?.output_type.clone()?;
+
+                if reference_accesses.len() == 1 {
+                    return Some(agent_output_type);
+                }
+
+                let candidate_types = self
+                    .tooling_snapshot
+                    .resolve_access_path_types(vec![agent_output_type], &reference_accesses[1..]);
+
+                candidate_types.first().cloned()
+            }
+            ReferenceKeyword::Tool => None,
+        }
     }
 }
 
