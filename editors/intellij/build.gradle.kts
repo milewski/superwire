@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.engineai"
-version = "0.1.1"
+version = "0.1.2"
 
 data class LspBundleTarget(
     val rustTargetTriple: String,
