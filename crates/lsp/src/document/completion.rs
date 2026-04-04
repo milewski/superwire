@@ -265,125 +265,226 @@ impl DocumentState {
             reference_completion_path.root_keyword(),
             Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets)
         ) && Self::is_for_loop_iterable_clause_context(line_prefix);
+
         let reference_completion_constraint = if for_loop_iterable_reference_context {
             ReferenceCompletionConstraint::ForLoopIterable
         } else {
             self.reference_completion_constraint(line_prefix, inference_setting_value_completion_context)
         };
+
         let reference_suggestions =
             semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
+
+        if let Some(inference_suggestions) = self.inference_reference_completion_suggestions(
+            semantic_index,
+            line_prefix,
+            &reference_completion_path,
+            &reference_suggestions,
+            inference_setting_value_completion_context,
+        ) {
+            return Some(inference_suggestions);
+        }
+
+        if let Some(interpolation_suggestions) = self.interpolation_reference_completion_suggestions(
+            semantic_index,
+            line_prefix,
+            position,
+            &reference_completion_path,
+            &reference_suggestions,
+            inside_interpolation_expression,
+        ) {
+            return Some(interpolation_suggestions);
+        }
+
+        if let Some(output_suggestions) = self.output_reference_completion_suggestions(
+            semantic_index,
+            line_prefix,
+            position,
+            &reference_completion_path,
+            &reference_suggestions,
+            line_has_property_separator,
+        ) {
+            return Some(output_suggestions);
+        }
+
+        if let Some(prompt_suggestions) = self.prompt_reference_completion_suggestions(
+            semantic_index,
+            line_prefix,
+            &reference_completion_path,
+            &reference_suggestions,
+            line_has_property_separator,
+            inside_interpolation_expression,
+        ) {
+            return Some(prompt_suggestions);
+        }
+
+        self.default_reference_completion_suggestions(&reference_completion_path, &reference_suggestions, reference_completion_constraint)
+    }
+
+    fn inference_reference_completion_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_suggestions: &[CompletionSuggestion],
+        inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        inference_setting_value_completion_context?;
+
+        let can_suggest_inference_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                if can_suggest_inference_roots {
+                    return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
+                }
+
+                Some(reference_suggestions.to_vec())
+            }
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                if can_suggest_inference_roots {
+                    return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
+                }
+
+                Some(Vec::new())
+            }
+        }
+    }
+
+    fn interpolation_reference_completion_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_suggestions: &[CompletionSuggestion],
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if !inside_interpolation_expression {
+            return None;
+        }
+
+        let can_suggest_interpolation_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
+        let for_loop_iterator_reference_root = semantic_index
+            .for_loop_iterator_name_at_position(position)
+            .is_some_and(|iterator_name| iterator_name == reference_completion_path.root_identifier());
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                if can_suggest_interpolation_roots {
+                    return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
+                }
+
+                Some(reference_suggestions.to_vec())
+            }
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                if for_loop_iterator_reference_root {
+                    return Some(reference_suggestions.to_vec());
+                }
+
+                if can_suggest_interpolation_roots {
+                    return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
+                }
+
+                Some(Vec::new())
+            }
+        }
+    }
+
+    fn output_reference_completion_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_suggestions: &[CompletionSuggestion],
+        line_has_property_separator: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if !line_has_property_separator || !semantic_index.is_output_position(position) {
+            return None;
+        }
+
+        let can_suggest_output_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets) => {
+                if can_suggest_output_roots {
+                    return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
+                }
+
+                Some(reference_suggestions.to_vec())
+            }
+            Some(ReferenceKeyword::Tool) | None => {
+                if can_suggest_output_roots {
+                    return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
+                }
+
+                Some(Vec::new())
+            }
+        }
+    }
+
+    fn prompt_reference_completion_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_suggestions: &[CompletionSuggestion],
+        line_has_property_separator: bool,
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        let is_prompt_property_reference = line_has_property_separator
+            && !inside_interpolation_expression
+            && AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)
+                .is_some_and(|completion_context| completion_context.property_name == AgentExpressionPropertyName::Prompt);
+
+        if !is_prompt_property_reference {
+            return None;
+        }
+
+        let can_suggest_prompt_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                if can_suggest_prompt_roots {
+                    return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
+                }
+
+                Some(reference_suggestions.to_vec())
+            }
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                if can_suggest_prompt_roots {
+                    return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
+                }
+
+                Some(Vec::new())
+            }
+        }
+    }
+
+    fn default_reference_completion_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_suggestions: &[CompletionSuggestion],
+        reference_completion_constraint: ReferenceCompletionConstraint,
+    ) -> Option<Vec<CompletionSuggestion>> {
         let reference_root_keyword = reference_completion_path.root_keyword();
         let schema_reference_root = reference_completion_path.is_schema_root();
 
-        if inference_setting_value_completion_context.is_some() {
-            let can_suggest_inference_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
-
-            match reference_completion_path.root_keyword() {
-                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
-                    if can_suggest_inference_roots {
-                        return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
-                    }
-
-                    return Some(reference_suggestions);
-                }
-                Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
-                    if can_suggest_inference_roots {
-                        return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
-                    }
-
-                    return Some(Vec::new());
-                }
-            }
-        }
-
-        if inside_interpolation_expression {
-            let can_suggest_interpolation_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
-            let for_loop_iterator_reference_root = semantic_index
-                .for_loop_iterator_name_at_position(position)
-                .is_some_and(|iterator_name| iterator_name == reference_completion_path.root_identifier());
-
-            match reference_completion_path.root_keyword() {
-                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
-                    if can_suggest_interpolation_roots {
-                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
-                    }
-
-                    return Some(reference_suggestions);
-                }
-                Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
-                    if for_loop_iterator_reference_root {
-                        return Some(reference_suggestions);
-                    }
-
-                    if can_suggest_interpolation_roots {
-                        return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
-                    }
-
-                    return Some(Vec::new());
-                }
-            }
-        }
-
-        if line_has_property_separator && semantic_index.is_output_position(position) {
-            let can_suggest_output_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
-
-            match reference_completion_path.root_keyword() {
-                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets) => {
-                    if can_suggest_output_roots {
-                        return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
-                    }
-
-                    return Some(reference_suggestions);
-                }
-                Some(ReferenceKeyword::Tool) | None => {
-                    if can_suggest_output_roots {
-                        return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
-                    }
-
-                    return Some(Vec::new());
-                }
-            }
-        }
-
-        if line_has_property_separator
-            && !inside_interpolation_expression
-            && AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)
-                .is_some_and(|completion_context| completion_context.property_name == AgentExpressionPropertyName::Prompt)
-        {
-            let can_suggest_prompt_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
-
-            match reference_completion_path.root_keyword() {
-                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
-                    if can_suggest_prompt_roots {
-                        return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
-                    }
-
-                    return Some(reference_suggestions);
-                }
-                Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
-                    if can_suggest_prompt_roots {
-                        return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
-                    }
-
-                    return Some(Vec::new());
-                }
-            }
-        }
-
         if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
-            return Some(reference_suggestions);
+            return Some(reference_suggestions.to_vec());
         }
 
         if reference_root_keyword == Some(ReferenceKeyword::Tool) {
-            return Some(reference_suggestions);
+            return Some(reference_suggestions.to_vec());
         }
 
         if schema_reference_root || reference_root_keyword.is_some() {
-            return Some(reference_suggestions);
+            return Some(reference_suggestions.to_vec());
         }
 
         if !reference_suggestions.is_empty() {
-            return Some(reference_suggestions);
+            return Some(reference_suggestions.to_vec());
         }
 
         None

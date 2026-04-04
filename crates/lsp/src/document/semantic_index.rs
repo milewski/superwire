@@ -295,102 +295,7 @@ impl SemanticIndex {
         };
 
         for declaration in workflow.declarations() {
-            match declaration {
-                Declaration::Provider(provider_declaration) => {
-                    semantic_index.insert_provider(provider_declaration);
-                }
-                Declaration::Schema(schema_declaration) => {
-                    let schema_fields = schema_declaration
-                        .fields
-                        .iter()
-                        .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-                        .collect::<BTreeMap<_, _>>();
-
-                    let schema_field_metadata = typed_fields_to_metadata_map(&schema_declaration.fields);
-
-                    semantic_index.schemas.insert(
-                        schema_declaration.name.clone(),
-                        SchemaSummary {
-                            fields: schema_fields,
-                            field_metadata: schema_field_metadata,
-                        },
-                    );
-
-                    semantic_index.schema_names.push(schema_declaration.name.clone());
-                    semantic_index.schema_locations.push(NamedSpan {
-                        name: schema_declaration.name.clone(),
-                        span: schema_declaration.span,
-                    });
-                    semantic_index.typed_declaration_locations.push(schema_declaration.span);
-                }
-                Declaration::Input(input_declaration) => {
-                    semantic_index.has_input_declaration = true;
-
-                    if semantic_index.input_fields.is_empty() {
-                        semantic_index.input_fields = typed_fields_to_map(&input_declaration.fields);
-                        semantic_index.input_field_metadata = typed_fields_to_metadata_map(&input_declaration.fields);
-                    }
-
-                    semantic_index.typed_declaration_locations.push(input_declaration.span);
-                }
-                Declaration::Secrets(secrets_declaration) => {
-                    semantic_index.has_secrets_declaration = true;
-
-                    if semantic_index.secrets_fields.is_empty() {
-                        semantic_index.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
-                        semantic_index.secrets_field_metadata = typed_fields_to_metadata_map(&secrets_declaration.fields);
-                    }
-
-                    semantic_index.typed_declaration_locations.push(secrets_declaration.span);
-                }
-                Declaration::Agent(agent_declaration) => {
-                    let output_type = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
-                        AgentProperty::Output(type_expression) => Some(type_expression.clone()),
-                        AgentProperty::Model(_)
-                        | AgentProperty::Prompt(_)
-                        | AgentProperty::Context(_)
-                        | AgentProperty::Inference(_)
-                        | AgentProperty::Tools(_)
-                        | AgentProperty::Custom { name: _, value: _ } => None,
-                    });
-
-                    semantic_index.agents.insert(
-                        agent_declaration.name.clone(),
-                        AgentSummary {
-                            output_type: if agent_declaration.for_loop.is_some() {
-                                output_type.map(|agent_output_type| TypeExpression::Array {
-                                    item_type: Box::new(agent_output_type),
-                                    fixed_length: None,
-                                })
-                            } else {
-                                output_type
-                            },
-                        },
-                    );
-
-                    if let Some(agent_for_loop) = &agent_declaration.for_loop {
-                        semantic_index
-                            .agent_for_loop_iterators
-                            .insert(agent_declaration.name.clone(), agent_for_loop.iterator_name.clone());
-
-                        if let Some(iterator_type) = semantic_index.iterable_item_type(&agent_for_loop.iterable) {
-                            semantic_index
-                                .agent_for_loop_iterator_types
-                                .insert(agent_declaration.name.clone(), iterator_type);
-                        }
-                    }
-
-                    semantic_index.agent_names.push(agent_declaration.name.clone());
-                    semantic_index.agent_locations.push(NamedSpan {
-                        name: agent_declaration.name.clone(),
-                        span: agent_declaration.span,
-                    });
-                }
-                Declaration::Output(output_declaration) => {
-                    semantic_index.has_output_declaration = true;
-                    semantic_index.output_locations.push(output_declaration.span);
-                }
-            }
+            semantic_index.insert_declaration(declaration);
         }
 
         semantic_index.schema_names.sort();
@@ -400,6 +305,119 @@ impl SemanticIndex {
         semantic_index.agent_names.dedup();
 
         semantic_index
+    }
+
+    fn insert_declaration(&mut self, declaration: &Declaration) {
+        match declaration {
+            Declaration::Provider(provider_declaration) => {
+                self.insert_provider(provider_declaration);
+            }
+            Declaration::Schema(schema_declaration) => {
+                self.insert_schema_declaration(schema_declaration);
+            }
+            Declaration::Input(input_declaration) => {
+                self.insert_input_declaration(input_declaration);
+            }
+            Declaration::Secrets(secrets_declaration) => {
+                self.insert_secrets_declaration(secrets_declaration);
+            }
+            Declaration::Agent(agent_declaration) => {
+                self.insert_agent_declaration(agent_declaration);
+            }
+            Declaration::Output(output_declaration) => {
+                self.has_output_declaration = true;
+                self.output_locations.push(output_declaration.span);
+            }
+        }
+    }
+
+    fn insert_schema_declaration(&mut self, schema_declaration: &engine_ai_core::dsl::SchemaDeclaration) {
+        let schema_fields = schema_declaration
+            .fields
+            .iter()
+            .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        let schema_field_metadata = typed_fields_to_metadata_map(&schema_declaration.fields);
+
+        self.schemas.insert(
+            schema_declaration.name.clone(),
+            SchemaSummary {
+                fields: schema_fields,
+                field_metadata: schema_field_metadata,
+            },
+        );
+
+        self.schema_names.push(schema_declaration.name.clone());
+        self.schema_locations.push(NamedSpan {
+            name: schema_declaration.name.clone(),
+            span: schema_declaration.span,
+        });
+        self.typed_declaration_locations.push(schema_declaration.span);
+    }
+
+    fn insert_input_declaration(&mut self, input_declaration: &engine_ai_core::dsl::InputDeclaration) {
+        self.has_input_declaration = true;
+
+        if self.input_fields.is_empty() {
+            self.input_fields = typed_fields_to_map(&input_declaration.fields);
+            self.input_field_metadata = typed_fields_to_metadata_map(&input_declaration.fields);
+        }
+
+        self.typed_declaration_locations.push(input_declaration.span);
+    }
+
+    fn insert_secrets_declaration(&mut self, secrets_declaration: &engine_ai_core::dsl::SecretsDeclaration) {
+        self.has_secrets_declaration = true;
+
+        if self.secrets_fields.is_empty() {
+            self.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
+            self.secrets_field_metadata = typed_fields_to_metadata_map(&secrets_declaration.fields);
+        }
+
+        self.typed_declaration_locations.push(secrets_declaration.span);
+    }
+
+    fn insert_agent_declaration(&mut self, agent_declaration: &engine_ai_core::dsl::AgentDeclaration) {
+        let output_type = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
+            AgentProperty::Output(type_expression) => Some(type_expression.clone()),
+            AgentProperty::Model(_)
+            | AgentProperty::Prompt(_)
+            | AgentProperty::Context(_)
+            | AgentProperty::Inference(_)
+            | AgentProperty::Tools(_)
+            | AgentProperty::Custom { name: _, value: _ } => None,
+        });
+
+        self.agents.insert(
+            agent_declaration.name.clone(),
+            AgentSummary {
+                output_type: if agent_declaration.for_loop.is_some() {
+                    output_type.map(|agent_output_type| TypeExpression::Array {
+                        item_type: Box::new(agent_output_type),
+                        fixed_length: None,
+                    })
+                } else {
+                    output_type
+                },
+            },
+        );
+
+        if let Some(agent_for_loop) = &agent_declaration.for_loop {
+            self.agent_for_loop_iterators
+                .insert(agent_declaration.name.clone(), agent_for_loop.iterator_name.clone());
+
+            if let Some(iterator_type) = self.iterable_item_type(&agent_for_loop.iterable) {
+                self.agent_for_loop_iterator_types
+                    .insert(agent_declaration.name.clone(), iterator_type);
+            }
+        }
+
+        self.agent_names.push(agent_declaration.name.clone());
+        self.agent_locations.push(NamedSpan {
+            name: agent_declaration.name.clone(),
+            span: agent_declaration.span,
+        });
     }
 
     pub fn from_text_fallback(source_text: &str) -> Self {
