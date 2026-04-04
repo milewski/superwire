@@ -6,6 +6,15 @@ agent release_email {
     prompt: "Write a customer announcement email for {{ input.product_name }} with these highlights: {{ input.release_highlights }} and keep the tone warm and concise for existing customers."
     output: string
 }
+
+agent customer_email {
+    model: openai("gpt-4.1-mini")
+    prompt: "Write a customer announcement email for {{ input.product_name }} with these highlights: {{ input.release_highlights }}"
+    output: {
+        subject: string
+        body: string
+    }
+}
 ```
 ---
 ```ai
@@ -23,5 +32,14 @@ agent release_email {
     """
 
     output: string
+}
+
+agent customer_email {
+    model: openai("gpt-4.1-mini")
+    prompt: "Write a customer announcement email for {{ input.product_name }} with these highlights: {{ input.release_highlights }}"
+    output: {
+        subject: string
+        body: string
+    }
 }
 ```
