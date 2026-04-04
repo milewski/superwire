@@ -1186,13 +1186,14 @@ impl FormattedCodeSignatureLine {
 }
 
 fn line_signature(line_text: &str) -> Option<String> {
-    let signature = line_text.chars().filter(|character| !character.is_whitespace()).collect::<String>();
+    let compact_signature = line_text.chars().filter(|character| !character.is_whitespace()).collect::<String>();
+    let normalized_signature = compact_signature.trim_end_matches(',').to_owned();
 
-    if signature.is_empty() {
+    if normalized_signature.is_empty() {
         return None;
     }
 
-    Some(signature)
+    Some(normalized_signature)
 }
 
 fn map_source_lines_to_formatted_lines(
