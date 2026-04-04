@@ -2,8 +2,9 @@ use super::*;
 
 #[test]
 fn reports_parse_diagnostics_for_invalid_syntax() {
-    let document_state = DocumentState::new("agent broken {\n    prompt: \"hello\"\n".to_string());
-    let diagnostics = document_state.diagnostics();
+    let diagnostics = inline_diagnostics! {
+        @
+    };
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].code, DiagnosticCode::ParseError);
