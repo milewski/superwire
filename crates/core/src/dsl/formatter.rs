@@ -302,7 +302,7 @@ impl AgentDeclaration {
                 let previous_property_is_multiline = rendered_properties[property_index.saturating_sub(1)].is_multiline;
                 let current_property_is_multiline = rendered_property.is_multiline;
 
-                if previous_property_is_multiline || current_property_is_multiline {
+                if previous_property_is_multiline || (current_property_is_multiline && !rendered_property.is_output_property) {
                     formatter.push_newline();
                 }
             }
@@ -344,6 +344,7 @@ impl AgentProperty {
         RenderedAgentProperty {
             text: property_formatter.output,
             is_multiline: property_is_multiline,
+            is_output_property: matches!(self, Self::Output(_)),
         }
     }
 }
@@ -351,6 +352,7 @@ impl AgentProperty {
 struct RenderedAgentProperty {
     text: String,
     is_multiline: bool,
+    is_output_property: bool,
 }
 
 impl TypedField {

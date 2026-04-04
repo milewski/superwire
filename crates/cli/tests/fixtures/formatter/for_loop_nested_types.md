@@ -20,7 +20,6 @@ input {
 agent reviewer for item in input.items {
     model: openai("gpt-4o-mini")
     prompt: "Review {{ item }}"
-
     output: {
         score: number
         tags: [string]
