@@ -551,14 +551,10 @@ fn suppresses_suggestions_after_named_declaration_keyword_header() {
 
 #[test]
 fn suggests_only_block_braces_after_named_schema_declaration_name() {
-    let source = "schema test ".to_string();
-    let completion_suggestions = completion_suggestions_from_source(
-        source,
-        Position {
-            line: 0,
-            character: "schema test ".len() as u32,
-        },
-    );
+    let completion_suggestions = inline_completion_suggestions! {
+        schema test <cursor> {
+        }
+    };
 
     assert_completion_contains!(&completion_suggestions, "{}");
 
@@ -935,19 +931,17 @@ fn suggests_only_declared_providers_for_model_property_value() {
 
 #[test]
 fn suggests_reference_roots_inside_model_call_expression() {
-    let source = [
-        "provider openai {",
-        "    driver: \"openai\"",
-        "    models: [\"gpt-4.1-mini\", \"gpt-4o-mini\"]",
-        "}",
-        "",
-        "agent writer {",
-        "    model: openai()",
-        "    prompt: \"hello\"",
-        "    output: string",
-        "}",
-    ]
-    .join("\n");
+    let source = r#"provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini", "gpt-4o-mini"]
+}
+
+agent writer {
+    model: openai()
+    prompt: "hello"
+    output: string
+}
+"#;
 
     let model_call_offset = source.find("openai(").expect("test source should contain model provider call") + "openai(".len();
 
@@ -965,7 +959,7 @@ fn suggests_reference_roots_inside_model_call_expression() {
         character += 1;
     }
 
-    let completion_suggestions = completion_suggestions_from_source(source, Position { line, character });
+    let completion_suggestions = completion_suggestions_from_source(source.to_string(), Position { line, character });
 
     assert_completion_contains!(&completion_suggestions, "gpt-4.1-mini", "gpt-4o-mini");
     assert_completion_contains_labels!(

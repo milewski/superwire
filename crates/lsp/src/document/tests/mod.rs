@@ -352,6 +352,10 @@ fn normalize_inline_cursor_layout(source_template: &str) -> String {
     let remaining_source = &source_template[marker_end_offset..];
     let next_character = remaining_source.chars().find(|character| !character.is_whitespace());
 
+    if next_character == Some('{') {
+        return source_template.to_string();
+    }
+
     if next_character == Some('}') {
         normalized_source.push('\n');
     }

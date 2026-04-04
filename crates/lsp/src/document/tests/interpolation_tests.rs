@@ -67,7 +67,12 @@ fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() 
         }
     };
 
-    assert!(completion_suggestions.is_empty());
+    let completion_labels = completion_suggestions
+        .iter()
+        .map(|completion_suggestion| completion_suggestion.label.clone())
+        .collect::<Vec<_>>();
+
+    assert!(completion_suggestions.is_empty(), "unexpected suggestions: {completion_labels:?}");
 }
 
 #[test]
@@ -118,25 +123,23 @@ fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
 
 #[test]
 fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
-    let source = [
-        "provider openai {",
-        "    driver: \"openai\"",
-        "    models: [\"gpt-4.1-mini\"]",
-        "}",
-        "",
-        "agent worker {",
-        "    model: openai(\"gpt-4.1-mini\")",
-        "    prompt: \" a short note for input number {{ n }}\"",
-        "    output: string",
-        "}",
-    ]
-    .join("\n");
+    let source = r#"provider openai {
+    driver: "openai"
+    models: ["gpt-4.1-mini"]
+}
+
+agent worker {
+    model: openai("gpt-4.1-mini")
+    prompt: " a short note for input number {{ n }}"
+    output: string
+}
+"#;
     let cursor_offset = source
         .find("    prompt: \"")
         .expect("test source should contain prompt string prefix")
         + "    prompt: \"".len();
-    let cursor_position = position_from_source_offset(&source, cursor_offset);
-    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+    let cursor_position = position_from_source_offset(source, cursor_offset);
+    let completion_suggestions = completion_suggestions_from_source(source.to_string(), cursor_position);
 
     assert!(completion_suggestions.is_empty());
 }
