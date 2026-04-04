@@ -7,6 +7,7 @@ use engine_ai_core::runtime::InferenceSetting;
 pub enum DeclarationHeaderCompletionContext {
     NamedDeclaration,
     SingletonDeclaration,
+    NamedDeclarationBlock,
     AgentForKeyword { keyword_prefix: String },
     AgentForIteratorName,
     AgentInKeyword { keyword_prefix: String },
@@ -49,6 +50,10 @@ impl DeclarationHeaderCompletionContext {
                     return Some(Self::NamedDeclaration);
                 }
 
+                if trimmed_line_after_keyword.split_whitespace().count() == 1 {
+                    return Some(Self::NamedDeclarationBlock);
+                }
+
                 None
             }
             DeclarationKeyword::Input | DeclarationKeyword::Secrets | DeclarationKeyword::Output => {
@@ -64,6 +69,13 @@ impl DeclarationHeaderCompletionContext {
     pub fn completion_suggestions(self) -> Vec<CompletionSuggestion> {
         match self {
             Self::NamedDeclaration | Self::SingletonDeclaration | Self::AgentForIteratorName => Vec::new(),
+            Self::NamedDeclarationBlock => vec![CompletionSuggestion {
+                label: "{}".to_string(),
+                kind: CompletionKind::Value,
+                detail: "Declaration block".to_string(),
+                documentation: "Insert declaration block braces.".to_string(),
+                insert_text: "{}".to_string(),
+            }],
             Self::AgentForKeyword { keyword_prefix } => Self::for_clause_keyword_suggestions(ForClauseKeyword::For, &keyword_prefix),
             Self::AgentInKeyword { keyword_prefix } => Self::for_clause_keyword_suggestions(ForClauseKeyword::In, &keyword_prefix),
         }
