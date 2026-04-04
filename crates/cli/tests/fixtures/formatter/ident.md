@@ -1,18 +1,11 @@
 ```ai
-provider openai   {driver:"openai" models:["gpt-4o-mini",]}
-
-output { result: "ok" }
+provider openai {
+  driver: "openai"
+}
 ```
 ---
 ```ai
 provider openai {
     driver: "openai"
-    models: [
-        "gpt-4o-mini",
-    ]
-}
-
-output {
-    result: "ok"
 }
 ```
