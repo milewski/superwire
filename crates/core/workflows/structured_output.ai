@@ -21,9 +21,7 @@ output {
     generated_by: "status_summary_workflow"
     report: {
         source: "workflow"
-        overview: {
-            text: agent.summary.text
-        }
+        overview: { text: agent.summary.text }
         metrics: {
             confidence: agent.summary.confidence
             status: "ok"

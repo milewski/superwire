@@ -7,7 +7,7 @@ try:
 
 # Run the CLI with arguments
 cli *arguments:
-    cargo run --release -p engine_ai_cli -- {{arguments}}
+    cargo run --release -p engine-ai-cli -- {{arguments}}
 
 # Build a workflow to a standalone executable
 build workflow output:
