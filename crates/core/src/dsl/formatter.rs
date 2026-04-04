@@ -10,6 +10,7 @@ use super::parse_workflow;
 use super::parser::DslParseError;
 
 const MAX_LINE_WIDTH: usize = 120;
+const WRAP_WIDTH_BUFFER: usize = 12;
 
 #[derive(Debug, Error)]
 pub enum DslFormatError {
@@ -756,16 +757,42 @@ impl CallArgument {
 }
 
 fn find_wrap_split_index(text: &str, width_limit: usize) -> Option<usize> {
+    let mut byte_index = 0_usize;
+    let mut character_index = 0_usize;
     let mut last_whitespace_character_index = None;
+    let mut is_inside_interpolation = false;
 
-    for (character_count, character) in text.chars().enumerate() {
-        if character_count >= width_limit {
+    while byte_index < text.len() {
+        let remaining_text = &text[byte_index..];
+
+        if !is_inside_interpolation && remaining_text.starts_with("{{") {
+            is_inside_interpolation = true;
+            byte_index += 2;
+            character_index += 2;
+            continue;
+        }
+
+        if is_inside_interpolation && remaining_text.starts_with("}}") {
+            is_inside_interpolation = false;
+            byte_index += 2;
+            character_index += 2;
+            continue;
+        }
+
+        if character_index >= width_limit {
             break;
         }
 
-        if character.is_whitespace() {
-            last_whitespace_character_index = Some(character_count);
+        let Some(current_character) = remaining_text.chars().next() else {
+            break;
+        };
+
+        if current_character.is_whitespace() && !is_inside_interpolation {
+            last_whitespace_character_index = Some(character_index);
         }
+
+        byte_index += current_character.len_utf8();
+        character_index += 1;
     }
 
     last_whitespace_character_index
@@ -780,11 +807,18 @@ fn wrap_text_line_by_words(text_line: &str, width_limit: usize) -> Vec<String> {
 
     let mut wrapped_lines = Vec::new();
     let mut remaining_text = trimmed_text_line.to_owned();
+    let width_limit_with_buffer = width_limit.saturating_add(WRAP_WIDTH_BUFFER);
 
-    while remaining_text.chars().count() > width_limit {
-        let Some(split_character_index) = find_wrap_split_index(&remaining_text, width_limit) else {
+    while remaining_text.chars().count() > width_limit_with_buffer {
+        let split_character_index =
+            find_wrap_split_index(&remaining_text, width_limit).or_else(|| find_wrap_split_index(&remaining_text, width_limit_with_buffer));
+        let Some(split_character_index) = split_character_index else {
             break;
         };
+
+        if split_character_index == 0 {
+            break;
+        }
 
         let wrapped_line = remaining_text
             .chars()
