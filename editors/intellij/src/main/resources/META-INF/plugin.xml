@@ -38,6 +38,10 @@
         <lang.syntaxHighlighterFactory
                 language="EngineAI"
                 implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+
+        <lang.parserDefinition
+                language="EngineAI"
+                implementationClass="com.engineai.intellij.EngineAiParserDefinition"/>
     </extensions>
 
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
@@ -56,5 +60,6 @@
 
     <extensions defaultExtensionNs="org.intellij.markdown">
         <fenceLanguageProvider implementation="com.engineai.intellij.EngineAiCodeFenceLanguageProvider"/>
+        <additionalFenceLanguageSuggester implementation="com.engineai.intellij.EngineAiAdditionalFenceLanguageSuggester"/>
     </extensions>
 </idea-plugin>

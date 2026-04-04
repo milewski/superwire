@@ -8,7 +8,7 @@ import org.intellij.plugins.markdown.injection.CodeFenceLanguageProvider
 
 class EngineAiCodeFenceLanguageProvider : CodeFenceLanguageProvider {
     override fun getLanguageByInfoString(infoString: String): Language? {
-        val normalizedInfoString = infoString.trim().lowercase()
+        val normalizedInfoString = normalizeInfoString(infoString)
 
         return if (normalizedInfoString in supportedInfoStrings) {
             EngineAiLanguage
@@ -25,6 +25,14 @@ class EngineAiCodeFenceLanguageProvider : CodeFenceLanguageProvider {
 
     private companion object {
         const val preferredInfoString = "ai"
+
+        fun normalizeInfoString(infoString: String): String {
+            return infoString
+                .trim()
+                .substringBefore(' ')
+                .substringBefore('{')
+                .lowercase()
+        }
 
         val supportedInfoStrings = setOf(
             preferredInfoString,
