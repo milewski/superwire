@@ -931,35 +931,18 @@ fn suggests_only_declared_providers_for_model_property_value() {
 
 #[test]
 fn suggests_reference_roots_inside_model_call_expression() {
-    let source = r#"provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini", "gpt-4o-mini"]
-}
-
-agent writer {
-    model: openai()
-    prompt: "hello"
-    output: string
-}
-"#;
-
-    let model_call_offset = source.find("openai(").expect("test source should contain model provider call") + "openai(".len();
-
-    let mut line = 0_u32;
-    let mut character = 0_u32;
-
-    for character_in_source in source[..model_call_offset].chars() {
-        if character_in_source == '\n' {
-            line += 1;
-            character = 0;
-
-            continue;
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini", "gpt-4o-mini"]
         }
 
-        character += 1;
-    }
-
-    let completion_suggestions = completion_suggestions_from_source(source.to_string(), Position { line, character });
+        agent writer {
+            model: openai(<cursor>)
+            prompt: "hello"
+            output: string
+        }
+    };
 
     assert_completion_contains!(&completion_suggestions, "gpt-4.1-mini", "gpt-4o-mini");
     assert_completion_contains_labels!(

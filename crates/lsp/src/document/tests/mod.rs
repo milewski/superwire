@@ -335,7 +335,7 @@ fn normalize_inline_cursor_layout(source_template: &str) -> String {
         .rev()
         .find(|character| !character.is_whitespace());
 
-    if previous_character == Some('.') || previous_character == Some(':') {
+    if previous_character == Some('.') || previous_character == Some(':') || previous_character == Some('(') {
         return source_template.to_string();
     }
 
