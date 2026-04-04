@@ -184,14 +184,6 @@ impl DslFormatter {
         wrapped_lines
     }
 
-    fn prompt_line_exceeds_width_for_string_literal(&self, string_value: &str) -> bool {
-        let quoted_string_literal = render_expression_string_literal(string_value);
-        let projected_line_width =
-            self.indentation_depth * 4 + AgentPropertyName::Prompt.as_str().chars().count() + 2 + quoted_string_literal.chars().count();
-
-        projected_line_width > MAX_LINE_WIDTH
-    }
-
     fn normalize_multiline_string_lines(multiline_contents: &str) -> Vec<String> {
         let mut content_lines = multiline_contents.split('\n').map(ToOwned::to_owned).collect::<Vec<_>>();
 
@@ -299,21 +291,23 @@ impl AgentDeclaration {
 
         formatter.push_declaration_block_start(&declaration_header);
 
-        let mut has_written_any_property = false;
-        let mut property_iterator = self.properties.iter().peekable();
+        let rendered_properties = self
+            .properties
+            .iter()
+            .map(|agent_property| agent_property.render_for_agent_block(formatter.indentation_depth))
+            .collect::<Vec<_>>();
 
-        while let Some(agent_property) = property_iterator.next() {
-            if has_written_any_property && agent_property.should_have_leading_visual_separator() {
-                formatter.push_newline();
+        for (property_index, rendered_property) in rendered_properties.iter().enumerate() {
+            if property_index > 0 {
+                let previous_property_is_multiline = rendered_properties[property_index.saturating_sub(1)].is_multiline;
+                let current_property_is_multiline = rendered_property.is_multiline;
+
+                if previous_property_is_multiline || current_property_is_multiline {
+                    formatter.push_newline();
+                }
             }
 
-            let should_insert_trailing_visual_separator = agent_property.should_have_trailing_visual_separator(formatter);
-            agent_property.push_to_formatter(formatter);
-            has_written_any_property = true;
-
-            if property_iterator.peek().is_some() && should_insert_trailing_visual_separator {
-                formatter.push_newline();
-            }
+            formatter.output.push_str(&rendered_property.text);
         }
 
         formatter.push_declaration_block_end();
@@ -333,26 +327,30 @@ impl AgentProperty {
         }
     }
 
-    fn should_have_trailing_visual_separator(&self, formatter: &DslFormatter) -> bool {
-        match self {
-            Self::Prompt(expression) => expression.is_multiline_prompt_expression(formatter),
-            Self::Model(_)
-            | Self::Output(_)
-            | Self::Context(_)
-            | Self::Inference(_)
-            | Self::Tools(_)
-            | Self::Custom { name: _, value: _ } => false,
-        }
-    }
+    fn render_for_agent_block(&self, indentation_depth: usize) -> RenderedAgentProperty {
+        let mut property_formatter = DslFormatter {
+            output: String::new(),
+            indentation_depth,
+        };
 
-    fn should_have_leading_visual_separator(&self) -> bool {
-        match self {
-            Self::Inference(expression) => expression.is_non_empty_object_literal(),
-            Self::Model(_) | Self::Prompt(_) | Self::Output(_) | Self::Context(_) | Self::Tools(_) | Self::Custom { name: _, value: _ } => {
-                false
-            }
+        self.push_to_formatter(&mut property_formatter);
+
+        let property_body_without_trailing_newline = property_formatter
+            .output
+            .strip_suffix('\n')
+            .unwrap_or(property_formatter.output.as_str());
+        let property_is_multiline = property_body_without_trailing_newline.contains('\n');
+
+        RenderedAgentProperty {
+            text: property_formatter.output,
+            is_multiline: property_is_multiline,
         }
     }
+}
+
+struct RenderedAgentProperty {
+    text: String,
+    is_multiline: bool,
 }
 
 impl TypedField {
@@ -611,36 +609,6 @@ impl Expression {
 
         inline_array_literal.push(']');
         Some(inline_array_literal)
-    }
-
-    fn is_multiline_prompt_expression(&self, formatter: &DslFormatter) -> bool {
-        match self {
-            Self::StringLiteral(string_value) => {
-                string_value.contains('\n') || formatter.prompt_line_exceeds_width_for_string_literal(string_value)
-            }
-            Self::StringTemplate(string_template) => string_template.is_multiline(),
-            Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::Reference(_)
-            | Self::FunctionCall(_)
-            | Self::ArrayLiteral(_)
-            | Self::ObjectLiteral(_) => false,
-        }
-    }
-
-    fn is_non_empty_object_literal(&self) -> bool {
-        match self {
-            Self::ObjectLiteral(object_fields) => !object_fields.is_empty(),
-            Self::StringLiteral(_)
-            | Self::StringTemplate(_)
-            | Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::Reference(_)
-            | Self::FunctionCall(_)
-            | Self::ArrayLiteral(_) => false,
-        }
     }
 }
 

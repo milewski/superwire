@@ -20,6 +20,7 @@ agent tool_user {
             fourth_really_long_property_name: 101112,
         ),
     ]
+
     prompt: "Use tools"
     output: string
 }

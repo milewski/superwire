@@ -14,6 +14,7 @@ provider openai {
 
 agent planner {
     model: openai("gpt-4o-mini")
+
     prompt: tool.compose(
         data: {
             topic: "engine-ai"
@@ -23,6 +24,7 @@ agent planner {
             priority: 1
         },
     )
+
     output: string
 }
 

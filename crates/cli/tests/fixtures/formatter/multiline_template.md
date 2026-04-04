@@ -29,6 +29,7 @@ input {
 
 agent writer {
     model: openai("gpt-4o-mini")
+
     prompt: """
         Write about {{ input.topic }}
         Keep it short and clear.
@@ -39,6 +40,7 @@ agent writer {
 
 agent writer2 {
     model: openai("gpt-4o-mini")
+
     prompt: """
         Write about {{ input.topic }}
         Keep it short and clear.
