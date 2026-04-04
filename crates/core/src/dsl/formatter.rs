@@ -932,7 +932,11 @@ fn apply_standalone_comments(
         let (target_formatted_line_index, insert_after_target) = if let Some(next_line) = next_mapped_line {
             (next_line, false)
         } else if let Some(previous_line) = previous_mapped_line {
-            (previous_line, true)
+            if let Some(next_non_empty_line) = find_first_non_empty_formatted_line_after(previous_line, formatted_lines) {
+                (next_non_empty_line, false)
+            } else {
+                (previous_line, true)
+            }
         } else {
             (0, false)
         };
@@ -1004,6 +1008,24 @@ fn find_previous_mapped_formatted_line(source_line_number: usize, source_to_form
     None
 }
 
+fn find_first_non_empty_formatted_line_after(start_line_index: usize, formatted_lines: &[String]) -> Option<usize> {
+    let first_candidate_index = start_line_index.saturating_add(1);
+
+    for line_index in first_candidate_index..formatted_lines.len() {
+        let Some(line_text) = formatted_lines.get(line_index) else {
+            continue;
+        };
+
+        if line_text.trim().is_empty() {
+            continue;
+        }
+
+        return Some(line_index);
+    }
+
+    None
+}
+
 fn leading_whitespace(line_text: &str) -> String {
     line_text
         .chars()
@@ -1045,6 +1067,19 @@ mod tests {
         let expected_output = "provider openai {\n    driver: \"openai\"\n    models: [\n        \"gpt-4o-mini\",\n    ]\n}\n\noutput {\n    result: \"ok\"\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("representative workflow should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
+    }
+
+    #[test]
+    fn formatter_places_standalone_comment_before_next_declaration_when_source_is_single_line_block() {
+        let source_text =
+            "// provider declaration\nprovider openai {\n// provider driver\n    driver:\"openai\" // inline driver comment\n}\n\n// output heading\noutput { value: \"ok\" }\n";
+
+        let expected_output =
+            "// provider declaration\nprovider openai {\n    // provider driver\n    driver: \"openai\" // inline driver comment\n}\n\n// output heading\noutput {\n    value: \"ok\"\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("workflow with standalone comment should format successfully");
 
         assert_eq!(formatted_source, expected_output);
     }
