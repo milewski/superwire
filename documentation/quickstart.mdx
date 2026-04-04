@@ -1,9 +1,9 @@
 ---
-title: Quickstart
-description: Build and run a small Engine AI workflow with the current Rust runtime.
+title: Quickstart (Rust)
+description: Build and run a small Engine AI workflow using Rust code.
 ---
 
-This quickstart uses the default runtime with Ollama because it is the lowest-friction way to run a real workflow locally.
+This quickstart shows how to parse, validate, and execute Engine AI workflows from Rust. It uses Ollama as the model provider because it is the lowest-friction way to run a real workflow locally.
 
 ## 1. Start a model provider
 
@@ -37,9 +37,10 @@ output {
 
 ## 3. Execute it from Rust
 
+The `try_workflow!` macro simplifies workflow execution by combining parsing and running:
+
 ```rust
-use engine_ai_core::dsl::parse_workflow;
-use engine_ai_core::runtime::execute_workflow_without_input;
+use engine_ai_core::runtime::try_workflow;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -50,9 +51,7 @@ struct Output {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let workflow_source = include_str!("../hello.ai");
-    let workflow = parse_workflow(workflow_source)?;
-    let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
+    let workflow_output: Output = try_workflow!("hello.ai").await?;
 
     println!("{}", workflow_output.greeting);
 
@@ -91,9 +90,10 @@ output {
 }
 ```
 
+The `try_workflow!` macro also works with inputs:
+
 ```rust
-use engine_ai_core::dsl::parse_workflow;
-use engine_ai_core::runtime::execute_workflow;
+use engine_ai_core::runtime::try_workflow;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -111,29 +111,18 @@ struct Output {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let workflow_source = include_str!("../summary.ai");
-    let workflow = parse_workflow(workflow_source)?;
+    let input = Input {
+        topic: "agent workflows".to_string(),
+        audience: "Rust developers".to_string(),
+    };
 
-    let workflow_output: Output = execute_workflow(
-        &workflow,
-        Input {
-            topic: "agent workflows".to_string(),
-            audience: "Rust developers".to_string(),
-        },
-    )
-    .await?;
+    let workflow_output: Output = try_workflow!("summary.ai", input).await?;
 
     println!("{:?}", workflow_output);
 
     Ok(())
 }
 ```
-
-<Tip>
-  If you want deterministic tests without a live model, use
-  `WorkflowRuntime::run_with_runner(...)` with a custom `AgentRunner`. The testing guide
-  shows the full pattern.
-</Tip>
 
 ## 5. Know the current runtime boundary
 
