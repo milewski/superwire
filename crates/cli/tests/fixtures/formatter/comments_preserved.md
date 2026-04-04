@@ -44,7 +44,7 @@ provider ollama {
 
     // inline models comment
     models: ["qwen3.5:32b"]
-    
+
     // inline models comment
     output: string
 }

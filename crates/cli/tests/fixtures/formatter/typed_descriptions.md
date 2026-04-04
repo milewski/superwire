@@ -14,6 +14,7 @@ input {
 
 agent writer {
     prompt: "Write"
+
     output: {
         summary: string "One-line summary"
         ok: boolean "Status flag"

@@ -17,6 +17,7 @@ agent formatter_checks {
     """
 
     short_numbers: [1, 2, 3]
+
     long_numbers: [
         1,
         2,
@@ -49,6 +50,7 @@ agent formatter_checks {
         29,
         30,
     ]
+
     output: string
 }
 

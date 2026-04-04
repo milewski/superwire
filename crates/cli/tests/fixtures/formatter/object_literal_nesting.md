@@ -14,6 +14,7 @@ provider openai {
 
 agent planner {
     model: openai("gpt-4o-mini")
+
     context: {
         project: "engine-ai"
         details: {
@@ -22,6 +23,7 @@ agent planner {
         }
         ids: [1, 2, 3]
     }
+
     prompt: "Plan"
     output: string
 }
