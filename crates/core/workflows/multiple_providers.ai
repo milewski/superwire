@@ -34,11 +34,13 @@ agent redact_notes {
 // This agent runs after `redact_notes` because it references its output.
 agent synthesize_insights {
     model: openai("gpt-4.1-mini")
+
     prompt: """
         Study={{ input.study_name }}.
         Using these redacted notes, produce concise research
         insights and top recommendations: {{ agent.redact_notes.redacted_notes }}
     """
+
     output: {
         insights: [string]
         recommendations: [string]
@@ -47,10 +49,8 @@ agent synthesize_insights {
 
 output {
     study_name: input.study_name
-
     redacted_notes: agent.redact_notes.redacted_notes
     redaction_summary: agent.redact_notes.redaction_summary
-
     insights: agent.synthesize_insights.insights
     recommendations: agent.synthesize_insights.recommendations
 }

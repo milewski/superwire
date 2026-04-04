@@ -47,7 +47,6 @@ agent inline_profile {
 output {
     named_profile: agent.named_profile
     inline_profile: agent.inline_profile
-
     named_name: agent.named_profile.name
     inline_role: agent.inline_profile.role
 }

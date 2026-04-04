@@ -15,28 +15,35 @@ schema AllTypes {
     boolean_value: boolean "A true/false value"
     explicit_null: null "A field that must be null"
 
+    // Nullable fields
     nullable_string: string | null "A nullable string; the field must exist, but may be null"
     nullable_number: number | null "A nullable number; the field must exist, but may be null"
 
+    // Array types
     array: [string] "An array of strings"
     fixed_array: [string; 3] "Exactly three strings"
 
+    // An array of objects with inline schema definition.
     array_of_objects: [{
         id: string "Stable identifier for the item"
         score: number "Numeric score for the item"
     }] "An array of inline objects"
 
+    // Enum types
     enum_value: "draft" | "ready" | "published" "A fixed set of string values"
     nullable_enum: "draft" | "ready" | "published" | null "A nullable enum value"
 
+    // Tuple types
     tuple_value: (string, number, [string; 3]) "A tuple with mixed item types"
     nullable_tuple: (string, number, [string; 3]) | null "A nullable tuple"
 
+    // Nested object with inline schema definition.
     object_value: {
         string_value: string "Nested string field"
         number_value: number "Nested number field"
     } "A nested object value"
 
+    // A nullable nested object.
     nullable_object: {
         string_value: string "Nested string field"
         number_value: number "Nested number field"
@@ -64,6 +71,7 @@ input {
 
 agent typed_example {
     model: ollama("qwen3.5:32b")
+
     prompt: """
         Generate a JSON object that matches the AllTypes schema exactly.
         - Lead={{ input.lead_participant }},
@@ -86,22 +94,27 @@ output {
     boolean_value: agent.typed_example.boolean_value
     explicit_null: agent.typed_example.explicit_null
 
+    // Nullable fields are accessed the same way as non-nullable fields.
     nullable_string: agent.typed_example.nullable_string
     nullable_number: agent.typed_example.nullable_number
 
+    // Array and tuple fields can also be accessed directly.
     array: agent.typed_example.array
     fixed_array: agent.typed_example.fixed_array
     array_of_objects: agent.typed_example.array_of_objects
 
+    // Enum and tuple fields can be accessed directly as well.
     enum_value: agent.typed_example.enum_value
     nullable_enum: agent.typed_example.nullable_enum
     tuple_value: agent.typed_example.tuple_value
     nullable_tuple: agent.typed_example.nullable_tuple
 
+    // Nested object fields can be accessed with dot notation.
     object_value: agent.typed_example.object_value
     nested_string: agent.typed_example.object_value.string_value
     nested_number: agent.typed_example.object_value.number_value
 
+    // For nullable nested objects, the entire object is nullable.
     nullable_object: agent.typed_example.nullable_object
 
     // Accessing a nullable property requires `?.`.

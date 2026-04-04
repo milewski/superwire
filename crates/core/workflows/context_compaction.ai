@@ -57,7 +57,6 @@ agent summary_from_full_context {
     }
 
     prompt: "Write a short executive summary from the available context."
-
     output: string
 }
 
@@ -74,7 +73,6 @@ agent summary_from_default_compact_context {
     }
 
     prompt: "Write a short executive summary from the compacted prior context."
-
     output: string
 }
 
@@ -92,7 +90,6 @@ agent summary_from_compact_context_with_model {
     }
 
     prompt: "Write a short executive summary from the compacted prior context."
-
     output: string
 }
 
@@ -106,6 +103,7 @@ agent summary_from_compact_context_with_model {
 // - `prompt:` overrides the default compaction prompt
 agent summary_from_custom_compact_context {
     model: openai("gpt-4.1-mini")
+
     context: compact(
         agent: agent.research_analysis,
         model: openai("gpt-4.1-mini"),
@@ -117,7 +115,7 @@ agent summary_from_custom_compact_context {
             Compact this prior agent context for an executive summary step.
             Keep only the highest-signal themes, risks, opportunities,
             and essential quotes. Remove repetition and low-value details.
-        """
+        """,
     )
 
     inference: {
@@ -126,7 +124,6 @@ agent summary_from_custom_compact_context {
     }
 
     prompt: "Write a short executive summary from the customized compacted context."
-
     output: {
         summary: string "Executive-ready summary of the research"
         top_actions: [string; 3] "Exactly three recommended next actions"
@@ -141,11 +138,9 @@ output {
 
     // Default compacted version of that same context.
     compacted_context: compact(agent.research_analysis)
-
     summary_from_full_context: agent.summary_from_full_context
     summary_from_default_compact_context: agent.summary_from_default_compact_context
     summary_from_compact_context_with_model: agent.summary_from_compact_context_with_model
-
     customized_summary: agent.summary_from_custom_compact_context.summary
     customized_top_actions: agent.summary_from_custom_compact_context.top_actions
 }

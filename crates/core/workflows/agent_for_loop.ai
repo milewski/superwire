@@ -65,7 +65,6 @@ output {
     findings: agent.findings.items
     remediation_plans: agent.remediation_plan
     remediation_context: context(agent.remediation_plan)
-
     manual_numbers: agent.number_note
 
     // Referencing a looped agent returns an array of outputs.
