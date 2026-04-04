@@ -477,25 +477,7 @@ impl Expression {
     fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
         match self {
             Self::StringLiteral(string_value) => {
-                if string_value.contains('\n') {
-                    formatter.push_multiline_string_block(&escape_multiline_string_text(string_value));
-                } else if expression_format == ExpressionFormat::Canonical {
-                    let quoted_string_literal = render_expression_string_literal(string_value);
-
-                    if formatter.can_fit_inline_text(&quoted_string_literal) {
-                        formatter.output.push_str(&quoted_string_literal);
-                    } else {
-                        let wrapped_multiline_lines = formatter.wrap_multiline_string_value(string_value);
-
-                        if wrapped_multiline_lines.len() > 1 {
-                            formatter.push_multiline_string_block_from_lines(&wrapped_multiline_lines);
-                        } else {
-                            formatter.output.push_str(&quoted_string_literal);
-                        }
-                    }
-                } else {
-                    formatter.output.push_str(&render_expression_string_literal(string_value));
-                }
+                self.push_string_literal_to_formatter(formatter, string_value, expression_format);
             }
             Self::StringTemplate(string_template) => string_template.push_to_formatter(formatter),
             Self::NumberLiteral(number_literal) => formatter.output.push_str(number_literal),
@@ -510,101 +492,155 @@ impl Expression {
             Self::Reference(reference) => reference.push_to_formatter(formatter),
             Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
             Self::ArrayLiteral(array_items) => {
-                if expression_format == ExpressionFormat::Inline {
-                    formatter.output.push('[');
-
-                    let mut array_item_iterator = array_items.iter().peekable();
-                    while let Some(array_item) = array_item_iterator.next() {
-                        array_item.push_to_formatter(formatter, ExpressionFormat::Inline);
-
-                        if array_item_iterator.peek().is_some() {
-                            formatter.output.push_str(", ");
-                        }
-                    }
-
-                    formatter.output.push(']');
-                    return;
-                }
-
-                if array_items.is_empty() {
-                    formatter.output.push_str("[]");
-                    return;
-                }
-
-                if let Some(inline_array_literal) = self.inline_array_literal(formatter) {
-                    if formatter.can_fit_inline_text(&inline_array_literal) {
-                        formatter.output.push_str(&inline_array_literal);
-                        return;
-                    }
-                }
-
-                formatter.output.push('[');
-                formatter.push_newline();
-                formatter.indentation_depth += 1;
-
-                for array_item in array_items {
-                    formatter.push_indent();
-                    array_item.push_to_formatter(formatter, ExpressionFormat::Canonical);
-                    formatter.output.push(',');
-                    formatter.push_newline();
-                }
-
-                formatter.indentation_depth -= 1;
-                formatter.push_indent();
-                formatter.output.push(']');
+                self.push_array_literal_to_formatter(formatter, array_items, expression_format);
             }
             Self::ObjectLiteral(object_fields) => {
-                if expression_format == ExpressionFormat::Inline {
-                    formatter.output.push('{');
-
-                    if !object_fields.is_empty() {
-                        formatter.output.push(' ');
-                    }
-
-                    let mut object_field_iterator = object_fields.iter().peekable();
-                    while let Some(object_field) = object_field_iterator.next() {
-                        formatter.output.push_str(&object_field.name);
-                        formatter.output.push_str(": ");
-                        object_field.value.push_to_formatter(formatter, ExpressionFormat::Inline);
-
-                        if object_field_iterator.peek().is_some() {
-                            formatter.output.push(' ');
-                        }
-                    }
-
-                    if !object_fields.is_empty() {
-                        formatter.output.push(' ');
-                    }
-
-                    formatter.output.push('}');
-                    return;
-                }
-
-                if object_fields.is_empty() {
-                    formatter.output.push_str("{}");
-                    return;
-                }
-
-                if let Some(inline_object_literal) = self.inline_object_literal(formatter) {
-                    if formatter.can_fit_inline_text(&inline_object_literal) {
-                        formatter.output.push_str(&inline_object_literal);
-                        return;
-                    }
-                }
-
-                formatter.output.push('{');
-                formatter.push_newline();
-                formatter.indentation_depth += 1;
-
-                for object_field in object_fields {
-                    object_field.push_to_formatter(formatter);
-                }
-
-                formatter.indentation_depth -= 1;
-                formatter.push_indent();
-                formatter.output.push('}');
+                self.push_object_literal_to_formatter(formatter, object_fields, expression_format);
             }
         }
+    }
+
+    fn push_string_literal_to_formatter(&self, formatter: &mut DslFormatter, string_value: &str, expression_format: ExpressionFormat) {
+        if string_value.contains('\n') {
+            formatter.push_multiline_string_block(&escape_multiline_string_text(string_value));
+
+            return;
+        }
+
+        let quoted_string_literal = render_expression_string_literal(string_value);
+
+        if expression_format == ExpressionFormat::Inline {
+            formatter.output.push_str(&quoted_string_literal);
+
+            return;
+        }
+
+        if formatter.can_fit_inline_text(&quoted_string_literal) {
+            formatter.output.push_str(&quoted_string_literal);
+
+            return;
+        }
+
+        let wrapped_multiline_lines = formatter.wrap_multiline_string_value(string_value);
+
+        if wrapped_multiline_lines.len() > 1 {
+            formatter.push_multiline_string_block_from_lines(&wrapped_multiline_lines);
+        } else {
+            formatter.output.push_str(&quoted_string_literal);
+        }
+    }
+
+    fn push_array_literal_to_formatter(
+        &self,
+        formatter: &mut DslFormatter,
+        array_items: &[Expression],
+        expression_format: ExpressionFormat,
+    ) {
+        if expression_format == ExpressionFormat::Inline {
+            formatter.output.push('[');
+
+            let mut array_item_iterator = array_items.iter().peekable();
+            while let Some(array_item) = array_item_iterator.next() {
+                array_item.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+                if array_item_iterator.peek().is_some() {
+                    formatter.output.push_str(", ");
+                }
+            }
+
+            formatter.output.push(']');
+
+            return;
+        }
+
+        if array_items.is_empty() {
+            formatter.output.push_str("[]");
+
+            return;
+        }
+
+        if let Some(inline_array_literal) = self.inline_array_literal(formatter) {
+            if formatter.can_fit_inline_text(&inline_array_literal) {
+                formatter.output.push_str(&inline_array_literal);
+
+                return;
+            }
+        }
+
+        formatter.output.push('[');
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for array_item in array_items {
+            formatter.push_indent();
+            array_item.push_to_formatter(formatter, ExpressionFormat::Canonical);
+            formatter.output.push(',');
+            formatter.push_newline();
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push(']');
+    }
+
+    fn push_object_literal_to_formatter(
+        &self,
+        formatter: &mut DslFormatter,
+        object_fields: &[ObjectField],
+        expression_format: ExpressionFormat,
+    ) {
+        if expression_format == ExpressionFormat::Inline {
+            formatter.output.push('{');
+
+            if !object_fields.is_empty() {
+                formatter.output.push(' ');
+            }
+
+            let mut object_field_iterator = object_fields.iter().peekable();
+            while let Some(object_field) = object_field_iterator.next() {
+                formatter.output.push_str(&object_field.name);
+                formatter.output.push_str(": ");
+                object_field.value.push_to_formatter(formatter, ExpressionFormat::Inline);
+
+                if object_field_iterator.peek().is_some() {
+                    formatter.output.push(' ');
+                }
+            }
+
+            if !object_fields.is_empty() {
+                formatter.output.push(' ');
+            }
+
+            formatter.output.push('}');
+
+            return;
+        }
+
+        if object_fields.is_empty() {
+            formatter.output.push_str("{}");
+
+            return;
+        }
+
+        if let Some(inline_object_literal) = self.inline_object_literal(formatter) {
+            if formatter.can_fit_inline_text(&inline_object_literal) {
+                formatter.output.push_str(&inline_object_literal);
+
+                return;
+            }
+        }
+
+        formatter.output.push('{');
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for object_field in object_fields {
+            object_field.push_to_formatter(formatter);
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
     }
 
     fn is_inline_friendly(&self) -> bool {
