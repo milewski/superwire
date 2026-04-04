@@ -138,6 +138,10 @@ impl DocumentState {
                 }
             }
 
+            if !inside_interpolation_expression && Self::should_suppress_prompt_string_literal_suggestions(line_prefix) {
+                return Some(Vec::new());
+            }
+
             if semantic_index.is_output_position(position) && !inside_interpolation_expression {
                 if let Some(output_value_completion_context) = OutputValueCompletionContext::from_line_prefix(line_prefix) {
                     if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
@@ -171,7 +175,9 @@ impl DocumentState {
         }
 
         if semantic_index.agent_name_at_position(position).is_some() && line_has_property_separator && !inside_interpolation_expression {
-            if let Some(agent_property_suggestions) = self.agent_property_value_suggestions(semantic_index, line_prefix) {
+            if let Some(agent_property_suggestions) =
+                self.agent_property_value_suggestions(semantic_index, line_prefix, inside_interpolation_expression)
+            {
                 return Some(agent_property_suggestions);
             }
         }
@@ -215,7 +221,12 @@ impl DocumentState {
         None
     }
 
-    fn agent_property_value_suggestions(&self, semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    fn agent_property_value_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
         let agent_property_value_completion_context = AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)?;
 
         match agent_property_value_completion_context.property_name {
@@ -225,7 +236,18 @@ impl DocumentState {
             AgentExpressionPropertyName::Model => {
                 Some(semantic_index.provider_call_suggestions(&agent_property_value_completion_context.value_prefix))
             }
-            AgentExpressionPropertyName::Prompt | AgentExpressionPropertyName::Inference | AgentExpressionPropertyName::Tools => None,
+            AgentExpressionPropertyName::Prompt => {
+                if inside_interpolation_expression || ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
+                    return None;
+                }
+
+                if agent_property_value_completion_context.inside_string_literal {
+                    return Some(Vec::new());
+                }
+
+                Some(semantic_index.prompt_value_suggestions(&agent_property_value_completion_context.value_prefix))
+            }
+            AgentExpressionPropertyName::Inference | AgentExpressionPropertyName::Tools => None,
         }
     }
 
@@ -246,10 +268,7 @@ impl DocumentState {
         let schema_reference_root = reference_completion_path.is_schema_root();
 
         if inference_setting_value_completion_context.is_some() {
-            let reference_token_has_trailing_separator =
-                trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
-            let can_suggest_inference_roots =
-                !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+            let can_suggest_inference_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
 
             match reference_completion_path.root_keyword() {
                 Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
@@ -270,10 +289,7 @@ impl DocumentState {
         }
 
         if inside_interpolation_expression {
-            let reference_token_has_trailing_separator =
-                trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
-            let can_suggest_interpolation_roots =
-                !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+            let can_suggest_interpolation_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
 
             match reference_completion_path.root_keyword() {
                 Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
@@ -294,10 +310,7 @@ impl DocumentState {
         }
 
         if line_has_property_separator && semantic_index.is_output_position(position) {
-            let reference_token_has_trailing_separator =
-                trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
-            let can_suggest_output_roots =
-                !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty();
+            let can_suggest_output_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
 
             match reference_completion_path.root_keyword() {
                 Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets) => {
@@ -310,6 +323,31 @@ impl DocumentState {
                 Some(ReferenceKeyword::Tool) | None => {
                     if can_suggest_output_roots {
                         return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(Vec::new());
+                }
+            }
+        }
+
+        if line_has_property_separator
+            && !inside_interpolation_expression
+            && AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)
+                .is_some_and(|completion_context| completion_context.property_name == AgentExpressionPropertyName::Prompt)
+        {
+            let can_suggest_prompt_roots = Self::can_suggest_reference_roots(line_prefix, &reference_completion_path);
+
+            match reference_completion_path.root_keyword() {
+                Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+                    if can_suggest_prompt_roots {
+                        return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
+                    }
+
+                    return Some(reference_suggestions);
+                }
+                Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+                    if can_suggest_prompt_roots {
+                        return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
                     }
 
                     return Some(Vec::new());
@@ -334,6 +372,29 @@ impl DocumentState {
         }
 
         None
+    }
+
+    fn can_suggest_reference_roots(line_prefix: &str, reference_completion_path: &ReferenceCompletionPath) -> bool {
+        let reference_token_has_trailing_separator =
+            trailing_reference_token(line_prefix).is_some_and(|reference_token| reference_token.ends_with('.'));
+
+        !reference_token_has_trailing_separator && reference_completion_path.complete_accesses.is_empty()
+    }
+
+    fn should_suppress_prompt_string_literal_suggestions(line_prefix: &str) -> bool {
+        if let Some(agent_property_value_completion_context) = AgentPropertyValueCompletionContext::from_line_prefix(line_prefix) {
+            return agent_property_value_completion_context.property_name == AgentExpressionPropertyName::Prompt
+                && agent_property_value_completion_context.inside_string_literal;
+        }
+
+        let trimmed_line_prefix = line_prefix.trim_start();
+
+        let Some((line_before_value, value_prefix)) = trimmed_line_prefix.rsplit_once(':') else {
+            return false;
+        };
+
+        line_before_value.trim_end().ends_with(AgentExpressionPropertyName::Prompt.as_str())
+            && super::completion_context::ValueCompletionContext::from_value_prefix(value_prefix).inside_string_literal
     }
 
     fn inference_setting_value_completion_context(

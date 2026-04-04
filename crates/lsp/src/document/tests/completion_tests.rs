@@ -651,6 +651,45 @@ fn suggests_only_context_function_for_agent_context_property_value() {
 }
 
 #[test]
+fn suggests_only_valid_prompt_value_roots_and_literals() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            prompt: <cursor>
+            output: string
+        }
+    };
+
+    assert_completion_contains!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Input,
+        "\"\"",
+        "\"\"\""
+    );
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        ReferenceKeyword::Secrets,
+        ReferenceKeyword::Tool,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Schema,
+        "number",
+        "string"
+    );
+}
+
+#[test]
+fn suppresses_invalid_prompt_reference_roots() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            prompt: secrets.<cursor>
+            output: string
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn suggests_only_inference_settings_inside_inference_object() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
