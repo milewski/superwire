@@ -91,6 +91,35 @@ fn preserves_comments_while_formatting() {
     assert!(formatted_source.contains("// inline comment"));
 }
 
+#[test]
+fn rejects_non_workflow_file_target() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let non_workflow_file_path = temporary_workspace.write_file("notes.txt", "not a workflow\n");
+
+    let command_output = run_fmt_command(non_workflow_file_path.as_path());
+    let stderr_text = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(!command_output.status.success(), "fmt command should fail for non-.ai files");
+    assert_eq!(command_output.status.code(), Some(2));
+    assert!(stderr_text.contains("expected a .ai workflow file"));
+}
+
+#[test]
+fn rejects_directory_without_workflow_files() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let empty_directory_path = temporary_workspace.create_directory("empty");
+
+    let command_output = run_fmt_command(empty_directory_path.as_path());
+    let stderr_text = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(
+        !command_output.status.success(),
+        "fmt command should fail when no workflow files are found"
+    );
+    assert_eq!(command_output.status.code(), Some(2));
+    assert!(stderr_text.contains("no workflow files (.ai) found"));
+}
+
 fn run_fmt_command(target_path: &Path) -> Output {
     Command::new(cli_binary_path())
         .arg("fmt")
