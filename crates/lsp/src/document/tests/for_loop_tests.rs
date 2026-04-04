@@ -16,6 +16,22 @@ fn completes_input_fields_in_for_loop_iterable_reference() {
 }
 
 #[test]
+fn completes_agent_names_in_for_loop_iterable_reference() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings_source {
+            output: [string]
+        }
+
+        agent remediation_plan for finding in agent.<cursor> {
+            prompt: finding
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "findings_source");
+    assert_completion_excludes_labels!(&completion_suggestions, "remediation_plan");
+}
+
+#[test]
 fn suppresses_non_iterable_input_field_suggestions_in_for_loop_iterable_reference() {
     let completion_suggestions = inline_completion_suggestions! {
         input {
@@ -28,6 +44,22 @@ fn suppresses_non_iterable_input_field_suggestions_in_for_loop_iterable_referenc
     };
 
     assert!(completion_suggestions.is_empty());
+}
+
+#[test]
+fn completes_iterable_secrets_fields_in_for_loop_iterable_reference() {
+    let completion_suggestions = inline_completion_suggestions! {
+        secrets {
+            finding_ids: [string]
+            api_key: string
+        }
+
+        agent remediation_plan for finding in secrets.<cursor> {
+            prompt: finding
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "finding_ids");
 }
 
 #[test]

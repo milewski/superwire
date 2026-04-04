@@ -439,25 +439,9 @@ impl ForLoopIterableType for TypeExpression {
 fn is_for_loop_iterable_reference_context(line_prefix: &str) -> bool {
     let for_keyword = ForClauseKeyword::For.as_str();
     let in_keyword = ForClauseKeyword::In.as_str();
+    let trimmed_line_prefix = line_prefix.trim_start();
     let for_keyword_with_surrounding_whitespace = format!(" {for_keyword} ");
-    let for_keyword_with_trailing_whitespace = format!("{for_keyword} ");
-
-    let Some(reference_token) = trailing_reference_token(line_prefix) else {
-        return false;
-    };
-
-    let Some(reference_start_index) = line_prefix.rfind(reference_token) else {
-        return false;
-    };
-
-    let prefix_before_reference = &line_prefix[..reference_start_index];
-    let for_clause_prefix = prefix_before_reference
-        .rfind(for_keyword_with_surrounding_whitespace.as_str())
-        .map_or(prefix_before_reference, |for_clause_index| {
-            &prefix_before_reference[for_clause_index + 1..]
-        });
-
-    let Some(after_for_keyword) = for_clause_prefix.strip_prefix(for_keyword_with_trailing_whitespace.as_str()) else {
+    let Some((_, after_for_keyword)) = trimmed_line_prefix.split_once(for_keyword_with_surrounding_whitespace.as_str()) else {
         return false;
     };
 
