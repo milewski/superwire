@@ -9,7 +9,7 @@ use crate::protocol::{
     error_response, publish_diagnostics_notification, success_response, CodeLens, CodeLensParams, Command, Diagnostic,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
     DocumentSymbol as ProtocolDocumentSymbol, DocumentSymbolParams, ExecuteCommandParams, FoldingRange, FoldingRangeParams, JsonRpcRequest,
-    Location, SymbolInformation, TextDocumentPositionParams, TextEdit, WorkspaceSymbolParams,
+    Location, Range, SymbolInformation, TextDocumentPositionParams, TextEdit, WorkspaceSymbolParams,
 };
 
 #[derive(Debug, Error)]
@@ -290,10 +290,12 @@ impl LanguageServer {
             });
         };
 
+        let completion_text_edit_range = document_state.completion_text_edit_range(completion_params.position);
+
         let completion_items = document_state
             .completion_suggestions(completion_params.position)
             .into_iter()
-            .map(completion_item_to_value)
+            .map(|completion_suggestion| completion_item_to_value(completion_suggestion, completion_text_edit_range))
             .collect::<Vec<_>>();
 
         json!({
@@ -568,14 +570,42 @@ fn code_lens_hint_to_protocol(code_lens_hint: CodeLensHint) -> CodeLens {
     }
 }
 
-fn completion_item_to_value(completion_suggestion: CompletionSuggestion) -> Value {
-    json!({
-        "label": completion_suggestion.label,
-        "kind": completion_suggestion.kind.as_lsp_kind(),
-        "detail": completion_suggestion.detail,
-        "documentation": completion_suggestion.documentation,
-        "insertText": completion_suggestion.insert_text,
-    })
+fn completion_item_to_value(completion_suggestion: CompletionSuggestion, completion_text_edit_range: Option<Range>) -> Value {
+    let CompletionSuggestion {
+        label,
+        kind,
+        detail,
+        documentation,
+        insert_text,
+    } = completion_suggestion;
+
+    let insert_text_uses_snippet_format = insert_text.contains("$1");
+    let mut completion_item = json!({
+        "label": label,
+        "kind": kind.as_lsp_kind(),
+        "detail": detail,
+        "documentation": documentation,
+    });
+
+    if let Some(completion_item_object) = completion_item.as_object_mut() {
+        if let Some(text_edit_range) = completion_text_edit_range {
+            completion_item_object.insert(
+                "textEdit".to_string(),
+                json!({
+                    "range": text_edit_range,
+                    "newText": insert_text,
+                }),
+            );
+        } else {
+            completion_item_object.insert("insertText".to_string(), json!(insert_text));
+        }
+
+        if insert_text_uses_snippet_format {
+            completion_item_object.insert("insertTextFormat".to_string(), json!(2));
+        }
+    }
+
+    completion_item
 }
 
 fn markdown_hover(markdown: &str) -> Value {

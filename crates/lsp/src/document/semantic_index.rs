@@ -79,7 +79,7 @@ impl SemanticIndex {
                 kind: CompletionKind::Function,
                 detail: "Declared provider".to_string(),
                 documentation: "Provider call used in `model` properties.".to_string(),
-                insert_text: format!("{provider_name}("),
+                insert_text: format!("{provider_name}(\"$1\")"),
             })
             .collect::<Vec<_>>();
 
@@ -199,7 +199,7 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn prompt_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn prompt_value_suggestions(&self, value_prefix: &str, line_prefix: &str) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self.prompt_value_root_suggestions(value_prefix);
         let single_line_literal = "\"\"";
 
@@ -214,6 +214,8 @@ impl SemanticIndex {
         }
 
         let multiline_literal_label = "\"\"\"";
+        let multiline_literal_indentation = Self::line_indentation(line_prefix);
+        let multiline_literal_insert_text = format!("\"\"\"\n{multiline_literal_indentation}\"\"\"");
 
         if multiline_literal_label.starts_with(value_prefix) {
             completion_suggestions.push(CompletionSuggestion {
@@ -221,11 +223,20 @@ impl SemanticIndex {
                 kind: CompletionKind::Value,
                 detail: "Multiline string literal".to_string(),
                 documentation: "Literal prompt expression.".to_string(),
-                insert_text: "\"\"\"\n\"\"\"".to_string(),
+                insert_text: multiline_literal_insert_text,
             });
         }
 
         completion_suggestions
+    }
+
+    fn line_indentation(line_prefix: &str) -> &str {
+        let indentation_length = line_prefix
+            .char_indices()
+            .find_map(|(character_offset, character)| (!character.is_whitespace()).then_some(character_offset))
+            .unwrap_or(line_prefix.len());
+
+        &line_prefix[..indentation_length]
     }
 
     pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
@@ -630,9 +641,10 @@ impl SemanticIndex {
         let _ = provider_name;
 
         let trimmed_line_prefix = line_prefix.trim_start();
-        let (property_name, property_value_prefix) = trimmed_line_prefix.split_once(':')?;
+        let (line_before_value, property_value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
+        let property_name_identifier = trailing_identifier(line_before_value)?;
 
-        if property_name.trim() != "driver" {
+        if property_name_identifier != "driver" {
             return None;
         }
 
@@ -657,6 +669,46 @@ impl SemanticIndex {
                 }
             })
             .collect::<Vec<_>>();
+
+        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
+
+        Some(completion_suggestions)
+    }
+
+    pub fn provider_models_value_suggestions(&self, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let (line_before_value, property_value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
+        let property_name_identifier = trailing_identifier(line_before_value)?;
+
+        if property_name_identifier != "models" {
+            return None;
+        }
+
+        let value_completion_context = ValueCompletionContext::from_value_prefix(property_value_prefix);
+
+        if value_completion_context.inside_string_literal {
+            return Some(Vec::new());
+        }
+
+        let mut completion_suggestions = [
+            CompletionSuggestion {
+                label: "[]".to_string(),
+                kind: CompletionKind::Value,
+                detail: "Model list".to_string(),
+                documentation: "Array of supported model identifiers.".to_string(),
+                insert_text: "[]".to_string(),
+            },
+            CompletionSuggestion {
+                label: "[\"\"]".to_string(),
+                kind: CompletionKind::Value,
+                detail: "Model list template".to_string(),
+                documentation: "Array literal with one model placeholder string.".to_string(),
+                insert_text: "[\"$1\"]".to_string(),
+            },
+        ]
+        .into_iter()
+        .filter(|completion_suggestion| completion_suggestion.label.starts_with(&value_completion_context.value_prefix))
+        .collect::<Vec<_>>();
 
         completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 
@@ -782,6 +834,8 @@ impl SemanticIndex {
             .filter(|completion_suggestion| completion_suggestion.label.starts_with(prefix))
             .collect::<Vec<_>>();
 
+        completion_suggestions.extend(self.structural_type_suggestions(prefix));
+
         completion_suggestions.extend(
             self.schema_names
                 .iter()
@@ -803,6 +857,30 @@ impl SemanticIndex {
         );
 
         completion_suggestions
+    }
+
+    fn structural_type_suggestions(&self, type_prefix: &str) -> Vec<CompletionSuggestion> {
+        let structural_type_suggestions = [
+            CompletionSuggestion {
+                label: "[string]".to_string(),
+                kind: CompletionKind::Type,
+                detail: "Array type".to_string(),
+                documentation: "Array type expression.".to_string(),
+                insert_text: "[string]".to_string(),
+            },
+            CompletionSuggestion {
+                label: "{}".to_string(),
+                kind: CompletionKind::Type,
+                detail: "Object type".to_string(),
+                documentation: "Object type expression.".to_string(),
+                insert_text: "{}".to_string(),
+            },
+        ];
+
+        structural_type_suggestions
+            .into_iter()
+            .filter(|completion_suggestion| completion_suggestion.label.starts_with(type_prefix))
+            .collect()
     }
 
     pub fn root_declaration_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {

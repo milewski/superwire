@@ -1,17 +1,21 @@
-use engine_ai_core::dsl::{parse_workflow, AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword};
+use engine_ai_core::dsl::{
+    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword,
+};
 
-use crate::protocol::Position;
+use crate::protocol::{Position, Range};
 
 use super::completion_context::{
     AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
     ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext, ModelCallCompletionContext,
-    OutputValueCompletionContext,
+    OutputValueCompletionContext, ValueCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
 use super::semantic_index::SemanticIndex;
-use super::text_utils::{is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_reference_token};
+use super::text_utils::{
+    is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
+};
 use super::{CompletionSuggestion, DocumentState};
 use engine_ai_core::runtime::InferenceSetting;
 
@@ -32,6 +36,10 @@ impl DocumentState {
 
         let completion_scope = self.completion_scope(position);
         let semantic_index = self.semantic_index_for_completion(position);
+
+        if Self::is_typed_description_string_literal_context(&line_prefix, completion_scope, &semantic_index, position) {
+            return Vec::new();
+        }
 
         if let Some(typed_declaration_suggestions) =
             self.typed_declaration_scope_suggestions(completion_scope, &line_prefix, position, &semantic_index)
@@ -80,6 +88,76 @@ impl DocumentState {
         }
 
         semantic_index.default_suggestions(should_include_builtin_function_suggestions)
+    }
+
+    fn is_typed_description_string_literal_context(
+        line_prefix: &str,
+        completion_scope: CompletionScope,
+        semantic_index: &SemanticIndex,
+        position: Position,
+    ) -> bool {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let Some((line_before_value, value_prefix)) = trimmed_line_prefix.rsplit_once(':') else {
+            return false;
+        };
+
+        let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+        if !value_completion_context.inside_string_literal {
+            return false;
+        }
+
+        let property_name_identifier = trailing_identifier(line_before_value).unwrap_or_default();
+        let inside_agent_output_type = semantic_index.agent_name_at_position(position).is_some()
+            && AgentPropertyName::from_identifier(property_name_identifier) == Some(AgentPropertyName::Output);
+
+        if completion_scope != CompletionScope::TypedDeclarations && !inside_agent_output_type {
+            return false;
+        }
+
+        let trimmed_value_prefix = value_prefix.trim_start();
+        let Some(last_quote_index) = trimmed_value_prefix.rfind('"') else {
+            return false;
+        };
+
+        let value_before_open_quote = trimmed_value_prefix[..last_quote_index].trim_end();
+
+        !value_before_open_quote.is_empty()
+    }
+
+    #[must_use]
+    pub fn completion_text_edit_range(&self, position: Position) -> Option<Range> {
+        let line_prefix = self.line_prefix(position)?;
+
+        if let Some(model_call_completion_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {
+            return Some(Self::text_edit_range_for_prefix(
+                position,
+                &model_call_completion_context.model_prefix,
+            ));
+        }
+
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let (_, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
+        let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+        if value_completion_context.value_prefix.is_empty() {
+            return Some(Self::text_edit_range_for_prefix(position, ""));
+        }
+
+        Some(Self::text_edit_range_for_prefix(position, &value_completion_context.value_prefix))
+    }
+
+    fn text_edit_range_for_prefix(position: Position, value_prefix: &str) -> Range {
+        let value_prefix_character_count = u32::try_from(value_prefix.chars().count()).unwrap_or_default();
+        let start_character = position.character.saturating_sub(value_prefix_character_count);
+
+        Range {
+            start: Position {
+                line: position.line,
+                character: start_character,
+            },
+            end: position,
+        }
     }
 
     fn typed_declaration_scope_suggestions(
@@ -214,6 +292,10 @@ impl DocumentState {
             return Some(provider_driver_suggestions);
         }
 
+        if let Some(provider_models_suggestions) = semantic_index.provider_models_value_suggestions(line_prefix) {
+            return Some(provider_models_suggestions);
+        }
+
         if let Some(provider_property_suggestions) = semantic_index.provider_property_suggestions(position, line_prefix) {
             return Some(provider_property_suggestions);
         }
@@ -245,7 +327,7 @@ impl DocumentState {
                     return Some(Vec::new());
                 }
 
-                Some(semantic_index.prompt_value_suggestions(&agent_property_value_completion_context.value_prefix))
+                Some(semantic_index.prompt_value_suggestions(&agent_property_value_completion_context.value_prefix, line_prefix))
             }
             AgentExpressionPropertyName::Inference | AgentExpressionPropertyName::Tools => None,
         }
