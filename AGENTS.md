@@ -138,6 +138,19 @@ match ReferenceKeyword::from_identifier(root_identifier) {
 
 This rule is mandatory for all parser, validator, runtime, and LSP completion/hover logic.
 
+## DSL Test Source Representation (Mandatory)
+
+**Never use raw string literals for DSL source in tests.** This includes normal escaped strings (`"..."`) and raw
+strings (`r#"..."#`, `r"..."`).
+
+For DSL test fixtures, always use the existing inline test macros such as:
+
+- `inline_completion_suggestions!`
+- `inline_document_template!`
+- `inline_diagnostics!`
+
+This rule is strict: raw/escaped string literals can never be used to represent DSL test input.
+
 ## Code Quality
 
 **Always run formatting and linting after making code changes.** Run the same pedantic Clippy profile used by CI before
