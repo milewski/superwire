@@ -151,6 +151,19 @@ For DSL test fixtures, always use the existing inline test macros such as:
 
 This rule is strict: raw/escaped string literals can never be used to represent DSL test input.
 
+## Commit and PR Title Style (Mandatory)
+
+**Commit messages must be plain lowercase text with no prefixes or scopes.**
+
+- Do not use Conventional Commit prefixes such as `fix:`, `feat:`, `chore:`, `test:`.
+- Do not use scoped formats such as `fix(lsp): ...`.
+- Use simple lowercase phrasing, for example: `update lsp completion spacing behavior`.
+
+**Pull request titles must be plain readable titles with no prefix tokens.**
+
+- Do not use formats like `fix(lsp): ...` or `feat: ...`.
+- Use natural title phrasing, for example: `Update LSP completion spacing behavior`.
+
 ## Code Quality
 
 **Always run formatting and linting after making code changes.** Run the same pedantic Clippy profile used by CI before
