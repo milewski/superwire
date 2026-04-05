@@ -116,6 +116,20 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn inference_object_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        if !"{}".starts_with(value_prefix) {
+            return Vec::new();
+        }
+
+        vec![CompletionSuggestion {
+            label: "{}".to_string(),
+            kind: CompletionKind::Value,
+            detail: "Inference settings object".to_string(),
+            documentation: "Object literal for `inference` settings.".to_string(),
+            insert_text: "{}".to_string(),
+        }]
+    }
+
     pub fn for_loop_iterable_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
         let root_prefix = trailing_identifier(value_prefix).unwrap_or_default();
         let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
