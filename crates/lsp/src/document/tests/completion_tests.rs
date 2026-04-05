@@ -790,6 +790,26 @@ fn suggests_only_inference_settings_inside_inference_object() {
 }
 
 #[test]
+fn suggests_only_object_literal_for_inference_property_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greeting {
+            inference: <cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "{}");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Input,
+        AgentExpressionPropertyName::Model,
+        AgentExpressionPropertyName::Prompt,
+        "number",
+        "string"
+    );
+}
+
+#[test]
 fn suppresses_inference_suggestions_inside_string_literal_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
@@ -1132,6 +1152,26 @@ fn completion_text_edit_range_for_prompt_reference_replaces_only_reference_prefi
 
     assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
     assert_eq!(completion_text_edit_range.start.character, cursor_position.character - 6);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+}
+
+#[test]
+fn completion_text_edit_range_for_agent_property_inserts_at_current_line_cursor() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        agent greeting {
+            model: ollama("qwen3.5:8b")
+            <cursor>
+        }
+    });
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("agent property completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
     assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
     assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
 }

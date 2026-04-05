@@ -137,14 +137,20 @@ impl DocumentState {
         }
 
         let trimmed_line_prefix = line_prefix.trim_start();
-        let (_, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
-        let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
 
-        if value_completion_context.value_prefix.is_empty() {
-            return Some(Self::text_edit_range_for_prefix(position, ""));
+        if let Some((_, value_prefix)) = trimmed_line_prefix.rsplit_once(':') {
+            let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+            if value_completion_context.value_prefix.is_empty() {
+                return Some(Self::text_edit_range_for_prefix(position, ""));
+            }
+
+            return Some(Self::text_edit_range_for_prefix(position, &value_completion_context.value_prefix));
         }
 
-        Some(Self::text_edit_range_for_prefix(position, &value_completion_context.value_prefix))
+        let identifier_prefix = trailing_identifier(&line_prefix).unwrap_or_default();
+
+        Some(Self::text_edit_range_for_prefix(position, identifier_prefix))
     }
 
     fn text_edit_range_for_prefix(position: Position, value_prefix: &str) -> Range {
@@ -329,7 +335,18 @@ impl DocumentState {
 
                 Some(semantic_index.prompt_value_suggestions(&agent_property_value_completion_context.value_prefix, line_prefix))
             }
-            AgentExpressionPropertyName::Inference | AgentExpressionPropertyName::Tools => None,
+            AgentExpressionPropertyName::Inference => {
+                if agent_property_value_completion_context.inside_string_literal {
+                    return Some(Vec::new());
+                }
+
+                if ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
+                    return Some(Vec::new());
+                }
+
+                Some(semantic_index.inference_object_suggestions(&agent_property_value_completion_context.value_prefix))
+            }
+            AgentExpressionPropertyName::Tools => None,
         }
     }
 
