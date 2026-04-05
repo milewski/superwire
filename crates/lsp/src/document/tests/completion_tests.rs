@@ -449,6 +449,30 @@ fn completes_provider_driver_specific_properties() {
 }
 
 #[test]
+fn suggests_array_literals_for_provider_models_property_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider ollama {
+            driver: "ollama"
+            models: <cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "[]", "[\"\"]");
+}
+
+#[test]
+fn suppresses_suggestions_inside_provider_model_name_string_literal() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider ollama {
+            driver: "ollama"
+            models: ["<cursor>"]
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
+}
+
+#[test]
 fn suppresses_builtin_functions_in_top_level_scope() {
     let completion_suggestions = inline_completion_suggestions! {
         <cursor>
@@ -696,6 +720,23 @@ fn suggests_only_valid_prompt_value_roots_and_literals() {
         "number",
         "string"
     );
+
+    let single_line_string_completion = completion_suggestion_by_label(&completion_suggestions, "\"\"");
+    let multiline_string_completion = completion_suggestion_by_label(&completion_suggestions, "\"\"\"");
+
+    assert_eq!(single_line_string_completion.insert_text, "\"\"");
+    assert_eq!(multiline_string_completion.insert_text, "\"\"\"\n\"\"\"");
+}
+
+#[test]
+fn uses_current_line_indentation_for_multiline_prompt_literal_completion() {
+    let source = "agent writer {\n      prompt: \n      output: string\n}\n".to_string();
+    let cursor_position = Position { line: 1, character: 14 };
+
+    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+    let multiline_string_completion = completion_suggestion_by_label(&completion_suggestions, "\"\"\"");
+
+    assert_eq!(multiline_string_completion.insert_text, "\"\"\"\n      \"\"\"");
 }
 
 #[test]
@@ -887,6 +928,10 @@ fn completes_registered_provider_models_inside_model_call() {
     };
 
     assert_completion_contains!(&completion_suggestions, "gpt-4.1-mini", "gpt-4o-mini");
+
+    let gpt_model_completion = completion_suggestion_by_label(&completion_suggestions, "gpt-4.1-mini");
+
+    assert_eq!(gpt_model_completion.insert_text, "gpt-4.1-mini");
 }
 
 #[test]
@@ -927,6 +972,10 @@ fn suggests_only_declared_providers_for_model_property_value() {
     assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Variable);
     assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Type);
     assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Value);
+
+    let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai");
+
+    assert_eq!(openai_completion.insert_text, "openai(\"$1\")");
 }
 
 #[test]
@@ -951,6 +1000,123 @@ fn suggests_reference_roots_inside_model_call_expression() {
         ReferenceKeyword::Input,
         ReferenceKeyword::Secrets
     );
+
+    let gpt_model_completion = completion_suggestion_by_label(&completion_suggestions, "gpt-4.1-mini");
+
+    assert_eq!(gpt_model_completion.insert_text, "\"gpt-4.1-mini\"");
+}
+
+#[test]
+fn completion_text_edit_range_replaces_model_provider_prefix() {
+    let source = inline_document_template! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini", "gpt-4o-mini"]
+        }
+
+        agent writer {
+            model: op
+            prompt: "hello"
+            output: string
+        }
+    }
+    .to_string();
+
+    let model_line_index = source
+        .lines()
+        .position(|source_line| source_line.contains("model: op"))
+        .expect("model line should exist in source");
+
+    let model_line = source
+        .lines()
+        .nth(model_line_index)
+        .expect("model line should exist by discovered line index");
+
+    let provider_prefix_character_index = model_line
+        .find("op")
+        .map(|provider_prefix_start| provider_prefix_start + "op".chars().count())
+        .expect("model line should contain provider prefix");
+
+    let cursor_position = Position {
+        line: u32::try_from(model_line_index).expect("model line index should fit in u32"),
+        character: u32::try_from(provider_prefix_character_index).expect("provider prefix character index should fit in u32"),
+    };
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("model property completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character - 2);
+}
+
+#[test]
+fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        provider openai {
+            driver: "openai"
+            models: ["gpt-4.1-mini", "gpt-4o-mini"]
+        }
+
+        agent writer {
+            model: openai("<cursor>")
+            prompt: "hello"
+            output: string
+        }
+    });
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("model name completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+}
+
+#[test]
+fn completion_text_edit_range_for_prompt_value_keeps_space_after_separator() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        agent writer {
+            prompt: <cursor>
+            output: string
+        }
+    });
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("prompt completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+}
+
+#[test]
+fn completion_text_edit_range_for_prompt_reference_replaces_only_reference_prefix() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        agent writer {
+            prompt: agent.<cursor>
+            output: string
+        }
+    });
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("prompt reference completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character - 6);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
 }
 
 #[test]
@@ -1166,6 +1332,28 @@ fn suggests_only_types_inside_agent_output_object_field_value() {
 
     assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
     assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider, DeclarationKeyword::Agent);
+}
+
+#[test]
+fn suggests_array_type_for_agent_output_property_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: <cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "[string]");
+}
+
+#[test]
+fn suppresses_suggestions_inside_agent_output_type_description_string() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent findings {
+            output: boolean "<cursor>"
+        }
+    };
+
+    assert!(completion_suggestions.is_empty());
 }
 
 #[test]
