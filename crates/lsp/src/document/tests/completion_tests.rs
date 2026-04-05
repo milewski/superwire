@@ -730,13 +730,30 @@ fn suggests_only_valid_prompt_value_roots_and_literals() {
 
 #[test]
 fn uses_current_line_indentation_for_multiline_prompt_literal_completion() {
-    let source = "agent writer {\n      prompt: \n      output: string\n}\n".to_string();
-    let cursor_position = Position { line: 1, character: 14 };
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        agent writer {
+            prompt: <cursor>
+            output: string
+        }
+    });
+
+    let prompt_line = source
+        .lines()
+        .nth(usize::try_from(cursor_position.line).expect("cursor line should fit usize"))
+        .expect("prompt line should exist");
+
+    let prompt_line_indentation = prompt_line
+        .char_indices()
+        .find_map(|(character_offset, character)| (!character.is_whitespace()).then_some(character_offset))
+        .map(|first_non_whitespace_offset| &prompt_line[..first_non_whitespace_offset])
+        .unwrap_or_default();
+
+    let expected_multiline_insert_text = format!("\"\"\"\n{prompt_line_indentation}\"\"\"");
 
     let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
     let multiline_string_completion = completion_suggestion_by_label(&completion_suggestions, "\"\"\"");
 
-    assert_eq!(multiline_string_completion.insert_text, "\"\"\"\n      \"\"\"");
+    assert_eq!(multiline_string_completion.insert_text, expected_multiline_insert_text);
 }
 
 #[test]
