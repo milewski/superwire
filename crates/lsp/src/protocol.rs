@@ -135,6 +135,8 @@ pub enum DiagnosticCode {
     DuplicateAgent,
     #[serde(rename = "duplicate_singleton_declaration")]
     DuplicateSingletonDeclaration,
+    #[serde(rename = "duplicate_property")]
+    DuplicateProperty,
     #[serde(rename = "unknown_agent_property")]
     UnknownAgentProperty,
     #[serde(rename = "invalid_inference_setting_value_type")]

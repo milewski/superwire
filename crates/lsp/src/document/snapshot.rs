@@ -83,6 +83,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::DuplicateSchema => Self::DuplicateSchema,
             CoreDiagnosticCode::DuplicateAgent => Self::DuplicateAgent,
             CoreDiagnosticCode::DuplicateSingletonDeclaration => Self::DuplicateSingletonDeclaration,
+            CoreDiagnosticCode::DuplicateProperty => Self::DuplicateProperty,
             CoreDiagnosticCode::UnknownAgentProperty => Self::UnknownAgentProperty,
             CoreDiagnosticCode::InvalidInferenceSettingValueType => Self::InvalidInferenceSettingValueType,
             CoreDiagnosticCode::InvalidModelExpression => Self::InvalidModelExpression,

@@ -125,6 +125,10 @@ pub enum ValidationIssue {
     DuplicateSingletonDeclaration {
         declaration_kind: SingletonDeclarationKind,
     },
+    DuplicateProperty {
+        property_name: String,
+        context: ValidationContext,
+    },
     UnknownAgentProperty {
         agent_name: String,
         property_name: String,
@@ -202,6 +206,7 @@ impl ValidationIssue {
             Self::DuplicateSchema { .. } => "duplicate_schema",
             Self::DuplicateAgent { .. } => "duplicate_agent",
             Self::DuplicateSingletonDeclaration { .. } => "duplicate_singleton_declaration",
+            Self::DuplicateProperty { .. } => "duplicate_property",
             Self::UnknownAgentProperty { .. } => "unknown_agent_property",
             Self::InvalidInferenceSettingValueType { .. } => "invalid_inference_setting_value_type",
             Self::InvalidModelExpression { .. } => "invalid_model_expression",
@@ -236,6 +241,9 @@ impl ValidationIssue {
             }
             Self::DuplicateSingletonDeclaration { declaration_kind } => {
                 format!("`{}` declaration is defined more than once.", declaration_kind.as_str())
+            }
+            Self::DuplicateProperty { property_name, context } => {
+                format!("Property `{property_name}` is defined more than once in {}.", context.describe())
             }
             Self::UnknownAgentProperty { agent_name, property_name } => {
                 format!("Agent `{agent_name}` declares unsupported property `{property_name}`.")
@@ -339,7 +347,8 @@ impl ValidationIssue {
             Self::DuplicateProvider { .. }
             | Self::DuplicateSchema { .. }
             | Self::DuplicateAgent { .. }
-            | Self::DuplicateSingletonDeclaration { .. } => Some(self.duplicate_declaration_help_message()),
+            | Self::DuplicateSingletonDeclaration { .. }
+            | Self::DuplicateProperty { .. } => Some(self.duplicate_declaration_help_message()),
             Self::UnknownAgentProperty {
                 agent_name: _,
                 property_name,
@@ -405,6 +414,12 @@ impl ValidationIssue {
                 format!(
                     "Only one `{}` declaration is allowed; merge fields into a single block.",
                     declaration_kind.as_str()
+                )
+            }
+            Self::DuplicateProperty { property_name, context } => {
+                format!(
+                    "Keep a single `{property_name}` entry in {} and remove duplicate definitions.",
+                    context.describe()
                 )
             }
             _ => "Remove duplicate declarations to make names unique.".to_string(),
@@ -528,6 +543,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
             ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
             ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
             ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
+            ValidationIssue::DuplicateProperty {
+                property_name: _,
+                context: _,
+            } => Self::DuplicateProperty,
             ValidationIssue::UnknownAgentProperty {
                 agent_name: _,
                 property_name: _,
@@ -602,6 +621,7 @@ pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
     let mut validation_report = ValidationReport::default();
     let validation_index = build_validation_index(workflow, &mut validation_report);
 
+    validate_duplicate_properties(workflow, &mut validation_report);
     validate_schema_references(workflow, &validation_index, &mut validation_report);
     validate_agent_inference_settings(workflow, &mut validation_report);
     validate_agent_model_bindings(workflow, &validation_index, &mut validation_report);
@@ -731,6 +751,235 @@ fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpre
         .iter()
         .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
         .collect()
+}
+
+fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut ValidationReport) {
+    for declaration in workflow.declarations() {
+        match declaration {
+            Declaration::Provider(provider_declaration) => {
+                let provider_context = ValidationContext::Provider(provider_declaration.name.clone());
+
+                report_duplicate_object_field_names(
+                    provider_declaration.properties.as_slice(),
+                    provider_context.clone(),
+                    Some(provider_declaration.span),
+                    validation_report,
+                );
+
+                for provider_property in &provider_declaration.properties {
+                    report_duplicate_expression_object_fields(
+                        &provider_property.value,
+                        provider_context.clone(),
+                        Some(provider_declaration.span),
+                        validation_report,
+                    );
+                }
+            }
+            Declaration::Schema(schema_declaration) => {
+                let schema_context = ValidationContext::Schema(schema_declaration.name.clone());
+
+                report_duplicate_typed_field_names(schema_declaration.fields.as_slice(), schema_context.clone(), validation_report);
+
+                for schema_field in &schema_declaration.fields {
+                    report_duplicate_type_expression_fields(&schema_field.field_type, schema_context.clone(), validation_report);
+                }
+            }
+            Declaration::Agent(agent_declaration) => {
+                let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
+
+                let mut seen_agent_properties = HashSet::<AgentPropertyName>::new();
+
+                for agent_property in &agent_declaration.properties {
+                    let agent_property_name = agent_property.name();
+
+                    if !seen_agent_properties.insert(agent_property_name) {
+                        validation_report.push_issue_with_span(
+                            ValidationIssue::DuplicateProperty {
+                                property_name: agent_property_name.as_str().to_string(),
+                                context: agent_context.clone(),
+                            },
+                            Some(agent_declaration.span),
+                        );
+                    }
+
+                    match agent_property {
+                        AgentProperty::Model(expression)
+                        | AgentProperty::Prompt(expression)
+                        | AgentProperty::Context(expression)
+                        | AgentProperty::Inference(expression)
+                        | AgentProperty::Tools(expression) => {
+                            report_duplicate_expression_object_fields(
+                                expression,
+                                agent_context.clone(),
+                                Some(agent_declaration.span),
+                                validation_report,
+                            );
+                        }
+                        AgentProperty::Output {
+                            output_type_expression,
+                            description: _,
+                        } => {
+                            report_duplicate_type_expression_fields(output_type_expression, agent_context.clone(), validation_report);
+                        }
+                    }
+                }
+            }
+            Declaration::Input(input_declaration) => {
+                let input_context = ValidationContext::Input;
+
+                report_duplicate_typed_field_names(input_declaration.fields.as_slice(), input_context.clone(), validation_report);
+
+                for input_field in &input_declaration.fields {
+                    report_duplicate_type_expression_fields(&input_field.field_type, input_context.clone(), validation_report);
+                }
+            }
+            Declaration::Secrets(secrets_declaration) => {
+                let secrets_context = ValidationContext::Secrets;
+
+                report_duplicate_typed_field_names(secrets_declaration.fields.as_slice(), secrets_context.clone(), validation_report);
+
+                for secrets_field in &secrets_declaration.fields {
+                    report_duplicate_type_expression_fields(&secrets_field.field_type, secrets_context.clone(), validation_report);
+                }
+            }
+            Declaration::Output(output_declaration) => {
+                let output_context = ValidationContext::Output;
+
+                report_duplicate_object_field_names(
+                    output_declaration.fields.as_slice(),
+                    output_context.clone(),
+                    Some(output_declaration.span),
+                    validation_report,
+                );
+
+                for output_field in &output_declaration.fields {
+                    report_duplicate_expression_object_fields(
+                        &output_field.value,
+                        output_context.clone(),
+                        Some(output_declaration.span),
+                        validation_report,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn report_duplicate_object_field_names(
+    object_fields: &[ObjectField],
+    context: ValidationContext,
+    duplicate_span: Option<SourceSpan>,
+    validation_report: &mut ValidationReport,
+) {
+    let mut seen_field_names = HashSet::<String>::new();
+
+    for object_field in object_fields {
+        if seen_field_names.insert(object_field.name.clone()) {
+            continue;
+        }
+
+        validation_report.push_issue_with_span(
+            ValidationIssue::DuplicateProperty {
+                property_name: object_field.name.clone(),
+                context: context.clone(),
+            },
+            duplicate_span,
+        );
+    }
+}
+
+fn report_duplicate_typed_field_names(typed_fields: &[TypedField], context: ValidationContext, validation_report: &mut ValidationReport) {
+    let mut seen_field_names = HashSet::<String>::new();
+
+    for typed_field in typed_fields {
+        if seen_field_names.insert(typed_field.name.clone()) {
+            continue;
+        }
+
+        validation_report.push_issue_with_span(
+            ValidationIssue::DuplicateProperty {
+                property_name: typed_field.name.clone(),
+                context: context.clone(),
+            },
+            Some(typed_field.span),
+        );
+    }
+}
+
+fn report_duplicate_type_expression_fields(
+    type_expression: &TypeExpression,
+    context: ValidationContext,
+    validation_report: &mut ValidationReport,
+) {
+    match type_expression {
+        TypeExpression::Array {
+            item_type,
+            fixed_length: _,
+        } => {
+            report_duplicate_type_expression_fields(item_type, context, validation_report);
+        }
+        TypeExpression::Tuple(tuple_items) | TypeExpression::Union(tuple_items) => {
+            for tuple_item in tuple_items {
+                report_duplicate_type_expression_fields(tuple_item, context.clone(), validation_report);
+            }
+        }
+        TypeExpression::Object(typed_fields) => {
+            report_duplicate_typed_field_names(typed_fields.as_slice(), context.clone(), validation_report);
+
+            for typed_field in typed_fields {
+                report_duplicate_type_expression_fields(&typed_field.field_type, context.clone(), validation_report);
+            }
+        }
+        TypeExpression::String
+        | TypeExpression::Number
+        | TypeExpression::Float
+        | TypeExpression::Boolean
+        | TypeExpression::Null
+        | TypeExpression::SchemaReference(_)
+        | TypeExpression::StringEnum(_)
+        | TypeExpression::StringEnumReference(_) => {}
+    }
+}
+
+fn report_duplicate_expression_object_fields(
+    expression: &Expression,
+    context: ValidationContext,
+    duplicate_span: Option<SourceSpan>,
+    validation_report: &mut ValidationReport,
+) {
+    match expression {
+        Expression::FunctionCall(function_call) => {
+            for call_argument in &function_call.arguments {
+                report_duplicate_expression_object_fields(call_argument.expression(), context.clone(), duplicate_span, validation_report);
+            }
+        }
+        Expression::ArrayLiteral(array_values) => {
+            for array_value in array_values {
+                report_duplicate_expression_object_fields(array_value, context.clone(), duplicate_span, validation_report);
+            }
+        }
+        Expression::ObjectLiteral(object_fields) => {
+            report_duplicate_object_field_names(object_fields.as_slice(), context.clone(), duplicate_span, validation_report);
+
+            for object_field in object_fields {
+                report_duplicate_expression_object_fields(&object_field.value, context.clone(), duplicate_span, validation_report);
+            }
+        }
+        Expression::StringTemplate(string_template) => {
+            for string_template_part in &string_template.parts {
+                let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part else {
+                    continue;
+                };
+
+                report_duplicate_expression_object_fields(interpolation_expression, context.clone(), duplicate_span, validation_report);
+            }
+        }
+        Expression::StringLiteral(_)
+        | Expression::NumberLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral
+        | Expression::Reference(_) => {}
+    }
 }
 
 fn extract_declared_provider_models(provider_properties: &[ObjectField]) -> Option<HashSet<String>> {
@@ -1786,6 +2035,70 @@ mod tests {
     }
 
     #[test]
+    fn reports_duplicate_properties_in_declarations_and_object_definitions() {
+        let workflow = parse_inline_workflow! {
+            provider ollama {
+                driver: "ollama"
+                models: ["qwen3.5:8b"]
+                models: ["qwen3.5:14b"]
+            }
+
+            schema Greeting {
+                message: string
+                message: string
+            }
+
+            input {
+                profile: {
+                    id: string
+                    id: string
+                }
+            }
+
+            agent greeting {
+                model: ollama("qwen3.5:8b")
+                prompt: "hello"
+                prompt: "welcome"
+                inference: {
+                    temperature: 0.2
+                    temperature: 0.4
+                }
+                output: string
+            }
+
+            output {
+                payload: {
+                    status: "ok"
+                    status: "ready"
+                }
+            }
+        };
+
+        let validation_report = validate_workflow(&workflow);
+        let duplicate_property_issues = validation_report
+            .issues()
+            .iter()
+            .filter(|validation_issue| matches!(validation_issue, ValidationIssue::DuplicateProperty { .. }))
+            .count();
+
+        assert!(duplicate_property_issues >= 6);
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::DuplicateProperty { property_name, context }
+                if property_name == "prompt" && *context == ValidationContext::Agent("greeting".to_string()),
+            ValidationIssue::DuplicateProperty { property_name, context }
+                if property_name == "models" && *context == ValidationContext::Provider("ollama".to_string()),
+            ValidationIssue::DuplicateProperty { property_name, context }
+                if property_name == "message" && *context == ValidationContext::Schema("Greeting".to_string()),
+            ValidationIssue::DuplicateProperty { property_name, context }
+                if property_name == "id" && *context == ValidationContext::Input,
+            ValidationIssue::DuplicateProperty { property_name, context }
+                if property_name == "status" && *context == ValidationContext::Output
+        );
+    }
+
+    #[test]
     fn reports_invalid_model_expression() {
         let workflow = parse_inline_workflow! {
             agent researcher {
@@ -1892,6 +2205,10 @@ mod tests {
             },
             ValidationIssue::DuplicateSingletonDeclaration {
                 declaration_kind: SingletonDeclarationKind::Input,
+            },
+            ValidationIssue::DuplicateProperty {
+                property_name: "prompt".to_string(),
+                context: ValidationContext::Agent("writer".to_string()),
             },
             ValidationIssue::UnknownAgentProperty {
                 agent_name: "writer".to_string(),
