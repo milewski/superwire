@@ -180,3 +180,17 @@ fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::MissingOptionalReferenceAccess);
 }
+
+#[test]
+fn reports_duplicate_property_diagnostic() {
+    let diagnostics = inline_diagnostics! {
+        agent greeting {
+            model: ollama("qwen3.5:8b")
+            prompt: "Write a short welcome message."
+            prompt: "Write a short welcome message."
+            output: string
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::DuplicateProperty);
+}

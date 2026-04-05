@@ -327,6 +327,23 @@ pub enum AgentProperty {
     Tools(Expression),
 }
 
+impl AgentProperty {
+    #[must_use]
+    pub fn name(&self) -> AgentPropertyName {
+        match self {
+            Self::Model(_) => AgentPropertyName::Model,
+            Self::Prompt(_) => AgentPropertyName::Prompt,
+            Self::Output {
+                output_type_expression: _,
+                description: _,
+            } => AgentPropertyName::Output,
+            Self::Context(_) => AgentPropertyName::Context,
+            Self::Inference(_) => AgentPropertyName::Inference,
+            Self::Tools(_) => AgentPropertyName::Tools,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentPropertyName {
     Model,
