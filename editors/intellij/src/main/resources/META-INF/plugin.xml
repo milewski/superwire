@@ -1,14 +1,14 @@
 <idea-plugin>
     <id>com.superwire.intellij</id>
-    <name>SuperWire</name>
-    <vendor email="support@superwire.dev" url="https://github.com/milewski/superwire">SuperWire</vendor>
+    <name>Superwire</name>
+    <vendor email="support@superwire.dev" url="https://github.com/milewski/superwire">Superwire</vendor>
 
     <description>
         <![CDATA[
-        <h1>SuperWire language support for IntelliJ IDEs</h1>
+        <h1>Superwire language support for IntelliJ IDEs</h1>
         <ul>
             <li>Syntax highlighting powered by the shared TextMate grammar.</li>
-            <li>Compiler checking and diagnostics from the SuperWire language server.</li>
+            <li>Compiler checking and diagnostics from the Superwire language server.</li>
             <li>Completion for workflow declarations, properties, references, and builtins.</li>
             <li>Hover, go to definition, document/workspace symbol search, and code folding.</li>
             <li>Document formatting and generated-output code lens markers.</li>
