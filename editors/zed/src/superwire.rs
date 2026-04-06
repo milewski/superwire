@@ -58,10 +58,8 @@ impl SuperwireExtension {
             return Ok(Self::server_command(local_server_path, command_arguments));
         }
 
-        if let Some(workspace_server_path) = Self::build_workspace_server_binary(language_server_id, worktree)? {
-            self.cached_server_path = Some(workspace_server_path.clone());
-
-            return Ok(Self::server_command(workspace_server_path, command_arguments));
+        if let Some(workspace_server_command) = Self::build_workspace_server_command(language_server_id, worktree, &command_arguments)? {
+            return Ok(workspace_server_command);
         }
 
         Err(format!(
@@ -150,57 +148,53 @@ impl SuperwireExtension {
         None
     }
 
-    fn build_workspace_server_binary(language_server_id: &LanguageServerId, worktree: &zed::Worktree) -> Result<Option<String>> {
-        let worktree_root_directory = PathBuf::from(worktree.root_path());
-        let lsp_manifest_path = worktree_root_directory.join("crates/lsp/Cargo.toml");
-
-        if !lsp_manifest_path.is_file() {
+    fn build_workspace_server_command(
+        language_server_id: &LanguageServerId,
+        worktree: &zed::Worktree,
+        command_arguments: &[String],
+    ) -> Result<Option<zed::Command>> {
+        if worktree.read_text_file("crates/lsp/Cargo.toml").is_err() {
             return Ok(None);
         }
 
-        let expected_server_binary_path = worktree_root_directory.join("target/release").join(Self::server_binary_filename());
-
-        if Self::is_executable_server_binary_path(&expected_server_binary_path) {
-            return Ok(Some(expected_server_binary_path.to_string_lossy().to_string()));
-        }
-
-        let cargo_binary_path = worktree.which("cargo").unwrap_or_else(|| "cargo".to_string());
-
         zed::set_language_server_installation_status(language_server_id, &zed::LanguageServerInstallationStatus::CheckingForUpdate);
 
-        let mut cargo_build_command = zed::process::Command::new(cargo_binary_path.clone())
-            .arg("build")
-            .arg("--manifest-path")
-            .arg(lsp_manifest_path.to_string_lossy().to_string())
-            .arg("--bin")
-            .arg(SERVER_NAME)
-            .arg("--release");
+        let cargo_binary_path = Self::resolve_cargo_binary_path(worktree);
+        let lsp_manifest_path = PathBuf::from(worktree.root_path())
+            .join("crates")
+            .join("lsp")
+            .join("Cargo.toml")
+            .to_string_lossy()
+            .to_string();
 
-        let cargo_build_output = cargo_build_command
-            .output()
-            .map_err(|error| format!("Failed to run cargo build for Superwire LSP: {error}"))?;
+        let mut cargo_arguments = vec![
+            "run".to_string(),
+            "--manifest-path".to_string(),
+            lsp_manifest_path,
+            "--bin".to_string(),
+            SERVER_NAME.to_string(),
+            "--".to_string(),
+        ];
 
-        if cargo_build_output.status != Some(0) {
-            let build_error = String::from_utf8_lossy(&cargo_build_output.stderr).to_string();
+        cargo_arguments.extend(command_arguments.iter().cloned());
 
-            zed::set_language_server_installation_status(
-                language_server_id,
-                &zed::LanguageServerInstallationStatus::Failed(build_error.clone()),
-            );
+        Ok(Some(zed::Command {
+            command: cargo_binary_path,
+            args: cargo_arguments,
+            env: Vec::new(),
+        }))
+    }
 
-            return Err(format!("Failed to build Superwire LSP with cargo. Error: {}", build_error));
+    fn resolve_cargo_binary_path(worktree: &zed::Worktree) -> String {
+        if let Some(cargo_binary_path) = worktree.which("cargo") {
+            return cargo_binary_path;
         }
 
-        if !Self::is_executable_server_binary_path(&expected_server_binary_path) {
-            let expected_path = expected_server_binary_path.to_string_lossy().to_string();
-
-            return Err(format!(
-                "Cargo completed but Superwire LSP binary was not found at {}",
-                expected_path
-            ));
+        if let Some(cargo_binary_path) = worktree.which("cargo.exe") {
+            return cargo_binary_path;
         }
 
-        Ok(Some(expected_server_binary_path.to_string_lossy().to_string()))
+        "cargo".to_string()
     }
 
     fn server_command(server_path: String, command_arguments: Vec<String>) -> zed::Command {
