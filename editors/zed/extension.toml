@@ -5,6 +5,7 @@ version = "0.1.0"
 schema_version = 1
 authors = ["Superwire <support@superwire.dev>"]
 repository = "https://github.com/milewski/superwire"
+languages = ["languages/superwire"]
 
 [grammars.superwire]
 repository = "https://github.com/milewski/superwire"

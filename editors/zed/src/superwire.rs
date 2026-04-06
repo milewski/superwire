@@ -43,6 +43,16 @@ impl SuperwireExtension {
             });
         }
 
+        if let Some(worktree_server_path) = Self::resolve_worktree_server_path(worktree) {
+            self.cached_server_path = Some(worktree_server_path.clone());
+
+            return Ok(zed::Command {
+                command: worktree_server_path,
+                args: command_arguments,
+                env: shell_environment,
+            });
+        }
+
         if let Some(cached_server_path) = self.cached_server_path.clone() {
             if Self::is_executable_server_binary(&cached_server_path) {
                 return Ok(zed::Command {
@@ -107,6 +117,27 @@ impl SuperwireExtension {
 
                 if Self::is_executable_server_binary_path(&candidate_server_path) {
                     return Some(candidate_server_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        None
+    }
+
+    fn resolve_worktree_server_path(worktree: &zed::Worktree) -> Option<String> {
+        let worktree_root_directory = PathBuf::from(worktree.root_path());
+        let server_binary_names = Self::server_binary_names();
+
+        for ancestor_directory in worktree_root_directory.ancestors().take(4) {
+            let candidate_directories = [ancestor_directory.join("target/release"), ancestor_directory.join("target/debug")];
+
+            for candidate_directory in candidate_directories {
+                for server_binary_name in &server_binary_names {
+                    let candidate_server_path = candidate_directory.join(server_binary_name);
+
+                    if Self::is_executable_server_binary_path(&candidate_server_path) {
+                        return Some(candidate_server_path.to_string_lossy().to_string());
+                    }
                 }
             }
         }
