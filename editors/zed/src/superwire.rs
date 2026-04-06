@@ -124,6 +124,30 @@ impl SuperwireExtension {
             current_directory.join("..").join("..").join(EXTENSION_ID),
         );
 
+        if let Some(local_app_data_directory) = env::var_os("LOCALAPPDATA") {
+            Self::push_candidate_directory(
+                &mut extension_directories,
+                PathBuf::from(local_app_data_directory)
+                    .join("Zed")
+                    .join("extensions")
+                    .join("installed")
+                    .join(EXTENSION_ID),
+            );
+        }
+
+        if let Some(home_directory) = env::var_os("HOME") {
+            Self::push_candidate_directory(
+                &mut extension_directories,
+                PathBuf::from(home_directory)
+                    .join(".local")
+                    .join("share")
+                    .join("zed")
+                    .join("extensions")
+                    .join("installed")
+                    .join(EXTENSION_ID),
+            );
+        }
+
         extension_directories
     }
 
