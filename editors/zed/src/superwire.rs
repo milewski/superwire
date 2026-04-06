@@ -5,6 +5,7 @@ use zed_extension_api::settings::LspSettings;
 use zed_extension_api::{self as zed, LanguageServerId, Result};
 
 const SERVER_NAME: &str = "superwire-lsp";
+const EXTENSION_ID: &str = "superwire";
 const SERVER_PATH_ENVIRONMENT_VARIABLE: &str = "SUPERWIRE_LSP_PATH";
 const BUNDLED_BINARY_DIRECTORY_NAME: &str = "bin";
 
@@ -13,11 +14,10 @@ struct SuperwireExtension {
 }
 
 impl SuperwireExtension {
-    fn command_for_server(&mut self, worktree: &zed::Worktree) -> Result<zed::Command> {
+    fn command_for_server(&mut self, language_server_id: &LanguageServerId, worktree: &zed::Worktree) -> Result<zed::Command> {
         let binary_settings = LspSettings::for_worktree(SERVER_NAME, worktree)
             .ok()
             .and_then(|lsp_settings| lsp_settings.binary);
-
         let command_arguments = binary_settings
             .as_ref()
             .and_then(|binary_configuration| binary_configuration.arguments.clone())
@@ -58,8 +58,14 @@ impl SuperwireExtension {
             return Ok(Self::server_command(local_server_path, command_arguments));
         }
 
+        if let Some(workspace_server_path) = Self::build_workspace_server_binary(language_server_id, worktree)? {
+            self.cached_server_path = Some(workspace_server_path.clone());
+
+            return Ok(Self::server_command(workspace_server_path, command_arguments));
+        }
+
         Err(format!(
-            "Could not find a Superwire language server binary. Expected a bundled binary at {}",
+            "Could not find a Superwire language server binary. Expected bundled binary at {}",
             Self::bundled_binary_path_hint()
         ))
     }
@@ -76,24 +82,53 @@ impl SuperwireExtension {
 
     fn resolve_bundled_server_path() -> Option<String> {
         let current_directory = env::current_dir().ok()?;
+        let extension_directories = Self::candidate_extension_directories(&current_directory);
         let bundled_directory_name = Self::bundled_platform_directory_name();
         let binary_filename = Self::server_binary_filename();
 
-        let candidate_paths = [
-            current_directory
-                .join(BUNDLED_BINARY_DIRECTORY_NAME)
-                .join(&bundled_directory_name)
-                .join(&binary_filename),
-            current_directory.join(BUNDLED_BINARY_DIRECTORY_NAME).join(&binary_filename),
-        ];
+        for extension_directory in extension_directories {
+            let candidate_paths = [
+                extension_directory
+                    .join(BUNDLED_BINARY_DIRECTORY_NAME)
+                    .join(&bundled_directory_name)
+                    .join(&binary_filename),
+                extension_directory.join(BUNDLED_BINARY_DIRECTORY_NAME).join(&binary_filename),
+            ];
 
-        for candidate_path in candidate_paths {
-            if Self::is_executable_server_binary_path(&candidate_path) {
-                return Some(candidate_path.to_string_lossy().to_string());
+            for candidate_path in candidate_paths {
+                if Self::is_executable_server_binary_path(&candidate_path) {
+                    return Some(candidate_path.to_string_lossy().to_string());
+                }
             }
         }
 
         None
+    }
+
+    fn candidate_extension_directories(current_directory: &Path) -> Vec<PathBuf> {
+        let mut extension_directories = Vec::new();
+
+        Self::push_candidate_directory(&mut extension_directories, current_directory.to_path_buf());
+
+        Self::push_candidate_directory(
+            &mut extension_directories,
+            current_directory.join("..").join("..").join("installed").join(EXTENSION_ID),
+        );
+
+        Self::push_candidate_directory(
+            &mut extension_directories,
+            current_directory.join("..").join("..").join(EXTENSION_ID),
+        );
+
+        extension_directories
+    }
+
+    fn push_candidate_directory(extension_directories: &mut Vec<PathBuf>, candidate_directory: PathBuf) {
+        if extension_directories.contains(&candidate_directory) {
+            return;
+        }
+
+        extension_directories.push(candidate_directory);
     }
 
     fn resolve_local_development_server_path(worktree: &zed::Worktree) -> Option<String> {
@@ -113,6 +148,59 @@ impl SuperwireExtension {
         }
 
         None
+    }
+
+    fn build_workspace_server_binary(language_server_id: &LanguageServerId, worktree: &zed::Worktree) -> Result<Option<String>> {
+        let worktree_root_directory = PathBuf::from(worktree.root_path());
+        let lsp_manifest_path = worktree_root_directory.join("crates/lsp/Cargo.toml");
+
+        if !lsp_manifest_path.is_file() {
+            return Ok(None);
+        }
+
+        let expected_server_binary_path = worktree_root_directory.join("target/release").join(Self::server_binary_filename());
+
+        if Self::is_executable_server_binary_path(&expected_server_binary_path) {
+            return Ok(Some(expected_server_binary_path.to_string_lossy().to_string()));
+        }
+
+        let cargo_binary_path = worktree.which("cargo").unwrap_or_else(|| "cargo".to_string());
+
+        zed::set_language_server_installation_status(language_server_id, &zed::LanguageServerInstallationStatus::CheckingForUpdate);
+
+        let mut cargo_build_command = zed::process::Command::new(cargo_binary_path.clone())
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(lsp_manifest_path.to_string_lossy().to_string())
+            .arg("--bin")
+            .arg(SERVER_NAME)
+            .arg("--release");
+
+        let cargo_build_output = cargo_build_command
+            .output()
+            .map_err(|error| format!("Failed to run cargo build for Superwire LSP: {error}"))?;
+
+        if cargo_build_output.status != Some(0) {
+            let build_error = String::from_utf8_lossy(&cargo_build_output.stderr).to_string();
+
+            zed::set_language_server_installation_status(
+                language_server_id,
+                &zed::LanguageServerInstallationStatus::Failed(build_error.clone()),
+            );
+
+            return Err(format!("Failed to build Superwire LSP with cargo. Error: {}", build_error));
+        }
+
+        if !Self::is_executable_server_binary_path(&expected_server_binary_path) {
+            let expected_path = expected_server_binary_path.to_string_lossy().to_string();
+
+            return Err(format!(
+                "Cargo completed but Superwire LSP binary was not found at {}",
+                expected_path
+            ));
+        }
+
+        Ok(Some(expected_server_binary_path.to_string_lossy().to_string()))
     }
 
     fn server_command(server_path: String, command_arguments: Vec<String>) -> zed::Command {
@@ -141,7 +229,6 @@ impl SuperwireExtension {
             zed::Os::Linux => "linux",
             zed::Os::Windows => "windows",
         };
-
         let architecture_name = match architecture {
             zed::Architecture::Aarch64 => "aarch64",
             zed::Architecture::X86 => "x86",
@@ -177,9 +264,7 @@ impl SuperwireExtension {
         candidate_server_path
             .extension()
             .and_then(|value| value.to_str())
-            .is_some_and(|extension| {
-                extension.eq_ignore_ascii_case("exe") || extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
-            })
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
     }
 }
 
@@ -193,7 +278,7 @@ impl zed::Extension for SuperwireExtension {
             return Err(format!("Unknown language server ID: {}", language_server_id.as_ref()));
         }
 
-        self.command_for_server(worktree)
+        self.command_for_server(language_server_id, worktree)
     }
 
     fn language_server_workspace_configuration(
