@@ -46,6 +46,12 @@ impl SuperwireExtension {
             return Ok(Self::server_command(bundled_server_path, command_arguments));
         }
 
+        if let Some(worktree_bundled_server_path) = Self::resolve_worktree_bundled_server_path(worktree) {
+            self.cached_server_path = Some(worktree_bundled_server_path.clone());
+
+            return Ok(Self::server_command(worktree_bundled_server_path, command_arguments));
+        }
+
         if let Some(path_server_path) = worktree.which(SERVER_NAME) {
             self.cached_server_path = Some(path_server_path.clone());
 
@@ -142,6 +148,36 @@ impl SuperwireExtension {
                 if Self::is_executable_server_binary_path(&candidate_server_path) {
                     return Some(candidate_server_path.to_string_lossy().to_string());
                 }
+            }
+        }
+
+        None
+    }
+
+    fn resolve_worktree_bundled_server_path(worktree: &zed::Worktree) -> Option<String> {
+        let worktree_root_directory = PathBuf::from(worktree.root_path());
+        let bundled_directory_name = Self::bundled_platform_directory_name();
+        let server_binary_filename = Self::server_binary_filename();
+
+        let candidate_paths = [
+            worktree_root_directory
+                .join("editors")
+                .join("zed")
+                .join(BUNDLED_BINARY_DIRECTORY_NAME)
+                .join(&bundled_directory_name)
+                .join(&server_binary_filename),
+            worktree_root_directory
+                .join(BUNDLED_BINARY_DIRECTORY_NAME)
+                .join(&bundled_directory_name)
+                .join(&server_binary_filename),
+            worktree_root_directory
+                .join(BUNDLED_BINARY_DIRECTORY_NAME)
+                .join(&server_binary_filename),
+        ];
+
+        for candidate_path in candidate_paths {
+            if Self::is_executable_server_binary_path(&candidate_path) {
+                return Some(candidate_path.to_string_lossy().to_string());
             }
         }
 
