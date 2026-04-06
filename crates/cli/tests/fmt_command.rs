@@ -264,7 +264,7 @@ struct TemporaryWorkspace {
 impl TemporaryWorkspace {
     fn new() -> Self {
         let unique_suffix = unique_suffix();
-        let root_directory = std::env::temp_dir().join(format!("engine-ai-cli-tests-{unique_suffix}"));
+        let root_directory = std::env::temp_dir().join(format!("superwire-cli-tests-{unique_suffix}"));
 
         fs::create_dir_all(&root_directory).expect("temporary root directory should be created");
 

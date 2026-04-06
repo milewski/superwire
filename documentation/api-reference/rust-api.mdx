@@ -1,19 +1,19 @@
 ---
 title: Rust API
-description: Parse, validate, and execute Engine AI workflows from Rust.
+description: Parse, validate, and execute Superwire workflows from Rust.
 ---
 
 The public Rust surface is centered around two modules:
 
-- `engine_ai_core::dsl`
-- `engine_ai_core::runtime`
+- `superwire_core::dsl`
+- `superwire_core::runtime`
 
 ## Parse and validate
 
 ```rust
-use engine_ai_core::dsl::{parse_workflow, validate_workflow};
+use superwire_core::dsl::{parse_workflow, validate_workflow};
 
-let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
 let workflow = parse_workflow(workflow_source)?;
 let validation_report = validate_workflow(&workflow);
 
@@ -23,8 +23,8 @@ assert!(validation_report.is_valid());
 ## Execute with built-in providers
 
 ```rust
-use engine_ai_core::dsl::parse_workflow;
-use engine_ai_core::runtime::execute_workflow_without_input;
+use superwire_core::dsl::parse_workflow;
+use superwire_core::runtime::execute_workflow_without_input;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -33,7 +33,7 @@ struct Output {
     greeting: String,
 }
 
-let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
 let workflow = parse_workflow(workflow_source)?;
 let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
 ```
@@ -41,8 +41,8 @@ let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
 ## Execute with explicit input and secrets
 
 ```rust
-use engine_ai_core::dsl::parse_workflow;
-use engine_ai_core::runtime::execute_workflow;
+use superwire_core::dsl::parse_workflow;
+use superwire_core::runtime::execute_workflow;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +56,7 @@ struct Output {
     summary: String,
 }
 
-let workflow_source = include_str!("../../crates/core/workflows/structured_output.ai");
+let workflow_source = include_str!("../../crates/core/workflows/structured_output.wire");
 let workflow = parse_workflow(workflow_source)?;
 
 let workflow_output: Output = execute_workflow(
@@ -87,5 +87,5 @@ Useful runtime exports include:
 The crate exports `try_workflow!` for already-parsed workflows.
 
 ```rust
-use engine_ai_core::try_workflow;
+use superwire_core::try_workflow;
 ```

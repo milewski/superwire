@@ -10,11 +10,11 @@ The Rust API supports three useful testing layers.
 Use parse tests when you want fast syntax coverage.
 
 ```rust
-use engine_ai_core::dsl::parse_workflow;
+use superwire_core::dsl::parse_workflow;
 
 #[test]
 fn workflow_parses() {
-    let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+    let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
     let workflow = parse_workflow(workflow_source).expect("workflow should parse");
 
     assert!(!workflow.declarations().is_empty());
@@ -26,11 +26,11 @@ fn workflow_parses() {
 Use validation tests when you want to check names, references, or secret-safety rules without calling a provider.
 
 ```rust
-use engine_ai_core::dsl::{parse_workflow, validate_workflow};
+use superwire_core::dsl::{parse_workflow, validate_workflow};
 
 #[test]
 fn workflow_validates() {
-    let workflow_source = include_str!("../../crates/core/workflows/minimum.ai");
+    let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
     let workflow = parse_workflow(workflow_source).expect("workflow should parse");
     let report = validate_workflow(&workflow);
 
@@ -44,8 +44,8 @@ The most practical execution test pattern uses a custom `AgentRunner` so you can
 
 ```rust
 use async_trait::async_trait;
-use engine_ai_core::parse_inline_workflow;
-use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntime, WorkflowRuntimeError};
+use superwire_core::parse_inline_workflow;
+use superwire_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntime, WorkflowRuntimeError};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;

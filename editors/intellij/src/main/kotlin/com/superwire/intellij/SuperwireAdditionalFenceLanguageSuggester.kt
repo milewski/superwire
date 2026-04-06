@@ -1,9 +1,9 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.lang.Language
 import org.intellij.plugins.markdown.injection.aliases.AdditionalFenceLanguageSuggester
 
-class EngineAiAdditionalFenceLanguageSuggester : AdditionalFenceLanguageSuggester {
+class SuperwireAdditionalFenceLanguageSuggester : AdditionalFenceLanguageSuggester {
     override fun suggestLanguage(name: String): Language? {
         val normalizedLanguageName = name
             .trim()
@@ -12,7 +12,7 @@ class EngineAiAdditionalFenceLanguageSuggester : AdditionalFenceLanguageSuggeste
             .lowercase()
 
         return if (normalizedLanguageName in supportedFenceTags) {
-            EngineAiLanguage
+            SuperwireLanguage
         } else {
             null
         }
@@ -21,8 +21,7 @@ class EngineAiAdditionalFenceLanguageSuggester : AdditionalFenceLanguageSuggeste
     private companion object {
         val supportedFenceTags = setOf(
             "ai",
-            "engine-ai",
-            "engineai",
+            "superwire",
             "ai-dsl",
         )
     }

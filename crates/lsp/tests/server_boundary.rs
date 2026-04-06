@@ -25,25 +25,25 @@ struct LspProcessClient {
 
 impl LspProcessClient {
     fn spawn() -> Self {
-        let binary_path = engine_ai_lsp_binary_path();
+        let binary_path = superwire_lsp_binary_path();
 
         let mut server_process = Command::new(binary_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("Failed to start engine-ai-lsp process for integration test");
+            .expect("Failed to start superwire-lsp process for integration test");
 
         let request_writer = server_process
             .stdin
             .take()
-            .expect("Failed to capture stdin for engine-ai-lsp process");
+            .expect("Failed to capture stdin for superwire-lsp process");
 
         let response_reader = BufReader::new(
             server_process
                 .stdout
                 .take()
-                .expect("Failed to capture stdout for engine-ai-lsp process"),
+                .expect("Failed to capture stdout for superwire-lsp process"),
         );
 
         Self {
@@ -168,12 +168,12 @@ impl LspProcessClient {
     }
 }
 
-fn engine_ai_lsp_binary_path() -> PathBuf {
-    if let Ok(binary_path) = std::env::var("CARGO_BIN_EXE_engine-ai-lsp") {
+fn superwire_lsp_binary_path() -> PathBuf {
+    if let Ok(binary_path) = std::env::var("CARGO_BIN_EXE_superwire-lsp") {
         return PathBuf::from(binary_path);
     }
 
-    if let Ok(binary_path) = std::env::var("CARGO_BIN_EXE_engine_ai_lsp") {
+    if let Ok(binary_path) = std::env::var("CARGO_BIN_EXE_superwire_lsp") {
         return PathBuf::from(binary_path);
     }
 
@@ -184,14 +184,14 @@ fn engine_ai_lsp_binary_path() -> PathBuf {
         .and_then(std::path::Path::parent)
         .expect("Failed to resolve target debug directory from integration test binary path");
 
-    let binary_file_name = if cfg!(windows) { "engine-ai-lsp.exe" } else { "engine-ai-lsp" };
+    let binary_file_name = if cfg!(windows) { "superwire-lsp.exe" } else { "superwire-lsp" };
 
     let binary_path = target_debug_directory.join(binary_file_name);
     let binary_path_display = binary_path.display();
 
     assert!(
         binary_path.exists(),
-        "Failed to locate engine-ai-lsp binary at {binary_path_display}. Expected CARGO_BIN_EXE_engine-ai-lsp or CARGO_BIN_EXE_engine_ai_lsp."
+        "Failed to locate superwire-lsp binary at {binary_path_display}. Expected CARGO_BIN_EXE_superwire-lsp or CARGO_BIN_EXE_superwire_lsp."
     );
 
     binary_path
@@ -534,7 +534,7 @@ async fn supports_definition_symbols_folding_formatting_and_code_lens_requests()
             208,
             "workspace/executeCommand",
             json!({
-                "command": "engine-ai.generated.output",
+                "command": "superwire.generated.output",
                 "arguments": []
             }),
         )

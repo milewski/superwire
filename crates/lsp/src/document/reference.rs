@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 
-use engine_ai_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, TypeExpression};
-use engine_ai_core::semantic::ToolingReferencePath;
+use superwire_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, TypeExpression};
+use superwire_core::semantic::ToolingReferencePath;
 
 use crate::protocol::Position;
 

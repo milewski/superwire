@@ -274,7 +274,7 @@ impl LanguageServer {
                 range: document_diagnostic.range,
                 severity: document_diagnostic.severity.as_lsp_severity(),
                 code: document_diagnostic.code,
-                source: "engine-ai-lsp".to_string(),
+                source: "superwire-lsp".to_string(),
                 message: document_diagnostic.message,
             })
             .collect::<Vec<_>>();
@@ -512,11 +512,11 @@ fn initialize_result() -> Value {
                 "resolveProvider": false
             },
             "executeCommandProvider": {
-                "commands": ["engine-ai.generated.output"]
+                "commands": ["superwire.generated.output"]
             }
         },
         "serverInfo": {
-            "name": "engine-ai-lsp",
+            "name": "superwire-lsp",
             "version": "0.2.0"
         }
     })

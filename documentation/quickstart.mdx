@@ -1,9 +1,9 @@
 ---
 title: Quickstart (Rust)
-description: Build and run a small Engine AI workflow using Rust code.
+description: Build and run a small Superwire workflow using Rust code.
 ---
 
-This quickstart shows how to parse, validate, and execute Engine AI workflows from Rust. It uses Ollama as the model provider because it is the lowest-friction way to run a real workflow locally.
+This quickstart shows how to parse, validate, and execute Superwire workflows from Rust. It uses Ollama as the model provider because it is the lowest-friction way to run a real workflow locally.
 
 ## 1. Start a model provider
 
@@ -15,7 +15,7 @@ ollama pull qwen3.5:8b
 
 ## 2. Create a workflow
 
-Save this as `hello.ai`:
+Save this as `hello.wire`:
 
 ```ai
 provider ollama {
@@ -40,7 +40,7 @@ output {
 The `try_workflow!` macro simplifies workflow execution by combining parsing and running:
 
 ```rust
-use engine_ai_core::runtime::try_workflow;
+use superwire_core::runtime::try_workflow;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -51,7 +51,7 @@ struct Output {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let workflow_output: Output = try_workflow!("hello.ai").await?;
+    let workflow_output: Output = try_workflow!("hello.wire").await?;
 
     println!("{}", workflow_output.greeting);
 
@@ -93,7 +93,7 @@ output {
 The `try_workflow!` macro also works with inputs:
 
 ```rust
-use engine_ai_core::runtime::try_workflow;
+use superwire_core::runtime::try_workflow;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         audience: "Rust developers".to_string(),
     };
 
-    let workflow_output: Output = try_workflow!("summary.ai", input).await?;
+    let workflow_output: Output = try_workflow!("summary.wire", input).await?;
 
     println!("{:?}", workflow_output);
 

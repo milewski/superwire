@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
 
-use engine_ai_core::dsl::{
+use superwire_core::dsl::{
     AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, ReferenceKeyword,
     SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
 };
-use engine_ai_core::runtime::ProviderDriver;
-use engine_ai_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
+use superwire_core::runtime::ProviderDriver;
+use superwire_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
 
 use crate::protocol::Position;
 
@@ -356,7 +356,7 @@ impl SemanticIndex {
         }
     }
 
-    fn insert_schema_declaration(&mut self, schema_declaration: &engine_ai_core::dsl::SchemaDeclaration) {
+    fn insert_schema_declaration(&mut self, schema_declaration: &superwire_core::dsl::SchemaDeclaration) {
         let schema_fields = schema_declaration
             .fields
             .iter()
@@ -381,7 +381,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(schema_declaration.span);
     }
 
-    fn insert_input_declaration(&mut self, input_declaration: &engine_ai_core::dsl::InputDeclaration) {
+    fn insert_input_declaration(&mut self, input_declaration: &superwire_core::dsl::InputDeclaration) {
         self.has_input_declaration = true;
 
         if self.input_fields.is_empty() {
@@ -392,7 +392,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(input_declaration.span);
     }
 
-    fn insert_secrets_declaration(&mut self, secrets_declaration: &engine_ai_core::dsl::SecretsDeclaration) {
+    fn insert_secrets_declaration(&mut self, secrets_declaration: &superwire_core::dsl::SecretsDeclaration) {
         self.has_secrets_declaration = true;
 
         if self.secrets_fields.is_empty() {
@@ -403,7 +403,7 @@ impl SemanticIndex {
         self.typed_declaration_locations.push(secrets_declaration.span);
     }
 
-    fn insert_agent_declaration(&mut self, agent_declaration: &engine_ai_core::dsl::AgentDeclaration) {
+    fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
         let output_type = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
             AgentProperty::Output {
                 output_type_expression,
@@ -665,7 +665,7 @@ impl SemanticIndex {
         let value_completion_context = ValueCompletionContext::from_value_prefix(property_value_prefix);
         let mut completion_suggestions = ProviderDriver::all()
             .into_iter()
-            .map(engine_ai_core::ProviderDriver::as_str)
+            .map(superwire_core::ProviderDriver::as_str)
             .filter(|driver_name| driver_name.starts_with(&value_completion_context.value_prefix))
             .map(|driver_name| {
                 let insert_text = if value_completion_context.inside_string_literal {
@@ -1127,7 +1127,7 @@ impl SemanticIndex {
         }
     }
 
-    fn reference_expression_type(&self, reference: &engine_ai_core::dsl::Reference) -> Option<TypeExpression> {
+    fn reference_expression_type(&self, reference: &superwire_core::dsl::Reference) -> Option<TypeExpression> {
         let reference_keyword = reference.root_keyword()?;
         let reference_accesses = reference
             .accesses

@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
-use engine_ai_core::dsl::{Declaration, TypeExpression, Workflow};
-use engine_ai_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
-use engine_ai_core::runtime::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use superwire_core::dsl::{Declaration, TypeExpression, Workflow};
+use superwire_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
+use superwire_core::runtime::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 
 use crate::types::WorkflowExecutionError;
 

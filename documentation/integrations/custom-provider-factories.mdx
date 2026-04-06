@@ -11,7 +11,7 @@ For custom execution logic, implement `AgentRunner` and run workflows with `run_
 
 ```rust
 use async_trait::async_trait;
-use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntimeError};
+use superwire_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntimeError};
 use serde_json::json;
 
 struct MyRunner;
@@ -36,7 +36,7 @@ impl AgentRunner for MyRunner {
 ## Running with a custom runner
 
 ```rust
-use engine_ai_core::runtime::WorkflowRuntime;
+use superwire_core::runtime::WorkflowRuntime;
 
 let runtime = WorkflowRuntime::<Input, Output>::new(workflow)?;
 let output = runtime.run_with_runner(input, &MyRunner).await?;
@@ -52,4 +52,4 @@ let output = runtime.run_with_runner(input, &MyRunner).await?;
 ## Current limitation
 
 Provider declarations still parse into the built-in `ProviderConfig` variants (`openai` and `ollama`).
-If you need new provider drivers, add them in `engine-ai-core` and wire them into runtime provider parsing.
+If you need new provider drivers, add them in `superwire-core` and wire them into runtime provider parsing.

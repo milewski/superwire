@@ -1,7 +1,7 @@
 use crate::dsl::Expression;
 use crate::runtime::error::WorkflowRuntimeError;
-use engine_ai_agent::AgentConfig;
 use serde_json::{Map, Value};
+use superwire_agent::AgentConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InferenceSetting {

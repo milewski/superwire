@@ -1,14 +1,14 @@
 <idea-plugin>
-    <id>com.engineai.intellij</id>
-    <name>Engine AI</name>
-    <vendor email="support@engine-ai.dev" url="https://github.com/milewski/engine-ai">Engine AI</vendor>
+    <id>com.superwire.intellij</id>
+    <name>SuperWire</name>
+    <vendor email="support@superwire.dev" url="https://github.com/milewski/superwire">SuperWire</vendor>
 
     <description>
         <![CDATA[
-        <h1>Engine AI language support for IntelliJ IDEs</h1>
+        <h1>SuperWire language support for IntelliJ IDEs</h1>
         <ul>
             <li>Syntax highlighting powered by the shared TextMate grammar.</li>
-            <li>Compiler checking and diagnostics from the Engine AI language server.</li>
+            <li>Compiler checking and diagnostics from the SuperWire language server.</li>
             <li>Completion for workflow declarations, properties, references, and builtins.</li>
             <li>Hover, go to definition, document/workspace symbol search, and code folding.</li>
             <li>Document formatting and generated-output code lens markers.</li>
@@ -23,53 +23,49 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <fileType
-                name="Engine AI"
-                implementationClass="com.engineai.intellij.EngineAiFileType"
+                name="Superwire"
+                implementationClass="com.superwire.intellij.SuperwireFileType"
                 fieldName="INSTANCE"
-                language="EngineAI"
-                extensions="ai"/>
+                language="superwire"
+                extensions="wire"/>
 
-        <textmate.bundleProvider implementation="com.engineai.intellij.EngineAiTextMateBundleProvider"/>
+        <textmate.bundleProvider implementation="com.superwire.intellij.SuperwireTextMateBundleProvider"/>
 
         <editorHighlighterProvider
-                filetype="Engine AI"
-                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
-
-        <lang.syntaxHighlighterFactory
-                language="EngineAI"
-                implementationClass="com.engineai.intellij.EngineAiSyntaxHighlighterFactory"/>
+                filetype="Superwire"
+                implementationClass="com.superwire.intellij.SuperwireSyntaxHighlighterFactory"/>
 
         <lang.parserDefinition
-                language="EngineAI"
-                implementationClass="com.engineai.intellij.EngineAiParserDefinition"/>
+                language="superwire"
+                implementationClass="com.superwire.intellij.SuperwireParserDefinition"/>
 
         <lang.foldingBuilder
-                language="EngineAI"
+                language="superwire"
                 implementationClass="com.redhat.devtools.lsp4ij.features.foldingRange.LSPFoldingRangeBuilder"
                 order="first"/>
 
         <codeBlockProvider
-                language="EngineAI"
+                language="superwire"
                 implementationClass="com.redhat.devtools.lsp4ij.features.codeBlockProvider.LSPCodeBlockProvider"
                 order="first"/>
     </extensions>
 
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
-        <server id="engine-ai"
-                name="Engine AI"
-                factoryClass="com.engineai.intellij.EngineAiLanguageServerFactory">
+        <server id="superwire"
+                name="Superwire"
+                factoryClass="com.superwire.intellij.SuperwireLanguageServerFactory">
             <description>
                 <![CDATA[
-                Engine AI language server integration for IntelliJ.
+                Superwire language server integration for IntelliJ.
                 ]]>
             </description>
         </server>
 
-        <languageMapping language="EngineAI" serverId="engine-ai"/>
+        <languageMapping language="superwire" serverId="superwire"/>
     </extensions>
 
     <extensions defaultExtensionNs="org.intellij.markdown">
-        <fenceLanguageProvider implementation="com.engineai.intellij.EngineAiCodeFenceLanguageProvider"/>
-        <additionalFenceLanguageSuggester implementation="com.engineai.intellij.EngineAiAdditionalFenceLanguageSuggester"/>
+        <fenceLanguageProvider implementation="com.superwire.intellij.SuperwireCodeFenceLanguageProvider"/>
+        <additionalFenceLanguageSuggester implementation="com.superwire.intellij.SuperwireAdditionalFenceLanguageSuggester"/>
     </extensions>
 </idea-plugin>

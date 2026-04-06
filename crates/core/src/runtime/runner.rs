@@ -1,13 +1,13 @@
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::provider::ProviderConfig;
 use async_trait::async_trait;
-use engine_ai_agent::tool::{registered_runtime_tools, RuntimeTool, ToolError};
-use engine_ai_agent::{Agent, AgentConfig, Context as AgentContext, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
 use schemars::Schema;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+use superwire_agent::tool::{registered_runtime_tools, RuntimeTool, ToolError};
+use superwire_agent::{Agent, AgentConfig, Context as AgentContext, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
 
 #[derive(Debug, Clone)]
 pub struct RequestedAgentTool {
@@ -62,7 +62,7 @@ impl Debug for BoundRuntimeTool {
 
 #[async_trait]
 impl RuntimeTool for BoundRuntimeTool {
-    fn definition(&self) -> Result<engine_ai_agent::ToolDefinition, ToolError> {
+    fn definition(&self) -> Result<superwire_agent::ToolDefinition, ToolError> {
         self.inner_tool.definition()
     }
 

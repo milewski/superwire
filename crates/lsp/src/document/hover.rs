@@ -1,5 +1,5 @@
-use engine_ai_core::dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
-use engine_ai_core::runtime::ProviderDriver;
+use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
+use superwire_core::runtime::ProviderDriver;
 
 use crate::protocol::Position;
 

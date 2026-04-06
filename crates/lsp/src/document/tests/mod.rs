@@ -1,9 +1,9 @@
 use super::{CompletionKind, CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, TypeExpression};
 use crate::protocol::DiagnosticCode;
-use engine_ai_core::dsl::{
+use superwire_core::dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, SingletonDeclarationKind,
 };
-use engine_ai_core::runtime::InferenceSetting;
+use superwire_core::runtime::InferenceSetting;
 
 macro_rules! inline_completion_suggestions {
     ($($workflow_tokens:tt)*) => {{

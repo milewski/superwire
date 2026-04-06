@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{SourcePosition, SourceSpan};
+use superwire_core::dsl::{SourcePosition, SourceSpan};
 
 use crate::protocol::{Position, Range};
 

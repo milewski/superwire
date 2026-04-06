@@ -712,71 +712,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "engine-ai-agent"
-version = "0.1.0"
-dependencies = [
- "async-openai",
- "async-trait",
- "futures",
- "indoc",
- "inventory",
- "jsonschema",
- "ollama-rs",
- "paste",
- "rand 0.8.5",
- "reqwest 0.12.28",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "engine-ai-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "engine-ai-core",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "engine-ai-core"
-version = "0.1.0"
-dependencies = [
- "ariadne",
- "async-trait",
- "engine-ai-agent",
- "futures",
- "jsonschema",
- "pest",
- "pest_derive",
- "petgraph",
- "reqwest 0.12.28",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "strsim",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "engine-ai-lsp"
-version = "0.1.0"
-dependencies = [
- "colog",
- "engine-ai-core",
- "log",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "env_filter"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -933,13 +868,13 @@ name = "ffi"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "engine-ai-agent",
- "engine-ai-core",
  "ext-php-rs",
  "reqwest 0.12.28",
  "schemars 1.2.1",
  "serde",
  "serde_json",
+ "superwire-agent",
+ "superwire-core",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -2911,6 +2846,71 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "superwire-agent"
+version = "0.1.0"
+dependencies = [
+ "async-openai",
+ "async-trait",
+ "futures",
+ "indoc",
+ "inventory",
+ "jsonschema",
+ "ollama-rs",
+ "paste",
+ "rand 0.8.5",
+ "reqwest 0.12.28",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "superwire-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "superwire-core",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "superwire-core"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "async-trait",
+ "futures",
+ "jsonschema",
+ "pest",
+ "pest_derive",
+ "petgraph",
+ "reqwest 0.12.28",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "strsim",
+ "superwire-agent",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "superwire-lsp"
+version = "0.1.0"
+dependencies = [
+ "colog",
+ "log",
+ "serde",
+ "serde_json",
+ "superwire-core",
+ "thiserror 2.0.18",
+ "tokio",
+]
 
 [[package]]
 name = "syn"

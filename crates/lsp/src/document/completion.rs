@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{
+use superwire_core::dsl::{
     parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword,
 };
 
@@ -17,7 +17,7 @@ use super::text_utils::{
     is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
 };
 use super::{CompletionSuggestion, DocumentState};
-use engine_ai_core::runtime::InferenceSetting;
+use superwire_core::runtime::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 

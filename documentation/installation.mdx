@@ -1,15 +1,15 @@
 ---
 title: Installation
-description: Set up the Engine AI workspace, providers, and local docs tooling.
+description: Set up the Superwire workspace, providers, and local docs tooling.
 ---
 
 ## Rust workspace
 
-Engine AI is currently easiest to consume from source.
+Superwire is currently easiest to consume from source.
 
 ```bash
-git clone git@github.com:milewski/engine-ai.git
-cd engine-ai
+git clone git@github.com:milewski/superwire.git
+cd superwire
 cargo test
 ```
 
@@ -55,7 +55,7 @@ npx mintlify dev
 
 ## Recommended first checks
 
-- Open `crates/core/workflows/minimum.ai`
+- Open `crates/core/workflows/minimum.wire`
 - Read `/quickstart`
-- Parse a workflow with `engine_ai_core::dsl::parse_workflow`
-- Validate it with `engine_ai_core::dsl::validate_workflow`
+- Parse a workflow with `superwire_core::dsl::parse_workflow`
+- Validate it with `superwire_core::dsl::validate_workflow`

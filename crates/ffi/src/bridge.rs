@@ -4,10 +4,10 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
-use engine_ai_core::dsl::Workflow;
-use engine_ai_core::runtime::WorkflowRuntimeError;
-use engine_ai_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, WorkflowRuntime};
 use serde_json::Value;
+use superwire_core::dsl::Workflow;
+use superwire_core::runtime::WorkflowRuntimeError;
+use superwire_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, WorkflowRuntime};
 
 use crate::error::FfiError;
 use crate::types::{
@@ -292,7 +292,7 @@ impl AgentRunner for FfiAgentRunner {
         let requested_tools_without_bound_arguments = request
             .requested_tools
             .iter()
-            .map(|requested_tool| engine_ai_core::runtime::RequestedAgentTool {
+            .map(|requested_tool| superwire_core::runtime::RequestedAgentTool {
                 name: requested_tool.name.clone(),
                 bound_arguments: serde_json::Map::new(),
             })
@@ -352,7 +352,7 @@ impl WorkflowExecutionRequest {
     }
 
     fn parse_workflow(&self) -> Result<Workflow, WorkflowExecutionError> {
-        engine_ai_core::dsl::parse_workflow(&self.workflow_source).map_err(|parse_error| {
+        superwire_core::dsl::parse_workflow(&self.workflow_source).map_err(|parse_error| {
             let rendered_error_details = parse_error.render_with_source(&self.workflow_source, "ffi://workflow");
 
             WorkflowExecutionError::parse_failed(
@@ -384,7 +384,7 @@ impl ToolCallbackConfig {
         let mut http_request_builder = reqwest::Client::new().post(&self.endpoint).json(tool_invocation_payload);
 
         if let Some(auth_token) = &self.auth_token {
-            http_request_builder = http_request_builder.header("x-engine-ai-tool-callback-token", auth_token);
+            http_request_builder = http_request_builder.header("x-superwire-tool-callback-token", auth_token);
         }
 
         let http_response = http_request_builder.send().await.map_err(|error| ToolInvocationError {
@@ -413,9 +413,9 @@ impl ToolCallbackConfig {
 mod tests {
     use std::sync::Arc;
 
-    use engine_ai_agent::{AgentError, ToolError};
-    use engine_ai_core::runtime::WorkflowRuntimeError;
     use serde_json::json;
+    use superwire_agent::{AgentError, ToolError};
+    use superwire_core::runtime::WorkflowRuntimeError;
 
     use super::{CustomToolRegistry, EngineFfi, MAX_REGISTERED_EXECUTIONS};
     use crate::types::WorkflowExecutionError;

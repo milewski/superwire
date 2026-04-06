@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::parse_workflow;
+use superwire_core::dsl::parse_workflow;
 
 use crate::protocol::{Position, Range};
 

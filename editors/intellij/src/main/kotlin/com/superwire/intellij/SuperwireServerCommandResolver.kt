@@ -1,4 +1,4 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.project.Project
@@ -8,9 +8,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 
-object EngineAiServerCommandResolver {
-    private const val SERVER_PATH_ENVIRONMENT_VARIABLE = "ENGINE_AI_LSP_PATH"
-    private const val PLUGIN_CACHE_DIRECTORY = "engine-ai-lsp"
+object SuperwireServerCommandResolver {
+    private const val SERVER_PATH_ENVIRONMENT_VARIABLE = "SUPERWIRE_LSP_PATH"
+    private const val PLUGIN_CACHE_DIRECTORY = "superwire-lsp"
 
     fun resolveServerCommand(project: Project): List<String> {
         val environmentServerPath = resolveEnvironmentServerPath()
@@ -102,18 +102,18 @@ object EngineAiServerCommandResolver {
 
     private fun candidateBinaryFileNames(): List<String> {
         if (SystemInfo.isWindows) {
-            return listOf("${EngineAiPluginConstants.SERVER_BINARY_NAME}.exe", EngineAiPluginConstants.SERVER_BINARY_NAME)
+            return listOf("${SuperwirePluginConstants.SERVER_BINARY_NAME}.exe", SuperwirePluginConstants.SERVER_BINARY_NAME)
         }
 
-        return listOf(EngineAiPluginConstants.SERVER_BINARY_NAME, "${EngineAiPluginConstants.SERVER_BINARY_NAME}.exe")
+        return listOf(SuperwirePluginConstants.SERVER_BINARY_NAME, "${SuperwirePluginConstants.SERVER_BINARY_NAME}.exe")
     }
 
     private fun defaultServerCommandName(): String {
         if (SystemInfo.isWindows) {
-            return "${EngineAiPluginConstants.SERVER_BINARY_NAME}.exe"
+            return "${SuperwirePluginConstants.SERVER_BINARY_NAME}.exe"
         }
 
-        return EngineAiPluginConstants.SERVER_BINARY_NAME
+        return SuperwirePluginConstants.SERVER_BINARY_NAME
     }
 
     private fun candidateBundledResourcePaths(): List<String> {

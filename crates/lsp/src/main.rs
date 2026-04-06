@@ -1,4 +1,4 @@
-use engine_ai_lsp::server::LanguageServer;
+use superwire_lsp::server::LanguageServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

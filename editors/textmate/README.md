@@ -1,6 +1,6 @@
-# AI DSL TextMate Grammar
+# SuperWire TextMate Grammar
 
-This directory contains a TextMate grammar bundle for syntax highlighting of AI Engine DSL (`.ai`) files in JetBrains IDEs and other editors that support TextMate grammars.
+This directory contains a TextMate grammar bundle for syntax highlighting of SuperWire DSL (`.ai`) files in JetBrains IDEs and other editors that support TextMate grammars.
 
 ## Features
 
@@ -113,4 +113,4 @@ If you find issues with the syntax highlighting or want to add support for new f
 
 ## License
 
-This grammar is part of the AI Engine DSL project and follows the same license.
+This grammar is part of the SuperWire project and follows the same license.

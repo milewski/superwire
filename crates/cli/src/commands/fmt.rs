@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use engine_ai_core::dsl::{format_workflow_source, DslFormatError};
+use superwire_core::dsl::{format_workflow_source, DslFormatError};
 
 use crate::diagnostics::CommandError;
 
@@ -18,7 +18,7 @@ impl FormatCommand {
 
         if workflow_paths.is_empty() {
             return Err(CommandError::invalid_input(format!(
-                "no workflow files (.ai) found at {}",
+                "no workflow files (.wire) found at {}",
                 self.target_path.display()
             )));
         }
@@ -34,7 +34,7 @@ impl FormatCommand {
         if self.target_path.is_file() {
             if !is_workflow_file_path(&self.target_path) {
                 return Err(CommandError::invalid_input(format!(
-                    "expected a .ai workflow file, got {}",
+                    "expected a .wire workflow file, got {}",
                     self.target_path.display()
                 )));
             }
@@ -44,7 +44,7 @@ impl FormatCommand {
 
         if self.target_path.is_dir() {
             let mut workflow_paths = Vec::new();
-            collect_ai_files_recursively(&self.target_path, &mut workflow_paths)?;
+            collect_wire_files_recursively(&self.target_path, &mut workflow_paths)?;
             workflow_paths.sort();
 
             return Ok(workflow_paths);
@@ -92,10 +92,10 @@ impl FormatCommand {
 }
 
 fn is_workflow_file_path(file_path: &Path) -> bool {
-    file_path.extension().and_then(|extension| extension.to_str()) == Some("ai")
+    file_path.extension().and_then(|extension| extension.to_str()) == Some("wire")
 }
 
-fn collect_ai_files_recursively(directory_path: &Path, workflow_paths: &mut Vec<PathBuf>) -> Result<(), CommandError> {
+fn collect_wire_files_recursively(directory_path: &Path, workflow_paths: &mut Vec<PathBuf>) -> Result<(), CommandError> {
     let directory_entries = fs::read_dir(directory_path)
         .map_err(|read_error| CommandError::internal(format!("failed to read directory {}: {read_error}", directory_path.display())))?;
 
@@ -110,12 +110,12 @@ fn collect_ai_files_recursively(directory_path: &Path, workflow_paths: &mut Vec<
         let entry_path = directory_entry.path();
 
         if entry_path.is_dir() {
-            collect_ai_files_recursively(&entry_path, workflow_paths)?;
+            collect_wire_files_recursively(&entry_path, workflow_paths)?;
 
             continue;
         }
 
-        if entry_path.extension().and_then(|extension| extension.to_str()) != Some("ai") {
+        if entry_path.extension().and_then(|extension| extension.to_str()) != Some("wire") {
             continue;
         }
 

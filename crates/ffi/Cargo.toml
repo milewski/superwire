@@ -15,8 +15,8 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1"
-engine-ai-agent = { path = "../agent" }
-engine-ai-core = { path = "../core" }
+superwire-agent = { path = "../agent" }
+superwire-core = { path = "../core" }
 reqwest = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

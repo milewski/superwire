@@ -1,5 +1,5 @@
 [package]
-name = "engine-ai-cli"
+name = "superwire-cli"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,5 +12,5 @@ workspace = true
 
 [dependencies]
 clap = { workspace = true }
-engine-ai-core = { path = "../core" }
+superwire-core = { path = "../core" }
 thiserror = { workspace = true }

@@ -1,5 +1,5 @@
 [package]
-name = "engine-ai-core"
+name = "superwire-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 ariadne = "0.6.0"
 async-trait = "0.1"
-engine-ai-agent = { path = "../agent" }
+superwire-agent = { path = "../agent" }
 futures = "0.3"
 jsonschema = { workspace = true }
 pest = { workspace = true }

@@ -1,10 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
 
-use engine_ai_agent::{DynamicTool, ToolError};
-use engine_ai_core::runtime::WorkflowRuntimeError;
 use schemars::Schema;
 use serde_json::Value;
+use superwire_agent::{DynamicTool, ToolError};
+use superwire_core::runtime::WorkflowRuntimeError;
 
 use super::{CustomToolHandler, MAX_REGISTERED_EXECUTIONS};
 use crate::types::{
@@ -113,7 +113,7 @@ impl CustomToolRegistry {
     pub fn runtime_tools_for_requested_tools(
         self: &Arc<Self>,
         execution_id: &str,
-        requested_tools: &[engine_ai_core::runtime::RequestedAgentTool],
+        requested_tools: &[superwire_core::runtime::RequestedAgentTool],
         workflow_input: &Value,
     ) -> Result<Vec<DynamicTool>, WorkflowRuntimeError> {
         let declarations_by_execution = self

@@ -1,7 +1,7 @@
 use super::text_utils::{leading_identifier, trailing_identifier};
 use super::{CompletionKind, CompletionSuggestion};
-use engine_ai_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
-use engine_ai_core::runtime::InferenceSetting;
+use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
+use superwire_core::runtime::InferenceSetting;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclarationHeaderCompletionContext {

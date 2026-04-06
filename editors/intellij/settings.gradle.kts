@@ -1,1 +1,1 @@
-rootProject.name = "engine-ai-intellij"
+rootProject.name = "superwire-intellij"

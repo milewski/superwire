@@ -1,4 +1,4 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.codeInsight.completion.CompletionParameters
 import com.intellij.codeInsight.lookup.LookupElement
@@ -6,12 +6,12 @@ import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.lang.Language
 import org.intellij.plugins.markdown.injection.CodeFenceLanguageProvider
 
-class EngineAiCodeFenceLanguageProvider : CodeFenceLanguageProvider {
+class SuperwireCodeFenceLanguageProvider : CodeFenceLanguageProvider {
     override fun getLanguageByInfoString(infoString: String): Language? {
         val normalizedInfoString = normalizeInfoString(infoString)
 
         return if (normalizedInfoString in supportedInfoStrings) {
-            EngineAiLanguage
+            SuperwireLanguage
         } else {
             null
         }
@@ -36,8 +36,7 @@ class EngineAiCodeFenceLanguageProvider : CodeFenceLanguageProvider {
 
         val supportedInfoStrings = setOf(
             preferredInfoString,
-            "engine-ai",
-            "engineai",
+            "superwire",
             "ai-dsl",
         )
     }

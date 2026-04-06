@@ -1,6 +1,6 @@
 ---
 title: Language Server
-description: Run the Engine AI language server over stdio for diagnostics, completion, and hover support.
+description: Run the Superwire language server over stdio for diagnostics, completion, and hover support.
 ---
 
 The repository includes a language server binary in `crates/lsp`.
@@ -8,7 +8,7 @@ The repository includes a language server binary in `crates/lsp`.
 ## Run it
 
 ```bash
-cargo run -p engine-ai-lsp
+cargo run -p superwire-lsp
 ```
 
 ## Transport
@@ -25,7 +25,7 @@ The server speaks JSON-RPC over stdio and advertises:
 The server publishes diagnostics from the shared DSL pipeline:
 
 - parse/syntax errors with source spans
-- semantic validation errors from `engine-ai-core`
+- semantic validation errors from `superwire-core`
 - invalid agent properties
 - unknown provider/model bindings
 - invalid reference paths and schema references

@@ -1,7 +1,7 @@
-use engine_ai_core::diagnostic::{
+use superwire_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
-use engine_ai_core::dsl::{parse_workflow, validate_workflow, DslParseError};
+use superwire_core::dsl::{parse_workflow, validate_workflow, DslParseError};
 
 use crate::protocol::DiagnosticCode;
 

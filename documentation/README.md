@@ -1,6 +1,6 @@
-# Engine AI documentation
+# SuperWire documentation
 
-This directory contains the Mintlify documentation for the Engine AI DSL,
+This directory contains the Mintlify documentation for the SuperWire DSL,
 runtime, integrations, examples, and public Rust APIs.
 
 ## Structure

@@ -1,8 +1,8 @@
 {
-  "name": "@engine-ai/ffi-js-bridge",
+  "name": "@superwire/ffi-js-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "TypeScript bridge for engine-ai Rust FFI runtime",
+  "description": "TypeScript bridge for superwire Rust FFI runtime",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "commonjs",

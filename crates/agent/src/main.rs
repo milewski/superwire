@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use engine_ai_agent::{Agent, AgentConfig, AgentError, LoopExecutor, OpenAIProvider, Tool, ToolError};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use superwire_agent::{Agent, AgentConfig, AgentError, LoopExecutor, OpenAIProvider, Tool, ToolError};
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 struct QuoteToolInput {

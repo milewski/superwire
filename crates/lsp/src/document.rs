@@ -22,8 +22,8 @@ pub use types::{
     FoldingRangeBlock, SymbolKind, WorkspaceSymbolMatch,
 };
 
-use engine_ai_core::dsl::TypeExpression;
-use engine_ai_core::runtime::ProviderDriver;
+use superwire_core::dsl::TypeExpression;
+use superwire_core::runtime::ProviderDriver;
 
 use crate::protocol::Position;
 

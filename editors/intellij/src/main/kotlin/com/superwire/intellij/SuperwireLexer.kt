@@ -1,10 +1,10 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.lexer.LexerBase
 import com.intellij.psi.TokenType
 import com.intellij.psi.tree.IElementType
 
-class EngineAiLexer : LexerBase() {
+class SuperwireLexer : LexerBase() {
     private var sourceBuffer: CharSequence = ""
     private var sourceEndOffset = 0
     private var tokenStartOffset = 0
@@ -60,14 +60,14 @@ class EngineAiLexer : LexerBase() {
 
         if (firstCharacter.isReferenceSeparatorCharacter()) {
             tokenEndOffset = tokenStartOffset + 1
-            currentTokenType = EngineAiElementTypes.TEXT
+            currentTokenType = SuperwireElementTypes.TEXT
             return
         }
 
         val tokenType = if (firstCharacter.isIdentifierCharacter()) {
-            EngineAiElementTypes.SYMBOL
+            SuperwireElementTypes.SYMBOL
         } else {
-            EngineAiElementTypes.TEXT
+            SuperwireElementTypes.TEXT
         }
 
         tokenEndOffset = tokenStartOffset + 1

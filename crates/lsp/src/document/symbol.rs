@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{parse_workflow, Declaration, DeclarationKeyword, TypedField, Workflow};
+use superwire_core::dsl::{parse_workflow, Declaration, DeclarationKeyword, TypedField, Workflow};
 
 use super::position::source_span_to_range;
 use super::semantic_index::SemanticIndex;
@@ -241,7 +241,7 @@ impl SemanticIndex {
                 CodeLensHint {
                     range: output_range,
                     title: "Generated output".to_string(),
-                    command: "engine-ai.generated.output".to_string(),
+                    command: "superwire.generated.output".to_string(),
                 }
             })
             .collect()

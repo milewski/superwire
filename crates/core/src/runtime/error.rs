@@ -1,8 +1,8 @@
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::dsl::DslParseError;
 use crate::dsl::Workflow;
-use engine_ai_agent::AgentError;
 use std::fmt::{self, Debug, Display, Formatter};
+use superwire_agent::AgentError;
 use thiserror::Error;
 
 #[derive(Error)]

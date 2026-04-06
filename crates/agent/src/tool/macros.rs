@@ -3,7 +3,7 @@
 /// # Examples
 ///
 /// ```
-/// use engine_ai_agent::tool;
+/// use superwire_agent::tool;
 /// use serde::{Deserialize, Serialize};
 /// use schemars::JsonSchema;
 ///

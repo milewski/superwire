@@ -9,7 +9,6 @@ use crate::runtime::provider::ProviderConfig;
 use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
 use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
-use engine_ai_agent::AgentConfig;
 use futures::future::try_join_all;
 use schemars::{JsonSchema, Schema};
 use serde::de::DeserializeOwned;
@@ -17,6 +16,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
+use superwire_agent::AgentConfig;
 
 #[derive(Debug, Clone)]
 struct RuntimeState {

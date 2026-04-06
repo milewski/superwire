@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.intellij") version "1.17.4"
 }
 
-group = "com.engineai"
+group = "com.superwire"
 version = "0.1.2"
 
 data class LspBundleTarget(
@@ -16,12 +16,12 @@ val isWindowsHost = System.getProperty("os.name").startsWith("Windows", ignoreCa
 val isLinuxHost = System.getProperty("os.name").startsWith("Linux", ignoreCase = true)
 
 val allLspBundleTargets = listOf(
-    LspBundleTarget("x86_64-unknown-linux-gnu", "linux-x86_64", "engine-ai-lsp"),
-    LspBundleTarget("aarch64-unknown-linux-gnu", "linux-aarch64", "engine-ai-lsp"),
-    LspBundleTarget("x86_64-pc-windows-gnu", "windows-x86_64", "engine-ai-lsp.exe"),
-    LspBundleTarget("aarch64-pc-windows-gnullvm", "windows-aarch64", "engine-ai-lsp.exe"),
-    LspBundleTarget("x86_64-apple-darwin", "macos-x86_64", "engine-ai-lsp"),
-    LspBundleTarget("aarch64-apple-darwin", "macos-aarch64", "engine-ai-lsp"),
+    LspBundleTarget("x86_64-unknown-linux-gnu", "linux-x86_64", "superwire-lsp"),
+    LspBundleTarget("aarch64-unknown-linux-gnu", "linux-aarch64", "superwire-lsp"),
+    LspBundleTarget("x86_64-pc-windows-gnu", "windows-x86_64", "superwire-lsp.exe"),
+    LspBundleTarget("aarch64-pc-windows-gnullvm", "windows-aarch64", "superwire-lsp.exe"),
+    LspBundleTarget("x86_64-apple-darwin", "macos-x86_64", "superwire-lsp"),
+    LspBundleTarget("aarch64-apple-darwin", "macos-aarch64", "superwire-lsp"),
 )
 
 val lspBundleTargetsToBuild = when {
@@ -64,7 +64,7 @@ val buildLspBinaries by tasks.registering {
                     "cargo",
                     "build",
                     "-p",
-                    "engine-ai-lsp",
+                    "superwire-lsp",
                     "--release",
                     "--target",
                     lspBundleTarget.rustTargetTriple,

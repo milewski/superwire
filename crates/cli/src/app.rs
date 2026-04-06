@@ -27,7 +27,7 @@ impl Application {
 
 #[derive(Debug, Parser)]
 #[command(name = "cli")]
-#[command(about = "Engine AI CLI")]
+#[command(about = "SuperWire CLI")]
 pub struct CommandLineArguments {
     #[command(subcommand)]
     command: Command,

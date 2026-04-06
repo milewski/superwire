@@ -1,4 +1,4 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.lang.ASTNode
 import com.intellij.lang.ParserDefinition
@@ -12,9 +12,9 @@ import com.intellij.psi.tree.IFileElementType
 import com.intellij.psi.tree.TokenSet
 import com.intellij.extapi.psi.ASTWrapperPsiElement
 
-class EngineAiParserDefinition : ParserDefinition {
+class SuperwireParserDefinition : ParserDefinition {
     override fun createLexer(project: Project?): Lexer {
-        return EngineAiLexer()
+        return SuperwireLexer()
     }
 
     override fun createParser(project: Project?): PsiParser {
@@ -31,7 +31,7 @@ class EngineAiParserDefinition : ParserDefinition {
     }
 
     override fun getFileNodeType(): IFileElementType {
-        return EngineAiElementTypes.FILE
+        return SuperwireElementTypes.FILE
     }
 
     override fun getCommentTokens(): TokenSet {
@@ -47,7 +47,7 @@ class EngineAiParserDefinition : ParserDefinition {
     }
 
     override fun createFile(viewProvider: FileViewProvider): PsiFile {
-        return EngineAiPsiFile(viewProvider)
+        return SuperwirePsiFile(viewProvider)
     }
 
     override fun spaceExistenceTypeBetweenTokens(left: ASTNode, right: ASTNode): ParserDefinition.SpaceRequirements {
@@ -55,10 +55,10 @@ class EngineAiParserDefinition : ParserDefinition {
     }
 }
 
-class EngineAiPsiFile(viewProvider: FileViewProvider) : com.intellij.extapi.psi.PsiFileBase(viewProvider, EngineAiLanguage) {
-    override fun getFileType() = EngineAiFileType
+class SuperwirePsiFile(viewProvider: FileViewProvider) : com.intellij.extapi.psi.PsiFileBase(viewProvider, SuperwireLanguage) {
+    override fun getFileType() = SuperwireFileType
 
     override fun toString(): String {
-        return "Engine AI File"
+        return "Superwire File"
     }
 }

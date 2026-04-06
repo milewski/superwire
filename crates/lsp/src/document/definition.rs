@@ -1,4 +1,4 @@
-use engine_ai_core::dsl::{ReferenceKeyword, SourceSpan};
+use superwire_core::dsl::{ReferenceKeyword, SourceSpan};
 
 use crate::protocol::{Position, Range};
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Engine AI",
+  "name": "Superwire",
   "logo": {
     "dark": "/logo/dark.svg",
     "light": "/logo/light.svg"
@@ -25,17 +25,17 @@
     "links": [
       {
         "label": "GitHub",
-        "href": "https://github.com/milewski/engine-ai"
+        "href": "https://github.com/milewski/superwire"
       },
       {
         "label": "Issues",
-        "href": "https://github.com/milewski/engine-ai/issues"
+        "href": "https://github.com/milewski/superwire/issues"
       }
     ]
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/milewski/engine-ai"
+      "github": "https://github.com/milewski/superwire"
     }
   },
   "navigation": {

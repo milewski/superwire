@@ -1,19 +1,19 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.openapi.fileTypes.LanguageFileType
 import javax.swing.Icon
 
-object EngineAiFileType : LanguageFileType(EngineAiLanguage) {
+object SuperwireFileType : LanguageFileType(SuperwireLanguage) {
     override fun getName(): String {
-        return EngineAiPluginConstants.LANGUAGE_NAME
+        return SuperwirePluginConstants.LANGUAGE_NAME
     }
 
     override fun getDescription(): String {
-        return "Engine AI workflow file"
+        return "Superwire workflow file"
     }
 
     override fun getDefaultExtension(): String {
-        return EngineAiPluginConstants.FILE_EXTENSION
+        return SuperwirePluginConstants.FILE_EXTENSION
     }
 
     override fun getIcon(): Icon? {

@@ -1,4 +1,4 @@
-package com.engineai.intellij
+package com.superwire.intellij
 
 import com.intellij.openapi.fileTypes.PlainSyntaxHighlighter
 import com.intellij.openapi.fileTypes.SyntaxHighlighter
@@ -10,10 +10,10 @@ import org.jetbrains.plugins.textmate.TextMateService
 import org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateHighlighter
 import org.jetbrains.plugins.textmate.language.syntax.lexer.TextMateHighlightingLexer
 
-class EngineAiSyntaxHighlighterFactory : SyntaxHighlighterFactory() {
+class SuperwireSyntaxHighlighterFactory : SyntaxHighlighterFactory() {
     override fun getSyntaxHighlighter(project: Project?, virtualFile: VirtualFile?): SyntaxHighlighter {
         val textMateService = TextMateService.getInstance()
-        val languageDescriptor = textMateService.getLanguageDescriptorByExtension(EngineAiPluginConstants.FILE_EXTENSION)
+        val languageDescriptor = textMateService.getLanguageDescriptorByExtension(SuperwirePluginConstants.FILE_EXTENSION)
 
         if (languageDescriptor == null) {
             return PlainSyntaxHighlighter()
