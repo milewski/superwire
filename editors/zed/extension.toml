@@ -8,9 +8,14 @@ repository = "https://github.com/milewski/superwire"
 
 [grammars.superwire]
 repository = "https://github.com/milewski/superwire"
-rev = "add-zed-extension"
+rev = "7dd0fba9f7908d7578019d8eb4019ca9dadf9153"
 path = "editors/zed/tree-sitter-superwire"
 
 [language_servers.superwire-lsp]
 name = "Superwire LSP"
 languages = ["Superwire"]
+
+[[capabilities]]
+kind = "process:exec"
+command = "*"
+args = ["**"]
