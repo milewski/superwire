@@ -4,12 +4,3 @@ path_suffixes = ["wire"]
 line_comments = ["// "]
 tab_size = 2
 hard_tabs = false
-code_fence_block_name = "wire"
-autoclose_before = ";:.,=}])>"
-brackets = [
-    { start = "{", end = "}", close = true, newline = true },
-    { start = "[", end = "]", close = true, newline = true },
-    { start = "(", end = ")", close = true, newline = true },
-    { start = "\"\"\"", end = "\"\"\"", close = true, newline = false, not_in = ["comment", "string"] },
-    { start = "\"", end = "\"", close = true, newline = false, not_in = ["comment", "string"] },
-]
