@@ -8,7 +8,7 @@ repository = "https://github.com/milewski/superwire"
 
 [grammars.superwire]
 repository = "https://github.com/milewski/superwire"
-rev = "7dd0fba9f7908d7578019d8eb4019ca9dadf9153"
+rev = "add-zed-extension"
 path = "editors/zed/tree-sitter-superwire"
 
 [language_servers.superwire-lsp]
