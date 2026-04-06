@@ -11,3 +11,9 @@ crate-type = ["cdylib"]
 zed_extension_api = "0.7.0"
 
 [workspace]
+
+[profile.dev]
+incremental = false
+
+[profile.release]
+incremental = false
