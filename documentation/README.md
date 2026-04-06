@@ -1,6 +1,6 @@
-# SuperWire documentation
+# Superwire documentation
 
-This directory contains the Mintlify documentation for the SuperWire DSL,
+This directory contains the Mintlify documentation for the Superwire DSL,
 runtime, integrations, examples, and public Rust APIs.
 
 ## Structure
