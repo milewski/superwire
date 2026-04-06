@@ -159,7 +159,19 @@ impl SuperwireExtension {
 
         zed::set_language_server_installation_status(language_server_id, &zed::LanguageServerInstallationStatus::CheckingForUpdate);
 
-        let cargo_binary_path = Self::resolve_cargo_binary_path(worktree);
+        let Some(cargo_binary_path) = Self::resolve_cargo_binary_path(worktree) else {
+            let error_message = format!(
+                "Could not find cargo executable for workspace fallback. Bundle the LSP at {}",
+                Self::bundled_binary_path_hint()
+            );
+
+            zed::set_language_server_installation_status(
+                language_server_id,
+                &zed::LanguageServerInstallationStatus::Failed(error_message.clone()),
+            );
+
+            return Err(error_message);
+        };
         let lsp_manifest_path = PathBuf::from(worktree.root_path())
             .join("crates")
             .join("lsp")
@@ -185,16 +197,44 @@ impl SuperwireExtension {
         }))
     }
 
-    fn resolve_cargo_binary_path(worktree: &zed::Worktree) -> String {
+    fn resolve_cargo_binary_path(worktree: &zed::Worktree) -> Option<String> {
         if let Some(cargo_binary_path) = worktree.which("cargo") {
-            return cargo_binary_path;
+            return Some(cargo_binary_path);
         }
 
         if let Some(cargo_binary_path) = worktree.which("cargo.exe") {
-            return cargo_binary_path;
+            return Some(cargo_binary_path);
         }
 
-        "cargo".to_string()
+        if let Ok(cargo_binary_path) = env::var("CARGO") {
+            if Self::is_executable_server_binary(&cargo_binary_path) {
+                return Some(cargo_binary_path);
+            }
+        }
+
+        if let Ok(user_profile_directory) = env::var("USERPROFILE") {
+            let cargo_binary_path = PathBuf::from(user_profile_directory).join(".cargo").join("bin").join("cargo.exe");
+
+            if Self::is_executable_server_binary_path(&cargo_binary_path) {
+                return Some(cargo_binary_path.to_string_lossy().to_string());
+            }
+        }
+
+        if let Ok(home_directory) = env::var("HOME") {
+            let cargo_binary_path = PathBuf::from(home_directory).join(".cargo").join("bin").join("cargo");
+
+            if Self::is_executable_server_binary_path(&cargo_binary_path) {
+                return Some(cargo_binary_path.to_string_lossy().to_string());
+            }
+
+            let windows_cargo_binary_path = cargo_binary_path.with_extension("exe");
+
+            if Self::is_executable_server_binary_path(&windows_cargo_binary_path) {
+                return Some(windows_cargo_binary_path.to_string_lossy().to_string());
+            }
+        }
+
+        None
     }
 
     fn server_command(server_path: String, command_arguments: Vec<String>) -> zed::Command {
