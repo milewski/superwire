@@ -36,7 +36,7 @@ async function runSecretsAndInterpolationExample(): Promise<void> {
             response_policy: 'Be concise, acknowledge the issue, never promise refunds instantly, and escalate billing disputes that involve duplicate charges.',
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/secrets_and_interpolation.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/secrets_and_interpolation.wire', {
             inputs: inputPayload,
             secrets: secretsPayload,
         })

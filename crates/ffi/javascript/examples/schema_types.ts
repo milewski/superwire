@@ -36,7 +36,7 @@ async function runSchemaTypesExample(): Promise<void> {
             change_notes: 'We are replacing legacy segmentation rules with model-driven scoring and deploying to all regions in one week.',
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/schema_types.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/schema_types.wire', {
             inputs: inputPayload,
             secrets: providerSecrets,
         })

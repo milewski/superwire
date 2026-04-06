@@ -413,7 +413,7 @@ async fn try_workflow_macro_executes_workflow_from_path_literal_without_input() 
         greeting: String,
     }
 
-    let workflow_output: Output = crate::try_workflow!("fixtures/path_literal_output.ai")
+    let workflow_output: Output = crate::try_workflow!("fixtures/path_literal_output.wire")
         .await
         .expect("path-literal workflow should execute without input");
 
@@ -438,7 +438,7 @@ async fn try_workflow_macro_executes_workflow_from_path_literal_with_input() {
     }
 
     let workflow_output: WorkflowOutput = crate::try_workflow!(
-        "fixtures/path_literal_with_input.ai",
+        "fixtures/path_literal_with_input.wire",
         WorkflowInput {
             topic: "hello from input".to_string(),
         }

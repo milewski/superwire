@@ -34,7 +34,7 @@ async function runTemplateFunctionExample(): Promise<void> {
             ],
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/template_function.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/template_function.wire', {
             inputs: inputPayload,
             secrets: providerSecrets,
         })

@@ -1,4 +1,4 @@
-```ai
+```wire
 provider openai {driver:"openai" models:[ "gpt-4o-mini"]}
 input { items:[string] }
 agent reviewer for item 
@@ -7,7 +7,7 @@ string]}}
 output { reviews:agent.reviewer }
 ```
 ---
-```ai
+```wire
 provider openai {
     driver: "openai"
     models: ["gpt-4o-mini"]

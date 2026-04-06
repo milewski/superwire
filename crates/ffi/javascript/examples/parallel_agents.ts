@@ -45,7 +45,7 @@ async function runParallelAgentsExample(): Promise<void> {
             ],
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/parallel_agents.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/parallel_agents.wire', {
             inputs: inputPayload,
             secrets: providerSecrets,
         })

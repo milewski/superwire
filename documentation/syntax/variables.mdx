@@ -29,7 +29,7 @@ The language reserves these reference roots:
 
 Examples:
 
-```ai
+```wire
 input.topic
 secrets.openai_api_key
 agent.summary
@@ -41,7 +41,7 @@ tool.web_search
 
 Use `.` to access a nested field.
 
-```ai
+```wire
 agent.summary.title
 input.customer.profile.name
 ```
@@ -50,7 +50,7 @@ input.customer.profile.name
 
 Use `?.` when a nullable object may be `null`.
 
-```ai
+```wire
 agent.typed_example.nullable_object?.string_value
 ```
 
@@ -60,7 +60,7 @@ Validation allows optional chaining when the path can be followed through the de
 
 The grammar allows a plain identifier as a reference root. This is mainly useful for expression forms such as loop variables and function-call syntax.
 
-```ai
+```wire
 agent remediation_plan for finding in agent.findings.items {
     prompt: "Create a remediation plan for {{ finding }}"
     output: string

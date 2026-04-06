@@ -1,4 +1,4 @@
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
     prompt: "test"
@@ -6,7 +6,7 @@ agent greeting {
 }
 ```
 ---
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
     prompt: "test"

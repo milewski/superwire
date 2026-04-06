@@ -1,9 +1,9 @@
-```ai
+```wire
 provider  openai   {driver :  "openai" models:["gpt-4o-mini",]}
    output {   result:"ok" }
 ```
 ---
-```ai
+```wire
 provider openai {
     driver: "openai"
     models: ["gpt-4o-mini"]

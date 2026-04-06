@@ -1,4 +1,4 @@
-```ai
+```wire
 input { product_name: string release_highlights: [string] }
 
 agent release_email {
@@ -17,7 +17,7 @@ agent customer_email {
 }
 ```
 ---
-```ai
+```wire
 input {
     product_name: string
     release_highlights: [string]

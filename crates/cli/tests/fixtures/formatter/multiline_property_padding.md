@@ -1,4 +1,4 @@
-```ai
+```wire
 agent greeting_single {
     model: ollama("qwen3.5:8b")
     prompt: "aaa"
@@ -37,7 +37,7 @@ agent greeting_multiline_tools_then_inference {
 }
 ```
 ---
-```ai
+```wire
 agent greeting_single {
     model: ollama("qwen3.5:8b")
     prompt: "aaa"

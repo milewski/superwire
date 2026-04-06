@@ -7,7 +7,7 @@ The runtime includes a built-in Ollama driver.
 
 ## Required configuration
 
-```ai
+```wire
 provider ollama {
     driver: "ollama"
     endpoint: "http://localhost:11434"
@@ -26,7 +26,7 @@ Optional validation setting:
 
 ## Agent example
 
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
     prompt: "Write a short welcome message."

@@ -1,4 +1,4 @@
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
     // Leading indentation in this multiline string is neutralized.
@@ -12,7 +12,7 @@ agent greeting {
 }
 ```
 ---
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
 

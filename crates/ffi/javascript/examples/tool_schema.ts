@@ -48,7 +48,7 @@ async function runToolSchemaExample(): Promise<void> {
         }
 
         const workflow = Workflow.fromFile<WorkflowOutput, Input, Secrets>(
-            './examples/workflows/tool_schema.ai',
+            './examples/workflows/tool_schema.wire',
             inputs,
             secrets,
             [ new ContentFingerprint() ],

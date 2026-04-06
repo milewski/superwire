@@ -58,7 +58,7 @@ The grammar uses standard TextMate scope names, so it will work with any color t
 
 ## Example
 
-```ai
+```wire
 provider ollama {
     driver: "ollama"
     endpoint: "http://127.0.0.1:11434"

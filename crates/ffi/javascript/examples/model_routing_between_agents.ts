@@ -42,7 +42,7 @@ async function runModelRoutingBetweenAgentsExample(): Promise<void> {
             openai_api_key: providerSecrets.openai_api_key,
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/model_routing_between_agents.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/model_routing_between_agents.wire', {
             inputs: inputPayload,
             secrets: secretsPayload,
         })

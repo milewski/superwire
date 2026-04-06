@@ -17,7 +17,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         greeting: String,
     }
 
-    let workflow_result: Output = try_workflow!("../workflows/minimum.ai").await?;
+    let workflow_result: Output = try_workflow!("../workflows/minimum.wire").await?;
 
     println!("{workflow_result:?}");
 

@@ -1,4 +1,4 @@
-```ai
+```wire
 input { topic:string "Main topic" count:number "How many outputs" }
 
 agent writer {prompt:"Write" output:{summary:string "One-line summary" ok:boolean "Status flag"}}
@@ -6,7 +6,7 @@ agent writer {prompt:"Write" output:{summary:string "One-line summary" ok:boolea
 output { result:agent.writer }
 ```
 ---
-```ai
+```wire
 input {
     topic: string "Main topic"
     count: number "How many outputs"

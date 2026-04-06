@@ -12,7 +12,7 @@ A workflow is a plain text file made from a small set of declarations:
 - agents, which define model calls and dependencies
 - output, which defines the final JSON object returned by the workflow
 
-```ai
+```wire
 provider ollama {
     driver: "ollama"
     endpoint: "http://localhost:11434"
@@ -72,7 +72,7 @@ Engine AI has three useful layers:
 
 ## A more complete example
 
-```ai
+```wire
 provider openai {
     driver: "openai"
     endpoint: "https://api.openai.com/v1"

@@ -1,4 +1,4 @@
-```ai
+```wire
 agent assistant_with_tools {
     model: openai("gpt-4.1-mini")
 
@@ -23,7 +23,7 @@ agent assistant_with_tools {
 }
 ```
 ---
-```ai
+```wire
 agent assistant_with_tools {
     model: openai("gpt-4.1-mini")
 

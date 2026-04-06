@@ -1,4 +1,4 @@
-```ai
+```wire
 input { topic: string }
 
 agent long_template_prompt {
@@ -14,7 +14,7 @@ agent long_multiline_prompt {
 }
 ```
 ---
-```ai
+```wire
 input {
     topic: string
 }

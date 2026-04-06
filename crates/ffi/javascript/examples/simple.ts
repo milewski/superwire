@@ -2,7 +2,7 @@
  * Basic workflow + tool callback example.
  *
  * Shows how to:
- * - load a workflow from a `.ai` file
+ * - load a workflow from a `.wire` file
  * - pass `inputs` and `secrets` at workflow creation
  * - attach a workflow-scoped runtime tool (`Weather`) via `tools: []`
  */
@@ -13,7 +13,7 @@ import { Weather, type WeatherOutput } from './tools'
 async function runSimpleExample(): Promise<void> {
     const providerSecrets = loadOpenAIProviderSecrets()
 
-    const workflow = Workflow.fromFile('./examples/workflows/simple.ai', {
+    const workflow = Workflow.fromFile('./examples/workflows/simple.wire', {
         inputs: {
             region: 'Shanghai',
         },

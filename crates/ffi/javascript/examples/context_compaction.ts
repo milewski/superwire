@@ -42,7 +42,7 @@ async function runContextCompactionExample(): Promise<void> {
             ],
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/context_compaction.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/context_compaction.wire', {
             inputs: inputPayload,
             secrets: providerSecrets,
         })

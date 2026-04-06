@@ -25,7 +25,7 @@ async function runInferenceExample(): Promise<void> {
             release_scope: 'Checkout reliability and retry handling improvements',
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/inference.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/inference.wire', {
             inputs: inputPayload,
             secrets: providerSecrets,
         })

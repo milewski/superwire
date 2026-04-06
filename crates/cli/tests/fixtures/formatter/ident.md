@@ -1,10 +1,10 @@
-```ai
+```wire
 provider openai {
   driver: "openai"
 }
 ```
 ---
-```ai
+```wire
 provider openai {
     driver: "openai"
 }

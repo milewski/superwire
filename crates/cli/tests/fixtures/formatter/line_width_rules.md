@@ -1,4 +1,4 @@
-```ai
+```wire
 agent formatter_checks {
     model: openai("gpt-4.1-mini")
     prompt: "This is a very long prompt sentence that should exceed the formatter line width limit and therefore be wrapped into a multiline string block automatically by the formatter."
@@ -10,7 +10,7 @@ agent formatter_checks {
 output { value: agent.formatter_checks }
 ```
 ---
-```ai
+```wire
 agent formatter_checks {
     model: openai("gpt-4.1-mini")
 

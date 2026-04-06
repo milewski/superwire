@@ -1,4 +1,4 @@
-```ai
+```wire
 // provider declaration
 provider openai {
 // provider driver
@@ -27,7 +27,7 @@ provider ollama {
 output { value: "ok" }
 ```
 ---
-```ai
+```wire
 // provider declaration
 provider openai {
     // provider driver

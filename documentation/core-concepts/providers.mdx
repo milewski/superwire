@@ -5,7 +5,7 @@ description: Declare model backends and bind agents to them with explicit model 
 
 Providers are named blocks that hold backend settings.
 
-```ai
+```wire
 provider openai {
     driver: "openai"
     endpoint: "https://api.openai.com/v1"
@@ -16,7 +16,7 @@ provider openai {
 
 ## Provider syntax
 
-```ai
+```wire
 provider <provider_name> {
     <property_name>: <expression>
     ...
@@ -29,7 +29,7 @@ Every provider property is a key/value expression pair in the DSL. The parser pr
 
 Agents select a provider by calling the provider name in the `model` property.
 
-```ai
+```wire
 agent summarizer {
     model: openai("gpt-4.1-mini")
     prompt: "Summarize the release notes."
@@ -39,7 +39,7 @@ agent summarizer {
 
 The model name can be passed either positionally or as a named argument:
 
-```ai
+```wire
 model: openai("gpt-4.1-mini")
 model: openai(model: "gpt-4.1-mini")
 ```
@@ -57,7 +57,7 @@ Validation checks these provider-related conditions:
 
 ### OpenAI driver
 
-```ai
+```wire
 provider openai {
     driver: "openai"
     endpoint: "https://api.openai.com/v1"
@@ -78,7 +78,7 @@ Optional setting used by validation:
 
 ### Ollama driver
 
-```ai
+```wire
 provider ollama {
     driver: "ollama"
     endpoint: "http://localhost:11434"
@@ -97,7 +97,7 @@ Optional setting used by validation:
 
 ## Practical pattern: local first, cloud second
 
-```ai
+```wire
 provider ollama_local {
     driver: "ollama"
     endpoint: "http://localhost:11434"

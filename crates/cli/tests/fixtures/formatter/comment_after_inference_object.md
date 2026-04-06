@@ -1,4 +1,4 @@
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
     inference: {        temperature: 0.7}
@@ -14,7 +14,7 @@ agent greeting {
 }
 ```
 ---
-```ai
+```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
     inference: { temperature: 0.7 }

@@ -28,7 +28,7 @@ async function runStructuredOutputExample(): Promise<void> {
     const engine = new Engine()
 
     try {
-        const workflow = Workflow.fromFile('./examples/workflows/structured_output.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/structured_output.wire', {
             inputs: {},
             secrets: providerSecrets,
         })

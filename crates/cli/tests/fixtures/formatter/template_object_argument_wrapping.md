@@ -1,4 +1,4 @@
-```ai
+```wire
 input {
     study_name: string
     audience: string
@@ -18,7 +18,7 @@ agent research_multi_entry {
 }
 ```
 ---
-```ai
+```wire
 input {
     study_name: string
     audience: string

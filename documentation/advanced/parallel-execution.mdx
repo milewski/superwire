@@ -9,7 +9,7 @@ Engine AI computes execution order from agent references.
 
 Two agents can run in parallel when neither depends on the other.
 
-```ai
+```wire
 agent sentiment {
     model: openai("gpt-4.1-mini")
     prompt: "Classify sentiment for {{ input.text }}"
@@ -27,7 +27,7 @@ Because both agents depend only on `input.text`, they are independent in the dep
 
 ## Serial execution by reference
 
-```ai
+```wire
 agent summary {
     model: openai("gpt-4.1-mini")
     prompt: "Summarize {{ input.text }}"
@@ -47,7 +47,7 @@ agent review {
 
 The grammar also supports looped agents:
 
-```ai
+```wire
 agent remediation_plan for finding in agent.findings.items {
     model: openai("gpt-4.1-mini")
     prompt: "Create a remediation plan for {{ finding }}"

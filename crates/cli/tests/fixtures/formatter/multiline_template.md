@@ -1,4 +1,4 @@
-```ai
+```wire
 provider openai {driver:"openai" models:["gpt-4o-mini"]}
 input { topic:string }
 
@@ -17,7 +17,7 @@ agent writer2 {
 output { text:agent.writer }
 ```
 ---
-```ai
+```wire
 provider openai {
     driver: "openai"
     models: ["gpt-4o-mini"]

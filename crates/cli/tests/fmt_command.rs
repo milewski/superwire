@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn formats_all_markdown_fixtures_as_individual_files() {
     for fixture_case in discover_formatter_fixture_cases() {
         let temporary_workspace = TemporaryWorkspace::new();
-        let workflow_file_path = temporary_workspace.write_file("single.ai", &fixture_case.before_source);
+        let workflow_file_path = temporary_workspace.write_file("single.wire", &fixture_case.before_source);
 
         let command_output = run_fmt_command(workflow_file_path.as_path());
 
@@ -42,7 +42,7 @@ fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
             &nested_directory
         };
 
-        let workflow_file_name = format!("{}.ai", fixture_case.fixture_name);
+        let workflow_file_name = format!("{}.wire", fixture_case.fixture_name);
         let workflow_file_path = target_directory.join(workflow_file_name);
 
         fs::write(&workflow_file_path, &fixture_case.before_source).expect("workflow source should be written");
@@ -69,7 +69,7 @@ fn preserves_comments_for_fixture_cases_that_contain_comments() {
         }
 
         let temporary_workspace = TemporaryWorkspace::new();
-        let workflow_file_path = temporary_workspace.write_file("comments.ai", &fixture_case.before_source);
+        let workflow_file_path = temporary_workspace.write_file("comments.wire", &fixture_case.before_source);
 
         let command_output = run_fmt_command(workflow_file_path.as_path());
 
@@ -103,9 +103,9 @@ fn rejects_non_workflow_file_target() {
     let command_output = run_fmt_command(non_workflow_file_path.as_path());
     let stderr_text = String::from_utf8_lossy(&command_output.stderr);
 
-    assert!(!command_output.status.success(), "fmt command should fail for non-.ai files");
+    assert!(!command_output.status.success(), "fmt command should fail for non-.wire files");
     assert_eq!(command_output.status.code(), Some(2));
-    assert!(stderr_text.contains("expected a .ai workflow file"));
+    assert!(stderr_text.contains("expected a .wire workflow file"));
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn rejects_directory_without_workflow_files() {
     );
 
     assert_eq!(command_output.status.code(), Some(2));
-    assert!(stderr_text.contains("no workflow files (.ai) found"));
+    assert!(stderr_text.contains("no workflow files (.wire) found"));
 }
 
 fn run_fmt_command(target_path: &Path) -> Output {
@@ -190,12 +190,12 @@ impl FormatterFixtureCase {
     fn from_path(fixture_path: &Path) -> Self {
         let fixture_contents = fs::read_to_string(fixture_path)
             .unwrap_or_else(|read_error| panic!("failed to read fixture {}: {read_error}", fixture_path.display()));
-        let ai_code_blocks = Self::extract_ai_code_blocks(&fixture_contents);
+        let wire_code_blocks = Self::extract_wire_code_blocks(&fixture_contents);
 
         assert_eq!(
-            ai_code_blocks.len(),
+            wire_code_blocks.len(),
             2,
-            "fixture {} must contain exactly two ```ai blocks",
+            "fixture {} must contain exactly two ```wire blocks",
             fixture_path.display()
         );
 
@@ -205,40 +205,40 @@ impl FormatterFixtureCase {
                 .and_then(|file_stem| file_stem.to_str())
                 .expect("fixture file name should have valid UTF-8 stem")
                 .to_owned(),
-            before_source: ai_code_blocks[0].clone(),
-            expected_after_source: ai_code_blocks[1].clone(),
+            before_source: wire_code_blocks[0].clone(),
+            expected_after_source: wire_code_blocks[1].clone(),
         }
     }
 
-    fn extract_ai_code_blocks(markdown_text: &str) -> Vec<String> {
+    fn extract_wire_code_blocks(markdown_text: &str) -> Vec<String> {
         let mut extracted_blocks = Vec::new();
         let mut current_block_lines = Vec::new();
-        let mut is_inside_ai_block = false;
+        let mut is_inside_wire_block = false;
 
         for markdown_line in markdown_text.lines() {
             let line_without_carriage_return = markdown_line.trim_end_matches('\r');
             let trimmed_line = line_without_carriage_return.trim();
 
-            if !is_inside_ai_block && trimmed_line == "```ai" {
-                is_inside_ai_block = true;
+            if !is_inside_wire_block && trimmed_line == "```wire" {
+                is_inside_wire_block = true;
                 current_block_lines.clear();
 
                 continue;
             }
 
-            if is_inside_ai_block && trimmed_line == "```" {
+            if is_inside_wire_block && trimmed_line == "```" {
                 extracted_blocks.push(Self::normalize_block_contents(&current_block_lines));
-                is_inside_ai_block = false;
+                is_inside_wire_block = false;
 
                 continue;
             }
 
-            if is_inside_ai_block {
+            if is_inside_wire_block {
                 current_block_lines.push(line_without_carriage_return.to_owned());
             }
         }
 
-        assert!(!is_inside_ai_block, "unclosed ```ai block in fixture markdown");
+        assert!(!is_inside_wire_block, "unclosed ```wire block in fixture markdown");
         extracted_blocks
     }
 

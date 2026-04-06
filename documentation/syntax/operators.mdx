@@ -9,7 +9,7 @@ The DSL is small enough that punctuation matters a lot. This page collects the k
 
 `:` separates names from values in both object expressions and typed fields.
 
-```ai
+```wire
 driver: "openai"
 prompt: "Write a summary"
 title: string
@@ -19,7 +19,7 @@ title: string
 
 Use `.` for normal field access.
 
-```ai
+```wire
 agent.summary.title
 input.topic
 ```
@@ -28,7 +28,7 @@ input.topic
 
 Use `?.` when a nullable object may not be present.
 
-```ai
+```wire
 agent.summary.optional_section?.title
 ```
 
@@ -36,7 +36,7 @@ agent.summary.optional_section?.title
 
 Use `|` to join type alternatives.
 
-```ai
+```wire
 string | null
 "draft" | "ready" | "published"
 ```
@@ -45,7 +45,7 @@ string | null
 
 Use `;` inside an array type to enforce exact length.
 
-```ai
+```wire
 [string; 3]
 ```
 
@@ -55,13 +55,13 @@ Parentheses are used in two places.
 
 ### Tuple types
 
-```ai
+```wire
 (string, number, [string; 3])
 ```
 
 ### Function and provider calls
 
-```ai
+```wire
 openai("gpt-4.1-mini")
 openai(model: "gpt-4.1-mini")
 template("prompts/research_brief.md", {

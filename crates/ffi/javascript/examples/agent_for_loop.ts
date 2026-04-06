@@ -41,7 +41,7 @@ async function runAgentForLoopExample(): Promise<void> {
             ],
         }
 
-        const workflow = Workflow.fromFile('./examples/workflows/agent_for_loop.ai', {
+        const workflow = Workflow.fromFile('./examples/workflows/agent_for_loop.wire', {
             inputs: inputPayload,
             secrets: providerSecrets,
         })
