@@ -33,7 +33,7 @@
 
         <editorHighlighterProvider
                 filetype="Superwire"
-                implementationClass="com.superwire.intellij.SuperwireSyntaxHighlighterFactory"/>
+                implementationClass="com.superwire.intellij.SuperwireEditorHighlighterProvider"/>
 
         <lang.syntaxHighlighterFactory
                 language="superwire"
