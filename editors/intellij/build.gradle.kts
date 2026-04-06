@@ -120,6 +120,20 @@ tasks {
     processResources {
         dependsOn(verifyBundledLspBinary)
 
+        from(file("icon.svg")) {
+            into("icons")
+        }
+
+        from(file("icon.svg")) {
+            into("META-INF")
+            rename { "pluginIcon.svg" }
+        }
+
+        from(file("icon.svg")) {
+            into("META-INF")
+            rename { "pluginIcon_dark.svg" }
+        }
+
         from(file("../textmate")) {
             into("textmate")
         }
