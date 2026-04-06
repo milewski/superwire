@@ -1,0 +1,201 @@
+# Superwire
+
+A declarative DSL for building AI-powered workflows with type safety, composability, and runtime validation.
+
+## Overview
+
+Superwire provides a domain-specific language for defining AI agent workflows that can be parsed, validated, and executed programmatically. Workflows define providers, schemas, inputs, agents, and outputs in a single `.wire` file.
+
+## Quick Start
+
+### Installation
+
+```bash
+# Install the CLI tool
+cargo install --path crates/cli
+
+# Or build from source
+git clone https://github.com/milewski/superwire.git
+cd superwire
+cargo build --release
+```
+
+### Basic Workflow
+
+Create a `example.wire` file:
+
+```wire
+provider ollama {
+    driver: "ollama"
+    endpoint: "http://localhost:11434"
+    models: ["llama2"]
+}
+
+schema Summary {
+    text: string "The summary text"
+    length: number "Character count"
+}
+
+input {
+    content: string "Text to summarize"
+}
+
+agent summarizer {
+    model: ollama("llama2")
+    
+    prompt: """
+        Summarize the following text in one sentence:
+        {{ input.content }}
+    """
+    
+    output: schema.Summary
+}
+
+output {
+    result: agent.summarizer
+}
+```
+
+### Run with CLI
+
+```bash
+# Format a workflow file
+cli fmt example.wire
+
+# Execute a workflow (via runtime)
+cargo run --bin superwire-core --example minimum
+```
+
+## Core Concepts
+
+### Providers
+
+Define AI model providers (Ollama, OpenAI, etc.):
+
+```wire
+provider openai {
+    driver: "openai"
+    api_key: secrets.OPENAI_KEY
+    models: ["gpt-4", "gpt-3.5-turbo"]
+}
+```
+
+### Schemas
+
+Define structured output types:
+
+```wire
+schema User {
+    name: string "User's full name"
+    age: number "Age in years"
+    email: string "Email address"
+}
+```
+
+### Agents
+
+Define AI agents with prompts and outputs:
+
+```wire
+agent greet_user {
+    model: openai("gpt-4")
+    
+    prompt: "Say hello to {{ input.name }}"
+    
+    output: string
+}
+```
+
+### Context Sharing
+
+Agents can share context:
+
+```wire
+agent second_agent {
+    model: openai("gpt-4")
+    context: context(agent.first_agent)
+    
+    prompt: "Continue from previous response"
+    output: string
+}
+```
+
+## Architecture
+
+```
+superwire/
+├── crates/
+│   ├── agent/      # Agent execution and tool runtime
+│   ├── cli/        # Command-line interface
+│   ├── core/       # DSL parser, validator, and runtime
+│   ├── ffi/        # Foreign function interfaces (PHP, JavaScript)
+│   └── lsp/        # Language server for editor support
+├── editors/
+│   ├── intellij/   # IntelliJ/JetBrains plugin
+│   └── textmate/   # TextMate grammar for syntax highlighting
+└── documentation/  # Mintlify documentation source
+```
+
+## Development
+
+### Prerequisites
+
+- Rust 1.80+
+- Node.js 18+ (for JavaScript FFI)
+- PHP 8.2+ (for PHP FFI, optional)
+
+### Build
+
+```bash
+# Build all crates
+cargo build --all
+
+# Run tests
+cargo test --all
+
+# Run linter
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --check
+```
+
+### IntelliJ Plugin Development
+
+```bash
+cd editors/intellij
+./gradlew buildPlugin
+```
+
+## Documentation
+
+Full documentation is available at the [Superwire Docs](https://superwire.dev) (built from `documentation/` directory).
+
+### Local Docs Preview
+
+```bash
+cd documentation
+npx mintlify dev
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes with clear messages
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Code Style
+
+- Follow existing code patterns and conventions
+- Run `cargo clippy` and `cargo fmt` before committing
+- Add tests for new features
+- Update documentation as needed
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- Issues: [GitHub Issues](https://github.com/milewski/superwire/issues)
+- Discussions: [GitHub Discussions](https://github.com/milewski/superwire/discussions)
