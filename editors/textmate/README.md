@@ -27,15 +27,15 @@ The grammar provides syntax highlighting for:
 4. Select the `editors/textmate` directory from this repository
 5. Click **OK** to apply
 
-The IDE will automatically recognize `.ai` files and apply syntax highlighting.
+The IDE will automatically recognize `.wire` files and apply syntax highlighting.
 
 ### Visual Studio Code
 
 1. Copy the `editors/textmate` directory to your VS Code extensions folder:
-   - **Windows**: `%USERPROFILE%\.vscode\extensions\ai-dsl`
-   - **macOS/Linux**: `~/.vscode/extensions/ai-dsl`
+   - **Windows**: `%USERPROFILE%\.vscode\extensions\superwire`
+   - **macOS/Linux**: `~/.vscode/extensions/superwire`
 2. Restart VS Code
-3. Open any `.ai` file to see syntax highlighting
+3. Open any `.wire` file to see syntax highlighting
 
 ### Other Editors
 
@@ -45,16 +45,16 @@ For editors that support TextMate grammars (Sublime Text, Atom, etc.), refer to 
 
 The grammar uses standard TextMate scope names, so it will work with any color theme. The following scopes are used:
 
-- `keyword.control.ai` - Keywords like `provider`, `agent`, `schema`
-- `entity.name.type.schema.ai` - Declared schema names
-- `entity.name.type.schema-reference.ai` - Referenced schema types like `schema.Brief`
-- `entity.name.function.ai` - Function names and agent names
-- `entity.name.namespace.ai` - Function namespaces in calls like `foo.bar(...)`
-- `variable.parameter.ai` - Property names
-- `string.quoted.double.ai` - String literals
-- `comment.line.double-slash.ai` - Comments
-- `keyword.operator.ai` - Operators like `|` and `?.`
-- `punctuation.section.arguments.begin.ai` / `punctuation.section.arguments.end.ai` - Function call parentheses
+- `keyword.control.wire` - Keywords like `provider`, `agent`, `schema`
+- `entity.name.type.schema.wire` - Declared schema names
+- `entity.name.type.schema-reference.wire` - Referenced schema types like `schema.Brief`
+- `entity.name.function.wire` - Function names and agent names
+- `entity.name.namespace.wire` - Function namespaces in calls like `foo.bar(...)`
+- `variable.parameter.wire` - Property names
+- `string.quoted.double.wire` - String literals
+- `comment.line.double-slash.wire` - Comments
+- `keyword.operator.wire` - Operators like `|` and `?.`
+- `punctuation.section.arguments.begin.wire` / `punctuation.section.arguments.end.wire` - Function call parentheses
 
 ## Example
 

@@ -15,7 +15,7 @@ class SuperwireTextMateBundleProvider : TextMateBundleProvider {
         val bundledTextMateFiles = listOf(
             "package.json",
             "language-configuration.json",
-            "syntaxes/ai.tmLanguage.json",
+            "syntaxes/wire.tmLanguage.json",
         )
     }
 

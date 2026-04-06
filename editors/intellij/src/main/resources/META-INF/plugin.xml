@@ -35,6 +35,10 @@
                 filetype="Superwire"
                 implementationClass="com.superwire.intellij.SuperwireSyntaxHighlighterFactory"/>
 
+        <lang.syntaxHighlighterFactory
+                language="superwire"
+                implementationClass="com.superwire.intellij.SuperwireSyntaxHighlighterFactory"/>
+
         <lang.parserDefinition
                 language="superwire"
                 implementationClass="com.superwire.intellij.SuperwireParserDefinition"/>

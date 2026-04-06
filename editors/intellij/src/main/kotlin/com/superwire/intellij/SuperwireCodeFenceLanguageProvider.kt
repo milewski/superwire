@@ -24,7 +24,7 @@ class SuperwireCodeFenceLanguageProvider : CodeFenceLanguageProvider {
     }
 
     private companion object {
-        const val preferredInfoString = "ai"
+        const val preferredInfoString = "wire"
 
         fun normalizeInfoString(infoString: String): String {
             return infoString
@@ -37,7 +37,7 @@ class SuperwireCodeFenceLanguageProvider : CodeFenceLanguageProvider {
         val supportedInfoStrings = setOf(
             preferredInfoString,
             "superwire",
-            "ai-dsl",
+            "wire",
         )
     }
 }

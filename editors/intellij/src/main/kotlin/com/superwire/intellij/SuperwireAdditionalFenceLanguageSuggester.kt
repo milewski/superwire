@@ -20,9 +20,8 @@ class SuperwireAdditionalFenceLanguageSuggester : AdditionalFenceLanguageSuggest
 
     private companion object {
         val supportedFenceTags = setOf(
-            "ai",
+            "wire",
             "superwire",
-            "ai-dsl",
         )
     }
 }

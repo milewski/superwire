@@ -13,7 +13,7 @@
     "languages": [
       {
         "id": "superwire",
-        "aliases": ["Superwire", "wire"],
+        "aliases": ["superwire", "wire"],
         "extensions": [".wire"],
         "configuration": "./language-configuration.json"
       }
@@ -21,8 +21,8 @@
     "grammars": [
       {
         "language": "superwire",
-        "scopeName": "source.ai",
-        "path": "./syntaxes/ai.tmLanguage.json"
+        "scopeName": "source.wire",
+        "path": "./syntaxes/wire.tmLanguage.json"
       }
     ]
   }

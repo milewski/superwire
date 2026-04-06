@@ -1,7 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "AI DSL",
-  "scopeName": "source.ai",
+  "name": "Superwire DSL",
+  "scopeName": "source.wire",
+  "fileTypes": [
+    "wire"
+  ],
   "patterns": [
     {
       "include": "#comments"
@@ -32,7 +35,7 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.ai",
+          "name": "comment.line.double-slash.wire",
           "match": "//.*$"
         }
       ]
@@ -41,10 +44,10 @@
       "begin": "\\b(provider)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         "2": {
-          "name": "entity.name.type.provider.ai"
+          "name": "entity.name.type.provider.wire"
         }
       },
       "end": "\\}",
@@ -61,7 +64,7 @@
       "begin": "\\b(secrets)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         }
       },
       "end": "\\}",
@@ -78,10 +81,10 @@
       "begin": "\\b(schema)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         "2": {
-          "name": "entity.name.type.schema.ai"
+          "name": "entity.name.type.schema.wire"
         }
       },
       "end": "\\}",
@@ -98,7 +101,7 @@
       "begin": "\\b(input)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         }
       },
       "end": "\\}",
@@ -115,7 +118,7 @@
       "begin": "\\b(output)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         }
       },
       "end": "\\}",
@@ -132,22 +135,22 @@
       "begin": "\\b(agent)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(in)\\s+([^\\{]+?))?\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         "2": {
-          "name": "entity.name.function.agent.ai"
+          "name": "entity.name.function.agent.wire"
         },
         "3": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         "4": {
-          "name": "variable.other.ai"
+          "name": "variable.other.wire"
         },
         "5": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         "6": {
-          "name": "variable.other.reference.ai"
+          "name": "variable.other.reference.wire"
         }
       },
       "end": "\\}",
@@ -164,20 +167,20 @@
       "patterns": [
         {
           "match": "\\b(driver|endpoint|api_key|models|model|tools|context|output|prompt|inference)\\b(?=\\s*:)",
-          "name": "variable.parameter.ai"
+          "name": "variable.parameter.wire"
         },
         {
           "match": "\\b(provider|schema|agent|input|output|secrets|for|in)\\b",
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         {
           "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.other.property.ai"
+              "name": "variable.other.property.wire"
             },
             "2": {
-              "name": "punctuation.separator.ai"
+              "name": "punctuation.separator.wire"
             }
           }
         }
@@ -228,7 +231,7 @@
           "include": "#operators"
         },
         {
-          "name": "punctuation.separator.ai",
+          "name": "punctuation.separator.wire",
           "match": ","
         }
       ]
@@ -236,15 +239,15 @@
     "types": {
       "patterns": [
         {
-          "name": "storage.type.ai",
+          "name": "storage.type.wire",
           "match": "\\b(string|number|float|boolean|null)\\b"
         },
         {
           "match": "\\b(agent|input|schema|tool|secrets)\\b",
-          "name": "keyword.other.ai"
+          "name": "keyword.other.wire"
         },
         {
-          "name": "entity.name.type.schema-reference.ai",
+          "name": "entity.name.type.schema-reference.wire",
           "match": "\\bschema\\.[A-Za-z_][A-Za-z0-9_]*\\b"
         }
       ]
@@ -252,7 +255,7 @@
     "numbers": {
       "patterns": [
         {
-          "name": "constant.numeric.ai",
+          "name": "constant.numeric.wire",
           "match": "\\b\\d(?:[\\d_]*\\d)?(?:\\.\\d(?:[\\d_]*\\d)?)?\\b"
         }
       ]
@@ -260,7 +263,7 @@
     "booleans": {
       "patterns": [
         {
-          "name": "constant.language.boolean.ai",
+          "name": "constant.language.boolean.wire",
           "match": "\\b(true|false)\\b"
         }
       ]
@@ -268,15 +271,15 @@
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.ai",
+          "name": "keyword.operator.wire",
           "match": "\\|"
         },
         {
-          "name": "keyword.operator.ai",
+          "name": "keyword.operator.wire",
           "match": "\\?\\."
         },
         {
-          "name": "punctuation.separator.ai",
+          "name": "punctuation.separator.wire",
           "match": ";"
         }
       ]
@@ -285,13 +288,13 @@
       "begin": "\\{",
       "beginCaptures": {
         "0": {
-          "name": "punctuation.section.block.begin.ai"
+          "name": "punctuation.section.block.begin.wire"
         }
       },
       "end": "\\}",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.block.end.ai"
+          "name": "punctuation.section.block.end.wire"
         }
       },
       "patterns": [
@@ -307,22 +310,22 @@
       "begin": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
       "beginCaptures": {
         "1": {
-          "name": "keyword.other.ai"
+          "name": "keyword.other.wire"
         },
         "2": {
-          "name": "punctuation.accessor.ai"
+          "name": "punctuation.accessor.wire"
         },
         "3": {
-          "name": "entity.name.function.ai"
+          "name": "entity.name.function.wire"
         },
         "4": {
-          "name": "punctuation.section.arguments.begin.ai"
+          "name": "punctuation.section.arguments.begin.wire"
         }
       },
       "end": "\\)",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.arguments.end.ai"
+          "name": "punctuation.section.arguments.end.wire"
         }
       },
       "patterns": [
@@ -330,10 +333,10 @@
           "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.parameter.ai"
+              "name": "variable.parameter.wire"
             },
             "2": {
-              "name": "punctuation.separator.ai"
+              "name": "punctuation.separator.wire"
             }
           }
         },
@@ -346,22 +349,22 @@
       "begin": "\\b(?!tool\\b)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\()",
       "beginCaptures": {
         "1": {
-          "name": "entity.name.namespace.ai"
+          "name": "entity.name.namespace.wire"
         },
         "2": {
-          "name": "punctuation.accessor.ai"
+          "name": "punctuation.accessor.wire"
         },
         "3": {
-          "name": "entity.name.function.ai"
+          "name": "entity.name.function.wire"
         },
         "4": {
-          "name": "punctuation.section.arguments.begin.ai"
+          "name": "punctuation.section.arguments.begin.wire"
         }
       },
       "end": "\\)",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.arguments.end.ai"
+          "name": "punctuation.section.arguments.end.wire"
         }
       },
       "patterns": [
@@ -369,10 +372,10 @@
           "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.parameter.ai"
+              "name": "variable.parameter.wire"
             },
             "2": {
-              "name": "punctuation.separator.ai"
+              "name": "punctuation.separator.wire"
             }
           }
         },
@@ -385,16 +388,16 @@
       "begin": "\\b([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)\\s*(\\()",
       "beginCaptures": {
         "1": {
-          "name": "entity.name.function.ai"
+          "name": "entity.name.function.wire"
         },
         "2": {
-          "name": "punctuation.section.arguments.begin.ai"
+          "name": "punctuation.section.arguments.begin.wire"
         }
       },
       "end": "\\)",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.arguments.end.ai"
+          "name": "punctuation.section.arguments.end.wire"
         }
       },
       "patterns": [
@@ -402,10 +405,10 @@
           "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.parameter.ai"
+              "name": "variable.parameter.wire"
             },
             "2": {
-              "name": "punctuation.separator.ai"
+              "name": "punctuation.separator.wire"
             }
           }
         },
@@ -420,13 +423,13 @@
           "match": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
           "captures": {
             "1": {
-              "name": "keyword.other.ai"
+              "name": "keyword.other.wire"
             },
             "2": {
-              "name": "punctuation.accessor.ai"
+              "name": "punctuation.accessor.wire"
             },
             "3": {
-              "name": "entity.name.function.ai"
+              "name": "entity.name.function.wire"
             }
           }
         }
@@ -438,19 +441,19 @@
           "match": "\\b(agent|input|schema|tool|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
           "captures": {
             "1": {
-              "name": "keyword.other.ai"
+              "name": "keyword.other.wire"
             },
             "2": {
-              "name": "punctuation.accessor.ai"
+              "name": "punctuation.accessor.wire"
             },
             "3": {
-              "name": "variable.other.ai"
+              "name": "variable.other.wire"
             },
             "4": {
-              "name": "punctuation.accessor.ai"
+              "name": "punctuation.accessor.wire"
             },
             "5": {
-              "name": "variable.other.property.ai"
+              "name": "variable.other.property.wire"
             }
           }
         }
@@ -459,7 +462,7 @@
     "strings": {
       "patterns": [
         {
-          "name": "string.quoted.double.ai",
+          "name": "string.quoted.double.wire",
           "begin": "\"",
           "end": "\"",
           "patterns": [
@@ -467,7 +470,7 @@
               "include": "#string-interpolation"
             },
             {
-              "name": "constant.character.escape.ai",
+              "name": "constant.character.escape.wire",
               "match": "\\\\."
             }
           ]
@@ -477,7 +480,7 @@
     "multiline-strings": {
       "patterns": [
         {
-          "name": "string.quoted.triple.ai",
+          "name": "string.quoted.triple.wire",
           "begin": "\"\"\"",
           "end": "\"\"\"",
           "patterns": [
@@ -491,17 +494,17 @@
     "string-interpolation": {
       "patterns": [
         {
-          "name": "meta.embedded.line.ai",
+          "name": "meta.embedded.line.wire",
           "begin": "\\{\\{",
           "end": "\\}\\}",
           "beginCaptures": {
             "0": {
-              "name": "punctuation.definition.template-expression.begin.ai"
+              "name": "punctuation.definition.template-expression.begin.wire"
             }
           },
           "endCaptures": {
             "0": {
-              "name": "punctuation.definition.template-expression.end.ai"
+              "name": "punctuation.definition.template-expression.end.wire"
             }
           },
           "patterns": [
@@ -516,13 +519,13 @@
       "begin": "\\[",
       "beginCaptures": {
         "0": {
-          "name": "punctuation.section.array.begin.ai"
+          "name": "punctuation.section.array.begin.wire"
         }
       },
       "end": "\\]",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.array.end.ai"
+          "name": "punctuation.section.array.end.wire"
         }
       },
       "patterns": [
