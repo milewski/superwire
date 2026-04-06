@@ -1,0 +1,11 @@
+{
+  "name": "tree-sitter-superwire",
+  "version": "0.1.0",
+  "private": true,
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "files": [
+    "grammar.js",
+    "src/*"
+  ]
+}
