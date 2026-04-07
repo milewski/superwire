@@ -780,11 +780,26 @@ where
     WorkflowRuntime::<Input, Output>::new(workflow.clone())?.run(input).await
 }
 
+pub async fn execute_workflow_file<Input, Output>(workflow_path: impl AsRef<Path>, input: Input) -> Result<Output, WorkflowRuntimeError>
+where
+    Input: Serialize + JsonSchema,
+    Output: DeserializeOwned + JsonSchema,
+{
+    WorkflowRuntime::<Input, Output>::from_file(workflow_path)?.run(input).await
+}
+
 pub async fn execute_workflow_without_input<Output>(workflow: &Workflow) -> Result<Output, WorkflowRuntimeError>
 where
     Output: DeserializeOwned + JsonSchema,
 {
     execute_workflow(workflow, ()).await
+}
+
+pub async fn execute_workflow_file_without_input<Output>(workflow_path: impl AsRef<Path>) -> Result<Output, WorkflowRuntimeError>
+where
+    Output: DeserializeOwned + JsonSchema,
+{
+    execute_workflow_file(workflow_path, ()).await
 }
 
 fn compile_workflow<Input, Output>(workflow: &Workflow) -> Result<CompiledWorkflow, WorkflowRuntimeError>

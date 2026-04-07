@@ -16,38 +16,50 @@ pub use error::WorkflowRuntimeError;
 pub use inference::InferenceSetting;
 pub use provider::{ProviderConfig, ProviderDriver};
 pub use runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
-pub use workflow_runtime::{execute_workflow, execute_workflow_without_input, WorkflowRuntime};
+pub use workflow_runtime::{
+    execute_workflow, execute_workflow_file, execute_workflow_file_without_input, execute_workflow_without_input, WorkflowRuntime,
+};
 
 #[macro_export]
 macro_rules! try_workflow {
     ($workflow_path:literal) => {{
         async {
-            let workflow_source = include_str!($workflow_path);
-            let parsed_workflow = $crate::dsl::parse_workflow(workflow_source).map_err(|parse_error| {
-                let rendered_details = parse_error.render_with_source(workflow_source, $workflow_path);
+            let manifest_directory = ::std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            let caller_file_path = ::std::path::Path::new(file!());
+            let caller_directory = caller_file_path.parent().unwrap_or_else(|| ::std::path::Path::new(""));
 
-                $crate::runtime::WorkflowRuntimeError::ParseFailed {
-                    source: parse_error,
-                    details: rendered_details,
-                }
-            })?;
+            let mut workflow_path = manifest_directory.join(caller_directory).join($workflow_path);
 
-            $crate::runtime::execute_workflow_without_input(&parsed_workflow).await
+            if !workflow_path.exists() {
+                let workspace_root = manifest_directory
+                    .parent()
+                    .and_then(::std::path::Path::parent)
+                    .unwrap_or(manifest_directory);
+
+                workflow_path = workspace_root.join(caller_directory).join($workflow_path);
+            }
+
+            $crate::runtime::execute_workflow_file_without_input(&workflow_path).await
         }
     }};
     ($workflow_path:literal, $input:expr) => {{
         async {
-            let workflow_source = include_str!($workflow_path);
-            let parsed_workflow = $crate::dsl::parse_workflow(workflow_source).map_err(|parse_error| {
-                let rendered_details = parse_error.render_with_source(workflow_source, $workflow_path);
+            let manifest_directory = ::std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            let caller_file_path = ::std::path::Path::new(file!());
+            let caller_directory = caller_file_path.parent().unwrap_or_else(|| ::std::path::Path::new(""));
 
-                $crate::runtime::WorkflowRuntimeError::ParseFailed {
-                    source: parse_error,
-                    details: rendered_details,
-                }
-            })?;
+            let mut workflow_path = manifest_directory.join(caller_directory).join($workflow_path);
 
-            $crate::runtime::execute_workflow(&parsed_workflow, $input).await
+            if !workflow_path.exists() {
+                let workspace_root = manifest_directory
+                    .parent()
+                    .and_then(::std::path::Path::parent)
+                    .unwrap_or(manifest_directory);
+
+                workflow_path = workspace_root.join(caller_directory).join($workflow_path);
+            }
+
+            $crate::runtime::execute_workflow_file(&workflow_path, $input).await
         }
     }};
     ($workflow:expr) => {{
