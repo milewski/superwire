@@ -30,8 +30,11 @@ enum ToolsSubcommand {
 
 #[derive(Debug, Args)]
 struct BuildToolsCommand {
-    #[arg(value_name = "WORKFLOW_DIR", default_value = ".")]
-    workflow_directory: PathBuf,
+    #[arg(value_name = "PATH", default_value = ".")]
+    path: PathBuf,
+
+    #[arg(long, value_name = "OUTPUT")]
+    output: Option<PathBuf>,
 
     #[arg(long, value_name = "TARGET", default_value = "wasm32-unknown-unknown")]
     target: String,
@@ -41,8 +44,7 @@ impl BuildToolsCommand {
     fn execute(self) -> Result<(), CommandError> {
         self.ensure_cargo_component_installed()?;
 
-        let workflow_directory = self.resolve_workflow_directory()?;
-        let tool_source_paths = self.tool_source_paths(&workflow_directory)?;
+        let build_layout = self.resolve_build_layout()?;
         let workspace_root = Self::workspace_root();
 
         let wit_source_directory = workspace_root.join("crates/core/wit");
@@ -62,9 +64,9 @@ impl BuildToolsCommand {
             )));
         }
 
-        let tool_output_directory = workflow_directory.join("tools");
-        let generated_tools_directory = workflow_directory.join("target/tool-build");
-        let shared_target_directory = workflow_directory.join("target/tool-target");
+        let tool_output_directory = build_layout.workflow_directory.join("tools");
+        let generated_tools_directory = build_layout.workflow_directory.join("target/tool-build");
+        let shared_target_directory = build_layout.workflow_directory.join("target/tool-target");
 
         fs::create_dir_all(&tool_output_directory).map_err(|error| {
             CommandError::internal(format!(
@@ -80,12 +82,19 @@ impl BuildToolsCommand {
             ))
         })?;
 
-        for tool_source_path in tool_source_paths {
+        let output_paths_by_tool_source =
+            self.output_paths_by_tool_source(&build_layout.tool_source_paths, &build_layout.workflow_directory.join("tools"))?;
+
+        for tool_source_path in &build_layout.tool_source_paths {
+            let destination_component_path = output_paths_by_tool_source.get(tool_source_path).ok_or_else(|| {
+                CommandError::internal(format!("missing destination path for tool source {}", tool_source_path.display()))
+            })?;
+
             self.build_single_tool(
-                &tool_source_path,
+                tool_source_path,
                 &generated_tools_directory,
                 &shared_target_directory,
-                &tool_output_directory,
+                destination_component_path,
                 &wit_source_directory,
                 &tool_sdk_crate_directory,
             )?;
@@ -112,27 +121,69 @@ impl BuildToolsCommand {
         ))
     }
 
-    fn resolve_workflow_directory(&self) -> Result<PathBuf, CommandError> {
-        if self.workflow_directory.is_dir() {
-            return Ok(self.workflow_directory.clone());
+    fn resolve_build_layout(&self) -> Result<BuildLayout, CommandError> {
+        let canonical_path = fs::canonicalize(&self.path)
+            .map_err(|_| CommandError::invalid_input(format!("path does not exist: {}", self.path.display())))?;
+
+        if canonical_path.join("tool-sources/src").is_dir() {
+            let tool_sources_directory = canonical_path.join("tool-sources/src");
+
+            return Ok(BuildLayout {
+                workflow_directory: canonical_path.clone(),
+                tool_source_paths: self.tool_source_paths(&tool_sources_directory)?,
+            });
+        }
+
+        if canonical_path.join("src").is_dir() {
+            let tool_sources_directory = canonical_path.join("src");
+
+            return Ok(BuildLayout {
+                workflow_directory: canonical_path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf(),
+                tool_source_paths: self.tool_source_paths(&tool_sources_directory)?,
+            });
+        }
+
+        if canonical_path.file_name().and_then(|name| name.to_str()) == Some("src") {
+            let workflow_directory = canonical_path
+                .parent()
+                .and_then(Path::parent)
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf();
+
+            return Ok(BuildLayout {
+                workflow_directory,
+                tool_source_paths: self.tool_source_paths(&canonical_path)?,
+            });
+        }
+
+        if canonical_path.is_file() {
+            if canonical_path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+                return Err(CommandError::invalid_input(format!(
+                    "expected a .rs tool file, got: {}",
+                    canonical_path.display()
+                )));
+            }
+
+            let workflow_directory = canonical_path
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::parent)
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf();
+
+            return Ok(BuildLayout {
+                workflow_directory,
+                tool_source_paths: vec![canonical_path],
+            });
         }
 
         Err(CommandError::invalid_input(format!(
-            "workflow directory does not exist: {}",
-            self.workflow_directory.display()
+            "expected a workflow directory (containing tool-sources/src), a tool-sources directory, or a tool-sources/src directory. got: {}",
+            self.path.display()
         )))
     }
 
-    fn tool_source_paths(&self, workflow_directory: &Path) -> Result<Vec<PathBuf>, CommandError> {
-        let tool_sources_directory = workflow_directory.join("tool-sources/src");
-
-        if !tool_sources_directory.is_dir() {
-            return Err(CommandError::invalid_input(format!(
-                "tool source directory not found: {}",
-                tool_sources_directory.display()
-            )));
-        }
-
+    fn tool_source_paths(&self, tool_sources_directory: &Path) -> Result<Vec<PathBuf>, CommandError> {
         let mut tool_source_paths = Vec::new();
 
         for directory_entry_result in fs::read_dir(&tool_sources_directory).map_err(|error| {
@@ -162,7 +213,11 @@ impl BuildToolsCommand {
                 continue;
             }
 
-            tool_source_paths.push(entry_path);
+            let canonical_tool_source_path = fs::canonicalize(&entry_path).map_err(|error| {
+                CommandError::internal(format!("failed to canonicalize tool source path {}: {error}", entry_path.display()))
+            })?;
+
+            tool_source_paths.push(canonical_tool_source_path);
         }
 
         tool_source_paths.sort();
@@ -177,12 +232,78 @@ impl BuildToolsCommand {
         Ok(tool_source_paths)
     }
 
+    fn output_paths_by_tool_source(
+        &self,
+        tool_source_paths: &[PathBuf],
+        default_tool_output_directory: &Path,
+    ) -> Result<std::collections::HashMap<PathBuf, PathBuf>, CommandError> {
+        let mut output_paths = std::collections::HashMap::new();
+
+        if let Some(output_path) = &self.output {
+            if tool_source_paths.len() == 1 {
+                let single_tool_source_path = tool_source_paths[0].clone();
+                let resolved_output_path = if output_path.is_absolute() {
+                    output_path.clone()
+                } else {
+                    Path::new(".").join(output_path)
+                };
+
+                output_paths.insert(single_tool_source_path, resolved_output_path);
+
+                return Ok(output_paths);
+            }
+
+            let output_directory = if output_path.extension().and_then(|extension| extension.to_str()) == Some("wasm") {
+                return Err(CommandError::invalid_input(
+                    "--output points to a single .wasm file, but multiple tools were discovered. pass a directory path or build one tool file",
+                ));
+            } else if output_path.is_absolute() {
+                output_path.clone()
+            } else {
+                Path::new(".").join(output_path)
+            };
+
+            fs::create_dir_all(&output_directory).map_err(|error| {
+                CommandError::internal(format!("failed to create output directory {}: {error}", output_directory.display()))
+            })?;
+
+            for tool_source_path in tool_source_paths {
+                let tool_name = tool_source_path
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .ok_or_else(|| {
+                        CommandError::internal(format!("failed to resolve tool name from source {}", tool_source_path.display()))
+                    })?
+                    .to_string();
+
+                output_paths.insert(tool_source_path.clone(), output_directory.join(format!("{tool_name}.wasm")));
+            }
+
+            return Ok(output_paths);
+        }
+
+        for tool_source_path in tool_source_paths {
+            let tool_name = tool_source_path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| CommandError::internal(format!("failed to resolve tool name from source {}", tool_source_path.display())))?
+                .to_string();
+
+            output_paths.insert(
+                tool_source_path.clone(),
+                default_tool_output_directory.join(format!("{tool_name}.wasm")),
+            );
+        }
+
+        Ok(output_paths)
+    }
+
     fn build_single_tool(
         &self,
         tool_source_path: &Path,
         generated_tools_directory: &Path,
         shared_target_directory: &Path,
-        tool_output_directory: &Path,
+        destination_component_path: &Path,
         wit_source_directory: &Path,
         tool_sdk_crate_directory: &Path,
     ) -> Result<(), CommandError> {
@@ -243,9 +364,17 @@ impl BuildToolsCommand {
         }
 
         let compiled_component_path = shared_target_directory.join(&self.target).join("release/tool_component.wasm");
-        let destination_component_path = tool_output_directory.join(format!("{tool_name}.wasm"));
 
-        fs::copy(&compiled_component_path, &destination_component_path).map_err(|error| {
+        let destination_directory = destination_component_path.parent().unwrap_or_else(|| Path::new("."));
+
+        fs::create_dir_all(destination_directory).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to create destination directory {}: {error}",
+                destination_directory.display()
+            ))
+        })?;
+
+        fs::copy(&compiled_component_path, destination_component_path).map_err(|error| {
             CommandError::internal(format!(
                 "failed to copy component output from {} to {}: {error}",
                 compiled_component_path.display(),
@@ -295,6 +424,12 @@ impl BuildToolsCommand {
     }
 }
 
+#[derive(Debug, Clone)]
+struct BuildLayout {
+    workflow_directory: PathBuf,
+    tool_source_paths: Vec<PathBuf>,
+}
+
 fn copy_directory_recursively(source_directory: &Path, destination_directory: &Path) -> Result<(), CommandError> {
     fs::create_dir_all(destination_directory).map_err(|error| {
         CommandError::internal(format!(
@@ -333,16 +468,58 @@ fn copy_directory_recursively(source_directory: &Path, destination_directory: &P
 #[cfg(test)]
 mod tests {
     use super::BuildToolsCommand;
+    use std::fs;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::{env, process};
+
+    static TEMPORARY_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn converts_snake_case_tool_name_to_pascal_case_type_name() {
         let build_tools_command = BuildToolsCommand {
-            workflow_directory: PathBuf::from("."),
+            path: PathBuf::from("."),
+            output: None,
             target: String::from("wasm32-unknown-unknown"),
         };
 
         assert_eq!(build_tools_command.tool_type_name("weather"), "Weather");
         assert_eq!(build_tools_command.tool_type_name("knowledge_base_search"), "KnowledgeBaseSearch");
+    }
+
+    #[test]
+    fn resolves_layout_from_tool_sources_directory() {
+        let workflow_directory = create_temporary_workflow_directory();
+        let tool_sources_directory = workflow_directory.join("tool-sources");
+        let tool_sources_src_directory = tool_sources_directory.join("src");
+
+        fs::create_dir_all(&tool_sources_src_directory).expect("tool sources src directory should exist");
+
+        let build_tools_command = BuildToolsCommand {
+            path: tool_sources_directory.clone(),
+            output: None,
+            target: String::from("wasm32-unknown-unknown"),
+        };
+
+        let build_layout = build_tools_command
+            .resolve_build_layout()
+            .expect("build layout should resolve from tool-sources directory");
+
+        assert_eq!(build_layout.workflow_directory, workflow_directory);
+        assert_eq!(build_layout.tool_source_paths.len(), 1);
+        assert_eq!(build_layout.tool_source_paths[0], tool_sources_src_directory.join("weather.rs"));
+    }
+
+    fn create_temporary_workflow_directory() -> PathBuf {
+        let sequence_value = TEMPORARY_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary_directory = env::temp_dir().join(format!("superwire-cli-tools-test-{}-{sequence_value}", process::id()));
+
+        fs::create_dir_all(&temporary_directory).expect("temporary directory should be created");
+        let tool_sources_src_directory = temporary_directory.join("tool-sources/src");
+
+        fs::create_dir_all(&tool_sources_src_directory).expect("tool sources src directory should be created");
+        fs::write(tool_sources_src_directory.join("weather.rs"), "pub struct Weather;").expect("tool source file should be created");
+
+        temporary_directory
     }
 }
