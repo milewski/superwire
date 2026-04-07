@@ -6,16 +6,24 @@ provider openai {
     driver: "openai"
     endpoint: "http://198.18.0.1:1234/v1"
     api_key: "1234"
-    models: [ "qwen3.5-27b" ]
+    models: ["qwen3.5-27b"]
 }
 
 agent assistant {
     model: openai("qwen3.5-27b")
-    tools: [ tool.weather(city: input.city), tool.url_encode ]
-    prompt: "You must call tool.weather exactly once. You can call tool.url_encode when you need to encode a string. Use the tool result to answer with one short sentence."
-    output: string
+    tools: [tool.weather(city: input.city), tool.url_encode]
+
+    prompt: """
+        You must call tool.weather exactly once.
+        You can call tool.url_encode when you need to encode a string.
+        Use the tool result to answer with one short sentence.
+    """
+
+    output: {
+        weather: string
+    }
 }
 
 output {
-    message: agent.assistant
+    weather: agent.assistant.weather
 }

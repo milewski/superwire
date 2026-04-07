@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use superwire_core::runtime::WorkflowRuntime;
+use superwire_core::try_workflow;
 
 #[derive(Debug, Serialize, JsonSchema)]
 struct WorkflowInput {
@@ -9,17 +10,19 @@ struct WorkflowInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WorkflowOutput {
-    message: String,
+    weather: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let city_name = std::env::var("CITY").unwrap_or_else(|_| "Madrid".to_string());
+    let city = std::env::var("CITY").unwrap_or_else(|_| "Madrid".to_string());
 
-    let workflow_runtime = WorkflowRuntime::<WorkflowInput, WorkflowOutput>::from_file("./my_workflow.wire")?;
-    let workflow_output = workflow_runtime.run(WorkflowInput { city: city_name }).await?;
+    // let runtime = WorkflowRuntime::<WorkflowInput, WorkflowOutput>::from_file("./my_workflow.wire")?;
+    // let output = runtime.run(WorkflowInput { city }).await?;
 
-    println!("workflow output: {}", workflow_output.message);
+    let output: WorkflowOutput = try_workflow!("../my_workflow.wire", WorkflowInput { city }).await?;
+    //
+    println!("{:#?}", output);
 
     Ok(())
 }
