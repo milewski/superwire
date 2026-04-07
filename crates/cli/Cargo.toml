@@ -14,3 +14,4 @@ workspace = true
 clap = { workspace = true }
 superwire-core = { path = "../core" }
 thiserror = { workspace = true }
+wasmprinter = "0.245.1"

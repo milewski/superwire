@@ -3387,6 +3387,7 @@ dependencies = [
  "clap",
  "superwire-core",
  "thiserror 2.0.18",
+ "wasmprinter",
 ]
 
 [[package]]
