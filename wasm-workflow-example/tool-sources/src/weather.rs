@@ -5,25 +5,25 @@ use superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OptionalWeatherInput {
-    #[schemars(description = "Optional city name provided by the model")]
+    /// Optional city name provided by the model.
     city: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct BoundWeatherInput {
-    #[schemars(description = "Optional city name bound by workflow input or secrets")]
+    /// Optional city name bound by workflow input or secrets.
     city: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct WeatherOutput {
-    #[schemars(description = "City that was requested")]
+    /// City that was requested.
     city: String,
 
-    #[schemars(description = "Current weather summary returned by wttr.in")]
+    /// Current weather summary returned by wttr.in.
     summary: String,
 
-    #[schemars(description = "Data source name")]
+    /// Data source name.
     source: String,
 }
 
