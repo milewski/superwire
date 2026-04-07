@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use superwire_wasm_tool_sdk::host;
-use superwire_wasm_tool_sdk::{ToolExecutionError, ToolMetadata, Tool};
+use superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OptionalWeatherInput {

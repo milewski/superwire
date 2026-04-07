@@ -1,0 +1,6 @@
+build-tools:
+    cargo run --manifest-path "{{justfile_directory()}}/../Cargo.toml" -p superwire-cli -- tools build "{{justfile_directory()}}"
+
+run-demo city="Madrid": build-tools
+    cd "{{justfile_directory()}}"
+    CITY="{{city}}" cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml"

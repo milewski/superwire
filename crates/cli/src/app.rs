@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 
 use crate::commands::fmt::FormatCommand;
+use crate::commands::tools::ToolsCommand;
 use crate::diagnostics::CommandError;
 
 pub struct Application {
@@ -36,12 +37,14 @@ pub struct CommandLineArguments {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Fmt(FormatCommand),
+    Tools(ToolsCommand),
 }
 
 impl Command {
     fn execute(self) -> Result<(), CommandError> {
         match self {
             Self::Fmt(format_command) => format_command.execute(),
+            Self::Tools(tools_command) => tools_command.execute(),
         }
     }
 }
