@@ -50,6 +50,8 @@ where
             name: self.name().to_string(),
             description: self.description().to_string(),
             parameters_schema: self.parameters_schema.clone(),
+            bound_parameters_schema: None,
+            output_schema: None,
         }
     }
 
@@ -92,6 +94,8 @@ impl FinalizeErrorTool {
             name: self.name().to_string(),
             description: self.description().to_string(),
             parameters_schema: self.parameters_schema.clone(),
+            bound_parameters_schema: None,
+            output_schema: None,
         }
     }
 

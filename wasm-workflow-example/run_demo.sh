@@ -7,4 +7,4 @@ bash "$script_directory/build_tools.sh"
 
 cd "$script_directory"
 
-cargo run --manifest-path "$script_directory/Cargo.toml" -p wasm-workflow-host
+cargo run --manifest-path "$script_directory/Cargo.toml"

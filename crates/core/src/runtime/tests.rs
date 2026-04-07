@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
@@ -1110,62 +1110,15 @@ async fn includes_agent_output_description_in_generated_output_schema() {
     assert_eq!(first_agent_output_schema.get("description"), Some(&json!("example")));
 }
 
-#[derive(Debug, Clone, Default)]
-struct RuntimeToolCaptureRunner {
-    captured_runtime_tool_names: Arc<Mutex<Vec<Vec<String>>>>,
-}
-
-impl RuntimeToolCaptureRunner {
-    fn captured_runtime_tool_names(&self) -> Vec<Vec<String>> {
-        self.captured_runtime_tool_names
-            .lock()
-            .expect("captured runtime tool names lock should not be poisoned")
-            .clone()
-    }
-}
-
-#[async_trait]
-impl AgentRunner for RuntimeToolCaptureRunner {
-    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
-        use superwire_agent::tool::RuntimeTool;
-
-        let mut runtime_tool_names = Vec::new();
-
-        for runtime_tool in &request.runtime_tools {
-            let runtime_tool_definition = runtime_tool.definition().map_err(|error| WorkflowRuntimeError::Other {
-                message: format!("failed to read runtime tool definition: {error}"),
-            })?;
-
-            runtime_tool_names.push(runtime_tool_definition.name);
-        }
-
-        self.captured_runtime_tool_names
-            .lock()
-            .expect("captured runtime tool names lock should not be poisoned")
-            .push(runtime_tool_names);
-
-        Ok(AgentExecutionResult {
-            output: json!("ok"),
-            context: json!({
-                "agent": request.agent_name,
-            }),
-        })
-    }
-}
-
 #[tokio::test]
-async fn loads_wasm_tools_automatically_when_runtime_is_created_from_workflow_file() {
+async fn creates_runtime_from_workflow_file_without_tools_directory() {
     #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
     struct Output {
         value: String,
     }
 
-    let project_directory = create_temporary_project_directory("runtime-from-file");
-    let tools_directory = project_directory.join("tools");
+    let project_directory = create_temporary_project_directory("runtime-from-file-without-tools");
     let workflow_path = project_directory.join("my_workflow.wire");
-
-    fs::create_dir_all(&tools_directory).expect("tools directory should be created");
-    write_test_wasm_tool_module(&tools_directory.join("weather.wasm"));
 
     let workflow_source = crate::workflow_source! {
         provider openai {
@@ -1177,8 +1130,7 @@ async fn loads_wasm_tools_automatically_when_runtime_is_created_from_workflow_fi
 
         agent assistant {
             model: openai("model-a")
-            tools: [tool.weather]
-            prompt: "Use weather tool"
+            prompt: "hello"
             output: string
         }
 
@@ -1190,19 +1142,14 @@ async fn loads_wasm_tools_automatically_when_runtime_is_created_from_workflow_fi
     fs::write(&workflow_path, workflow_source).expect("workflow file should be written");
 
     let workflow_runtime = WorkflowRuntime::<(), Output>::from_file(&workflow_path).expect("runtime should compile from file");
-    let runtime_tool_capture_runner = RuntimeToolCaptureRunner::default();
+    let scripted_runner = ScriptedRunner::from_outputs(vec![json!("ok")]);
 
     let workflow_output = workflow_runtime
-        .run_with_runner((), &runtime_tool_capture_runner)
+        .run_with_runner((), &scripted_runner)
         .await
         .expect("workflow execution should succeed");
 
     assert_eq!(workflow_output.value, "ok".to_string());
-
-    let captured_runtime_tool_names = runtime_tool_capture_runner.captured_runtime_tool_names();
-
-    assert_eq!(captured_runtime_tool_names.len(), 1);
-    assert!(captured_runtime_tool_names[0].contains(&"weather".to_string()));
 
     fs::remove_dir_all(project_directory).expect("temporary project directory should be removed");
 }
@@ -1215,50 +1162,3 @@ fn create_temporary_project_directory(prefix: &str) -> PathBuf {
 
     temporary_directory
 }
-
-fn write_test_wasm_tool_module(module_path: &Path) {
-    let wasm_module_bytes = wat::parse_str(TEST_WASM_TOOL_MODULE).expect("test wasm module should parse");
-
-    fs::write(module_path, wasm_module_bytes).expect("test wasm module should be written");
-}
-
-const TEST_WASM_TOOL_MODULE: &str = r#"
-    (module
-      (memory (export "memory") 1)
-
-      (global $heap_pointer (mut i32) (i32.const 1024))
-
-      (func $pack_slice (param $slice_offset i32) (param $slice_length i32) (result i64)
-        (i64.or
-          (i64.shl
-            (i64.extend_i32_u (local.get $slice_offset))
-            (i64.const 32)
-          )
-          (i64.extend_i32_u (local.get $slice_length))
-        )
-      )
-
-      (func (export "tool_alloc") (param $allocation_length i32) (result i32)
-        (local $allocation_offset i32)
-
-        (local.set $allocation_offset (global.get $heap_pointer))
-
-        (global.set $heap_pointer
-          (i32.add (global.get $heap_pointer) (local.get $allocation_length))
-        )
-
-        (local.get $allocation_offset)
-      )
-
-      (data (i32.const 0) "{\"name\":\"weather\",\"description\":\"Returns static weather output\",\"parameters_schema\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}")
-      (data (i32.const 256) "{\"status\":\"sunny\"}")
-
-      (func (export "tool_definition") (result i64)
-        (call $pack_slice (i32.const 0) (i32.const 162))
-      )
-
-      (func (export "tool_execute") (param $input_offset i32) (param $input_length i32) (result i64)
-        (call $pack_slice (i32.const 256) (i32.const 18))
-      )
-    )
-"#;

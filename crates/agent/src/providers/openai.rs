@@ -1042,6 +1042,8 @@ mod tests {
             name: "lookup_weather".to_string(),
             description: "lookup weather".to_string(),
             parameters_schema: Schema::from(true),
+            bound_parameters_schema: None,
+            output_schema: None,
         }];
 
         let request_body = provider
