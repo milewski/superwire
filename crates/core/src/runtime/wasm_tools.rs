@@ -320,12 +320,12 @@ fn perform_http_get_request(request_url: &str) -> Result<String, String> {
 }
 
 #[derive(Clone)]
-pub struct WasmTool<AgentInputType = Value, OutputType = Value, BoundInputType = Map<String, Value>> {
+pub struct Tool<AgentInputType = Value, OutputType = Value, BoundInputType = Map<String, Value>> {
     component: WasmToolComponent,
     phantom: PhantomData<(AgentInputType, OutputType, BoundInputType)>,
 }
 
-impl<AgentInputType, OutputType, BoundInputType> WasmTool<AgentInputType, OutputType, BoundInputType>
+impl<AgentInputType, OutputType, BoundInputType> Tool<AgentInputType, OutputType, BoundInputType>
 where
     AgentInputType: Serialize,
     OutputType: DeserializeOwned,

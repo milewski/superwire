@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use superwire_core::{tool, try_workflow, WasmTool};
-use wasm_workflow_example_tool_sources::weather::{OptionalWeatherInput, WeatherOutput};
+use superwire_core::{tool, try_workflow, Tool};
+use tools::weather::{WeatherInput, WeatherOutput};
 
 #[derive(Debug, Serialize, JsonSchema)]
 struct WorkflowInput {
@@ -22,19 +22,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("workflow output: {:#?}", output);
 
-    let tool: WasmTool<OptionalWeatherInput, WeatherOutput> = tool!("../tools/weather.wasm")?;
+    let tool: Tool<WeatherInput, WeatherOutput> = tool!("../tools/weather.wasm")?;
 
     println!("tool definition: {:#?}", tool.definition());
 
     let direct_tool_output = tool
-        .run(OptionalWeatherInput {
+        .run(WeatherInput {
             city: Some("Shanghai".to_string()),
         })
         .await?;
 
     println!("direct tool output: {:#?}", direct_tool_output);
 
-    println!("summary: {} {} {}", direct_tool_output.city, direct_tool_output.summary, direct_tool_output.source);
+    println!(
+        "summary: {} {} {}",
+        direct_tool_output.city, direct_tool_output.summary, direct_tool_output.source
+    );
 
     Ok(())
 }

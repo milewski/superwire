@@ -4,7 +4,7 @@ input {
 
 provider openai {
     driver: "openai"
-    endpoint: "http://198.18.0.1:1234/v1"
+    endpoint: "http://100.76.5.36:1234/v1"
     api_key: "1234"
     models: ["qwen3.5-27b"]
 }

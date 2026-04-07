@@ -1,5 +1,5 @@
 [package]
-name = "wasm-workflow-example-tool-sources"
+name = "tools"
 version = "0.1.0"
 edition = "2021"
 

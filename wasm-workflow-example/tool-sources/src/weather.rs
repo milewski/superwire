@@ -4,7 +4,7 @@ use superwire_wasm_tool_sdk::host;
 use superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct OptionalWeatherInput {
+pub struct WeatherInput {
     /// Optional city name provided by the model.
     pub city: Option<String>,
 }
@@ -30,7 +30,7 @@ pub struct WeatherOutput {
 pub struct Weather;
 
 impl Tool for Weather {
-    type AgentInput = OptionalWeatherInput;
+    type AgentInput = WeatherInput;
     type BoundInput = BoundWeatherInput;
     type Output = WeatherOutput;
 
