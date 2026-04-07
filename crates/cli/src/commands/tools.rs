@@ -6,8 +6,8 @@ use clap::{Args, Subcommand};
 
 use crate::diagnostics::CommandError;
 
-const GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE: &str = include_str!("../../templates/generated-tool-cargo.toml.template");
-const GENERATED_TOOL_COMPONENT_SOURCE_TEMPLATE: &str = include_str!("../../templates/generated-tool-component-lib.rs.template");
+const GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE: &str = include_str!("../../templates/cargo.toml.template");
+const GENERATED_TOOL_COMPONENT_SOURCE_TEMPLATE: &str = include_str!("../../templates/lib.rs.template");
 
 #[derive(Debug, Args)]
 pub struct ToolsCommand {
