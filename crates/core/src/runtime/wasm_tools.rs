@@ -5,6 +5,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::fs;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use superwire_agent::{DynamicTool, ToolDefinition, ToolError};
@@ -319,15 +320,24 @@ fn perform_http_get_request(request_url: &str) -> Result<String, String> {
 }
 
 #[derive(Clone)]
-pub struct WasmTool {
+pub struct WasmTool<AgentInputType = Value, OutputType = Value, BoundInputType = Map<String, Value>> {
     component: WasmToolComponent,
+    phantom: PhantomData<(AgentInputType, OutputType, BoundInputType)>,
 }
 
-impl WasmTool {
+impl<AgentInputType, OutputType, BoundInputType> WasmTool<AgentInputType, OutputType, BoundInputType>
+where
+    AgentInputType: Serialize,
+    OutputType: DeserializeOwned,
+    BoundInputType: Serialize,
+{
     pub fn from_file(component_path: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
         let component = WasmToolComponent::from_file(component_path.as_ref().to_path_buf())?;
 
-        Ok(Self { component })
+        Ok(Self {
+            component,
+            phantom: PhantomData,
+        })
     }
 
     #[must_use]
@@ -336,25 +346,15 @@ impl WasmTool {
     }
 
     #[allow(clippy::unused_async)]
-    pub async fn run<AgentInputType, OutputType>(&self, agent_input: AgentInputType) -> Result<OutputType, ToolError>
+    pub async fn run(&self, agent_input: AgentInputType) -> Result<OutputType, ToolError>
     where
-        AgentInputType: Serialize,
-        OutputType: DeserializeOwned,
+        BoundInputType: Default,
     {
-        self.run_with_bound_input(agent_input, Map::<String, Value>::new()).await
+        self.run_with_bound_input(agent_input, BoundInputType::default()).await
     }
 
     #[allow(clippy::unused_async)]
-    pub async fn run_with_bound_input<AgentInputType, BoundInputType, OutputType>(
-        &self,
-        agent_input: AgentInputType,
-        bound_input: BoundInputType,
-    ) -> Result<OutputType, ToolError>
-    where
-        AgentInputType: Serialize,
-        BoundInputType: Serialize,
-        OutputType: DeserializeOwned,
-    {
+    pub async fn run_with_bound_input(&self, agent_input: AgentInputType, bound_input: BoundInputType) -> Result<OutputType, ToolError> {
         let serialized_agent_input = self.serialize_agent_input(agent_input)?;
         let serialized_bound_input = self.serialize_bound_input(bound_input)?;
         let output_value = self.component.execute(serialized_agent_input, serialized_bound_input)?;
@@ -362,18 +362,22 @@ impl WasmTool {
         self.deserialize_output(output_value)
     }
 
-    fn serialize_agent_input<AgentInputType>(&self, agent_input: AgentInputType) -> Result<Value, ToolError>
+    #[allow(clippy::unused_async)]
+    pub async fn run_without_input(&self) -> Result<OutputType, ToolError>
     where
-        AgentInputType: Serialize,
+        AgentInputType: Default,
+        BoundInputType: Default,
     {
+        self.run_with_bound_input(AgentInputType::default(), BoundInputType::default())
+            .await
+    }
+
+    fn serialize_agent_input(&self, agent_input: AgentInputType) -> Result<Value, ToolError> {
         serde_json::to_value(agent_input)
             .map_err(|error| ToolError::new(format!("failed to serialize wasm tool agent input payload: {error}")))
     }
 
-    fn serialize_bound_input<BoundInputType>(&self, bound_input: BoundInputType) -> Result<Map<String, Value>, ToolError>
-    where
-        BoundInputType: Serialize,
-    {
+    fn serialize_bound_input(&self, bound_input: BoundInputType) -> Result<Map<String, Value>, ToolError> {
         let serialized_bound_input = serde_json::to_value(bound_input)
             .map_err(|error| ToolError::new(format!("failed to serialize wasm tool bound input payload: {error}")))?;
 
@@ -386,10 +390,7 @@ impl WasmTool {
         Ok(bound_input_object.clone())
     }
 
-    fn deserialize_output<OutputType>(&self, output_value: Value) -> Result<OutputType, ToolError>
-    where
-        OutputType: DeserializeOwned,
-    {
+    fn deserialize_output(&self, output_value: Value) -> Result<OutputType, ToolError> {
         serde_json::from_value(output_value)
             .map_err(|error| ToolError::new(format!("failed to deserialize wasm tool output payload: {error}")))
     }

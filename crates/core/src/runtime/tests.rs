@@ -460,7 +460,8 @@ async fn try_workflow_macro_executes_workflow_from_path_literal_with_input() {
 
 #[test]
 fn tool_macro_loads_component_path_relative_to_callsite() {
-    let tool_load_result = crate::tool!("fixtures/path_literal_output.wasm");
+    let tool_load_result: Result<crate::runtime::WasmTool<serde_json::Value, serde_json::Value>, _> =
+        crate::tool!("fixtures/path_literal_output.wasm");
 
     match tool_load_result {
         Ok(_) => panic!("missing fixture component should return an error"),

@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 use superwire_wasm_tool_sdk::host;
 use superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct OptionalWeatherInput {
     /// Optional city name provided by the model.
-    city: Option<String>,
+    pub city: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -15,16 +15,16 @@ pub struct BoundWeatherInput {
     city: Option<String>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct WeatherOutput {
     /// City that was requested.
-    city: String,
+    pub city: String,
 
     /// Current weather summary returned by wttr.in.
-    summary: String,
+    pub summary: String,
 
     /// Data source name.
-    source: String,
+    pub source: String,
 }
 
 pub struct Weather;
