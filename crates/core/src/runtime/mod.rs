@@ -16,7 +16,7 @@ pub use error::WorkflowRuntimeError;
 pub use inference::InferenceSetting;
 pub use provider::{ProviderConfig, ProviderDriver};
 pub use runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
-pub use wasm_tools::WasmTool;
+pub use wasm_tools::Tool;
 pub use workflow_runtime::{
     execute_workflow, execute_workflow_file, execute_workflow_file_without_input, execute_workflow_without_input, WorkflowRuntime,
 };
@@ -90,7 +90,7 @@ macro_rules! tool {
                 resolved_tool_path = workspace_root.join(caller_directory).join($tool_path);
             }
 
-            $crate::runtime::WasmTool::from_file(&resolved_tool_path)
+            $crate::runtime::Tool::from_file(&resolved_tool_path)
         }
     }};
 }
