@@ -316,6 +316,34 @@ fn perform_http_get_request(request_url: &str) -> Result<String, String> {
         .map_err(|error| format!("failed to read http response body from `{request_url}`: {error}"))
 }
 
+#[derive(Clone)]
+pub struct WasmTool {
+    component: WasmToolComponent,
+}
+
+impl WasmTool {
+    pub fn from_file(component_path: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
+        let component = WasmToolComponent::from_file(component_path.as_ref().to_path_buf())?;
+
+        Ok(Self { component })
+    }
+
+    #[must_use]
+    pub fn definition(&self) -> &ToolDefinition {
+        &self.component.tool_definition
+    }
+
+    #[allow(clippy::unused_async)]
+    pub async fn run(&self, agent_input: Value) -> Result<Value, ToolError> {
+        self.component.execute(agent_input, Map::new())
+    }
+
+    #[allow(clippy::unused_async)]
+    pub async fn run_with_bound_input(&self, agent_input: Value, bound_input: Map<String, Value>) -> Result<Value, ToolError> {
+        self.component.execute(agent_input, bound_input)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::WasmToolRuntimeLoader;
