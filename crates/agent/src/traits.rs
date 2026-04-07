@@ -13,6 +13,8 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters_schema: Schema,
+    pub bound_parameters_schema: Option<Schema>,
+    pub output_schema: Option<Schema>,
 }
 
 /// Tool-selection mode requested by the executor for a provider turn.

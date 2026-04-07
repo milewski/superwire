@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/agent", "crates/lsp", "crates/ffi", "crates/cli"]
+members = ["crates/core", "crates/agent", "crates/lsp", "crates/ffi", "crates/cli", "crates/wasm-tool-sdk"]
 resolver = "2"
 
 [workspace.lints.clippy]

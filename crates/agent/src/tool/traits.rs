@@ -1,6 +1,6 @@
 use crate::tool::ToolError;
 use crate::traits::ToolDefinition;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::fmt::Debug;
 
 /// Trait for tools that can be used by the agent
@@ -40,6 +40,33 @@ pub trait RuntimeTool: Send + Sync + Debug {
     fn definition(&self) -> Result<ToolDefinition, ToolError>;
 
     async fn execute(&self, input: Value) -> Result<Value, ToolError>;
+
+    async fn execute_with_bound_arguments(&self, model_input: Value, bound_arguments: Map<String, Value>) -> Result<Value, ToolError> {
+        let input_kind = match &model_input {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        };
+
+        let Some(model_input_fields) = model_input.as_object() else {
+            return Err(ToolError::new(format!(
+                "tool `{}` requires object arguments, but model sent {}",
+                self.definition()?.name,
+                input_kind
+            )));
+        };
+
+        let mut merged_arguments = model_input_fields.clone();
+
+        for (bound_argument_name, bound_argument_value) in bound_arguments {
+            merged_arguments.insert(bound_argument_name, bound_argument_value);
+        }
+
+        self.execute(Value::Object(merged_arguments)).await
+    }
 }
 
 #[async_trait::async_trait]
@@ -52,6 +79,8 @@ where
             name: self.name().to_string(),
             description: self.description().to_string(),
             parameters_schema: T::parameters_schema(),
+            bound_parameters_schema: None,
+            output_schema: None,
         })
     }
 

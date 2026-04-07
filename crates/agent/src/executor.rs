@@ -105,11 +105,15 @@ where
                 name: self.finalize_success_tool.name().to_string(),
                 description: self.finalize_success_tool.description().to_string(),
                 parameters_schema: self.finalize_success_parameters_schema.clone(),
+                bound_parameters_schema: None,
+                output_schema: None,
             },
             ToolDefinition {
                 name: self.finalize_error_tool.name().to_string(),
                 description: self.finalize_error_tool.description().to_string(),
                 parameters_schema: self.finalize_error_parameters_schema.clone(),
+                bound_parameters_schema: None,
+                output_schema: None,
             },
         ];
 

@@ -15,26 +15,6 @@ pub struct RequestedAgentTool {
     pub bound_arguments: Map<String, Value>,
 }
 
-impl RequestedAgentTool {
-    fn merge_with_model_arguments(&self, model_arguments: Value) -> Result<Value, ToolError> {
-        let Some(model_argument_fields) = model_arguments.as_object() else {
-            return Err(ToolError::new(format!(
-                "tool `{}` requires object arguments, but model sent {}",
-                self.name,
-                crate::runtime::types::value_kind_name(&model_arguments)
-            )));
-        };
-
-        let mut merged_arguments = model_argument_fields.clone();
-
-        for (bound_argument_name, bound_argument_value) in &self.bound_arguments {
-            merged_arguments.insert(bound_argument_name.clone(), bound_argument_value.clone());
-        }
-
-        Ok(Value::Object(merged_arguments))
-    }
-}
-
 #[derive(Clone)]
 struct BoundRuntimeTool {
     inner_tool: Arc<dyn RuntimeTool>,
@@ -67,11 +47,9 @@ impl RuntimeTool for BoundRuntimeTool {
     }
 
     async fn execute(&self, input: Value) -> Result<Value, ToolError> {
-        // Merge order is deterministic: model-provided arguments are applied first,
-        // then DSL-bound arguments override matching keys.
-        let merged_input = self.requested_tool.merge_with_model_arguments(input)?;
-
-        self.inner_tool.execute(merged_input).await
+        self.inner_tool
+            .execute_with_bound_arguments(input, self.requested_tool.bound_arguments.clone())
+            .await
     }
 }
 

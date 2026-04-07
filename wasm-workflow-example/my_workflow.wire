@@ -4,14 +4,14 @@ input {
 
 provider openai {
     driver: "openai"
-    endpoint: "http://198.18.0.1:1234/v1"
+    endpoint: "http://100.76.74.102:1234/v1"
     api_key: "1234"
-    models: ["qwen3.5-27b"]
+    models: [ "qwen3.5-27b" ]
 }
 
 agent assistant {
     model: openai("qwen3.5-27b")
-    tools: [tool.weather(city: input.city)]
+    tools: [ tool.weather(city: input.city) ]
     prompt: "You must call tool.weather exactly once. Use the tool result to answer with one short sentence."
     output: string
 }

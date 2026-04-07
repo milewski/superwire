@@ -1,14 +1,21 @@
 use crate::runtime::error::WorkflowRuntimeError;
 use schemars::Schema;
-use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use superwire_agent::{DynamicTool, ToolDefinition, ToolError};
-use wasmtime::{Caller, Engine, Extern, Instance, Linker, Memory, Module, Store, TypedFunc};
+use wasmtime::component::{Component, Linker};
+use wasmtime::{Config, Engine, Store};
+
+mod contract {
+    wasmtime::component::bindgen!({
+        path: "wit",
+        world: "superwire-tool",
+    });
+}
 
 #[derive(Debug, Clone)]
 pub struct WasmToolRuntimeLoader {
@@ -27,9 +34,9 @@ impl WasmToolRuntimeLoader {
         let mut discovered_runtime_tools = Vec::new();
         let mut discovered_tool_names = HashSet::<String>::new();
 
-        for module_path in self.wasm_module_paths()? {
-            let wasm_tool_module = WasmToolModule::from_file(module_path)?;
-            let dynamic_tool = wasm_tool_module.as_dynamic_tool();
+        for component_path in self.wasm_component_paths()? {
+            let wasm_tool_component = WasmToolComponent::from_file(component_path)?;
+            let dynamic_tool = wasm_tool_component.as_dynamic_tool();
             let tool_name = dynamic_tool.tool_definition().name.clone();
 
             if !discovered_tool_names.insert(tool_name.clone()) {
@@ -51,7 +58,7 @@ impl WasmToolRuntimeLoader {
         self.workflow_directory.join("tools")
     }
 
-    fn wasm_module_paths(&self) -> Result<Vec<PathBuf>, WorkflowRuntimeError> {
+    fn wasm_component_paths(&self) -> Result<Vec<PathBuf>, WorkflowRuntimeError> {
         let tools_directory = self.tools_directory();
 
         if !tools_directory.exists() {
@@ -67,7 +74,7 @@ impl WasmToolRuntimeLoader {
             });
         }
 
-        let mut wasm_module_paths = Vec::new();
+        let mut wasm_component_paths = Vec::new();
 
         let directory_entries = fs::read_dir(&tools_directory).map_err(|error| WorkflowRuntimeError::Other {
             message: format!("failed to read tools directory `{}`: {error}", tools_directory.display()),
@@ -78,49 +85,50 @@ impl WasmToolRuntimeLoader {
                 message: format!("failed to read directory entry in `{}`: {error}", tools_directory.display()),
             })?;
 
-            let module_path = directory_entry.path();
+            let component_path = directory_entry.path();
 
-            if !module_path.is_file() {
+            if !component_path.is_file() {
                 continue;
             }
 
-            if module_path.extension().and_then(std::ffi::OsStr::to_str) != Some("wasm") {
+            if component_path.extension().and_then(std::ffi::OsStr::to_str) != Some("wasm") {
                 continue;
             }
 
-            wasm_module_paths.push(module_path);
+            wasm_component_paths.push(component_path);
         }
 
-        wasm_module_paths.sort();
+        wasm_component_paths.sort();
 
-        Ok(wasm_module_paths)
+        Ok(wasm_component_paths)
     }
 }
 
-#[derive(Debug, Clone)]
-struct WasmToolModule {
-    module_path: PathBuf,
+#[derive(Clone)]
+struct WasmToolComponent {
+    component_path: PathBuf,
     execution_engine: Arc<Engine>,
-    compiled_module: Arc<Module>,
+    compiled_component: Arc<Component>,
     tool_definition: ToolDefinition,
 }
 
-impl WasmToolModule {
-    fn from_file(module_path: PathBuf) -> Result<Self, WorkflowRuntimeError> {
-        let execution_engine = Arc::new(Engine::default());
-        let compiled_module =
+impl WasmToolComponent {
+    fn from_file(component_path: PathBuf) -> Result<Self, WorkflowRuntimeError> {
+        let execution_engine = Arc::new(Self::component_engine()?);
+
+        let compiled_component =
             Arc::new(
-                Module::from_file(&execution_engine, &module_path).map_err(|error| WorkflowRuntimeError::Other {
-                    message: format!("failed to compile wasm tool module `{}`: {error}", module_path.display()),
+                Component::from_file(&execution_engine, &component_path).map_err(|error| WorkflowRuntimeError::Other {
+                    message: format!("failed to compile wasm tool component `{}`: {error}", component_path.display()),
                 })?,
             );
 
-        let tool_definition = Self::read_tool_definition(&execution_engine, &compiled_module, &module_path)?;
+        let tool_definition = Self::read_tool_definition(&execution_engine, &compiled_component, &component_path)?;
 
         Ok(Self {
-            module_path,
+            component_path,
             execution_engine,
-            compiled_module,
+            compiled_component,
             tool_definition,
         })
     }
@@ -128,434 +136,197 @@ impl WasmToolModule {
     #[must_use]
     fn as_dynamic_tool(&self) -> DynamicTool {
         let tool_definition = self.tool_definition.clone();
-        let wasm_tool_module = self.clone();
+        let wasm_tool_component = self.clone();
 
-        DynamicTool::new(tool_definition, move |tool_input| {
-            let wasm_tool_module = wasm_tool_module.clone();
+        DynamicTool::new_with_bound_arguments(tool_definition, move |agent_input, bound_input| {
+            let wasm_tool_component = wasm_tool_component.clone();
 
-            async move { wasm_tool_module.execute(tool_input) }
+            async move { wasm_tool_component.execute(agent_input, bound_input) }
         })
     }
 
-    fn execute(&self, tool_input: Value) -> Result<Value, ToolError> {
-        let mut instance_handle =
-            WasmToolInstance::new(&self.execution_engine, &self.compiled_module, &self.module_path).map_err(ToolError::new)?;
+    fn execute(&self, agent_input: Value, bound_input: Map<String, Value>) -> Result<Value, ToolError> {
+        let mut component_instance = WasmToolComponentInstance::new(&self.execution_engine, &self.compiled_component, &self.component_path)
+            .map_err(ToolError::new)?;
 
-        instance_handle.execute_tool(tool_input)
+        component_instance.execute_tool(agent_input, bound_input)
+    }
+
+    fn component_engine() -> Result<Engine, WorkflowRuntimeError> {
+        let mut engine_config = Config::new();
+        engine_config.wasm_component_model(true);
+
+        Engine::new(&engine_config).map_err(|error| WorkflowRuntimeError::Other {
+            message: format!("failed to create wasm component engine: {error}"),
+        })
     }
 
     fn read_tool_definition(
         execution_engine: &Engine,
-        compiled_module: &Module,
-        module_path: &Path,
+        compiled_component: &Component,
+        component_path: &Path,
     ) -> Result<ToolDefinition, WorkflowRuntimeError> {
-        let mut instance_handle = WasmToolInstance::new(execution_engine, compiled_module, module_path)
+        let mut component_instance = WasmToolComponentInstance::new(execution_engine, compiled_component, component_path)
             .map_err(|error| WorkflowRuntimeError::Other { message: error })?;
 
-        let definition_json = instance_handle
-            .read_exported_json_string(WasmToolExportName::Definition)
-            .map_err(|error| WorkflowRuntimeError::Other { message: error })?;
-
-        let definition_payload =
-            serde_json::from_str::<WasmToolDefinitionPayload>(&definition_json).map_err(|error| WorkflowRuntimeError::Other {
+        let definition_result = component_instance
+            .bindings
+            .superwire_tool_tool()
+            .call_definition(&mut component_instance.store)
+            .map_err(|error| WorkflowRuntimeError::Other {
                 message: format!(
-                    "failed to parse `tool_definition` payload from wasm module `{}`: {error}",
-                    module_path.display()
+                    "failed to call `definition` on wasm tool component `{}`: {error}",
+                    component_path.display()
                 ),
             })?;
 
-        Ok(definition_payload.into_tool_definition())
+        let component_tool_definition = definition_result.map_err(|error_message| WorkflowRuntimeError::Other {
+            message: format!(
+                "wasm tool component `{}` returned definition error: {error_message}",
+                component_path.display()
+            ),
+        })?;
+
+        let parameters_schema = serde_json::from_str::<Schema>(&component_tool_definition.parameters_schema_json).map_err(|error| {
+            WorkflowRuntimeError::Other {
+                message: format!(
+                    "failed to parse `parameters_schema_json` from wasm tool component `{}`: {error}",
+                    component_path.display()
+                ),
+            }
+        })?;
+
+        let bound_parameters_schema =
+            serde_json::from_str::<Schema>(&component_tool_definition.bound_parameters_schema_json).map_err(|error| {
+                WorkflowRuntimeError::Other {
+                    message: format!(
+                        "failed to parse `bound_parameters_schema_json` from wasm tool component `{}`: {error}",
+                        component_path.display()
+                    ),
+                }
+            })?;
+
+        let output_schema =
+            serde_json::from_str::<Schema>(&component_tool_definition.output_schema_json).map_err(|error| WorkflowRuntimeError::Other {
+                message: format!(
+                    "failed to parse `output_schema_json` from wasm tool component `{}`: {error}",
+                    component_path.display()
+                ),
+            })?;
+
+        Ok(ToolDefinition {
+            name: component_tool_definition.name,
+            description: component_tool_definition.description,
+            parameters_schema,
+            bound_parameters_schema: Some(bound_parameters_schema),
+            output_schema: Some(output_schema),
+        })
     }
 }
 
-struct WasmToolInstance {
-    store: Store<()>,
-    instance: Instance,
-    module_path: PathBuf,
+struct WasmToolComponentStoreData {
+    component_path: PathBuf,
 }
 
-impl WasmToolInstance {
-    fn new(execution_engine: &Engine, compiled_module: &Module, module_path: &Path) -> Result<Self, String> {
-        let mut store = Store::new(execution_engine, ());
-
-        let mut linker = Linker::new(execution_engine);
-
-        Self::register_host_http_import(&mut linker, module_path)?;
-
-        let instance = linker
-            .instantiate(&mut store, compiled_module)
-            .map_err(|error| format!("failed to instantiate wasm tool module `{}`: {error}", module_path.display()))?;
-
-        Ok(Self {
-            store,
-            instance,
-            module_path: module_path.to_path_buf(),
-        })
-    }
-
-    fn execute_tool(&mut self, tool_input: Value) -> Result<Value, ToolError> {
-        let serialized_tool_input = serde_json::to_vec(&tool_input)
-            .map_err(|error| ToolError::new(format!("failed to serialize tool input for wasm module: {error}")))?;
-
-        let input_length =
-            i32::try_from(serialized_tool_input.len()).map_err(|_| ToolError::new("tool input payload exceeds wasm i32 length limits"))?;
-
-        let allocate_function = self.allocate_function().map_err(ToolError::new)?;
-
-        let input_pointer = allocate_function
-            .call(&mut self.store, input_length)
-            .map_err(|error| ToolError::new(format!("wasm tool `tool_alloc` failed: {error}")))?;
-
-        let input_pointer_offset =
-            usize::try_from(input_pointer).map_err(|_| ToolError::new("wasm tool returned a negative pointer from `tool_alloc`"))?;
-
-        let tool_memory = self.memory().map_err(ToolError::new)?;
-
-        tool_memory
-            .write(&mut self.store, input_pointer_offset, &serialized_tool_input)
-            .map_err(|error| ToolError::new(format!("failed to write input payload into wasm memory: {error}")))?;
-
-        let execute_function = self.execute_function().map_err(ToolError::new)?;
-
-        let output_pointer_and_length = execute_function
-            .call(&mut self.store, (input_pointer, input_length))
-            .map_err(|error| ToolError::new(format!("wasm tool `tool_execute` failed: {error}")))?;
-
-        let output_json = self
-            .read_memory_slice_as_string(output_pointer_and_length)
-            .map_err(ToolError::new)?;
-
-        serde_json::from_str::<Value>(&output_json).map_err(|error| {
-            ToolError::new(format!(
-                "wasm tool `{}` returned invalid JSON output: {error}",
-                self.module_path.display()
-            ))
-            .with_context("raw_output", Value::String(output_json))
-        })
-    }
-
-    fn read_exported_json_string(&mut self, export_name: WasmToolExportName) -> Result<String, String> {
-        let exported_function = self.json_slice_function(export_name)?;
-
-        let pointer_and_length = exported_function.call(&mut self.store, ()).map_err(|error| {
+impl contract::superwire::tool::host::Host for WasmToolComponentStoreData {
+    fn http_get(&mut self, request_url: String) -> Result<String, String> {
+        perform_http_get_request(&request_url).map_err(|error_message| {
             format!(
-                "failed to call export `{}` for wasm module `{}`: {error}",
-                export_name.as_str(),
-                self.module_path.display()
+                "host-http-get failed for component `{}` with url `{request_url}`: {error_message}",
+                self.component_path.display()
+            )
+        })
+    }
+}
+
+struct WasmToolComponentInstance {
+    store: Store<WasmToolComponentStoreData>,
+    bindings: contract::SuperwireTool,
+}
+
+impl WasmToolComponentInstance {
+    fn new(execution_engine: &Engine, compiled_component: &Component, component_path: &Path) -> Result<Self, String> {
+        let mut component_linker = Linker::new(execution_engine);
+
+        contract::superwire::tool::host::add_to_linker::<
+            WasmToolComponentStoreData,
+            wasmtime::component::HasSelf<WasmToolComponentStoreData>,
+        >(&mut component_linker, |store_data| store_data)
+        .map_err(|error| {
+            format!(
+                "failed to register host imports for component `{}`: {error}",
+                component_path.display()
             )
         })?;
 
-        self.read_memory_slice_as_string(pointer_and_length)
+        let mut component_store = Store::new(
+            execution_engine,
+            WasmToolComponentStoreData {
+                component_path: component_path.to_path_buf(),
+            },
+        );
+
+        let component_bindings = contract::SuperwireTool::instantiate(&mut component_store, compiled_component, &component_linker)
+            .map_err(|error| format!("failed to instantiate wasm tool component `{}`: {error}", component_path.display()))?;
+
+        Ok(Self {
+            store: component_store,
+            bindings: component_bindings,
+        })
     }
 
-    fn register_host_http_import(linker: &mut Linker<()>, module_path: &Path) -> Result<(), String> {
-        linker
-            .func_wrap(
-                "superwire",
-                "host_http_get",
-                move |mut caller: Caller<'_, ()>, url_pointer: i32, url_length: i32| {
-                    Self::host_http_get(&mut caller, url_pointer, url_length).unwrap_or(0)
-                },
-            )
-            .map_err(|error| {
-                format!(
-                    "failed to register host import `superwire.host_http_get` for module `{}`: {error}",
-                    module_path.display()
-                )
-            })
-            .map(|_| ())
-    }
+    fn execute_tool(&mut self, agent_input: Value, bound_input: Map<String, Value>) -> Result<Value, ToolError> {
+        let serialized_agent_input = serde_json::to_string(&agent_input)
+            .map_err(|error| ToolError::new(format!("failed to serialize agent tool input for wasm component: {error}")))?;
 
-    fn host_http_get(caller: &mut Caller<'_, ()>, url_pointer: i32, url_length: i32) -> Result<i64, String> {
-        let request_url = Self::read_caller_memory_as_string(caller, url_pointer, url_length)?;
+        let serialized_bound_input = serde_json::to_string(&Value::Object(bound_input))
+            .map_err(|error| ToolError::new(format!("failed to serialize bound tool input for wasm component: {error}")))?;
 
-        let response_body = Self::perform_http_get_request(&request_url)?;
+        let execution_result = self
+            .bindings
+            .superwire_tool_tool()
+            .call_execute(&mut self.store, &serialized_agent_input, &serialized_bound_input)
+            .map_err(|error| ToolError::new(format!("wasm tool `execute` call failed: {error}")))?;
 
-        Self::write_string_into_caller_memory(caller, &response_body)
-    }
-
-    fn perform_http_get_request(request_url: &str) -> Result<String, String> {
-        let http_agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(15)).build();
-
-        let http_response = http_agent
-            .get(request_url)
-            .set("accept", "application/json")
-            .call()
-            .map_err(|error| format!("http request to `{request_url}` failed: {error}"))?;
-
-        http_response
-            .into_string()
-            .map_err(|error| format!("failed to read http response body from `{request_url}`: {error}"))
-    }
-
-    fn read_caller_memory_as_string(caller: &mut Caller<'_, ()>, pointer: i32, length: i32) -> Result<String, String> {
-        if pointer <= 0 {
-            return Err("caller memory pointer must be positive".to_string());
-        }
-
-        if length < 0 {
-            return Err("caller memory length cannot be negative".to_string());
-        }
-
-        let byte_offset = usize::try_from(pointer).map_err(|_| "caller memory pointer does not fit usize".to_string())?;
-        let byte_length = usize::try_from(length).map_err(|_| "caller memory length does not fit usize".to_string())?;
-        let memory_slice = WasmMemorySlice { byte_offset, byte_length };
-
-        let memory = Self::caller_memory(caller)?;
-        let memory_bytes = memory.data(&*caller);
-        let end_offset = memory_slice.end_offset()?;
-
-        if end_offset > memory_bytes.len() {
-            return Err(format!(
-                "caller memory slice out of bounds (offset={}, length={}, memory_size={})",
-                memory_slice.byte_offset,
-                memory_slice.byte_length,
-                memory_bytes.len()
-            ));
-        }
-
-        let slice_bytes = &memory_bytes[memory_slice.byte_offset..end_offset];
-
-        String::from_utf8(slice_bytes.to_vec()).map_err(|error| format!("caller memory payload is not utf-8: {error}"))
-    }
-
-    fn write_string_into_caller_memory(caller: &mut Caller<'_, ()>, payload: &str) -> Result<i64, String> {
-        let payload_bytes = payload.as_bytes();
-
-        let payload_length = i32::try_from(payload_bytes.len()).map_err(|_| "host payload length exceeds wasm i32 limits".to_string())?;
-
-        let allocation_pointer = Self::allocate_caller_memory(caller, payload_length)?;
-
-        if allocation_pointer <= 0 {
-            return Err("guest `tool_alloc` returned a non-positive pointer".to_string());
-        }
-
-        let allocation_offset =
-            usize::try_from(allocation_pointer).map_err(|_| "guest allocation pointer does not fit usize".to_string())?;
-
-        let memory = Self::caller_memory(caller)?;
-
-        memory
-            .write(&mut *caller, allocation_offset, payload_bytes)
-            .map_err(|error| format!("failed to write host payload into wasm memory: {error}"))?;
-
-        let memory_slice = WasmMemorySlice {
-            byte_offset: allocation_offset,
-            byte_length: payload_bytes.len(),
+        let output_json = match execution_result {
+            Ok(output_json) => output_json,
+            Err(tool_error) => {
+                return Err(ToolError::new(format!(
+                    "wasm tool execution failed [{}]: {}",
+                    tool_error.code, tool_error.message
+                )));
+            }
         };
 
-        memory_slice.to_encoded_i64()
-    }
-
-    fn allocate_caller_memory(caller: &mut Caller<'_, ()>, allocation_length: i32) -> Result<i32, String> {
-        let Some(allocation_export) = caller.get_export(WasmToolExportName::Allocate.as_str()) else {
-            return Err("guest module is missing `tool_alloc` while serving host import".to_string());
-        };
-
-        let Extern::Func(allocation_function) = allocation_export else {
-            return Err("guest `tool_alloc` export is not a function".to_string());
-        };
-
-        let typed_allocation_function = allocation_function
-            .typed::<i32, i32>(&mut *caller)
-            .map_err(|error| format!("guest `tool_alloc` has invalid signature: {error}"))?;
-
-        typed_allocation_function
-            .call(&mut *caller, allocation_length)
-            .map_err(|error| format!("guest `tool_alloc` call failed: {error}"))
-    }
-
-    fn caller_memory(caller: &mut Caller<'_, ()>) -> Result<Memory, String> {
-        let Some(memory_export) = caller.get_export(WasmToolExportName::Memory.as_str()) else {
-            return Err("guest module is missing exported `memory`".to_string());
-        };
-
-        let Extern::Memory(memory) = memory_export else {
-            return Err("guest `memory` export is not a memory".to_string());
-        };
-
-        Ok(memory)
-    }
-
-    fn json_slice_function(&mut self, export_name: WasmToolExportName) -> Result<TypedFunc<(), i64>, String> {
-        self.instance
-            .get_typed_func::<(), i64>(&mut self.store, export_name.as_str())
-            .map_err(|error| {
-                format!(
-                    "missing or invalid wasm export `{}` in module `{}`: {error}",
-                    export_name.as_str(),
-                    self.module_path.display()
-                )
-            })
-    }
-
-    fn allocate_function(&mut self) -> Result<TypedFunc<i32, i32>, String> {
-        self.instance
-            .get_typed_func::<i32, i32>(&mut self.store, WasmToolExportName::Allocate.as_str())
-            .map_err(|error| {
-                format!(
-                    "missing or invalid wasm export `{}` in module `{}`: {error}",
-                    WasmToolExportName::Allocate.as_str(),
-                    self.module_path.display()
-                )
-            })
-    }
-
-    fn execute_function(&mut self) -> Result<TypedFunc<(i32, i32), i64>, String> {
-        self.instance
-            .get_typed_func::<(i32, i32), i64>(&mut self.store, WasmToolExportName::Execute.as_str())
-            .map_err(|error| {
-                format!(
-                    "missing or invalid wasm export `{}` in module `{}`: {error}",
-                    WasmToolExportName::Execute.as_str(),
-                    self.module_path.display()
-                )
-            })
-    }
-
-    fn memory(&mut self) -> Result<Memory, String> {
-        self.instance
-            .get_memory(&mut self.store, WasmToolExportName::Memory.as_str())
-            .ok_or_else(|| format!("missing wasm memory export `memory` in module `{}`", self.module_path.display()))
-    }
-
-    fn read_memory_slice_as_string(&mut self, encoded_slice: i64) -> Result<String, String> {
-        let memory_slice = WasmMemorySlice::from_encoded_i64(encoded_slice)?;
-        let tool_memory = self.memory()?;
-        let memory_bytes = tool_memory.data(&self.store);
-
-        let end_offset = memory_slice.end_offset()?;
-
-        if end_offset > memory_bytes.len() {
-            return Err(format!(
-                "wasm memory slice out of bounds for module `{}` (offset={}, length={}, memory_size={})",
-                self.module_path.display(),
-                memory_slice.byte_offset,
-                memory_slice.byte_length,
-                memory_bytes.len()
-            ));
-        }
-
-        let slice_bytes = &memory_bytes[memory_slice.byte_offset..end_offset];
-
-        String::from_utf8(slice_bytes.to_vec())
-            .map_err(|error| format!("wasm module `{}` returned non-utf8 payload: {error}", self.module_path.display()))
+        serde_json::from_str::<Value>(&output_json).map_err(|error| {
+            ToolError::new(format!("wasm tool returned invalid JSON output: {error}"))
+                .with_context("raw_output", Value::String(output_json))
+        })
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct WasmMemorySlice {
-    byte_offset: usize,
-    byte_length: usize,
-}
+fn perform_http_get_request(request_url: &str) -> Result<String, String> {
+    let http_agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(15)).build();
 
-impl WasmMemorySlice {
-    fn from_encoded_i64(encoded_slice: i64) -> Result<Self, String> {
-        let encoded_slice = u64::try_from(encoded_slice).map_err(|_| "wasm tool returned a negative pointer-length payload".to_string())?;
+    let http_response = http_agent
+        .get(request_url)
+        .set("accept", "application/json")
+        .call()
+        .map_err(|error| format!("http request to `{request_url}` failed: {error}"))?;
 
-        let byte_offset_u64 = encoded_slice >> 32;
-        let byte_length_u64 = encoded_slice & 0xFFFF_FFFF;
-
-        let byte_offset = usize::try_from(byte_offset_u64).map_err(|_| "wasm tool pointer does not fit in host usize".to_string())?;
-
-        let byte_length = usize::try_from(byte_length_u64).map_err(|_| "wasm tool length does not fit in host usize".to_string())?;
-
-        Ok(Self { byte_offset, byte_length })
-    }
-
-    fn end_offset(self) -> Result<usize, String> {
-        self.byte_offset
-            .checked_add(self.byte_length)
-            .ok_or_else(|| "wasm tool pointer-length overflowed host usize".to_string())
-    }
-
-    fn to_encoded_i64(self) -> Result<i64, String> {
-        let byte_offset = u32::try_from(self.byte_offset).map_err(|_| "wasm tool pointer does not fit into 32-bit encoding".to_string())?;
-
-        let byte_length = u32::try_from(self.byte_length).map_err(|_| "wasm tool length does not fit into 32-bit encoding".to_string())?;
-
-        let encoded_slice = (u64::from(byte_offset) << 32) | u64::from(byte_length);
-
-        i64::try_from(encoded_slice).map_err(|_| "encoded wasm memory slice does not fit i64".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WasmToolExportName {
-    Memory,
-    Allocate,
-    Definition,
-    Execute,
-}
-
-impl WasmToolExportName {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Memory => "memory",
-            Self::Allocate => "tool_alloc",
-            Self::Definition => "tool_definition",
-            Self::Execute => "tool_execute",
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct WasmToolDefinitionPayload {
-    name: String,
-    description: String,
-    parameters_schema: Schema,
-}
-
-impl WasmToolDefinitionPayload {
-    fn into_tool_definition(self) -> ToolDefinition {
-        ToolDefinition {
-            name: self.name,
-            description: self.description,
-            parameters_schema: self.parameters_schema,
-        }
-    }
+    http_response
+        .into_string()
+        .map_err(|error| format!("failed to read http response body from `{request_url}`: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::WasmToolRuntimeLoader;
-    use serde_json::json;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::{env, fs};
-    use superwire_agent::tool::RuntimeTool;
 
     static TEMPORARY_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    #[tokio::test]
-    async fn discovers_and_executes_wasm_tools_from_workflow_tools_directory() {
-        let project_directory = create_temporary_project_directory("wasm-tools-discovery");
-        let tools_directory = project_directory.join("tools");
-
-        fs::create_dir_all(&tools_directory).expect("tools directory should be created");
-
-        write_test_wasm_tool_module(&tools_directory.join("weather.wasm"));
-
-        let runtime_tools = WasmToolRuntimeLoader::from_workflow_directory(&project_directory)
-            .discover_runtime_tools()
-            .expect("wasm tools should be discovered");
-
-        assert_eq!(runtime_tools.len(), 1);
-
-        let tool_definition = runtime_tools[0].definition().expect("tool definition should be available");
-
-        assert_eq!(tool_definition.name, "weather");
-        assert_eq!(tool_definition.description, "Returns static weather output");
-
-        let output_value = runtime_tools[0]
-            .execute(json!({ "city": "Madrid" }))
-            .await
-            .expect("tool execution should succeed");
-
-        assert_eq!(output_value, json!({ "status": "sunny" }));
-
-        fs::remove_dir_all(project_directory).expect("temporary project directory should be removed");
-    }
 
     #[test]
     fn returns_empty_tool_list_when_tools_directory_is_missing() {
@@ -570,6 +341,35 @@ mod tests {
         fs::remove_dir_all(project_directory).expect("temporary project directory should be removed");
     }
 
+    #[test]
+    fn fails_when_tools_path_is_not_a_directory() {
+        let project_directory = create_temporary_project_directory("wasm-tools-invalid-directory");
+        let tools_path = project_directory.join("tools");
+
+        fs::write(&tools_path, b"not-a-directory").expect("tools path placeholder file should be written");
+
+        let discovery_result = WasmToolRuntimeLoader::from_workflow_directory(&project_directory).discover_runtime_tools();
+
+        assert!(discovery_result.is_err());
+
+        fs::remove_dir_all(project_directory).expect("temporary project directory should be removed");
+    }
+
+    #[test]
+    fn fails_when_tools_directory_contains_invalid_component_binary() {
+        let project_directory = create_temporary_project_directory("wasm-tools-invalid-component");
+        let tools_directory = project_directory.join("tools");
+
+        fs::create_dir_all(&tools_directory).expect("tools directory should be created");
+        fs::write(tools_directory.join("broken.wasm"), b"not-a-component").expect("invalid component binary should be written");
+
+        let discovery_result = WasmToolRuntimeLoader::from_workflow_directory(&project_directory).discover_runtime_tools();
+
+        assert!(discovery_result.is_err());
+
+        fs::remove_dir_all(project_directory).expect("temporary project directory should be removed");
+    }
+
     fn create_temporary_project_directory(prefix: &str) -> PathBuf {
         let sequence_value = TEMPORARY_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let temporary_directory = env::temp_dir().join(format!("superwire-{prefix}-{}-{sequence_value}", std::process::id()));
@@ -578,51 +378,4 @@ mod tests {
 
         temporary_directory
     }
-
-    fn write_test_wasm_tool_module(module_path: &Path) {
-        let wasm_module_bytes = wat::parse_str(TEST_WASM_TOOL_MODULE).expect("test wasm module should parse");
-
-        fs::write(module_path, wasm_module_bytes).expect("test wasm module should be written");
-    }
-
-    const TEST_WASM_TOOL_MODULE: &str = r#"
-        (module
-          (memory (export "memory") 1)
-
-          (global $heap_pointer (mut i32) (i32.const 1024))
-
-          (func $pack_slice (param $slice_offset i32) (param $slice_length i32) (result i64)
-            (i64.or
-              (i64.shl
-                (i64.extend_i32_u (local.get $slice_offset))
-                (i64.const 32)
-              )
-              (i64.extend_i32_u (local.get $slice_length))
-            )
-          )
-
-          (func (export "tool_alloc") (param $allocation_length i32) (result i32)
-            (local $allocation_offset i32)
-
-            (local.set $allocation_offset (global.get $heap_pointer))
-
-            (global.set $heap_pointer
-              (i32.add (global.get $heap_pointer) (local.get $allocation_length))
-            )
-
-            (local.get $allocation_offset)
-          )
-
-          (data (i32.const 0) "{\"name\":\"weather\",\"description\":\"Returns static weather output\",\"parameters_schema\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}")
-          (data (i32.const 256) "{\"status\":\"sunny\"}")
-
-          (func (export "tool_definition") (result i64)
-            (call $pack_slice (i32.const 0) (i32.const 162))
-          )
-
-          (func (export "tool_execute") (param $input_offset i32) (param $input_length i32) (result i64)
-            (call $pack_slice (i32.const 256) (i32.const 18))
-          )
-        )
-    "#;
 }
