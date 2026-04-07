@@ -1,6 +1,6 @@
 use crate::dsl::{
-    AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, CallArgument, Expression, FunctionCall, Reference, ReferenceKeyword,
-    Workflow,
+    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, CallArgument, Expression, FunctionCall, Reference,
+    ReferenceKeyword, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
@@ -8,6 +8,7 @@ use crate::runtime::inference::InferenceSetting;
 use crate::runtime::provider::ProviderConfig;
 use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
 use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
+use crate::runtime::wasm_tools::WasmToolRuntimeLoader;
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
 use futures::future::try_join_all;
 use schemars::{JsonSchema, Schema};
@@ -15,8 +16,11 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::marker::PhantomData;
+use std::path::Path;
 use superwire_agent::AgentConfig;
+use superwire_agent::DynamicTool;
 
 #[derive(Debug, Clone)]
 struct RuntimeState {
@@ -89,6 +93,7 @@ where
 {
     workflow: Workflow,
     compiled_workflow: CompiledWorkflow,
+    runtime_tools: Vec<DynamicTool>,
     phantom: PhantomData<(Input, Output)>,
 }
 
@@ -103,8 +108,39 @@ where
         Ok(Self {
             workflow,
             compiled_workflow,
+            runtime_tools: Vec::new(),
             phantom: PhantomData,
         })
+    }
+
+    pub fn new_with_workflow_directory(workflow: Workflow, workflow_directory: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
+        let mut workflow_runtime = Self::new(workflow)?;
+
+        workflow_runtime.runtime_tools =
+            WasmToolRuntimeLoader::from_workflow_directory(workflow_directory.as_ref()).discover_runtime_tools()?;
+
+        Ok(workflow_runtime)
+    }
+
+    pub fn from_file(workflow_path: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
+        let workflow_path = workflow_path.as_ref();
+        let workflow_source = fs::read_to_string(workflow_path).map_err(|error| WorkflowRuntimeError::Other {
+            message: format!("failed to read workflow file `{}`: {error}", workflow_path.display()),
+        })?;
+
+        let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
+            let source_name = workflow_path.display().to_string();
+            let rendered_parse_error = parse_error.render_with_source(&workflow_source, &source_name);
+
+            WorkflowRuntimeError::ParseFailed {
+                source: parse_error,
+                details: rendered_parse_error,
+            }
+        })?;
+
+        let workflow_directory = workflow_path.parent().unwrap_or_else(|| Path::new("."));
+
+        Self::new_with_workflow_directory(parsed_workflow, workflow_directory)
     }
 
     #[must_use]
@@ -592,7 +628,7 @@ where
             config: prepared_agent_execution.config.clone(),
             output_schema: prepared_agent_execution.output_schema.clone(),
             requested_tools: tools,
-            runtime_tools: Vec::new(),
+            runtime_tools: self.runtime_tools.clone(),
         };
 
         runner.run_agent(&request).await

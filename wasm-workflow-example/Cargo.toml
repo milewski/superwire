@@ -1,0 +1,3 @@
+[workspace]
+members = ["host", "tool-src/weather"]
+resolver = "2"

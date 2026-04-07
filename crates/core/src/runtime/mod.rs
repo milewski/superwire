@@ -6,6 +6,7 @@ pub mod provider;
 mod runner;
 pub mod type_inference;
 pub mod types;
+mod wasm_tools;
 mod workflow_runtime;
 
 #[cfg(test)]
