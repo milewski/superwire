@@ -37,7 +37,7 @@ struct BuildToolsCommand {
     #[arg(long, value_name = "OUTPUT")]
     output: Option<PathBuf>,
 
-    #[arg(long, visible_alias = "wai", action = clap::ArgAction::SetTrue)]
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     wat: bool,
 
     #[arg(long, value_name = "TARGET", default_value = "wasm32-unknown-unknown")]
@@ -71,6 +71,7 @@ impl BuildToolsCommand {
         let tool_output_directory = build_layout.workflow_directory.join("tools");
         let generated_tools_directory = build_layout.workflow_directory.join("target/tool-build");
         let shared_target_directory = build_layout.workflow_directory.join("target/tool-target");
+        let additional_dependency_entries = self.additional_dependency_entries(&build_layout.workflow_directory)?;
 
         fs::create_dir_all(&tool_output_directory).map_err(|error| {
             CommandError::internal(format!(
@@ -104,6 +105,7 @@ impl BuildToolsCommand {
                 wat_output_paths_by_tool_source.get(tool_source_path).map(|path| path.as_path()),
                 &wit_source_directory,
                 &tool_sdk_crate_directory,
+                &additional_dependency_entries,
             )?;
         }
 
@@ -337,6 +339,7 @@ impl BuildToolsCommand {
         wat_output_path: Option<&Path>,
         wit_source_directory: &Path,
         tool_sdk_crate_directory: &Path,
+        additional_dependency_entries: &str,
     ) -> Result<(), CommandError> {
         let tool_name = tool_source_path
             .file_stem()
@@ -367,7 +370,8 @@ impl BuildToolsCommand {
 
         copy_directory_recursively(wit_source_directory, &generated_tool_wit_directory)?;
 
-        let generated_cargo_manifest = self.generated_tool_cargo_manifest(&tool_name, tool_sdk_crate_directory);
+        let generated_cargo_manifest =
+            self.generated_tool_cargo_manifest(&tool_name, tool_sdk_crate_directory, additional_dependency_entries);
         let generated_source = self.generated_tool_component_source(tool_source_path, &tool_type_name);
 
         fs::write(generated_tool_crate_directory.join("Cargo.toml"), generated_cargo_manifest)
@@ -447,10 +451,65 @@ impl BuildToolsCommand {
         Ok(())
     }
 
-    fn generated_tool_cargo_manifest(&self, tool_name: &str, tool_sdk_crate_directory: &Path) -> String {
+    fn generated_tool_cargo_manifest(
+        &self,
+        tool_name: &str,
+        tool_sdk_crate_directory: &Path,
+        additional_dependency_entries: &str,
+    ) -> String {
         GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE
             .replace("{{tool_name}}", tool_name)
             .replace("{{tool_sdk_crate_path}}", &tool_sdk_crate_directory.display().to_string())
+            .replace("{{extra_dependencies}}", additional_dependency_entries)
+    }
+
+    fn additional_dependency_entries(&self, workflow_directory: &Path) -> Result<String, CommandError> {
+        let tool_sources_manifest_path = workflow_directory.join("tool-sources/Cargo.toml");
+
+        if !tool_sources_manifest_path.is_file() {
+            return Ok(String::new());
+        }
+
+        let tool_sources_manifest = fs::read_to_string(&tool_sources_manifest_path).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to read tool sources manifest {}: {error}",
+                tool_sources_manifest_path.display()
+            ))
+        })?;
+
+        Ok(Self::extract_dependencies_section(&tool_sources_manifest))
+    }
+
+    fn extract_dependencies_section(tool_sources_manifest: &str) -> String {
+        let mut is_inside_dependencies_section = false;
+        let mut dependency_lines = Vec::new();
+
+        for manifest_line in tool_sources_manifest.lines() {
+            let trimmed_manifest_line = manifest_line.trim();
+
+            if trimmed_manifest_line == "[dependencies]" {
+                is_inside_dependencies_section = true;
+
+                continue;
+            }
+
+            if is_inside_dependencies_section
+                && trimmed_manifest_line.starts_with('[')
+                && !trimmed_manifest_line.starts_with("[dependencies.")
+            {
+                break;
+            }
+
+            if is_inside_dependencies_section {
+                dependency_lines.push(manifest_line.to_string());
+            }
+        }
+
+        if dependency_lines.iter().all(|line| line.trim().is_empty()) {
+            return String::new();
+        }
+
+        format!("\n{}", dependency_lines.join("\n"))
     }
 
     fn generated_tool_component_source(&self, tool_source_path: &Path, tool_type_name: &str) -> String {
