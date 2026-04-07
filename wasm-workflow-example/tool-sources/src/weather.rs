@@ -38,7 +38,7 @@ impl Tool for Weather {
         ToolMetadata::new("weather", "Fetches current weather from wttr.in")
     }
 
-    fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
+    async fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
         let city_name = bound_input
             .city
             .or(agent_input.city)

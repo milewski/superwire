@@ -43,6 +43,7 @@ impl ToolExecutionError {
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait Tool {
     type AgentInput: DeserializeOwned + JsonSchema;
     type BoundInput: DeserializeOwned + JsonSchema;
@@ -50,7 +51,7 @@ pub trait Tool {
 
     fn metadata() -> ToolMetadata;
 
-    fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError>;
+    async fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -89,14 +90,14 @@ where
     })
 }
 
-pub fn execute_tool_json<ToolType>(agent_input_json: &str, bound_input_json: &str) -> Result<String, ToolExecutionError>
+pub async fn execute_tool_json<ToolType>(agent_input_json: &str, bound_input_json: &str) -> Result<String, ToolExecutionError>
 where
     ToolType: Tool,
 {
     let parsed_agent_input = parse_json::<ToolType::AgentInput>(agent_input_json, StandardToolErrorCode::InvalidAgentInput)?;
     let parsed_bound_input = parse_json::<ToolType::BoundInput>(bound_input_json, StandardToolErrorCode::InvalidBoundInput)?;
 
-    let execution_output = ToolType::execute(parsed_agent_input, parsed_bound_input)?;
+    let execution_output = ToolType::execute(parsed_agent_input, parsed_bound_input).await?;
 
     serde_json::to_string(&execution_output).map_err(|error| {
         ToolExecutionError::new(
@@ -104,6 +105,13 @@ where
             format!("failed to serialize tool output: {error}"),
         )
     })
+}
+
+pub fn execute_tool_json_blocking<ToolType>(agent_input_json: &str, bound_input_json: &str) -> Result<String, ToolExecutionError>
+where
+    ToolType: Tool,
+{
+    pollster::block_on(execute_tool_json::<ToolType>(agent_input_json, bound_input_json))
 }
 
 fn schema_json<SchemaType>() -> Result<String, String>
