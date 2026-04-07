@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use superwire_agent::{DynamicTool, ToolDefinition, ToolError};
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Config, Engine, Store};
@@ -306,16 +305,14 @@ impl WasmToolComponentInstance {
 }
 
 fn perform_http_get_request(request_url: &str) -> Result<String, String> {
-    let http_agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(15)).build();
-
-    let http_response = http_agent
-        .get(request_url)
-        .set("accept", "application/json")
+    let mut http_response = ureq::get(request_url)
+        .header("accept", "application/json")
         .call()
         .map_err(|error| format!("http request to `{request_url}` failed: {error}"))?;
 
     http_response
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|error| format!("failed to read http response body from `{request_url}`: {error}"))
 }
 
