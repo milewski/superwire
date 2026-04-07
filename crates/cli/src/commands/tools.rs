@@ -83,6 +83,12 @@ impl BuildToolsCommand {
             self.output_paths_by_tool_source(&build_layout.tool_source_paths, &build_layout.workflow_directory.join("tools"))?;
 
         let wat_output_paths_by_tool_source = self.wat_output_paths_by_tool_source(&output_paths_by_tool_source);
+        let tool_build_context = ToolBuildContext {
+            generated_tools_directory: &generated_tools_directory,
+            shared_target_directory: &shared_target_directory,
+            wit_source_directory: &wit_source_directory,
+            additional_dependency_entries: &additional_dependency_entries,
+        };
 
         for tool_source_path in &build_layout.tool_source_paths {
             let destination_component_path = output_paths_by_tool_source.get(tool_source_path).ok_or_else(|| {
@@ -91,12 +97,11 @@ impl BuildToolsCommand {
 
             self.build_single_tool(
                 tool_source_path,
-                &generated_tools_directory,
-                &shared_target_directory,
                 destination_component_path,
-                wat_output_paths_by_tool_source.get(tool_source_path).map(|path| path.as_path()),
-                &wit_source_directory,
-                &additional_dependency_entries,
+                wat_output_paths_by_tool_source
+                    .get(tool_source_path)
+                    .map(std::path::PathBuf::as_path),
+                &tool_build_context,
             )?;
         }
 
@@ -186,7 +191,7 @@ impl BuildToolsCommand {
     fn tool_source_paths(&self, tool_sources_directory: &Path) -> Result<Vec<PathBuf>, CommandError> {
         let mut tool_source_paths = Vec::new();
 
-        for directory_entry_result in fs::read_dir(&tool_sources_directory).map_err(|error| {
+        for directory_entry_result in fs::read_dir(tool_sources_directory).map_err(|error| {
             CommandError::internal(format!(
                 "failed to read tool source directory {}: {error}",
                 tool_sources_directory.display()
@@ -308,8 +313,7 @@ impl BuildToolsCommand {
         for (tool_source_path, wasm_output_path) in output_paths_by_tool_source {
             let mut wat_file_name = wasm_output_path
                 .file_stem()
-                .map(std::ffi::OsStr::to_os_string)
-                .unwrap_or_else(|| OsString::from("tool"));
+                .map_or_else(|| OsString::from("tool"), std::ffi::OsStr::to_os_string);
 
             wat_file_name.push(".wat");
 
@@ -324,12 +328,9 @@ impl BuildToolsCommand {
     fn build_single_tool(
         &self,
         tool_source_path: &Path,
-        generated_tools_directory: &Path,
-        shared_target_directory: &Path,
         destination_component_path: &Path,
         wat_output_path: Option<&Path>,
-        wit_source_directory: &Path,
-        additional_dependency_entries: &str,
+        tool_build_context: &ToolBuildContext<'_>,
     ) -> Result<(), CommandError> {
         let tool_name = tool_source_path
             .file_stem()
@@ -338,7 +339,7 @@ impl BuildToolsCommand {
             .to_string();
 
         let tool_type_name = self.tool_type_name(&tool_name);
-        let generated_tool_crate_directory = generated_tools_directory.join(&tool_name);
+        let generated_tool_crate_directory = tool_build_context.generated_tools_directory.join(&tool_name);
         let generated_tool_source_directory = generated_tool_crate_directory.join("src");
         let generated_tool_wit_directory = generated_tool_crate_directory.join("wit");
 
@@ -358,9 +359,9 @@ impl BuildToolsCommand {
             ))
         })?;
 
-        copy_directory_recursively(wit_source_directory, &generated_tool_wit_directory)?;
+        copy_directory_recursively(tool_build_context.wit_source_directory, &generated_tool_wit_directory)?;
 
-        let generated_cargo_manifest = self.generated_tool_cargo_manifest(&tool_name, additional_dependency_entries);
+        let generated_cargo_manifest = self.generated_tool_cargo_manifest(&tool_name, tool_build_context.additional_dependency_entries);
         let generated_source = self.generated_tool_component_source(tool_source_path, &tool_type_name);
 
         fs::write(generated_tool_crate_directory.join("Cargo.toml"), generated_cargo_manifest)
@@ -377,7 +378,7 @@ impl BuildToolsCommand {
             .arg("--release")
             .arg("--target")
             .arg(&self.target)
-            .env("CARGO_TARGET_DIR", shared_target_directory)
+            .env("CARGO_TARGET_DIR", tool_build_context.shared_target_directory)
             .status()
             .map_err(|error| CommandError::internal(format!("failed to run cargo component build for `{tool_name}`: {error}")))?;
 
@@ -387,7 +388,10 @@ impl BuildToolsCommand {
             )));
         }
 
-        let compiled_component_path = shared_target_directory.join(&self.target).join("release/tool_component.wasm");
+        let compiled_component_path = tool_build_context
+            .shared_target_directory
+            .join(&self.target)
+            .join("release/tool_component.wasm");
 
         let destination_directory = destination_component_path.parent().unwrap_or_else(|| Path::new("."));
 
@@ -562,6 +566,13 @@ impl BuildToolsCommand {
 struct BuildLayout {
     workflow_directory: PathBuf,
     tool_source_paths: Vec<PathBuf>,
+}
+
+struct ToolBuildContext<'context> {
+    generated_tools_directory: &'context Path,
+    shared_target_directory: &'context Path,
+    wit_source_directory: &'context Path,
+    additional_dependency_entries: &'context str,
 }
 
 fn copy_directory_recursively(source_directory: &Path, destination_directory: &Path) -> Result<(), CommandError> {

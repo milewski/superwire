@@ -34,7 +34,7 @@ impl Tool for UrlEncode {
         ToolMetadata::new("url_encode", "Encodes text as a URL-safe string")
     }
 
-    fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
+    async fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
         let input_text = bound_input
             .text
             .or(agent_input.text)
