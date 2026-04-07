@@ -52,19 +52,11 @@ impl BuildToolsCommand {
         let workspace_root = Self::workspace_root();
 
         let wit_source_directory = workspace_root.join("crates/core/wit");
-        let tool_sdk_crate_directory = workspace_root.join("crates/wasm-tool-sdk");
 
         if !wit_source_directory.is_dir() {
             return Err(CommandError::internal(format!(
                 "wit source directory not found: {}",
                 wit_source_directory.display()
-            )));
-        }
-
-        if !tool_sdk_crate_directory.is_dir() {
-            return Err(CommandError::internal(format!(
-                "tool sdk crate directory not found: {}",
-                tool_sdk_crate_directory.display()
             )));
         }
 
@@ -104,7 +96,6 @@ impl BuildToolsCommand {
                 destination_component_path,
                 wat_output_paths_by_tool_source.get(tool_source_path).map(|path| path.as_path()),
                 &wit_source_directory,
-                &tool_sdk_crate_directory,
                 &additional_dependency_entries,
             )?;
         }
@@ -338,7 +329,6 @@ impl BuildToolsCommand {
         destination_component_path: &Path,
         wat_output_path: Option<&Path>,
         wit_source_directory: &Path,
-        tool_sdk_crate_directory: &Path,
         additional_dependency_entries: &str,
     ) -> Result<(), CommandError> {
         let tool_name = tool_source_path
@@ -370,8 +360,7 @@ impl BuildToolsCommand {
 
         copy_directory_recursively(wit_source_directory, &generated_tool_wit_directory)?;
 
-        let generated_cargo_manifest =
-            self.generated_tool_cargo_manifest(&tool_name, tool_sdk_crate_directory, additional_dependency_entries);
+        let generated_cargo_manifest = self.generated_tool_cargo_manifest(&tool_name, additional_dependency_entries);
         let generated_source = self.generated_tool_component_source(tool_source_path, &tool_type_name);
 
         fs::write(generated_tool_crate_directory.join("Cargo.toml"), generated_cargo_manifest)
@@ -451,15 +440,9 @@ impl BuildToolsCommand {
         Ok(())
     }
 
-    fn generated_tool_cargo_manifest(
-        &self,
-        tool_name: &str,
-        tool_sdk_crate_directory: &Path,
-        additional_dependency_entries: &str,
-    ) -> String {
+    fn generated_tool_cargo_manifest(&self, tool_name: &str, additional_dependency_entries: &str) -> String {
         GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE
             .replace("{{tool_name}}", tool_name)
-            .replace("{{tool_sdk_crate_path}}", &tool_sdk_crate_directory.display().to_string())
             .replace("{{extra_dependencies}}", additional_dependency_entries)
     }
 
@@ -477,10 +460,12 @@ impl BuildToolsCommand {
             ))
         })?;
 
-        Ok(Self::extract_dependencies_section(&tool_sources_manifest))
+        let tool_sources_manifest_directory = tool_sources_manifest_path.parent().unwrap_or_else(|| Path::new("."));
+
+        Self::extract_dependencies_section(&tool_sources_manifest, tool_sources_manifest_directory)
     }
 
-    fn extract_dependencies_section(tool_sources_manifest: &str) -> String {
+    fn extract_dependencies_section(tool_sources_manifest: &str, manifest_directory: &Path) -> Result<String, CommandError> {
         let mut is_inside_dependencies_section = false;
         let mut dependency_lines = Vec::new();
 
@@ -501,15 +486,45 @@ impl BuildToolsCommand {
             }
 
             if is_inside_dependencies_section {
-                dependency_lines.push(manifest_line.to_string());
+                dependency_lines.push(Self::normalize_dependency_line(manifest_line, manifest_directory)?);
             }
         }
 
         if dependency_lines.iter().all(|line| line.trim().is_empty()) {
-            return String::new();
+            return Ok(String::new());
         }
 
-        format!("\n{}", dependency_lines.join("\n"))
+        Ok(format!("\n{}", dependency_lines.join("\n")))
+    }
+
+    fn normalize_dependency_line(dependency_line: &str, manifest_directory: &Path) -> Result<String, CommandError> {
+        let Some(path_assignment_index) = dependency_line.find("path = \"") else {
+            return Ok(dependency_line.to_string());
+        };
+
+        let path_value_start_index = path_assignment_index + "path = \"".len();
+        let path_value_end_offset = dependency_line[path_value_start_index..]
+            .find('"')
+            .ok_or_else(|| CommandError::invalid_input(format!("invalid dependency path entry: {dependency_line}")))?;
+
+        let path_value_end_index = path_value_start_index + path_value_end_offset;
+        let dependency_path = &dependency_line[path_value_start_index..path_value_end_index];
+
+        let resolved_dependency_path = manifest_directory.join(dependency_path);
+        let canonical_dependency_path = fs::canonicalize(&resolved_dependency_path).map_err(|error| {
+            CommandError::invalid_input(format!(
+                "failed to resolve dependency path `{dependency_path}` from {}: {error}",
+                manifest_directory.display()
+            ))
+        })?;
+
+        let mut normalized_dependency_line = dependency_line.to_string();
+        normalized_dependency_line.replace_range(
+            path_value_start_index..path_value_end_index,
+            &canonical_dependency_path.display().to_string(),
+        );
+
+        Ok(normalized_dependency_line)
     }
 
     fn generated_tool_component_source(&self, tool_source_path: &Path, tool_type_name: &str) -> String {
