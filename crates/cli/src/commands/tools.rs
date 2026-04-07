@@ -37,8 +37,8 @@ struct BuildToolsCommand {
     #[arg(long, value_name = "OUTPUT")]
     output: Option<PathBuf>,
 
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    wai: bool,
+    #[arg(long, visible_alias = "wai", action = clap::ArgAction::SetTrue)]
+    wat: bool,
 
     #[arg(long, value_name = "TARGET", default_value = "wasm32-unknown-unknown")]
     target: String,
@@ -52,7 +52,6 @@ impl BuildToolsCommand {
         let workspace_root = Self::workspace_root();
 
         let wit_source_directory = workspace_root.join("crates/core/wit");
-        let wit_definition_path = wit_source_directory.join("superwire-tool.wit");
         let tool_sdk_crate_directory = workspace_root.join("crates/wasm-tool-sdk");
 
         if !wit_source_directory.is_dir() {
@@ -68,13 +67,6 @@ impl BuildToolsCommand {
                 tool_sdk_crate_directory.display()
             )));
         }
-
-        let wit_definition_source = fs::read_to_string(&wit_definition_path).map_err(|error| {
-            CommandError::internal(format!(
-                "failed to read WIT definition file {}: {error}",
-                wit_definition_path.display()
-            ))
-        })?;
 
         let tool_output_directory = build_layout.workflow_directory.join("tools");
         let generated_tools_directory = build_layout.workflow_directory.join("target/tool-build");
@@ -97,7 +89,7 @@ impl BuildToolsCommand {
         let output_paths_by_tool_source =
             self.output_paths_by_tool_source(&build_layout.tool_source_paths, &build_layout.workflow_directory.join("tools"))?;
 
-        let wai_output_paths_by_tool_source = self.wai_output_paths_by_tool_source(&output_paths_by_tool_source);
+        let wat_output_paths_by_tool_source = self.wat_output_paths_by_tool_source(&output_paths_by_tool_source);
 
         for tool_source_path in &build_layout.tool_source_paths {
             let destination_component_path = output_paths_by_tool_source.get(tool_source_path).ok_or_else(|| {
@@ -109,10 +101,9 @@ impl BuildToolsCommand {
                 &generated_tools_directory,
                 &shared_target_directory,
                 destination_component_path,
-                wai_output_paths_by_tool_source.get(tool_source_path).map(|path| path.as_path()),
+                wat_output_paths_by_tool_source.get(tool_source_path).map(|path| path.as_path()),
                 &wit_source_directory,
                 &tool_sdk_crate_directory,
-                &wit_definition_source,
             )?;
         }
 
@@ -314,27 +305,27 @@ impl BuildToolsCommand {
         Ok(output_paths)
     }
 
-    fn wai_output_paths_by_tool_source(&self, output_paths_by_tool_source: &HashMap<PathBuf, PathBuf>) -> HashMap<PathBuf, PathBuf> {
-        let mut wai_output_paths_by_tool_source = HashMap::new();
+    fn wat_output_paths_by_tool_source(&self, output_paths_by_tool_source: &HashMap<PathBuf, PathBuf>) -> HashMap<PathBuf, PathBuf> {
+        let mut wat_output_paths_by_tool_source = HashMap::new();
 
-        if !self.wai {
-            return wai_output_paths_by_tool_source;
+        if !self.wat {
+            return wat_output_paths_by_tool_source;
         }
 
         for (tool_source_path, wasm_output_path) in output_paths_by_tool_source {
-            let mut wai_file_name = wasm_output_path
+            let mut wat_file_name = wasm_output_path
                 .file_stem()
                 .map(std::ffi::OsStr::to_os_string)
                 .unwrap_or_else(|| OsString::from("tool"));
 
-            wai_file_name.push(".wai");
+            wat_file_name.push(".wat");
 
-            let wai_output_path = wasm_output_path.parent().unwrap_or_else(|| Path::new(".")).join(wai_file_name);
+            let wat_output_path = wasm_output_path.parent().unwrap_or_else(|| Path::new(".")).join(wat_file_name);
 
-            wai_output_paths_by_tool_source.insert(tool_source_path.clone(), wai_output_path);
+            wat_output_paths_by_tool_source.insert(tool_source_path.clone(), wat_output_path);
         }
 
-        wai_output_paths_by_tool_source
+        wat_output_paths_by_tool_source
     }
 
     fn build_single_tool(
@@ -343,10 +334,9 @@ impl BuildToolsCommand {
         generated_tools_directory: &Path,
         shared_target_directory: &Path,
         destination_component_path: &Path,
-        wai_output_path: Option<&Path>,
+        wat_output_path: Option<&Path>,
         wit_source_directory: &Path,
         tool_sdk_crate_directory: &Path,
-        wit_definition_source: &str,
     ) -> Result<(), CommandError> {
         let tool_name = tool_source_path
             .file_stem()
@@ -423,20 +413,33 @@ impl BuildToolsCommand {
             ))
         })?;
 
-        if let Some(wai_output_path) = wai_output_path {
-            let wai_output_directory = wai_output_path.parent().unwrap_or_else(|| Path::new("."));
-
-            fs::create_dir_all(wai_output_directory).map_err(|error| {
+        if let Some(wat_output_path) = wat_output_path {
+            let wat_output_directory = wat_output_path.parent().unwrap_or_else(|| Path::new("."));
+            let wasm_binary = fs::read(destination_component_path).map_err(|error| {
                 CommandError::internal(format!(
-                    "failed to create WAI destination directory {}: {error}",
-                    wai_output_directory.display()
+                    "failed to read built wasm binary {}: {error}",
+                    destination_component_path.display()
                 ))
             })?;
 
-            fs::write(wai_output_path, wit_definition_source)
-                .map_err(|error| CommandError::internal(format!("failed to write WAI file {}: {error}", wai_output_path.display())))?;
+            let wat_source = wasmprinter::print_bytes(&wasm_binary).map_err(|error| {
+                CommandError::internal(format!(
+                    "failed to convert wasm binary {} to wat: {error}",
+                    destination_component_path.display()
+                ))
+            })?;
 
-            println!("built {}", wai_output_path.display());
+            fs::create_dir_all(wat_output_directory).map_err(|error| {
+                CommandError::internal(format!(
+                    "failed to create WAT destination directory {}: {error}",
+                    wat_output_directory.display()
+                ))
+            })?;
+
+            fs::write(wat_output_path, wat_source)
+                .map_err(|error| CommandError::internal(format!("failed to write WAT file {}: {error}", wat_output_path.display())))?;
+
+            println!("built {}", wat_output_path.display());
         }
 
         println!("built {}", destination_component_path.display());
@@ -537,7 +540,7 @@ mod tests {
         let build_tools_command = BuildToolsCommand {
             path: PathBuf::from("."),
             output: None,
-            wai: false,
+            wat: false,
             target: String::from("wasm32-unknown-unknown"),
         };
 
@@ -556,7 +559,7 @@ mod tests {
         let build_tools_command = BuildToolsCommand {
             path: tool_sources_directory.clone(),
             output: None,
-            wai: false,
+            wat: false,
             target: String::from("wasm32-unknown-unknown"),
         };
 
