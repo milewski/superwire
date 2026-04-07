@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/core", "crates/agent", "crates/lsp", "crates/ffi", "crates/cli", "crates/wasm-tool-sdk"]
 resolver = "2"
+exclude = ["wasm-workflow-example"]
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }
