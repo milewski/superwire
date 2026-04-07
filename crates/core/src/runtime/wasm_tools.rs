@@ -1,5 +1,7 @@
 use crate::runtime::error::WorkflowRuntimeError;
 use schemars::Schema;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::fs;
@@ -334,13 +336,62 @@ impl WasmTool {
     }
 
     #[allow(clippy::unused_async)]
-    pub async fn run(&self, agent_input: Value) -> Result<Value, ToolError> {
-        self.component.execute(agent_input, Map::new())
+    pub async fn run<AgentInputType, OutputType>(&self, agent_input: AgentInputType) -> Result<OutputType, ToolError>
+    where
+        AgentInputType: Serialize,
+        OutputType: DeserializeOwned,
+    {
+        self.run_with_bound_input(agent_input, Map::<String, Value>::new()).await
     }
 
     #[allow(clippy::unused_async)]
-    pub async fn run_with_bound_input(&self, agent_input: Value, bound_input: Map<String, Value>) -> Result<Value, ToolError> {
-        self.component.execute(agent_input, bound_input)
+    pub async fn run_with_bound_input<AgentInputType, BoundInputType, OutputType>(
+        &self,
+        agent_input: AgentInputType,
+        bound_input: BoundInputType,
+    ) -> Result<OutputType, ToolError>
+    where
+        AgentInputType: Serialize,
+        BoundInputType: Serialize,
+        OutputType: DeserializeOwned,
+    {
+        let serialized_agent_input = self.serialize_agent_input(agent_input)?;
+        let serialized_bound_input = self.serialize_bound_input(bound_input)?;
+        let output_value = self.component.execute(serialized_agent_input, serialized_bound_input)?;
+
+        self.deserialize_output(output_value)
+    }
+
+    fn serialize_agent_input<AgentInputType>(&self, agent_input: AgentInputType) -> Result<Value, ToolError>
+    where
+        AgentInputType: Serialize,
+    {
+        serde_json::to_value(agent_input)
+            .map_err(|error| ToolError::new(format!("failed to serialize wasm tool agent input payload: {error}")))
+    }
+
+    fn serialize_bound_input<BoundInputType>(&self, bound_input: BoundInputType) -> Result<Map<String, Value>, ToolError>
+    where
+        BoundInputType: Serialize,
+    {
+        let serialized_bound_input = serde_json::to_value(bound_input)
+            .map_err(|error| ToolError::new(format!("failed to serialize wasm tool bound input payload: {error}")))?;
+
+        let Some(bound_input_object) = serialized_bound_input.as_object() else {
+            return Err(ToolError::new(
+                "failed to serialize wasm tool bound input payload: expected object-compatible bound input",
+            ));
+        };
+
+        Ok(bound_input_object.clone())
+    }
+
+    fn deserialize_output<OutputType>(&self, output_value: Value) -> Result<OutputType, ToolError>
+    where
+        OutputType: DeserializeOwned,
+    {
+        serde_json::from_value(output_value)
+            .map_err(|error| ToolError::new(format!("failed to deserialize wasm tool output payload: {error}")))
     }
 }
 
