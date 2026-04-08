@@ -12,6 +12,10 @@ workspace = true
 
 [dependencies]
 clap = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 superwire-core = { path = "../core" }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 wasmprinter = "0.245.1"

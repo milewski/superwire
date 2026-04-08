@@ -333,8 +333,14 @@ fn perform_http_post_json_request(request_url: &str, request_body_json: &str, in
         .header("accept", "application/json")
         .header("content-type", "application/json");
 
+    let internal_token = if internal_token.is_some() {
+        internal_token.map(str::to_string)
+    } else {
+        std::env::var("SUPERWIRE_INTERNAL_TOKEN").ok()
+    };
+
     if let Some(internal_token) = internal_token {
-        http_request = http_request.header("x-superwire-internal-token", internal_token);
+        http_request = http_request.header("x-superwire-internal-token", &internal_token);
     }
 
     let mut http_response = http_request

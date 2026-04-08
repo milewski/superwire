@@ -1,0 +1,81 @@
+<?php
+
+namespace Superwire\Laravel\Tests\Feature;
+
+use Superwire\Laravel\Tests\TestCase;
+use Superwire\Laravel\Workflow;
+
+final class WorkflowIntegrationTest extends TestCase
+{
+    public function testRunsWorkflowWithInputsAndSecretsThroughCliExecutor(): void
+    {
+        $temporaryDirectory = $this->createTemporaryDirectory('superwire-workflow');
+        $fakeCliPath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'fake-cli';
+        $workflowFilePath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'example.wire';
+
+        file_put_contents($workflowFilePath, "output { ok: boolean }");
+
+        file_put_contents($fakeCliPath, <<<'PHP'
+#!/usr/bin/env php
+<?php
+
+$arguments = $_SERVER['argv'] ?? [];
+
+if (($arguments[1] ?? '') !== 'workflow' || ($arguments[2] ?? '') !== 'run') {
+    fwrite(STDERR, 'unexpected command');
+    exit(1);
+}
+
+$workflowFilePath = (string) ($arguments[3] ?? '');
+$inputJson = '{}';
+$secretsJson = '{}';
+
+for ($argumentIndex = 4; $argumentIndex < count($arguments); $argumentIndex++) {
+    $argumentName = $arguments[$argumentIndex];
+
+    if ($argumentName === '--input-json') {
+        $inputJson = (string) ($arguments[$argumentIndex + 1] ?? '{}');
+        $argumentIndex++;
+        continue;
+    }
+
+    if ($argumentName === '--secrets-json') {
+        $secretsJson = (string) ($arguments[$argumentIndex + 1] ?? '{}');
+        $argumentIndex++;
+        continue;
+    }
+}
+
+$inputPayload = json_decode($inputJson, true);
+$secretsPayload = json_decode($secretsJson, true);
+
+if (!is_array($inputPayload) || !is_array($secretsPayload)) {
+    fwrite(STDERR, 'invalid json payload');
+    exit(1);
+}
+
+echo json_encode([
+    'workflow_file_path' => $workflowFilePath,
+    'inputs' => $inputPayload,
+    'secrets' => $secretsPayload,
+    'internal_token' => getenv('SUPERWIRE_INTERNAL_TOKEN') ?: '',
+], JSON_THROW_ON_ERROR);
+PHP,
+        );
+
+        chmod($fakeCliPath, 0755);
+
+        config()->set('superwire.cli.binary', $fakeCliPath);
+        config()->set('superwire.cli.working_directory', $temporaryDirectory);
+
+        $workflowOutput = Workflow::fromFile($workflowFilePath)
+            ->withInputs([ 'city' => 'Lisbon' ])
+            ->withSecrets([ 'api_key' => 'secret-test-key' ])
+            ->run();
+
+        $this->assertSame($workflowFilePath, $workflowOutput[ 'workflow_file_path' ]);
+        $this->assertSame([ 'city' => 'Lisbon' ], $workflowOutput[ 'inputs' ]);
+        $this->assertSame([ 'api_key' => 'secret-test-key' ], $workflowOutput[ 'secrets' ]);
+        $this->assertSame('test-internal-token', $workflowOutput[ 'internal_token' ]);
+    }
+}

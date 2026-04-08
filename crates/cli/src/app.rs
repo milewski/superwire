@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 use crate::commands::fmt::FormatCommand;
 use crate::commands::tools::ToolsCommand;
+use crate::commands::workflow::WorkflowCommand;
 use crate::diagnostics::CommandError;
 
 pub struct Application {
@@ -38,6 +39,7 @@ pub struct CommandLineArguments {
 pub enum Command {
     Fmt(FormatCommand),
     Tools(ToolsCommand),
+    Workflow(WorkflowCommand),
 }
 
 impl Command {
@@ -45,6 +47,7 @@ impl Command {
         match self {
             Self::Fmt(format_command) => format_command.execute(),
             Self::Tools(tools_command) => tools_command.execute(),
+            Self::Workflow(workflow_command) => workflow_command.execute(),
         }
     }
 }
