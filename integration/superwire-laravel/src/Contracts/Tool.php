@@ -2,6 +2,8 @@
 
 namespace Superwire\Laravel\Contracts;
 
+use Swaggest\JsonSchema\Schema;
+
 interface Tool
 {
     public static function name(): string;
@@ -11,19 +13,25 @@ interface Tool
     public static function endpointName(): string;
 
     /**
-     * @return array<string, mixed>
+     * @return class-string<ToolInputData>
      */
-    public static function inputSchema(): array;
+    public static function agentInputClass(): string;
 
     /**
-     * @return array<string, mixed>
+     * @return class-string<ToolBoundInputData>
      */
-    public static function boundInputSchema(): array;
+    public static function boundInputClass(): string;
 
     /**
-     * @return array<string, mixed>
+     * @return class-string<ToolOutputData>
      */
-    public static function outputSchema(): array;
+    public static function outputClass(): string;
+
+    public static function inputSchema(): Schema;
+
+    public static function boundInputSchema(): Schema;
+
+    public static function outputSchema(): Schema;
 
     /**
      * @param array<string, mixed> $agentInput

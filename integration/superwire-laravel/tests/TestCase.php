@@ -4,9 +4,12 @@ namespace Superwire\Laravel\Tests;
 
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use Superwire\Laravel\SuperwireServiceProvider;
+use Superwire\Laravel\Tests\Concerns\AssertsToolSchemas;
 
 abstract class TestCase extends OrchestraTestCase
 {
+    use AssertsToolSchemas;
+
     /**
      * @var list<string>
      */

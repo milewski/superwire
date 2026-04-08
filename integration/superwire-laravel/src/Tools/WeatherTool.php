@@ -2,7 +2,11 @@
 
 namespace Superwire\Laravel\Tools;
 
-use Superwire\Laravel\Schema\JsonSchemaBuilder;
+use Illuminate\Support\Facades\Http;
+use Superwire\Laravel\Tools\Data\WeatherAgentInput;
+use Superwire\Laravel\Tools\Data\WeatherBoundInput;
+use Superwire\Laravel\Tools\Data\WeatherOutput;
+use Throwable;
 
 final class WeatherTool extends AbstractTool
 {
@@ -16,37 +20,28 @@ final class WeatherTool extends AbstractTool
         return 'Fetches weather summary via wttr.in in Laravel runtime';
     }
 
-    public static function inputSchema(): array
+    protected function handle(WeatherAgentInput $agentInput, WeatherBoundInput $boundInput): WeatherOutput
     {
-        return JsonSchemaBuilder::object()
-            ->property('city', JsonSchemaBuilder::nullableString())
-            ->toArray();
-    }
-
-    public static function outputSchema(): array
-    {
-        return JsonSchemaBuilder::object()
-            ->property('city', JsonSchemaBuilder::string())
-            ->property('summary', JsonSchemaBuilder::string())
-            ->property('source', JsonSchemaBuilder::string())
-            ->required(['city', 'summary', 'source'])
-            ->toArray();
-    }
-
-    public function execute(array $agentInput, array $boundInput): array
-    {
-        $cityName = $boundInput['city'] ?? ($agentInput['city'] ?? 'Madrid');
+        $cityName = $boundInput->city ?? ($agentInput->city ?? 'Madrid');
         $weatherUrl = 'https://wttr.in/' . rawurlencode((string) $cityName) . '?format=%C+%t';
-        $weatherSummary = @file_get_contents($weatherUrl);
 
-        if ($weatherSummary === false) {
+        try {
+            $weatherResponse = Http::timeout(10)->get($weatherUrl);
+
+            if ($weatherResponse->successful()) {
+                $weatherSummary = $weatherResponse->body();
+            } else {
+                $weatherSummary = 'Weather service temporarily unavailable';
+            }
+        } catch (Throwable $throwable) {
+            report($throwable);
             $weatherSummary = 'Weather service temporarily unavailable';
         }
 
-        return [
-            'city' => (string) $cityName,
-            'summary' => trim((string) $weatherSummary),
-            'source' => 'wttr.in via laravel package',
-        ];
+        return new WeatherOutput(
+            city: (string) $cityName,
+            summary: trim((string) $weatherSummary),
+            source: 'wttr.in via laravel package',
+        );
     }
 }
