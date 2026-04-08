@@ -4,18 +4,3 @@ build-tools:
 run-demo city="Madrid": build-tools
     cd "{{justfile_directory()}}"
     CITY="{{city}}" cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml"
-
-run-php-shim-demo city="Madrid" token="dev-superwire-token": build-tools
-    #!/usr/bin/env bash
-    set -euo pipefail
-    script_directory="{{justfile_directory()}}"
-    mkdir -p "$script_directory/target"
-
-    SUPERWIRE_INTERNAL_TOKEN="{{token}}" php -S 127.0.0.1:8099 -t "$script_directory/php-shim" > "$script_directory/target/php-shim.log" 2>&1 &
-    php_server_process_id=$!
-
-    trap 'kill "$php_server_process_id"' EXIT
-
-    sleep 1
-
-    CITY="{{city}}" cargo run --manifest-path "$script_directory/Cargo.toml" --bin php_shim_demo
