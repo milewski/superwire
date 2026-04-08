@@ -239,6 +239,15 @@ impl contract::superwire::tool::host::Host for WasmToolComponentStoreData {
             )
         })
     }
+
+    fn http_post_json(&mut self, request_url: String, request_body_json: String, internal_token: Option<String>) -> Result<String, String> {
+        perform_http_post_json_request(&request_url, &request_body_json, internal_token.as_deref()).map_err(|error_message| {
+            format!(
+                "host-http-post-json failed for component `{}` with url `{request_url}`: {error_message}",
+                self.component_path.display()
+            )
+        })
+    }
 }
 
 struct WasmToolComponentInstance {
@@ -317,6 +326,25 @@ fn perform_http_get_request(request_url: &str) -> Result<String, String> {
         .body_mut()
         .read_to_string()
         .map_err(|error| format!("failed to read http response body from `{request_url}`: {error}"))
+}
+
+fn perform_http_post_json_request(request_url: &str, request_body_json: &str, internal_token: Option<&str>) -> Result<String, String> {
+    let mut http_request = ureq::post(request_url)
+        .header("accept", "application/json")
+        .header("content-type", "application/json");
+
+    if let Some(internal_token) = internal_token {
+        http_request = http_request.header("x-superwire-internal-token", internal_token);
+    }
+
+    let mut http_response = http_request
+        .send(request_body_json)
+        .map_err(|error| format!("http post request to `{request_url}` failed: {error}"))?;
+
+    http_response
+        .body_mut()
+        .read_to_string()
+        .map_err(|error| format!("failed to read http post response body from `{request_url}`: {error}"))
 }
 
 #[derive(Clone)]

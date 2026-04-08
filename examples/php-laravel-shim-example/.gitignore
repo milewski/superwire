@@ -1,3 +1,4 @@
 target/
 Cargo.lock
 tools/*.wasm
+!tools/.gitkeep

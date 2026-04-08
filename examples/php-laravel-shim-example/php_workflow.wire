@@ -11,7 +11,7 @@ provider openai {
 
 agent assistant {
     model: openai("qwen3.5-27b")
-    tools: [tool.php_weather(city: input.city)]
+    tools: [tool.php_weather(city: input.city, internal_token: "dev-superwire-token")]
 
     prompt: "Call tool.php_weather exactly once and return only the weather summary string."
 

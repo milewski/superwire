@@ -2,6 +2,7 @@ package superwire:tool@0.1.0;
 
 interface host {
     http-get: func(url: string) -> result<string, string>;
+    http-post-json: func(url: string, body-json: string, internal-token: option<string>) -> result<string, string>;
 }
 
 interface tool {
