@@ -3391,8 +3391,12 @@ name = "superwire-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
  "superwire-core",
  "thiserror 2.0.18",
+ "tokio",
  "wasmprinter",
 ]
 
