@@ -3,11 +3,13 @@
 namespace Superwire\Laravel\Execution;
 
 use Illuminate\Contracts\Config\Repository;
+use JsonException;
 use Superwire\Laravel\Contracts\Tool;
 use Superwire\Laravel\Data\ToolBuildRequest;
 use Superwire\Laravel\Data\ToolBuildResult;
 use Superwire\Laravel\Exceptions\InvalidToolClassException;
 use Superwire\Laravel\Exceptions\ToolBuildException;
+use Swaggest\JsonSchema\Schema;
 use Symfony\Component\Process\Process;
 
 final readonly class ToolCompiler
@@ -16,6 +18,9 @@ final readonly class ToolCompiler
     {
     }
 
+    /**
+     * @throws JsonException
+     */
     public function build(ToolBuildRequest $toolBuildRequest): ToolBuildResult
     {
         $validatedToolClasses = $this->validatedToolClasses($toolBuildRequest->toolClasses);
@@ -52,9 +57,9 @@ final readonly class ToolCompiler
                 'class' => $toolClass,
                 'description' => $toolClass::description(),
                 'endpoint_name' => $toolClass::endpointName(),
-                'input_schema' => $toolClass::inputSchema(),
-                'bound_input_schema' => $toolClass::boundInputSchema(),
-                'output_schema' => $toolClass::outputSchema(),
+                'input_schema' => $this->schemaPayload($toolClass::inputSchema()),
+                'bound_input_schema' => $this->schemaPayload($toolClass::boundInputSchema()),
+                'output_schema' => $this->schemaPayload($toolClass::outputSchema()),
             ];
 
             $modulePath = sprintf('%s/%s.rs', $toolSourcesDirectory, $moduleName);
@@ -207,5 +212,21 @@ superwire-wasm-tool-sdk = { path = "%s" }
 TOML,
             addslashes($wasmToolSdkPath),
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     * @throws JsonException
+     */
+    private function schemaPayload(Schema $schema): array
+    {
+        $serializedSchema = json_encode($schema, JSON_THROW_ON_ERROR);
+        $decodedSchema = json_decode($serializedSchema, true, 512, JSON_THROW_ON_ERROR);
+
+        if (!is_array($decodedSchema)) {
+            throw new ToolBuildException('tool schema must serialize to a json object');
+        }
+
+        return $decodedSchema;
     }
 }
