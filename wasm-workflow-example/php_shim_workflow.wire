@@ -1,0 +1,25 @@
+input {
+    city: string
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "http://100.76.5.36:1234/v1"
+    api_key: "1234"
+    models: ["qwen3.5-27b"]
+}
+
+agent assistant {
+    model: openai("qwen3.5-27b")
+    tools: [tool.php_weather(city: input.city)]
+
+    prompt: "Call tool.php_weather exactly once and return only the weather summary string."
+
+    output: {
+        weather: string
+    }
+}
+
+output {
+    weather: agent.assistant.weather
+}
