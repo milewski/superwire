@@ -1,5 +1,5 @@
 [package]
-name = "wasm-workflow-example"
+name = "php-laravel-shim-example"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 schemars = "1.2"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
-superwire-core = { path = "../crates/core" }
-tools = { path = "tool-sources" }
+superwire-core = { path = "../../crates/core" }
+php_tools = { path = "tool-sources" }
 
 [workspace]

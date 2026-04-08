@@ -13,11 +13,20 @@ fn host_http_get_delegate(request_url: &str) -> Result<String, String> {
     superwire::tool::host::http_get(request_url)
 }
 
+fn host_http_post_json_delegate(
+    request_url: &str,
+    request_body_json: &str,
+    internal_token: Option<&str>,
+) -> Result<String, String> {
+    superwire::tool::host::http_post_json(request_url, request_body_json, internal_token)
+}
+
 struct GeneratedTool;
 
 impl Guest for GeneratedTool {
     fn definition() -> Result<ToolDefinition, String> {
         superwire_wasm_tool_sdk::host::register_http_get(host_http_get_delegate);
+        superwire_wasm_tool_sdk::host::register_http_post_json(host_http_post_json_delegate);
 
         let tool_definition = superwire_wasm_tool_sdk::build_tool_definition_json::<user_tool::{{tool_type_name}}>()?;
 
@@ -32,6 +41,7 @@ impl Guest for GeneratedTool {
 
     fn execute(agent_input_json: String, bound_input_json: String) -> Result<String, ToolError> {
         superwire_wasm_tool_sdk::host::register_http_get(host_http_get_delegate);
+        superwire_wasm_tool_sdk::host::register_http_post_json(host_http_post_json_delegate);
 
         superwire_wasm_tool_sdk::execute_tool_json_blocking::<user_tool::{{tool_type_name}}>(&agent_input_json, &bound_input_json)
             .map_err(|error| ToolError {
