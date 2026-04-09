@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Tests;
 
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
@@ -31,9 +33,9 @@ abstract class TestCase extends OrchestraTestCase
      */
     protected function defineEnvironment($application): void
     {
-        $application['config']->set('superwire.runtime.internal_token', 'test-internal-token');
-        $application['config']->set('superwire.routes.middleware', []);
-        $application['config']->set('superwire.security.enforce_localhost_only', false);
+        $application[ 'config' ]->set('superwire.runtime.internal_token', 'test-internal-token');
+        $application[ 'config' ]->set('superwire.routes.middleware', []);
+        $application[ 'config' ]->set('superwire.security.enforce_localhost_only', false);
     }
 
     protected function createTemporaryDirectory(string $prefix): string
@@ -46,7 +48,7 @@ abstract class TestCase extends OrchestraTestCase
             bin2hex(random_bytes(6)),
         );
 
-        mkdir($temporaryDirectory, 0777, true);
+        mkdir($temporaryDirectory, 0o777, true);
 
         $this->temporaryDirectories[] = $temporaryDirectory;
 
@@ -75,6 +77,7 @@ abstract class TestCase extends OrchestraTestCase
         }
 
         foreach ($entries as $entry) {
+
             if ($entry === '.' || $entry === '..') {
                 continue;
             }
@@ -82,12 +85,15 @@ abstract class TestCase extends OrchestraTestCase
             $entryPath = $directoryPath . DIRECTORY_SEPARATOR . $entry;
 
             if (is_dir($entryPath)) {
+
                 $this->removeDirectory($entryPath);
 
                 continue;
+
             }
 
             unlink($entryPath);
+
         }
 
         rmdir($directoryPath);

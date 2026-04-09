@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel;
 
 use Illuminate\Support\ServiceProvider;
@@ -31,10 +33,12 @@ class SuperwireServiceProvider extends ServiceProvider
         $this->loadRoutesFrom(__DIR__ . '/../routes/superwire.php');
 
         if ($this->app->runningInConsole()) {
+
             $this->commands([
                 BuildToolsCommand::class,
                 RunWorkflowCommand::class,
             ]);
+
         }
     }
 }

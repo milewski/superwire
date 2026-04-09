@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Tests\Concerns;
 
 use JsonException;
@@ -48,9 +50,13 @@ trait AssertsToolSchemas
         }
 
         try {
+
             $schema->in($this->schemaValidationValue($payload));
+
         } catch (Throwable $throwable) {
+
             $this->fail(sprintf('%s does not match schema: %s', $payloadContext, $throwable->getMessage()));
+
         }
 
         $this->addToAssertionCount(1);
@@ -58,30 +64,35 @@ trait AssertsToolSchemas
 
     /**
      * @param array<string, mixed> $schemaPayload
-     * @param mixed $payload
      */
     private function assertNoUndeclaredProperties(array $schemaPayload, mixed $payload, string $jsonPath): void
     {
         if (is_array($payload) && !$this->isListArray($payload) && $this->schemaRepresentsObject($schemaPayload)) {
+
             $propertySchemas = $this->schemaObjectProperties($schemaPayload);
 
             foreach ($payload as $propertyName => $propertyValue) {
+
                 if (!array_key_exists($propertyName, $propertySchemas)) {
                     $this->fail(sprintf('unexpected property `%s` found at `%s`', $propertyName, $jsonPath));
                 }
 
-                $propertySchema = $propertySchemas[$propertyName];
+                $propertySchema = $propertySchemas[ $propertyName ];
 
                 if (is_array($propertySchema)) {
                     $this->assertNoUndeclaredProperties($propertySchema, $propertyValue, $jsonPath . '.' . $propertyName);
                 }
+
             }
+
         }
 
-        if (is_array($payload) && $this->isListArray($payload) && isset($schemaPayload['items']) && is_array($schemaPayload['items'])) {
+        if (is_array($payload) && $this->isListArray($payload) && isset($schemaPayload[ 'items' ]) && is_array($schemaPayload[ 'items' ])) {
+
             foreach ($payload as $itemIndex => $itemPayload) {
-                $this->assertNoUndeclaredProperties($schemaPayload['items'], $itemPayload, $jsonPath . '[' . $itemIndex . ']');
+                $this->assertNoUndeclaredProperties($schemaPayload[ 'items' ], $itemPayload, $jsonPath . '[' . $itemIndex . ']');
             }
+
         }
     }
 
@@ -90,7 +101,7 @@ trait AssertsToolSchemas
      */
     private function schemaRepresentsObject(array $schemaPayload): bool
     {
-        if (isset($schemaPayload['properties']) && is_array($schemaPayload['properties'])) {
+        if (isset($schemaPayload[ 'properties' ]) && is_array($schemaPayload[ 'properties' ])) {
             return true;
         }
 
@@ -98,7 +109,7 @@ trait AssertsToolSchemas
             return false;
         }
 
-        $schemaType = $schemaPayload['type'];
+        $schemaType = $schemaPayload[ 'type' ];
 
         if (is_string($schemaType)) {
             return $schemaType === 'object';
@@ -117,18 +128,20 @@ trait AssertsToolSchemas
      */
     private function schemaObjectProperties(array $schemaPayload): array
     {
-        if (!isset($schemaPayload['properties']) || !is_array($schemaPayload['properties'])) {
+        if (!isset($schemaPayload[ 'properties' ]) || !is_array($schemaPayload[ 'properties' ])) {
             return [];
         }
 
         $propertySchemas = [];
 
-        foreach ($schemaPayload['properties'] as $propertyName => $propertySchema) {
+        foreach ($schemaPayload[ 'properties' ] as $propertyName => $propertySchema) {
+
             if (!is_string($propertyName) || !is_array($propertySchema)) {
                 continue;
             }
 
-            $propertySchemas[$propertyName] = $propertySchema;
+            $propertySchemas[ $propertyName ] = $propertySchema;
+
         }
 
         return $propertySchemas;
@@ -148,10 +161,14 @@ trait AssertsToolSchemas
     private function schemaPayload(Schema $schema): array
     {
         try {
+
             $encodedSchema = json_encode($schema, JSON_THROW_ON_ERROR);
             $decodedSchema = json_decode($encodedSchema, true, 512, JSON_THROW_ON_ERROR);
+
         } catch (JsonException $jsonException) {
+
             $this->fail(sprintf('failed to serialize schema: %s', $jsonException->getMessage()));
+
         }
 
         if (!is_array($decodedSchema)) {
@@ -163,14 +180,17 @@ trait AssertsToolSchemas
 
     /**
      * @param array<string, mixed> $payload
-     * @return mixed
      */
     private function schemaValidationValue(array $payload): mixed
     {
         try {
+
             return json_decode(json_encode($payload, JSON_THROW_ON_ERROR), false, 512, JSON_THROW_ON_ERROR);
+
         } catch (JsonException $jsonException) {
+
             $this->fail(sprintf('failed to serialize payload for schema validation: %s', $jsonException->getMessage()));
+
         }
     }
 }

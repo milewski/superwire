@@ -12,3 +12,4 @@ intellij-build:
 
 build-cli-alpine:
     cargo build -p superwire-cli --release --target x86_64-unknown-linux-musl
+    mv target/x86_64-unknown-linux-musl/release/superwire-cli ./superwire-cli

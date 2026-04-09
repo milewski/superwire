@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Support;
 
 use Superwire\Laravel\Execution\ToolCompiler;

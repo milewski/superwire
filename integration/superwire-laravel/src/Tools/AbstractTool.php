@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Tools;
 
 use Illuminate\Support\Str;
@@ -16,12 +18,14 @@ use Superwire\Laravel\Contracts\ToolBoundInputData;
 use Superwire\Laravel\Contracts\ToolData;
 use Superwire\Laravel\Contracts\ToolInputData;
 use Superwire\Laravel\Contracts\ToolOutputData;
+use Superwire\Laravel\Tools\Data\EmptyToolBoundInputData;
+use Superwire\Laravel\Tools\Data\EmptyToolInputData;
 use Swaggest\JsonSchema\Schema;
 
 abstract class AbstractTool implements Tool
 {
     /**
-     * @var array<string, array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, output_class: class-string<ToolOutputData>}>
+     * @var array<string, array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, output_class: class-string<ToolOutputData>, handle_parameters: list<array{kind: 'agent_input'|'bound_input'|'container', class: class-string<ToolData>|class-string>}>>
      */
     private static array $executionSignatures = [];
 
@@ -45,7 +49,7 @@ abstract class AbstractTool implements Tool
      */
     final public static function agentInputClass(): string
     {
-        return static::executionSignature()['agent_input_class'];
+        return static::executionSignature()[ 'agent_input_class' ];
     }
 
     /**
@@ -53,7 +57,7 @@ abstract class AbstractTool implements Tool
      */
     final public static function boundInputClass(): string
     {
-        return static::executionSignature()['bound_input_class'];
+        return static::executionSignature()[ 'bound_input_class' ];
     }
 
     /**
@@ -61,7 +65,7 @@ abstract class AbstractTool implements Tool
      */
     final public static function outputClass(): string
     {
-        return static::executionSignature()['output_class'];
+        return static::executionSignature()[ 'output_class' ];
     }
 
     final public static function inputSchema(): Schema
@@ -89,42 +93,72 @@ abstract class AbstractTool implements Tool
         $executionSignature = static::executionSignature();
 
         $agentInputData = static::hydrateToolDataClass(
-            $executionSignature['agent_input_class'],
+            $executionSignature[ 'agent_input_class' ],
             $agentInput,
             'agent input',
         );
 
         $boundInputData = static::hydrateToolDataClass(
-            $executionSignature['bound_input_class'],
+            $executionSignature[ 'bound_input_class' ],
             $boundInput,
             'bound input',
         );
 
         if (!method_exists($this, 'handle')) {
+
             throw new LogicException(sprintf(
                 'tool `%s` must define protected method handle(<input>, <bound>): <output>',
                 static::class,
             ));
+
         }
 
-        $toolOutput = $this->handle($agentInputData, $boundInputData);
+        $handleArguments = [];
+
+        foreach ($executionSignature[ 'handle_parameters' ] as $handleParameter) {
+
+            if ($handleParameter[ 'kind' ] === 'agent_input') {
+
+                $handleArguments[] = $agentInputData;
+
+                continue;
+
+            }
+
+            if ($handleParameter[ 'kind' ] === 'bound_input') {
+
+                $handleArguments[] = $boundInputData;
+
+                continue;
+
+            }
+
+            $handleArguments[] = app($handleParameter[ 'class' ]);
+
+        }
+
+        $toolOutput = $this->handle(...$handleArguments);
 
         if (!$toolOutput instanceof ToolOutputData) {
+
             throw new InvalidArgumentException(sprintf(
                 'tool `%s` handle method must return `%s`, received `%s`',
                 static::class,
                 ToolOutputData::class,
                 get_debug_type($toolOutput),
             ));
+
         }
 
-        if (!$toolOutput instanceof $executionSignature['output_class']) {
+        if (!$toolOutput instanceof $executionSignature[ 'output_class' ]) {
+
             throw new InvalidArgumentException(sprintf(
                 'tool `%s` handle method must return `%s`, received `%s`',
                 static::class,
-                $executionSignature['output_class'],
+                $executionSignature[ 'output_class' ],
                 $toolOutput::class,
             ));
+
         }
 
         return static::extractToolDataPayload($toolOutput);
@@ -139,64 +173,52 @@ abstract class AbstractTool implements Tool
      */
 
     /**
-     * @return array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, output_class: class-string<ToolOutputData>}
+     * @return array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, output_class: class-string<ToolOutputData>, handle_parameters: list<array{kind: 'agent_input'|'bound_input'|'container', class: class-string|class-string<ToolData>}>}
      */
     private static function executionSignature(): array
     {
         $toolClassName = static::class;
 
         if (array_key_exists($toolClassName, self::$executionSignatures)) {
-            return self::$executionSignatures[$toolClassName];
+            return self::$executionSignatures[ $toolClassName ];
         }
 
         if (!method_exists($toolClassName, 'handle')) {
+
             throw new LogicException(sprintf(
                 'tool `%s` must define protected method handle(<input>, <bound>): <output>',
                 $toolClassName,
             ));
+
         }
 
         $handleMethod = new ReflectionMethod($toolClassName, 'handle');
 
         if ($handleMethod->isPrivate()) {
+
             throw new LogicException(sprintf(
                 'tool `%s` handle method cannot be private',
                 $toolClassName,
             ));
+
         }
 
-        $handleParameters = $handleMethod->getParameters();
-
-        if (count($handleParameters) !== 2) {
-            throw new LogicException(sprintf(
-                'tool `%s` handle method must have exactly 2 parameters: (agentInput, boundInput)',
-                $toolClassName,
-            ));
-        }
-
-        $agentInputClass = static::toolDataClassFromParameter(
-            $handleParameters[0],
-            ToolInputData::class,
-            'agent input',
-            $toolClassName,
-        );
-
-        $boundInputClass = static::toolDataClassFromParameter(
-            $handleParameters[1],
-            ToolBoundInputData::class,
-            'bound input',
-            $toolClassName,
-        );
+        [
+            'agent_input_class' => $agentInputClass,
+            'bound_input_class' => $boundInputClass,
+            'handle_parameters' => $handleParameters,
+        ] = static::resolveHandleParameters($handleMethod, $toolClassName);
 
         $outputClass = static::toolDataClassFromReturnType($handleMethod, ToolOutputData::class, $toolClassName);
 
-        self::$executionSignatures[$toolClassName] = [
+        self::$executionSignatures[ $toolClassName ] = [
             'agent_input_class' => $agentInputClass,
             'bound_input_class' => $boundInputClass,
             'output_class' => $outputClass,
+            'handle_parameters' => $handleParameters,
         ];
 
-        return self::$executionSignatures[$toolClassName];
+        return self::$executionSignatures[ $toolClassName ];
     }
 
     /**
@@ -216,12 +238,14 @@ abstract class AbstractTool implements Tool
         $requiredPropertyNames = [];
 
         foreach (static::constructorParameters($toolDataReflectionClass) as $constructorParameter) {
+
             $propertySchema = static::schemaFromType($constructorParameter->getType(), $visitedClassNames);
             $toolDataSchema->setProperty($constructorParameter->getName(), $propertySchema);
 
             if (!$constructorParameter->isOptional()) {
                 $requiredPropertyNames[] = $constructorParameter->getName();
             }
+
         }
 
         if ($requiredPropertyNames !== []) {
@@ -245,35 +269,44 @@ abstract class AbstractTool implements Tool
         );
 
         foreach ($payload as $fieldName => $fieldValue) {
+
             if (!is_string($fieldName) || !in_array($fieldName, $expectedFieldNames, true)) {
+
                 throw new InvalidArgumentException(sprintf(
                     '%s payload contains unknown field `%s` for `%s`',
                     $payloadContext,
                     (string) $fieldName,
                     $toolDataClassName,
                 ));
+
             }
+
         }
 
         $constructorArguments = [];
 
         foreach ($constructorParameters as $constructorParameter) {
+
             $fieldName = $constructorParameter->getName();
 
             if (array_key_exists($fieldName, $payload)) {
-                $constructorArguments[$fieldName] = static::payloadValueForType(
-                    $payload[$fieldName],
+
+                $constructorArguments[ $fieldName ] = static::payloadValueForType(
+                    $payload[ $fieldName ],
                     $constructorParameter->getType(),
                     sprintf('%s.%s', $payloadContext, $fieldName),
                 );
 
                 continue;
+
             }
 
             if ($constructorParameter->isDefaultValueAvailable()) {
-                $constructorArguments[$fieldName] = $constructorParameter->getDefaultValue();
+
+                $constructorArguments[ $fieldName ] = $constructorParameter->getDefaultValue();
 
                 continue;
+
             }
 
             throw new InvalidArgumentException(sprintf(
@@ -282,6 +315,7 @@ abstract class AbstractTool implements Tool
                 $fieldName,
                 $toolDataClassName,
             ));
+
         }
 
         /** @var ToolData $toolDataInstance */
@@ -299,6 +333,7 @@ abstract class AbstractTool implements Tool
         $payload = [];
 
         foreach (static::constructorParameters($toolDataReflectionClass) as $constructorParameter) {
+
             $propertyName = $constructorParameter->getName();
 
             if (!$toolDataReflectionClass->hasProperty($propertyName)) {
@@ -311,7 +346,8 @@ abstract class AbstractTool implements Tool
                 $toolDataProperty->setAccessible(true);
             }
 
-            $payload[$propertyName] = static::payloadValueFromToolData($toolDataProperty->getValue($toolData));
+            $payload[ $propertyName ] = static::payloadValueFromToolData($toolDataProperty->getValue($toolData));
+
         }
 
         return $payload;
@@ -331,16 +367,20 @@ abstract class AbstractTool implements Tool
         }
 
         if ($reflectionType instanceof ReflectionUnionType) {
+
             $unionTypeSchema = Schema::create();
             $unionSchemas = [];
 
             foreach ($reflectionType->getTypes() as $unionMemberType) {
+
                 if ($unionMemberType instanceof ReflectionNamedType && $unionMemberType->getName() === 'null') {
+
                     $nullSchema = Schema::create();
                     $nullSchema->type = 'null';
                     $unionSchemas[] = $nullSchema;
 
                     continue;
+
                 }
 
                 if (!$unionMemberType instanceof ReflectionNamedType) {
@@ -348,11 +388,13 @@ abstract class AbstractTool implements Tool
                 }
 
                 $unionSchemas[] = static::schemaFromNamedType($unionMemberType, $visitedClassNames);
+
             }
 
             $unionTypeSchema->anyOf = $unionSchemas;
 
             return $unionTypeSchema;
+
         }
 
         throw new LogicException('unsupported reflection type for tool schema generation');
@@ -412,7 +454,9 @@ abstract class AbstractTool implements Tool
         }
 
         if ($reflectionType instanceof ReflectionUnionType) {
+
             foreach ($reflectionType->getTypes() as $unionMemberType) {
+
                 if (!$unionMemberType instanceof ReflectionNamedType) {
                     continue;
                 }
@@ -426,16 +470,22 @@ abstract class AbstractTool implements Tool
                 }
 
                 try {
+
                     return static::payloadValueForNamedType($payloadValue, $unionMemberType, $payloadPath);
+
                 } catch (InvalidArgumentException $invalidArgumentException) {
+
                     continue;
+
                 }
+
             }
 
             throw new InvalidArgumentException(sprintf(
                 'field `%s` does not match any supported union type',
                 $payloadPath,
             ));
+
         }
 
         throw new InvalidArgumentException(sprintf('unsupported reflection type for `%s`', $payloadPath));
@@ -454,16 +504,20 @@ abstract class AbstractTool implements Tool
         $typeClassName = $namedType->getName();
 
         if (is_a($typeClassName, ToolData::class, true)) {
+
             if (!is_array($payloadValue)) {
+
                 throw new InvalidArgumentException(sprintf(
                     'field `%s` must be an object payload for `%s`, received `%s`',
                     $payloadPath,
                     $typeClassName,
                     get_debug_type($payloadValue),
                 ));
+
             }
 
             return static::hydrateToolDataClass($typeClassName, $payloadValue, $payloadPath);
+
         }
 
         throw new InvalidArgumentException(sprintf(
@@ -538,13 +592,15 @@ abstract class AbstractTool implements Tool
         }
 
         if (is_array($toolDataValue)) {
+
             $normalizedArray = [];
 
             foreach ($toolDataValue as $arrayKey => $arrayValue) {
-                $normalizedArray[$arrayKey] = static::payloadValueFromToolData($arrayValue);
+                $normalizedArray[ $arrayKey ] = static::payloadValueFromToolData($arrayValue);
             }
 
             return $normalizedArray;
+
         }
 
         if (is_string($toolDataValue) || is_int($toolDataValue) || is_float($toolDataValue) || is_bool($toolDataValue) || $toolDataValue === null) {
@@ -573,6 +629,89 @@ abstract class AbstractTool implements Tool
     }
 
     /**
+     * @return array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, handle_parameters: list<array{kind: 'agent_input'|'bound_input'|'container', class: class-string|class-string<ToolData>}>}
+     */
+    private static function resolveHandleParameters(ReflectionMethod $handleMethod, string $toolClassName): array
+    {
+        $agentInputClass = null;
+        $boundInputClass = null;
+        $resolvedHandleParameters = [];
+
+        foreach ($handleMethod->getParameters() as $handleParameter) {
+
+            $parameterType = $handleParameter->getType();
+
+            if (!$parameterType instanceof ReflectionNamedType || $parameterType->isBuiltin()) {
+
+                throw new LogicException(sprintf(
+                    'tool `%s` handle parameter `%s` must be a class type; scalar and union types are not supported',
+                    $toolClassName,
+                    $handleParameter->getName(),
+                ));
+
+            }
+
+            $parameterClassName = $parameterType->getName();
+
+            if (is_a($parameterClassName, ToolInputData::class, true)) {
+
+                if ($agentInputClass !== null) {
+
+                    throw new LogicException(sprintf(
+                        'tool `%s` handle method can define only one `%s` parameter',
+                        $toolClassName,
+                        ToolInputData::class,
+                    ));
+
+                }
+
+                $agentInputClass = $parameterClassName;
+                $resolvedHandleParameters[] = [
+                    'kind' => 'agent_input',
+                    'class' => $parameterClassName,
+                ];
+
+                continue;
+
+            }
+
+            if (is_a($parameterClassName, ToolBoundInputData::class, true)) {
+
+                if ($boundInputClass !== null) {
+
+                    throw new LogicException(sprintf(
+                        'tool `%s` handle method can define only one `%s` parameter',
+                        $toolClassName,
+                        ToolBoundInputData::class,
+                    ));
+
+                }
+
+                $boundInputClass = $parameterClassName;
+                $resolvedHandleParameters[] = [
+                    'kind' => 'bound_input',
+                    'class' => $parameterClassName,
+                ];
+
+                continue;
+
+            }
+
+            $resolvedHandleParameters[] = [
+                'kind' => 'container',
+                'class' => $parameterClassName,
+            ];
+
+        }
+
+        return [
+            'agent_input_class' => $agentInputClass ?? EmptyToolInputData::class,
+            'bound_input_class' => $boundInputClass ?? EmptyToolBoundInputData::class,
+            'handle_parameters' => $resolvedHandleParameters,
+        ];
+    }
+
+    /**
      * @param class-string<ToolData> $expectedInterfaceClass
      * @return class-string
      */
@@ -585,6 +724,7 @@ abstract class AbstractTool implements Tool
         $parameterType = $reflectionParameter->getType();
 
         if (!$parameterType instanceof ReflectionNamedType || $parameterType->isBuiltin()) {
+
             throw new LogicException(sprintf(
                 'tool `%s` handle %s parameter `%s` must be a class implementing `%s`',
                 $toolClassName,
@@ -592,11 +732,13 @@ abstract class AbstractTool implements Tool
                 $reflectionParameter->getName(),
                 $expectedInterfaceClass,
             ));
+
         }
 
         $parameterClassName = $parameterType->getName();
 
         if (!is_a($parameterClassName, $expectedInterfaceClass, true)) {
+
             throw new LogicException(sprintf(
                 'tool `%s` handle %s parameter `%s` must implement `%s`, found `%s`',
                 $toolClassName,
@@ -605,6 +747,7 @@ abstract class AbstractTool implements Tool
                 $expectedInterfaceClass,
                 $parameterClassName,
             ));
+
         }
 
         return $parameterClassName;
@@ -622,22 +765,26 @@ abstract class AbstractTool implements Tool
         $returnType = $reflectionMethod->getReturnType();
 
         if (!$returnType instanceof ReflectionNamedType || $returnType->isBuiltin()) {
+
             throw new LogicException(sprintf(
                 'tool `%s` handle return type must be a class implementing `%s`',
                 $toolClassName,
                 $expectedInterfaceClass,
             ));
+
         }
 
         $returnClassName = $returnType->getName();
 
         if (!is_a($returnClassName, $expectedInterfaceClass, true)) {
+
             throw new LogicException(sprintf(
                 'tool `%s` handle return type must implement `%s`, found `%s`',
                 $toolClassName,
                 $expectedInterfaceClass,
                 $returnClassName,
             ));
+
         }
 
         return $returnClassName;

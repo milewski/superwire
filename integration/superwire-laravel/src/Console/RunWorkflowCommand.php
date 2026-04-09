@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Console;
 
 use Illuminate\Console\Command;
@@ -46,6 +48,7 @@ final class RunWorkflowCommand extends Command
         $inputFields = [];
 
         foreach ($inputFlags as $inputFlag) {
+
             if (!is_string($inputFlag)) {
                 continue;
             }
@@ -56,7 +59,8 @@ final class RunWorkflowCommand extends Command
                 continue;
             }
 
-            $inputFields[$inputKey] = $inputValue;
+            $inputFields[ $inputKey ] = $inputValue;
+
         }
 
         return $inputFields;

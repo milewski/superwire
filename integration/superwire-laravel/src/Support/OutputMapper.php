@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Support;
 
 use Spatie\LaravelData\Data;
@@ -14,11 +16,13 @@ final class OutputMapper
     public function mapToClass(array $payload, string $outputClassName): object
     {
         if (!is_subclass_of($outputClassName, Data::class)) {
+
             throw new WorkflowExecutionException(sprintf(
                 'failed to map workflow output into %s: class must extend %s',
                 $outputClassName,
                 Data::class,
             ));
+
         }
 
         return $outputClassName::from($payload);

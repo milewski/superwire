@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Exceptions;
 
 class WorkflowExecutionException extends SuperwireException
@@ -38,7 +40,7 @@ class WorkflowExecutionException extends SuperwireException
      */
     public function context(): array
     {
-        $context = $this->errorPayload['details']['context'] ?? null;
+        $context = $this->errorPayload[ 'details' ][ 'context' ] ?? null;
 
         if (is_array($context)) {
             return $context;
