@@ -84,6 +84,25 @@ impl WorkflowType {
             }
         }
     }
+
+    #[must_use]
+    pub fn is_guaranteed_array(&self) -> bool {
+        match self {
+            Self::Array {
+                item_type: _,
+                fixed_length: _,
+            } => true,
+            Self::Union(union_members) => union_members.iter().all(Self::is_guaranteed_array),
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::StringEnum(_)
+            | Self::Tuple(_)
+            | Self::Object(_) => false,
+        }
+    }
 }
 
 impl Display for WorkflowType {

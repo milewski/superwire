@@ -414,6 +414,35 @@ mod tests {
     }
 
     #[test]
+    fn validation_stage_rejects_non_array_for_loop_iterable_reference() {
+        let workflow = parse_inline_workflow! {
+            agent summarizer {
+                output: {
+                    tasks: [{ id: number }]
+                    participants: [{ id: number }]
+                }
+            }
+
+            agent analyzer for participant in agent.summarizer {
+                output: string
+            }
+        };
+
+        let validate_result = WorkflowPipeline::parse(WorkflowPipelineInput::Workflow(&workflow))
+            .expect("parse stage should succeed")
+            .normalize()
+            .validate();
+
+        assert!(matches!(
+            validate_result,
+            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+                if issues.contains("invalid_for_loop_iterable_type")
+                    && issues.contains("for-loop iterable must evaluate to an array")
+                    && issues.contains("Agent `analyzer`")
+        ));
+    }
+
+    #[test]
     fn typecheck_stage_reports_missing_output_block_as_formatted_diagnostic() {
         let workflow = parse_inline_workflow! {
             agent greeting {
