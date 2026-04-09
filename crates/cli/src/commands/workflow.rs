@@ -7,10 +7,14 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
+use superwire_agent::AgentError;
 use superwire_core::dsl::{parse_workflow, Declaration, TypeExpression, Workflow};
 use superwire_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
-use superwire_core::runtime::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
+use superwire_core::runtime::{
+    types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType},
+    WorkflowRuntimeError,
+};
 
 use crate::diagnostics::CommandError;
 
@@ -94,7 +98,7 @@ impl RunWorkflowCommand {
                 DynamicWorkflowInput { fields: input_value },
                 DynamicWorkflowSecrets { fields: secrets_value },
             ))
-            .map_err(|error| CommandError::internal(error.to_string()))?;
+            .map_err(Self::map_workflow_runtime_error)?;
 
         if self.pretty {
             println!(
@@ -162,6 +166,45 @@ impl RunWorkflowCommand {
         };
 
         Ok(parsed_payload_object.clone())
+    }
+}
+
+impl RunWorkflowCommand {
+    fn map_workflow_runtime_error(error: WorkflowRuntimeError) -> CommandError {
+        match error {
+            WorkflowRuntimeError::AgentExecutionFailed { agent_name, source } => match *source {
+                AgentError::ExecutionFailed {
+                    error: executor_error,
+                    context,
+                } => CommandError::internal_with_details(
+                    format!("agent execution failed for `{agent_name}`: {executor_error}"),
+                    json!({
+                        "type": "workflow_runtime_error",
+                        "kind": "agent_execution_failed",
+                        "agent_name": agent_name,
+                        "executor_error": format!("{executor_error}"),
+                        "context": context,
+                    }),
+                ),
+                other_agent_error => CommandError::internal_with_details(
+                    format!("agent execution failed for `{agent_name}`: {other_agent_error}"),
+                    json!({
+                        "type": "workflow_runtime_error",
+                        "kind": "agent_execution_failed",
+                        "agent_name": agent_name,
+                        "agent_error": format!("{other_agent_error}"),
+                    }),
+                ),
+            },
+            other_runtime_error => CommandError::internal_with_details(
+                other_runtime_error.to_string(),
+                json!({
+                    "type": "workflow_runtime_error",
+                    "kind": "other",
+                    "error": other_runtime_error.to_string(),
+                }),
+            ),
+        }
     }
 }
 

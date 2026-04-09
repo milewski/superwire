@@ -2,6 +2,7 @@
 
 namespace Superwire\Laravel\Tests\Feature;
 
+use Superwire\Laravel\Exceptions\WorkflowExecutionException;
 use Superwire\Laravel\Tests\TestCase;
 use Superwire\Laravel\Workflow;
 
@@ -132,5 +133,65 @@ PHP,
         $workflowOutput = Workflow::fromFile($workflowFilePath)->run();
 
         $this->assertSame('{}', $workflowOutput[ 'input_json' ]);
+    }
+
+    public function testMapsJsonCliErrorPayloadIntoWorkflowExecutionException(): void
+    {
+        $temporaryDirectory = $this->createTemporaryDirectory('superwire-workflow-json-error');
+        $fakeCliPath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'fake-cli';
+        $workflowFilePath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'example.wire';
+
+        file_put_contents($workflowFilePath, "output { ok: boolean }");
+
+        file_put_contents($fakeCliPath, <<<'PHP'
+#!/usr/bin/env php
+<?php
+
+fwrite(STDERR, json_encode([
+    'code' => 'internal_error',
+    'message' => 'agent execution failed for `summarizer`: Agent failed to complete the task: test reason',
+    'details' => [
+        'type' => 'workflow_runtime_error',
+        'kind' => 'agent_execution_failed',
+        'agent_name' => 'summarizer',
+        'context' => [
+            'messages' => [
+                [
+                    'kind' => 'user',
+                    'content' => 'hello',
+                ],
+            ],
+            'total_tokens' => 12,
+            'input_tokens' => 10,
+            'output_tokens' => 2,
+        ],
+    ],
+], JSON_THROW_ON_ERROR));
+
+exit(1);
+PHP,
+        );
+
+        chmod($fakeCliPath, 0755);
+
+        config()->set('superwire.cli.binary', $fakeCliPath);
+        config()->set('superwire.cli.working_directory', $temporaryDirectory);
+
+        try {
+            Workflow::fromFile($workflowFilePath)->run();
+            $this->fail('Workflow execution should fail with WorkflowExecutionException.');
+        } catch (WorkflowExecutionException $workflowExecutionException) {
+            $errorPayload = $workflowExecutionException->errorPayload();
+
+            $this->assertIsArray($errorPayload);
+            $this->assertSame('internal_error', $errorPayload[ 'code' ]);
+            $this->assertSame('summarizer', $errorPayload[ 'details' ][ 'agent_name' ]);
+
+            $context = $workflowExecutionException->context();
+
+            $this->assertIsArray($context);
+            $this->assertSame(12, $context[ 'total_tokens' ]);
+            $this->assertSame('hello', $context[ 'messages' ][0][ 'content' ]);
+        }
     }
 }

@@ -83,6 +83,14 @@ public function __construct(
     /**
      * @param class-string $outputClassName
      */
+    public function mapInto(string $outputClassName): self
+    {
+        return $this->outputMapInto($outputClassName);
+    }
+
+    /**
+     * @param class-string $outputClassName
+     */
     public function outputMapInto(string $outputClassName): self
     {
         return new self(

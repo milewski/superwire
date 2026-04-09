@@ -4,7 +4,7 @@ return [
     'cli' => [
         'binary' => env('SUPERWIRE_CLI_BINARY', 'cli'),
         'working_directory' => base_path(),
-        'timeout_seconds' => 120,
+        'timeout_seconds' => (int) env('SUPERWIRE_CLI_TIMEOUT_SECONDS', 600),
     ],
 
     'build' => [
