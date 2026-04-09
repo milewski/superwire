@@ -28,6 +28,7 @@ pub struct SemanticIndex {
     pub secrets_field_metadata: BTreeMap<String, FieldMetadata>,
     pub agents: HashMap<String, AgentSummary>,
     pub agent_for_loop_bindings: HashMap<String, BTreeMap<String, Vec<TypeExpression>>>,
+    pub agent_for_loop_iterable_item_types: HashMap<String, TypeExpression>,
     pub agent_names: Vec<String>,
     pub output_locations: Vec<SourceSpan>,
     pub typed_declaration_locations: Vec<SourceSpan>,
@@ -311,6 +312,7 @@ impl SemanticIndex {
             secrets_field_metadata: BTreeMap::new(),
             agents: HashMap::new(),
             agent_for_loop_bindings: HashMap::new(),
+            agent_for_loop_iterable_item_types: HashMap::new(),
             agent_names: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -434,6 +436,9 @@ impl SemanticIndex {
 
         if let Some(agent_for_loop) = &agent_declaration.for_loop {
             if let Some(iterable_item_type) = self.iterable_item_type(&agent_for_loop.iterable) {
+                self.agent_for_loop_iterable_item_types
+                    .insert(agent_declaration.name.clone(), iterable_item_type.clone());
+
                 let for_loop_binding_types = self.for_loop_binding_types(agent_for_loop, iterable_item_type);
 
                 if !for_loop_binding_types.is_empty() {
@@ -553,6 +558,7 @@ impl SemanticIndex {
             secrets_field_metadata: field_metadata_from_type_map(tooling_snapshot.secrets_fields()),
             agents,
             agent_for_loop_bindings: HashMap::new(),
+            agent_for_loop_iterable_item_types: HashMap::new(),
             agent_names,
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -1051,6 +1057,41 @@ impl SemanticIndex {
 
     pub fn has_for_loop_binding_at_position(&self, position: Position, binding_name: &str) -> bool {
         self.for_loop_binding_types_at_position(position, binding_name).is_some()
+    }
+
+    pub fn for_loop_destructuring_binding_suggestions(
+        &self,
+        position: Position,
+        field_prefix: &str,
+        existing_field_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
+        let Some(agent_name) = self.agent_name_at_position(position) else {
+            return Vec::new();
+        };
+
+        let Some(iterable_item_type) = self.agent_for_loop_iterable_item_types.get(agent_name) else {
+            return Vec::new();
+        };
+
+        let mut available_fields = self
+            .tooling_snapshot
+            .available_fields_for_types(std::slice::from_ref(iterable_item_type));
+
+        for existing_field_name in existing_field_names {
+            let _ = available_fields.remove(existing_field_name);
+        }
+
+        available_fields
+            .into_iter()
+            .filter(|(field_name, _)| field_name.starts_with(field_prefix))
+            .map(|(field_name, _)| CompletionSuggestion {
+                label: field_name.clone(),
+                kind: CompletionKind::Property,
+                detail: "Destructured for-loop field".to_string(),
+                documentation: "Field available on each item in the for-loop iterable expression.".to_string(),
+                insert_text: field_name,
+            })
+            .collect()
     }
 
     fn for_loop_binding_types(

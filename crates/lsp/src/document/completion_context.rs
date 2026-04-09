@@ -1,4 +1,4 @@
-use super::text_utils::{for_clause_iterable_prefix, leading_identifier, split_for_clause_binding, trailing_identifier};
+use super::text_utils::{for_clause_iterable_prefix, is_identifier, leading_identifier, split_for_clause_binding, trailing_identifier};
 use super::{CompletionKind, CompletionSuggestion};
 use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
 use superwire_core::runtime::InferenceSetting;
@@ -258,6 +258,12 @@ pub struct ForLoopIterableValueCompletionContext {
 }
 
 #[derive(Debug, Clone)]
+pub struct ForLoopDestructuringBindingCompletionContext {
+    pub field_prefix: String,
+    pub existing_field_names: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct OutputValueCompletionContext {
     pub value_prefix: String,
 }
@@ -335,6 +341,52 @@ impl ForLoopIterableValueCompletionContext {
             value_prefix: for_clause_iterable_prefix(line_prefix)?,
         })
     }
+}
+
+impl ForLoopDestructuringBindingCompletionContext {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let for_clause_separator = format!(" {} ", ForClauseKeyword::For.as_str());
+        let (_, after_for_clause_separator) = trimmed_line_prefix.rsplit_once(for_clause_separator.as_str())?;
+        let after_for_clause_separator = after_for_clause_separator.trim_start();
+        let after_opening_brace = after_for_clause_separator.strip_prefix('{')?;
+
+        if after_opening_brace.contains('}') {
+            return None;
+        }
+
+        let field_prefix = trailing_identifier(after_opening_brace).unwrap_or_default().to_string();
+        let mut existing_field_names = parse_existing_destructuring_field_names(after_opening_brace);
+
+        if !field_prefix.is_empty() && existing_field_names.last().is_some_and(|field_name| field_name == &field_prefix) {
+            let _ = existing_field_names.pop();
+        }
+
+        Some(Self {
+            field_prefix,
+            existing_field_names,
+        })
+    }
+}
+
+fn parse_existing_destructuring_field_names(destructuring_prefix: &str) -> Vec<String> {
+    let mut field_names = Vec::new();
+
+    for field_segment in destructuring_prefix.split(',') {
+        let candidate_field_name = field_segment.trim();
+
+        if candidate_field_name.is_empty() {
+            continue;
+        }
+
+        if !is_identifier(candidate_field_name) {
+            continue;
+        }
+
+        field_names.push(candidate_field_name.to_string());
+    }
+
+    field_names
 }
 
 impl OutputValueCompletionContext {

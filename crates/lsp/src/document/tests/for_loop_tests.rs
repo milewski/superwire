@@ -270,6 +270,85 @@ fn suggests_in_keyword_after_for_object_destructuring_pattern_in_agent_header() 
 }
 
 #[test]
+fn suggests_destructuring_field_names_from_agent_iterable_output() {
+    let completion_suggestions = completion_suggestions_from_source_without_cursor_normalization(inline_document_template! {
+        input {
+            findings_text: string
+        }
+
+        agent findings {
+            model: ollama("qwen3:8b")
+            prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
+            output: {
+                items: [{
+                    id: string
+                    name: number
+                }]
+            }
+        }
+
+        agent remediation_plan for { <cursor> } in agent.findings.items {
+            prompt: "{{ id }}"
+            output: string
+        }
+    });
+
+    assert_completion_contains!(&completion_suggestions, "id", "name");
+}
+
+#[test]
+fn excludes_existing_destructured_field_names_from_suggestions() {
+    let completion_suggestions = completion_suggestions_from_source_without_cursor_normalization(inline_document_template! {
+        input {
+            findings_text: string
+        }
+
+        agent findings {
+            model: ollama("qwen3:8b")
+            prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
+            output: {
+                items: [{
+                    id: string
+                    name: number
+                }]
+            }
+        }
+
+        agent remediation_plan for { id, <cursor> } in agent.findings.items {
+            prompt: "{{ id }}"
+            output: string
+        }
+    });
+
+    assert_completion_contains!(&completion_suggestions, "name");
+    assert_completion_excludes_labels!(&completion_suggestions, "id");
+}
+
+fn completion_suggestions_from_source_without_cursor_normalization(source_template: &str) -> Vec<CompletionSuggestion> {
+    let cursor_marker = "<cursor>";
+    let cursor_byte_offset = source_template
+        .find(cursor_marker)
+        .expect("cursor marker should exist in test source");
+    let mut line = 0_u32;
+    let mut character = 0_u32;
+
+    for source_character in source_template[..cursor_byte_offset].chars() {
+        if source_character == '\n' {
+            line += 1;
+            character = 0;
+
+            continue;
+        }
+
+        character += 1;
+    }
+
+    let source_without_cursor = source_template.replacen(cursor_marker, "", 1);
+
+    completion_suggestions_from_source(source_without_cursor, Position { line, character })
+}
+
+#[test]
 fn suggests_object_destructuring_bindings_inside_prompt_interpolation_expression() {
     let completion_suggestions = inline_completion_suggestions! {
         agent alpha {
