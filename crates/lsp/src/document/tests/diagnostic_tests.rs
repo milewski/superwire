@@ -182,6 +182,24 @@ fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
 }
 
 #[test]
+fn reports_invalid_for_loop_iterable_type_diagnostic_for_object_reference() {
+    let diagnostics = inline_diagnostics! {
+        agent summarizer {
+            output: {
+                tasks: [{ id: number }]
+                participants: [{ id: number }]
+            }
+        }
+
+        agent analyzer for participant in agent.summarizer {
+            output: string
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidForLoopIterableType);
+}
+
+#[test]
 fn reports_duplicate_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent greeting {

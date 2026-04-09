@@ -99,6 +99,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::MissingAgentOutputTypeForFieldReference => Self::MissingAgentOutputTypeForFieldReference,
             CoreDiagnosticCode::MissingOptionalReferenceAccess => Self::MissingOptionalReferenceAccess,
             CoreDiagnosticCode::InvalidReferencePath => Self::InvalidReferencePath,
+            CoreDiagnosticCode::InvalidForLoopIterableType => Self::InvalidForLoopIterableType,
             CoreDiagnosticCode::UnknownSchemaReference => Self::UnknownSchemaReference,
             CoreDiagnosticCode::AgentDependencyCycle => Self::AgentDependencyCycle,
             CoreDiagnosticCode::WorkflowCompilationError => Self::WorkflowCompilationError,

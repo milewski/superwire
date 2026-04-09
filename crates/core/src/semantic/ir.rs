@@ -130,21 +130,10 @@ fn collect_typed_agents(
             continue;
         };
 
-        let iteration_output_type = if let Some(output_type_expression) = agent_declaration.output_type() {
-            workflow_type_from_dsl(output_type_expression, named_schema_types)?
-        } else {
-            WorkflowType::String
-        };
-
-        let final_output_type = if agent_declaration.for_loop.is_some() {
-            WorkflowType::Array {
-                item_type: Box::new(iteration_output_type.clone()),
-                fixed_length: None,
-            }
-            .normalize()
-        } else {
-            iteration_output_type.clone()
-        };
+        let iteration_output_type_expression = agent_declaration.inferred_iteration_output_type_expression();
+        let final_output_type_expression = agent_declaration.inferred_final_output_type_expression();
+        let iteration_output_type = workflow_type_from_dsl(&iteration_output_type_expression, named_schema_types)?;
+        let final_output_type = workflow_type_from_dsl(&final_output_type_expression, named_schema_types)?;
 
         let (provider_name, model_expression) = parse_agent_model_binding(agent_declaration)?;
         let provider_declaration = workflow.find_provider(&provider_name);

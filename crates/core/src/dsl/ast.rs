@@ -293,6 +293,25 @@ impl AgentDeclaration {
     }
 
     #[must_use]
+    pub fn inferred_iteration_output_type_expression(&self) -> TypeExpression {
+        self.output_type().cloned().unwrap_or(TypeExpression::String)
+    }
+
+    #[must_use]
+    pub fn inferred_final_output_type_expression(&self) -> TypeExpression {
+        let iteration_output_type_expression = self.inferred_iteration_output_type_expression();
+
+        if self.for_loop.is_some() {
+            return TypeExpression::Array {
+                item_type: Box::new(iteration_output_type_expression),
+                fixed_length: None,
+            };
+        }
+
+        iteration_output_type_expression
+    }
+
+    #[must_use]
     pub fn output_description(&self) -> Option<&str> {
         for agent_property in &self.properties {
             if let AgentProperty::Output {
