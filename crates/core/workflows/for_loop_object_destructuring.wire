@@ -1,0 +1,36 @@
+// This example demonstrates object destructuring in agent for-clauses.
+// The loop binds `id` and `name` directly from each participant object.
+
+provider ollama {
+    driver: "ollama"
+    models: ["qwen3:8b"]
+}
+
+agent alpha {
+    model: ollama("qwen3:8b")
+    prompt: "Generate participants and tasks for a sprint planning note."
+    output: {
+        tasks: [{
+            id: number "the unique identifier of the task"
+        }]
+        participants: [{
+            id: number "the unique identifier of the participant"
+            name: string "human-readable participant name"
+        }]
+    }
+}
+
+agent analyzer for { id, name } in agent.alpha.participants {
+    model: ollama("qwen3:8b")
+    prompt: "Write a short workload summary for participant #{{ id }} ({{ name }})."
+    output: {
+        participant_id: number
+        participant_name: string
+        summary: string
+    }
+}
+
+output {
+    generated_participants: agent.alpha.participants
+    participant_summaries: agent.analyzer
+}

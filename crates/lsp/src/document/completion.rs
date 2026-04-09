@@ -6,8 +6,8 @@ use crate::protocol::{Position, Range};
 
 use super::completion_context::{
     AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
-    ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext, ModelCallCompletionContext,
-    OutputValueCompletionContext, ValueCompletionContext,
+    ForLoopDestructuringBindingCompletionContext, ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext,
+    ModelCallCompletionContext, OutputValueCompletionContext, ValueCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
@@ -199,6 +199,18 @@ impl DocumentState {
         line_has_property_separator: bool,
         inside_interpolation_expression: bool,
     ) -> Option<Vec<CompletionSuggestion>> {
+        if !inside_interpolation_expression {
+            if let Some(for_loop_destructuring_binding_completion_context) =
+                ForLoopDestructuringBindingCompletionContext::from_line_prefix(line_prefix)
+            {
+                return Some(semantic_index.for_loop_destructuring_binding_suggestions(
+                    position,
+                    &for_loop_destructuring_binding_completion_context.field_prefix,
+                    &for_loop_destructuring_binding_completion_context.existing_field_names,
+                ));
+            }
+        }
+
         if completion_scope == CompletionScope::General
             && !line_has_property_separator
             && !inside_interpolation_expression
