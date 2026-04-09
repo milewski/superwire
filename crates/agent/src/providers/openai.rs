@@ -113,8 +113,9 @@ impl OpenAIProvider {
         let mut converted_tools = Vec::new();
 
         for tool in tools {
-            let parameters = serde_json::to_value(&tool.parameters_schema)
+            let serialized_parameters = serde_json::to_value(&tool.parameters_schema)
                 .map_err(|error| format!("Failed to serialize schema for '{}': {error}", tool.name))?;
+            let parameters = Self::normalize_tool_parameters_schema(serialized_parameters);
 
             converted_tools.push(json!({
                 "type": "function",
@@ -188,8 +189,9 @@ impl OpenAIProvider {
         let mut converted_tools = Vec::new();
 
         for tool in tools {
-            let parameters = serde_json::to_value(&tool.parameters_schema)
+            let serialized_parameters = serde_json::to_value(&tool.parameters_schema)
                 .map_err(|error| format!("Failed to serialize schema for '{}': {error}", tool.name))?;
+            let parameters = Self::normalize_tool_parameters_schema(serialized_parameters);
 
             converted_tools.push(json!({
                 "type": "function",
@@ -201,6 +203,26 @@ impl OpenAIProvider {
         }
 
         Ok(converted_tools)
+    }
+
+    fn normalize_tool_parameters_schema(serialized_parameters: Value) -> Value {
+        let Value::Object(mut parameter_fields) = serialized_parameters else {
+            return json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+            });
+        };
+
+        if !matches!(parameter_fields.get("type"), Some(Value::String(parameter_type)) if parameter_type == "object") {
+            parameter_fields.insert("type".to_string(), Value::String("object".to_string()));
+        }
+
+        if !matches!(parameter_fields.get("properties"), Some(Value::Object(_))) {
+            parameter_fields.insert("properties".to_string(), Value::Object(serde_json::Map::new()));
+        }
+
+        Value::Object(parameter_fields)
     }
 
     async fn send_request(&self, endpoint_path: &str, request_body: &Value) -> Result<HttpResponseData, ProviderError> {
@@ -268,6 +290,17 @@ impl OpenAIProvider {
                 }
             }
         }
+    }
+
+    fn should_fallback_to_chat_completions(responses_response: &HttpResponseData) -> bool {
+        if responses_response.status_code == StatusCode::NOT_FOUND {
+            return true;
+        }
+
+        matches!(
+            responses_response.status_code,
+            StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+        ) && responses_response.response_body.contains("tools.0.type")
     }
 
     fn parse_chat_content(content: Option<&Value>) -> Option<String> {
@@ -875,7 +908,7 @@ impl Provider for OpenAIProvider {
                 return Ok(provider_response);
             }
 
-            if preferred_api == PreferredApi::Responses || responses_response.status_code != StatusCode::NOT_FOUND {
+            if preferred_api == PreferredApi::Responses || !Self::should_fallback_to_chat_completions(&responses_response) {
                 return Err(self.map_http_error(
                     "/responses",
                     responses_response.status_code,

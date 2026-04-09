@@ -9,6 +9,14 @@ use crate::diagnostics::CommandError;
 
 const GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE: &str = include_str!("../../templates/cargo.toml.template");
 const GENERATED_TOOL_COMPONENT_SOURCE_TEMPLATE: &str = include_str!("../../templates/lib.rs.template");
+const EMBEDDED_TOOL_WIT_SOURCE: &str = include_str!("../../../../crates/core/wit/superwire-tool.wit");
+const EMBEDDED_WASM_TOOL_SDK_SOURCE: &str = include_str!("../../../../crates/wasm-tool-sdk/src/lib.rs");
+
+fn embedded_wasm_tool_sdk_source() -> String {
+    EMBEDDED_WASM_TOOL_SDK_SOURCE
+        .replace("$crate::", "crate::superwire_wasm_tool_sdk::")
+        .replace("crate::superwire_wasm_tool_sdk::php_proxy_tool!", "crate::php_proxy_tool!")
+}
 
 #[derive(Debug, Args)]
 pub struct ToolsCommand {
@@ -49,16 +57,6 @@ impl BuildToolsCommand {
         self.ensure_cargo_component_installed()?;
 
         let build_layout = self.resolve_build_layout()?;
-        let workspace_root = Self::workspace_root();
-
-        let wit_source_directory = workspace_root.join("crates/core/wit");
-
-        if !wit_source_directory.is_dir() {
-            return Err(CommandError::internal(format!(
-                "wit source directory not found: {}",
-                wit_source_directory.display()
-            )));
-        }
 
         let tool_output_directory = build_layout.workflow_directory.join("tools");
         let generated_tools_directory = build_layout.workflow_directory.join("target/tool-build");
@@ -86,7 +84,6 @@ impl BuildToolsCommand {
         let tool_build_context = ToolBuildContext {
             generated_tools_directory: &generated_tools_directory,
             shared_target_directory: &shared_target_directory,
-            wit_source_directory: &wit_source_directory,
             additional_dependency_entries: &additional_dependency_entries,
         };
 
@@ -359,7 +356,7 @@ impl BuildToolsCommand {
             ))
         })?;
 
-        copy_directory_recursively(tool_build_context.wit_source_directory, &generated_tool_wit_directory)?;
+        write_embedded_wit_package(&generated_tool_wit_directory)?;
 
         let generated_cargo_manifest = self.generated_tool_cargo_manifest(&tool_name, tool_build_context.additional_dependency_entries);
         let generated_source = self.generated_tool_component_source(tool_source_path, &tool_type_name);
@@ -369,6 +366,12 @@ impl BuildToolsCommand {
 
         fs::write(generated_tool_source_directory.join("lib.rs"), generated_source)
             .map_err(|error| CommandError::internal(format!("failed to write generated source for tool `{tool_name}`: {error}")))?;
+
+        fs::write(
+            generated_tool_source_directory.join("superwire_wasm_tool_sdk.rs"),
+            embedded_wasm_tool_sdk_source(),
+        )
+        .map_err(|error| CommandError::internal(format!("failed to write embedded wasm sdk source for tool `{tool_name}`: {error}")))?;
 
         let build_status = Command::new("cargo")
             .arg("component")
@@ -502,6 +505,17 @@ impl BuildToolsCommand {
     }
 
     fn normalize_dependency_line(dependency_line: &str, manifest_directory: &Path) -> Result<String, CommandError> {
+        let trimmed_dependency_line = dependency_line.trim_start();
+
+        if trimmed_dependency_line.starts_with("superwire-wasm-tool-sdk")
+            || trimmed_dependency_line.starts_with("serde_json")
+            || trimmed_dependency_line.starts_with("serde")
+            || trimmed_dependency_line.starts_with("schemars")
+            || trimmed_dependency_line.starts_with("pollster")
+        {
+            return Ok(String::new());
+        }
+
         let Some(path_assignment_index) = dependency_line.find("path = \"") else {
             return Ok(dependency_line.to_string());
         };
@@ -556,10 +570,6 @@ impl BuildToolsCommand {
 
         converted_name
     }
-
-    fn workspace_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -571,11 +581,10 @@ struct BuildLayout {
 struct ToolBuildContext<'context> {
     generated_tools_directory: &'context Path,
     shared_target_directory: &'context Path,
-    wit_source_directory: &'context Path,
     additional_dependency_entries: &'context str,
 }
 
-fn copy_directory_recursively(source_directory: &Path, destination_directory: &Path) -> Result<(), CommandError> {
+fn write_embedded_wit_package(destination_directory: &Path) -> Result<(), CommandError> {
     fs::create_dir_all(destination_directory).map_err(|error| {
         CommandError::internal(format!(
             "failed to create destination directory {}: {error}",
@@ -583,29 +592,8 @@ fn copy_directory_recursively(source_directory: &Path, destination_directory: &P
         ))
     })?;
 
-    for directory_entry_result in fs::read_dir(source_directory)
-        .map_err(|error| CommandError::internal(format!("failed to read source directory {}: {error}", source_directory.display())))?
-    {
-        let directory_entry =
-            directory_entry_result.map_err(|error| CommandError::internal(format!("failed to read directory entry: {error}")))?;
-
-        let entry_source_path = directory_entry.path();
-        let entry_destination_path = destination_directory.join(directory_entry.file_name());
-
-        if entry_source_path.is_dir() {
-            copy_directory_recursively(&entry_source_path, &entry_destination_path)?;
-
-            continue;
-        }
-
-        fs::copy(&entry_source_path, &entry_destination_path).map_err(|error| {
-            CommandError::internal(format!(
-                "failed to copy file from {} to {}: {error}",
-                entry_source_path.display(),
-                entry_destination_path.display()
-            ))
-        })?;
-    }
+    fs::write(destination_directory.join("superwire-tool.wit"), EMBEDDED_TOOL_WIT_SOURCE)
+        .map_err(|error| CommandError::internal(format!("failed to write embedded WIT package: {error}")))?;
 
     Ok(())
 }

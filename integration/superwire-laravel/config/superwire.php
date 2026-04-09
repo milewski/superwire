@@ -10,7 +10,6 @@ return [
     'build' => [
         'root_directory' => storage_path('app/superwire'),
         'tools_directory' => base_path('tools'),
-        'wasm_tool_sdk_path' => env('SUPERWIRE_WASM_TOOL_SDK_PATH', base_path('vendor/superwire/superwire/crates/wasm-tool-sdk')),
     ],
 
     'runtime' => [
@@ -19,7 +18,7 @@ return [
 
     'tools' => [
         'registered_classes' => [],
-        'http_endpoint_base_url' => env('SUPERWIRE_INTERNAL_ENDPOINT_BASE_URL', 'http://127.0.0.1:8000'),
+        'http_endpoint_base_url' => env('SUPERWIRE_INTERNAL_ENDPOINT_BASE_URL', 'http://127.0.0.1'),
         'http_prefix' => 'superwire/tools',
     ],
 

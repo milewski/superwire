@@ -38,13 +38,7 @@ final readonly class ToolCompiler
             throw new ToolBuildException(sprintf('failed to create tool output directory %s', $toolOutputDirectory));
         }
 
-        $wasmToolSdkPath = (string) $this->config->get('superwire.build.wasm_tool_sdk_path', '');
-
-        if ($wasmToolSdkPath === '') {
-            throw new ToolBuildException('missing superwire.build.wasm_tool_sdk_path configuration');
-        }
-
-        file_put_contents($toolSourcesManifestPath, $this->toolSourcesCargoManifest($wasmToolSdkPath));
+        file_put_contents($toolSourcesManifestPath, $this->toolSourcesCargoManifest());
 
         $moduleNames = [];
         $toolRegistryMap = [];
@@ -148,25 +142,100 @@ final readonly class ToolCompiler
         $toolName = $toolClass::name();
         $toolDescription = $toolClass::description();
         $toolEndpoint = $this->toolEndpoint($toolClass::endpointName());
+        $toolTypeName = $this->typeName($toolName);
+        $agentInputTypeName = sprintf('%sAgentInput', $toolTypeName);
+        $boundInputTypeName = sprintf('%sBoundInput', $toolTypeName);
+        $outputTypeName = sprintf('%sOutput', $toolTypeName);
+
+        $agentInputSchemaJson = addslashes(json_encode($toolClass::inputSchema(), JSON_THROW_ON_ERROR));
+        $boundInputSchemaJson = addslashes(json_encode($toolClass::boundInputSchema(), JSON_THROW_ON_ERROR));
+        $outputSchemaJson = addslashes(json_encode($toolClass::outputSchema(), JSON_THROW_ON_ERROR));
 
         return sprintf(
             <<<'RUST'
+use std::borrow::Cow;
+
+use schemars::{JsonSchema, Schema, SchemaGenerator};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-superwire_wasm_tool_sdk::php_proxy_tool!(
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct %s(Value);
+
+impl JsonSchema for %s {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("%s")
+    }
+
+    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
+        let _ = schema_generator;
+
+        serde_json::from_str::<Schema>("%s").expect("agent input schema json should be valid")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct %s(Value);
+
+impl JsonSchema for %s {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("%s")
+    }
+
+    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
+        let _ = schema_generator;
+
+        serde_json::from_str::<Schema>("%s").expect("bound input schema json should be valid")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct %s(Value);
+
+impl JsonSchema for %s {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("%s")
+    }
+
+    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
+        let _ = schema_generator;
+
+        serde_json::from_str::<Schema>("%s").expect("output schema json should be valid")
+    }
+}
+
+crate::php_proxy_tool!(
     tool = %sTool,
     name = "%s",
     description = "%s",
     endpoint = "%s",
-    input = Value,
-    bound_input = Value,
-    output = Value,
+    input = %s,
+    bound_input = %s,
+    output = %s,
 );
 RUST,
-            $this->typeName($toolName),
+            $agentInputTypeName,
+            $agentInputTypeName,
+            $agentInputTypeName,
+            $agentInputSchemaJson,
+            $boundInputTypeName,
+            $boundInputTypeName,
+            $boundInputTypeName,
+            $boundInputSchemaJson,
+            $outputTypeName,
+            $outputTypeName,
+            $outputTypeName,
+            $outputSchemaJson,
+            $toolTypeName,
             addslashes($toolName),
             addslashes($toolDescription),
             addslashes($toolEndpoint),
+            $agentInputTypeName,
+            $boundInputTypeName,
+            $outputTypeName,
         );
     }
 
@@ -194,10 +263,9 @@ RUST,
         return $typeName === '' ? 'ProxyTool' : $typeName;
     }
 
-    private function toolSourcesCargoManifest(string $wasmToolSdkPath): string
+    private function toolSourcesCargoManifest(): string
     {
-        return sprintf(
-            <<<'TOML'
+        return <<<'TOML'
 [package]
 name = "superwire_php_tools"
 version = "0.1.0"
@@ -205,13 +273,7 @@ edition = "2021"
 
 [lib]
 path = "src/lib.rs"
-
-[dependencies]
-serde_json = "1.0"
-superwire-wasm-tool-sdk = { path = "%s" }
-TOML,
-            addslashes($wasmToolSdkPath),
-        );
+TOML;
     }
 
     /**

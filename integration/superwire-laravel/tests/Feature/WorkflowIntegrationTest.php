@@ -33,14 +33,16 @@ $secretsJson = '{}';
 for ($argumentIndex = 4; $argumentIndex < count($arguments); $argumentIndex++) {
     $argumentName = $arguments[$argumentIndex];
 
-    if ($argumentName === '--input-json') {
-        $inputJson = (string) ($arguments[$argumentIndex + 1] ?? '{}');
+    if ($argumentName === '--input-file') {
+        $inputFilePath = (string) ($arguments[$argumentIndex + 1] ?? '');
+        $inputJson = is_file($inputFilePath) ? (string) file_get_contents($inputFilePath) : '{}';
         $argumentIndex++;
         continue;
     }
 
-    if ($argumentName === '--secrets-json') {
-        $secretsJson = (string) ($arguments[$argumentIndex + 1] ?? '{}');
+    if ($argumentName === '--secrets-file') {
+        $secretsFilePath = (string) ($arguments[$argumentIndex + 1] ?? '');
+        $secretsJson = is_file($secretsFilePath) ? (string) file_get_contents($secretsFilePath) : '{}';
         $argumentIndex++;
         continue;
     }
@@ -77,5 +79,58 @@ PHP,
         $this->assertSame([ 'city' => 'Lisbon' ], $workflowOutput[ 'inputs' ]);
         $this->assertSame([ 'api_key' => 'secret-test-key' ], $workflowOutput[ 'secrets' ]);
         $this->assertSame('test-internal-token', $workflowOutput[ 'internal_token' ]);
+    }
+
+    public function testSendsEmptyInputsAsJsonObjectWhenNotProvided(): void
+    {
+        $temporaryDirectory = $this->createTemporaryDirectory('superwire-workflow-empty-inputs');
+        $fakeCliPath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'fake-cli';
+        $workflowFilePath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'example.wire';
+
+        file_put_contents($workflowFilePath, "output { ok: boolean }");
+
+        file_put_contents($fakeCliPath, <<<'PHP'
+#!/usr/bin/env php
+<?php
+
+$arguments = $_SERVER['argv'] ?? [];
+
+if (($arguments[1] ?? '') !== 'workflow' || ($arguments[2] ?? '') !== 'run') {
+    fwrite(STDERR, 'unexpected command');
+    exit(1);
+}
+
+$inputFilePath = null;
+
+for ($argumentIndex = 4; $argumentIndex < count($arguments); $argumentIndex++) {
+    $argumentName = $arguments[$argumentIndex];
+
+    if ($argumentName === '--input-file') {
+        $inputFilePath = (string) ($arguments[$argumentIndex + 1] ?? '');
+        break;
+    }
+}
+
+if ($inputFilePath === null || !is_file($inputFilePath)) {
+    fwrite(STDERR, 'missing --input-file argument');
+    exit(1);
+}
+
+$inputJson = (string) file_get_contents($inputFilePath);
+
+echo json_encode([
+    'input_json' => $inputJson,
+], JSON_THROW_ON_ERROR);
+PHP,
+        );
+
+        chmod($fakeCliPath, 0755);
+
+        config()->set('superwire.cli.binary', $fakeCliPath);
+        config()->set('superwire.cli.working_directory', $temporaryDirectory);
+
+        $workflowOutput = Workflow::fromFile($workflowFilePath)->run();
+
+        $this->assertSame('{}', $workflowOutput[ 'input_json' ]);
     }
 }

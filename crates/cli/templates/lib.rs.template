@@ -3,6 +3,8 @@ wit_bindgen::generate!({
     world: "superwire-tool",
 });
 
+mod superwire_wasm_tool_sdk;
+
 mod user_tool {
     include!("{{tool_source_path}}");
 }
@@ -25,10 +27,10 @@ struct GeneratedTool;
 
 impl Guest for GeneratedTool {
     fn definition() -> Result<ToolDefinition, String> {
-        superwire_wasm_tool_sdk::host::register_http_get(host_http_get_delegate);
-        superwire_wasm_tool_sdk::host::register_http_post_json(host_http_post_json_delegate);
+        crate::superwire_wasm_tool_sdk::host::register_http_get(host_http_get_delegate);
+        crate::superwire_wasm_tool_sdk::host::register_http_post_json(host_http_post_json_delegate);
 
-        let tool_definition = superwire_wasm_tool_sdk::build_tool_definition_json::<user_tool::{{tool_type_name}}>()?;
+        let tool_definition = crate::superwire_wasm_tool_sdk::build_tool_definition_json::<user_tool::{{tool_type_name}}Tool>()?;
 
         Ok(ToolDefinition {
             name: tool_definition.name,
@@ -40,10 +42,10 @@ impl Guest for GeneratedTool {
     }
 
     fn execute(agent_input_json: String, bound_input_json: String) -> Result<String, ToolError> {
-        superwire_wasm_tool_sdk::host::register_http_get(host_http_get_delegate);
-        superwire_wasm_tool_sdk::host::register_http_post_json(host_http_post_json_delegate);
+        crate::superwire_wasm_tool_sdk::host::register_http_get(host_http_get_delegate);
+        crate::superwire_wasm_tool_sdk::host::register_http_post_json(host_http_post_json_delegate);
 
-        superwire_wasm_tool_sdk::execute_tool_json_blocking::<user_tool::{{tool_type_name}}>(&agent_input_json, &bound_input_json)
+        crate::superwire_wasm_tool_sdk::execute_tool_json_blocking::<user_tool::{{tool_type_name}}Tool>(&agent_input_json, &bound_input_json)
             .map_err(|error| ToolError {
                 code: error.code,
                 message: error.message,

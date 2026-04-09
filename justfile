@@ -9,3 +9,6 @@ cli *arguments:
 # Build IntelliJ plugin (bundles LSP binaries)
 intellij-build:
     cd editors/intellij && ./gradlew clean buildPlugin
+
+build-cli-alpine:
+    cargo build -p superwire-cli --release --target x86_64-unknown-linux-musl
