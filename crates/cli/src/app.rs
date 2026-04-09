@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use serde_json::json;
 
 use crate::commands::fmt::FormatCommand;
 use crate::commands::tools::ToolsCommand;
@@ -20,7 +21,18 @@ impl Application {
         match self.arguments.command.execute() {
             Ok(()) => ExitStatus::from_exit_code(ExitCode::Success),
             Err(command_error) => {
-                eprintln!("{command_error}");
+                if std::env::var("SUPERWIRE_ERROR_FORMAT").ok().as_deref() == Some("json") {
+                    let error_payload = json!({
+                        "code": command_error.code(),
+                        "message": command_error.message(),
+                        "details": command_error.details(),
+                    });
+
+                    eprintln!("{error_payload}");
+                } else {
+                    eprintln!("{command_error}");
+                }
+
                 ExitStatus::from_exit_code(command_error.exit_code())
             }
         }
