@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, HashSet};
 
-use superwire_core::dsl::{DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, TypeExpression};
+use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, TypeExpression};
 use superwire_core::semantic::ToolingReferencePath;
 
 use crate::protocol::Position;
 
 use super::semantic_index::{FieldMetadata, SemanticIndex};
-use super::text_utils::{is_identifier, leading_identifier, trailing_reference_token};
+use super::text_utils::{for_clause_iterable_prefix, is_identifier, trailing_reference_token};
 use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
@@ -160,7 +160,7 @@ impl SemanticIndex {
         let current_agent_name = self.agent_name_at_position(position);
 
         if let Some(iterator_reference_suggestions) =
-            self.for_loop_iterator_reference_suggestions(reference_completion_path, reference_completion_constraint, position)
+            self.for_loop_binding_reference_suggestions(reference_completion_path, reference_completion_constraint, position)
         {
             return iterator_reference_suggestions;
         }
@@ -195,7 +195,7 @@ impl SemanticIndex {
         }
     }
 
-    fn for_loop_iterator_reference_suggestions(
+    fn for_loop_binding_reference_suggestions(
         &self,
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
@@ -205,18 +205,15 @@ impl SemanticIndex {
             return None;
         }
 
-        let iterator_name = self.for_loop_iterator_name_at_position(position)?;
+        let for_loop_binding_types = self
+            .for_loop_binding_types_at_position(position, reference_completion_path.root_identifier())?
+            .to_vec();
 
-        if reference_completion_path.root_identifier() != iterator_name {
-            return None;
-        }
-
-        let iterator_type = self.for_loop_iterator_type_at_position(position)?.clone();
         let candidate_types = if reference_completion_path.complete_accesses.is_empty() {
-            vec![iterator_type]
+            for_loop_binding_types
         } else {
             self.tooling_snapshot
-                .resolve_access_path_types(vec![iterator_type], &reference_completion_path.complete_accesses)
+                .resolve_access_path_types(for_loop_binding_types, &reference_completion_path.complete_accesses)
         };
 
         if self.requires_optional_access_for_field_completion(candidate_types.as_slice(), reference_completion_path) {
@@ -589,22 +586,5 @@ impl ForLoopIterableType for TypeExpression {
 }
 
 fn is_for_loop_iterable_reference_context(line_prefix: &str) -> bool {
-    let for_keyword = ForClauseKeyword::For.as_str();
-    let in_keyword = ForClauseKeyword::In.as_str();
-    let trimmed_line_prefix = line_prefix.trim_start();
-    let for_keyword_with_surrounding_whitespace = format!(" {for_keyword} ");
-    let Some((_, after_for_keyword)) = trimmed_line_prefix.split_once(for_keyword_with_surrounding_whitespace.as_str()) else {
-        return false;
-    };
-
-    let Some(iterator_name) = leading_identifier(after_for_keyword) else {
-        return false;
-    };
-
-    let remaining_after_iterator = after_for_keyword[iterator_name.len()..].trim_start();
-    let Some(after_in_keyword) = remaining_after_iterator.strip_prefix(in_keyword) else {
-        return false;
-    };
-
-    after_in_keyword.starts_with(char::is_whitespace)
+    for_clause_iterable_prefix(line_prefix).is_some()
 }

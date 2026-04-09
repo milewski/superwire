@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use super::ast::{
-    AgentDeclaration, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, Expression, ForClauseKeyword,
-    FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, Expression,
+    ForClauseKeyword, FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -288,7 +288,7 @@ impl AgentDeclaration {
             declaration_header.push(' ');
             declaration_header.push_str(ForClauseKeyword::For.as_str());
             declaration_header.push(' ');
-            declaration_header.push_str(&loop_declaration.iterator_name);
+            declaration_header.push_str(&loop_declaration.pattern.render_for_clause());
             declaration_header.push(' ');
             declaration_header.push_str(ForClauseKeyword::In.as_str());
             declaration_header.push(' ');
@@ -317,6 +317,15 @@ impl AgentDeclaration {
         }
 
         formatter.push_declaration_block_end();
+    }
+}
+
+impl AgentForLoopPattern {
+    fn render_for_clause(&self) -> String {
+        match self {
+            Self::Identifier(identifier) => identifier.clone(),
+            Self::ObjectDestructuring(field_names) => format!("{{ {} }}", field_names.join(", ")),
+        }
     }
 }
 
@@ -1672,6 +1681,17 @@ mod tests {
             "// provider declaration\nprovider openai {\n    // provider driver\n    driver: \"openai\" // inline driver comment\n}\n\n// output heading\noutput {\n    value: \"ok\"\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("workflow with standalone comment should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
+    }
+
+    #[test]
+    fn formatter_renders_object_destructuring_for_loop_pattern() {
+        let source_text = "agent analyzer for {id,name,} in agent.alpha.participants {prompt:\"hello\" output:string}\n";
+        let expected_output =
+            "agent analyzer for { id, name } in agent.alpha.participants {\n    prompt: \"hello\"\n    output: string\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("workflow should format successfully");
 
         assert_eq!(formatted_source, expected_output);
     }

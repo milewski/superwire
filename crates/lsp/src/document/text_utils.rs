@@ -1,3 +1,5 @@
+use superwire_core::dsl::{DeclarationKeyword, ForClauseKeyword};
+
 pub fn trailing_identifier(line_prefix: &str) -> Option<&str> {
     let mut start_index = line_prefix.len();
 
@@ -90,4 +92,121 @@ pub fn is_inside_multiline_string_literal(source_text: &str, cursor_offset: usiz
 
 pub fn is_symbol_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || character == '_' || character == '.' || character == '?'
+}
+
+pub fn split_for_clause_binding(source_text: &str) -> Option<(&str, &str)> {
+    let trimmed_source = source_text.trim_start();
+
+    if let Some(after_opening_brace) = trimmed_source.strip_prefix('{') {
+        return split_object_destructuring_binding(trimmed_source, after_opening_brace);
+    }
+
+    let binding_identifier = leading_identifier(trimmed_source)?;
+    let remaining_text = &trimmed_source[binding_identifier.len()..];
+
+    Some((binding_identifier, remaining_text))
+}
+
+pub fn for_clause_iterable_prefix(line_prefix: &str) -> Option<String> {
+    let trimmed_line_prefix = line_prefix.trim_start();
+    let agent_keyword_with_space = format!("{} ", DeclarationKeyword::Agent.as_str());
+    let (_, after_agent_keyword) = trimmed_line_prefix.rsplit_once(agent_keyword_with_space.as_str())?;
+    let for_keyword_with_spaces = format!(" {} ", ForClauseKeyword::For.as_str());
+    let (_, after_for_keyword) = after_agent_keyword.split_once(for_keyword_with_spaces.as_str())?;
+    let (_, after_for_binding) = split_for_clause_binding(after_for_keyword)?;
+    let after_in_keyword = after_for_binding.trim_start().strip_prefix(ForClauseKeyword::In.as_str())?;
+
+    if !after_in_keyword.starts_with(char::is_whitespace) {
+        return None;
+    }
+
+    let iterable_prefix = after_in_keyword.trim_start();
+
+    if iterable_prefix.contains('{') || iterable_prefix.contains('}') || iterable_prefix.contains(':') {
+        return None;
+    }
+
+    Some(iterable_prefix.to_string())
+}
+
+fn split_object_destructuring_binding<'source>(
+    full_binding_source: &'source str,
+    mut remaining_text: &'source str,
+) -> Option<(&'source str, &'source str)> {
+    let mut consumed_length = 1_usize;
+
+    loop {
+        let trimmed_remaining_text = remaining_text.trim_start();
+        consumed_length += remaining_text.len().saturating_sub(trimmed_remaining_text.len());
+        remaining_text = trimmed_remaining_text;
+
+        if let Some(after_closing_brace) = remaining_text.strip_prefix('}') {
+            consumed_length += 1;
+            let binding_text = &full_binding_source[..consumed_length];
+
+            return Some((binding_text, after_closing_brace));
+        }
+
+        let field_identifier = leading_identifier(remaining_text)?;
+        consumed_length += field_identifier.len();
+        remaining_text = &remaining_text[field_identifier.len()..];
+
+        let trimmed_remaining_text = remaining_text.trim_start();
+        consumed_length += remaining_text.len().saturating_sub(trimmed_remaining_text.len());
+        remaining_text = trimmed_remaining_text;
+
+        if let Some(after_comma) = remaining_text.strip_prefix(',') {
+            consumed_length += 1;
+            remaining_text = after_comma;
+
+            continue;
+        }
+
+        if let Some(after_closing_brace) = remaining_text.strip_prefix('}') {
+            consumed_length += 1;
+            let binding_text = &full_binding_source[..consumed_length];
+
+            return Some((binding_text, after_closing_brace));
+        }
+
+        return None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{for_clause_iterable_prefix, split_for_clause_binding};
+
+    #[test]
+    fn splits_identifier_for_clause_binding() {
+        let (binding_text, remaining_text) = split_for_clause_binding("item in input.items").expect("identifier binding should parse");
+
+        assert_eq!(binding_text, "item");
+        assert_eq!(remaining_text, " in input.items");
+    }
+
+    #[test]
+    fn splits_object_destructuring_for_clause_binding() {
+        let (binding_text, remaining_text) =
+            split_for_clause_binding("{ id, name } in agent.alpha.participants").expect("object binding should parse");
+
+        assert_eq!(binding_text, "{ id, name }");
+        assert_eq!(remaining_text, " in agent.alpha.participants");
+    }
+
+    #[test]
+    fn extracts_iterable_prefix_for_identifier_for_clause() {
+        let iterable_prefix =
+            for_clause_iterable_prefix("agent analyzer for item in input.participants").expect("iterable prefix should parse");
+
+        assert_eq!(iterable_prefix, "input.participants");
+    }
+
+    #[test]
+    fn extracts_iterable_prefix_for_object_destructuring_for_clause() {
+        let iterable_prefix = for_clause_iterable_prefix("agent analyzer for { id, name } in agent.alpha.participants")
+            .expect("iterable prefix should parse");
+
+        assert_eq!(iterable_prefix, "agent.alpha.participants");
+    }
 }

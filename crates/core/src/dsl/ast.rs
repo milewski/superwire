@@ -329,8 +329,31 @@ impl AgentDeclaration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentForLoop {
-    pub iterator_name: String,
+    pub pattern: AgentForLoopPattern,
     pub iterable: Expression,
+}
+
+impl AgentForLoop {
+    #[must_use]
+    pub fn bound_identifier_names(&self) -> Vec<&str> {
+        self.pattern.bound_identifier_names()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentForLoopPattern {
+    Identifier(String),
+    ObjectDestructuring(Vec<String>),
+}
+
+impl AgentForLoopPattern {
+    #[must_use]
+    pub fn bound_identifier_names(&self) -> Vec<&str> {
+        match self {
+            Self::Identifier(identifier) => vec![identifier.as_str()],
+            Self::ObjectDestructuring(field_names) => field_names.iter().map(String::as_str).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

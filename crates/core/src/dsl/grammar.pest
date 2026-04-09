@@ -15,7 +15,9 @@ input_declaration = { "input" ~ typed_block }
 schema_declaration = { "schema" ~ identifier ~ typed_block }
 
 agent_declaration = { "agent" ~ identifier ~ for_clause? ~ agent_block }
-for_clause = { "for" ~ identifier ~ "in" ~ expression }
+for_clause = { "for" ~ for_loop_pattern ~ "in" ~ expression }
+for_loop_pattern = { identifier | object_destructuring_pattern }
+object_destructuring_pattern = { "{" ~ identifier ~ ("," ~ identifier)* ~ ","? ~ "}" }
 agent_block = { "{" ~ agent_property* ~ "}" }
 
 agent_property = _{

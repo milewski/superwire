@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, CallArgument, Expression, FunctionCall, Reference,
-    ReferenceKeyword, Workflow,
+    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, CallArgument, Expression,
+    FunctionCall, Reference, ReferenceKeyword, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
@@ -83,6 +83,66 @@ impl CompletedAgentExecution {
     fn apply_to_runtime_state(self, runtime_state: &mut RuntimeState) {
         runtime_state.agent_outputs.insert(self.agent_name.clone(), self.output);
         runtime_state.agent_contexts.insert(self.agent_name, self.context);
+    }
+}
+
+impl AgentForLoop {
+    fn local_bindings_for_iteration_item(
+        &self,
+        iterable_item: &Value,
+        agent_name: &str,
+    ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
+        self.pattern.local_bindings_for_iteration_item(iterable_item, agent_name)
+    }
+}
+
+impl AgentForLoopPattern {
+    fn local_bindings_for_iteration_item(
+        &self,
+        iterable_item: &Value,
+        agent_name: &str,
+    ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
+        match self {
+            Self::Identifier(iterator_name) => {
+                let mut local_bindings = HashMap::new();
+                local_bindings.insert(iterator_name.clone(), iterable_item.clone());
+
+                Ok(local_bindings)
+            }
+            Self::ObjectDestructuring(field_names) => self.object_destructuring_bindings(iterable_item, field_names, agent_name),
+        }
+    }
+
+    fn object_destructuring_bindings(
+        &self,
+        iterable_item: &Value,
+        field_names: &[String],
+        agent_name: &str,
+    ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
+        let Some(iterable_object) = iterable_item.as_object() else {
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: format!("for-loop iterable for agent `{agent_name}`"),
+                message: format!(
+                    "object destructuring in for-loop requires object items, found {}",
+                    value_kind_name(iterable_item)
+                ),
+            });
+        };
+
+        let mut local_bindings = HashMap::new();
+
+        for field_name in field_names {
+            let Some(field_value) = iterable_object.get(field_name) else {
+                return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                    context: format!("for-loop iterable for agent `{agent_name}`"),
+                    message: format!("object destructuring field `{field_name}` is missing from iterable item"),
+                });
+            };
+
+            local_bindings.insert(field_name.clone(), field_value.clone());
+        }
+
+        Ok(local_bindings)
     }
 }
 
@@ -453,8 +513,7 @@ where
         let mut pending_iteration_executions = Vec::new();
 
         for iterable_item in iterable_items {
-            let mut local_bindings = HashMap::new();
-            local_bindings.insert(agent_for_loop.iterator_name.clone(), iterable_item.clone());
+            let local_bindings = agent_for_loop.local_bindings_for_iteration_item(iterable_item, &prepared_agent_execution.agent_name)?;
 
             let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
 
