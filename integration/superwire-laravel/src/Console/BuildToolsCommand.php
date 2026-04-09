@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Console;
 
 use Illuminate\Console\Command;
@@ -22,14 +24,18 @@ final class BuildToolsCommand extends Command
         $toolClasses = $this->option('tool');
 
         if (!is_array($toolClasses) || empty($toolClasses)) {
+
             $configuredToolClasses = config('superwire.tools.registered_classes', []);
             $toolClasses = is_array($configuredToolClasses) ? $configuredToolClasses : [];
+
         }
 
         if (empty($toolClasses)) {
+
             $this->error('No tool classes provided. Use --tool=App\\Superwire\\Tools\\WeatherTool or configure superwire.tools.registered_classes.');
 
             return self::FAILURE;
+
         }
 
         $buildResult = $this->toolCompiler->build(new ToolBuildRequest($toolClasses));

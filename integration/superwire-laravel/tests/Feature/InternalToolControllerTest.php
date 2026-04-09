@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Tests\Feature;
 
 use Superwire\Laravel\Tests\Fixtures\EchoTool;
@@ -11,7 +13,7 @@ final class InternalToolControllerTest extends TestCase
     {
         parent::defineEnvironment($application);
 
-        $application['config']->set('superwire.tools.registered_classes', [EchoTool::class]);
+        $application[ 'config' ]->set('superwire.tools.registered_classes', [ EchoTool::class ]);
     }
 
     public function testExecutesRegisteredToolWhenRequestIsAuthorized(): void

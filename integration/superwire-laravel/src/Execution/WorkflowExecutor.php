@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Execution;
 
 use Illuminate\Contracts\Config\Repository;
@@ -31,10 +33,12 @@ final class WorkflowExecutor
         $secretsPayloadFilePath = null;
 
         if ($workflowExecutionRequest->secrets !== []) {
+
             $secretsJson = $this->encodePayloadAsJsonObject($workflowExecutionRequest->secrets, 'secrets payload');
             $secretsPayloadFilePath = $this->createTemporaryPayloadFile($secretsJson, 'superwire-secrets-');
             $command[] = '--secrets-file';
             $command[] = $secretsPayloadFilePath;
+
         }
 
         $process = new Process(
@@ -49,6 +53,7 @@ final class WorkflowExecutor
         );
 
         try {
+
             $process->run();
 
             if (!$process->isSuccessful()) {
@@ -62,6 +67,7 @@ final class WorkflowExecutor
             }
 
             return new WorkflowExecutionResult($decodedOutput);
+
         } finally {
             @unlink($inputPayloadFilePath);
 
@@ -95,12 +101,14 @@ final class WorkflowExecutor
             throw new WorkflowExecutionException('failed to create temporary payload file');
         }
 
-        @chmod($temporaryPayloadFilePath, 0600);
+        @chmod($temporaryPayloadFilePath, 0o600);
 
         if (file_put_contents($temporaryPayloadFilePath, $payloadJson) === false) {
+
             @unlink($temporaryPayloadFilePath);
 
             throw new WorkflowExecutionException('failed to write temporary payload file');
+
         }
 
         return $temporaryPayloadFilePath;
@@ -116,22 +124,24 @@ final class WorkflowExecutor
         $cliOutput = trim($errorOutput) !== '' ? trim($errorOutput) : trim($standardOutput);
         $decodedPayload = json_decode($cliOutput, true);
 
-        if (is_array($decodedPayload) && isset($decodedPayload['message']) && is_string($decodedPayload['message'])) {
+        if (is_array($decodedPayload) && isset($decodedPayload[ 'message' ]) && is_string($decodedPayload[ 'message' ])) {
+
             return new WorkflowExecutionException(
                 message: sprintf(
-                    "failed to execute workflow command `%s`: %s",
+                    'failed to execute workflow command `%s`: %s',
                     implode(' ', $command),
-                    $decodedPayload['message'],
+                    $decodedPayload[ 'message' ],
                 ),
                 command: $command,
                 errorPayload: $decodedPayload,
                 rawCliOutput: $cliOutput,
             );
+
         }
 
         return new WorkflowExecutionException(
             message: sprintf(
-                "failed to execute workflow command `%s`: %s",
+                'failed to execute workflow command `%s`: %s',
                 implode(' ', $command),
                 $cliOutput,
             ),

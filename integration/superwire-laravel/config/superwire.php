@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 return [
     'cli' => [
         'binary' => env('SUPERWIRE_CLI_BINARY', 'cli'),
@@ -27,6 +29,6 @@ return [
     ],
 
     'routes' => [
-        'middleware' => ['api'],
+        'middleware' => [ 'api' ],
     ],
 ];

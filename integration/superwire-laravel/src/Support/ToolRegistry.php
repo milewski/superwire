@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Support;
 
 use Illuminate\Contracts\Config\Repository;
@@ -22,19 +24,22 @@ final class ToolRegistry
             . 'tool-registry.json';
 
         if (is_file($manifestPath)) {
+
             $manifestPayload = json_decode((string) file_get_contents($manifestPath), true);
 
             if (is_array($manifestPayload)
-                && isset($manifestPayload['tools'][$toolName]['class'])
-                && is_string($manifestPayload['tools'][$toolName]['class'])
+                && isset($manifestPayload[ 'tools' ][ $toolName ][ 'class' ])
+                && is_string($manifestPayload[ 'tools' ][ $toolName ][ 'class' ])
             ) {
-                return $manifestPayload['tools'][$toolName]['class'];
+                return $manifestPayload[ 'tools' ][ $toolName ][ 'class' ];
             }
+
         }
 
         $configuredToolClasses = $this->config->get('superwire.tools.registered_classes', []);
 
         foreach ($configuredToolClasses as $configuredToolClass) {
+
             if (!is_string($configuredToolClass)) {
                 continue;
             }
@@ -46,6 +51,7 @@ final class ToolRegistry
             if ($configuredToolClass::name() === $toolName) {
                 return $configuredToolClass;
             }
+
         }
 
         throw new InvalidToolClassException(sprintf('failed to resolve superwire tool class for `%s`', $toolName));

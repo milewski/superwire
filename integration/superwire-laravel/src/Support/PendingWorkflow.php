@@ -1,31 +1,33 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Support;
 
 use Superwire\Laravel\Data\ToolBuildRequest;
 use Superwire\Laravel\Data\ToolBuildResult;
 use Superwire\Laravel\Data\WorkflowExecutionRequest;
+use Superwire\Laravel\Exceptions\ToolBuildException;
 use Superwire\Laravel\Execution\ToolCompiler;
 use Superwire\Laravel\Execution\WorkflowExecutor;
-use Superwire\Laravel\Exceptions\ToolBuildException;
 
 final readonly class PendingWorkflow
 {
     /**
- * @param list<class-string> $toolClasses
- * @param array<string, mixed> $inputs
- * @param array<string, mixed> $secrets
- */
-public function __construct(
-    private string $workflowFilePath,
-    private WorkflowExecutor $workflowExecutor,
-    private ToolCompiler $toolCompiler,
-    private OutputMapper $outputMapper,
-    private array $toolClasses = [],
-    private array $inputs = [],
-    private array $secrets = [],
-    private ?string $outputClassName = null,
-)
+     * @param list<class-string> $toolClasses
+     * @param array<string, mixed> $inputs
+     * @param array<string, mixed> $secrets
+     */
+    public function __construct(
+        private string $workflowFilePath,
+        private WorkflowExecutor $workflowExecutor,
+        private ToolCompiler $toolCompiler,
+        private OutputMapper $outputMapper,
+        private array $toolClasses = [],
+        private array $inputs = [],
+        private array $secrets = [],
+        private ?string $outputClassName = null,
+    )
     {
     }
 
@@ -108,8 +110,10 @@ public function __construct(
     public function run(): mixed
     {
         if (!empty($this->toolClasses)) {
+
             $toolBuildResult = $this->toolCompiler->build(new ToolBuildRequest($this->toolClasses));
             $this->publishBuiltToolsToWorkflowDirectory($toolBuildResult);
+
         }
 
         $workflowExecutionResult = $this->workflowExecutor->execute(new WorkflowExecutionRequest(
@@ -131,11 +135,12 @@ public function __construct(
         $workflowDirectory = dirname($this->workflowFilePath);
         $workflowToolsDirectory = $workflowDirectory . DIRECTORY_SEPARATOR . 'tools';
 
-        if (!is_dir($workflowToolsDirectory) && !mkdir($workflowToolsDirectory, 0777, true) && !is_dir($workflowToolsDirectory)) {
+        if (!is_dir($workflowToolsDirectory) && !mkdir($workflowToolsDirectory, 0o777, true) && !is_dir($workflowToolsDirectory)) {
             throw new ToolBuildException(sprintf('failed to create workflow tools directory %s', $workflowToolsDirectory));
         }
 
         foreach ($toolBuildResult->toolNames as $toolName) {
+
             $sourcePath = $toolBuildResult->outputDirectory . DIRECTORY_SEPARATOR . $toolName . '.wasm';
             $destinationPath = $workflowToolsDirectory . DIRECTORY_SEPARATOR . $toolName . '.wasm';
 
@@ -146,6 +151,7 @@ public function __construct(
             if (!copy($sourcePath, $destinationPath)) {
                 throw new ToolBuildException(sprintf('failed to publish built tool artifact from %s to %s', $sourcePath, $destinationPath));
             }
+
         }
     }
 }

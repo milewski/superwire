@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Tests\Unit;
 
 use Illuminate\Http\Request;

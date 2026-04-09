@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Execution;
 
 use Illuminate\Contracts\Config\Repository;
@@ -30,11 +32,11 @@ final readonly class ToolCompiler
         $toolSourcesManifestPath = $buildRootDirectory . '/tool-sources/Cargo.toml';
         $toolSourcesLibPath = $toolSourcesDirectory . '/lib.rs';
 
-        if (!is_dir($toolSourcesDirectory) && !mkdir($toolSourcesDirectory, 0777, true) && !is_dir($toolSourcesDirectory)) {
+        if (!is_dir($toolSourcesDirectory) && !mkdir($toolSourcesDirectory, 0o777, true) && !is_dir($toolSourcesDirectory)) {
             throw new ToolBuildException(sprintf('failed to create tool sources directory %s', $toolSourcesDirectory));
         }
 
-        if (!is_dir($toolOutputDirectory) && !mkdir($toolOutputDirectory, 0777, true) && !is_dir($toolOutputDirectory)) {
+        if (!is_dir($toolOutputDirectory) && !mkdir($toolOutputDirectory, 0o777, true) && !is_dir($toolOutputDirectory)) {
             throw new ToolBuildException(sprintf('failed to create tool output directory %s', $toolOutputDirectory));
         }
 
@@ -44,6 +46,7 @@ final readonly class ToolCompiler
         $toolRegistryMap = [];
 
         foreach ($validatedToolClasses as $toolClass) {
+
             $toolName = $toolClass::name();
             $moduleName = $this->moduleName($toolName);
             $moduleNames[] = $moduleName;
@@ -58,6 +61,7 @@ final readonly class ToolCompiler
 
             $modulePath = sprintf('%s/%s.rs', $toolSourcesDirectory, $moduleName);
             file_put_contents($modulePath, $this->toolModuleSource($toolClass));
+
         }
 
         $libSourceLines = array_map(
@@ -92,7 +96,7 @@ final readonly class ToolCompiler
         if (!$process->isSuccessful()) {
 
             throw new ToolBuildException(sprintf(
-                "failed to build tool wasm modules using `%s`: %s",
+                'failed to build tool wasm modules using `%s`: %s',
                 implode(' ', $command),
                 trim($process->getErrorOutput()) !== '' ? trim($process->getErrorOutput()) : trim($process->getOutput()),
             ));
@@ -111,6 +115,7 @@ final readonly class ToolCompiler
         $validatedToolClasses = [];
 
         foreach ($toolClasses as $toolClass) {
+
             if (!is_string($toolClass)) {
                 throw new InvalidToolClassException('tool class references must be class-string values');
             }
@@ -124,6 +129,7 @@ final readonly class ToolCompiler
             }
 
             $validatedToolClasses[] = $toolClass;
+
         }
 
         return $validatedToolClasses;
@@ -153,70 +159,70 @@ final readonly class ToolCompiler
 
         return sprintf(
             <<<'RUST'
-use std::borrow::Cow;
+            use std::borrow::Cow;
 
-use schemars::{JsonSchema, Schema, SchemaGenerator};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+            use schemars::{JsonSchema, Schema, SchemaGenerator};
+            use serde::{Deserialize, Serialize};
+            use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct %s(Value);
+            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[serde(transparent)]
+            pub struct %s(Value);
 
-impl JsonSchema for %s {
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("%s")
-    }
+            impl JsonSchema for %s {
+                fn schema_name() -> Cow<'static, str> {
+                    Cow::Borrowed("%s")
+                }
 
-    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
-        let _ = schema_generator;
+                fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
+                    let _ = schema_generator;
 
-        serde_json::from_str::<Schema>("%s").expect("agent input schema json should be valid")
-    }
-}
+                    serde_json::from_str::<Schema>("%s").expect("agent input schema json should be valid")
+                }
+            }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct %s(Value);
+            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[serde(transparent)]
+            pub struct %s(Value);
 
-impl JsonSchema for %s {
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("%s")
-    }
+            impl JsonSchema for %s {
+                fn schema_name() -> Cow<'static, str> {
+                    Cow::Borrowed("%s")
+                }
 
-    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
-        let _ = schema_generator;
+                fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
+                    let _ = schema_generator;
 
-        serde_json::from_str::<Schema>("%s").expect("bound input schema json should be valid")
-    }
-}
+                    serde_json::from_str::<Schema>("%s").expect("bound input schema json should be valid")
+                }
+            }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct %s(Value);
+            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[serde(transparent)]
+            pub struct %s(Value);
 
-impl JsonSchema for %s {
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("%s")
-    }
+            impl JsonSchema for %s {
+                fn schema_name() -> Cow<'static, str> {
+                    Cow::Borrowed("%s")
+                }
 
-    fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
-        let _ = schema_generator;
+                fn json_schema(schema_generator: &mut SchemaGenerator) -> Schema {
+                    let _ = schema_generator;
 
-        serde_json::from_str::<Schema>("%s").expect("output schema json should be valid")
-    }
-}
+                    serde_json::from_str::<Schema>("%s").expect("output schema json should be valid")
+                }
+            }
 
-crate::php_proxy_tool!(
-    tool = %sTool,
-    name = "%s",
-    description = "%s",
-    endpoint = "%s",
-    input = %s,
-    bound_input = %s,
-    output = %s,
-);
-RUST,
+            crate::php_proxy_tool!(
+                tool = %sTool,
+                name = "%s",
+                description = "%s",
+                endpoint = "%s",
+                input = %s,
+                bound_input = %s,
+                output = %s,
+            );
+            RUST,
             $agentInputTypeName,
             $agentInputTypeName,
             $agentInputTypeName,
@@ -253,11 +259,13 @@ RUST,
         $typeName = '';
 
         foreach ($segments as $segment) {
+
             if ($segment === '') {
                 continue;
             }
 
             $typeName .= ucfirst($segment);
+
         }
 
         return $typeName === '' ? 'ProxyTool' : $typeName;
@@ -266,19 +274,19 @@ RUST,
     private function toolSourcesCargoManifest(): string
     {
         return <<<'TOML'
-[package]
-name = "superwire_php_tools"
-version = "0.1.0"
-edition = "2021"
+        [package]
+        name = "superwire_php_tools"
+        version = "0.1.0"
+        edition = "2021"
 
-[lib]
-path = "src/lib.rs"
-TOML;
+        [lib]
+        path = "src/lib.rs"
+        TOML;
     }
 
     /**
-     * @return array<string, mixed>
      * @throws JsonException
+     * @return array<string, mixed>
      */
     private function schemaPayload(Schema $schema): array
     {

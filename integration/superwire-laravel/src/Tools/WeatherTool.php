@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace Superwire\Laravel\Tools;
 
 use Illuminate\Support\Facades\Http;
@@ -26,16 +28,24 @@ final class WeatherTool extends AbstractTool
         $weatherUrl = 'https://wttr.in/' . rawurlencode((string) $cityName) . '?format=%C+%t';
 
         try {
+
             $weatherResponse = Http::timeout(10)->get($weatherUrl);
 
             if ($weatherResponse->successful()) {
+
                 $weatherSummary = $weatherResponse->body();
+
             } else {
+
                 $weatherSummary = 'Weather service temporarily unavailable';
+
             }
+
         } catch (Throwable $throwable) {
+
             report($throwable);
             $weatherSummary = 'Weather service temporarily unavailable';
+
         }
 
         return new WeatherOutput(
