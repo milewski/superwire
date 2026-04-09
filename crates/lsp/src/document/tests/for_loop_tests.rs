@@ -33,6 +33,36 @@ fn completes_agent_names_in_for_loop_iterable_reference() {
 
 #[test]
 fn suppresses_non_iterable_input_field_suggestions_in_for_loop_iterable_reference() {
+    let source_template = inline_document_template! {
+        input {
+            xxxx: string
+        }
+
+        agent worker for item in input.<cursor> {
+            prompt: item
+        }
+    };
+
+    let (source_text, cursor_position) = source_with_cursor(source_template);
+    let line_text = source_text
+        .lines()
+        .nth(cursor_position.line as usize)
+        .expect("cursor line should exist");
+    let line_prefix = line_text.chars().take(cursor_position.character as usize).collect::<String>();
+
+    assert!(
+        super::super::completion_context::ForLoopIterableValueCompletionContext::from_line_prefix(&line_prefix).is_some(),
+        "for-loop iterable value context should be detected for line prefix {line_prefix:?}"
+    );
+
+    assert!(
+        matches!(
+            super::super::reference::ReferenceCompletionConstraint::from_line_prefix(&line_prefix),
+            super::super::reference::ReferenceCompletionConstraint::ForLoopIterable
+        ),
+        "reference completion should require iterable constraint"
+    );
+
     let completion_suggestions = inline_completion_suggestions! {
         input {
             xxxx: string
@@ -226,4 +256,84 @@ fn suggests_in_keyword_after_for_iterator_name_in_agent_header() {
         .expect("in keyword completion should exist");
 
     assert!(matches!(in_keyword_completion.kind, CompletionKind::Keyword));
+}
+
+#[test]
+fn suggests_in_keyword_after_for_object_destructuring_pattern_in_agent_header() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent remediation_plan for { id, name } <cursor> {
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, ForClauseKeyword::In);
+    assert_completion_excludes_labels!(&completion_suggestions, ForClauseKeyword::For, DeclarationKeyword::Agent);
+}
+
+#[test]
+fn suggests_object_destructuring_bindings_inside_prompt_interpolation_expression() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent alpha {
+            output: {
+                participants: [{
+                    id: number
+                    name: string
+                    profile: {
+                        city: string
+                    }
+                }]
+            }
+        }
+
+        agent analyzer for { id, profile } in agent.alpha.participants {
+            prompt: "Analyze participant {{ <cursor> }}"
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "id", "profile");
+    assert_completion_excludes_labels!(&completion_suggestions, "name");
+}
+
+#[test]
+fn completes_object_destructuring_binding_fields_from_for_loop_iterable() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent alpha {
+            output: {
+                participants: [{
+                    id: number
+                    name: string
+                    profile: {
+                        city: string
+                    }
+                }]
+            }
+        }
+
+        agent analyzer for { id, profile } in agent.alpha.participants {
+            prompt: "Analyze participant {{ profile.<cursor> }}"
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "city");
+    assert_completion_excludes_labels!(&completion_suggestions, "id", "name");
+}
+
+#[test]
+fn completes_iterable_references_for_object_destructuring_for_clause() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            participants: [{
+                id: number
+                name: string
+            }]
+        }
+
+        agent analyzer for { id, name } in input.<cursor> {
+            prompt: "Analyze participant {{ id }} {{ name }}"
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "participants");
 }

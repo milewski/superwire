@@ -272,8 +272,8 @@ mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
-        AgentProperty, CallArgument, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
-        TypeExpression,
+        AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot,
+        StringTemplatePart, TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -358,7 +358,7 @@ mod tests {
             .as_ref()
             .expect("remediation_plan should include a for-loop");
 
-        assert_eq!(loop_definition.iterator_name, "finding");
+        assert_eq!(loop_definition.pattern, AgentForLoopPattern::Identifier("finding".to_string()));
 
         match &loop_definition.iterable {
             Expression::Reference(reference) => {
@@ -368,6 +368,40 @@ mod tests {
                 assert!(!reference.accesses[0].optional);
                 assert_eq!(reference.accesses[1].field, "items");
                 assert!(!reference.accesses[1].optional);
+            }
+            _ => panic!("loop iterable should be a reference"),
+        }
+    }
+
+    #[test]
+    fn parses_object_destructuring_for_loop_agent_structure() {
+        let workflow = parse_inline_workflow! {
+            agent participant_analyzer for { id, name } in agent.alpha.participants {
+                prompt: "Analyze participant {{ id }} and {{ name }}"
+                output: string
+            }
+        };
+
+        let participant_analyzer_agent = workflow
+            .find_agent("participant_analyzer")
+            .expect("missing agent declaration: participant_analyzer");
+
+        let loop_definition = participant_analyzer_agent
+            .for_loop
+            .as_ref()
+            .expect("participant_analyzer should include a for-loop");
+
+        assert_eq!(
+            loop_definition.pattern,
+            AgentForLoopPattern::ObjectDestructuring(vec!["id".to_string(), "name".to_string()])
+        );
+
+        match &loop_definition.iterable {
+            Expression::Reference(reference) => {
+                assert_eq!(reference.root, ReferenceRoot::Keyword(ReferenceKeyword::Agent));
+                assert_eq!(reference.accesses.len(), 2);
+                assert_eq!(reference.accesses[0].field, "alpha");
+                assert_eq!(reference.accesses[1].field, "participants");
             }
             _ => panic!("loop iterable should be a reference"),
         }

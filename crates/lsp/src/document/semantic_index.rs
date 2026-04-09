@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
-    AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration, ReferenceKeyword,
-    SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
+    AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration,
+    ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
 };
 use superwire_core::runtime::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
@@ -27,8 +27,7 @@ pub struct SemanticIndex {
     pub secrets_fields: BTreeMap<String, TypeExpression>,
     pub secrets_field_metadata: BTreeMap<String, FieldMetadata>,
     pub agents: HashMap<String, AgentSummary>,
-    pub agent_for_loop_iterators: HashMap<String, String>,
-    pub agent_for_loop_iterator_types: HashMap<String, TypeExpression>,
+    pub agent_for_loop_bindings: HashMap<String, BTreeMap<String, Vec<TypeExpression>>>,
     pub agent_names: Vec<String>,
     pub output_locations: Vec<SourceSpan>,
     pub typed_declaration_locations: Vec<SourceSpan>,
@@ -266,14 +265,18 @@ impl SemanticIndex {
             })
             .collect::<Vec<_>>();
 
-        if let Some(for_loop_iterator_name) = self.for_loop_iterator_name_at_position(position) {
-            if for_loop_iterator_name.starts_with(root_prefix) {
+        if let Some(for_loop_binding_names) = self.for_loop_binding_names_at_position(position) {
+            for for_loop_binding_name in for_loop_binding_names {
+                if !for_loop_binding_name.starts_with(root_prefix) {
+                    continue;
+                }
+
                 completion_suggestions.push(CompletionSuggestion {
-                    label: for_loop_iterator_name.to_string(),
+                    label: for_loop_binding_name.to_string(),
                     kind: CompletionKind::Variable,
                     detail: "For-loop iterator variable".to_string(),
                     documentation: "Iterator binding declared in the current agent for-clause.".to_string(),
-                    insert_text: for_loop_iterator_name.to_string(),
+                    insert_text: for_loop_binding_name.to_string(),
                 });
             }
         }
@@ -307,8 +310,7 @@ impl SemanticIndex {
             secrets_fields: BTreeMap::new(),
             secrets_field_metadata: BTreeMap::new(),
             agents: HashMap::new(),
-            agent_for_loop_iterators: HashMap::new(),
-            agent_for_loop_iterator_types: HashMap::new(),
+            agent_for_loop_bindings: HashMap::new(),
             agent_names: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -431,12 +433,13 @@ impl SemanticIndex {
         );
 
         if let Some(agent_for_loop) = &agent_declaration.for_loop {
-            self.agent_for_loop_iterators
-                .insert(agent_declaration.name.clone(), agent_for_loop.iterator_name.clone());
+            if let Some(iterable_item_type) = self.iterable_item_type(&agent_for_loop.iterable) {
+                let for_loop_binding_types = self.for_loop_binding_types(agent_for_loop, iterable_item_type);
 
-            if let Some(iterator_type) = self.iterable_item_type(&agent_for_loop.iterable) {
-                self.agent_for_loop_iterator_types
-                    .insert(agent_declaration.name.clone(), iterator_type);
+                if !for_loop_binding_types.is_empty() {
+                    self.agent_for_loop_bindings
+                        .insert(agent_declaration.name.clone(), for_loop_binding_types);
+                }
             }
         }
 
@@ -549,8 +552,7 @@ impl SemanticIndex {
             secrets_fields: tooling_snapshot.secrets_fields().clone(),
             secrets_field_metadata: field_metadata_from_type_map(tooling_snapshot.secrets_fields()),
             agents,
-            agent_for_loop_iterators: HashMap::new(),
-            agent_for_loop_iterator_types: HashMap::new(),
+            agent_for_loop_bindings: HashMap::new(),
             agent_names,
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
@@ -1034,16 +1036,50 @@ impl SemanticIndex {
             .map(|agent_location| agent_location.name.as_str())
     }
 
-    pub(in crate::document) fn for_loop_iterator_name_at_position(&self, position: Position) -> Option<&str> {
+    pub(in crate::document) fn for_loop_binding_names_at_position(&self, position: Position) -> Option<Vec<&str>> {
         let agent_name = self.agent_name_at_position(position)?;
+        let for_loop_bindings = self.agent_for_loop_bindings.get(agent_name)?;
 
-        self.agent_for_loop_iterators.get(agent_name).map(String::as_str)
+        Some(for_loop_bindings.keys().map(String::as_str).collect())
     }
 
-    pub fn for_loop_iterator_type_at_position(&self, position: Position) -> Option<&TypeExpression> {
+    pub fn for_loop_binding_types_at_position(&self, position: Position, binding_name: &str) -> Option<&[TypeExpression]> {
         let agent_name = self.agent_name_at_position(position)?;
 
-        self.agent_for_loop_iterator_types.get(agent_name)
+        self.agent_for_loop_bindings.get(agent_name)?.get(binding_name).map(Vec::as_slice)
+    }
+
+    pub fn has_for_loop_binding_at_position(&self, position: Position, binding_name: &str) -> bool {
+        self.for_loop_binding_types_at_position(position, binding_name).is_some()
+    }
+
+    fn for_loop_binding_types(
+        &self,
+        agent_for_loop: &superwire_core::dsl::AgentForLoop,
+        iterable_item_type: TypeExpression,
+    ) -> BTreeMap<String, Vec<TypeExpression>> {
+        let mut binding_types = BTreeMap::new();
+
+        match &agent_for_loop.pattern {
+            AgentForLoopPattern::Identifier(identifier) => {
+                binding_types.insert(identifier.clone(), vec![iterable_item_type]);
+            }
+            AgentForLoopPattern::ObjectDestructuring(field_names) => {
+                for field_name in field_names {
+                    let resolved_field_types = self
+                        .tooling_snapshot
+                        .resolve_access_path_types(vec![iterable_item_type.clone()], std::slice::from_ref(field_name));
+
+                    if resolved_field_types.is_empty() {
+                        continue;
+                    }
+
+                    binding_types.insert(field_name.clone(), resolved_field_types);
+                }
+            }
+        }
+
+        binding_types
     }
 
     fn iterable_item_type(&self, iterable_expression: &Expression) -> Option<TypeExpression> {

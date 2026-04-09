@@ -1,7 +1,8 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentProperty, CallArgument, Declaration, Expression, FunctionCall, InputDeclaration, NamedArgument,
-    ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration,
-    SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, Expression, FunctionCall,
+    InputDeclaration, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
+    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, TypeExpression, TypedField,
+    Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -148,11 +149,45 @@ impl AstVisitor {
     fn visit_for_clause(&self, for_clause_pair: Pair<'_, Rule>) -> Result<AgentForLoop, DslParseError> {
         let mut inner_pairs = for_clause_pair.into_inner();
 
-        let iterator_name = self.next_identifier(&mut inner_pairs, "iterator name", "for clause")?;
+        let pattern_pair = self.next_pair(&mut inner_pairs, "for-loop pattern", "for clause")?;
+        let pattern = self.visit_for_loop_pattern(pattern_pair)?;
         let iterable_pair = self.next_pair(&mut inner_pairs, "iterable expression", "for clause")?;
         let iterable = self.visit_expression(iterable_pair)?;
 
-        Ok(AgentForLoop { iterator_name, iterable })
+        Ok(AgentForLoop { pattern, iterable })
+    }
+
+    fn visit_for_loop_pattern(&self, pattern_pair: Pair<'_, Rule>) -> Result<AgentForLoopPattern, DslParseError> {
+        match pattern_pair.as_rule() {
+            Rule::for_loop_pattern => {
+                let inner_pattern_pair = self.first_inner_pair(pattern_pair, "for-loop pattern")?;
+
+                self.visit_for_loop_pattern(inner_pattern_pair)
+            }
+            Rule::identifier => Ok(AgentForLoopPattern::Identifier(pattern_pair.as_str().to_owned())),
+            Rule::object_destructuring_pattern => {
+                let mut field_names = Vec::new();
+
+                for identifier_pair in pattern_pair.into_inner() {
+                    if identifier_pair.as_rule() != Rule::identifier {
+                        return Err(DslParseError::unexpected_with_span(
+                            identifier_pair.as_rule(),
+                            "object destructuring pattern",
+                            source_span_from_pair(&identifier_pair),
+                        ));
+                    }
+
+                    field_names.push(identifier_pair.as_str().to_owned());
+                }
+
+                Ok(AgentForLoopPattern::ObjectDestructuring(field_names))
+            }
+            _ => Err(DslParseError::unexpected_with_span(
+                pattern_pair.as_rule(),
+                "for-loop pattern",
+                source_span_from_pair(&pattern_pair),
+            )),
+        }
     }
 
     fn visit_agent_block(&self, agent_block_pair: Pair<'_, Rule>) -> Result<Vec<AgentProperty>, DslParseError> {

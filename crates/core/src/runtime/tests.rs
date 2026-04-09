@@ -835,6 +835,49 @@ async fn executes_for_loop_iterations_in_parallel() {
 }
 
 #[tokio::test]
+async fn executes_for_loop_object_destructuring_bindings() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        values: Vec<String>,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        agent collect_people for { id, name } in [
+            { id: 1 name: "Ada" },
+            { id: 2 name: "Linus" }
+        ] {
+            model: openai("model-a")
+            prompt: "Person {{ id }} {{ name }}"
+            output: string
+        }
+
+        output {
+            values: agent.collect_people
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let runner = ScriptedRunner::from_outputs(vec![json!("first"), json!("second")]);
+    let output = runtime
+        .run_with_runner((), &runner)
+        .await
+        .expect("workflow should run successfully");
+
+    assert_eq!(
+        output,
+        Output {
+            values: vec!["first".to_string(), "second".to_string()],
+        }
+    );
+
+    let prompts = runner.prompts();
+    assert!(prompts[0].contains("Person 1 Ada"));
+    assert!(prompts[1].contains("Person 2 Linus"));
+}
+
+#[tokio::test]
 async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
     #[derive(Debug, Serialize, JsonSchema)]
     struct Input {

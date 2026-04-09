@@ -1,4 +1,4 @@
-use super::text_utils::{leading_identifier, trailing_identifier};
+use super::text_utils::{for_clause_iterable_prefix, leading_identifier, split_for_clause_binding, trailing_identifier};
 use super::{CompletionKind, CompletionSuggestion};
 use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
 use superwire_core::runtime::InferenceSetting;
@@ -17,15 +17,12 @@ impl DeclarationHeaderCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_line_prefix = line_prefix.trim_start();
 
-        let declaration_line_prefix = if let Some((prefix_before_brace, suffix_after_brace)) = trimmed_line_prefix.split_once('{') {
-            if !suffix_after_brace.trim().is_empty() {
-                return None;
-            }
+        let mut declaration_line_prefix = trimmed_line_prefix;
+        let trimmed_line_prefix_without_trailing_whitespace = trimmed_line_prefix.trim_end();
 
-            prefix_before_brace.trim_end()
-        } else {
-            trimmed_line_prefix
-        };
+        if let Some(prefix_before_trailing_brace) = trimmed_line_prefix_without_trailing_whitespace.strip_suffix('{') {
+            declaration_line_prefix = prefix_before_trailing_brace.trim_end();
+        }
 
         if declaration_line_prefix.contains(':') {
             return None;
@@ -86,14 +83,11 @@ impl DeclarationHeaderCompletionContext {
             return Some(Self::NamedDeclaration);
         }
 
-        let mut declaration_segments = trimmed_line_after_keyword.split_whitespace().collect::<Vec<_>>();
         let line_has_trailing_whitespace = trimmed_line_after_keyword.ends_with(char::is_whitespace);
+        let agent_name = leading_identifier(trimmed_line_after_keyword)?;
+        let after_agent_name = &trimmed_line_after_keyword[agent_name.len()..];
 
-        if declaration_segments.is_empty() {
-            return Some(Self::NamedDeclaration);
-        }
-
-        if declaration_segments.len() == 1 {
+        if after_agent_name.trim().is_empty() {
             if line_has_trailing_whitespace {
                 return Some(Self::AgentForKeyword {
                     keyword_prefix: String::new(),
@@ -103,28 +97,29 @@ impl DeclarationHeaderCompletionContext {
             return Some(Self::NamedDeclaration);
         }
 
-        let for_clause_segment = declaration_segments[1];
+        let after_agent_name = after_agent_name.trim_start();
+        let for_keyword_segment = leading_identifier(after_agent_name).unwrap_or_default();
 
-        if declaration_segments.len() == 2 {
-            if ForClauseKeyword::from_identifier(for_clause_segment) == Some(ForClauseKeyword::For) {
-                if line_has_trailing_whitespace {
-                    return Some(Self::AgentForIteratorName);
-                }
-
-                return None;
-            }
-
-            return Some(Self::AgentForKeyword {
-                keyword_prefix: for_clause_segment.to_string(),
-            });
-        }
-
-        if ForClauseKeyword::from_identifier(for_clause_segment) != Some(ForClauseKeyword::For) {
+        if for_keyword_segment.is_empty() {
             return None;
         }
 
-        if declaration_segments.len() == 3 {
-            if line_has_trailing_whitespace {
+        if ForClauseKeyword::from_identifier(for_keyword_segment) != Some(ForClauseKeyword::For) {
+            return Some(Self::AgentForKeyword {
+                keyword_prefix: for_keyword_segment.to_string(),
+            });
+        }
+
+        let after_for_keyword = &after_agent_name[for_keyword_segment.len()..];
+
+        if after_for_keyword.trim_start().is_empty() {
+            return Some(Self::AgentForIteratorName);
+        }
+
+        let (for_binding_text, after_for_binding) = split_for_clause_binding(after_for_keyword)?;
+
+        if after_for_binding.is_empty() && !line_has_trailing_whitespace {
+            if for_binding_text.starts_with('{') {
                 return Some(Self::AgentInKeyword {
                     keyword_prefix: String::new(),
                 });
@@ -133,29 +128,37 @@ impl DeclarationHeaderCompletionContext {
             return Some(Self::AgentForIteratorName);
         }
 
-        if declaration_segments.len() == 4 {
-            let in_clause_segment = declaration_segments.pop().unwrap_or_default();
+        let after_for_binding = after_for_binding.trim_start();
 
-            if line_has_trailing_whitespace {
-                if ForClauseKeyword::from_identifier(in_clause_segment) == Some(ForClauseKeyword::In) {
-                    return None;
-                }
+        if after_for_binding.is_empty() {
+            return Some(Self::AgentInKeyword {
+                keyword_prefix: String::new(),
+            });
+        }
 
-                return Some(Self::AgentInKeyword {
-                    keyword_prefix: in_clause_segment.to_string(),
-                });
-            }
+        let in_keyword_segment = leading_identifier(after_for_binding).unwrap_or_default();
 
-            if ForClauseKeyword::from_identifier(in_clause_segment).is_some() {
+        if in_keyword_segment.is_empty() {
+            return None;
+        }
+
+        if line_has_trailing_whitespace {
+            if ForClauseKeyword::from_identifier(in_keyword_segment) == Some(ForClauseKeyword::In) {
                 return None;
             }
 
             return Some(Self::AgentInKeyword {
-                keyword_prefix: in_clause_segment.to_string(),
+                keyword_prefix: in_keyword_segment.to_string(),
             });
         }
 
-        None
+        if ForClauseKeyword::from_identifier(in_keyword_segment) == Some(ForClauseKeyword::In) {
+            return None;
+        }
+
+        Some(Self::AgentInKeyword {
+            keyword_prefix: in_keyword_segment.to_string(),
+        })
     }
 
     fn for_clause_keyword_suggestions(for_clause_keyword: ForClauseKeyword, keyword_prefix: &str) -> Vec<CompletionSuggestion> {
@@ -328,23 +331,8 @@ impl ArrayFixedLengthCompletionContext {
 
 impl ForLoopIterableValueCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
-        if line_prefix.contains(':') {
-            return None;
-        }
-
-        let trimmed_line_prefix = line_prefix.trim_start();
-        let for_clause_separator = format!(" {} ", ForClauseKeyword::For.as_str());
-        let (_, after_for_clause_separator) = trimmed_line_prefix.split_once(for_clause_separator.as_str())?;
-        let iterator_name = leading_identifier(after_for_clause_separator)?;
-        let after_iterator_name = after_for_clause_separator[iterator_name.len()..].trim_start();
-        let after_in_keyword = after_iterator_name.strip_prefix(ForClauseKeyword::In.as_str())?;
-
-        if !after_in_keyword.starts_with(char::is_whitespace) {
-            return None;
-        }
-
         Some(Self {
-            value_prefix: after_in_keyword.trim_start().to_string(),
+            value_prefix: for_clause_iterable_prefix(line_prefix)?,
         })
     }
 }
