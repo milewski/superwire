@@ -167,6 +167,8 @@ pub enum DiagnosticCode {
     MissingOptionalReferenceAccess,
     #[serde(rename = "invalid_reference_path")]
     InvalidReferencePath,
+    #[serde(rename = "invalid_for_loop_iterable_type")]
+    InvalidForLoopIterableType,
     #[serde(rename = "unknown_schema_reference")]
     UnknownSchemaReference,
     #[serde(rename = "agent_dependency_cycle")]

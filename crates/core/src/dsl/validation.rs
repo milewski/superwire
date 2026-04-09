@@ -1,8 +1,10 @@
 use super::ast::{
-    AgentProperty, AgentPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword, SourceSpan, StringTemplatePart,
-    TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword,
+    SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
+use crate::runtime::types::workflow_type_from_dsl;
 use crate::runtime::InferenceSetting;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -189,6 +191,10 @@ pub enum ValidationIssue {
         invalid_field: String,
         context: ValidationContext,
     },
+    InvalidForLoopIterableType {
+        agent_name: String,
+        found_type: String,
+    },
     UnknownSchemaReference {
         referenced_schema: String,
         context: ValidationContext,
@@ -222,12 +228,14 @@ impl ValidationIssue {
             Self::MissingAgentOutputTypeForFieldReference { .. } => "missing_agent_output_type_for_field_reference",
             Self::MissingOptionalReferenceAccess { .. } => "missing_optional_reference_access",
             Self::InvalidReferencePath { .. } => "invalid_reference_path",
+            Self::InvalidForLoopIterableType { .. } => "invalid_for_loop_iterable_type",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
         }
     }
 
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn message(&self) -> String {
         match self {
             Self::DuplicateProvider { provider_name } => {
@@ -318,6 +326,9 @@ impl ValidationIssue {
                     context.describe()
                 )
             }
+            Self::InvalidForLoopIterableType { agent_name, found_type } => {
+                format!("Agent `{agent_name}` for-loop iterable must evaluate to an array, found `{found_type}`.")
+            }
             Self::UnknownSchemaReference {
                 referenced_schema,
                 context,
@@ -388,6 +399,10 @@ impl ValidationIssue {
                 reference_path: _,
                 invalid_field: _,
                 context: _,
+            }
+            | Self::InvalidForLoopIterableType {
+                agent_name: _,
+                found_type: _,
             }
             | Self::UnknownSchemaReference {
                 referenced_schema: _,
@@ -507,6 +522,10 @@ impl ValidationIssue {
             } => {
                 format!("Ensure the referenced type contains `{invalid_field}`, or update the reference path to an existing field.")
             }
+            Self::InvalidForLoopIterableType {
+                agent_name: _,
+                found_type: _,
+            } => "Use an array expression in the `in` clause, such as `agent.other_agent.items` or an array literal.".to_string(),
             Self::UnknownSchemaReference {
                 referenced_schema,
                 context: _,
@@ -591,6 +610,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 invalid_field: _,
                 context: _,
             } => Self::InvalidReferencePath,
+            ValidationIssue::InvalidForLoopIterableType {
+                agent_name: _,
+                found_type: _,
+            } => Self::InvalidForLoopIterableType,
             ValidationIssue::UnknownSchemaReference {
                 referenced_schema: _,
                 context: _,
@@ -1326,7 +1349,7 @@ fn validate_model_expression(
 }
 
 fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
-    let mut keyword_reference_validation_state = KeywordReferenceValidationState::new(validation_index, validation_report);
+    let mut keyword_reference_validation_state = KeywordReferenceValidationState::new(workflow, validation_index, validation_report);
 
     for declaration in workflow.declarations() {
         match declaration {
@@ -1350,6 +1373,8 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         agent_context.clone(),
                         SecretReferencePolicy::Allow,
                     );
+
+                    keyword_reference_validation_state.validate_for_loop_iterable_type(agent_declaration, agent_for_loop);
                 }
 
                 for agent_property in &agent_declaration.properties {
@@ -1400,6 +1425,7 @@ enum SecretReferencePolicy {
 struct KeywordReferenceValidationState<'validation> {
     validation_index: &'validation ValidationIndex,
     validation_report: &'validation mut ValidationReport,
+    for_loop_type_inference_context: TypeInferenceContext,
     unknown_agent_references: HashSet<(ValidationContext, String)>,
     invalid_keyword_reference_roots: HashSet<(ValidationContext, ReferenceKeyword)>,
     secret_reference_leaks: HashSet<(ValidationContext, String)>,
@@ -1413,10 +1439,17 @@ struct KeywordReferenceValidationState<'validation> {
 }
 
 impl<'validation> KeywordReferenceValidationState<'validation> {
-    fn new(validation_index: &'validation ValidationIndex, validation_report: &'validation mut ValidationReport) -> Self {
+    fn new(
+        workflow: &Workflow,
+        validation_index: &'validation ValidationIndex,
+        validation_report: &'validation mut ValidationReport,
+    ) -> Self {
+        let for_loop_type_inference_context = Self::build_for_loop_type_inference_context(workflow);
+
         Self {
             validation_index,
             validation_report,
+            for_loop_type_inference_context,
             unknown_agent_references: HashSet::new(),
             invalid_keyword_reference_roots: HashSet::new(),
             secret_reference_leaks: HashSet::new(),
@@ -1428,6 +1461,78 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             unknown_input_field_references: HashSet::new(),
             unknown_secrets_field_references: HashSet::new(),
         }
+    }
+
+    fn build_for_loop_type_inference_context(workflow: &Workflow) -> TypeInferenceContext {
+        let mut named_schema_types = HashMap::new();
+
+        for declaration in workflow.declarations() {
+            let Declaration::Schema(schema_declaration) = declaration else {
+                continue;
+            };
+
+            named_schema_types.insert(
+                schema_declaration.name.clone(),
+                TypeExpression::Object(schema_declaration.fields.clone()),
+            );
+        }
+
+        let input_type = workflow.find_input().and_then(|input_declaration| {
+            workflow_type_from_dsl(&TypeExpression::Object(input_declaration.fields.clone()), &named_schema_types).ok()
+        });
+
+        let secrets_type = workflow.find_secrets().and_then(|secrets_declaration| {
+            workflow_type_from_dsl(&TypeExpression::Object(secrets_declaration.fields.clone()), &named_schema_types).ok()
+        });
+
+        let mut agent_output_types = HashMap::new();
+
+        for declaration in workflow.declarations() {
+            let Declaration::Agent(agent_declaration) = declaration else {
+                continue;
+            };
+
+            let final_output_type_expression = agent_declaration.inferred_final_output_type_expression();
+            let inferred_output_type = workflow_type_from_dsl(&final_output_type_expression, &named_schema_types);
+
+            let Ok(inferred_output_type) = inferred_output_type else {
+                continue;
+            };
+
+            agent_output_types.insert(agent_declaration.name.clone(), inferred_output_type);
+        }
+
+        TypeInferenceContext {
+            input_type,
+            secrets_type,
+            agent_output_types,
+            local_binding_types: HashMap::new(),
+        }
+    }
+
+    fn validate_for_loop_iterable_type(&mut self, agent_declaration: &AgentDeclaration, agent_for_loop: &AgentForLoop) {
+        let type_inference_context = &self.for_loop_type_inference_context;
+        let inferred_iterable_type = infer_expression_type(
+            &agent_for_loop.iterable,
+            type_inference_context,
+            &format!("for-loop iterable for agent `{}`", agent_declaration.name),
+        );
+
+        let Ok(inferred_iterable_type) = inferred_iterable_type else {
+            return;
+        };
+
+        if inferred_iterable_type.is_guaranteed_array() {
+            return;
+        }
+
+        self.validation_report.push_issue_with_span(
+            ValidationIssue::InvalidForLoopIterableType {
+                agent_name: agent_declaration.name.clone(),
+                found_type: inferred_iterable_type.to_string(),
+            },
+            Some(agent_declaration.span),
+        );
     }
 
     fn validate_expression(&mut self, expression: &Expression, context: ValidationContext, secret_reference_policy: SecretReferencePolicy) {
@@ -2270,6 +2375,10 @@ mod tests {
                 invalid_field: "score".to_string(),
                 context: ValidationContext::Output,
             },
+            ValidationIssue::InvalidForLoopIterableType {
+                agent_name: "analyzer".to_string(),
+                found_type: "{ tasks: [{ id: number }] }".to_string(),
+            },
             ValidationIssue::UnknownSchemaReference {
                 referenced_schema: "MissingSchema".to_string(),
                 context: ValidationContext::Output,
@@ -2508,6 +2617,48 @@ mod tests {
             ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
                 if *keyword == ReferenceKeyword::Agent && *context == ValidationContext::Output
         );
+    }
+
+    #[test]
+    fn reports_invalid_for_loop_iterable_type_for_object_reference() {
+        let workflow = parse_inline_workflow! {
+            agent summarizer {
+                output: {
+                    tasks: [{ id: number }]
+                    participants: [{ id: number }]
+                }
+            }
+
+            agent analyzer for participant in agent.summarizer {
+                output: string
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidForLoopIterableType {
+                agent_name,
+                found_type: _
+            } if agent_name == "analyzer"
+        );
+    }
+
+    #[test]
+    fn allows_for_loop_iterable_type_for_array_reference() {
+        let workflow = parse_inline_workflow! {
+            agent summarizer {
+                output: {
+                    tasks: [{ id: number }]
+                    participants: [{ id: number }]
+                }
+            }
+
+            agent analyzer for participant in agent.summarizer.participants {
+                output: string
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::InvalidForLoopIterableType { .. });
     }
 
     #[test]
