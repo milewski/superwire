@@ -134,7 +134,33 @@ fn run_fmt_command(target_path: &Path) -> Output {
 }
 
 fn cli_binary_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_cli"))
+    if let Some(configured_binary_path) = option_env!("CARGO_BIN_EXE_superwire-cli") {
+        return PathBuf::from(configured_binary_path);
+    }
+
+    if let Some(configured_binary_path) = option_env!("CARGO_BIN_EXE_superwire_cli") {
+        return PathBuf::from(configured_binary_path);
+    }
+
+    let current_executable_path = std::env::current_exe()
+        .unwrap_or_else(|current_executable_error| panic!("failed to resolve current test executable path: {current_executable_error}"));
+    let target_profile_directory = current_executable_path.parent().and_then(Path::parent).unwrap_or_else(|| {
+        panic!(
+            "failed to derive target profile directory from {}",
+            current_executable_path.display()
+        )
+    });
+    let executable_file_name = format!("superwire-cli{}", std::env::consts::EXE_SUFFIX);
+    let inferred_binary_path = target_profile_directory.join(executable_file_name);
+
+    if inferred_binary_path.exists() {
+        return inferred_binary_path;
+    }
+
+    panic!(
+        "failed to locate superwire-cli binary; looked for compile-time cargo bin vars and {}",
+        inferred_binary_path.display()
+    );
 }
 
 fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
