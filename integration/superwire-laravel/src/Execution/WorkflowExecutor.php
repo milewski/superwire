@@ -42,6 +42,7 @@ final class WorkflowExecutor
             (string) $this->config->get('superwire.cli.working_directory', base_path()),
             [
                 'SUPERWIRE_INTERNAL_TOKEN' => (string) $this->config->get('superwire.runtime.internal_token', ''),
+                'SUPERWIRE_ERROR_FORMAT' => 'json',
             ],
             null,
             (float) $this->config->get('superwire.cli.timeout_seconds', 120),
@@ -51,11 +52,7 @@ final class WorkflowExecutor
             $process->run();
 
             if (!$process->isSuccessful()) {
-                throw new WorkflowExecutionException(sprintf(
-                    "failed to execute workflow command `%s`: %s",
-                    implode(' ', $command),
-                    trim($process->getErrorOutput()) !== '' ? trim($process->getErrorOutput()) : trim($process->getOutput()),
-                ));
+                throw $this->mapFailedProcessToException($command, $process);
             }
 
             $decodedOutput = json_decode($process->getOutput(), true);
@@ -107,5 +104,39 @@ final class WorkflowExecutor
         }
 
         return $temporaryPayloadFilePath;
+    }
+
+    /**
+     * @param array<int, string> $command
+     */
+    private function mapFailedProcessToException(array $command, Process $process): WorkflowExecutionException
+    {
+        $errorOutput = $process->getErrorOutput();
+        $standardOutput = $process->getOutput();
+        $cliOutput = trim($errorOutput) !== '' ? trim($errorOutput) : trim($standardOutput);
+        $decodedPayload = json_decode($cliOutput, true);
+
+        if (is_array($decodedPayload) && isset($decodedPayload['message']) && is_string($decodedPayload['message'])) {
+            return new WorkflowExecutionException(
+                message: sprintf(
+                    "failed to execute workflow command `%s`: %s",
+                    implode(' ', $command),
+                    $decodedPayload['message'],
+                ),
+                command: $command,
+                errorPayload: $decodedPayload,
+                rawCliOutput: $cliOutput,
+            );
+        }
+
+        return new WorkflowExecutionException(
+            message: sprintf(
+                "failed to execute workflow command `%s`: %s",
+                implode(' ', $command),
+                $cliOutput,
+            ),
+            command: $command,
+            rawCliOutput: $cliOutput,
+        );
     }
 }

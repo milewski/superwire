@@ -1,3 +1,4 @@
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::app::ExitCode;
@@ -8,7 +9,7 @@ pub enum CommandError {
     InvalidInput { message: String },
 
     #[error("{message}")]
-    Internal { message: String },
+    Internal { message: String, details: Option<Value> },
 }
 
 impl CommandError {
@@ -17,13 +18,44 @@ impl CommandError {
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::Internal { message: message.into() }
+        Self::Internal {
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn internal_with_details(message: impl Into<String>, details: Value) -> Self {
+        Self::Internal {
+            message: message.into(),
+            details: Some(details),
+        }
+    }
+
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidInput { message: _ } => "invalid_input",
+            Self::Internal { message: _, details: _ } => "internal_error",
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        match self {
+            Self::InvalidInput { message } => message,
+            Self::Internal { message, details: _ } => message,
+        }
+    }
+
+    pub fn details(&self) -> Option<&Value> {
+        match self {
+            Self::InvalidInput { message: _ } => None,
+            Self::Internal { message: _, details } => details.as_ref(),
+        }
     }
 
     pub const fn exit_code(&self) -> ExitCode {
         match self {
             Self::InvalidInput { message: _ } => ExitCode::InvalidInput,
-            Self::Internal { message: _ } => ExitCode::InternalError,
+            Self::Internal { message: _, details: _ } => ExitCode::InternalError,
         }
     }
 }
