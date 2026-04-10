@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
 use ReflectionClass;
+use ReflectionException;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
@@ -85,23 +86,59 @@ abstract class AbstractTool implements Tool
     }
 
     /**
-     * @param array<string, mixed> $agentInput
-     * @param array<string, mixed> $boundInput
-     * @return array<string, mixed>
+     * @param array<string, mixed> $agentInputPayload
      */
-    final public function execute(array $agentInput, array $boundInput): array
+    final public static function resolveAgentInput(array $agentInputPayload): ToolInputData
     {
         $executionSignature = static::executionSignature();
-
         $agentInputData = static::hydrateToolDataClass(
             $executionSignature->agentInputClass,
-            $agentInput,
+            $agentInputPayload,
             'agent input',
         );
 
+        return static::assertToolInputDataClass(
+            $agentInputData,
+            $executionSignature->agentInputClass,
+            'agent input',
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $boundInputPayload
+     */
+    final public static function resolveBoundInput(array $boundInputPayload): ToolBoundInputData
+    {
+        $executionSignature = static::executionSignature();
         $boundInputData = static::hydrateToolDataClass(
             $executionSignature->boundInputClass,
+            $boundInputPayload,
+            'bound input',
+        );
+
+        return static::assertToolBoundInputDataClass(
+            $boundInputData,
+            $executionSignature->boundInputClass,
+            'bound input',
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    final public function execute(ToolInputData $agentInput, ToolBoundInputData $boundInput): array
+    {
+        $executionSignature = static::executionSignature();
+
+        $agentInputData = static::assertToolInputDataClass(
+            $agentInput,
+            $executionSignature->agentInputClass,
+            'agent input',
+        );
+
+        $boundInputData = static::assertToolBoundInputDataClass(
             $boundInput,
+            $executionSignature->boundInputClass,
             'bound input',
         );
 
@@ -152,13 +189,52 @@ abstract class AbstractTool implements Tool
     }
 
     /**
+     * @param class-string<ToolInputData> $expectedToolInputDataClassName
+     */
+    private static function assertToolInputDataClass(
+        ToolData $toolData,
+        string $expectedToolInputDataClassName,
+        string $payloadContext,
+    ): ToolInputData {
+        if ($toolData instanceof $expectedToolInputDataClassName) {
+            return $toolData;
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            '%s must resolve to `%s`, received `%s`',
+            $payloadContext,
+            $expectedToolInputDataClassName,
+            $toolData::class,
+        ));
+    }
+
+    /**
+     * @param class-string<ToolBoundInputData> $expectedToolBoundInputDataClassName
+     */
+    private static function assertToolBoundInputDataClass(
+        ToolData $toolData,
+        string $expectedToolBoundInputDataClassName,
+        string $payloadContext,
+    ): ToolBoundInputData {
+        if ($toolData instanceof $expectedToolBoundInputDataClassName) {
+            return $toolData;
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            '%s must resolve to `%s`, received `%s`',
+            $payloadContext,
+            $expectedToolBoundInputDataClassName,
+            $toolData::class,
+        ));
+    }
+
+    /**
      * Each tool implementation must define:
      *
      * `protected function handle(MyInput $agentInput, MyBoundInput $boundInput): MyOutput`
      *
      * where DTO classes implement ToolInputData, ToolBoundInputData, and ToolOutputData.
      */
-
     private static function executionSignature(): ToolExecutionSignature
     {
         return static::executionSignatureRegistry()->remember(
@@ -217,6 +293,8 @@ abstract class AbstractTool implements Tool
     /**
      * @param class-string<ToolData> $toolDataClassName
      * @param list<class-string<ToolData>> $visitedClassNames
+     *
+     * @throws ReflectionException
      */
     private static function schemaFromToolDataClass(string $toolDataClassName, array $visitedClassNames): Schema
     {
@@ -251,6 +329,8 @@ abstract class AbstractTool implements Tool
     /**
      * @param class-string<ToolData> $toolDataClassName
      * @param array<string, mixed> $payload
+     *
+     * @throws ReflectionException
      */
     private static function hydrateToolDataClass(string $toolDataClassName, array $payload, string $payloadContext): ToolData
     {

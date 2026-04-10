@@ -21,7 +21,8 @@ final readonly class ToolExecutionSignature
         public string $boundInputClass,
         public string $outputClass,
         private array $handleParameters,
-    ) {
+    )
+    {
     }
 
     /**

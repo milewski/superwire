@@ -12,7 +12,8 @@ final readonly class ToolHandleParameter
     public function __construct(
         public ToolHandleParameterKind $kind,
         public string $className,
-    ) {
+    )
+    {
     }
 
     /**

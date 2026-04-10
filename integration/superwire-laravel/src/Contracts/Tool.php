@@ -36,9 +36,19 @@ interface Tool
     public static function outputSchema(): Schema;
 
     /**
-     * @param array<string, mixed> $agentInput
-     * @param array<string, mixed> $boundInput
+     * @param array<string, mixed> $agentInputPayload
+     */
+    public static function resolveAgentInput(array $agentInputPayload): ToolInputData;
+
+    /**
+     * @param array<string, mixed> $boundInputPayload
+     */
+    public static function resolveBoundInput(array $boundInputPayload): ToolBoundInputData;
+
+    /**
+     * Execute a tool with already-resolved typed payload objects.
+     *
      * @return array<string, mixed>
      */
-    public function execute(array $agentInput, array $boundInput): array;
+    public function execute(ToolInputData $agentInput, ToolBoundInputData $boundInput): array;
 }

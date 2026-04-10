@@ -5,6 +5,9 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Tests\Unit;
 
 use PHPUnit\Framework\AssertionFailedError;
+use Superwire\Laravel\Tests\Fixtures\EchoTool;
+use Superwire\Laravel\Tests\Fixtures\EchoToolAgentInput;
+use Superwire\Laravel\Tests\Fixtures\EchoToolBoundInput;
 use Superwire\Laravel\Tests\TestCase;
 use Superwire\Laravel\Tools\Data\WeatherAgentInput;
 use Superwire\Laravel\Tools\Data\WeatherBoundInput;
@@ -27,6 +30,30 @@ final class ToolSchemaTest extends TestCase
         $this->assertSame(WeatherAgentInput::class, WeatherTool::agentInputClass());
         $this->assertSame(WeatherBoundInput::class, WeatherTool::boundInputClass());
         $this->assertSame(WeatherOutput::class, WeatherTool::outputClass());
+    }
+
+    public function testToolExecutionUsesResolvedTypedInputContracts(): void
+    {
+        $resolvedAgentInput = EchoTool::resolveAgentInput([
+            'city' => 'Lisbon',
+        ]);
+        $resolvedBoundInput = EchoTool::resolveBoundInput([
+            'units' => 'metric',
+        ]);
+
+        $this->assertInstanceOf(EchoToolAgentInput::class, $resolvedAgentInput);
+        $this->assertInstanceOf(EchoToolBoundInput::class, $resolvedBoundInput);
+
+        $toolOutput = (new EchoTool())->execute($resolvedAgentInput, $resolvedBoundInput);
+
+        $this->assertSame([
+            'agent_input' => [
+                'city' => 'Lisbon',
+            ],
+            'bound_input' => [
+                'units' => 'metric',
+            ],
+        ], $toolOutput);
     }
 
     public function testWeatherToolOutputSchemaFailsOnUnexpectedProperty(): void

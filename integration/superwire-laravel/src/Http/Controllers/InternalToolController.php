@@ -33,8 +33,10 @@ final class InternalToolController extends Controller
             $toolInstance = app($toolClass);
 
             $toolInvocationRequest = $this->toolInvocationRequest($request, $tool);
+            $resolvedAgentInput = $toolClass::resolveAgentInput($toolInvocationRequest->agentInput);
+            $resolvedBoundInput = $toolClass::resolveBoundInput($toolInvocationRequest->boundInput);
             $toolInvocationResponse = new ToolInvocationResponse(
-                $toolInstance->execute($toolInvocationRequest->agentInput, $toolInvocationRequest->boundInput),
+                $toolInstance->execute($resolvedAgentInput, $resolvedBoundInput),
             );
 
             return response()->json($toolInvocationResponse->output);
