@@ -20,14 +20,15 @@ use Superwire\Laravel\Contracts\ToolInputData;
 use Superwire\Laravel\Contracts\ToolOutputData;
 use Superwire\Laravel\Tools\Data\EmptyToolBoundInputData;
 use Superwire\Laravel\Tools\Data\EmptyToolInputData;
+use Superwire\Laravel\Tools\Execution\ToolExecutionSignature;
+use Superwire\Laravel\Tools\Execution\ToolExecutionSignatureRegistry;
+use Superwire\Laravel\Tools\Execution\ToolHandleParameter;
+use Superwire\Laravel\Tools\Execution\ToolHandleParameterKind;
 use Swaggest\JsonSchema\Schema;
 
 abstract class AbstractTool implements Tool
 {
-    /**
-     * @var array<string, array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, output_class: class-string<ToolOutputData>, handle_parameters: list<array{kind: 'agent_input'|'bound_input'|'container', class: class-string<ToolData>|class-string>}>>
-     */
-    private static array $executionSignatures = [];
+    private static ?ToolExecutionSignatureRegistry $executionSignatures = null;
 
     public static function name(): string
     {
@@ -49,7 +50,7 @@ abstract class AbstractTool implements Tool
      */
     final public static function agentInputClass(): string
     {
-        return static::executionSignature()[ 'agent_input_class' ];
+        return static::executionSignature()->agentInputClass;
     }
 
     /**
@@ -57,7 +58,7 @@ abstract class AbstractTool implements Tool
      */
     final public static function boundInputClass(): string
     {
-        return static::executionSignature()[ 'bound_input_class' ];
+        return static::executionSignature()->boundInputClass;
     }
 
     /**
@@ -65,7 +66,7 @@ abstract class AbstractTool implements Tool
      */
     final public static function outputClass(): string
     {
-        return static::executionSignature()[ 'output_class' ];
+        return static::executionSignature()->outputClass;
     }
 
     final public static function inputSchema(): Schema
@@ -93,13 +94,13 @@ abstract class AbstractTool implements Tool
         $executionSignature = static::executionSignature();
 
         $agentInputData = static::hydrateToolDataClass(
-            $executionSignature[ 'agent_input_class' ],
+            $executionSignature->agentInputClass,
             $agentInput,
             'agent input',
         );
 
         $boundInputData = static::hydrateToolDataClass(
-            $executionSignature[ 'bound_input_class' ],
+            $executionSignature->boundInputClass,
             $boundInput,
             'bound input',
         );
@@ -115,26 +116,12 @@ abstract class AbstractTool implements Tool
 
         $handleArguments = [];
 
-        foreach ($executionSignature[ 'handle_parameters' ] as $handleParameter) {
-
-            if ($handleParameter[ 'kind' ] === 'agent_input') {
-
-                $handleArguments[] = $agentInputData;
-
-                continue;
-
-            }
-
-            if ($handleParameter[ 'kind' ] === 'bound_input') {
-
-                $handleArguments[] = $boundInputData;
-
-                continue;
-
-            }
-
-            $handleArguments[] = app($handleParameter[ 'class' ]);
-
+        foreach ($executionSignature->handleParameters() as $handleParameter) {
+            $handleArguments[] = match ($handleParameter->kind) {
+                ToolHandleParameterKind::AgentInput => $agentInputData,
+                ToolHandleParameterKind::BoundInput => $boundInputData,
+                ToolHandleParameterKind::Container => app($handleParameter->className),
+            };
         }
 
         $toolOutput = $this->handle(...$handleArguments);
@@ -150,12 +137,12 @@ abstract class AbstractTool implements Tool
 
         }
 
-        if (!$toolOutput instanceof $executionSignature[ 'output_class' ]) {
+        if (!$toolOutput instanceof $executionSignature->outputClass) {
 
             throw new InvalidArgumentException(sprintf(
                 'tool `%s` handle method must return `%s`, received `%s`',
                 static::class,
-                $executionSignature[ 'output_class' ],
+                $executionSignature->outputClass,
                 $toolOutput::class,
             ));
 
@@ -172,17 +159,25 @@ abstract class AbstractTool implements Tool
      * where DTO classes implement ToolInputData, ToolBoundInputData, and ToolOutputData.
      */
 
-    /**
-     * @return array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, output_class: class-string<ToolOutputData>, handle_parameters: list<array{kind: 'agent_input'|'bound_input'|'container', class: class-string|class-string<ToolData>}>}
-     */
-    private static function executionSignature(): array
+    private static function executionSignature(): ToolExecutionSignature
     {
-        $toolClassName = static::class;
+        return static::executionSignatureRegistry()->remember(
+            static::class,
+            static fn (): ToolExecutionSignature => static::buildExecutionSignature(static::class),
+        );
+    }
 
-        if (array_key_exists($toolClassName, self::$executionSignatures)) {
-            return self::$executionSignatures[ $toolClassName ];
+    private static function executionSignatureRegistry(): ToolExecutionSignatureRegistry
+    {
+        if (self::$executionSignatures === null) {
+            self::$executionSignatures = new ToolExecutionSignatureRegistry();
         }
 
+        return self::$executionSignatures;
+    }
+
+    private static function buildExecutionSignature(string $toolClassName): ToolExecutionSignature
+    {
         if (!method_exists($toolClassName, 'handle')) {
 
             throw new LogicException(sprintf(
@@ -211,14 +206,12 @@ abstract class AbstractTool implements Tool
 
         $outputClass = static::toolDataClassFromReturnType($handleMethod, ToolOutputData::class, $toolClassName);
 
-        self::$executionSignatures[ $toolClassName ] = [
-            'agent_input_class' => $agentInputClass,
-            'bound_input_class' => $boundInputClass,
-            'output_class' => $outputClass,
-            'handle_parameters' => $handleParameters,
-        ];
-
-        return self::$executionSignatures[ $toolClassName ];
+        return new ToolExecutionSignature(
+            agentInputClass: $agentInputClass,
+            boundInputClass: $boundInputClass,
+            outputClass: $outputClass,
+            handleParameters: $handleParameters,
+        );
     }
 
     /**
@@ -629,7 +622,7 @@ abstract class AbstractTool implements Tool
     }
 
     /**
-     * @return array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, handle_parameters: list<array{kind: 'agent_input'|'bound_input'|'container', class: class-string|class-string<ToolData>}>}
+     * @return array{agent_input_class: class-string<ToolInputData>, bound_input_class: class-string<ToolBoundInputData>, handle_parameters: list<ToolHandleParameter>}
      */
     private static function resolveHandleParameters(ReflectionMethod $handleMethod, string $toolClassName): array
     {
@@ -666,10 +659,7 @@ abstract class AbstractTool implements Tool
                 }
 
                 $agentInputClass = $parameterClassName;
-                $resolvedHandleParameters[] = [
-                    'kind' => 'agent_input',
-                    'class' => $parameterClassName,
-                ];
+                $resolvedHandleParameters[] = ToolHandleParameter::agentInput($parameterClassName);
 
                 continue;
 
@@ -688,19 +678,13 @@ abstract class AbstractTool implements Tool
                 }
 
                 $boundInputClass = $parameterClassName;
-                $resolvedHandleParameters[] = [
-                    'kind' => 'bound_input',
-                    'class' => $parameterClassName,
-                ];
+                $resolvedHandleParameters[] = ToolHandleParameter::boundInput($parameterClassName);
 
                 continue;
 
             }
 
-            $resolvedHandleParameters[] = [
-                'kind' => 'container',
-                'class' => $parameterClassName,
-            ];
+            $resolvedHandleParameters[] = ToolHandleParameter::container($parameterClassName);
 
         }
 
