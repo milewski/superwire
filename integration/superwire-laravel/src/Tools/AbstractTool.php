@@ -140,19 +140,23 @@ abstract class AbstractTool implements Tool
         $executionSignature = static::executionSignature();
 
         if (!$agentInput instanceof $executionSignature->agentInputClass) {
+
             throw new InvalidArgumentException(sprintf(
                 'agent input must be `%s`, received `%s`',
                 $executionSignature->agentInputClass,
                 $agentInput::class,
             ));
+
         }
 
         if (!$boundInput instanceof $executionSignature->boundInputClass) {
+
             throw new InvalidArgumentException(sprintf(
                 'bound input must be `%s`, received `%s`',
                 $executionSignature->boundInputClass,
                 $boundInput::class,
             ));
+
         }
 
         $handleArguments = $this->handleArgumentsForExecution(
@@ -161,25 +165,28 @@ abstract class AbstractTool implements Tool
             $boundInput,
         );
 
-        /** @var mixed $toolOutput */
         $toolOutput = $this->handle(...$handleArguments);
 
         if (!$toolOutput instanceof ToolOutputData) {
+
             throw new InvalidArgumentException(sprintf(
                 'tool `%s` handle method must return `%s`, received `%s`',
                 static::class,
                 ToolOutputData::class,
                 get_debug_type($toolOutput),
             ));
+
         }
 
         if (!$toolOutput instanceof $executionSignature->outputClass) {
+
             throw new InvalidArgumentException(sprintf(
                 'tool `%s` handle method must return `%s`, received `%s`',
                 static::class,
                 $executionSignature->outputClass,
                 $toolOutput::class,
             ));
+
         }
 
         $toolDataMapper = self::$toolDataMapper ??= new ToolDataMapper();

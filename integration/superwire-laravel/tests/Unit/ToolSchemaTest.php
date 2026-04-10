@@ -37,6 +37,7 @@ final class ToolSchemaTest extends TestCase
         $resolvedAgentInput = EchoTool::resolveAgentInput([
             'city' => 'Lisbon',
         ]);
+
         $resolvedBoundInput = EchoTool::resolveBoundInput([
             'units' => 'metric',
         ]);
@@ -46,14 +47,13 @@ final class ToolSchemaTest extends TestCase
 
         $toolOutput = (new EchoTool())->execute($resolvedAgentInput, $resolvedBoundInput);
 
-        $this->assertSame([
-            'agent_input' => [
-                'city' => 'Lisbon',
+        $this->assertSame(
+            expected: [
+                'agent_input' => [ 'city' => 'Lisbon' ],
+                'bound_input' => [ 'units' => 'metric' ],
             ],
-            'bound_input' => [
-                'units' => 'metric',
-            ],
-        ], $toolOutput);
+            actual: $toolOutput,
+        );
     }
 
     public function testWeatherToolOutputSchemaFailsOnUnexpectedProperty(): void

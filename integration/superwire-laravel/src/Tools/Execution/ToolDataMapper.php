@@ -99,9 +99,8 @@ final class ToolDataMapper
     }
 
     /**
-     * @return array<string, mixed>
-     *
      * @throws ReflectionException
+     * @return array<string, mixed>
      */
     public function extractToolDataPayload(ToolData $toolData): array
     {

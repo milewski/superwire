@@ -32,15 +32,19 @@ final class ToolExecutionSignatureRegistryTest extends TestCase
         $resolutionCount = 0;
 
         $firstResolution = $executionSignatureRegistry->remember(EchoTool::class, function () use (&$resolutionCount): ToolExecutionSignature {
+
             $resolutionCount++;
 
             return $this->echoToolExecutionSignature();
+
         });
 
         $secondResolution = $executionSignatureRegistry->remember(EchoTool::class, function () use (&$resolutionCount): ToolExecutionSignature {
+
             $resolutionCount++;
 
             return $this->echoToolExecutionSignature();
+
         });
 
         $this->assertSame($firstResolution, $secondResolution);
