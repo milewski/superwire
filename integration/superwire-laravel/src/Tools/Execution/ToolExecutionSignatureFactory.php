@@ -7,9 +7,9 @@ namespace Superwire\Laravel\Tools\Execution;
 use LogicException;
 use ReflectionMethod;
 use ReflectionNamedType;
+use Spatie\LaravelData\Data;
 use Superwire\Laravel\Contracts\ToolBoundInputData;
 use Superwire\Laravel\Contracts\ToolInputData;
-use Superwire\Laravel\Contracts\ToolOutputData;
 use Superwire\Laravel\Tools\Data\EmptyToolBoundInputData;
 use Superwire\Laravel\Tools\Data\EmptyToolInputData;
 
@@ -43,7 +43,7 @@ final class ToolExecutionSignatureFactory
             'handle_parameters' => $handleParameters,
         ] = $this->resolveHandleParameters($handleMethod, $toolClassName);
 
-        $outputClass = $this->toolDataClassFromReturnType($handleMethod, ToolOutputData::class, $toolClassName);
+        $outputClass = $this->toolDataClassFromReturnType($handleMethod, $toolClassName);
 
         return new ToolExecutionSignature(
             agentInputClass: $agentInputClass,
@@ -80,6 +80,18 @@ final class ToolExecutionSignatureFactory
 
             if (is_a($parameterClassName, ToolInputData::class, true)) {
 
+                if (!is_a($parameterClassName, Data::class, true)) {
+
+                    throw new LogicException(sprintf(
+                        'tool `%s` handle parameter `%s` must extend `%s` because it implements `%s`',
+                        $toolClassName,
+                        $parameterClassName,
+                        Data::class,
+                        ToolInputData::class,
+                    ));
+
+                }
+
                 if ($agentInputClass !== null) {
 
                     throw new LogicException(sprintf(
@@ -98,6 +110,18 @@ final class ToolExecutionSignatureFactory
             }
 
             if (is_a($parameterClassName, ToolBoundInputData::class, true)) {
+
+                if (!is_a($parameterClassName, Data::class, true)) {
+
+                    throw new LogicException(sprintf(
+                        'tool `%s` handle parameter `%s` must extend `%s` because it implements `%s`',
+                        $toolClassName,
+                        $parameterClassName,
+                        Data::class,
+                        ToolBoundInputData::class,
+                    ));
+
+                }
 
                 if ($boundInputClass !== null) {
 
@@ -127,13 +151,8 @@ final class ToolExecutionSignatureFactory
         ];
     }
 
-    /**
-     * @param class-string $expectedInterfaceClass
-     * @return class-string
-     */
     private function toolDataClassFromReturnType(
         ReflectionMethod $reflectionMethod,
-        string $expectedInterfaceClass,
         string $toolClassName,
     ): string {
         $returnType = $reflectionMethod->getReturnType();
@@ -141,22 +160,22 @@ final class ToolExecutionSignatureFactory
         if (!$returnType instanceof ReflectionNamedType || $returnType->isBuiltin()) {
 
             throw new LogicException(sprintf(
-                'tool `%s` handle return type must be a class implementing `%s`',
+                'tool `%s` handle return type must be a class extending `%s`',
                 $toolClassName,
-                $expectedInterfaceClass,
+                Data::class,
             ));
 
         }
 
         $returnClassName = $returnType->getName();
 
-        if (!is_a($returnClassName, $expectedInterfaceClass, true)) {
+        if (!is_a($returnClassName, Data::class, true)) {
 
             throw new LogicException(sprintf(
-                'tool `%s` handle return type must implement `%s`, found `%s`',
+                'tool `%s` handle return type `%s` must extend `%s`',
                 $toolClassName,
-                $expectedInterfaceClass,
                 $returnClassName,
+                Data::class,
             ));
 
         }

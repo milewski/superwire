@@ -4,16 +4,16 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tools\Execution;
 
+use Spatie\LaravelData\Data;
 use Superwire\Laravel\Contracts\ToolBoundInputData;
 use Superwire\Laravel\Contracts\ToolInputData;
-use Superwire\Laravel\Contracts\ToolOutputData;
 
 final readonly class ToolExecutionSignature
 {
     /**
      * @param class-string<ToolInputData> $agentInputClass
      * @param class-string<ToolBoundInputData> $boundInputClass
-     * @param class-string<ToolOutputData> $outputClass
+     * @param class-string<Data> $outputClass
      * @param list<ToolHandleParameter> $handleParameters
      */
     public function __construct(

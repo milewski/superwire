@@ -12,13 +12,14 @@ use ReflectionNamedType;
 use ReflectionParameter;
 use ReflectionType;
 use ReflectionUnionType;
-use Superwire\Laravel\Contracts\ToolData;
+use Spatie\LaravelData\Data;
 use Swaggest\JsonSchema\Schema;
+use Throwable;
 
 final class ToolDataMapper
 {
     /**
-     * @param class-string<ToolData> $toolDataClassName
+     * @param class-string<Data> $toolDataClassName
      *
      * @throws ReflectionException
      */
@@ -28,100 +29,63 @@ final class ToolDataMapper
     }
 
     /**
-     * @param class-string<ToolData> $toolDataClassName
+     * @param class-string<Data> $toolDataClassName
      * @param array<string, mixed> $payload
      *
      * @throws ReflectionException
      */
-    public function hydrateToolDataClass(string $toolDataClassName, array $payload, string $payloadContext): ToolData
+    public function hydrateToolDataClass(string $toolDataClassName, array $payload, string $payloadContext): Data
     {
-        $toolDataReflectionClass = new ReflectionClass($toolDataClassName);
-        $constructorParameters = $this->constructorParameters($toolDataReflectionClass);
-        $expectedFieldNames = array_map(
-            static fn (ReflectionParameter $constructorParameter): string => $constructorParameter->getName(),
-            $constructorParameters,
-        );
-
-        foreach ($payload as $fieldName => $fieldValue) {
-
-            if (!is_string($fieldName) || !in_array($fieldName, $expectedFieldNames, true)) {
-
-                throw new InvalidArgumentException(sprintf(
-                    '%s payload contains unknown field `%s` for `%s`',
-                    $payloadContext,
-                    (string) $fieldName,
-                    $toolDataClassName,
-                ));
-
-            }
-
-        }
-
-        $constructorArguments = [];
-
-        foreach ($constructorParameters as $constructorParameter) {
-
-            $fieldName = $constructorParameter->getName();
-
-            if (array_key_exists($fieldName, $payload)) {
-
-                $constructorArguments[ $fieldName ] = $this->payloadValueForType(
-                    $payload[ $fieldName ],
-                    $constructorParameter->getType(),
-                    sprintf('%s.%s', $payloadContext, $fieldName),
-                );
-
-                continue;
-
-            }
-
-            if ($constructorParameter->isDefaultValueAvailable()) {
-
-                $constructorArguments[ $fieldName ] = $constructorParameter->getDefaultValue();
-
-                continue;
-
-            }
+        if (!is_a($toolDataClassName, Data::class, true)) {
 
             throw new InvalidArgumentException(sprintf(
-                '%s payload is missing required field `%s` for `%s`',
-                $payloadContext,
-                $fieldName,
+                'tool data class `%s` must extend `%s`',
                 $toolDataClassName,
+                Data::class,
             ));
 
         }
 
-        /** @var ToolData $toolDataInstance */
-        $toolDataInstance = $toolDataReflectionClass->newInstanceArgs($constructorArguments);
+        try {
 
-        return $toolDataInstance;
+            return $toolDataClassName::from($payload);
+
+        } catch (Throwable $throwable) {
+
+            throw new InvalidArgumentException(sprintf(
+                'failed to map %s payload into `%s`: %s',
+                $payloadContext,
+                $toolDataClassName,
+                $throwable->getMessage(),
+            ), previous: $throwable);
+
+        }
     }
 
     /**
      * @throws ReflectionException
      * @return array<string, mixed>
      */
-    public function extractToolDataPayload(ToolData $toolData): array
+    public function extractToolDataPayload(Data $toolData): array
     {
-        $toolDataReflectionClass = new ReflectionClass($toolData::class);
-        $payload = [];
+        if (!$toolData instanceof Data) {
 
-        foreach ($this->constructorParameters($toolDataReflectionClass) as $constructorParameter) {
+            throw new InvalidArgumentException(sprintf(
+                'tool data object `%s` must extend `%s`',
+                $toolData::class,
+                Data::class,
+            ));
 
-            $propertyName = $constructorParameter->getName();
+        }
 
-            if (!$toolDataReflectionClass->hasProperty($propertyName)) {
-                continue;
-            }
+        $payload = $toolData->toArray();
 
-            $toolDataProperty = $toolDataReflectionClass->getProperty($propertyName);
+        if (!is_array($payload)) {
 
-            if (!$toolDataProperty->isPublic()) {
-                $toolDataProperty->setAccessible(true);
-            }
-
-            $payload[ $propertyName ] = $this->payloadValueFromToolData($toolDataProperty->getValue($toolData));
+            throw new InvalidArgumentException(sprintf(
+                'tool data object `%s` must serialize into array payload',
+                $toolData::class,
+            ));
 
         }
 
@@ -129,8 +93,8 @@ final class ToolDataMapper
     }
 
     /**
-     * @param class-string<ToolData> $toolDataClassName
-     * @param list<class-string<ToolData>> $visitedClassNames
+     * @param class-string<Data> $toolDataClassName
+     * @param list<class-string<Data>> $visitedClassNames
      *
      * @throws ReflectionException
      */
@@ -165,7 +129,9 @@ final class ToolDataMapper
     }
 
     /**
-     * @param list<class-string<ToolData>> $visitedClassNames
+     * @param list<class-string<Data>> $visitedClassNames
+     *
+     * @throws ReflectionException
      */
     private function schemaFromType(?ReflectionType $reflectionType, array $visitedClassNames): Schema
     {
@@ -212,7 +178,7 @@ final class ToolDataMapper
     }
 
     /**
-     * @param list<class-string<ToolData>> $visitedClassNames
+     * @param list<class-string<Data>> $visitedClassNames
      *
      * @throws ReflectionException
      */
@@ -224,12 +190,12 @@ final class ToolDataMapper
 
         $typeClassName = $namedType->getName();
 
-        if (is_a($typeClassName, ToolData::class, true)) {
+        if (is_a($typeClassName, Data::class, true)) {
             return $this->buildSchemaFromToolDataClass($typeClassName, $visitedClassNames);
         }
 
         throw new LogicException(sprintf(
-            'unsupported non-tool-data type `%s` in tool schema generation',
+            'unsupported non-data type `%s` in tool schema generation',
             $typeClassName,
         ));
     }
@@ -316,7 +282,7 @@ final class ToolDataMapper
 
         $typeClassName = $namedType->getName();
 
-        if (is_a($typeClassName, ToolData::class, true)) {
+        if (is_a($typeClassName, Data::class, true)) {
 
             if (!is_array($payloadValue)) {
 
@@ -400,7 +366,7 @@ final class ToolDataMapper
 
     private function payloadValueFromToolData(mixed $toolDataValue): mixed
     {
-        if ($toolDataValue instanceof ToolData) {
+        if ($toolDataValue instanceof Data) {
             return $this->extractToolDataPayload($toolDataValue);
         }
 
@@ -421,13 +387,13 @@ final class ToolDataMapper
         }
 
         throw new InvalidArgumentException(sprintf(
-            'tool output contains unsupported value `%s`; only scalar, null, array, and tool data objects are supported',
+            'tool output contains unsupported value `%s`; only scalar, null, array, and data objects are supported',
             get_debug_type($toolDataValue),
         ));
     }
 
     /**
-     * @param ReflectionClass<ToolData> $toolDataReflectionClass
+     * @param ReflectionClass<Data> $toolDataReflectionClass
      * @return list<ReflectionParameter>
      */
     private function constructorParameters(ReflectionClass $toolDataReflectionClass): array

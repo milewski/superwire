@@ -6,10 +6,10 @@ namespace Superwire\Laravel\Tools;
 
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Spatie\LaravelData\Data;
 use Superwire\Laravel\Contracts\Tool;
 use Superwire\Laravel\Contracts\ToolBoundInputData;
 use Superwire\Laravel\Contracts\ToolInputData;
-use Superwire\Laravel\Contracts\ToolOutputData;
 use Superwire\Laravel\Tools\Execution\ToolDataMapper;
 use Superwire\Laravel\Tools\Execution\ToolExecutionSignature;
 use Superwire\Laravel\Tools\Execution\ToolExecutionSignatureFactory;
@@ -56,7 +56,7 @@ abstract class AbstractTool implements Tool
     }
 
     /**
-     * @return class-string<ToolOutputData>
+     * @return class-string<Data>
      */
     final public static function outputClass(): string
     {
@@ -84,9 +84,6 @@ abstract class AbstractTool implements Tool
         return $toolDataMapper->schemaFromToolDataClass(static::outputClass());
     }
 
-    /**
-     * @param array<string, mixed> $agentInputPayload
-     */
     final public static function resolveAgentInput(array $agentInputPayload): ToolInputData
     {
         $executionSignature = static::executionSignature();
@@ -167,17 +164,6 @@ abstract class AbstractTool implements Tool
 
         $toolOutput = $this->handle(...$handleArguments);
 
-        if (!$toolOutput instanceof ToolOutputData) {
-
-            throw new InvalidArgumentException(sprintf(
-                'tool `%s` handle method must return `%s`, received `%s`',
-                static::class,
-                ToolOutputData::class,
-                get_debug_type($toolOutput),
-            ));
-
-        }
-
         if (!$toolOutput instanceof $executionSignature->outputClass) {
 
             throw new InvalidArgumentException(sprintf(
@@ -228,7 +214,8 @@ abstract class AbstractTool implements Tool
      *
      * `protected function handle(MyInput $agentInput, MyBoundInput $boundInput): MyOutput`
      *
-     * where DTO classes implement ToolInputData, ToolBoundInputData, and ToolOutputData.
+     * where input and bound DTO classes implement ToolInputData and ToolBoundInputData.
+     * The output DTO class must extend Laravel Data.
      */
     private static function executionSignature(): ToolExecutionSignature
     {

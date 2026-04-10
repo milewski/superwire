@@ -4,9 +4,9 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tools\Data;
 
-use Superwire\Laravel\Contracts\ToolOutputData;
+use Spatie\LaravelData\Data;
 
-final readonly class WeatherOutput implements ToolOutputData
+final class WeatherOutput extends Data
 {
     public function __construct(
         public string $city,

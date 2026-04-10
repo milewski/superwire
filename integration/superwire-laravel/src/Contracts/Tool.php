@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Contracts;
 
+use Spatie\LaravelData\Data;
 use Swaggest\JsonSchema\Schema;
 
 interface Tool
@@ -25,7 +26,7 @@ interface Tool
     public static function boundInputClass(): string;
 
     /**
-     * @return class-string<ToolOutputData>
+     * @return class-string<Data>
      */
     public static function outputClass(): string;
 

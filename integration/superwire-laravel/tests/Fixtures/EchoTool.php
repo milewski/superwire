@@ -4,9 +4,9 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests\Fixtures;
 
+use Spatie\LaravelData\Data;
 use Superwire\Laravel\Contracts\ToolBoundInputData;
 use Superwire\Laravel\Contracts\ToolInputData;
-use Superwire\Laravel\Contracts\ToolOutputData;
 use Superwire\Laravel\Tools\AbstractTool;
 
 final class EchoTool extends AbstractTool
@@ -29,21 +29,21 @@ final class EchoTool extends AbstractTool
     }
 }
 
-final readonly class EchoToolAgentInput implements ToolInputData
+final class EchoToolAgentInput extends Data implements ToolInputData
 {
     public function __construct(public ?string $city = null)
     {
     }
 }
 
-final readonly class EchoToolBoundInput implements ToolBoundInputData
+final class EchoToolBoundInput extends Data implements ToolBoundInputData
 {
     public function __construct(public ?string $units = null)
     {
     }
 }
 
-final readonly class EchoToolOutput implements ToolOutputData
+final class EchoToolOutput extends Data
 {
     /**
      * @param array<string, mixed> $agent_input
