@@ -4,11 +4,9 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Support;
 
-use Superwire\Laravel\Data\ToolBuildRequest;
-use Superwire\Laravel\Data\ToolBuildResult;
+use Superwire\Laravel\Contracts\Tool;
 use Superwire\Laravel\Data\WorkflowExecutionRequest;
-use Superwire\Laravel\Exceptions\ToolBuildException;
-use Superwire\Laravel\Execution\ToolCompiler;
+use Superwire\Laravel\Exceptions\WorkflowExecutionException;
 use Superwire\Laravel\Execution\WorkflowExecutor;
 
 final readonly class PendingWorkflow
@@ -21,7 +19,6 @@ final readonly class PendingWorkflow
     public function __construct(
         private string $workflowFilePath,
         private WorkflowExecutor $workflowExecutor,
-        private ToolCompiler $toolCompiler,
         private OutputMapper $outputMapper,
         private array $toolClasses = [],
         private array $inputs = [],
@@ -39,7 +36,6 @@ final readonly class PendingWorkflow
         return new self(
             workflowFilePath: $this->workflowFilePath,
             workflowExecutor: $this->workflowExecutor,
-            toolCompiler: $this->toolCompiler,
             outputMapper: $this->outputMapper,
             toolClasses: $toolClasses,
             inputs: $this->inputs,
@@ -56,7 +52,6 @@ final readonly class PendingWorkflow
         return new self(
             workflowFilePath: $this->workflowFilePath,
             workflowExecutor: $this->workflowExecutor,
-            toolCompiler: $this->toolCompiler,
             outputMapper: $this->outputMapper,
             toolClasses: $this->toolClasses,
             inputs: $inputs,
@@ -73,7 +68,6 @@ final readonly class PendingWorkflow
         return new self(
             workflowFilePath: $this->workflowFilePath,
             workflowExecutor: $this->workflowExecutor,
-            toolCompiler: $this->toolCompiler,
             outputMapper: $this->outputMapper,
             toolClasses: $this->toolClasses,
             inputs: $this->inputs,
@@ -98,7 +92,6 @@ final readonly class PendingWorkflow
         return new self(
             workflowFilePath: $this->workflowFilePath,
             workflowExecutor: $this->workflowExecutor,
-            toolCompiler: $this->toolCompiler,
             outputMapper: $this->outputMapper,
             toolClasses: $this->toolClasses,
             inputs: $this->inputs,
@@ -110,10 +103,7 @@ final readonly class PendingWorkflow
     public function run(): mixed
     {
         if (!empty($this->toolClasses)) {
-
-            $toolBuildResult = $this->toolCompiler->build(new ToolBuildRequest($this->toolClasses));
-            $this->publishBuiltToolsToWorkflowDirectory($toolBuildResult);
-
+            $this->assertCompiledToolsAreAvailable();
         }
 
         $workflowExecutionResult = $this->workflowExecutor->execute(new WorkflowExecutionRequest(
@@ -130,28 +120,71 @@ final readonly class PendingWorkflow
         return $this->outputMapper->mapToClass($workflowExecutionResult->output, $this->outputClassName);
     }
 
-    private function publishBuiltToolsToWorkflowDirectory(ToolBuildResult $toolBuildResult): void
+    private function assertCompiledToolsAreAvailable(): void
     {
         $workflowDirectory = dirname($this->workflowFilePath);
         $workflowToolsDirectory = $workflowDirectory . DIRECTORY_SEPARATOR . 'tools';
 
-        if (!is_dir($workflowToolsDirectory) && !mkdir($workflowToolsDirectory, 0o777, true) && !is_dir($workflowToolsDirectory)) {
-            throw new ToolBuildException(sprintf('failed to create workflow tools directory %s', $workflowToolsDirectory));
-        }
+        if (!is_dir($workflowToolsDirectory)) {
 
-        foreach ($toolBuildResult->toolNames as $toolName) {
-
-            $sourcePath = $toolBuildResult->outputDirectory . DIRECTORY_SEPARATOR . $toolName . '.wasm';
-            $destinationPath = $workflowToolsDirectory . DIRECTORY_SEPARATOR . $toolName . '.wasm';
-
-            if (!is_file($sourcePath)) {
-                throw new ToolBuildException(sprintf('built tool artifact not found at %s', $sourcePath));
-            }
-
-            if (!copy($sourcePath, $destinationPath)) {
-                throw new ToolBuildException(sprintf('failed to publish built tool artifact from %s to %s', $sourcePath, $destinationPath));
-            }
+            throw new WorkflowExecutionException(sprintf(
+                'missing compiled workflow tools directory `%s`; run `php artisan superwire:tools:prepare --workflow=%s` before execution',
+                $workflowToolsDirectory,
+                $this->workflowFilePath,
+            ));
 
         }
+
+        $missingToolArtifacts = [];
+
+        foreach ($this->validatedToolClasses() as $toolClass) {
+
+            $toolName = $toolClass::name();
+            $toolArtifactPath = $workflowToolsDirectory . DIRECTORY_SEPARATOR . $toolName . '.wasm';
+
+            if (!is_file($toolArtifactPath)) {
+                $missingToolArtifacts[] = $toolName;
+            }
+
+        }
+
+        if ($missingToolArtifacts !== []) {
+
+            throw new WorkflowExecutionException(sprintf(
+                'missing compiled tool artifact(s) for workflow `%s`: %s. Run `php artisan superwire:tools:prepare --workflow=%s` before execution',
+                $this->workflowFilePath,
+                implode(', ', array_map(static fn (string $toolName): string => sprintf('tool.%s', $toolName), $missingToolArtifacts)),
+                $this->workflowFilePath,
+            ));
+
+        }
+    }
+
+    /**
+     * @return list<class-string<Tool>>
+     */
+    private function validatedToolClasses(): array
+    {
+        $validatedToolClasses = [];
+
+        foreach ($this->toolClasses as $toolClass) {
+
+            if (!is_string($toolClass)) {
+                throw new WorkflowExecutionException('tool class references must be class-string values');
+            }
+
+            if (!class_exists($toolClass)) {
+                throw new WorkflowExecutionException(sprintf('tool class `%s` does not exist', $toolClass));
+            }
+
+            if (!is_subclass_of($toolClass, Tool::class)) {
+                throw new WorkflowExecutionException(sprintf('tool class `%s` must implement %s', $toolClass, Tool::class));
+            }
+
+            $validatedToolClasses[] = $toolClass;
+
+        }
+
+        return $validatedToolClasses;
     }
 }
