@@ -336,6 +336,15 @@ impl DocumentState {
             }
         }
 
+        self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
+    }
+
+    fn provider_non_reference_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+    ) -> Option<Vec<CompletionSuggestion>> {
         if let Some(provider_driver_suggestions) = semantic_index.provider_driver_value_suggestions(position, line_prefix) {
             return Some(provider_driver_suggestions);
         }
@@ -344,11 +353,7 @@ impl DocumentState {
             return Some(provider_models_suggestions);
         }
 
-        if let Some(provider_property_suggestions) = semantic_index.provider_property_suggestions(position, line_prefix) {
-            return Some(provider_property_suggestions);
-        }
-
-        None
+        semantic_index.provider_property_suggestions(position, line_prefix)
     }
 
     fn agent_property_value_suggestions(
