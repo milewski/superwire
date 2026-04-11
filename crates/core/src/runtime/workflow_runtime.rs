@@ -19,8 +19,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::marker::PhantomData;
 use std::path::Path;
+use superwire_agent::tool::registered_runtime_tools;
 use superwire_agent::AgentConfig;
 use superwire_agent::DynamicTool;
+use superwire_agent::ToolDefinition;
 
 #[derive(Debug, Clone)]
 struct RuntimeState {
@@ -79,10 +81,156 @@ struct CompletedAgentExecution {
     context: Value,
 }
 
+#[derive(Debug, Clone)]
+struct RuntimeToolCatalog {
+    tool_definitions: HashMap<String, ToolDefinition>,
+}
+
 impl CompletedAgentExecution {
     fn apply_to_runtime_state(self, runtime_state: &mut RuntimeState) {
         runtime_state.agent_outputs.insert(self.agent_name.clone(), self.output);
         runtime_state.agent_contexts.insert(self.agent_name, self.context);
+    }
+}
+
+impl RuntimeToolCatalog {
+    fn from_runtime_tools(dynamic_runtime_tools: &[DynamicTool]) -> Result<Self, WorkflowRuntimeError> {
+        let mut tool_definitions = HashMap::<String, ToolDefinition>::new();
+
+        for registered_tool in registered_runtime_tools() {
+            let tool_definition = registered_tool.definition().map_err(|error| WorkflowRuntimeError::Other {
+                message: format!("failed to read definition for registered runtime tool: {error}"),
+            })?;
+
+            if tool_definitions
+                .insert(tool_definition.name.clone(), tool_definition.clone())
+                .is_some()
+            {
+                return Err(WorkflowRuntimeError::Other {
+                    message: format!("duplicate runtime tool name `{}` while building tool catalog", tool_definition.name),
+                });
+            }
+        }
+
+        for dynamic_runtime_tool in dynamic_runtime_tools {
+            let tool_definition = dynamic_runtime_tool.tool_definition().clone();
+
+            if tool_definitions
+                .insert(tool_definition.name.clone(), tool_definition.clone())
+                .is_some()
+            {
+                return Err(WorkflowRuntimeError::Other {
+                    message: format!("duplicate runtime tool name `{}` while building tool catalog", tool_definition.name),
+                });
+            }
+        }
+
+        Ok(Self { tool_definitions })
+    }
+
+    fn validate_workflow_tool_bindings(&self, workflow: &Workflow) -> Result<(), WorkflowRuntimeError> {
+        for declaration in workflow.declarations() {
+            let crate::dsl::Declaration::Agent(agent_declaration) = declaration else {
+                continue;
+            };
+
+            let Some(tools_expression) = agent_declaration.expression_property(AgentExpressionPropertyName::Tools) else {
+                continue;
+            };
+
+            let parsed_tool_bindings = tools_expression.parse_agent_tools_expression(agent_declaration)?;
+
+            for tool_binding in parsed_tool_bindings {
+                tool_binding.validate_required_bound_arguments(agent_declaration, self)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn tool_definition(&self, tool_name: &str) -> Option<&ToolDefinition> {
+        self.tool_definitions.get(tool_name)
+    }
+}
+
+impl AgentToolBinding {
+    fn validate_required_bound_arguments(
+        &self,
+        agent_declaration: &AgentDeclaration,
+        runtime_tool_catalog: &RuntimeToolCatalog,
+    ) -> Result<(), WorkflowRuntimeError> {
+        let Some(tool_definition) = runtime_tool_catalog.tool_definition(&self.tool_name) else {
+            return Ok(());
+        };
+
+        let required_bound_argument_names = tool_definition.required_bound_argument_names()?;
+
+        if required_bound_argument_names.is_empty() {
+            return Ok(());
+        }
+
+        let provided_bound_argument_names = self
+            .argument_expressions
+            .iter()
+            .map(|argument_expression| argument_expression.argument_name.clone())
+            .collect::<HashSet<_>>();
+
+        let missing_bound_argument_names = required_bound_argument_names
+            .into_iter()
+            .filter(|required_argument_name| !provided_bound_argument_names.contains(required_argument_name))
+            .collect::<Vec<_>>();
+
+        if missing_bound_argument_names.is_empty() {
+            return Ok(());
+        }
+
+        let formatted_missing_argument_names = missing_bound_argument_names
+            .iter()
+            .map(|argument_name| format!("`{argument_name}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        Err(WorkflowRuntimeError::InvalidAgentProperty {
+            agent_name: agent_declaration.name.clone(),
+            property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+            message: format!(
+                "tool `tool.{}` is missing required bound argument(s): {}",
+                self.tool_name, formatted_missing_argument_names
+            ),
+        })
+    }
+}
+
+trait ToolDefinitionExt {
+    fn required_bound_argument_names(&self) -> Result<Vec<String>, WorkflowRuntimeError>;
+}
+
+impl ToolDefinitionExt for ToolDefinition {
+    fn required_bound_argument_names(&self) -> Result<Vec<String>, WorkflowRuntimeError> {
+        let Some(bound_parameters_schema) = &self.bound_parameters_schema else {
+            return Ok(Vec::new());
+        };
+
+        let schema_value = serde_json::to_value(bound_parameters_schema).map_err(|error| WorkflowRuntimeError::Other {
+            message: format!("failed to inspect bound parameter schema for tool `tool.{}`: {error}", self.name),
+        })?;
+
+        let required_values = schema_value
+            .as_object()
+            .and_then(|schema_object| schema_object.get("required"))
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut required_bound_argument_names = required_values
+            .into_iter()
+            .filter_map(|required_value| required_value.as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+
+        required_bound_argument_names.sort();
+        required_bound_argument_names.dedup();
+
+        Ok(required_bound_argument_names)
     }
 }
 
@@ -163,23 +311,26 @@ where
     Output: DeserializeOwned + JsonSchema,
 {
     pub fn new(workflow: Workflow) -> Result<Self, WorkflowRuntimeError> {
+        Self::new_with_runtime_tools(workflow, Vec::new())
+    }
+
+    pub fn new_with_workflow_directory(workflow: Workflow, workflow_directory: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
+        let runtime_tools = WasmToolRuntimeLoader::from_workflow_directory(workflow_directory.as_ref()).discover_runtime_tools()?;
+
+        Self::new_with_runtime_tools(workflow, runtime_tools)
+    }
+
+    pub(crate) fn new_with_runtime_tools(workflow: Workflow, runtime_tools: Vec<DynamicTool>) -> Result<Self, WorkflowRuntimeError> {
         let compiled_workflow = compile_workflow::<Input, Output>(&workflow)?;
+        let runtime_tool_catalog = RuntimeToolCatalog::from_runtime_tools(runtime_tools.as_slice())?;
+        runtime_tool_catalog.validate_workflow_tool_bindings(&workflow)?;
 
         Ok(Self {
             workflow,
             compiled_workflow,
-            runtime_tools: Vec::new(),
+            runtime_tools,
             phantom: PhantomData,
         })
-    }
-
-    pub fn new_with_workflow_directory(workflow: Workflow, workflow_directory: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
-        let mut workflow_runtime = Self::new(workflow)?;
-
-        workflow_runtime.runtime_tools =
-            WasmToolRuntimeLoader::from_workflow_directory(workflow_directory.as_ref()).discover_runtime_tools()?;
-
-        Ok(workflow_runtime)
     }
 
     pub fn from_file(workflow_path: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {

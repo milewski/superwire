@@ -1,7 +1,7 @@
 use crate::parse_inline_workflow;
 use crate::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, RequestedAgentTool, WorkflowRuntime, WorkflowRuntimeError};
 use async_trait::async_trait;
-use schemars::JsonSchema;
+use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use std::{env, fs};
+use superwire_agent::{DynamicTool, ToolDefinition, ToolError};
 use tokio::time::sleep;
 
 static TEMPORARY_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1023,6 +1024,148 @@ async fn evaluates_tool_bound_arguments_from_secrets_context() {
         .expect("bound arguments expectation should be an object")
         .clone()
     );
+}
+
+#[test]
+fn fails_workflow_compilation_when_required_tool_bound_arguments_are_missing() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        project_id: i32,
+        task_id: i32,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct Output {
+        #[expect(dead_code)]
+        participants: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolBoundArguments {
+        project_id: i32,
+        task_id: i32,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolInput {
+        query: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        agent participants_fetcher {
+            model: openai("model-a")
+            tools: [
+                tool.get_answered_participants_for_task()
+            ]
+            prompt: "Find participants"
+            output: string
+        }
+
+        output {
+            participants: agent.participants_fetcher
+        }
+    };
+
+    let tool = DynamicTool::new_with_bound_arguments(
+        ToolDefinition {
+            name: "get_answered_participants_for_task".to_string(),
+            description: "Find answered participants for a task".to_string(),
+            parameters_schema: schema_for!(ToolInput),
+            bound_parameters_schema: Some(schema_for!(ToolBoundArguments)),
+            output_schema: None,
+        },
+        |_agent_input, _bound_input| async move { Ok::<Value, ToolError>(json!({ "ok": true })) },
+    );
+
+    let runtime_result = WorkflowRuntime::<Input, Output>::new_with_runtime_tools(workflow, vec![tool]);
+    let Err(runtime_error) = runtime_result else {
+        panic!("workflow compilation should fail when required tool bound arguments are missing");
+    };
+
+    match runtime_error {
+        WorkflowRuntimeError::InvalidAgentProperty {
+            agent_name,
+            property,
+            message,
+        } => {
+            assert_eq!(agent_name, "participants_fetcher");
+            assert_eq!(property, "tools");
+            assert!(message.contains("tool `tool.get_answered_participants_for_task` is missing required bound argument(s):"));
+            assert!(message.contains("`project_id`"));
+            assert!(message.contains("`task_id`"));
+        }
+        _ => panic!("expected invalid agent property error for missing tool bound arguments"),
+    }
+}
+
+#[test]
+fn compiles_workflow_when_required_tool_bound_arguments_are_provided() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        project_id: i32,
+        task_id: i32,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct Output {
+        #[expect(dead_code)]
+        participants: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolBoundArguments {
+        project_id: i32,
+        task_id: i32,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolInput {
+        query: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        agent participants_fetcher {
+            model: openai("model-a")
+            tools: [
+                tool.get_answered_participants_for_task(project_id: input.project_id, task_id: input.task_id)
+            ]
+            prompt: "Find participants"
+            output: string
+        }
+
+        output {
+            participants: agent.participants_fetcher
+        }
+    };
+
+    let tool = DynamicTool::new_with_bound_arguments(
+        ToolDefinition {
+            name: "get_answered_participants_for_task".to_string(),
+            description: "Find answered participants for a task".to_string(),
+            parameters_schema: schema_for!(ToolInput),
+            bound_parameters_schema: Some(schema_for!(ToolBoundArguments)),
+            output_schema: None,
+        },
+        |_agent_input, _bound_input| async move { Ok::<Value, ToolError>(json!({ "ok": true })) },
+    );
+
+    let runtime = WorkflowRuntime::<Input, Output>::new_with_runtime_tools(workflow, vec![tool]);
+
+    assert!(runtime.is_ok());
 }
 
 #[tokio::test]
