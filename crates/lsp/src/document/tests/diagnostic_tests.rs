@@ -212,3 +212,14 @@ fn reports_duplicate_property_diagnostic() {
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::DuplicateProperty);
 }
+
+#[test]
+fn reports_invalid_type_expression_reference_diagnostic() {
+    let diagnostics = inline_diagnostics! {
+        agent greeting {
+            output: test
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidTypeExpressionReference);
+}
