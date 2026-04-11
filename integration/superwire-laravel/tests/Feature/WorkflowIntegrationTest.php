@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Tests\Feature;
 
 use Superwire\Laravel\Exceptions\WorkflowExecutionException;
+use Superwire\Laravel\Tests\Fixtures\EchoTool;
 use Superwire\Laravel\Tests\TestCase;
 use Superwire\Laravel\Workflow;
 
@@ -199,5 +200,47 @@ final class WorkflowIntegrationTest extends TestCase
             $this->assertSame('hello', $context[ 'messages' ][ 0 ][ 'content' ]);
 
         }
+    }
+
+    public function testFailsEarlyWhenCompiledToolArtifactsAreMissing(): void
+    {
+        $temporaryDirectory = $this->createTemporaryDirectory('superwire-workflow-missing-tools');
+        $fakeCliPath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'fake-cli';
+        $workflowFilePath = $temporaryDirectory . DIRECTORY_SEPARATOR . 'example.wire';
+
+        file_put_contents($workflowFilePath, <<<'WIRE'
+        agent assistant {
+            model: openai("model-a")
+            tools: [tool.echo_tool]
+            prompt: "hello"
+            output: string
+        }
+
+        output {
+            value: agent.assistant
+        }
+        WIRE,
+        );
+
+        file_put_contents($fakeCliPath, <<<'PHP'
+        #!/usr/bin/env php
+        <?php
+
+        file_put_contents('php://stderr', 'cli should not execute when tool artifacts are missing');
+        exit(1);
+        PHP,
+        );
+
+        chmod($fakeCliPath, 0o755);
+
+        config()->set('superwire.cli.binary', $fakeCliPath);
+        config()->set('superwire.cli.working_directory', $temporaryDirectory);
+
+        $this->expectException(WorkflowExecutionException::class);
+        $this->expectExceptionMessage('missing compiled workflow tools directory');
+
+        Workflow::fromFile($workflowFilePath)
+            ->withTools([ EchoTool::class ])
+            ->run();
     }
 }

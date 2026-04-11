@@ -6,6 +6,7 @@ namespace Superwire\Laravel;
 
 use Illuminate\Support\ServiceProvider;
 use Superwire\Laravel\Console\BuildToolsCommand;
+use Superwire\Laravel\Console\PrepareToolsCommand;
 use Superwire\Laravel\Console\RunWorkflowCommand;
 use Superwire\Laravel\Execution\ToolCompiler;
 use Superwire\Laravel\Execution\WorkflowExecutor;
@@ -36,6 +37,7 @@ class SuperwireServiceProvider extends ServiceProvider
 
             $this->commands([
                 BuildToolsCommand::class,
+                PrepareToolsCommand::class,
                 RunWorkflowCommand::class,
             ]);
 

@@ -13,7 +13,7 @@ final class RunWorkflowCommand extends Command
         {workflow : Path to workflow file}
         {--input=* : Input fields in key=value format}
         {--secret=* : Secrets fields in key=value format}
-        {--tool=* : Fully-qualified PHP tool classes to build before run}';
+        {--tool=* : Fully-qualified PHP tool classes required at runtime (must be precompiled)}';
 
     protected $description = 'Run a Superwire workflow from Laravel using the configured CLI runtime';
 
