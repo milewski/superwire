@@ -6,6 +6,7 @@ namespace Superwire\Laravel\Execution;
 
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Support\Facades\Process;
 use JsonException;
 use RuntimeException;
 use Superwire\Laravel\Data\ToolBuildRequest;
@@ -17,7 +18,6 @@ use Superwire\Laravel\Execution\Compiler\ToolModuleSourceGenerator;
 use Superwire\Laravel\Execution\Compiler\ToolModuleTemplateRenderer;
 use Superwire\Laravel\Execution\Compiler\ToolNameFormatter;
 use Superwire\Laravel\Execution\Compiler\ToolSchemaPayloadSerializer;
-use Symfony\Component\Process\Process;
 
 final readonly class ToolCompiler
 {
@@ -105,7 +105,7 @@ final readonly class ToolCompiler
     {
         $cliBinary = (string) $this->config->get('superwire.cli.binary', 'cli');
         $workingDirectory = (string) $this->config->get('superwire.cli.working_directory', base_path());
-        $timeoutSeconds = (float) $this->config->get('superwire.cli.timeout_seconds', 120);
+        $timeoutSeconds = (int) $this->config->get('superwire.cli.timeout_seconds', 120);
         $buildTasks = [];
 
         foreach ($toolSourcePathByToolName as $toolName => $toolSourcePath) {
@@ -120,25 +120,19 @@ final readonly class ToolCompiler
                 $toolOutputPath,
             ];
 
-            $buildTasks[] = static function () use ($command, $workingDirectory, $timeoutSeconds, $toolName): array {
+            $buildTasks[] = static function () use ($command, $workingDirectory, $timeoutSeconds, $toolName): string {
 
-                $process = new Process(
-                    command: $command,
-                    cwd: $workingDirectory,
-                    env: null,
-                    input: null,
-                    timeout: $timeoutSeconds,
-                );
+                $processResult = Process::path($workingDirectory)
+                    ->timeout($timeoutSeconds)
+                    ->run($command);
 
-                $process->run();
-
-                return [
+                return json_encode([
                     'tool_name' => $toolName,
                     'command' => $command,
-                    'success' => $process->isSuccessful(),
-                    'error_output' => trim($process->getErrorOutput()),
-                    'standard_output' => trim($process->getOutput()),
-                ];
+                    'success' => $processResult->successful(),
+                    'error_output' => trim($processResult->errorOutput()),
+                    'standard_output' => trim($processResult->output()),
+                ], JSON_THROW_ON_ERROR);
 
             };
 
@@ -150,20 +144,22 @@ final readonly class ToolCompiler
 
         } catch (RuntimeException) {
 
-            $buildResults = array_map(static fn (callable $buildTask): array => $buildTask(), $buildTasks);
+            $buildResults = array_map(static fn (callable $buildTask): string => $buildTask(), $buildTasks);
 
         }
 
-        foreach ($buildResults as $buildResult) {
+        foreach ($buildResults as $encodedBuildResult) {
 
-            if (($buildResult[ 'success' ] ?? false) === true) {
+            $buildResult = is_string($encodedBuildResult) ? json_decode($encodedBuildResult, true) : null;
+
+            if (is_array($buildResult) && (($buildResult[ 'success' ] ?? false) === true)) {
                 continue;
             }
 
-            $toolName = is_string($buildResult[ 'tool_name' ] ?? null) ? $buildResult[ 'tool_name' ] : 'unknown';
-            $command = is_array($buildResult[ 'command' ] ?? null) ? $buildResult[ 'command' ] : [];
-            $errorOutput = is_string($buildResult[ 'error_output' ] ?? null) ? $buildResult[ 'error_output' ] : '';
-            $standardOutput = is_string($buildResult[ 'standard_output' ] ?? null) ? $buildResult[ 'standard_output' ] : '';
+            $toolName = is_array($buildResult) && is_string($buildResult[ 'tool_name' ] ?? null) ? $buildResult[ 'tool_name' ] : 'unknown';
+            $command = is_array($buildResult) && is_array($buildResult[ 'command' ] ?? null) ? $buildResult[ 'command' ] : [];
+            $errorOutput = is_array($buildResult) && is_string($buildResult[ 'error_output' ] ?? null) ? $buildResult[ 'error_output' ] : '';
+            $standardOutput = is_array($buildResult) && is_string($buildResult[ 'standard_output' ] ?? null) ? $buildResult[ 'standard_output' ] : '';
             $failureOutput = $errorOutput !== '' ? $errorOutput : $standardOutput;
 
             throw new ToolBuildException(sprintf(
@@ -178,14 +174,18 @@ final readonly class ToolCompiler
 
     private function toolSourcesCargoManifest(): string
     {
-        return <<<'TOML'
-        [package]
-        name = "superwire_php_tools"
-        version = "0.1.0"
-        edition = "2021"
+        $templatePath = __DIR__ . '/../../resources/templates/tool_sources.Cargo.toml.tpl';
 
-        [lib]
-        path = "src/lib.rs"
-        TOML;
+        if (!is_file($templatePath)) {
+            throw new ToolBuildException(sprintf('tool sources Cargo template not found at %s', $templatePath));
+        }
+
+        $templateSource = file_get_contents($templatePath);
+
+        if ($templateSource === false) {
+            throw new ToolBuildException(sprintf('failed to read tool sources Cargo template at %s', $templatePath));
+        }
+
+        return $templateSource;
     }
 }
