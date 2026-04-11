@@ -12,6 +12,7 @@ use crate::protocol::Position;
 use super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::hover::builtin_symbol_suggestions;
 use super::position::source_span_contains_position;
+use super::reference::ReferenceCompletionPath;
 use super::text_utils::trailing_identifier;
 use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
 
@@ -22,11 +23,15 @@ pub struct SemanticIndex {
     pub schemas: HashMap<String, SchemaSummary>,
     pub schema_names: Vec<String>,
     pub schema_locations: Vec<NamedSpan>,
+    schema_field_locations: HashMap<String, SourceSpan>,
     pub input_fields: BTreeMap<String, TypeExpression>,
     pub input_field_metadata: BTreeMap<String, FieldMetadata>,
+    input_field_locations: HashMap<String, SourceSpan>,
     pub secrets_fields: BTreeMap<String, TypeExpression>,
     pub secrets_field_metadata: BTreeMap<String, FieldMetadata>,
+    secrets_field_locations: HashMap<String, SourceSpan>,
     pub agents: HashMap<String, AgentSummary>,
+    agent_output_field_locations: HashMap<String, SourceSpan>,
     pub agent_for_loop_bindings: HashMap<String, BTreeMap<String, Vec<TypeExpression>>>,
     pub agent_for_loop_iterable_item_types: HashMap<String, TypeExpression>,
     pub agent_names: Vec<String>,
@@ -306,11 +311,15 @@ impl SemanticIndex {
             schemas: HashMap::new(),
             schema_names: Vec::new(),
             schema_locations: Vec::new(),
+            schema_field_locations: HashMap::new(),
             input_fields: BTreeMap::new(),
             input_field_metadata: BTreeMap::new(),
+            input_field_locations: HashMap::new(),
             secrets_fields: BTreeMap::new(),
             secrets_field_metadata: BTreeMap::new(),
+            secrets_field_locations: HashMap::new(),
             agents: HashMap::new(),
+            agent_output_field_locations: HashMap::new(),
             agent_for_loop_bindings: HashMap::new(),
             agent_for_loop_iterable_item_types: HashMap::new(),
             agent_names: Vec::new(),
@@ -361,6 +370,8 @@ impl SemanticIndex {
     }
 
     fn insert_schema_declaration(&mut self, schema_declaration: &superwire_core::dsl::SchemaDeclaration) {
+        self.insert_schema_field_locations(schema_declaration.name.as_str(), &schema_declaration.fields);
+
         let schema_fields = schema_declaration
             .fields
             .iter()
@@ -391,6 +402,7 @@ impl SemanticIndex {
         if self.input_fields.is_empty() {
             self.input_fields = typed_fields_to_map(&input_declaration.fields);
             self.input_field_metadata = typed_fields_to_metadata_map(&input_declaration.fields);
+            self.insert_singleton_field_locations(SingletonDeclarationKind::Input, &input_declaration.fields);
         }
 
         self.typed_declaration_locations.push(input_declaration.span);
@@ -402,23 +414,30 @@ impl SemanticIndex {
         if self.secrets_fields.is_empty() {
             self.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
             self.secrets_field_metadata = typed_fields_to_metadata_map(&secrets_declaration.fields);
+            self.insert_singleton_field_locations(SingletonDeclarationKind::Secrets, &secrets_declaration.fields);
         }
 
         self.typed_declaration_locations.push(secrets_declaration.span);
     }
 
     fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
-        let output_type = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
+        let output_type_expression = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
             AgentProperty::Output {
                 output_type_expression,
                 description: _,
-            } => Some(output_type_expression.clone()),
+            } => Some(output_type_expression),
             AgentProperty::Model(_)
             | AgentProperty::Prompt(_)
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Tools(_) => None,
         });
+
+        if let Some(output_type_expression) = output_type_expression {
+            self.insert_agent_output_field_locations(agent_declaration.name.as_str(), output_type_expression);
+        }
+
+        let output_type = output_type_expression.cloned();
 
         self.agents.insert(
             agent_declaration.name.clone(),
@@ -552,11 +571,15 @@ impl SemanticIndex {
             schemas,
             schema_names,
             schema_locations,
+            schema_field_locations: HashMap::new(),
             input_fields: tooling_snapshot.input_fields().clone(),
             input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
+            input_field_locations: HashMap::new(),
             secrets_fields: tooling_snapshot.secrets_fields().clone(),
             secrets_field_metadata: field_metadata_from_type_map(tooling_snapshot.secrets_fields()),
+            secrets_field_locations: HashMap::new(),
             agents,
+            agent_output_field_locations: HashMap::new(),
             agent_for_loop_bindings: HashMap::new(),
             agent_for_loop_iterable_item_types: HashMap::new(),
             agent_names,
@@ -587,6 +610,68 @@ impl SemanticIndex {
         }
 
         false
+    }
+
+    fn insert_schema_field_locations(&mut self, schema_name: &str, typed_fields: &[TypedField]) {
+        Self::insert_field_locations(
+            &mut self.schema_field_locations,
+            Self::schema_field_location_prefix(schema_name),
+            typed_fields,
+        );
+    }
+
+    fn insert_singleton_field_locations(&mut self, singleton_kind: SingletonDeclarationKind, typed_fields: &[TypedField]) {
+        match singleton_kind {
+            SingletonDeclarationKind::Input => {
+                Self::insert_field_locations(&mut self.input_field_locations, Vec::new(), typed_fields);
+            }
+            SingletonDeclarationKind::Secrets => {
+                Self::insert_field_locations(&mut self.secrets_field_locations, Vec::new(), typed_fields);
+            }
+            SingletonDeclarationKind::Output => {}
+        }
+    }
+
+    fn insert_agent_output_field_locations(&mut self, agent_name: &str, output_type_expression: &TypeExpression) {
+        let TypeExpression::Object(typed_fields) = output_type_expression else {
+            return;
+        };
+
+        Self::insert_field_locations(
+            &mut self.agent_output_field_locations,
+            Self::agent_field_location_prefix(agent_name),
+            typed_fields,
+        );
+    }
+
+    fn insert_field_locations(
+        field_locations: &mut HashMap<String, SourceSpan>,
+        field_prefix_segments: Vec<String>,
+        typed_fields: &[TypedField],
+    ) {
+        for typed_field in typed_fields {
+            let mut field_path_segments = field_prefix_segments.clone();
+            field_path_segments.push(typed_field.name.clone());
+
+            let field_location_key = Self::field_location_key(field_path_segments.as_slice());
+            field_locations.insert(field_location_key, typed_field.span);
+
+            if let TypeExpression::Object(nested_typed_fields) = &typed_field.field_type {
+                Self::insert_field_locations(field_locations, field_path_segments, nested_typed_fields);
+            }
+        }
+    }
+
+    fn field_location_key(field_path_segments: &[String]) -> String {
+        field_path_segments.join(".")
+    }
+
+    fn schema_field_location_prefix(schema_name: &str) -> Vec<String> {
+        vec![schema_name.to_string()]
+    }
+
+    fn agent_field_location_prefix(agent_name: &str) -> Vec<String> {
+        vec![agent_name.to_string()]
     }
 
     fn insert_provider(&mut self, provider_declaration: &ProviderDeclaration) {
@@ -1202,6 +1287,254 @@ impl SemanticIndex {
                 Some(TypeExpression::Object(typed_fields))
             }
         }
+    }
+
+    pub fn definition_span_for_symbol_at_cursor(
+        &self,
+        symbol_token: &str,
+        cursor_character_offset: usize,
+        position: Position,
+    ) -> Option<SourceSpan> {
+        if let Some(provider_span) = self.provider_span(symbol_token) {
+            return Some(provider_span);
+        }
+
+        if let Some(schema_span) = self.schema_span(symbol_token) {
+            return Some(schema_span);
+        }
+
+        if let Some(agent_span) = self.agent_span(symbol_token) {
+            return Some(agent_span);
+        }
+
+        let reference_completion_path = ReferenceCompletionPath::from_token(symbol_token)?;
+        let selected_segment_index = ReferenceCompletionPath::segment_index_at_cursor(symbol_token, cursor_character_offset)?;
+
+        if reference_completion_path.is_schema_root() {
+            return self.schema_reference_definition_span(&reference_completion_path, selected_segment_index);
+        }
+
+        if let Some(reference_root_keyword) = reference_completion_path.root_keyword() {
+            return self.keyword_reference_definition_span(reference_root_keyword, &reference_completion_path, selected_segment_index);
+        }
+
+        if let Some(for_loop_binding_definition_span) =
+            self.for_loop_binding_reference_definition_span(position, &reference_completion_path, selected_segment_index)
+        {
+            return Some(for_loop_binding_definition_span);
+        }
+
+        self.provider_span(reference_completion_path.root_identifier())
+    }
+
+    fn for_loop_binding_reference_definition_span(
+        &self,
+        position: Position,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        let binding_name = reference_completion_path.root_identifier();
+        let binding_types = self.for_loop_binding_types_at_position(position, binding_name)?;
+
+        if selected_segment_index == 0 {
+            return None;
+        }
+
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+
+        self.field_span_for_type_set_access_path(binding_types, selected_accesses.as_slice())
+    }
+
+    fn keyword_reference_definition_span(
+        &self,
+        reference_root_keyword: ReferenceKeyword,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        match reference_root_keyword {
+            ReferenceKeyword::Input => self.singleton_reference_definition_span(
+                reference_completion_path,
+                selected_segment_index,
+                &self.input_fields,
+                &self.input_field_locations,
+            ),
+            ReferenceKeyword::Secrets => self.singleton_reference_definition_span(
+                reference_completion_path,
+                selected_segment_index,
+                &self.secrets_fields,
+                &self.secrets_field_locations,
+            ),
+            ReferenceKeyword::Agent => self.agent_reference_definition_span(reference_completion_path, selected_segment_index),
+            ReferenceKeyword::Tool => None,
+        }
+    }
+
+    fn schema_reference_definition_span(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+        let schema_name = selected_accesses.first()?;
+
+        if selected_accesses.len() == 1 {
+            return self.schema_span(schema_name);
+        }
+
+        self.schema_field_span(schema_name, &selected_accesses[1..])
+    }
+
+    fn singleton_reference_definition_span(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+        root_fields: &BTreeMap<String, TypeExpression>,
+        root_field_locations: &HashMap<String, SourceSpan>,
+    ) -> Option<SourceSpan> {
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+
+        if selected_accesses.is_empty() {
+            return None;
+        }
+
+        let field_location_key = Self::field_location_key(selected_accesses.as_slice());
+
+        if let Some(field_span) = root_field_locations.get(&field_location_key) {
+            return Some(*field_span);
+        }
+
+        let root_field_name = selected_accesses.first()?;
+        let root_field_type = root_fields.get(root_field_name)?;
+
+        if selected_accesses.len() == 1 {
+            return None;
+        }
+
+        self.field_span_for_type_access_path(root_field_type, &selected_accesses[1..])
+    }
+
+    fn agent_reference_definition_span(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+        let agent_name = selected_accesses.first()?;
+
+        if selected_accesses.len() == 1 {
+            return self.agent_span(agent_name);
+        }
+
+        let agent_field_location_key = Self::field_location_key(selected_accesses.as_slice());
+
+        if let Some(field_span) = self.agent_output_field_locations.get(&agent_field_location_key) {
+            return Some(*field_span);
+        }
+
+        let agent_output_type = self.agents.get(agent_name)?.output_type.as_ref()?;
+
+        self.field_span_for_type_access_path(agent_output_type, &selected_accesses[1..])
+    }
+
+    fn schema_field_span(&self, schema_name: &str, field_accesses: &[String]) -> Option<SourceSpan> {
+        if field_accesses.is_empty() {
+            return self.schema_span(schema_name);
+        }
+
+        let mut schema_field_location_segments = Self::schema_field_location_prefix(schema_name);
+        schema_field_location_segments.extend(field_accesses.iter().cloned());
+
+        let schema_field_location_key = Self::field_location_key(schema_field_location_segments.as_slice());
+
+        if let Some(field_span) = self.schema_field_locations.get(&schema_field_location_key) {
+            return Some(*field_span);
+        }
+
+        let schema_summary = self.schemas.get(schema_name)?;
+        let first_field_name = field_accesses.first()?;
+        let first_field_type = schema_summary.fields.get(first_field_name)?;
+
+        if field_accesses.len() == 1 {
+            return None;
+        }
+
+        self.field_span_for_type_access_path(first_field_type, &field_accesses[1..])
+    }
+
+    fn field_span_for_type_access_path(&self, root_type_expression: &TypeExpression, field_accesses: &[String]) -> Option<SourceSpan> {
+        if field_accesses.is_empty() {
+            return None;
+        }
+
+        match root_type_expression {
+            TypeExpression::Object(typed_fields) => {
+                let first_field_name = field_accesses.first()?;
+                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *first_field_name)?;
+
+                if field_accesses.len() == 1 {
+                    return Some(typed_field.span);
+                }
+
+                self.field_span_for_type_access_path(&typed_field.field_type, &field_accesses[1..])
+            }
+            TypeExpression::SchemaReference(schema_name) => self.schema_field_span(schema_name, field_accesses),
+            TypeExpression::Union(union_members) => {
+                for union_member in union_members {
+                    if let Some(field_span) = self.field_span_for_type_access_path(union_member, field_accesses) {
+                        return Some(field_span);
+                    }
+                }
+
+                None
+            }
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
+            | TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_) => None,
+        }
+    }
+
+    fn field_span_for_type_set_access_path(
+        &self,
+        root_type_expressions: &[TypeExpression],
+        field_accesses: &[String],
+    ) -> Option<SourceSpan> {
+        for root_type_expression in root_type_expressions {
+            if let Some(field_span) = self.field_span_for_type_access_path(root_type_expression, field_accesses) {
+                return Some(field_span);
+            }
+        }
+
+        None
+    }
+
+    fn provider_span(&self, provider_name: &str) -> Option<SourceSpan> {
+        self.provider_locations
+            .iter()
+            .find(|provider_location| provider_location.name == provider_name)
+            .map(|provider_location| provider_location.span)
+    }
+
+    fn schema_span(&self, schema_name: &str) -> Option<SourceSpan> {
+        self.schema_locations
+            .iter()
+            .find(|schema_location| schema_location.name == schema_name)
+            .map(|schema_location| schema_location.span)
+    }
+
+    fn agent_span(&self, agent_name: &str) -> Option<SourceSpan> {
+        self.agent_locations
+            .iter()
+            .find(|agent_location| agent_location.name == agent_name)
+            .map(|agent_location| agent_location.span)
     }
 
     fn reference_expression_type(&self, reference: &superwire_core::dsl::Reference) -> Option<TypeExpression> {
