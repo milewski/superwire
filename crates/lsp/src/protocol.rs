@@ -171,6 +171,8 @@ pub enum DiagnosticCode {
     InvalidForLoopIterableType,
     #[serde(rename = "unknown_schema_reference")]
     UnknownSchemaReference,
+    #[serde(rename = "invalid_type_expression_reference")]
+    InvalidTypeExpressionReference,
     #[serde(rename = "agent_dependency_cycle")]
     AgentDependencyCycle,
     #[serde(rename = "workflow_compilation_error")]

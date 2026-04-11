@@ -199,6 +199,10 @@ pub enum ValidationIssue {
         referenced_schema: String,
         context: ValidationContext,
     },
+    InvalidTypeExpressionReference {
+        reference_path: String,
+        context: ValidationContext,
+    },
     AgentDependencyCycle {
         agent_names: Vec<String>,
     },
@@ -230,6 +234,7 @@ impl ValidationIssue {
             Self::InvalidReferencePath { .. } => "invalid_reference_path",
             Self::InvalidForLoopIterableType { .. } => "invalid_for_loop_iterable_type",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
+            Self::InvalidTypeExpressionReference { .. } => "invalid_type_expression_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
         }
     }
@@ -335,6 +340,12 @@ impl ValidationIssue {
             } => {
                 format!("Unknown schema `schema.{referenced_schema}` referenced in {}.", context.describe())
             }
+            Self::InvalidTypeExpressionReference { reference_path, context } => {
+                format!(
+                    "Type reference `{reference_path}` in {} must start with `agent.` or `input.`.",
+                    context.describe()
+                )
+            }
             Self::AgentDependencyCycle { agent_names } => {
                 format!("Circular agent dependency detected: {}.", agent_names.join(", "))
             }
@@ -406,6 +417,10 @@ impl ValidationIssue {
             }
             | Self::UnknownSchemaReference {
                 referenced_schema: _,
+                context: _,
+            }
+            | Self::InvalidTypeExpressionReference {
+                reference_path: _,
                 context: _,
             }
             | Self::AgentDependencyCycle { agent_names: _ }
@@ -532,6 +547,13 @@ impl ValidationIssue {
             } => {
                 format!("Declare `schema {referenced_schema} {{ ... }}` before using `schema.{referenced_schema}`.")
             }
+            Self::InvalidTypeExpressionReference {
+                reference_path: _,
+                context: _,
+            } => {
+                "Use a scalar type (`string`, `number`, `float`, `boolean`, `null`), `schema.<name>`, or a reference that starts with `agent.` or `input.`."
+                    .to_string()
+            }
             Self::AgentDependencyCycle { agent_names } => {
                 format!(
                     "Break the cycle by removing at least one dependency among: {}.",
@@ -618,6 +640,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 referenced_schema: _,
                 context: _,
             } => Self::UnknownSchemaReference,
+            ValidationIssue::InvalidTypeExpressionReference {
+                reference_path: _,
+                context: _,
+            } => Self::InvalidTypeExpressionReference,
             ValidationIssue::AgentDependencyCycle { agent_names: _ } => Self::AgentDependencyCycle,
         }
     }
@@ -1073,6 +1099,7 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
 
 fn validate_schema_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut unknown_schema_references = HashSet::new();
+    let mut invalid_type_expression_references = HashSet::new();
 
     for declaration in workflow.declarations() {
         match declaration {
@@ -1085,6 +1112,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                         validation_index,
                         validation_report,
                         &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
                     );
                 }
             }
@@ -1097,6 +1125,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                         validation_index,
                         validation_report,
                         &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
                     );
                 }
             }
@@ -1111,6 +1140,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                         validation_index,
                         validation_report,
                         &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
                     );
                 }
             }
@@ -1130,6 +1160,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                             validation_index,
                             validation_report,
                             &mut unknown_schema_references,
+                            &mut invalid_type_expression_references,
                         );
                     }
                 }
@@ -1146,6 +1177,7 @@ fn validate_type_expression_for_schemas(
     validation_index: &ValidationIndex,
     validation_report: &mut ValidationReport,
     unknown_schema_references: &mut HashSet<(ValidationContext, String)>,
+    invalid_type_expression_references: &mut HashSet<(ValidationContext, String)>,
 ) {
     match type_expression {
         TypeExpression::SchemaReference(referenced_schema_name) => {
@@ -1176,6 +1208,7 @@ fn validate_type_expression_for_schemas(
                 validation_index,
                 validation_report,
                 unknown_schema_references,
+                invalid_type_expression_references,
             );
         }
         TypeExpression::Tuple(type_expressions) | TypeExpression::Union(type_expressions) => {
@@ -1187,6 +1220,7 @@ fn validate_type_expression_for_schemas(
                     validation_index,
                     validation_report,
                     unknown_schema_references,
+                    invalid_type_expression_references,
                 );
             }
         }
@@ -1199,7 +1233,35 @@ fn validate_type_expression_for_schemas(
                     validation_index,
                     validation_report,
                     unknown_schema_references,
+                    invalid_type_expression_references,
                 );
+            }
+        }
+        TypeExpression::StringEnumReference(reference) => {
+            let Some(reference_root_keyword) = reference.root_keyword() else {
+                let reference_path = reference.render_path();
+                let issue_key = (context.clone(), reference_path.clone());
+
+                if invalid_type_expression_references.insert(issue_key) {
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::InvalidTypeExpressionReference { reference_path, context },
+                        Some(reference.span),
+                    );
+                }
+
+                return;
+            };
+
+            if !matches!(reference_root_keyword, ReferenceKeyword::Agent | ReferenceKeyword::Input) {
+                let reference_path = reference.render_path();
+                let issue_key = (context.clone(), reference_path.clone());
+
+                if invalid_type_expression_references.insert(issue_key) {
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::InvalidTypeExpressionReference { reference_path, context },
+                        Some(reference.span),
+                    );
+                }
             }
         }
         TypeExpression::String
@@ -1207,8 +1269,7 @@ fn validate_type_expression_for_schemas(
         | TypeExpression::Float
         | TypeExpression::Boolean
         | TypeExpression::Null
-        | TypeExpression::StringEnum(_)
-        | TypeExpression::StringEnumReference(_) => {}
+        | TypeExpression::StringEnum(_) => {}
     }
 }
 
@@ -2895,6 +2956,40 @@ mod tests {
                 context
             } if referenced_schema == "MissingSchema"
                 && *context == ValidationContext::Schema("Wrapper".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_invalid_type_expression_reference_root() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                output: test
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidTypeExpressionReference {
+                reference_path,
+                context
+            } if reference_path == "test" && *context == ValidationContext::Agent("greeting".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_invalid_keyword_root_in_type_expression_reference() {
+        let workflow = parse_inline_workflow! {
+            agent greeting {
+                output: secrets.api_key
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidTypeExpressionReference {
+                reference_path,
+                context
+            } if reference_path == "secrets.api_key" && *context == ValidationContext::Agent("greeting".to_owned())
         );
     }
 

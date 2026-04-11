@@ -49,6 +49,7 @@ pub enum DiagnosticCode {
     InvalidReferencePath,
     InvalidForLoopIterableType,
     UnknownSchemaReference,
+    InvalidTypeExpressionReference,
     AgentDependencyCycle,
     WorkflowCompilationError,
 }
@@ -83,6 +84,7 @@ impl DiagnosticCode {
             Self::InvalidReferencePath => "invalid_reference_path",
             Self::InvalidForLoopIterableType => "invalid_for_loop_iterable_type",
             Self::UnknownSchemaReference => "unknown_schema_reference",
+            Self::InvalidTypeExpressionReference => "invalid_type_expression_reference",
             Self::AgentDependencyCycle => "agent_dependency_cycle",
             Self::WorkflowCompilationError => "workflow_compilation_error",
         }
