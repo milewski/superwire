@@ -615,6 +615,24 @@ fn suggests_only_valid_output_value_roots_and_literals_in_output_expression_cont
         DeclarationKeyword::Schema,
         ReferenceKeyword::Tool
     );
+
+    let agent_root_completion = completion_suggestion_by_label(&completion_suggestions, ReferenceKeyword::Agent.as_str());
+    assert_eq!(agent_root_completion.insert_text, ReferenceKeyword::Agent.as_str());
+}
+
+#[test]
+fn suggests_agent_names_after_output_agent_root_separator() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent greeter {
+            output: string
+        }
+
+        output {
+            greeting: agent.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "greeter");
 }
 
 #[test]
@@ -1137,7 +1155,7 @@ fn completion_text_edit_range_for_prompt_value_keeps_space_after_separator() {
 }
 
 #[test]
-fn completion_text_edit_range_for_prompt_reference_replaces_only_reference_prefix() {
+fn completion_text_edit_range_for_prompt_reference_after_separator_keeps_root_and_separator() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
             prompt: agent.<cursor>
@@ -1151,7 +1169,49 @@ fn completion_text_edit_range_for_prompt_reference_replaces_only_reference_prefi
         .expect("prompt reference completion should include a replacement range");
 
     assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
-    assert_eq!(completion_text_edit_range.start.character, cursor_position.character - 6);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+}
+
+#[test]
+fn completion_text_edit_range_for_output_reference_after_separator_keeps_root_and_separator() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        agent greeter {
+            output: string
+        }
+
+        output {
+            greeting: agent.<cursor>
+        }
+    });
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("output reference completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+}
+
+#[test]
+fn completion_text_edit_range_for_array_item_type_does_not_replace_opening_bracket() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        agent writer {
+            output: [<cursor>]
+        }
+    });
+
+    let document_state = DocumentState::new(source);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("array item type completion should include a replacement range");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
     assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
     assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
 }

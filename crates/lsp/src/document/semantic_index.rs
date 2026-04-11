@@ -166,7 +166,7 @@ impl SemanticIndex {
                 kind: CompletionKind::Module,
                 detail: "Output value reference root".to_string(),
                 documentation: format!("Use `{}.<path>` in output expressions.", reference_keyword.as_str()),
-                insert_text: format!("{}.", reference_keyword.as_str()),
+                insert_text: reference_keyword.as_str().to_string(),
             })
             .collect()
     }
