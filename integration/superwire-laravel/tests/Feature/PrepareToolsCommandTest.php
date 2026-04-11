@@ -45,28 +45,30 @@ final class PrepareToolsCommandTest extends TestCase
             exit(1);
         }
 
-        $outputDirectory = null;
+        $outputPath = null;
 
         for ($argumentIndex = 3; $argumentIndex < count($arguments); $argumentIndex++) {
             if (($arguments[$argumentIndex] ?? '') !== '--output') {
                 continue;
             }
 
-            $outputDirectory = (string) ($arguments[$argumentIndex + 1] ?? '');
+            $outputPath = (string) ($arguments[$argumentIndex + 1] ?? '');
             break;
         }
 
-        if ($outputDirectory === null || $outputDirectory === '') {
-            fwrite(STDERR, 'missing output directory');
+        if ($outputPath === null || $outputPath === '') {
+            fwrite(STDERR, 'missing output path');
             exit(1);
         }
+
+        $outputDirectory = dirname($outputPath);
 
         if (!is_dir($outputDirectory) && !mkdir($outputDirectory, 0777, true) && !is_dir($outputDirectory)) {
-            fwrite(STDERR, 'failed to create output directory');
+            fwrite(STDERR, 'failed to create output parent directory');
             exit(1);
         }
 
-        file_put_contents($outputDirectory . DIRECTORY_SEPARATOR . 'echo_tool.wasm', 'fake-wasm');
+        file_put_contents($outputPath, 'fake-wasm');
         exit(0);
         PHP,
         );
@@ -224,28 +226,30 @@ final class PrepareToolsCommandTest extends TestCase
             exit(1);
         }
 
-        $outputDirectory = null;
+        $outputPath = null;
 
         for ($argumentIndex = 3; $argumentIndex < count($arguments); $argumentIndex++) {
             if (($arguments[$argumentIndex] ?? '') !== '--output') {
                 continue;
             }
 
-            $outputDirectory = (string) ($arguments[$argumentIndex + 1] ?? '');
+            $outputPath = (string) ($arguments[$argumentIndex + 1] ?? '');
             break;
         }
 
-        if ($outputDirectory === null || $outputDirectory === '') {
-            fwrite(STDERR, 'missing output directory');
+        if ($outputPath === null || $outputPath === '') {
+            fwrite(STDERR, 'missing output path');
             exit(1);
         }
+
+        $outputDirectory = dirname($outputPath);
 
         if (!is_dir($outputDirectory) && !mkdir($outputDirectory, 0777, true) && !is_dir($outputDirectory)) {
-            fwrite(STDERR, 'failed to create output directory');
+            fwrite(STDERR, 'failed to create output parent directory');
             exit(1);
         }
 
-        file_put_contents($outputDirectory . DIRECTORY_SEPARATOR . 'discovered_tool.wasm', 'fake-wasm');
+        file_put_contents($outputPath, 'fake-wasm');
         exit(0);
         PHP,
         );

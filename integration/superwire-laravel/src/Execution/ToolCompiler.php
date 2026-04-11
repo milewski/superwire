@@ -5,7 +5,9 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Execution;
 
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Support\Facades\Concurrency;
 use JsonException;
+use RuntimeException;
 use Superwire\Laravel\Data\ToolBuildRequest;
 use Superwire\Laravel\Data\ToolBuildResult;
 use Superwire\Laravel\Exceptions\ToolBuildException;
@@ -59,6 +61,7 @@ final readonly class ToolCompiler
 
         $moduleNames = [];
         $toolRegistryMap = [];
+        $toolSourcePathByToolName = [];
 
         foreach ($validatedToolClasses as $toolClass) {
 
@@ -76,6 +79,7 @@ final readonly class ToolCompiler
 
             $modulePath = sprintf('%s/%s.rs', $toolSourcesDirectory, $moduleName);
             file_put_contents($modulePath, $toolModuleSourceGenerator->generate($toolClass));
+            $toolSourcePathByToolName[ $toolName ] = $modulePath;
 
         }
 
@@ -89,36 +93,87 @@ final readonly class ToolCompiler
         $registryManifestPath = $buildRootDirectory . '/tool-registry.json';
         file_put_contents($registryManifestPath, json_encode([ 'tools' => $toolRegistryMap ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 
-        $command = [
-            (string) $this->config->get('superwire.cli.binary', 'cli'),
-            'tools',
-            'build',
-            $buildRootDirectory,
-            '--output',
-            $toolOutputDirectory,
-        ];
+        $this->buildToolModulesInParallel($toolSourcePathByToolName, $toolOutputDirectory);
 
-        $process = new Process(
-            command: $command,
-            cwd: (string) $this->config->get('superwire.cli.working_directory', base_path()),
-            env: null,
-            input: null,
-            timeout: (float) $this->config->get('superwire.cli.timeout_seconds', 120),
-        );
+        return new ToolBuildResult(array_keys($toolRegistryMap), $toolOutputDirectory);
+    }
 
-        $process->run();
+    /**
+     * @param array<string, string> $toolSourcePathByToolName
+     */
+    private function buildToolModulesInParallel(array $toolSourcePathByToolName, string $toolOutputDirectory): void
+    {
+        $cliBinary = (string) $this->config->get('superwire.cli.binary', 'cli');
+        $workingDirectory = (string) $this->config->get('superwire.cli.working_directory', base_path());
+        $timeoutSeconds = (float) $this->config->get('superwire.cli.timeout_seconds', 120);
+        $buildTasks = [];
 
-        if (!$process->isSuccessful()) {
+        foreach ($toolSourcePathByToolName as $toolName => $toolSourcePath) {
 
-            throw new ToolBuildException(sprintf(
-                'failed to build tool wasm modules using `%s`: %s',
-                implode(' ', $command),
-                trim($process->getErrorOutput()) !== '' ? trim($process->getErrorOutput()) : trim($process->getOutput()),
-            ));
+            $toolOutputPath = $toolOutputDirectory . DIRECTORY_SEPARATOR . $toolName . '.wasm';
+            $command = [
+                $cliBinary,
+                'tools',
+                'build',
+                $toolSourcePath,
+                '--output',
+                $toolOutputPath,
+            ];
+
+            $buildTasks[] = static function () use ($command, $workingDirectory, $timeoutSeconds, $toolName): array {
+
+                $process = new Process(
+                    command: $command,
+                    cwd: $workingDirectory,
+                    env: null,
+                    input: null,
+                    timeout: $timeoutSeconds,
+                );
+
+                $process->run();
+
+                return [
+                    'tool_name' => $toolName,
+                    'command' => $command,
+                    'success' => $process->isSuccessful(),
+                    'error_output' => trim($process->getErrorOutput()),
+                    'standard_output' => trim($process->getOutput()),
+                ];
+
+            };
 
         }
 
-        return new ToolBuildResult(array_keys($toolRegistryMap), $toolOutputDirectory);
+        try {
+
+            $buildResults = Concurrency::driver('fork')->run($buildTasks);
+
+        } catch (RuntimeException) {
+
+            $buildResults = array_map(static fn (callable $buildTask): array => $buildTask(), $buildTasks);
+
+        }
+
+        foreach ($buildResults as $buildResult) {
+
+            if (($buildResult[ 'success' ] ?? false) === true) {
+                continue;
+            }
+
+            $toolName = is_string($buildResult[ 'tool_name' ] ?? null) ? $buildResult[ 'tool_name' ] : 'unknown';
+            $command = is_array($buildResult[ 'command' ] ?? null) ? $buildResult[ 'command' ] : [];
+            $errorOutput = is_string($buildResult[ 'error_output' ] ?? null) ? $buildResult[ 'error_output' ] : '';
+            $standardOutput = is_string($buildResult[ 'standard_output' ] ?? null) ? $buildResult[ 'standard_output' ] : '';
+            $failureOutput = $errorOutput !== '' ? $errorOutput : $standardOutput;
+
+            throw new ToolBuildException(sprintf(
+                'failed to build tool `%s` using `%s`: %s',
+                $toolName,
+                implode(' ', $command),
+                $failureOutput,
+            ));
+
+        }
     }
 
     private function toolSourcesCargoManifest(): string
