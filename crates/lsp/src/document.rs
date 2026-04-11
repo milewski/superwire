@@ -33,6 +33,12 @@ pub struct DocumentState {
     semantic_snapshot: SemanticSnapshot,
 }
 
+#[derive(Debug)]
+pub(super) struct SymbolTokenAtPosition {
+    pub symbol_token: String,
+    pub cursor_character_offset: usize,
+}
+
 impl DocumentState {
     #[must_use]
     pub fn new(text: String) -> Self {
@@ -59,7 +65,7 @@ impl DocumentState {
         Some(line_characters.into_iter().take(cursor_index).collect())
     }
 
-    fn symbol_token_at(&self, position: Position) -> Option<String> {
+    fn symbol_token_at_position(&self, position: Position) -> Option<SymbolTokenAtPosition> {
         let line_text = self.text.lines().nth(position.line as usize)?;
         let line_characters: Vec<char> = line_text.chars().collect();
 
@@ -89,7 +95,15 @@ impl DocumentState {
             end_index += 1;
         }
 
-        Some(line_characters[start_index..end_index].iter().collect())
+        Some(SymbolTokenAtPosition {
+            symbol_token: line_characters[start_index..end_index].iter().collect(),
+            cursor_character_offset: cursor_index.saturating_sub(start_index),
+        })
+    }
+
+    fn symbol_token_at(&self, position: Position) -> Option<String> {
+        self.symbol_token_at_position(position)
+            .map(|symbol_token_at_position| symbol_token_at_position.symbol_token)
     }
 }
 

@@ -433,6 +433,7 @@ fn is_inside_string_literal(source_text: &str, byte_offset: usize) -> bool {
 }
 
 mod completion_tests;
+mod definition_tests;
 mod diagnostic_tests;
 mod for_loop_tests;
 mod interpolation_tests;

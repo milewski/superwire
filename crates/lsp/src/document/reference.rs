@@ -122,6 +122,72 @@ impl ReferenceCompletionPath {
         &self.root
     }
 
+    pub fn segment_index_at_cursor(reference_token: &str, cursor_character_offset: usize) -> Option<usize> {
+        if reference_token.is_empty() {
+            return None;
+        }
+
+        let token_characters = reference_token.chars().collect::<Vec<_>>();
+
+        if cursor_character_offset >= token_characters.len() {
+            return None;
+        }
+
+        if !is_identifier_character(token_characters[cursor_character_offset]) {
+            return None;
+        }
+
+        let mut segment_index = 0_usize;
+        let mut character_index = 0_usize;
+
+        while character_index < token_characters.len() {
+            if !is_identifier_character(token_characters[character_index]) {
+                character_index += 1;
+                continue;
+            }
+
+            let segment_start_index = character_index;
+
+            while character_index < token_characters.len() && is_identifier_character(token_characters[character_index]) {
+                character_index += 1;
+            }
+
+            if (segment_start_index..character_index).contains(&cursor_character_offset) {
+                return Some(segment_index);
+            }
+
+            segment_index += 1;
+        }
+
+        None
+    }
+
+    pub fn resolved_accesses_through_segment(&self, segment_index: usize) -> Option<Vec<String>> {
+        if segment_index == 0 {
+            return Some(Vec::new());
+        }
+
+        let resolved_access_count = segment_index;
+        let mut resolved_accesses = Vec::new();
+
+        for complete_access in self.complete_accesses.iter().take(resolved_access_count) {
+            resolved_accesses.push(complete_access.clone());
+        }
+
+        if resolved_accesses.len() < resolved_access_count
+            && resolved_accesses.len() == self.complete_accesses.len()
+            && !self.pending_prefix.is_empty()
+        {
+            resolved_accesses.push(self.pending_prefix.clone());
+        }
+
+        if resolved_accesses.len() == resolved_access_count {
+            return Some(resolved_accesses);
+        }
+
+        None
+    }
+
     fn root_declaration_keyword(&self) -> Option<DeclarationKeyword> {
         DeclarationKeyword::from_identifier(&self.root)
     }
@@ -129,6 +195,10 @@ impl ReferenceCompletionPath {
     pub fn is_schema_root(&self) -> bool {
         self.root_declaration_keyword() == Some(DeclarationKeyword::Schema)
     }
+}
+
+fn is_identifier_character(character: char) -> bool {
+    character.is_ascii_alphanumeric() || character == '_'
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
