@@ -5,10 +5,11 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Execution;
 
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
+use Illuminate\Support\Facades\Process;
 use Superwire\Laravel\Data\WorkflowExecutionRequest;
 use Superwire\Laravel\Data\WorkflowExecutionResult;
 use Superwire\Laravel\Exceptions\WorkflowExecutionException;
-use Symfony\Component\Process\Process;
 
 final class WorkflowExecutor
 {
@@ -41,26 +42,21 @@ final class WorkflowExecutor
 
         }
 
-        $process = new Process(
-            $command,
-            (string) $this->config->get('superwire.cli.working_directory', base_path()),
-            [
+        $processResult = Process::path((string) $this->config->get('superwire.cli.working_directory', base_path()))
+            ->timeout((int) $this->config->get('superwire.cli.timeout_seconds', 120))
+            ->env([
                 'SUPERWIRE_INTERNAL_TOKEN' => (string) $this->config->get('superwire.runtime.internal_token', ''),
                 'SUPERWIRE_ERROR_FORMAT' => 'json',
-            ],
-            null,
-            (float) $this->config->get('superwire.cli.timeout_seconds', 120),
-        );
+            ])
+            ->run($command);
 
         try {
 
-            $process->run();
-
-            if (!$process->isSuccessful()) {
-                throw $this->mapFailedProcessToException($command, $process);
+            if (!$processResult->successful()) {
+                throw $this->mapFailedProcessToException($command, $processResult);
             }
 
-            $decodedOutput = json_decode($process->getOutput(), true);
+            $decodedOutput = json_decode($processResult->output(), true);
 
             if (!is_array($decodedOutput)) {
                 throw new WorkflowExecutionException('workflow output must be a JSON object');
@@ -117,10 +113,10 @@ final class WorkflowExecutor
     /**
      * @param array<int, string> $command
      */
-    private function mapFailedProcessToException(array $command, Process $process): WorkflowExecutionException
+    private function mapFailedProcessToException(array $command, ProcessResultContract $processResult): WorkflowExecutionException
     {
-        $errorOutput = $process->getErrorOutput();
-        $standardOutput = $process->getOutput();
+        $errorOutput = $processResult->errorOutput();
+        $standardOutput = $processResult->output();
         $cliOutput = trim($errorOutput) !== '' ? trim($errorOutput) : trim($standardOutput);
         $decodedPayload = json_decode($cliOutput, true);
 
