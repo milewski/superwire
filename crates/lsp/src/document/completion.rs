@@ -140,9 +140,39 @@ impl DocumentState {
 
         if let Some((_, value_prefix)) = trimmed_line_prefix.rsplit_once(':') {
             let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+            let semantic_index = self.semantic_index_for_completion(position);
 
             if value_completion_context.value_prefix.is_empty() {
                 return Some(Self::text_edit_range_for_prefix(position, ""));
+            }
+
+            if let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(&line_prefix) {
+                let reference_token = trailing_reference_token(&line_prefix).unwrap_or_default();
+
+                if reference_token.ends_with('.') {
+                    return Some(Self::text_edit_range_for_prefix(
+                        position,
+                        &reference_completion_path.pending_prefix,
+                    ));
+                }
+
+                if reference_completion_path.complete_accesses.is_empty() && reference_completion_path.pending_prefix.is_empty() {
+                    return Some(Self::text_edit_range_for_prefix(
+                        position,
+                        reference_completion_path.root_identifier(),
+                    ));
+                }
+
+                return Some(Self::text_edit_range_for_prefix(
+                    position,
+                    &reference_completion_path.pending_prefix,
+                ));
+            }
+
+            if semantic_index.is_type_position(position, &line_prefix) {
+                let type_prefix = trailing_reference_token(&value_completion_context.value_prefix).unwrap_or_default();
+
+                return Some(Self::text_edit_range_for_prefix(position, type_prefix));
             }
 
             return Some(Self::text_edit_range_for_prefix(position, &value_completion_context.value_prefix));
