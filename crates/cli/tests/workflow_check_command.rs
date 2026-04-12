@@ -3,17 +3,21 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+macro_rules! workflow_template {
+    ($($workflow_tokens:tt)*) => {{
+        stringify!($($workflow_tokens)*)
+    }};
+}
+
 #[test]
 fn validates_workflow_file_when_check_command_succeeds() {
     let temporary_workspace = TemporaryWorkspace::new();
-    let workflow_file_path = temporary_workspace.write_file(
-        "valid.wire",
-        r"
-output {
-    ok: true
-}
-",
-    );
+    let workflow_source = workflow_template! {
+        output {
+            ok: true
+        }
+    };
+    let workflow_file_path = temporary_workspace.write_file("valid.wire", &workflow_source);
 
     let command_output = run_workflow_check_command(workflow_file_path.as_path());
     let standard_output = String::from_utf8_lossy(&command_output.stdout);
@@ -25,18 +29,16 @@ output {
 #[test]
 fn rejects_workflow_file_with_invalid_reference_types() {
     let temporary_workspace = TemporaryWorkspace::new();
-    let workflow_file_path = temporary_workspace.write_file(
-        "invalid.wire",
-        r"
-input {
-    title: string
-}
+    let workflow_source = workflow_template! {
+        input {
+            title: string
+        }
 
-output {
-    summary: input.missing
-}
-",
-    );
+        output {
+            summary: input.missing
+        }
+    };
+    let workflow_file_path = temporary_workspace.write_file("invalid.wire", &workflow_source);
 
     let command_output = run_workflow_check_command(workflow_file_path.as_path());
     let standard_error = String::from_utf8_lossy(&command_output.stderr);
