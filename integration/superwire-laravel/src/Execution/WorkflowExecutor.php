@@ -7,6 +7,7 @@ namespace Superwire\Laravel\Execution;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Support\Facades\Process;
+use JsonException;
 use Superwire\Laravel\Data\WorkflowExecutionRequest;
 use Superwire\Laravel\Data\WorkflowExecutionResult;
 use Superwire\Laravel\Exceptions\WorkflowExecutionException;
@@ -97,6 +98,7 @@ final class WorkflowExecutor
 
     /**
      * @param array<string, mixed> $payload
+     * @throws JsonException
      */
     private function encodePayloadAsJsonObject(array $payload, string $payloadLabel): string
     {
