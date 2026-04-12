@@ -31,6 +31,7 @@ pub struct WorkflowCommand {
 impl WorkflowCommand {
     pub fn execute(self) -> Result<(), CommandError> {
         match self.command {
+            WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
         }
     }
@@ -38,7 +39,50 @@ impl WorkflowCommand {
 
 #[derive(Debug, Subcommand)]
 enum WorkflowSubcommand {
+    Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
+}
+
+#[derive(Debug, Args)]
+struct CheckWorkflowCommand {
+    #[arg(value_name = "WORKFLOW_PATH")]
+    workflow_path: PathBuf,
+}
+
+impl CheckWorkflowCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let workflow_source = fs::read_to_string(&self.workflow_path).map_err(|read_error| {
+            CommandError::invalid_input(format!(
+                "failed to read workflow file {}: {read_error}",
+                self.workflow_path.display()
+            ))
+        })?;
+
+        let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
+            CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &self.workflow_path.display().to_string()))
+        })?;
+
+        let runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
+            .map_err(|schema_context_error| CommandError::invalid_input(schema_context_error.message().to_string()))?;
+        let workflow_directory = self.workflow_path.parent().unwrap_or_else(|| Path::new("."));
+
+        runtime_schema_context
+            .with_scope(|| {
+                superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new_with_workflow_directory(
+                    parsed_workflow,
+                    workflow_directory,
+                )
+            })
+            .map_err(Self::map_workflow_runtime_error)?;
+
+        println!("workflow is valid");
+
+        Ok(())
+    }
+
+    fn map_workflow_runtime_error(runtime_error: WorkflowRuntimeError) -> CommandError {
+        CommandError::invalid_input(runtime_error.to_string())
+    }
 }
 
 #[derive(Debug, Args)]
