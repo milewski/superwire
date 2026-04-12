@@ -18,7 +18,7 @@ fn validates_workflow_file_when_check_command_succeeds() {
         }
     };
 
-    let workflow_file_path = temporary_workspace.write_file("valid.wire", &workflow_source);
+    let workflow_file_path = temporary_workspace.write_file("valid.wire", workflow_source);
 
     let command_output = run_workflow_check_command(workflow_file_path.as_path());
     let standard_output = String::from_utf8_lossy(&command_output.stdout);
@@ -40,7 +40,7 @@ fn rejects_workflow_file_with_invalid_reference_types() {
         }
     };
 
-    let workflow_file_path = temporary_workspace.write_file("invalid.wire", &workflow_source);
+    let workflow_file_path = temporary_workspace.write_file("invalid.wire", workflow_source);
 
     let command_output = run_workflow_check_command(workflow_file_path.as_path());
     let standard_error = String::from_utf8_lossy(&command_output.stderr);
