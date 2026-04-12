@@ -73,6 +73,28 @@ final class WorkflowExecutor
         }
     }
 
+    public function check(string $workflowFilePath): void
+    {
+        $command = [
+            (string) $this->config->get('superwire.cli.binary', 'cli'),
+            'workflow',
+            'check',
+            $workflowFilePath,
+        ];
+
+        $processResult = Process::path((string) $this->config->get('superwire.cli.working_directory', base_path()))
+            ->timeout((int) $this->config->get('superwire.cli.timeout_seconds', 120))
+            ->env([
+                'SUPERWIRE_INTERNAL_TOKEN' => (string) $this->config->get('superwire.runtime.internal_token', ''),
+                'SUPERWIRE_ERROR_FORMAT' => 'json',
+            ])
+            ->run($command);
+
+        if (!$processResult->successful()) {
+            throw $this->mapFailedProcessToException($command, $processResult);
+        }
+    }
+
     /**
      * @param array<string, mixed> $payload
      */
