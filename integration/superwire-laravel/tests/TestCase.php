@@ -36,6 +36,8 @@ abstract class TestCase extends OrchestraTestCase
         $application[ 'config' ]->set('superwire.runtime.internal_token', 'test-internal-token');
         $application[ 'config' ]->set('superwire.routes.middleware', []);
         $application[ 'config' ]->set('superwire.security.enforce_localhost_only', false);
+        $application[ 'config' ]->set('data', require __DIR__ . '/../vendor/spatie/laravel-data/config/data.php');
+        $application[ 'config' ]->set('data.validation_strategy', 'disabled');
     }
 
     protected function createTemporaryDirectory(string $prefix): string
