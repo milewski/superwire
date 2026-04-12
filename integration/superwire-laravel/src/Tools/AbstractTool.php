@@ -6,6 +6,7 @@ namespace Superwire\Laravel\Tools;
 
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use ReflectionException;
 use Spatie\LaravelData\Data;
 use Superwire\Laravel\Contracts\Tool;
 use Superwire\Laravel\Contracts\ToolBoundInputData;
@@ -130,6 +131,7 @@ abstract class AbstractTool implements Tool
     }
 
     /**
+     * @throws ReflectionException
      * @return array<string, mixed>
      */
     final public function execute(ToolInputData $agentInput, ToolBoundInputData $boundInput): array
