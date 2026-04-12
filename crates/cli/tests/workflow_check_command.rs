@@ -17,6 +17,7 @@ fn validates_workflow_file_when_check_command_succeeds() {
             ok: true
         }
     };
+
     let workflow_file_path = temporary_workspace.write_file("valid.wire", &workflow_source);
 
     let command_output = run_workflow_check_command(workflow_file_path.as_path());
@@ -38,6 +39,7 @@ fn rejects_workflow_file_with_invalid_reference_types() {
             summary: input.missing
         }
     };
+
     let workflow_file_path = temporary_workspace.write_file("invalid.wire", &workflow_source);
 
     let command_output = run_workflow_check_command(workflow_file_path.as_path());
@@ -71,12 +73,14 @@ fn cli_binary_path() -> PathBuf {
 
     let current_executable_path = std::env::current_exe()
         .unwrap_or_else(|current_executable_error| panic!("failed to resolve current test executable path: {current_executable_error}"));
+
     let target_profile_directory = current_executable_path.parent().and_then(Path::parent).unwrap_or_else(|| {
         panic!(
             "failed to derive target profile directory from {}",
             current_executable_path.display()
         )
     });
+
     let executable_file_name = format!("superwire-cli{}", std::env::consts::EXE_SUFFIX);
     let inferred_binary_path = target_profile_directory.join(executable_file_name);
 
@@ -128,6 +132,7 @@ fn unique_suffix() -> String {
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after unix epoch")
         .as_millis();
+
     let process_identifier = std::process::id();
 
     format!("{timestamp_millis}-{process_identifier}")
