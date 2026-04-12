@@ -6,10 +6,12 @@ namespace Superwire\Laravel\Tools\Execution;
 
 use InvalidArgumentException;
 use LogicException;
+use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionParameter;
+use ReflectionProperty;
 use ReflectionType;
 use ReflectionUnionType;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
@@ -102,6 +104,7 @@ final class ToolDataMapper
         $toolDataReflectionClass = new ReflectionClass($toolDataClassName);
         $toolDataSchema = Schema::object();
         $toolDataSchema->additionalProperties = false;
+        $toolDataSchema->description = $this->resolveClassDescription($toolDataReflectionClass);
         $requiredPropertyNames = [];
 
         foreach ($this->constructorParameters($toolDataReflectionClass) as $constructorParameter) {
@@ -114,6 +117,12 @@ final class ToolDataMapper
                     constructorParameter: $constructorParameter,
                 ),
             );
+
+            $propertySchema->description = $this->resolveParameterDescription(
+                toolDataReflectionClass: $toolDataReflectionClass,
+                constructorParameter: $constructorParameter,
+            );
+
             $toolDataSchema->setProperty($constructorParameter->getName(), $propertySchema);
 
             if (!$constructorParameter->isOptional()) {
@@ -280,6 +289,84 @@ final class ToolDataMapper
         $dataCollectionOf = $attributes[ 0 ]->newInstance();
 
         return $dataCollectionOf->class;
+    }
+
+    /**
+     * @param ReflectionClass<Data> $toolDataReflectionClass
+     */
+    private function resolveClassDescription(ReflectionClass $toolDataReflectionClass): ?string
+    {
+        return $this->extractDescriptionFromAttributes($toolDataReflectionClass->getAttributes());
+    }
+
+    /**
+     * @param ReflectionClass<Data> $toolDataReflectionClass
+     */
+    private function resolveParameterDescription(
+        ReflectionClass $toolDataReflectionClass,
+        ReflectionParameter $constructorParameter,
+    ): ?string {
+        $parameterDescription = $this->extractDescriptionFromAttributes($constructorParameter->getAttributes());
+
+        if (is_string($parameterDescription)) {
+            return $parameterDescription;
+        }
+
+        $property = $this->findPropertyForConstructorParameter($toolDataReflectionClass, $constructorParameter);
+
+        if (!$property instanceof ReflectionProperty) {
+            return null;
+        }
+
+        return $this->extractDescriptionFromAttributes($property->getAttributes());
+    }
+
+    /**
+     * @param ReflectionClass<Data> $toolDataReflectionClass
+     */
+    private function findPropertyForConstructorParameter(
+        ReflectionClass $toolDataReflectionClass,
+        ReflectionParameter $constructorParameter,
+    ): ?ReflectionProperty {
+        if (!$toolDataReflectionClass->hasProperty($constructorParameter->getName())) {
+            return null;
+        }
+
+        return $toolDataReflectionClass->getProperty($constructorParameter->getName());
+    }
+
+    /**
+     * @param array<int, ReflectionAttribute<object>> $attributes
+     */
+    private function extractDescriptionFromAttributes(array $attributes): ?string
+    {
+        foreach ($attributes as $attribute) {
+
+            if (class_basename($attribute->getName()) !== 'Description') {
+                continue;
+            }
+
+            $arguments = $attribute->getArguments();
+
+            if (isset($arguments[ 0 ]) && is_string($arguments[ 0 ]) && $arguments[ 0 ] !== '') {
+                return $arguments[ 0 ];
+            }
+
+            $attributeInstance = $attribute->newInstance();
+
+            foreach ([ 'text', 'description', 'value' ] as $propertyName) {
+
+                $propertyValue = data_get($attributeInstance, $propertyName);
+
+                if (is_string($propertyValue) && $propertyValue !== '') {
+                    return $propertyValue;
+                }
+
+            }
+
+        }
+
+        return null;
     }
 
     /**

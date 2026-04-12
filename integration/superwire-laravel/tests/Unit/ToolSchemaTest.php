@@ -4,7 +4,9 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests\Unit;
 
+use JsonException;
 use PHPUnit\Framework\AssertionFailedError;
+use Superwire\Laravel\Tests\Fixtures\DescribedTool;
 use Superwire\Laravel\Tests\Fixtures\EchoTool;
 use Superwire\Laravel\Tests\Fixtures\EchoToolAgentInput;
 use Superwire\Laravel\Tests\Fixtures\EchoToolBoundInput;
@@ -98,5 +100,35 @@ final class ToolSchemaTest extends TestCase
             'summary' => 'Clear +18C',
             'source' => 'wttr.in via laravel package',
         ]);
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function testInputSchemaIncludesDescriptionMetadataFromDescriptionAttributes(): void
+    {
+        $schemaPayload = json_decode(
+            json_encode(DescribedTool::inputSchema(), JSON_THROW_ON_ERROR),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+
+        $this->assertIsArray($schemaPayload);
+        $this->assertSame('Input payload with translation entries.', data_get($schemaPayload, 'description'));
+        $this->assertSame(
+            'Localized name entries. One per supported language.',
+            data_get($schemaPayload, 'properties.name.description'),
+        );
+        $this->assertSame('array', data_get($schemaPayload, 'properties.name.type'));
+        $this->assertSame('Single localized translation entry.', data_get($schemaPayload, 'properties.name.items.description'));
+        $this->assertSame(
+            'Language code such as en_US or zh_CN.',
+            data_get($schemaPayload, 'properties.name.items.properties.language.description'),
+        );
+        $this->assertSame(
+            'Localized text for the selected language.',
+            data_get($schemaPayload, 'properties.name.items.properties.value.description'),
+        );
     }
 }
