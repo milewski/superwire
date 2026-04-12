@@ -12,7 +12,9 @@ use ReflectionNamedType;
 use ReflectionParameter;
 use ReflectionType;
 use ReflectionUnionType;
+use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Data;
+use Spatie\LaravelData\DataCollection;
 use Swaggest\JsonSchema\Schema;
 use Throwable;
 
@@ -31,8 +33,6 @@ final class ToolDataMapper
     /**
      * @param class-string<Data> $toolDataClassName
      * @param array<string, mixed> $payload
-     *
-     * @throws ReflectionException
      */
     public function hydrateToolDataClass(string $toolDataClassName, array $payload, string $payloadContext): Data
     {
@@ -52,18 +52,15 @@ final class ToolDataMapper
 
         } catch (Throwable $throwable) {
 
-            throw new InvalidArgumentException(sprintf(
-                'failed to map %s payload into `%s`: %s',
-                $payloadContext,
-                $toolDataClassName,
-                $throwable->getMessage(),
-            ), previous: $throwable);
+            throw new InvalidArgumentException(
+                message: sprintf('failed to map %s payload into `%s`: %s', $payloadContext, $toolDataClassName, $throwable->getMessage()),
+                previous: $throwable,
+            );
 
         }
     }
 
     /**
-     * @throws ReflectionException
      * @return array<string, mixed>
      */
     public function extractToolDataPayload(Data $toolData): array
@@ -71,9 +68,7 @@ final class ToolDataMapper
         if (!$toolData instanceof Data) {
 
             throw new InvalidArgumentException(sprintf(
-                'tool data object `%s` must extend `%s`',
-                $toolData::class,
-                Data::class,
+                'tool data object `%s` must extend `%s`', $toolData::class, Data::class,
             ));
 
         }
@@ -83,8 +78,7 @@ final class ToolDataMapper
         if (!is_array($payload)) {
 
             throw new InvalidArgumentException(sprintf(
-                'tool data object `%s` must serialize into array payload',
-                $toolData::class,
+                'tool data object `%s` must serialize into array payload', $toolData::class,
             ));
 
         }
@@ -112,7 +106,14 @@ final class ToolDataMapper
 
         foreach ($this->constructorParameters($toolDataReflectionClass) as $constructorParameter) {
 
-            $propertySchema = $this->schemaFromType($constructorParameter->getType(), $visitedClassNames);
+            $propertySchema = $this->schemaFromType(
+                reflectionType: $constructorParameter->getType(),
+                visitedClassNames: $visitedClassNames,
+                dataCollectionItemClassName: $this->resolveDataCollectionItemClassName(
+                    toolDataReflectionClass: $toolDataReflectionClass,
+                    constructorParameter: $constructorParameter,
+                ),
+            );
             $toolDataSchema->setProperty($constructorParameter->getName(), $propertySchema);
 
             if (!$constructorParameter->isOptional()) {
@@ -133,14 +134,18 @@ final class ToolDataMapper
      *
      * @throws ReflectionException
      */
-    private function schemaFromType(?ReflectionType $reflectionType, array $visitedClassNames): Schema
+    private function schemaFromType(
+        ?ReflectionType $reflectionType,
+        array $visitedClassNames,
+        ?string $dataCollectionItemClassName,
+    ): Schema
     {
         if ($reflectionType === null) {
             return Schema::create();
         }
 
         if ($reflectionType instanceof ReflectionNamedType) {
-            return $this->schemaFromNamedType($reflectionType, $visitedClassNames);
+            return $this->schemaFromNamedType($reflectionType, $visitedClassNames, $dataCollectionItemClassName);
         }
 
         if ($reflectionType instanceof ReflectionUnionType) {
@@ -164,7 +169,11 @@ final class ToolDataMapper
                     throw new LogicException('unsupported reflection union member type');
                 }
 
-                $unionSchemas[] = $this->schemaFromNamedType($unionMemberType, $visitedClassNames);
+                $unionSchemas[] = $this->schemaFromNamedType(
+                    $unionMemberType,
+                    $visitedClassNames,
+                    $dataCollectionItemClassName,
+                );
 
             }
 
@@ -182,7 +191,11 @@ final class ToolDataMapper
      *
      * @throws ReflectionException
      */
-    private function schemaFromNamedType(ReflectionNamedType $namedType, array $visitedClassNames): Schema
+    private function schemaFromNamedType(
+        ReflectionNamedType $namedType,
+        array $visitedClassNames,
+        ?string $dataCollectionItemClassName,
+    ): Schema
     {
         if ($namedType->isBuiltin()) {
             return $this->schemaFromBuiltinType($namedType->getName());
@@ -194,9 +207,26 @@ final class ToolDataMapper
             return $this->buildSchemaFromToolDataClass($typeClassName, $visitedClassNames);
         }
 
+        if (is_a($typeClassName, DataCollection::class, true)) {
+
+            if (!is_string($dataCollectionItemClassName) || $dataCollectionItemClassName === '') {
+
+                throw new LogicException(sprintf(
+                    'unsupported data collection type `%s` without %s attribute',
+                    $typeClassName,
+                    DataCollectionOf::class,
+                ));
+
+            }
+
+            return $this->arraySchema(
+                $this->buildSchemaFromToolDataClass($dataCollectionItemClassName, $visitedClassNames),
+            );
+
+        }
+
         throw new LogicException(sprintf(
-            'unsupported non-data type `%s` in tool schema generation',
-            $typeClassName,
+            'unsupported non-data type `%s` in tool schema generation', $typeClassName,
         ));
     }
 
@@ -214,182 +244,42 @@ final class ToolDataMapper
         };
     }
 
-    private function arraySchema(): Schema
+    private function arraySchema(?Schema $itemsSchema = null): Schema
     {
         $arraySchema = Schema::create();
         $arraySchema->type = 'array';
 
+        if ($itemsSchema !== null) {
+            $arraySchema->items = $itemsSchema;
+        }
+
         return $arraySchema;
     }
 
-    private function payloadValueForType(mixed $payloadValue, ?ReflectionType $reflectionType, string $payloadPath): mixed
+    /**
+     * @param ReflectionClass<Data> $toolDataReflectionClass
+     * @return class-string<Data>|null
+     */
+    private function resolveDataCollectionItemClassName(
+        ReflectionClass $toolDataReflectionClass,
+        ReflectionParameter $constructorParameter,
+    ): ?string
     {
-        if ($reflectionType === null) {
-            return $payloadValue;
-        }
-
-        if ($reflectionType instanceof ReflectionNamedType) {
-            return $this->payloadValueForNamedType($payloadValue, $reflectionType, $payloadPath);
-        }
-
-        if ($reflectionType instanceof ReflectionUnionType) {
-
-            foreach ($reflectionType->getTypes() as $unionMemberType) {
-
-                if (!$unionMemberType instanceof ReflectionNamedType) {
-                    continue;
-                }
-
-                if ($unionMemberType->getName() === 'null' && $payloadValue === null) {
-                    return null;
-                }
-
-                if ($unionMemberType->getName() === 'null') {
-                    continue;
-                }
-
-                try {
-
-                    return $this->payloadValueForNamedType($payloadValue, $unionMemberType, $payloadPath);
-
-                } catch (InvalidArgumentException $invalidArgumentException) {
-
-                    continue;
-
-                }
-
-            }
-
-            throw new InvalidArgumentException(sprintf(
-                'field `%s` does not match any supported union type',
-                $payloadPath,
-            ));
-
-        }
-
-        throw new InvalidArgumentException(sprintf('unsupported reflection type for `%s`', $payloadPath));
-    }
-
-    private function payloadValueForNamedType(mixed $payloadValue, ReflectionNamedType $namedType, string $payloadPath): mixed
-    {
-        if ($payloadValue === null && $namedType->allowsNull()) {
+        if (!$toolDataReflectionClass->hasProperty($constructorParameter->getName())) {
             return null;
         }
 
-        if ($namedType->isBuiltin()) {
-            return $this->payloadValueForBuiltinType($payloadValue, $namedType->getName(), $payloadPath);
+        $property = $toolDataReflectionClass->getProperty($constructorParameter->getName());
+        $attributes = $property->getAttributes(DataCollectionOf::class);
+
+        if ($attributes === []) {
+            return null;
         }
 
-        $typeClassName = $namedType->getName();
+        /** @var DataCollectionOf $dataCollectionOf */
+        $dataCollectionOf = $attributes[ 0 ]->newInstance();
 
-        if (is_a($typeClassName, Data::class, true)) {
-
-            if (!is_array($payloadValue)) {
-
-                throw new InvalidArgumentException(sprintf(
-                    'field `%s` must be an object payload for `%s`, received `%s`',
-                    $payloadPath,
-                    $typeClassName,
-                    get_debug_type($payloadValue),
-                ));
-
-            }
-
-            return $this->hydrateToolDataClass($typeClassName, $payloadValue, $payloadPath);
-
-        }
-
-        throw new InvalidArgumentException(sprintf(
-            'field `%s` has unsupported type `%s`',
-            $payloadPath,
-            $typeClassName,
-        ));
-    }
-
-    private function payloadValueForBuiltinType(mixed $payloadValue, string $builtinTypeName, string $payloadPath): mixed
-    {
-        return match ($builtinTypeName) {
-            'string' => $this->assertPayloadType($payloadValue, 'string', $payloadPath),
-            'int' => $this->assertPayloadType($payloadValue, 'integer', $payloadPath),
-            'float' => $this->assertNumericPayloadType($payloadValue, $payloadPath),
-            'bool' => $this->assertPayloadType($payloadValue, 'boolean', $payloadPath),
-            'array' => $this->assertPayloadType($payloadValue, 'array', $payloadPath),
-            'object' => $this->assertPayloadType($payloadValue, 'object', $payloadPath),
-            'mixed' => $payloadValue,
-            default => throw new InvalidArgumentException(sprintf(
-                'field `%s` has unsupported builtin type `%s`',
-                $payloadPath,
-                $builtinTypeName,
-            )),
-        };
-    }
-
-    private function assertPayloadType(mixed $payloadValue, string $expectedTypeName, string $payloadPath): mixed
-    {
-        $hasExpectedType = match ($expectedTypeName) {
-            'string' => is_string($payloadValue),
-            'integer' => is_int($payloadValue),
-            'boolean' => is_bool($payloadValue),
-            'array' => is_array($payloadValue),
-            'object' => is_object($payloadValue),
-            default => false,
-        };
-
-        if ($hasExpectedType) {
-            return $payloadValue;
-        }
-
-        throw new InvalidArgumentException(sprintf(
-            'field `%s` must be %s, received `%s`',
-            $payloadPath,
-            $expectedTypeName,
-            get_debug_type($payloadValue),
-        ));
-    }
-
-    private function assertNumericPayloadType(mixed $payloadValue, string $payloadPath): float
-    {
-        if (is_float($payloadValue)) {
-            return $payloadValue;
-        }
-
-        if (is_int($payloadValue)) {
-            return (float) $payloadValue;
-        }
-
-        throw new InvalidArgumentException(sprintf(
-            'field `%s` must be number, received `%s`',
-            $payloadPath,
-            get_debug_type($payloadValue),
-        ));
-    }
-
-    private function payloadValueFromToolData(mixed $toolDataValue): mixed
-    {
-        if ($toolDataValue instanceof Data) {
-            return $this->extractToolDataPayload($toolDataValue);
-        }
-
-        if (is_array($toolDataValue)) {
-
-            $normalizedArray = [];
-
-            foreach ($toolDataValue as $arrayKey => $arrayValue) {
-                $normalizedArray[ $arrayKey ] = $this->payloadValueFromToolData($arrayValue);
-            }
-
-            return $normalizedArray;
-
-        }
-
-        if (is_string($toolDataValue) || is_int($toolDataValue) || is_float($toolDataValue) || is_bool($toolDataValue) || $toolDataValue === null) {
-            return $toolDataValue;
-        }
-
-        throw new InvalidArgumentException(sprintf(
-            'tool output contains unsupported value `%s`; only scalar, null, array, and data objects are supported',
-            get_debug_type($toolDataValue),
-        ));
+        return $dataCollectionOf->class;
     }
 
     /**
