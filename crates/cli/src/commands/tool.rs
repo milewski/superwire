@@ -30,8 +30,19 @@ interface types {
 
 interface tool {
     use types.{input, bounded-input, output};
+    use superwire:tool/types@0.1.0.{tool-error};
 
-    execute: func(input: input, bounded-input: bounded-input) -> result<output, string>;
+    execute: func(input: input, bounded-input: bounded-input) -> result<output, tool-error>;
+}
+";
+
+const BASE_TOOL_TYPES_WIT_SOURCE: &str = r"package superwire:tool@0.1.0;
+
+interface types {
+    record tool-error {
+        code: string,
+        message: string,
+    }
 }
 ";
 
@@ -74,6 +85,8 @@ impl InitToolCommand {
             .map_err(|error| CommandError::internal(format!("failed to create tool directory {}: {error}", output_directory.display())))?;
 
         let sample_wit_path = output_directory.join("sample-tool.wit");
+        let deps_directory = output_directory.join("deps");
+        let base_tool_types_path = deps_directory.join("tool.wit");
 
         if sample_wit_path.exists() {
             return Err(CommandError::invalid_input(format!(
@@ -85,8 +98,27 @@ impl InitToolCommand {
         fs::write(&sample_wit_path, SAMPLE_TOOL_WIT_SOURCE)
             .map_err(|error| CommandError::internal(format!("failed to write sample WIT file {}: {error}", sample_wit_path.display())))?;
 
+        fs::create_dir_all(&deps_directory).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to create dependency directory {}: {error}",
+                deps_directory.display()
+            ))
+        })?;
+
+        fs::write(&base_tool_types_path, BASE_TOOL_TYPES_WIT_SOURCE).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to write base tool types dependency {}: {error}",
+                base_tool_types_path.display()
+            ))
+        })?;
+
         println!("initialized {}", sample_wit_path.display());
+        println!("initialized {}", base_tool_types_path.display());
         println!("next: cli tool prepare {}", output_directory.display());
+        println!(
+            "tip: run `wasm-tools component wit {}` to validate package imports",
+            output_directory.display()
+        );
 
         Ok(())
     }
@@ -400,8 +432,8 @@ impl<'source> WitSource<'source> {
             return Err("`interface tool` execute success type must be `output`".to_string());
         }
 
-        if execute_signature.error != "tool-error" && execute_signature.error != "string" {
-            return Err("`interface tool` execute error type must be `string` or `tool-error`".to_string());
+        if execute_signature.error != "tool-error" {
+            return Err("`interface tool` execute error type must be `tool-error`".to_string());
         }
 
         for required_alias in ToolContractTypeName::all() {
@@ -576,10 +608,10 @@ impl<'source> WitSource<'source> {
         let result_source = execute_body[(parameters_source_end + 1)..].trim();
         let result_source = result_source
             .strip_prefix("->")
-            .ok_or_else(|| "`interface tool` execute must return `result<output, string>` or `result<output, tool-error>`".to_string())?
+            .ok_or_else(|| "`interface tool` execute must return `result<output, tool-error>`".to_string())?
             .trim();
         let Some(result_inner_source) = result_source.strip_prefix("result<").and_then(|source| source.strip_suffix('>')) else {
-            return Err("`interface tool` execute must return `result<output, string>` or `result<output, tool-error>`".to_string());
+            return Err("`interface tool` execute must return `result<output, tool-error>`".to_string());
         };
         let result_type_entries = result_inner_source
             .split(',')
@@ -588,7 +620,7 @@ impl<'source> WitSource<'source> {
             .collect::<Vec<_>>();
 
         if result_type_entries.len() != 2 {
-            return Err("`interface tool` execute must return `result<output, string>` or `result<output, tool-error>`".to_string());
+            return Err("`interface tool` execute must return `result<output, tool-error>`".to_string());
         }
 
         Ok(ParsedExecuteSignature {
@@ -936,7 +968,7 @@ mod tests {
 
             interface tool {
                 use types.{input, bounded-input, output};
-                use superwire:tool@0.1.0/types.{tool-error};
+                use superwire:tool/types@0.1.0.{tool-error};
 
                 execute: func(request: input, context: bounded-input) -> result<output, tool-error>;
             }",
@@ -1074,6 +1106,6 @@ mod tests {
             .parse_tool_contract()
             .expect_err("unsupported execute error type should fail");
 
-        assert!(parse_error.contains("error type must be `string` or `tool-error`"));
+        assert!(parse_error.contains("error type must be `tool-error`"));
     }
 }
