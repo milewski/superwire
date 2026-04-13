@@ -14,7 +14,7 @@ use crate::diagnostics::CommandError;
 
 const GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE: &str = include_str!("../../templates/cargo.toml.template");
 const GENERATED_TOOL_COMPONENT_SOURCE_TEMPLATE: &str = include_str!("../../templates/lib.rs.template");
-const EMBEDDED_TOOL_WIT_SOURCE: &str = include_str!("../../../../crates/core/wit/superwire-tool.wit");
+const EMBEDDED_TOOL_WIT_SOURCE: &str = include_str!("../../../../crates/core/wit/runtime/superwire-tool.wit");
 const EMBEDDED_WASM_TOOL_SDK_SOURCE: &str = include_str!("../../../../crates/wasm-tool-sdk/src/lib.rs");
 
 fn embedded_wasm_tool_sdk_source() -> String {
