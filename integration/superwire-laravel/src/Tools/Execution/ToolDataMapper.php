@@ -51,7 +51,7 @@ final class ToolDataMapper
 
         try {
 
-            return $toolDataClassName::from($payload);
+            return $toolDataClassName::from($this->normalizePayloadForToolDataClass($toolDataClassName, $payload));
 
         } catch (Throwable $throwable) {
 
@@ -61,6 +61,188 @@ final class ToolDataMapper
             );
 
         }
+    }
+
+    /**
+     * @param class-string<Data> $toolDataClassName
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizePayloadForToolDataClass(string $toolDataClassName, array $payload): array
+    {
+        $toolDataReflectionClass = new ReflectionClass($toolDataClassName);
+
+        foreach ($this->constructorParameters($toolDataReflectionClass) as $constructorParameter) {
+
+            $parameterName = $constructorParameter->getName();
+
+            if (!array_key_exists($parameterName, $payload)) {
+                continue;
+            }
+
+            $parameterValue = $payload[ $parameterName ];
+            $parameterType = $constructorParameter->getType();
+
+            $dataClassName = $this->resolveDataTypeClassName($parameterType);
+
+            if (is_string($dataClassName) && is_array($parameterValue)) {
+
+                $payload[ $parameterName ] = $this->normalizePayloadForToolDataClass($dataClassName, $parameterValue);
+                continue;
+
+            }
+
+            $dataCollectionClassName = $this->resolveDataCollectionTypeClassName($parameterType);
+            $dataCollectionItemClassName = $this->resolveDataCollectionItemClassName($toolDataReflectionClass, $constructorParameter);
+
+            if (is_string($dataCollectionClassName) && is_string($dataCollectionItemClassName) && is_array($parameterValue)) {
+                $payload[ $parameterName ] = $this->normalizeDataCollectionPayload($dataCollectionItemClassName, $parameterValue);
+            }
+
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param class-string<Data> $dataCollectionItemClassName
+     * @param array<int|string, mixed> $items
+     *
+     * @return array<int, mixed>
+     */
+    private function normalizeDataCollectionPayload(string $dataCollectionItemClassName, array $items): array
+    {
+        $normalizedItems = $items;
+
+        if (!array_is_list($normalizedItems) && $this->isKeyValueDataClass($dataCollectionItemClassName)) {
+
+            $normalizedItems = collect($normalizedItems)
+                ->map(static fn (mixed $value, string|int $key): array => [
+                    'key' => (string) $key,
+                    'value' => $value,
+                ])
+                ->values()
+                ->all();
+
+        }
+
+        return array_values(array_map(function (mixed $item) use ($dataCollectionItemClassName): mixed {
+
+            if (is_array($item)) {
+                return $this->normalizePayloadForToolDataClass($dataCollectionItemClassName, $item);
+            }
+
+            if ($this->isSingleValueDataClass($dataCollectionItemClassName)) {
+                return [ 'value' => $item ];
+            }
+
+            return $item;
+
+        }, $normalizedItems));
+    }
+
+    private function resolveDataTypeClassName(?ReflectionType $reflectionType): ?string
+    {
+        if ($reflectionType instanceof ReflectionNamedType) {
+
+            $typeName = $reflectionType->getName();
+
+            return $reflectionType->isBuiltin() || !is_a($typeName, Data::class, true)
+                ? null
+                : $typeName;
+
+        }
+
+        if ($reflectionType instanceof ReflectionUnionType) {
+
+            foreach ($reflectionType->getTypes() as $unionMemberType) {
+
+                if (!$unionMemberType instanceof ReflectionNamedType) {
+                    continue;
+                }
+
+                $typeName = $unionMemberType->getName();
+
+                if (!$unionMemberType->isBuiltin() && is_a($typeName, Data::class, true)) {
+                    return $typeName;
+                }
+
+            }
+
+        }
+
+        return null;
+    }
+
+    private function resolveDataCollectionTypeClassName(?ReflectionType $reflectionType): ?string
+    {
+        if ($reflectionType instanceof ReflectionNamedType) {
+
+            $typeName = $reflectionType->getName();
+
+            return $reflectionType->isBuiltin() || !is_a($typeName, DataCollection::class, true)
+                ? null
+                : $typeName;
+
+        }
+
+        if ($reflectionType instanceof ReflectionUnionType) {
+
+            foreach ($reflectionType->getTypes() as $unionMemberType) {
+
+                if (!$unionMemberType instanceof ReflectionNamedType) {
+                    continue;
+                }
+
+                $typeName = $unionMemberType->getName();
+
+                if (!$unionMemberType->isBuiltin() && is_a($typeName, DataCollection::class, true)) {
+                    return $typeName;
+                }
+
+            }
+
+        }
+
+        return null;
+    }
+
+    /**
+     * @param class-string<Data> $className
+     */
+    private function isSingleValueDataClass(string $className): bool
+    {
+        $reflectionClass = new ReflectionClass($className);
+        $constructor = $reflectionClass->getConstructor();
+
+        if ($constructor === null) {
+            return false;
+        }
+
+        $parameters = $constructor->getParameters();
+
+        return count($parameters) === 1 && $parameters[ 0 ]->getName() === 'value';
+    }
+
+    /**
+     * @param class-string<Data> $className
+     */
+    private function isKeyValueDataClass(string $className): bool
+    {
+        $reflectionClass = new ReflectionClass($className);
+        $constructor = $reflectionClass->getConstructor();
+
+        if ($constructor === null) {
+            return false;
+        }
+
+        $parameterNames = array_map(
+            static fn (ReflectionParameter $reflectionParameter): string => $reflectionParameter->getName(),
+            $constructor->getParameters(),
+        );
+
+        return $parameterNames === [ 'key', 'value' ];
     }
 
     /**
