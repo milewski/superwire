@@ -8,8 +8,6 @@ use crate::diagnostics::CommandError;
 
 const SAMPLE_TOOL_WIT_SOURCE: &str = r"package superwire:sample-tool@0.1.0;
 
-use superwire:tool@0.1.0/types.{tool-error};
-
 interface types {
     record create-task-request {
         task-group-id: u64,
@@ -32,9 +30,8 @@ interface types {
 
 interface tool {
     use types.{input, bounded-input, output};
-    use superwire:tool@0.1.0/types.{tool-error};
 
-    execute: func(input: input, bounded-input: bounded-input) -> result<output, tool-error>;
+    execute: func(input: input, bounded-input: bounded-input) -> result<output, string>;
 }
 ";
 
@@ -403,8 +400,8 @@ impl<'source> WitSource<'source> {
             return Err("`interface tool` execute success type must be `output`".to_string());
         }
 
-        if execute_signature.error != "tool-error" {
-            return Err("`interface tool` execute error type must be `tool-error`".to_string());
+        if execute_signature.error != "tool-error" && execute_signature.error != "string" {
+            return Err("`interface tool` execute error type must be `string` or `tool-error`".to_string());
         }
 
         for required_alias in ToolContractTypeName::all() {
@@ -579,10 +576,10 @@ impl<'source> WitSource<'source> {
         let result_source = execute_body[(parameters_source_end + 1)..].trim();
         let result_source = result_source
             .strip_prefix("->")
-            .ok_or_else(|| "`interface tool` execute must return `result<output, tool-error>`".to_string())?
+            .ok_or_else(|| "`interface tool` execute must return `result<output, string>` or `result<output, tool-error>`".to_string())?
             .trim();
         let Some(result_inner_source) = result_source.strip_prefix("result<").and_then(|source| source.strip_suffix('>')) else {
-            return Err("`interface tool` execute must return `result<output, tool-error>`".to_string());
+            return Err("`interface tool` execute must return `result<output, string>` or `result<output, tool-error>`".to_string());
         };
         let result_type_entries = result_inner_source
             .split(',')
@@ -591,7 +588,7 @@ impl<'source> WitSource<'source> {
             .collect::<Vec<_>>();
 
         if result_type_entries.len() != 2 {
-            return Err("`interface tool` execute must return `result<output, tool-error>`".to_string());
+            return Err("`interface tool` execute must return `result<output, string>` or `result<output, tool-error>`".to_string());
         }
 
         Ok(ParsedExecuteSignature {
@@ -1069,14 +1066,14 @@ mod tests {
             }
 
             interface tool {
-                execute: func(input: input, bounded-input: bounded-input) -> result<output, string>;
+                execute: func(input: input, bounded-input: bounded-input) -> result<output, u64>;
             }",
         );
 
         let parse_error = wit_source
             .parse_tool_contract()
-            .expect_err("non tool-error execute error type should fail");
+            .expect_err("unsupported execute error type should fail");
 
-        assert!(parse_error.contains("error type must be `tool-error`"));
+        assert!(parse_error.contains("error type must be `string` or `tool-error`"));
     }
 }
