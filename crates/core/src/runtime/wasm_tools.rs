@@ -14,7 +14,7 @@ use wasmtime::{Config, Engine, Store};
 
 mod contract {
     wasmtime::component::bindgen!({
-        path: "wit",
+        path: "wit/runtime",
         world: "superwire-tool",
     });
 }
