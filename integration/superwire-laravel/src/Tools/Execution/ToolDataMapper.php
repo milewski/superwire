@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use LogicException;
 use ReflectionAttribute;
 use ReflectionClass;
+use ReflectionEnum;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionParameter;
@@ -234,9 +235,43 @@ final class ToolDataMapper
 
         }
 
+        if (enum_exists($typeClassName)) {
+            return $this->schemaFromEnumType($typeClassName);
+        }
+
         throw new LogicException(sprintf(
             'unsupported non-data type `%s` in tool schema generation', $typeClassName,
         ));
+    }
+
+    /**
+     * @param class-string $enumClassName
+     */
+    private function schemaFromEnumType(string $enumClassName): Schema
+    {
+        $enumReflection = new ReflectionEnum($enumClassName);
+        $enumSchema = Schema::create();
+
+        if ($enumReflection->isBacked()) {
+
+            $backingType = $enumReflection->getBackingType()?->getName();
+            $enumSchema->type = $backingType === 'int' ? 'integer' : 'string';
+            $enumSchema->enum = array_map(
+                static fn ($case) => $case->getBackingValue(),
+                $enumReflection->getCases(),
+            );
+
+            return $enumSchema;
+
+        }
+
+        $enumSchema->type = 'string';
+        $enumSchema->enum = array_map(
+            static fn ($case) => $case->getName(),
+            $enumReflection->getCases(),
+        );
+
+        return $enumSchema;
     }
 
     private function schemaFromBuiltinType(string $builtinTypeName): Schema
