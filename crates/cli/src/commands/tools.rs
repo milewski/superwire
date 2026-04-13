@@ -1,9 +1,14 @@
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{collections::HashMap, ffi::OsString};
 
 use clap::{Args, Subcommand};
+use schemars::Schema;
+use serde_json::{Map, Value};
+use superwire_agent::ToolDefinition;
+use superwire_core::Tool;
 
 use crate::diagnostics::CommandError;
 
@@ -28,6 +33,7 @@ impl ToolsCommand {
     pub fn execute(self) -> Result<(), CommandError> {
         match self.command {
             ToolsSubcommand::Build(build_tools_command) => build_tools_command.execute(),
+            ToolsSubcommand::Inspect(inspect_tools_command) => inspect_tools_command.execute(),
         }
     }
 }
@@ -35,6 +41,447 @@ impl ToolsCommand {
 #[derive(Debug, Subcommand)]
 enum ToolsSubcommand {
     Build(BuildToolsCommand),
+    Inspect(InspectToolsCommand),
+}
+
+#[derive(Debug, Args)]
+struct InspectToolsCommand {
+    #[arg(value_name = "WASM_PATH")]
+    wasm_path: PathBuf,
+}
+
+impl InspectToolsCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let resolved_wasm_path = self.resolve_wasm_path()?;
+        let tool = Tool::<Value, Value, Map<String, Value>>::from_file(&resolved_wasm_path)
+            .map_err(|error| CommandError::invalid_input(format!("failed to load wasm tool {}: {error}", resolved_wasm_path.display())))?;
+        let rendered_tool_inspection = ToolInspectionReport::from_tool_definition(tool.definition())?.render();
+
+        println!("{rendered_tool_inspection}");
+
+        Ok(())
+    }
+
+    fn resolve_wasm_path(&self) -> Result<PathBuf, CommandError> {
+        let resolved_wasm_path = fs::canonicalize(&self.wasm_path)
+            .map_err(|_| CommandError::invalid_input(format!("path does not exist: {}", self.wasm_path.display())))?;
+
+        if !resolved_wasm_path.is_file() {
+            return Err(CommandError::invalid_input(format!(
+                "expected a .wasm file path, got non-file path: {}",
+                self.wasm_path.display()
+            )));
+        }
+
+        if resolved_wasm_path.extension().and_then(|extension| extension.to_str()) != Some("wasm") {
+            return Err(CommandError::invalid_input(format!(
+                "expected a .wasm file path, got: {}",
+                self.wasm_path.display()
+            )));
+        }
+
+        Ok(resolved_wasm_path)
+    }
+}
+
+struct ToolInspectionReport {
+    lines: Vec<String>,
+}
+
+impl ToolInspectionReport {
+    fn from_tool_definition(tool_definition: &ToolDefinition) -> Result<Self, CommandError> {
+        let output_styler = OutputStyler::for_stdout();
+        let mut report = Self { lines: Vec::new() };
+
+        report.lines.push(format!(
+            "{}: {}",
+            output_styler.label("tool"),
+            output_styler.tool_name(&tool_definition.name)
+        ));
+        report.lines.push(format!(
+            "{}: {}",
+            output_styler.label("description"),
+            output_styler.description(&tool_definition.description)
+        ));
+        report.lines.push(String::new());
+
+        report.push_schema_section("input schema", &tool_definition.parameters_schema, &output_styler)?;
+
+        if let Some(bound_input_schema) = &tool_definition.bound_parameters_schema {
+            report.lines.push(String::new());
+            report.push_schema_section("bound input schema", bound_input_schema, &output_styler)?;
+        }
+
+        if let Some(output_schema) = &tool_definition.output_schema {
+            report.lines.push(String::new());
+            report.push_schema_section("output schema", output_schema, &output_styler)?;
+        }
+
+        Ok(report)
+    }
+
+    fn push_schema_section(&mut self, section_name: &str, schema: &Schema, output_styler: &OutputStyler) -> Result<(), CommandError> {
+        let schema_value =
+            serde_json::to_value(schema).map_err(|error| CommandError::internal(format!("failed to serialize {section_name}: {error}")))?;
+        let mut schema_renderer = JsonSchemaRenderer::from_root_schema(&schema_value, section_name.to_string(), output_styler);
+
+        self.lines.push(format!("{}:", output_styler.section(section_name)));
+        schema_renderer.render_into(&mut self.lines);
+
+        Ok(())
+    }
+
+    fn render(self) -> String {
+        self.lines.join("\n")
+    }
+}
+
+struct OutputStyler {
+    colors_enabled: bool,
+}
+
+impl OutputStyler {
+    fn for_stdout() -> Self {
+        let terminal_supports_colors = std::io::stdout().is_terminal();
+        let no_color_requested = std::env::var_os("NO_COLOR").is_some();
+        let clicolor_value = std::env::var("CLICOLOR").ok();
+        let clicolor_disables_colors = clicolor_value.as_deref() == Some("0");
+
+        Self {
+            colors_enabled: terminal_supports_colors && !no_color_requested && !clicolor_disables_colors,
+        }
+    }
+
+    #[cfg(test)]
+    fn without_colors() -> Self {
+        Self { colors_enabled: false }
+    }
+
+    fn section(&self, value: &str) -> String {
+        self.paint(value, "1;36")
+    }
+
+    fn label(&self, value: &str) -> String {
+        self.paint(value, "1;33")
+    }
+
+    fn tool_name(&self, value: &str) -> String {
+        self.paint(value, "1;32")
+    }
+
+    fn value_type(&self, value: &str) -> String {
+        self.paint(value, "32")
+    }
+
+    fn description(&self, value: &str) -> String {
+        self.paint(value, "2;37")
+    }
+
+    fn required_marker(&self) -> String {
+        self.paint("[required]", "1;31")
+    }
+
+    fn paint(&self, value: &str, color_code: &str) -> String {
+        if self.colors_enabled {
+            format!("\x1b[{color_code}m{value}\x1b[0m")
+        } else {
+            value.to_string()
+        }
+    }
+}
+
+struct JsonSchemaRenderer<'schema, 'style> {
+    root_schema: &'schema Value,
+    schema_label: String,
+    active_references: Vec<String>,
+    output_styler: &'style OutputStyler,
+}
+
+impl<'schema, 'style> JsonSchemaRenderer<'schema, 'style> {
+    fn from_root_schema(root_schema: &'schema Value, schema_label: String, output_styler: &'style OutputStyler) -> Self {
+        Self {
+            root_schema,
+            schema_label,
+            active_references: Vec::new(),
+            output_styler,
+        }
+    }
+
+    fn render_into(&mut self, output_lines: &mut Vec<String>) {
+        let schema_label = self.schema_label.clone();
+
+        self.render_schema_node(self.root_schema, output_lines, 1, Some(schema_label.as_str()), false);
+    }
+
+    fn render_schema_node(
+        &mut self,
+        schema_node: &Value,
+        output_lines: &mut Vec<String>,
+        depth: usize,
+        node_name: Option<&str>,
+        required: bool,
+    ) {
+        let indentation = self.indentation(depth);
+
+        let required_marker = if required {
+            format!(" {}", self.output_styler.required_marker())
+        } else {
+            String::new()
+        };
+
+        let node_label = self.output_styler.label(node_name.unwrap_or("value"));
+        let value_type = self.describe_value_type(schema_node);
+        let description = self.schema_description(schema_node);
+        let type_segment = self.output_styler.value_type(&value_type);
+
+        if let Some(description) = description {
+            output_lines.push(format!(
+                "{indentation}- {node_label}{required_marker} -> {type_segment}; {}",
+                self.output_styler.description(description)
+            ));
+        } else {
+            output_lines.push(format!("{indentation}- {node_label}{required_marker} -> {type_segment}"));
+        }
+
+        if let Some(reference_target) = self.reference_target(schema_node) {
+            if self
+                .active_references
+                .iter()
+                .any(|active_reference| active_reference == reference_target)
+            {
+                let recursive_indentation = self.indentation(depth + 1);
+                output_lines.push(format!("{recursive_indentation}- recursive reference: {reference_target}"));
+
+                return;
+            }
+
+            if let Some(referenced_schema) = self.resolve_reference(reference_target).cloned() {
+                self.active_references.push(reference_target.to_string());
+                self.render_schema_node(&referenced_schema, output_lines, depth + 1, Some("referenced schema"), false);
+                self.active_references.pop();
+            }
+
+            return;
+        }
+
+        self.render_union_variants(schema_node, output_lines, depth);
+        self.render_object_properties(schema_node, output_lines, depth);
+        self.render_array_items(schema_node, output_lines, depth);
+    }
+
+    fn render_union_variants(&mut self, schema_node: &Value, output_lines: &mut Vec<String>, depth: usize) {
+        for (keyword, branch_label) in [("oneOf", "oneOf option"), ("anyOf", "anyOf option"), ("allOf", "allOf item")] {
+            let Some(union_values) = schema_node.get(keyword).and_then(Value::as_array) else {
+                continue;
+            };
+
+            for (union_index, union_value) in union_values.iter().enumerate() {
+                let union_label = format!("{branch_label} {}", union_index + 1);
+
+                self.render_schema_node(union_value, output_lines, depth + 1, Some(union_label.as_str()), false);
+            }
+        }
+    }
+
+    fn render_object_properties(&mut self, schema_node: &Value, output_lines: &mut Vec<String>, depth: usize) {
+        let Some(properties_object) = schema_node.get("properties").and_then(Value::as_object) else {
+            return;
+        };
+
+        let required_property_names = self.required_property_names(schema_node);
+        let mut sorted_property_names = properties_object.keys().cloned().collect::<Vec<_>>();
+
+        sorted_property_names.sort();
+
+        for property_name in sorted_property_names {
+            let Some(property_schema) = properties_object.get(&property_name) else {
+                continue;
+            };
+
+            let property_is_required = required_property_names.iter().any(|required_name| required_name == &property_name);
+
+            self.render_schema_node(
+                property_schema,
+                output_lines,
+                depth + 1,
+                Some(property_name.as_str()),
+                property_is_required,
+            );
+        }
+    }
+
+    fn render_array_items(&mut self, schema_node: &Value, output_lines: &mut Vec<String>, depth: usize) {
+        if let Some(tuple_item_schemas) = schema_node.get("prefixItems").and_then(Value::as_array) {
+            for (tuple_item_index, tuple_item_schema) in tuple_item_schemas.iter().enumerate() {
+                let tuple_item_label = format!("item {}", tuple_item_index + 1);
+
+                self.render_schema_node(tuple_item_schema, output_lines, depth + 1, Some(tuple_item_label.as_str()), false);
+            }
+        }
+
+        if let Some(item_schema) = schema_node.get("items") {
+            if let Some(tuple_item_schemas) = item_schema.as_array() {
+                for (tuple_item_index, tuple_item_schema) in tuple_item_schemas.iter().enumerate() {
+                    let tuple_item_label = format!("item {}", tuple_item_index + 1);
+
+                    self.render_schema_node(tuple_item_schema, output_lines, depth + 1, Some(tuple_item_label.as_str()), false);
+                }
+
+                return;
+            }
+
+            self.render_schema_node(item_schema, output_lines, depth + 1, Some("items"), false);
+        }
+
+        if let Some(additional_item_schema) = schema_node.get("additionalItems") {
+            self.render_schema_node(additional_item_schema, output_lines, depth + 1, Some("additional items"), false);
+        }
+    }
+
+    fn required_property_names(&self, schema_node: &Value) -> Vec<String> {
+        schema_node
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|required_values| {
+                required_values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    }
+
+    fn describe_value_type(&self, schema_node: &Value) -> String {
+        if let Some(enum_values) = schema_node.get("enum").and_then(Value::as_array) {
+            return format!("enum ({})", Self::join_display_values(enum_values));
+        }
+
+        if let Some(const_value) = schema_node.get("const") {
+            return format!("const ({})", Self::display_value(const_value));
+        }
+
+        if let Some(type_value) = schema_node.get("type") {
+            let mut rendered_type = Self::display_value_type_keyword(type_value);
+
+            if rendered_type == "array" {
+                if let Some(tuple_item_schemas) = schema_node.get("prefixItems").and_then(Value::as_array) {
+                    rendered_type = format!("tuple[{}]", tuple_item_schemas.len());
+                }
+
+                if let Some(tuple_item_schemas) = schema_node.get("items").and_then(Value::as_array) {
+                    rendered_type = format!("tuple[{}]", tuple_item_schemas.len());
+                }
+            }
+
+            return rendered_type;
+        }
+
+        if schema_node.get("properties").is_some() {
+            return "object".to_string();
+        }
+
+        if schema_node.get("items").is_some() {
+            return "array".to_string();
+        }
+
+        if let Some(tuple_item_schemas) = schema_node.get("prefixItems").and_then(Value::as_array) {
+            return format!("tuple[{}]", tuple_item_schemas.len());
+        }
+
+        if let Some(one_of_values) = schema_node.get("oneOf").and_then(Value::as_array) {
+            return format!("oneOf ({})", self.union_member_types(one_of_values));
+        }
+
+        if let Some(any_of_values) = schema_node.get("anyOf").and_then(Value::as_array) {
+            return format!("anyOf ({})", self.union_member_types(any_of_values));
+        }
+
+        if let Some(all_of_values) = schema_node.get("allOf").and_then(Value::as_array) {
+            return format!("allOf ({})", self.union_member_types(all_of_values));
+        }
+
+        if let Some(reference_target) = self.reference_target(schema_node) {
+            return format!("reference ({reference_target})");
+        }
+
+        "unknown".to_string()
+    }
+
+    fn union_member_types(&self, union_values: &[Value]) -> String {
+        let mut rendered_member_types = union_values
+            .iter()
+            .map(|union_value| self.describe_value_type(union_value))
+            .collect::<Vec<_>>();
+
+        rendered_member_types.sort();
+        rendered_member_types.dedup();
+
+        rendered_member_types.join(" | ")
+    }
+
+    fn schema_description<'value>(&self, schema_node: &'value Value) -> Option<&'value str> {
+        schema_node.get("description").and_then(Value::as_str)
+    }
+
+    fn reference_target<'value>(&self, schema_node: &'value Value) -> Option<&'value str> {
+        schema_node.get("$ref").and_then(Value::as_str)
+    }
+
+    fn resolve_reference(&self, reference_target: &str) -> Option<&Value> {
+        if !reference_target.starts_with("#/") {
+            return None;
+        }
+
+        let reference_segments = reference_target
+            .trim_start_matches("#/")
+            .split('/')
+            .map(Self::decode_reference_segment)
+            .collect::<Vec<_>>();
+
+        let mut current_schema = self.root_schema;
+
+        for reference_segment in reference_segments {
+            current_schema = current_schema.get(reference_segment.as_str())?;
+        }
+
+        Some(current_schema)
+    }
+
+    fn decode_reference_segment(reference_segment: &str) -> String {
+        reference_segment.replace("~1", "/").replace("~0", "~")
+    }
+
+    fn display_value_type_keyword(type_value: &Value) -> String {
+        match type_value {
+            Value::String(single_type_name) => single_type_name.clone(),
+            Value::Array(type_values) => {
+                let type_names = type_values.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+
+                if type_names.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    type_names.join(" | ")
+                }
+            }
+            _ => "unknown".to_string(),
+        }
+    }
+
+    fn display_value(value: &Value) -> String {
+        match value {
+            Value::String(string_value) => format!("\"{string_value}\""),
+            _ => value.to_string(),
+        }
+    }
+
+    fn join_display_values(values: &[Value]) -> String {
+        values.iter().map(Self::display_value).collect::<Vec<_>>().join(", ")
+    }
+
+    fn indentation(&self, depth: usize) -> String {
+        "  ".repeat(depth)
+    }
 }
 
 #[derive(Debug, Args)]
@@ -600,7 +1047,8 @@ fn write_embedded_wit_package(destination_directory: &Path) -> Result<(), Comman
 
 #[cfg(test)]
 mod tests {
-    use super::BuildToolsCommand;
+    use super::{BuildToolsCommand, JsonSchemaRenderer, OutputStyler};
+    use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -643,6 +1091,104 @@ mod tests {
         assert_eq!(build_layout.workflow_directory, workflow_directory);
         assert_eq!(build_layout.tool_source_paths.len(), 1);
         assert_eq!(build_layout.tool_source_paths[0], tool_sources_src_directory.join("weather.rs"));
+    }
+
+    #[test]
+    fn renders_required_properties_from_object_schema() {
+        let schema_value = json!({
+            "type": "object",
+            "description": "Request payload",
+            "required": ["city"],
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "City name"
+                },
+                "days": {
+                    "type": "integer"
+                }
+            }
+        });
+
+        let mut output_lines = Vec::new();
+        let output_styler = OutputStyler::without_colors();
+        let mut schema_renderer = JsonSchemaRenderer::from_root_schema(&schema_value, "input schema".to_string(), &output_styler);
+
+        schema_renderer.render_into(&mut output_lines);
+
+        let rendered_output = output_lines.join("\n");
+
+        assert!(rendered_output.contains("input schema -> object; Request payload"));
+        assert!(rendered_output.contains("city [required] -> string; City name"));
+        assert!(rendered_output.contains("days -> integer"));
+    }
+
+    #[test]
+    fn renders_schema_references() {
+        let schema_value = json!({
+            "$defs": {
+                "Coordinates": {
+                    "type": "object",
+                    "properties": {
+                        "latitude": { "type": "number" },
+                        "longitude": { "type": "number" }
+                    },
+                    "required": ["latitude", "longitude"]
+                }
+            },
+            "$ref": "#/$defs/Coordinates"
+        });
+        let mut output_lines = Vec::new();
+        let output_styler = OutputStyler::without_colors();
+        let mut schema_renderer = JsonSchemaRenderer::from_root_schema(&schema_value, "output schema".to_string(), &output_styler);
+
+        schema_renderer.render_into(&mut output_lines);
+
+        let rendered_output = output_lines.join("\n");
+
+        assert!(rendered_output.contains("output schema -> reference (#/$defs/Coordinates)"));
+        assert!(rendered_output.contains("referenced schema -> object"));
+        assert!(rendered_output.contains("latitude [required] -> number"));
+        assert!(rendered_output.contains("longitude [required] -> number"));
+    }
+
+    #[test]
+    fn renders_enum_union_and_tuple_types() {
+        let schema_value = json!({
+            "type": "object",
+            "properties": {
+                "status": {
+                    "enum": ["pending", "done"]
+                },
+                "payload": {
+                    "oneOf": [
+                        { "type": "string" },
+                        { "type": "integer" }
+                    ]
+                },
+                "coordinates": {
+                    "type": "array",
+                    "items": [
+                        { "type": "number" },
+                        { "type": "number" }
+                    ]
+                }
+            }
+        });
+
+        let mut output_lines = Vec::new();
+        let output_styler = OutputStyler::without_colors();
+        let mut schema_renderer = JsonSchemaRenderer::from_root_schema(&schema_value, "input schema".to_string(), &output_styler);
+
+        schema_renderer.render_into(&mut output_lines);
+
+        let rendered_output = output_lines.join("\n");
+
+        assert!(rendered_output.contains("status -> enum (\"pending\", \"done\")"));
+        assert!(rendered_output.contains("payload -> oneOf (integer | string)"));
+        assert!(rendered_output.contains("coordinates -> tuple[2]"));
+        assert!(rendered_output.contains("item 1 -> number"));
+        assert!(rendered_output.contains("item 2 -> number"));
     }
 
     fn create_temporary_workflow_directory() -> PathBuf {
