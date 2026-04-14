@@ -31,6 +31,8 @@ pub struct WorkflowCommand {
 impl WorkflowCommand {
     pub fn execute(self) -> Result<(), CommandError> {
         match self.command {
+            WorkflowSubcommand::Init(init_workflow_command) => init_workflow_command.execute(),
+            WorkflowSubcommand::Build(build_workflow_command) => build_workflow_command.execute(),
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
         }
@@ -39,6 +41,8 @@ impl WorkflowCommand {
 
 #[derive(Debug, Subcommand)]
 enum WorkflowSubcommand {
+    Init(InitWorkflowCommand),
+    Build(BuildWorkflowCommand),
     Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
 }
@@ -483,5 +487,305 @@ impl CliWorkflowTypeInference {
         }
 
         Ok(WorkflowType::Object(output_field_types).normalize())
+    }
+}
+
+#[derive(Debug, Args)]
+struct InitWorkflowCommand {
+    #[arg(value_name = "DIRECTORY", default_value = ".")]
+    directory: PathBuf,
+}
+
+impl InitWorkflowCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let dir = if self.directory.is_absolute() {
+            self.directory.clone()
+        } else {
+            Path::new(".").join(&self.directory)
+        };
+
+        fs::create_dir_all(&dir).map_err(|e| CommandError::internal(format!("create dir: {e}")))?;
+
+        let main_wire = dir.join("main.wire");
+        let tools_dir = dir.join("tools");
+
+        if main_wire.exists() {
+            return Err(CommandError::invalid_input(format!("file exists: {}", main_wire.display())));
+        }
+
+        if tools_dir.exists() {
+            return Err(CommandError::invalid_input(format!("dir exists: {}", tools_dir.display())));
+        }
+
+        fs::create_dir_all(&tools_dir).map_err(|e| CommandError::internal(format!("create tools: {e}")))?;
+
+        fs::write(&main_wire, WORKFLOW_INIT_TPL).map_err(|e| CommandError::internal(format!("write main: {e}")))?;
+        self.scaffold_tools(&tools_dir)?;
+
+        println!("initialized {}", main_wire.display());
+        println!("initialized {}", tools_dir.display());
+        println!("next: superwire-cli workflow check {}", main_wire.display());
+        Ok(())
+    }
+
+    fn scaffold_tools(&self, tools_dir: &Path) -> Result<(), CommandError> {
+        let src_dir = tools_dir.join("src");
+        let wit_dir = tools_dir.join("wit");
+
+        fs::create_dir_all(&src_dir).map_err(|e| CommandError::internal(format!("src dir: {e}")))?;
+        fs::create_dir_all(&wit_dir).map_err(|e| CommandError::internal(format!("wit dir: {e}")))?;
+
+        fs::write(tools_dir.join("Cargo.toml"), TOOL_CARGO_TPL).map_err(|e| CommandError::internal(format!("cargo: {e}")))?;
+        fs::write(src_dir.join("lib.rs"), TOOL_RS_TPL).map_err(|e| CommandError::internal(format!("tool src: {e}")))?;
+        fs::write(wit_dir.join("tool.wit"), TOOL_WIT_TPL).map_err(|e| CommandError::internal(format!("tool wit: {e}")))?;
+
+        println!("initialized {}", tools_dir.join("Cargo.toml").display());
+        println!("initialized {}", src_dir.join("lib.rs").display());
+        Ok(())
+    }
+}
+
+const WORKFLOW_INIT_TPL: &str = r#"input {
+    query: string
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "http://169.254.83.107:1234/v1"
+    api_key: "1234"
+    models: ["qwen3.5-9b"]
+}
+
+agent assistant {
+    model: openai("qwen3.5-9b")
+    tools: [tool.example_tool]
+
+    prompt: "You are a helpful assistant."
+
+    output: {
+        result: string
+    }
+}
+
+output {
+    result: agent.assistant.result
+}
+"#;
+
+const TOOL_CARGO_TPL: &str = r#"[package]
+name = "tool-example"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[workspace]
+
+[dependencies]
+serde_json = "1.0"
+wit-bindgen = "0.55.0"
+"#;
+
+const TOOL_RS_TPL: &str = r##"mod bindings {
+    wit_bindgen::generate!({
+        path: "wit",
+        world: "superwire-tool",
+    });
+
+    use super::*;
+
+    export!(ExampleTool);
+}
+
+use bindings::exports::superwire::tool::tool::{Guest, ToolDefinition, ToolError};
+
+pub struct ExampleTool;
+
+impl Guest for ExampleTool {
+    fn definition() -> Result<ToolDefinition, String> {
+        Ok(ToolDefinition {
+            name: "example_tool".to_string(),
+            description: "A simple example tool".to_string(),
+            parameters_schema_json: r#"{"type":"object","properties":{"query":{"type":"string"}}}"#.to_string(),
+            bound_parameters_schema_json: r#"{"type":"object"}"#.to_string(),
+            output_schema_json: r#"{"type":"object","properties":{"message":{"type":"string"}}}"#.to_string(),
+        })
+    }
+
+    fn execute(agent_input_json: String, _bound_input_json: String) -> Result<String, ToolError> {
+        let input: serde_json::Value = serde_json::from_str(&agent_input_json)
+            .map_err(|e| ToolError {
+                code: "parse_error".to_string(),
+                message: e.to_string(),
+            })?;
+
+        let query = input.get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+
+        let output = serde_json::json!({
+            "message": format!("processed: {}", query)
+        });
+
+        Ok(output.to_string())
+    }
+}
+"##;
+
+const TOOL_WIT_TPL: &str = r#"package superwire:tool@0.1.0;
+
+interface tool {
+    record tool-definition {
+        name: string,
+        description: string,
+        parameters-schema-json: string,
+        bound-parameters-schema-json: string,
+        output-schema-json: string,
+    }
+
+    record tool-error {
+        code: string,
+        message: string,
+    }
+
+    definition: func() -> result<tool-definition, string>;
+    execute: func(agent-input-json: string, bound-input-json: string) -> result<string, tool-error>;
+}
+
+interface marker {}
+
+world superwire-tool {
+    export tool;
+    export marker;
+}
+"#;
+
+#[derive(Debug, Args)]
+struct BuildWorkflowCommand {
+    #[arg(value_name = "DIRECTORY", default_value = ".")]
+    directory: PathBuf,
+
+    #[arg(long, value_name = "OUTPUT", default_value = "output.wasm")]
+    output: PathBuf,
+}
+
+impl BuildWorkflowCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let cwd = std::env::current_dir().map_err(|e| CommandError::internal(format!("cwd: {e}")))?;
+
+        let dir = if self.directory.is_absolute() {
+            if self.directory.join("main.wire").exists() {
+                self.directory.clone()
+            } else if self.directory.join("main.wire").exists() {
+                self.directory.clone()
+            } else {
+                cwd.join(&self.directory)
+            }
+        } else {
+            cwd.join(&self.directory)
+        };
+
+        let main_wire = dir.join("main.wire");
+        let tools_dir = dir.join("tools");
+
+        if !main_wire.exists() {
+            return Err(CommandError::invalid_input(format!("workflow not found: {}", main_wire.display())));
+        }
+
+        if !tools_dir.is_dir() {
+            return Err(CommandError::invalid_input(format!("tools dir not found: {}", tools_dir.display())));
+        }
+
+        self.build_tools(&tools_dir)?;
+        let output_path = dir.join(&self.output);
+        self.package_wasm(&tools_dir, &output_path)?;
+
+        println!("built {}", output_path.display());
+        Ok(())
+    }
+
+    fn build_tools(&self, tools_dir: &Path) -> Result<(), CommandError> {
+        let cargo = tools_dir.join("Cargo.toml");
+        if !cargo.exists() {
+            return Err(CommandError::invalid_input(format!("tool cargo not found: {}", cargo.display())));
+        }
+
+        println!("compiling tools to wasm...");
+        let output = std::process::Command::new("cargo")
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(cargo)
+            .arg("--target")
+            .arg("wasm32-unknown-unknown")
+            .output()
+            .map_err(|e| CommandError::internal(format!("cargo failed: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(CommandError::internal(format!("build failed: {stderr}")));
+        }
+
+        Ok(())
+    }
+
+    fn package_wasm(&self, tools_dir: &Path, output_path: &Path) -> Result<(), CommandError> {
+        let wasm_dir = tools_dir.join("target/wasm32-unknown-unknown/debug");
+        let wit_dir = tools_dir.join("wit");
+
+        let wasm_files: Vec<PathBuf> = std::fs::read_dir(&wasm_dir)
+            .map_err(|e| CommandError::internal(format!("read wasm dir: {e}")))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map(|ext| ext == "wasm").unwrap_or(false))
+            .map(|e| e.path().to_owned())
+            .collect();
+
+        if wasm_files.is_empty() {
+            return Err(CommandError::internal(format!("no wasm output in {}", wasm_dir.display())));
+        }
+
+        for wasm_file in &wasm_files {
+            let file_name = wasm_file.file_name().unwrap().to_string_lossy();
+            let target_path = tools_dir.join(&*file_name);
+
+            let embed_path = tools_dir.join(format!(".embed_{}", file_name));
+            let embed_output = std::process::Command::new("wasm-tools")
+                .arg("component")
+                .arg("embed")
+                .arg(&wit_dir)
+                .arg(wasm_file)
+                .arg("-o")
+                .arg(&embed_path)
+                .output()
+                .map_err(|e| CommandError::internal(format!("wasm-tools embed failed: {e}")))?;
+
+            if !embed_output.status.success() {
+                let stderr = String::from_utf8_lossy(&embed_output.stderr);
+                return Err(CommandError::internal(format!("wasm-tools embed failed: {stderr}")));
+            }
+
+            let component_output = std::process::Command::new("wasm-tools")
+                .arg("component")
+                .arg("new")
+                .arg(&embed_path)
+                .arg("-o")
+                .arg(&target_path)
+                .output()
+                .map_err(|e| CommandError::internal(format!("wasm-tools component new failed: {e}")))?;
+
+            if !component_output.status.success() {
+                let stderr = String::from_utf8_lossy(&component_output.stderr);
+                return Err(CommandError::internal(format!("wasm-tools component new failed: {stderr}")));
+            }
+
+            let _ = std::fs::remove_file(&embed_path);
+        }
+
+        let first_file_name = wasm_files[0].file_name().unwrap().to_string_lossy();
+        let wasm_bytes = fs::read(tools_dir.join(&*first_file_name)).map_err(|e| CommandError::internal(format!("read wasm: {e}")))?;
+        fs::write(output_path, &wasm_bytes).map_err(|e| CommandError::internal(format!("write output: {e}")))?;
+
+        Ok(())
     }
 }
