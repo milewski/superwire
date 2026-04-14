@@ -4,47 +4,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 
+use crate::commands::tool_init::scaffold_tool_project;
 use crate::diagnostics::CommandError;
-
-const SAMPLE_TOOL_WIT_SOURCE: &str = r"package superwire:sample-tool@0.1.0;
-
-interface types {
-    record create-task-request {
-        task-group-id: u64,
-    }
-
-    record workspace-context {
-        workspace-id: u64,
-        project-id: u64,
-    }
-
-    record create-task-result {
-        task-id: u64,
-        number: u64,
-    }
-
-    type input = create-task-request;
-    type bounded-input = workspace-context;
-    type output = create-task-result;
-}
-
-interface tool {
-    use types.{input, bounded-input, output};
-    use superwire:tool/types@0.1.0.{tool-error};
-
-    execute: func(input: input, bounded-input: bounded-input) -> result<output, tool-error>;
-}
-";
-
-const BASE_TOOL_TYPES_WIT_SOURCE: &str = r"package superwire:tool@0.1.0;
-
-interface types {
-    record tool-error {
-        code: string,
-        message: string,
-    }
-}
-";
 
 #[derive(Debug, Args)]
 pub struct ToolCommand {
@@ -71,6 +32,9 @@ enum ToolSubcommand {
 struct InitToolCommand {
     #[arg(value_name = "DIRECTORY", default_value = ".")]
     directory: PathBuf,
+
+    #[arg(long, value_name = "LANGUAGE")]
+    language: String,
 }
 
 impl InitToolCommand {
@@ -84,41 +48,13 @@ impl InitToolCommand {
         fs::create_dir_all(&output_directory)
             .map_err(|error| CommandError::internal(format!("failed to create tool directory {}: {error}", output_directory.display())))?;
 
-        let sample_wit_path = output_directory.join("sample-tool.wit");
-        let deps_directory = output_directory.join("deps");
-        let base_tool_types_path = deps_directory.join("tool.wit");
+        let written_paths = scaffold_tool_project(&self.language, &output_directory)?;
 
-        if sample_wit_path.exists() {
-            return Err(CommandError::invalid_input(format!(
-                "sample file already exists: {}",
-                sample_wit_path.display()
-            )));
+        for written_path in written_paths {
+            println!("initialized {}", written_path.display());
         }
 
-        fs::write(&sample_wit_path, SAMPLE_TOOL_WIT_SOURCE)
-            .map_err(|error| CommandError::internal(format!("failed to write sample WIT file {}: {error}", sample_wit_path.display())))?;
-
-        fs::create_dir_all(&deps_directory).map_err(|error| {
-            CommandError::internal(format!(
-                "failed to create dependency directory {}: {error}",
-                deps_directory.display()
-            ))
-        })?;
-
-        fs::write(&base_tool_types_path, BASE_TOOL_TYPES_WIT_SOURCE).map_err(|error| {
-            CommandError::internal(format!(
-                "failed to write base tool types dependency {}: {error}",
-                base_tool_types_path.display()
-            ))
-        })?;
-
-        println!("initialized {}", sample_wit_path.display());
-        println!("initialized {}", base_tool_types_path.display());
-        println!("next: cli tool prepare {}", output_directory.display());
-        println!(
-            "tip: run `wasm-tools component wit {}` to validate package imports",
-            output_directory.display()
-        );
+        println!("next: cargo check --manifest-path {}/Cargo.toml", output_directory.display());
 
         Ok(())
     }
@@ -938,8 +874,60 @@ impl<'specification> PhpSourceRenderer<'specification> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::env;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::process;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{PhpSourceRenderer, ToolContract, ToolContractTypeName, ToolSpecification, WitField, WitRecord, WitSource, WitType};
+    use super::{
+        InitToolCommand, PhpSourceRenderer, ToolContract, ToolContractTypeName, ToolSpecification, WitField, WitRecord, WitSource, WitType,
+    };
+
+    static TEMPORARY_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn initializes_rust_tool_project_without_language_output_subdirectory() {
+        let root_directory = create_temporary_directory("tool-init-rust");
+        let init_tool_command = InitToolCommand {
+            directory: root_directory.clone(),
+            language: "rust".to_string(),
+        };
+
+        init_tool_command.execute().expect("rust project scaffold should be created");
+
+        assert!(root_directory.join("Cargo.toml").is_file());
+        assert!(root_directory.join("src/lib.rs").is_file());
+        assert!(root_directory.join("src/example_tool.rs").is_file());
+        assert!(root_directory.join("wit/deps/tool.wit").is_file());
+        assert!(root_directory.join("wit/world.wit").is_file());
+
+        let example_tool_source =
+            fs::read_to_string(root_directory.join("src/example_tool.rs")).expect("example tool source should be readable");
+        let example_tool_wit_source =
+            fs::read_to_string(root_directory.join("wit/world.wit")).expect("example tool wit source should be readable");
+
+        assert!(example_tool_source.contains("wit_bindgen::generate!"));
+        assert!(example_tool_source.contains("fn execute(input: Input, bounded_input: Option<BoundedInput>)"));
+        assert!(example_tool_wit_source.contains("use superwire:tool/types@0.1.0.{tool-error};"));
+        assert!(example_tool_wit_source.contains("export superwire:tool/marker@0.1.0;"));
+        assert!(example_tool_wit_source.contains("world superwire-tool"));
+    }
+
+    #[test]
+    fn rejects_unknown_init_language() {
+        let root_directory = create_temporary_directory("tool-init-invalid-language");
+        let init_tool_command = InitToolCommand {
+            directory: root_directory,
+            language: "go".to_string(),
+        };
+
+        let command_error = init_tool_command
+            .execute()
+            .expect_err("unsupported language should return an error");
+
+        assert!(command_error.to_string().contains("supported languages: rust"));
+    }
 
     #[test]
     fn parses_wit_records_from_types_interface() {
@@ -1107,5 +1095,14 @@ mod tests {
             .expect_err("unsupported execute error type should fail");
 
         assert!(parse_error.contains("error type must be `tool-error`"));
+    }
+
+    fn create_temporary_directory(prefix: &str) -> PathBuf {
+        let sequence_value = TEMPORARY_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary_directory = env::temp_dir().join(format!("superwire-cli-{prefix}-{}-{sequence_value}", process::id()));
+
+        fs::create_dir_all(&temporary_directory).expect("temporary directory should be created");
+
+        temporary_directory
     }
 }
