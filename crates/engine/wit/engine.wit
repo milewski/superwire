@@ -1,0 +1,14 @@
+package superwire:engine@0.1.0;
+
+interface runner {
+  record run-result {
+    ok: option<string>,
+    err: option<string>,
+  }
+
+  run-workflow: func(workflow-path: string, input-json: string) -> run-result;
+}
+
+world engine {
+  export runner;
+}
