@@ -1,6 +1,15 @@
 use schemars::{schema_for, JsonSchema};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct EmptyInput {}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct EmptyBoundInput {}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct EmptyOutput {}
 
 #[derive(Debug, Clone)]
 pub struct ToolMetadata {

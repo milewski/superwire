@@ -16,6 +16,60 @@ const GENERATED_TOOL_CARGO_MANIFEST_TEMPLATE: &str = include_str!("../../templat
 const GENERATED_TOOL_COMPONENT_SOURCE_TEMPLATE: &str = include_str!("../../templates/lib.rs.template");
 const EMBEDDED_TOOL_WIT_SOURCE: &str = include_str!("../../../../crates/core/wit/runtime/superwire-tool.wit");
 const EMBEDDED_WASM_TOOL_SDK_SOURCE: &str = include_str!("../../../../crates/wasm-tool-sdk/src/lib.rs");
+const TOOL_SOURCES_MANIFEST_TEMPLATE: &str = r#"[package]
+name = "tool-sources"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+"#;
+const TOOL_SOURCES_LIB_TEMPLATE: &str = "pub mod {{tool_name}};\n";
+const TOOL_SOURCE_TEMPLATE: &str = r#"use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct {{tool_type_name}}Input {
+    pub query: String,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct {{tool_type_name}}BoundInput {
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct {{tool_type_name}}Output {
+    pub message: String,
+    pub workspace_id: Option<String>,
+}
+
+pub struct {{tool_type_name}};
+
+impl Tool for {{tool_type_name}} {
+    type AgentInput = {{tool_type_name}}Input;
+    type BoundInput = {{tool_type_name}}BoundInput;
+    type Output = {{tool_type_name}}Output;
+
+    fn metadata() -> ToolMetadata {
+        ToolMetadata::new("{{tool_name}}", "Describe what this tool does")
+    }
+
+    async fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
+        let resolved_limit = agent_input.limit.unwrap_or(10);
+        let message = format!("query={}, limit={resolved_limit}", agent_input.query);
+
+        Ok({{tool_type_name}}Output {
+            message,
+            workspace_id: bound_input.workspace_id,
+        })
+    }
+}
+"#;
 
 fn embedded_wasm_tool_sdk_source() -> String {
     EMBEDDED_WASM_TOOL_SDK_SOURCE
@@ -32,6 +86,7 @@ pub struct ToolsCommand {
 impl ToolsCommand {
     pub fn execute(self) -> Result<(), CommandError> {
         match self.command {
+            ToolsSubcommand::Init(init_tools_command) => init_tools_command.execute(),
             ToolsSubcommand::Build(build_tools_command) => build_tools_command.execute(),
             ToolsSubcommand::Inspect(inspect_tools_command) => inspect_tools_command.execute(),
         }
@@ -40,8 +95,133 @@ impl ToolsCommand {
 
 #[derive(Debug, Subcommand)]
 enum ToolsSubcommand {
+    Init(InitToolsCommand),
     Build(BuildToolsCommand),
     Inspect(InspectToolsCommand),
+}
+
+#[derive(Debug, Args)]
+struct InitToolsCommand {
+    #[arg(value_name = "DIRECTORY", default_value = ".")]
+    directory: PathBuf,
+
+    #[arg(long, value_name = "TOOL_NAME", default_value = "example_tool")]
+    tool_name: String,
+}
+
+impl InitToolsCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        self.validate_tool_name()?;
+
+        let output_directory = if self.directory.is_absolute() {
+            self.directory.clone()
+        } else {
+            Path::new(".").join(&self.directory)
+        };
+
+        fs::create_dir_all(&output_directory).map_err(|error| {
+            CommandError::internal(format!("failed to create output directory {}: {error}", output_directory.display()))
+        })?;
+
+        let tool_sources_directory = output_directory.join("tool-sources");
+        let tool_sources_source_directory = tool_sources_directory.join("src");
+        let tool_sources_manifest_path = tool_sources_directory.join("Cargo.toml");
+        let tool_sources_lib_path = tool_sources_source_directory.join("lib.rs");
+        let tool_source_path = tool_sources_source_directory.join(format!("{}.rs", self.tool_name));
+
+        Self::ensure_paths_do_not_exist([
+            tool_sources_manifest_path.as_path(),
+            tool_sources_lib_path.as_path(),
+            tool_source_path.as_path(),
+        ])?;
+
+        fs::create_dir_all(&tool_sources_source_directory).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to create tool source directory {}: {error}",
+                tool_sources_source_directory.display()
+            ))
+        })?;
+
+        fs::write(&tool_sources_manifest_path, TOOL_SOURCES_MANIFEST_TEMPLATE).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to write tool sources manifest {}: {error}",
+                tool_sources_manifest_path.display()
+            ))
+        })?;
+
+        let tool_sources_lib_source = TOOL_SOURCES_LIB_TEMPLATE.replace("{{tool_name}}", &self.tool_name);
+        fs::write(&tool_sources_lib_path, tool_sources_lib_source)
+            .map_err(|error| CommandError::internal(format!("failed to write source file {}: {error}", tool_sources_lib_path.display())))?;
+
+        let tool_type_name = Self::tool_type_name(&self.tool_name);
+        let tool_source = TOOL_SOURCE_TEMPLATE
+            .replace("{{tool_name}}", &self.tool_name)
+            .replace("{{tool_type_name}}", &tool_type_name);
+
+        fs::write(&tool_source_path, tool_source)
+            .map_err(|error| CommandError::internal(format!("failed to write source file {}: {error}", tool_source_path.display())))?;
+
+        println!("initialized {}", tool_sources_manifest_path.display());
+        println!("initialized {}", tool_sources_lib_path.display());
+        println!("initialized {}", tool_source_path.display());
+        println!("next: superwire-cli tools build {}", output_directory.display());
+
+        Ok(())
+    }
+
+    fn validate_tool_name(&self) -> Result<(), CommandError> {
+        if self.tool_name.is_empty() {
+            return Err(CommandError::invalid_input("tool name cannot be empty"));
+        }
+
+        let first_character = self.tool_name.chars().next().unwrap_or_default();
+
+        if !first_character.is_ascii_lowercase() {
+            return Err(CommandError::invalid_input("tool name must start with a lowercase ASCII letter"));
+        }
+
+        if !self
+            .tool_name
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+        {
+            return Err(CommandError::invalid_input(
+                "tool name can only contain lowercase ASCII letters, digits, and underscores",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn ensure_paths_do_not_exist<'path>(paths: impl IntoIterator<Item = &'path Path>) -> Result<(), CommandError> {
+        for path in paths {
+            if path.exists() {
+                return Err(CommandError::invalid_input(format!("file already exists: {}", path.display())));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn tool_type_name(tool_name: &str) -> String {
+        let mut converted_name = String::new();
+
+        for tool_name_segment in tool_name.split('_') {
+            let mut segment_characters = tool_name_segment.chars();
+
+            let Some(first_character) = segment_characters.next() else {
+                continue;
+            };
+
+            converted_name.push(first_character.to_ascii_uppercase());
+
+            for character in segment_characters {
+                converted_name.push(character);
+            }
+        }
+
+        converted_name
+    }
 }
 
 #[derive(Debug, Args)]
@@ -999,23 +1179,7 @@ impl BuildToolsCommand {
     }
 
     fn tool_type_name(&self, tool_name: &str) -> String {
-        let mut converted_name = String::new();
-
-        for tool_name_segment in tool_name.split('_') {
-            let mut segment_characters = tool_name_segment.chars();
-
-            let Some(first_character) = segment_characters.next() else {
-                continue;
-            };
-
-            converted_name.push(first_character.to_ascii_uppercase());
-
-            for character in segment_characters {
-                converted_name.push(character);
-            }
-        }
-
-        converted_name
+        InitToolsCommand::tool_type_name(tool_name)
     }
 }
 
@@ -1047,7 +1211,7 @@ fn write_embedded_wit_package(destination_directory: &Path) -> Result<(), Comman
 
 #[cfg(test)]
 mod tests {
-    use super::{BuildToolsCommand, JsonSchemaRenderer, OutputStyler};
+    use super::{BuildToolsCommand, InitToolsCommand, JsonSchemaRenderer, OutputStyler};
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
@@ -1067,6 +1231,53 @@ mod tests {
 
         assert_eq!(build_tools_command.tool_type_name("weather"), "Weather");
         assert_eq!(build_tools_command.tool_type_name("knowledge_base_search"), "KnowledgeBaseSearch");
+    }
+
+    #[test]
+    fn initializes_rust_tool_sources_template() {
+        let temporary_directory = create_temporary_workflow_directory();
+        let project_directory = temporary_directory.join("scaffold");
+        let init_tools_command = InitToolsCommand {
+            directory: project_directory.clone(),
+            tool_name: "hello_tool".to_string(),
+        };
+
+        init_tools_command.execute().expect("init command should write scaffold files");
+
+        let manifest_path = project_directory.join("tool-sources/Cargo.toml");
+        let module_path = project_directory.join("tool-sources/src/lib.rs");
+        let tool_path = project_directory.join("tool-sources/src/hello_tool.rs");
+
+        assert!(manifest_path.is_file());
+        assert!(module_path.is_file());
+        assert!(tool_path.is_file());
+
+        let module_source = fs::read_to_string(module_path).expect("module source should be readable");
+        let tool_source = fs::read_to_string(tool_path).expect("tool source should be readable");
+
+        assert!(module_source.contains("pub mod hello_tool;"));
+        assert!(tool_source.contains("pub struct HelloToolInput"));
+        assert!(tool_source.contains("pub struct HelloToolBoundInput"));
+        assert!(tool_source.contains("pub struct HelloToolOutput"));
+        assert!(tool_source.contains("type AgentInput = HelloToolInput;"));
+        assert!(tool_source.contains("type BoundInput = HelloToolBoundInput;"));
+        assert!(tool_source.contains("type Output = HelloToolOutput;"));
+    }
+
+    #[test]
+    fn rejects_invalid_tool_name_when_initializing_template() {
+        let temporary_directory = create_temporary_workflow_directory();
+        let project_directory = temporary_directory.join("invalid");
+        let init_tools_command = InitToolsCommand {
+            directory: project_directory,
+            tool_name: "HelloTool".to_string(),
+        };
+
+        let command_error = init_tools_command
+            .execute()
+            .expect_err("init command should reject invalid tool names");
+
+        assert!(command_error.to_string().contains("must start with a lowercase ASCII letter"));
     }
 
     #[test]
