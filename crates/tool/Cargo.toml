@@ -1,0 +1,22 @@
+[package]
+name = "superwire-tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+wasmtime = "30.0"
+wasmtime-wasi = "30.0"
+wasi-common = "30.0"
+once_cell = "1.20"
+wasmtime-component-macro = "30.0"
+wasmtime-component-util = "30.0"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile = "3.8"
+
+[lints]
+workspace = true

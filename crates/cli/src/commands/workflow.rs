@@ -15,6 +15,7 @@ use superwire_core::runtime::{
     types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType},
     WorkflowRuntimeError,
 };
+use superwire_tool::ToolBackend;
 
 use crate::diagnostics::CommandError;
 
@@ -32,6 +33,7 @@ impl WorkflowCommand {
     pub fn execute(self) -> Result<(), CommandError> {
         match self.command {
             WorkflowSubcommand::Init(init_workflow_command) => init_workflow_command.execute(),
+            WorkflowSubcommand::Inspect(inspect_command) => inspect_command.execute(),
             WorkflowSubcommand::Build(build_workflow_command) => build_workflow_command.execute(),
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
@@ -42,6 +44,7 @@ impl WorkflowCommand {
 #[derive(Debug, Subcommand)]
 enum WorkflowSubcommand {
     Init(InitWorkflowCommand),
+    Inspect(InspectCommand),
     Build(BuildWorkflowCommand),
     Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
@@ -545,6 +548,32 @@ impl InitWorkflowCommand {
     }
 }
 
+#[derive(Debug, Args)]
+struct InspectCommand {
+    #[arg(value_name = "TOOL_PATH")]
+    tool_path: PathBuf,
+}
+
+impl InspectCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let path = self.tool_path;
+
+        if !path.exists() {
+            return Err(CommandError::invalid_input(format!("tool file not found: {}", path.display())));
+        }
+
+        let backend = superwire_tool::backend::wasm::WasmBackend::new(&path).map_err(|e| CommandError::internal(e.to_string()))?;
+
+        let descriptor = backend.describe().map_err(|e| CommandError::internal(e.to_string()))?;
+
+        let json = serde_json::to_string_pretty(&descriptor).map_err(|e| CommandError::internal(e.to_string()))?;
+
+        println!("{json}");
+
+        Ok(())
+    }
+}
+
 const WORKFLOW_INIT_TPL: &str = r#"input {
     query: string
 }
@@ -634,7 +663,7 @@ impl Guest for ExampleTool {
 }
 "##;
 
-const TOOL_WIT_TPL: &str = r#"package superwire:tool@0.1.0;
+const TOOL_WIT_TPL: &str = r"package superwire:tool@0.1.0;
 
 interface tool {
     record tool-definition {
@@ -660,7 +689,7 @@ world superwire-tool {
     export tool;
     export marker;
 }
-"#;
+";
 
 #[derive(Debug, Args)]
 struct BuildWorkflowCommand {
@@ -736,9 +765,9 @@ impl BuildWorkflowCommand {
 
         let wasm_files: Vec<PathBuf> = std::fs::read_dir(&wasm_dir)
             .map_err(|e| CommandError::internal(format!("read wasm dir: {e}")))?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map(|ext| ext == "wasm").unwrap_or(false))
-            .map(|e| e.path().to_owned())
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "wasm"))
+            .map(|e| e.path().clone())
             .collect();
 
         if wasm_files.is_empty() {
@@ -749,7 +778,7 @@ impl BuildWorkflowCommand {
             let file_name = wasm_file.file_name().unwrap().to_string_lossy();
             let target_path = tools_dir.join(&*file_name);
 
-            let embed_path = tools_dir.join(format!(".embed_{}", file_name));
+            let embed_path = tools_dir.join(format!(".embed_{file_name}"));
             let embed_output = std::process::Command::new("wasm-tools")
                 .arg("component")
                 .arg("embed")
