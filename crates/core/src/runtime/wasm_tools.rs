@@ -182,46 +182,55 @@ impl WasmToolComponent {
                 ),
             })?;
 
-        let component_tool_definition = definition_result.map_err(|error_message| WorkflowRuntimeError::Other {
+        let tool_definition = definition_result.map_err(|e| WorkflowRuntimeError::Other {
+            message: format!("tool definition failed: {}", e),
+        })?;
+
+        let name = tool_definition.name;
+        let description = tool_definition.description;
+        let parameters_schema_json = tool_definition.parameters_schema_json;
+        let bound_parameters_schema_json = tool_definition.bound_parameters_schema_json;
+        let output_schema_json = tool_definition.output_schema_json;
+
+        let parameters_schema = serde_json::from_str::<Schema>(&parameters_schema_json).map_err(|error| WorkflowRuntimeError::Other {
             message: format!(
-                "wasm tool component `{}` returned definition error: {error_message}",
+                "failed to parse `input_schema` from wasm tool component `{}`: {error}",
                 component_path.display()
             ),
         })?;
 
-        let parameters_schema = serde_json::from_str::<Schema>(&component_tool_definition.parameters_schema_json).map_err(|error| {
-            WorkflowRuntimeError::Other {
-                message: format!(
-                    "failed to parse `parameters_schema_json` from wasm tool component `{}`: {error}",
-                    component_path.display()
-                ),
-            }
-        })?;
-
-        let bound_parameters_schema =
-            serde_json::from_str::<Schema>(&component_tool_definition.bound_parameters_schema_json).map_err(|error| {
-                WorkflowRuntimeError::Other {
+        let bound_parameters_schema = if bound_parameters_schema_json.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_str::<Schema>(&bound_parameters_schema_json).map_err(|error| WorkflowRuntimeError::Other {
                     message: format!(
-                        "failed to parse `bound_parameters_schema_json` from wasm tool component `{}`: {error}",
+                        "failed to parse `bound_input_schema` from wasm tool component `{}`: {error}",
                         component_path.display()
                     ),
-                }
-            })?;
+                })?,
+            )
+        };
 
-        let output_schema =
-            serde_json::from_str::<Schema>(&component_tool_definition.output_schema_json).map_err(|error| WorkflowRuntimeError::Other {
-                message: format!(
-                    "failed to parse `output_schema_json` from wasm tool component `{}`: {error}",
-                    component_path.display()
-                ),
-            })?;
+        let output_schema = if output_schema_json.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_str::<Schema>(&output_schema_json).map_err(|error| WorkflowRuntimeError::Other {
+                    message: format!(
+                        "failed to parse `output_schema` from wasm tool component `{}`: {error}",
+                        component_path.display()
+                    ),
+                })?,
+            )
+        };
 
         Ok(ToolDefinition {
-            name: component_tool_definition.name,
-            description: component_tool_definition.description,
+            name,
+            description,
             parameters_schema,
-            bound_parameters_schema: Some(bound_parameters_schema),
-            output_schema: Some(output_schema),
+            bound_parameters_schema,
+            output_schema,
         })
     }
 }
@@ -231,8 +240,8 @@ struct WasmToolComponentStoreData {
 }
 
 impl contract::superwire::tool::host::Host for WasmToolComponentStoreData {
-    fn http_get(&mut self, request_url: String) -> Result<String, String> {
-        perform_http_get_request(&request_url).map_err(|error_message| {
+    fn http_get(&mut self, request_url: String) -> std::string::String {
+        perform_http_get_request(&request_url).unwrap_or_else(|error_message| {
             format!(
                 "host-http-get failed for component `{}` with url `{request_url}`: {error_message}",
                 self.component_path.display()
@@ -240,8 +249,8 @@ impl contract::superwire::tool::host::Host for WasmToolComponentStoreData {
         })
     }
 
-    fn http_post_json(&mut self, request_url: String, request_body_json: String, internal_token: Option<String>) -> Result<String, String> {
-        perform_http_post_json_request(&request_url, &request_body_json, internal_token.as_deref()).map_err(|error_message| {
+    fn http_post_json(&mut self, request_url: String, request_body_json: String, internal_token: Option<String>) -> std::string::String {
+        perform_http_post_json_request(&request_url, &request_body_json, internal_token.as_deref()).unwrap_or_else(|error_message| {
             format!(
                 "host-http-post-json failed for component `{}` with url `{request_url}`: {error_message}",
                 self.component_path.display()
@@ -302,10 +311,7 @@ impl WasmToolComponentInstance {
         let output_json = match execution_result {
             Ok(output_json) => output_json,
             Err(tool_error) => {
-                return Err(ToolError::new(format!(
-                    "wasm tool execution failed [{}]: {}",
-                    tool_error.code, tool_error.message
-                )));
+                return Err(ToolError::new(format!("wasm tool execution failed: {}", tool_error.message)));
             }
         };
 

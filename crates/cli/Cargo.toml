@@ -17,6 +17,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 superwire-agent = { path = "../agent" }
 superwire-core = { path = "../core" }
+superwire-tool = { path = "../tool" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 wasmprinter = "0.245.1"
+jsonschema = { workspace = true }

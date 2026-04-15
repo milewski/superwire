@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
+use serde_json::Value;
+use superwire_tool::ToolBackend;
 
 use crate::commands::tool_init::scaffold_tool_project;
 use crate::diagnostics::CommandError;
@@ -18,6 +20,8 @@ impl ToolCommand {
         match self.command {
             ToolSubcommand::Init(init_tool_command) => init_tool_command.execute(),
             ToolSubcommand::Prepare(prepare_tool_command) => prepare_tool_command.execute(),
+            ToolSubcommand::Inspect(inspect_command) => inspect_command.execute(),
+            ToolSubcommand::Run(run_command) => run_command.execute(),
         }
     }
 }
@@ -26,6 +30,8 @@ impl ToolCommand {
 enum ToolSubcommand {
     Init(InitToolCommand),
     Prepare(PrepareToolCommand),
+    Inspect(InspectToolCommand),
+    Run(RunToolCommand),
 }
 
 #[derive(Debug, Args)]
@@ -108,6 +114,70 @@ impl PrepareToolCommand {
             tool_specifications.len(),
             output_directory.display()
         );
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Args)]
+struct InspectToolCommand {
+    #[arg(value_name = "TOOL_PATH")]
+    tool_path: PathBuf,
+}
+
+impl InspectToolCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let path = self.tool_path;
+
+        if !path.exists() {
+            return Err(CommandError::invalid_input(format!("tool file not found: {}", path.display())));
+        }
+
+        let backend = superwire_tool::backend::wasm::WasmBackend::new(&path).map_err(|e| CommandError::internal(e.to_string()))?;
+
+        let descriptor = backend.describe().map_err(|e| CommandError::internal(e.to_string()))?;
+
+        let json = serde_json::to_string_pretty(&descriptor).map_err(|e| CommandError::internal(e.to_string()))?;
+
+        println!("{json}");
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Args)]
+struct RunToolCommand {
+    #[arg(value_name = "TOOL_PATH")]
+    tool_path: PathBuf,
+
+    #[arg(long, value_name = "JSON", default_value = "{}")]
+    input: String,
+
+    #[arg(long, value_name = "JSON", default_value = "{}")]
+    bound_input: String,
+}
+
+impl RunToolCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let path = self.tool_path;
+
+        if !path.exists() {
+            return Err(CommandError::invalid_input(format!("tool file not found: {}", path.display())));
+        }
+
+        let _ =
+            serde_json::from_str::<Value>(&self.input).map_err(|e| CommandError::invalid_input(format!("invalid --input JSON: {e}")))?;
+
+        let _ = serde_json::from_str::<Value>(&self.bound_input)
+            .map_err(|e| CommandError::invalid_input(format!("invalid --bound-input JSON: {e}")))?;
+
+        let backend = superwire_tool::backend::wasm::WasmBackend::new(&path).map_err(|e| CommandError::internal(e.to_string()))?;
+
+        let result = backend
+            .execute(self.input.clone(), self.bound_input.clone())
+            .map_err(|e| CommandError::internal(format!("tool execution failed: {e}")))?;
+
+        println!("{result}");
 
         Ok(())
     }
