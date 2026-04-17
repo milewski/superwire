@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 
 use crate::commands::fmt::FormatCommand;
+use crate::commands::tools::ToolsCommand;
 use crate::commands::workflow::WorkflowCommand;
 use crate::diagnostics::CommandError;
 
@@ -49,6 +50,7 @@ pub struct CommandLineArguments {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Fmt(FormatCommand),
+    Tools(ToolsCommand),
     Workflow(WorkflowCommand),
 }
 
@@ -56,6 +58,7 @@ impl Command {
     fn execute(self) -> Result<(), CommandError> {
         match self {
             Self::Fmt(format_command) => format_command.execute(),
+            Self::Tools(tools_command) => tools_command.execute(),
             Self::Workflow(workflow_command) => workflow_command.execute(),
         }
     }

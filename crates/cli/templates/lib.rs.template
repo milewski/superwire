@@ -12,7 +12,7 @@ mod user_tool {
 use exports::superwire::tool::tool::{Guest, ToolDefinition, ToolError};
 
 fn host_http_get_delegate(request_url: &str) -> Result<String, String> {
-    superwire::tool::host::http_get(request_url)
+    Ok(superwire::tool::host::http_get(request_url))
 }
 
 fn host_http_post_json_delegate(
@@ -20,7 +20,7 @@ fn host_http_post_json_delegate(
     request_body_json: &str,
     internal_token: Option<&str>,
 ) -> Result<String, String> {
-    superwire::tool::host::http_post_json(request_url, request_body_json, internal_token)
+    Ok(superwire::tool::host::http_post_json(request_url, request_body_json, internal_token))
 }
 
 struct GeneratedTool;
