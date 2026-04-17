@@ -1,0 +1,37 @@
+package superwire:tool@0.1.0;
+
+/// @tool-name weather
+/// @tool-description Fetch weather in Laravel class style.
+
+interface schema {
+  /// Agent-provided weather request payload.
+  record agent-input {
+    /// Optional city coming from model arguments.
+    city: option<string>,
+  }
+
+  /// Workflow-bound weather request payload.
+  record bound-input {
+    /// Optional city coming from workflow binding.
+    city: option<string>,
+
+    /// Shared internal token validated by middleware.
+    internal-token: option<string>,
+  }
+
+  /// Weather tool response payload.
+  record output {
+    /// City resolved by the tool.
+    city: string,
+
+    /// Weather summary text.
+    summary: string,
+
+    /// Source attribution.
+    source: string,
+  }
+}
+
+world tool-schema {
+  import schema;
+}

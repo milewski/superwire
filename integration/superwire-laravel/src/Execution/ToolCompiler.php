@@ -11,6 +11,7 @@ use JsonException;
 use RuntimeException;
 use Superwire\Laravel\Data\ToolBuildRequest;
 use Superwire\Laravel\Data\ToolBuildResult;
+use Superwire\Laravel\Contracts\WitDefinedTool;
 use Superwire\Laravel\Exceptions\ToolBuildException;
 use Superwire\Laravel\Execution\Compiler\ToolClassValidator;
 use Superwire\Laravel\Execution\Compiler\ToolEndpointResolver;
@@ -18,6 +19,8 @@ use Superwire\Laravel\Execution\Compiler\ToolModuleSourceGenerator;
 use Superwire\Laravel\Execution\Compiler\ToolModuleTemplateRenderer;
 use Superwire\Laravel\Execution\Compiler\ToolNameFormatter;
 use Superwire\Laravel\Execution\Compiler\ToolSchemaPayloadSerializer;
+use Superwire\Laravel\Wit\WitPhpToolTypesGenerator;
+use Superwire\Laravel\Wit\WitToolSchemaParser;
 
 final readonly class ToolCompiler
 {
@@ -34,6 +37,8 @@ final readonly class ToolCompiler
         $toolNameFormatter = new ToolNameFormatter();
         $toolSchemaPayloadSerializer = new ToolSchemaPayloadSerializer();
         $toolEndpointResolver = new ToolEndpointResolver($this->config);
+        $witToolSchemaParser = new WitToolSchemaParser();
+        $witPhpToolTypesGenerator = new WitPhpToolTypesGenerator();
         $toolModuleTemplateRenderer = new ToolModuleTemplateRenderer(__DIR__ . '/../../resources/templates/tool_module.rs.tpl');
         $toolModuleSourceGenerator = new ToolModuleSourceGenerator(
             $toolNameFormatter,
@@ -46,11 +51,16 @@ final readonly class ToolCompiler
         $buildRootDirectory = (string) $this->config->get('superwire.build.root_directory', storage_path('app/superwire'));
         $toolOutputDirectory = (string) $this->config->get('superwire.build.tools_directory', base_path('tools'));
         $toolSourcesDirectory = $buildRootDirectory . '/tool-sources/src';
+        $toolSourcesWitDirectory = $buildRootDirectory . '/tool-sources/wit';
         $toolSourcesManifestPath = $buildRootDirectory . '/tool-sources/Cargo.toml';
         $toolSourcesLibPath = $toolSourcesDirectory . '/lib.rs';
 
         if (!is_dir($toolSourcesDirectory) && !mkdir($toolSourcesDirectory, 0o777, true) && !is_dir($toolSourcesDirectory)) {
             throw new ToolBuildException(sprintf('failed to create tool sources directory %s', $toolSourcesDirectory));
+        }
+
+        if (!is_dir($toolSourcesWitDirectory) && !mkdir($toolSourcesWitDirectory, 0o777, true) && !is_dir($toolSourcesWitDirectory)) {
+            throw new ToolBuildException(sprintf('failed to create tool wit directory %s', $toolSourcesWitDirectory));
         }
 
         if (!is_dir($toolOutputDirectory) && !mkdir($toolOutputDirectory, 0o777, true) && !is_dir($toolOutputDirectory)) {
@@ -64,6 +74,12 @@ final readonly class ToolCompiler
         $toolSourcePathByToolName = [];
 
         foreach ($validatedToolClasses as $toolClass) {
+            if (is_subclass_of($toolClass, WitDefinedTool::class)) {
+                /** @var class-string<WitDefinedTool> $witDefinedToolClass */
+                $witDefinedToolClass = $toolClass;
+                $parsedWitSchema = $witToolSchemaParser->parseFile($witDefinedToolClass::witPath());
+                $witPhpToolTypesGenerator->generateForToolClass($witDefinedToolClass, $parsedWitSchema);
+            }
 
             $toolName = $toolClass::name();
             $moduleName = $toolNameFormatter->moduleName($toolName);
@@ -80,6 +96,17 @@ final readonly class ToolCompiler
             $modulePath = sprintf('%s/%s.rs', $toolSourcesDirectory, $moduleName);
             file_put_contents($modulePath, $toolModuleSourceGenerator->generate($toolClass));
             $toolSourcePathByToolName[ $toolName ] = $modulePath;
+
+            if (is_subclass_of($toolClass, WitDefinedTool::class)) {
+                /** @var class-string<WitDefinedTool> $witDefinedToolClass */
+                $witDefinedToolClass = $toolClass;
+                $sourceWitPath = $witDefinedToolClass::witPath();
+                $targetWitPath = sprintf('%s/%s.wit', $toolSourcesWitDirectory, $moduleName);
+
+                if (!copy($sourceWitPath, $targetWitPath)) {
+                    throw new ToolBuildException(sprintf('failed to copy WIT file from %s to %s', $sourceWitPath, $targetWitPath));
+                }
+            }
 
         }
 

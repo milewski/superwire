@@ -3,58 +3,35 @@
 namespace App\Superwire\Tools;
 
 use App\Superwire\Tool;
+use App\Superwire\Tools\Generated\WeatherAgentInput;
+use App\Superwire\Tools\Generated\WeatherBoundInput;
+use App\Superwire\Tools\Generated\WeatherOutput;
 
 final class WeatherTool extends Tool
 {
-    public static function name(): string
+    public static function witPath(): string
     {
-        return 'weather';
+        return __DIR__ . '/weather.wit';
     }
 
-    public static function description(): string
+    public function execute(object $agentInput, object $boundInput): object
     {
-        return 'Fetch weather in Laravel class style';
-    }
+        if (!$agentInput instanceof WeatherAgentInput || !$boundInput instanceof WeatherBoundInput) {
+            throw new \RuntimeException('invalid_tool_input_types');
+        }
 
-    public static function inputSchema(): array
-    {
-        return [
-            'type' => 'object',
-            'properties' => [
-                'city' => [
-                    'type' => ['string', 'null'],
-                ],
-            ],
-        ];
-    }
-
-    public static function outputSchema(): array
-    {
-        return [
-            'type' => 'object',
-            'properties' => [
-                'city' => ['type' => 'string'],
-                'summary' => ['type' => 'string'],
-                'source' => ['type' => 'string'],
-            ],
-            'required' => ['city', 'summary', 'source'],
-        ];
-    }
-
-    public function execute(array $agentInput, array $boundInput): array
-    {
-        $city = $boundInput['city'] ?? ($agentInput['city'] ?? 'Madrid');
-        $weatherUrl = 'https://wttr.in/' . rawurlencode((string) $city) . '?format=%C+%t';
+        $cityName = $boundInput->city ?? ($agentInput->city ?? 'Madrid');
+        $weatherUrl = 'https://wttr.in/' . rawurlencode((string) $cityName) . '?format=%C+%t';
         $weatherSummary = @file_get_contents($weatherUrl);
 
         if ($weatherSummary === false) {
             $weatherSummary = 'Weather service temporarily unavailable';
         }
 
-        return [
-            'city' => (string) $city,
-            'summary' => trim((string) $weatherSummary),
-            'source' => 'wttr.in via laravel-like weather tool',
-        ];
+        return new WeatherOutput(
+            city: (string) $cityName,
+            summary: trim((string) $weatherSummary),
+            source: 'wttr.in via laravel-like weather tool',
+        );
     }
 }

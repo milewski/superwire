@@ -30,7 +30,11 @@ final class ToolController
 
         $tool = $this->resolveTool($toolName);
 
-        return $tool->execute($agentInput, $boundInput);
+        $resolvedAgentInput = $tool::resolveAgentInput($agentInput);
+        $resolvedBoundInput = $tool::resolveBoundInput($boundInput);
+        $toolOutput = $tool->execute($resolvedAgentInput, $resolvedBoundInput);
+
+        return $tool::outputPayload($toolOutput);
     }
 
     private function resolveTool(string $toolName): Tool

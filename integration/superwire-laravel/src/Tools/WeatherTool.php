@@ -5,21 +5,13 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Tools;
 
 use Illuminate\Support\Facades\Http;
-use Superwire\Laravel\Tools\Data\WeatherAgentInput;
-use Superwire\Laravel\Tools\Data\WeatherBoundInput;
-use Superwire\Laravel\Tools\Data\WeatherOutput;
 use Throwable;
 
-final class WeatherTool extends AbstractTool
+final class WeatherTool extends AbstractWitTool
 {
-    public static function name(): string
+    public static function witPath(): string
     {
-        return 'weather';
-    }
-
-    public static function description(): string
-    {
-        return 'Fetches weather summary via wttr.in in Laravel runtime';
+        return __DIR__ . '/weather.wit';
     }
 
     protected function handle(WeatherAgentInput $agentInput, WeatherBoundInput $boundInput): WeatherOutput
