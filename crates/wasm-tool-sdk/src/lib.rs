@@ -32,6 +32,30 @@ impl ToolMetadata {
             description: description.into(),
         }
     }
+
+    pub fn from_wit_source(wit_source: &str) -> Result<Self, String> {
+        let tool_name = Self::directive_value(wit_source, "tool-name")?;
+        let tool_description = Self::directive_value(wit_source, "tool-description")?;
+
+        Ok(Self {
+            name: tool_name,
+            description: tool_description,
+        })
+    }
+
+    fn directive_value(wit_source: &str, directive_name: &str) -> Result<String, String> {
+        let directive_prefix = format!("/// @{directive_name} ");
+
+        for source_line in wit_source.lines() {
+            let trimmed_line = source_line.trim();
+
+            if let Some(value) = trimmed_line.strip_prefix(&directive_prefix) {
+                return Ok(value.trim().to_string());
+            }
+        }
+
+        Err(format!("missing `{directive_name}` directive"))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -156,4 +180,11 @@ pub mod host {
 #[macro_export]
 macro_rules! php_proxy_tool {
     ($($token:tt)*) => {};
+}
+
+#[macro_export]
+macro_rules! tool_metadata_from_wit {
+    ($wit_path:literal) => {
+        $crate::ToolMetadata::from_wit_source(include_str!($wit_path)).expect(concat!("invalid WIT metadata directives in ", $wit_path))
+    };
 }

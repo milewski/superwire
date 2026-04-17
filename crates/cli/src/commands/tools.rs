@@ -688,6 +688,7 @@ impl BuildToolsCommand {
         let tool_output_directory = build_layout.workflow_directory.join("tools");
         let generated_tools_directory = build_layout.workflow_directory.join("target/tool-build");
         let shared_target_directory = build_layout.workflow_directory.join("target/tool-target");
+        let tool_wit_source_directory = build_layout.workflow_directory.join("tool-sources/wit");
         let additional_dependency_entries = self.additional_dependency_entries(&build_layout.workflow_directory)?;
 
         fs::create_dir_all(&tool_output_directory).map_err(|error| {
@@ -709,6 +710,7 @@ impl BuildToolsCommand {
 
         let wat_output_paths_by_tool_source = self.wat_output_paths_by_tool_source(&output_paths_by_tool_source);
         let tool_build_context = ToolBuildContext {
+            tool_wit_source_directory: &tool_wit_source_directory,
             generated_tools_directory: &generated_tools_directory,
             shared_target_directory: &shared_target_directory,
             additional_dependency_entries: &additional_dependency_entries,
@@ -984,6 +986,11 @@ impl BuildToolsCommand {
         })?;
 
         write_embedded_wit_package(&generated_tool_wit_directory)?;
+        self.copy_tool_wit_sources(
+            &tool_name,
+            tool_build_context.tool_wit_source_directory,
+            &generated_tool_wit_directory,
+        )?;
 
         let generated_cargo_manifest = self.generated_tool_cargo_manifest(&tool_name, tool_build_context.additional_dependency_entries);
         let generated_source = self.generated_tool_component_source(tool_source_path, &tool_type_name);
@@ -1139,6 +1146,7 @@ impl BuildToolsCommand {
             || trimmed_dependency_line.starts_with("serde")
             || trimmed_dependency_line.starts_with("schemars")
             || trimmed_dependency_line.starts_with("pollster")
+            || trimmed_dependency_line.starts_with("wit-bindgen")
         {
             return Ok(String::new());
         }
@@ -1178,6 +1186,33 @@ impl BuildToolsCommand {
             .replace("{{tool_type_name}}", tool_type_name)
     }
 
+    fn copy_tool_wit_sources(
+        &self,
+        tool_name: &str,
+        source_wit_directory: &Path,
+        destination_wit_directory: &Path,
+    ) -> Result<(), CommandError> {
+        if !source_wit_directory.is_dir() {
+            return Ok(());
+        }
+
+        let source_path = source_wit_directory.join(format!("{tool_name}.wit"));
+
+        if !source_path.is_file() {
+            return Ok(());
+        }
+
+        fs::copy(&source_path, destination_wit_directory.join(format!("{tool_name}.wit"))).map_err(|error| {
+            CommandError::internal(format!(
+                "failed to copy WIT source from {} to {}: {error}",
+                source_path.display(),
+                destination_wit_directory.display()
+            ))
+        })?;
+
+        Ok(())
+    }
+
     fn tool_type_name(&self, tool_name: &str) -> String {
         InitToolsCommand::tool_type_name(tool_name)
     }
@@ -1190,6 +1225,7 @@ struct BuildLayout {
 }
 
 struct ToolBuildContext<'context> {
+    tool_wit_source_directory: &'context Path,
     generated_tools_directory: &'context Path,
     shared_target_directory: &'context Path,
     additional_dependency_entries: &'context str,
