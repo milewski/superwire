@@ -1,32 +1,24 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use crate::superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct WeatherInput {
-    pub city: Option<String>,
+mod schema_bindings {
+    wit_bindgen::generate!({
+        path: "wit/weather.wit",
+        world: "tool-schema",
+        additional_derives: [serde::Deserialize, serde::Serialize, schemars::JsonSchema],
+    });
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct WeatherBoundInput {
-    pub city: Option<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct WeatherOutput {
-    pub city: String,
-    pub summary: String,
-}
+use crate::tool_metadata_from_wit;
 
 pub struct Weather;
 
 impl Tool for Weather {
-    type AgentInput = WeatherInput;
-    type BoundInput = WeatherBoundInput;
-    type Output = WeatherOutput;
+    type AgentInput = schema_bindings::superwire::tool::schema::AgentInput;
+    type BoundInput = schema_bindings::superwire::tool::schema::BoundInput;
+    type Output = schema_bindings::superwire::tool::schema::Output;
 
     fn metadata() -> ToolMetadata {
-        ToolMetadata::new("weather", "Returns a weather summary for a city")
+        tool_metadata_from_wit!("../wit/weather.wit")
     }
 
     async fn execute(agent_input: Self::AgentInput, bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
@@ -37,7 +29,7 @@ impl Tool for Weather {
 
         let weather_summary = resolve_weather_summary(&city_name);
 
-        Ok(WeatherOutput {
+        Ok(Self::Output {
             city: city_name,
             summary: weather_summary,
         })

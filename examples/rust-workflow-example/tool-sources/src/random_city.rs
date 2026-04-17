@@ -1,27 +1,24 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use crate::superwire_wasm_tool_sdk::{Tool, ToolExecutionError, ToolMetadata};
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RandomCityInput {}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RandomCityBoundInput {}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct RandomCityOutput {
-    pub city: String,
+mod schema_bindings {
+    wit_bindgen::generate!({
+        path: "wit/random_city.wit",
+        world: "tool-schema",
+        additional_derives: [serde::Deserialize, serde::Serialize, schemars::JsonSchema],
+    });
 }
+
+use crate::tool_metadata_from_wit;
 
 pub struct RandomCity;
 
 impl Tool for RandomCity {
-    type AgentInput = RandomCityInput;
-    type BoundInput = RandomCityBoundInput;
-    type Output = RandomCityOutput;
+    type AgentInput = schema_bindings::superwire::tool::schema::AgentInput;
+    type BoundInput = schema_bindings::superwire::tool::schema::BoundInput;
+    type Output = schema_bindings::superwire::tool::schema::Output;
 
     fn metadata() -> ToolMetadata {
-        ToolMetadata::new("random_city", "Returns a city name")
+        tool_metadata_from_wit!("../wit/random_city.wit")
     }
 
     async fn execute(_agent_input: Self::AgentInput, _bound_input: Self::BoundInput) -> Result<Self::Output, ToolExecutionError> {
@@ -36,7 +33,7 @@ impl Tool for RandomCity {
 
         let selected_city = city_options[2];
 
-        Ok(RandomCityOutput {
+        Ok(Self::Output {
             city: selected_city.to_string(),
         })
     }

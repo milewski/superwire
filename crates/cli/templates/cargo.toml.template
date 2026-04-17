@@ -17,3 +17,7 @@ serde_json = "1.0"
 {{extra_dependencies}}
 
 [workspace]
+
+[package.metadata.component.target]
+path = "wit"
+world = "superwire-tool"
