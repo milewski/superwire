@@ -36,33 +36,39 @@ impl WasmToolRuntimeLoader {
         let mut discovered_runtime_tools = Vec::new();
         let mut discovered_tool_names = HashSet::<String>::new();
 
-        for component_path in self.wasm_component_paths()? {
-            let wasm_tool_component = WasmToolComponent::from_file(component_path)?;
-            let dynamic_tool = wasm_tool_component.as_dynamic_tool();
-            let tool_name = dynamic_tool.tool_definition().name.clone();
+        let search_directories = self.tool_search_directories();
 
-            if !discovered_tool_names.insert(tool_name.clone()) {
-                return Err(WorkflowRuntimeError::Other {
-                    message: format!(
-                        "duplicate wasm tool name `{tool_name}` discovered in `{}`",
-                        self.tools_directory().display()
-                    ),
-                });
+        for search_dir in search_directories {
+            for component_path in self.wasm_component_paths_in(&search_dir)? {
+                let wasm_tool_component = WasmToolComponent::from_file(component_path)?;
+                let dynamic_tool = wasm_tool_component.as_dynamic_tool();
+                let tool_name = dynamic_tool.tool_definition().name.clone();
+
+                if !discovered_tool_names.insert(tool_name.clone()) {
+                    return Err(WorkflowRuntimeError::Other {
+                        message: format!(
+                            "duplicate wasm tool name `{tool_name}` discovered in `{}`",
+                            self.tools_directory().display()
+                        ),
+                    });
+                }
+
+                discovered_runtime_tools.push(dynamic_tool);
             }
-
-            discovered_runtime_tools.push(dynamic_tool);
         }
 
         Ok(discovered_runtime_tools)
+    }
+
+    fn tool_search_directories(&self) -> Vec<PathBuf> {
+        vec![self.tools_directory()]
     }
 
     fn tools_directory(&self) -> PathBuf {
         self.workflow_directory.join("tools")
     }
 
-    fn wasm_component_paths(&self) -> Result<Vec<PathBuf>, WorkflowRuntimeError> {
-        let tools_directory = self.tools_directory();
-
+    fn wasm_component_paths_in(&self, tools_directory: &Path) -> Result<Vec<PathBuf>, WorkflowRuntimeError> {
         if !tools_directory.exists() {
             return Ok(Vec::new());
         }
@@ -78,7 +84,7 @@ impl WasmToolRuntimeLoader {
 
         let mut wasm_component_paths = Vec::new();
 
-        let directory_entries = fs::read_dir(&tools_directory).map_err(|error| WorkflowRuntimeError::Other {
+        let directory_entries = fs::read_dir(tools_directory).map_err(|error| WorkflowRuntimeError::Other {
             message: format!("failed to read tools directory `{}`: {error}", tools_directory.display()),
         })?;
 
@@ -183,7 +189,7 @@ impl WasmToolComponent {
             })?;
 
         let tool_definition = definition_result.map_err(|e| WorkflowRuntimeError::Other {
-            message: format!("tool definition failed: {}", e),
+            message: format!("tool definition failed: {e}"),
         })?;
 
         let name = tool_definition.name;
