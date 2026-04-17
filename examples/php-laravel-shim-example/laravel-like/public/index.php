@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Superwire\Http\ToolController;
 
 require_once __DIR__ . '/../app/Superwire/Tool.php';
+require_once __DIR__ . '/../app/Superwire/Tools/Generated/WeatherAgentInput.php';
+require_once __DIR__ . '/../app/Superwire/Tools/Generated/WeatherBoundInput.php';
+require_once __DIR__ . '/../app/Superwire/Tools/Generated/WeatherOutput.php';
 require_once __DIR__ . '/../app/Superwire/Tools/WeatherTool.php';
 require_once __DIR__ . '/../app/Superwire/Security/InternalRequestGuard.php';
 require_once __DIR__ . '/../app/Superwire/Http/ToolController.php';
