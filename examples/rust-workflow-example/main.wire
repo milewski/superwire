@@ -1,0 +1,31 @@
+input {
+    user_query: string
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "http://100.76.74.102:1234/v1"
+    api_key: "1234"
+    models: ["qwen3.5-27b"]
+}
+
+agent assistant {
+    model: openai("qwen3.5-27b")
+    tools: [tool.random_city, tool.weather]
+
+    prompt: """
+        You must call tool.random_city exactly once.
+        Then call tool.weather exactly once using the city returned by tool.random_city.
+        Return concise output.
+    """
+
+    output: {
+        city: string
+        weather_summary: string
+    }
+}
+
+output {
+    city: agent.assistant.city
+    weather_summary: agent.assistant.weather_summary
+}
