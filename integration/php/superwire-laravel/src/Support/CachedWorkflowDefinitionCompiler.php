@@ -1,13 +1,13 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Support;
 
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Superwire\Contracts\Support\JsonWorkflowDecoder;
-use Superwire\Contracts\WorkflowDefinition;
+use Superwire\Contracts\Workflow\WorkflowDefinition;
 
 final class CachedWorkflowDefinitionCompiler
 {
@@ -27,7 +27,7 @@ final class CachedWorkflowDefinitionCompiler
         $cacheKey = $this->cacheKey($absolutePath);
 
         if (array_key_exists($cacheKey, self::$definitionsByCacheKey)) {
-            return self::$definitionsByCacheKey[$cacheKey];
+            return self::$definitionsByCacheKey[ $cacheKey ];
         }
 
         $process = Process::path(base_path())
@@ -45,7 +45,7 @@ final class CachedWorkflowDefinitionCompiler
         }
 
         $definition = (new JsonWorkflowDecoder())->decodeFromJson($process->output());
-        self::$definitionsByCacheKey[$cacheKey] = $definition;
+        self::$definitionsByCacheKey[ $cacheKey ] = $definition;
 
         return $definition;
     }

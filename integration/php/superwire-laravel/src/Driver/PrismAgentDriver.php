@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Driver;
 
@@ -8,43 +8,56 @@ use Prism\Prism\Enums\Provider as PrismProvider;
 use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Facades\Prism;
 use Prism\Prism\Schema\RawSchema;
-use Prism\Prism\Text\Response as PrismTextResponse;
 use Prism\Prism\Tool as PrismTool;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
 use Prism\Prism\ValueObjects\ToolCall;
 use RuntimeException;
-use Superwire\Contracts\AgentConversationMessage;
-use Superwire\Contracts\AgentToolCall;
-use Superwire\Contracts\AgentToolDefinition;
-use Superwire\Contracts\AgentToolResult;
-use Superwire\Contracts\AgentTurnRequest;
-use Superwire\Contracts\AgentTurnResponse;
+use Superwire\Contracts\Agent\AgentConversationMessage;
+use Superwire\Contracts\Agent\AgentToolCall;
+use Superwire\Contracts\Agent\AgentToolDefinition;
+use Superwire\Contracts\Agent\AgentToolResult;
+use Superwire\Contracts\Agent\AgentTurnRequest;
+use Superwire\Contracts\Agent\AgentTurnResponse;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
 use Throwable;
 
 final class PrismAgentDriver implements AgentTurnDriverInterface
 {
+    /**
+     * @param array<string, mixed> $driverConfiguration
+     */
+    public function __construct(
+        private readonly array $driverConfiguration = [],
+    ) {
+    }
+
     public function generateTurn(AgentTurnRequest $request): AgentTurnResponse
     {
         $provider = $this->resolvePrismProvider($request->provider);
         $providerConfig = $this->normalizeProviderConfig($request->providerConfig);
         $messages = $this->toPrismMessages($request->messages);
         $tools = $this->toPrismTools($request->tools);
+        $pendingRequest = Prism::text()
+            ->using($provider, $request->model, $providerConfig)
+            ->withMessages($messages)
+            ->withTools($tools)
+            ->withToolChoice($request->requireToolCall ? ToolChoice::Any : ToolChoice::Auto)
+            ->withMaxSteps(1);
+
+        $pendingRequest = $this->applyClientConfiguration($pendingRequest);
 
         try {
-            $response = Prism::text()
-                ->using($provider, $request->model, $providerConfig)
-                ->withMessages($messages)
-                ->withTools($tools)
-                ->withToolChoice($request->requireToolCall ? ToolChoice::Any : ToolChoice::Auto)
-                ->withMaxSteps(1)
-                ->asText();
+
+            $response = $pendingRequest->asText();
+
         } catch (Throwable $throwable) {
+
             if ($this->canUseOpenAiFallback($provider, $providerConfig)) {
                 return $this->requestOpenAiCompatibleTurn($request, $providerConfig);
             }
 
             throw $throwable;
+
         }
 
         return new AgentTurnResponse(
@@ -63,7 +76,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
             return false;
         }
 
-        return is_string($providerConfig['url'] ?? null) && is_string($providerConfig['api_key'] ?? null);
+        return is_string($providerConfig[ 'url' ] ?? null) && is_string($providerConfig[ 'api_key' ] ?? null);
     }
 
     /**
@@ -71,8 +84,8 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
      */
     private function requestOpenAiCompatibleTurn(AgentTurnRequest $request, array $providerConfig): AgentTurnResponse
     {
-        $url = rtrim((string) $providerConfig['url'], '/') . '/chat/completions';
-        $apiKey = (string) $providerConfig['api_key'];
+        $url = rtrim((string) $providerConfig[ 'url' ], '/') . '/chat/completions';
+        $apiKey = (string) $providerConfig[ 'api_key' ];
         $payload = [
             'model' => $request->model,
             'messages' => [
@@ -104,6 +117,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
                 ]),
                 'content' => json_encode($payload, JSON_UNESCAPED_SLASHES),
                 'ignore_errors' => true,
+                'timeout' => $this->fallbackRequestTimeoutSeconds(),
             ],
         ]);
 
@@ -119,44 +133,50 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
             throw new RuntimeException('openai-compatible fallback returned invalid json');
         }
 
-        $message = $decodedResponse['choices'][0]['message'] ?? null;
+        $message = $decodedResponse[ 'choices' ][ 0 ][ 'message' ] ?? null;
 
         if (is_array($message)) {
+
             $toolCalls = [];
 
-            foreach (($message['tool_calls'] ?? []) as $toolCall) {
-                if (!is_array($toolCall) || !is_array($toolCall['function'] ?? null)) {
+            foreach (($message[ 'tool_calls' ] ?? []) as $toolCall) {
+
+                if (!is_array($toolCall) || !is_array($toolCall[ 'function' ] ?? null)) {
                     continue;
                 }
 
-                $arguments = json_decode((string) ($toolCall['function']['arguments'] ?? '{}'), true);
+                $arguments = json_decode((string) ($toolCall[ 'function' ][ 'arguments' ] ?? '{}'), true);
 
                 if (!is_array($arguments)) {
                     $arguments = [];
                 }
 
                 $toolCalls[] = new AgentToolCall(
-                    id: (string) ($toolCall['id'] ?? uniqid('tool-call-', true)),
-                    name: (string) ($toolCall['function']['name'] ?? ''),
+                    id: (string) ($toolCall[ 'id' ] ?? uniqid('tool-call-', true)),
+                    name: (string) ($toolCall[ 'function' ][ 'name' ] ?? ''),
                     arguments: $arguments,
                 );
+
             }
 
             return new AgentTurnResponse(
-                text: (string) ($message['content'] ?? ''),
+                text: (string) ($message[ 'content' ] ?? ''),
                 toolCalls: $toolCalls,
                 toolResults: [],
             );
+
         }
 
-        $outputText = $decodedResponse['output_text'] ?? null;
+        $outputText = $decodedResponse[ 'output_text' ] ?? null;
 
         if (is_string($outputText)) {
+
             return new AgentTurnResponse(
                 text: $outputText,
                 toolCalls: [],
                 toolResults: [],
             );
+
         }
 
         throw new RuntimeException('openai-compatible fallback response missing first choice message: ' . $responseBody);
@@ -169,66 +189,125 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
     private function normalizeProviderConfig(array $providerConfig): array
     {
         if (array_is_list($providerConfig)) {
+
             $normalized = [];
 
             foreach ($providerConfig as $value) {
+
                 if (!is_string($value)) {
                     continue;
                 }
 
                 if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
-                    $normalized['url'] = $value;
+
+                    $normalized[ 'url' ] = $value;
 
                     continue;
+
                 }
 
                 if (str_starts_with($value, 'sk-')) {
-                    $normalized['api_key'] = $value;
+
+                    $normalized[ 'api_key' ] = $value;
 
                     continue;
+
                 }
 
                 if (!array_key_exists('provider', $normalized)) {
-                    $normalized['provider'] = $value;
+                    $normalized[ 'provider' ] = $value;
                 }
+
             }
 
             $providerConfig = $normalized;
+
         }
 
         if (array_key_exists('endpoint', $providerConfig) && !array_key_exists('url', $providerConfig)) {
-            $providerConfig['url'] = $providerConfig['endpoint'];
-            unset($providerConfig['endpoint']);
+
+            $providerConfig[ 'url' ] = $providerConfig[ 'endpoint' ];
+            unset($providerConfig[ 'endpoint' ]);
+
         }
 
         return $providerConfig;
     }
 
-    /** @param array<int, AgentConversationMessage> $messages */
-    private function toPrismMessages(array $messages): array
+    private function applyClientConfiguration(object $pendingRequest): object
     {
-        return [new UserMessage($this->conversationToPrompt($messages))];
+        if (method_exists($pendingRequest, 'withClientOptions')) {
+
+            $clientOptions = $this->driverConfiguration[ 'client_options' ] ?? null;
+
+            if (is_array($clientOptions)) {
+                $pendingRequest = $pendingRequest->withClientOptions($clientOptions);
+            }
+
+        }
+
+        if (method_exists($pendingRequest, 'withClientRetry')) {
+
+            $retryTimes = $this->driverConfiguration[ 'retry_times' ] ?? null;
+
+            if (is_int($retryTimes)) {
+
+                $retrySleepMilliseconds = $this->driverConfiguration[ 'retry_sleep_milliseconds' ] ?? 0;
+                $retrySleepMilliseconds = is_int($retrySleepMilliseconds) ? $retrySleepMilliseconds : 0;
+                $pendingRequest = $pendingRequest->withClientRetry($retryTimes, $retrySleepMilliseconds);
+
+            }
+
+        }
+
+        return $pendingRequest;
     }
 
-    /** @param array<int, AgentConversationMessage> $messages */
+    private function fallbackRequestTimeoutSeconds(): int
+    {
+        $requestTimeoutSeconds = $this->driverConfiguration[ 'request_timeout_seconds' ] ?? null;
+
+        if (is_int($requestTimeoutSeconds) && $requestTimeoutSeconds > 0) {
+            return $requestTimeoutSeconds;
+        }
+
+        return 120;
+    }
+
+    /**
+     * @param array<int, AgentConversationMessage> $messages
+     */
+    private function toPrismMessages(array $messages): array
+    {
+        return [ new UserMessage($this->conversationToPrompt($messages)) ];
+    }
+
+    /**
+     * @param array<int, AgentConversationMessage> $messages
+     */
     private function conversationToPrompt(array $messages): string
     {
         $segments = [];
 
         foreach ($messages as $message) {
+
             if ($message->role === 'user') {
-                $segments[] = "[user]\n" . (string) ($message->payload['content'] ?? '');
+
+                $segments[] = "[user]\n" . (string) ($message->payload[ 'content' ] ?? '');
 
                 continue;
+
             }
 
             if ($message->role === 'assistant') {
-                $content = (string) ($message->payload['content'] ?? '');
+
+                $content = (string) ($message->payload[ 'content' ] ?? '');
                 $segments[] = "[assistant]\n{$content}";
 
-                $toolCalls = $message->payload['tool_calls'] ?? [];
+                $toolCalls = $message->payload[ 'tool_calls' ] ?? [];
 
                 foreach ($toolCalls as $toolCall) {
+
                     if (!$toolCall instanceof AgentToolCall) {
                         continue;
                     }
@@ -238,15 +317,19 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
                         'name' => $toolCall->name,
                         'arguments' => $toolCall->arguments,
                     ], JSON_UNESCAPED_SLASHES);
+
                 }
 
                 continue;
+
             }
 
             if ($message->role === 'tool_result') {
-                $toolResults = $message->payload['tool_results'] ?? [];
+
+                $toolResults = $message->payload[ 'tool_results' ] ?? [];
 
                 foreach ($toolResults as $toolResult) {
+
                     if (!$toolResult instanceof AgentToolResult) {
                         continue;
                     }
@@ -257,8 +340,11 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
                         'arguments' => $toolResult->arguments,
                         'result' => $toolResult->result,
                     ], JSON_UNESCAPED_SLASHES);
+
                 }
+
             }
+
         }
 
         return implode("\n\n", $segments);
@@ -273,24 +359,30 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
         $prismTools = [];
 
         foreach ($tools as $tool) {
+
             $prismTool = (new PrismTool())
                 ->as($tool->name)
                 ->for($tool->description)
                 ->using(static fn (): string => 'ok');
 
-            $properties = $tool->parametersSchema['properties'] ?? null;
+            $properties = $tool->parametersSchema[ 'properties' ] ?? null;
 
             if (is_array($properties)) {
+
                 foreach ($properties as $parameterName => $parameterSchema) {
+
                     if (!is_string($parameterName) || !is_array($parameterSchema)) {
                         continue;
                     }
 
                     $prismTool = $prismTool->withParameter(new RawSchema($parameterName, $parameterSchema));
+
                 }
+
             }
 
             $prismTools[] = $prismTool;
+
         }
 
         return $prismTools;
@@ -305,19 +397,27 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
         $normalizedToolCalls = [];
 
         foreach ($toolCalls as $toolCall) {
+
             try {
+
                 $arguments = $toolCall->arguments();
+
             } catch (Throwable) {
+
                 $arguments = [];
+
             }
 
             $normalizedToolCalls[] = new AgentToolCall($toolCall->id, $toolCall->name, $arguments);
+
         }
 
         return $normalizedToolCalls;
     }
 
-    /** @return array<int, AgentToolResult> */
+    /**
+     * @return array<int, AgentToolResult>
+     */
     private function toToolResults(array $toolResults): array
     {
         return [];
@@ -326,7 +426,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
     private function resolvePrismProvider(string $providerIdentifier): PrismProvider
     {
         $normalizedIdentifier = strtolower(trim($providerIdentifier));
-        $normalizedIdentifier = str_replace(['-', ' '], '', $normalizedIdentifier);
+        $normalizedIdentifier = str_replace([ '-', ' ' ], '', $normalizedIdentifier);
         $providerMap = [
             'openai' => PrismProvider::OpenAI,
             'anthropic' => PrismProvider::Anthropic,
@@ -343,7 +443,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
             'z' => PrismProvider::Z,
         ];
 
-        $provider = $providerMap[$normalizedIdentifier] ?? null;
+        $provider = $providerMap[ $normalizedIdentifier ] ?? null;
 
         if ($provider !== null) {
             return $provider;

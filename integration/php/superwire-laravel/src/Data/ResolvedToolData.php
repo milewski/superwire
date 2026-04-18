@@ -1,11 +1,11 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Data;
 
 use Spatie\LaravelData\Data;
-use Superwire\Contracts\ToolExecution;
+use Superwire\Contracts\Tool\ToolExecution;
 
 final class ResolvedToolData extends Data
 {

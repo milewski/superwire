@@ -1,11 +1,11 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support;
 
 use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
-use Superwire\Contracts\WorkflowDefinition;
+use Superwire\Contracts\Workflow\WorkflowDefinition;
 
 final class JsonWorkflowDecoder
 {

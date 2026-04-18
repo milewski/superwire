@@ -1,12 +1,12 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support;
 
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\AgentToolCall;
-use Superwire\Contracts\AgentToolResult;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentToolCall;
+use Superwire\Contracts\Agent\AgentToolResult;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 
 final class DefaultRuntimeToolInvoker implements RuntimeToolInvokerInterface
@@ -14,6 +14,7 @@ final class DefaultRuntimeToolInvoker implements RuntimeToolInvokerInterface
     public function invoke(AgentExecutionRequest $request, AgentToolCall $toolCall): AgentToolResult
     {
         foreach ($request->tools as $toolExecution) {
+
             if ($toolExecution->name !== $toolCall->name) {
                 continue;
             }
@@ -29,6 +30,7 @@ final class DefaultRuntimeToolInvoker implements RuntimeToolInvokerInterface
                     'arguments' => $toolCall->arguments,
                 ],
             );
+
         }
 
         return new AgentToolResult(

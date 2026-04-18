@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support\Stages;
 
@@ -11,14 +11,15 @@ final class WorkflowTypeNormalizationStage
      */
     public function normalize(mixed $value, array $workflowType): mixed
     {
-        $kind = $workflowType['kind'] ?? null;
+        $kind = $workflowType[ 'kind' ] ?? null;
 
         if (!is_string($kind)) {
             return $value;
         }
 
         if ($kind === 'object') {
-            $fields = $workflowType['fields'] ?? null;
+
+            $fields = $workflowType[ 'fields' ] ?? null;
 
             if (!is_array($fields)) {
                 return is_array($value) ? $value : [];
@@ -27,18 +28,22 @@ final class WorkflowTypeNormalizationStage
             $normalizedObject = is_array($value) ? $value : [];
 
             foreach ($fields as $fieldName => $fieldType) {
+
                 if (!is_string($fieldName) || !is_array($fieldType)) {
                     continue;
                 }
 
-                $normalizedObject[$fieldName] = $this->normalize($normalizedObject[$fieldName] ?? null, $fieldType);
+                $normalizedObject[ $fieldName ] = $this->normalize($normalizedObject[ $fieldName ] ?? null, $fieldType);
+
             }
 
             return $normalizedObject;
+
         }
 
         if ($kind === 'array') {
-            $itemType = $workflowType['item_type'] ?? null;
+
+            $itemType = $workflowType[ 'item_type' ] ?? null;
 
             if (!is_array($itemType)) {
                 return is_array($value) ? array_values($value) : [];
@@ -52,10 +57,12 @@ final class WorkflowTypeNormalizationStage
                 fn (mixed $item): mixed => $this->normalize($item, $itemType),
                 array_values($value),
             );
+
         }
 
         if ($kind === 'tuple') {
-            $items = $workflowType['items'] ?? null;
+
+            $items = $workflowType[ 'items' ] ?? null;
 
             if (!is_array($items)) {
                 return is_array($value) ? array_values($value) : [];
@@ -65,32 +72,39 @@ final class WorkflowTypeNormalizationStage
             $normalizedTuple = [];
 
             foreach (array_values($items) as $index => $itemType) {
+
                 if (!is_array($itemType)) {
                     continue;
                 }
 
-                $normalizedTuple[] = $this->normalize($tupleValues[$index] ?? null, $itemType);
+                $normalizedTuple[] = $this->normalize($tupleValues[ $index ] ?? null, $itemType);
+
             }
 
             return $normalizedTuple;
+
         }
 
         if ($kind === 'union') {
-            $members = $workflowType['members'] ?? null;
+
+            $members = $workflowType[ 'members' ] ?? null;
 
             if (!is_array($members) || $members === []) {
                 return $value;
             }
 
             foreach ($members as $memberType) {
+
                 if (!is_array($memberType)) {
                     continue;
                 }
 
                 return $this->normalize($value, $memberType);
+
             }
 
             return $value;
+
         }
 
         return $this->normalizeScalar($value, $kind);
@@ -103,6 +117,7 @@ final class WorkflowTypeNormalizationStage
         }
 
         if ($kind === 'integer') {
+
             if (is_int($value)) {
                 return $value;
             }
@@ -112,9 +127,11 @@ final class WorkflowTypeNormalizationStage
             }
 
             return 0;
+
         }
 
         if ($kind === 'float') {
+
             if (is_float($value) || is_int($value)) {
                 return (float) $value;
             }
@@ -124,6 +141,7 @@ final class WorkflowTypeNormalizationStage
             }
 
             return 0.0;
+
         }
 
         if ($kind === 'boolean') {

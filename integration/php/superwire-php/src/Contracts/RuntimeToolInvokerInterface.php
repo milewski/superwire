@@ -1,12 +1,12 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Contracts;
 
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\AgentToolCall;
-use Superwire\Contracts\AgentToolResult;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentToolCall;
+use Superwire\Contracts\Agent\AgentToolResult;
 
 interface RuntimeToolInvokerInterface
 {

@@ -1,11 +1,11 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Contracts;
 
-use Superwire\Contracts\WorkflowDefinition;
-use Superwire\Contracts\WorkflowExecutionResult;
+use Superwire\Contracts\Workflow\WorkflowDefinition;
+use Superwire\Contracts\Workflow\WorkflowExecutionResult;
 
 interface WorkflowRunnerInterface
 {

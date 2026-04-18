@@ -1,15 +1,15 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Data;
 
 use Spatie\LaravelData\Data;
-use Superwire\Contracts\AgentExpectedOutput;
-use Superwire\Contracts\AgentExecutionMetadata;
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\ExecutionBindings;
-use Superwire\Contracts\ProviderExecution;
+use Superwire\Contracts\Agent\AgentExecutionMetadata;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentExpectedOutput;
+use Superwire\Contracts\Execution\ExecutionBindings;
+use Superwire\Contracts\Provider\ProviderExecution;
 
 final class ResolvedAgentExecutionData extends Data
 {
@@ -40,8 +40,8 @@ final class ResolvedAgentExecutionData extends Data
      */
     public function expectedOutputWorkflowType(): array
     {
-        if (is_array($this->expectedOutput) && array_key_exists('workflow_type', $this->expectedOutput) && is_array($this->expectedOutput['workflow_type'])) {
-            return $this->expectedOutput['workflow_type'];
+        if (is_array($this->expectedOutput) && array_key_exists('workflow_type', $this->expectedOutput) && is_array($this->expectedOutput[ 'workflow_type' ])) {
+            return $this->expectedOutput[ 'workflow_type' ];
         }
 
         return [];

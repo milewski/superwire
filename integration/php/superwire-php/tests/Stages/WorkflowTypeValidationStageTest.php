@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Tests\Stages;
 
@@ -13,9 +13,9 @@ final class WorkflowTypeValidationStageTest extends TestCase
     public function testItAcceptsMatchingObjectOutput(): void
     {
         (new WorkflowTypeValidationStage())->validate(
-            ['summary' => 'ok'],
-            ['kind' => 'object', 'fields' => ['summary' => ['kind' => 'string']]],
-            'agent output'
+            [ 'summary' => 'ok' ],
+            [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
+            'agent output',
         );
 
         self::assertTrue(true);
@@ -26,9 +26,9 @@ final class WorkflowTypeValidationStageTest extends TestCase
         $this->expectException(InvalidWorkflowDefinitionException::class);
 
         (new WorkflowTypeValidationStage())->validate(
-            ['summary' => 123],
-            ['kind' => 'object', 'fields' => ['summary' => ['kind' => 'string']]],
-            'agent output'
+            [ 'summary' => 123 ],
+            [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
+            'agent output',
         );
     }
 }

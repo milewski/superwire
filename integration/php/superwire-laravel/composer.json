@@ -8,6 +8,7 @@
         "illuminate/contracts": "^12.0|^13.0",
         "illuminate/support": "^12.0|^13.0",
         "prism-php/prism": "^0.100",
+        "spatie/fork": "^1.2",
         "spatie/laravel-data": "^4.18",
         "superwire/superwire-php": "*@dev"
     },

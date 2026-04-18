@@ -1,17 +1,17 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Superwire\Contracts\AgentExpectedOutput;
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\AgentToolCall;
-use Superwire\Contracts\AgentTurnRequest;
-use Superwire\Contracts\AgentTurnResponse;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentExpectedOutput;
+use Superwire\Contracts\Agent\AgentToolCall;
+use Superwire\Contracts\Agent\AgentTurnRequest;
+use Superwire\Contracts\Agent\AgentTurnResponse;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
-use Superwire\Contracts\ProviderExecution;
+use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Support\LoopAgentDriver;
 
 final class LoopAgentDriverTest extends TestCase
@@ -19,8 +19,8 @@ final class LoopAgentDriverTest extends TestCase
     public function testItForcesCompletionToolWhenModelReturnsOnlyText(): void
     {
         $turnDriver = new FakeTurnDriver([
-            new AgentTurnResponse('plain text with no tool calls', []),
-            new AgentTurnResponse('', [new AgentToolCall('1', 'finalize_success', ['answer' => ['summary' => 'ok']])]),
+            new AgentTurnResponse([], 'plain text with no tool calls'),
+            new AgentTurnResponse([ new AgentToolCall('1', 'finalize_success', [ 'answer' => [ 'summary' => 'ok' ] ]) ]),
         ]);
 
         $driver = new LoopAgentDriver($turnDriver);
@@ -31,22 +31,22 @@ final class LoopAgentDriverTest extends TestCase
             model: 'gpt-4.1-mini',
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
-                workflowType: ['kind' => 'object', 'fields' => ['summary' => ['kind' => 'string']]],
-                jsonSchema: ['type' => 'object'],
+                workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
+                jsonSchema: [ 'type' => 'object' ],
             ),
         ));
 
-        self::assertSame(['summary' => 'ok'], $result->output);
+        self::assertSame([ 'summary' => 'ok' ], $result->output);
         self::assertCount(2, $turnDriver->requests);
-        self::assertFalse($turnDriver->requests[0]->requireToolCall);
-        self::assertTrue($turnDriver->requests[1]->requireToolCall);
+        self::assertFalse($turnDriver->requests[ 0 ]->requireToolCall);
+        self::assertTrue($turnDriver->requests[ 1 ]->requireToolCall);
     }
 
     public function testItSynthesizesFinalizeSuccessFromTextInForcedCompletionMode(): void
     {
         $turnDriver = new FakeTurnDriver([
-            new AgentTurnResponse('plain text with no tool calls', []),
-            new AgentTurnResponse('final plain text', []),
+            new AgentTurnResponse([], 'plain text with no tool calls'),
+            new AgentTurnResponse([], 'final plain text'),
         ]);
 
         $driver = new LoopAgentDriver($turnDriver);
@@ -57,22 +57,26 @@ final class LoopAgentDriverTest extends TestCase
             model: 'gpt-4.1-mini',
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
-                workflowType: ['kind' => 'string'],
-                jsonSchema: ['type' => 'string'],
+                workflowType: [ 'kind' => 'string' ],
+                jsonSchema: [ 'type' => 'string' ],
             ),
         ));
 
         self::assertSame('final plain text', $result->output);
-        self::assertTrue((bool) ($result->metadata['synthetic_completion'] ?? false));
+        self::assertTrue((bool) ($result->metadata[ 'synthetic_completion' ] ?? false));
     }
 }
 
 final class FakeTurnDriver implements AgentTurnDriverInterface
 {
-    /** @var array<int, AgentTurnRequest> */
+    /**
+     * @var array<int, AgentTurnRequest>
+     */
     public array $requests = [];
 
-    /** @param array<int, AgentTurnResponse> $responses */
+    /**
+     * @param array<int, AgentTurnResponse> $responses
+     */
     public function __construct(private array $responses)
     {
     }
@@ -81,6 +85,6 @@ final class FakeTurnDriver implements AgentTurnDriverInterface
     {
         $this->requests[] = $request;
 
-        return array_shift($this->responses) ?? new AgentTurnResponse('', []);
+        return array_shift($this->responses) ?? new AgentTurnResponse([]);
     }
 }
