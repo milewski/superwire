@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Superwire\Laravel\Tests;
 
+use Closure;
+use Illuminate\Support\Facades\Concurrency;
 use Superwire\Contracts\AgentExecutionRequest;
 use Superwire\Contracts\AgentExecutionResult;
 use Superwire\Contracts\Contracts\AgentDriverInterface;
@@ -16,7 +18,7 @@ final class LaravelWorkflowRunnerTest extends TestCase
     public function testItRunsWorkflowBatchesWithDependencies(): void
     {
         $driverRegistry = $this->app->make(DriverRegistryInterface::class);
-        $driverRegistry->register('fake', new FakeAgentDriver());
+        $driverRegistry->register('prism', new FakeAgentDriver());
 
         $workflowRunner = $this->app->make(WorkflowRunnerInterface::class);
         $workflowDefinition = (new JsonWorkflowDecoder())->decodeFromArray([
@@ -25,7 +27,7 @@ final class LaravelWorkflowRunnerTest extends TestCase
             'providers' => [
                 [
                     'name' => 'openai',
-                    'driver' => 'fake',
+                    'driver' => 'openai',
                     'config' => [],
                 ],
             ],
@@ -91,7 +93,7 @@ final class LaravelWorkflowRunnerTest extends TestCase
     public function testItExecutesForEachAgentsAsArrayOutputs(): void
     {
         $driverRegistry = $this->app->make(DriverRegistryInterface::class);
-        $driverRegistry->register('fake', new FakeAgentDriver());
+        $driverRegistry->register('prism', new FakeAgentDriver());
 
         $workflowRunner = $this->app->make(WorkflowRunnerInterface::class);
         $workflowDefinition = (new JsonWorkflowDecoder())->decodeFromArray([
@@ -100,7 +102,7 @@ final class LaravelWorkflowRunnerTest extends TestCase
             'providers' => [
                 [
                     'name' => 'openai',
-                    'driver' => 'fake',
+                    'driver' => 'openai',
                     'config' => [],
                 ],
             ],
@@ -148,14 +150,255 @@ final class LaravelWorkflowRunnerTest extends TestCase
 
         self::assertSame(['reply: item=1', 'reply: item=2', 'reply: item=3'], $result->output['items']);
     }
+
+    public function testItResolvesModelAndProviderModelsFromSecrets(): void
+    {
+        $driverRegistry = $this->app->make(DriverRegistryInterface::class);
+        $capturingDriver = new FakeAgentDriver();
+        $driverRegistry->register('prism', $capturingDriver);
+
+        $workflowRunner = $this->app->make(WorkflowRunnerInterface::class);
+        $workflowDefinition = (new JsonWorkflowDecoder())->decodeFromArray([
+            'format' => 'superwire_workflow_compact_v1',
+            'workflow_path' => 'tests.wire',
+            'providers' => [
+                [
+                    'name' => 'openai',
+                    'driver' => 'openai',
+                    'models' => [['$ref' => 'secrets.max_model']],
+                    'config' => [
+                        'models' => [['$ref' => 'secrets.max_model']],
+                    ],
+                ],
+            ],
+            'agents' => [
+                [
+                    'name' => 'summary',
+                    'provider' => 'openai',
+                    'model' => [
+                        '$call' => 'openai',
+                        'args' => [['$ref' => 'secrets.max_model']],
+                        'named' => [],
+                    ],
+                    'prompt' => 'run',
+                    'output' => [
+                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                    ],
+                    'dependencies' => [],
+                    'dependents' => [],
+                    'batch' => 0,
+                ],
+            ],
+            'output' => [
+                'fields' => [
+                    'summary' => ['$ref' => 'agent.summary'],
+                ],
+                'contract' => [
+                    'workflow_type' => ['kind' => 'object', 'fields' => ['summary' => ['kind' => 'string']]],
+                    'json_schema' => ['type' => 'object'],
+                ],
+            ],
+            'execution' => [
+                'order' => ['summary'],
+                'batches' => [['summary']],
+                'edges' => [],
+            ],
+        ]);
+
+        $result = $workflowRunner->run($workflowDefinition, [], ['max_model' => 'gpt-4.1']);
+
+        self::assertSame('reply: run', $result->output['summary']);
+        self::assertNotNull($capturingDriver->lastRequest);
+        self::assertSame('gpt-4.1', $capturingDriver->lastRequest->model);
+        self::assertSame(['gpt-4.1'], $capturingDriver->lastRequest->provider->configValue('models'));
+        self::assertSame('string', $capturingDriver->lastRequest->expectedOutput->kind());
+    }
+
+    public function testItFailsWhenDriverReturnsUnstructuredOutputForStructuredContract(): void
+    {
+        $driverRegistry = $this->app->make(DriverRegistryInterface::class);
+        $driverRegistry->register('prism', new FakeAgentDriver(fn (): mixed => 'not-json-object'));
+
+        $workflowRunner = $this->app->make(WorkflowRunnerInterface::class);
+        $workflowDefinition = (new JsonWorkflowDecoder())->decodeFromArray([
+            'format' => 'superwire_workflow_compact_v1',
+            'workflow_path' => 'tests.wire',
+            'providers' => [
+                [
+                    'name' => 'openai',
+                    'driver' => 'openai',
+                    'config' => [],
+                ],
+            ],
+            'agents' => [
+                [
+                    'name' => 'structured',
+                    'provider' => 'openai',
+                    'model' => 'gpt-4.1-mini',
+                    'prompt' => 'run',
+                    'output' => [
+                        'iteration' => [
+                            'workflow_type' => ['kind' => 'object', 'fields' => ['value' => ['kind' => 'string']]],
+                            'json_schema' => ['type' => 'object'],
+                        ],
+                        'final_output' => [
+                            'workflow_type' => ['kind' => 'object', 'fields' => ['value' => ['kind' => 'string']]],
+                            'json_schema' => ['type' => 'object'],
+                        ],
+                    ],
+                    'dependencies' => [],
+                    'dependents' => [],
+                    'batch' => 0,
+                ],
+            ],
+            'output' => [
+                'fields' => [
+                    'value' => ['$ref' => 'agent.structured.value'],
+                ],
+                'contract' => [
+                    'workflow_type' => ['kind' => 'object', 'fields' => ['value' => ['kind' => 'string']]],
+                    'json_schema' => ['type' => 'object'],
+                ],
+            ],
+            'execution' => [
+                'order' => ['structured'],
+                'batches' => [['structured']],
+                'edges' => [],
+            ],
+        ]);
+
+        $this->expectException(\Superwire\Contracts\Exception\InvalidWorkflowDefinitionException::class);
+
+        $workflowRunner->run($workflowDefinition);
+    }
+
+    public function testItDispatchesIndependentBatchAgentsThroughConcurrencyDriver(): void
+    {
+        $driverRegistry = $this->app->make(DriverRegistryInterface::class);
+        $driverRegistry->register('prism', new FakeAgentDriver());
+
+        $fakeConcurrencyDriver = new FakeConcurrencyDriver();
+        Concurrency::swap(new FakeConcurrencyManager($fakeConcurrencyDriver));
+
+        $workflowRunner = $this->app->make(WorkflowRunnerInterface::class);
+        $workflowDefinition = (new JsonWorkflowDecoder())->decodeFromArray([
+            'format' => 'superwire_workflow_compact_v1',
+            'workflow_path' => 'tests.wire',
+            'providers' => [[
+                'name' => 'openai',
+                'driver' => 'openai',
+                'config' => [],
+            ]],
+            'agents' => [
+                [
+                    'name' => 'first',
+                    'provider' => 'openai',
+                    'model' => 'gpt-4.1-mini',
+                    'prompt' => 'one',
+                    'output' => [
+                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                    ],
+                    'dependencies' => [],
+                    'dependents' => [],
+                    'batch' => 0,
+                ],
+                [
+                    'name' => 'second',
+                    'provider' => 'openai',
+                    'model' => 'gpt-4.1-mini',
+                    'prompt' => 'two',
+                    'output' => [
+                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                    ],
+                    'dependencies' => [],
+                    'dependents' => [],
+                    'batch' => 0,
+                ],
+            ],
+            'output' => [
+                'fields' => [
+                    'first' => ['$ref' => 'agent.first'],
+                    'second' => ['$ref' => 'agent.second'],
+                ],
+                'contract' => [
+                    'workflow_type' => ['kind' => 'object', 'fields' => ['first' => ['kind' => 'string'], 'second' => ['kind' => 'string']]],
+                    'json_schema' => ['type' => 'object'],
+                ],
+            ],
+            'execution' => [
+                'order' => ['first', 'second'],
+                'batches' => [['first', 'second']],
+                'edges' => [],
+            ],
+        ]);
+
+        $result = $workflowRunner->run($workflowDefinition);
+
+        self::assertSame('reply: one', $result->output['first']);
+        self::assertSame('reply: two', $result->output['second']);
+        self::assertSame([2], $fakeConcurrencyDriver->taskCounts);
+    }
+}
+
+final class FakeConcurrencyManager
+{
+    public function __construct(private readonly FakeConcurrencyDriver $driver)
+    {
+    }
+
+    public function driver(string|null $name = null): FakeConcurrencyDriver
+    {
+        return $this->driver;
+    }
+}
+
+final class FakeConcurrencyDriver
+{
+    /** @var list<int> */
+    public array $taskCounts = [];
+
+    /**
+     * @param array<string, callable(): mixed> $tasks
+     * @return array<string, mixed>
+     */
+    public function run(array $tasks): array
+    {
+        $this->taskCounts[] = count($tasks);
+        $results = [];
+
+        foreach ($tasks as $taskKey => $task) {
+            $results[$taskKey] = $task();
+        }
+
+        return $results;
+    }
 }
 
 final class FakeAgentDriver implements AgentDriverInterface
 {
+    public ?AgentExecutionRequest $lastRequest = null;
+
+    /**
+     * @param (Closure(AgentExecutionRequest): mixed)|null $outputFactory
+     */
+    public function __construct(
+        private readonly ?Closure $outputFactory = null,
+    ) {
+    }
+
     public function execute(AgentExecutionRequest $request): AgentExecutionResult
     {
+        $this->lastRequest = $request;
+
+        $output = $this->outputFactory === null
+            ? 'reply: ' . $request->prompt
+            : ($this->outputFactory)($request);
+
         return new AgentExecutionResult(
-            output: 'reply: ' . $request->prompt,
+            output: $output,
             context: [
                 'model' => $request->model,
                 'agent' => $request->agentName,

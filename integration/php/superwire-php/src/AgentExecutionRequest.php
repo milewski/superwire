@@ -7,22 +7,19 @@ namespace Superwire\Contracts;
 final class AgentExecutionRequest
 {
     /**
-     * @param array<string, mixed> $provider
-     * @param array<string, mixed> $metadata
-     * @param array<string, mixed> $localBindings
+     * @param list<ToolExecution> $tools
      */
     public function __construct(
         public readonly string $agentName,
-        public readonly string $providerName,
-        public readonly string $driverName,
+        public readonly ProviderExecution $provider,
         public readonly string $model,
         public readonly string $prompt,
-        public readonly array $provider = [],
+        public readonly AgentExpectedOutput $expectedOutput,
         public readonly mixed $context = null,
         public readonly mixed $inference = null,
         public readonly array $tools = [],
-        public readonly array $metadata = [],
-        public readonly array $localBindings = [],
+        public readonly ?AgentExecutionMetadata $metadata = null,
+        public readonly ?ExecutionBindings $bindings = null,
     ) {
     }
 }

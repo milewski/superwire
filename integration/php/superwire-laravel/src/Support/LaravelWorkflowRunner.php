@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Superwire\Laravel\Support;
 
+use Illuminate\Support\Facades\Concurrency;
 use Superwire\Contracts\AgentDefinition;
-use Superwire\Contracts\AgentExecutionRequest;
+use Superwire\Contracts\AgentExecutionResult;
 use Superwire\Contracts\Contracts\DriverRegistryInterface;
 use Superwire\Contracts\Contracts\WorkflowRunnerInterface;
 use Superwire\Contracts\Exception\ExpressionResolutionException;
 use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
+use Superwire\Contracts\Support\ExecutionPipeline;
 use Superwire\Contracts\Support\ExecutionPlanResolver;
 use Superwire\Contracts\Support\ExpressionResolver;
+use Superwire\Contracts\Support\Stages\WorkflowDefinitionValidationStage;
+use Superwire\Contracts\Support\Stages\WorkflowTypeValidationStage;
 use Superwire\Contracts\WorkflowDefinition;
 use Superwire\Contracts\WorkflowExecutionResult;
+use Superwire\Laravel\Data\ResolvedAgentExecutionData;
+use Superwire\Laravel\Data\ResolvedProviderData;
+use Superwire\Laravel\Data\ResolvedToolData;
 
 final class LaravelWorkflowRunner implements WorkflowRunnerInterface
 {
@@ -21,33 +28,109 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
 
     private ExpressionResolver $expressionResolver;
 
+    private WorkflowDefinitionValidationStage $workflowDefinitionValidationStage;
+
+    private WorkflowTypeValidationStage $workflowTypeValidationStage;
+
     public function __construct(
         private readonly DriverRegistryInterface $driverRegistry,
     ) {
         $this->executionPlanResolver = new ExecutionPlanResolver();
         $this->expressionResolver = new ExpressionResolver();
+        $this->workflowDefinitionValidationStage = new WorkflowDefinitionValidationStage();
+        $this->workflowTypeValidationStage = new WorkflowTypeValidationStage();
     }
 
     public function run(WorkflowDefinition $workflowDefinition, array $input = [], array $secrets = []): WorkflowExecutionResult
     {
-        $executionBatches = $this->resolveExecutionBatches($workflowDefinition);
-        $agentOutputs = [];
-        $agentContexts = [];
+        $pipelineContext = new LaravelWorkflowExecutionPipelineContext($workflowDefinition, $input, $secrets);
+        $executionPipeline = (new ExecutionPipeline())
+            ->addStage(fn (LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext => $this->validateWorkflowStage($context))
+            ->addStage(fn (LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext => $this->resolveBatchesStage($context))
+            ->addStage(fn (LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext => $this->executeAgentsStage($context))
+            ->addStage(fn (LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext => $this->resolveOutputStage($context));
 
-        foreach ($executionBatches as $executionBatch) {
-            foreach ($executionBatch as $agentName) {
-                $agentDefinition = $workflowDefinition->agentByName($agentName);
+        /** @var LaravelWorkflowExecutionPipelineContext $resolvedContext */
+        $resolvedContext = $executionPipeline->run($pipelineContext);
 
-                if ($agentDefinition === null) {
-                    throw new InvalidWorkflowDefinitionException("execution batch references unknown agent `{$agentName}`");
-                }
+        return new WorkflowExecutionResult($resolvedContext->resolvedOutput, $resolvedContext->agentOutputs, $resolvedContext->agentContexts);
+    }
 
+    private function validateWorkflowStage(LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext
+    {
+        $this->workflowDefinitionValidationStage->validate($context->workflowDefinition);
+
+        return $context;
+    }
+
+    private function resolveBatchesStage(LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext
+    {
+        $context->executionBatches = $this->resolveExecutionBatches($context->workflowDefinition);
+
+        return $context;
+    }
+
+    private function executeAgentsStage(LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext
+    {
+        foreach ($context->executionBatches as $executionBatch) {
+            $batchResults = $this->executeBatch(
+                workflowDefinition: $context->workflowDefinition,
+                batchAgentNames: $executionBatch,
+                input: $context->input,
+                secrets: $context->secrets,
+                agentOutputs: $context->agentOutputs,
+                agentContexts: $context->agentContexts,
+            );
+
+            foreach ($batchResults as $agentName => $agentExecutionResult) {
+                $context->agentOutputs[$agentName] = $agentExecutionResult['output'];
+                $context->agentContexts[$agentName] = $agentExecutionResult['context'];
+            }
+        }
+
+        return $context;
+    }
+
+    /**
+     * @param list<string> $batchAgentNames
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $secrets
+     * @param array<string, mixed> $agentOutputs
+     * @param array<string, mixed> $agentContexts
+     * @return array<string, array{output: mixed, context: mixed}>
+     */
+    private function executeBatch(
+        WorkflowDefinition $workflowDefinition,
+        array $batchAgentNames,
+        array $input,
+        array $secrets,
+        array $agentOutputs,
+        array $agentContexts,
+    ): array {
+        $tasks = [];
+
+        foreach ($batchAgentNames as $agentName) {
+            $agentDefinition = $workflowDefinition->agentByName($agentName);
+
+            if ($agentDefinition === null) {
+                throw new InvalidWorkflowDefinitionException("execution batch references unknown agent `{$agentName}`");
+            }
+
+            $tasks[$agentName] = function () use ($workflowDefinition, $agentDefinition, $input, $secrets, $agentOutputs, $agentContexts): array {
                 if ($agentDefinition->forEach !== null) {
-                    $iterationResults = $this->executeForEachAgent($workflowDefinition, $agentDefinition, $input, $secrets, $agentOutputs, $agentContexts);
-                    $agentOutputs[$agentDefinition->name] = $iterationResults['outputs'];
-                    $agentContexts[$agentDefinition->name] = $iterationResults['contexts'];
+                    $iterationResults = $this->executeForEachAgent(
+                        $workflowDefinition,
+                        $agentDefinition,
+                        $input,
+                        $secrets,
+                        $agentOutputs,
+                        $agentContexts,
+                    );
 
-                    continue;
+                    return [
+                        'output' => $iterationResults['outputs'],
+                        'context' => $iterationResults['contexts'],
+                    ];
                 }
 
                 $agentResult = $this->executeAgent(
@@ -57,17 +140,53 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
                     secrets: $secrets,
                     agentOutputs: $agentOutputs,
                     agentContexts: $agentContexts,
-                    localBindings: []
+                    localBindings: [],
+                    expectedOutputKey: 'final_output',
                 );
 
-                $agentOutputs[$agentDefinition->name] = $agentResult->output;
-                $agentContexts[$agentDefinition->name] = $agentResult->context;
-            }
+                return [
+                    'output' => $agentResult->output,
+                    'context' => $agentResult->context,
+                ];
+            };
         }
 
-        $resolvedOutput = $this->resolveWorkflowOutput($workflowDefinition, $input, $secrets, $agentOutputs, $agentContexts);
+        return $this->runConcurrentTasks($tasks);
+    }
 
-        return new WorkflowExecutionResult($resolvedOutput, $agentOutputs, $agentContexts);
+    /**
+     * @param array<string, callable(): array{output: mixed, context: mixed}> $tasks
+     * @return array<string, array{output: mixed, context: mixed}>
+     */
+    private function runConcurrentTasks(array $tasks): array
+    {
+        try {
+            /** @var array<string, array{output: mixed, context: mixed}> $parallelResults */
+            $parallelResults = Concurrency::driver(config('superwire.parallel.driver', 'fork'))->run($tasks);
+
+            return $parallelResults;
+        } catch (\Throwable) {
+            $sequentialResults = [];
+
+            foreach ($tasks as $taskKey => $task) {
+                $sequentialResults[$taskKey] = $task();
+            }
+
+            return $sequentialResults;
+        }
+    }
+
+    private function resolveOutputStage(LaravelWorkflowExecutionPipelineContext $context): LaravelWorkflowExecutionPipelineContext
+    {
+        $context->resolvedOutput = $this->resolveWorkflowOutput(
+            $context->workflowDefinition,
+            $context->input,
+            $context->secrets,
+            $context->agentOutputs,
+            $context->agentContexts,
+        );
+
+        return $context;
     }
 
     /**
@@ -85,7 +204,8 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
         array $agentOutputs,
         array $agentContexts,
         array $localBindings,
-    ): \Superwire\Contracts\AgentExecutionResult {
+        string $expectedOutputKey,
+    ): AgentExecutionResult {
         $providerDefinition = $workflowDefinition->providerByName($agentDefinition->provider);
 
         if ($providerDefinition === null) {
@@ -95,15 +215,17 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
         }
 
         $runtimeContext = $this->buildRuntimeContext($input, $secrets, $agentOutputs, $agentContexts, $localBindings);
-        $resolvedModel = $this->stringifyResolvedValue(
-            $this->expressionResolver->resolve($agentDefinition->model, $runtimeContext),
-            "agent `{$agentDefinition->name}` model"
-        );
+
+        $resolvedModelExpression = $this->expressionResolver->resolve($agentDefinition->model, $runtimeContext);
+        $resolvedModel = $this->resolveModelName($resolvedModelExpression, $agentDefinition->name, $providerDefinition->driver);
+
         $resolvedPrompt = $this->stringifyResolvedValue(
             $this->expressionResolver->resolve($agentDefinition->prompt, $runtimeContext),
             "agent `{$agentDefinition->name}` prompt"
         );
-        $resolvedProviderConfig = $this->expressionResolver->resolve($providerDefinition->config, $runtimeContext);
+
+        $resolvedProviderConfig = $this->resolveProviderConfig($providerDefinition->config, $runtimeContext, $agentDefinition->name);
+
         $resolvedContext = $agentDefinition->context === null
             ? null
             : $this->expressionResolver->resolve($agentDefinition->context, $runtimeContext);
@@ -124,33 +246,40 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
                 $resolvedToolBindings[$bindingName] = $this->expressionResolver->resolve($bindingValue, $runtimeContext);
             }
 
-            $resolvedTools[] = [
-                'name' => $toolDefinition['name'],
-                'bind' => $resolvedToolBindings,
-            ];
+            $resolvedTools[] = new ResolvedToolData($toolDefinition['name'], $resolvedToolBindings);
         }
 
-        $driver = $this->driverRegistry->get($providerDefinition->driver);
-        $request = new AgentExecutionRequest(
+        $resolvedExecution = new ResolvedAgentExecutionData(
             agentName: $agentDefinition->name,
-            providerName: $providerDefinition->name,
-            driverName: $providerDefinition->driver,
+            provider: new ResolvedProviderData(
+                name: $providerDefinition->name,
+                provider: $providerDefinition->driver,
+                config: $resolvedProviderConfig,
+            ),
             model: $resolvedModel,
             prompt: $resolvedPrompt,
-            provider: is_array($resolvedProviderConfig) ? $resolvedProviderConfig : $providerDefinition->config,
             context: $resolvedContext,
             inference: $resolvedInference,
             tools: $resolvedTools,
             localBindings: $localBindings,
-            metadata: [
-                'dependencies' => $agentDefinition->dependencies,
-                'dependents' => $agentDefinition->dependents,
-                'batch' => $agentDefinition->batch,
-                'output' => $agentDefinition->output,
-            ],
+            dependencies: $agentDefinition->dependencies,
+            dependents: $agentDefinition->dependents,
+            batch: $agentDefinition->batch,
+            expectedOutput: $this->resolveExpectedOutputContract($agentDefinition, $expectedOutputKey),
         );
 
-        return $driver->execute($request);
+        $executionDriverKey = $this->resolveExecutionDriverKey($resolvedProviderConfig);
+        $executionDriver = $this->driverRegistry->get($executionDriverKey);
+        $agentRequest = $resolvedExecution->toRequest();
+        $agentResult = $executionDriver->execute($agentRequest);
+
+        $this->workflowTypeValidationStage->validate(
+            value: $agentResult->output,
+            workflowType: $resolvedExecution->expectedOutputWorkflowType(),
+            context: "agent `{$agentDefinition->name}` output"
+        );
+
+        return $agentResult;
     }
 
     /**
@@ -178,20 +307,42 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
         $iterationOutputs = [];
         $iterationContexts = [];
 
-        foreach ($iterableValues as $iterableValue) {
-            $localBindings = $this->buildForEachBindings($agentDefinition, $iterableValue);
-            $iterationResult = $this->executeAgent(
-                workflowDefinition: $workflowDefinition,
-                agentDefinition: $agentDefinition,
-                input: $input,
-                secrets: $secrets,
-                agentOutputs: $agentOutputs,
-                agentContexts: $agentContexts,
-                localBindings: $localBindings,
-            );
+        $iterationTasks = [];
 
-            $iterationOutputs[] = $iterationResult->output;
-            $iterationContexts[] = $iterationResult->context;
+        foreach (array_values($iterableValues) as $index => $iterableValue) {
+            $iterationTasks[(string) $index] = function () use (
+                $workflowDefinition,
+                $agentDefinition,
+                $input,
+                $secrets,
+                $agentOutputs,
+                $agentContexts,
+                $iterableValue
+            ): array {
+                $localBindings = $this->buildForEachBindings($agentDefinition, $iterableValue);
+                $iterationResult = $this->executeAgent(
+                    workflowDefinition: $workflowDefinition,
+                    agentDefinition: $agentDefinition,
+                    input: $input,
+                    secrets: $secrets,
+                    agentOutputs: $agentOutputs,
+                    agentContexts: $agentContexts,
+                    localBindings: $localBindings,
+                    expectedOutputKey: 'iteration',
+                );
+
+                return [
+                    'output' => $iterationResult->output,
+                    'context' => $iterationResult->context,
+                ];
+            };
+        }
+
+        $iterationResults = $this->runConcurrentTasks($iterationTasks);
+
+        foreach (array_keys($iterationTasks) as $taskIndex) {
+            $iterationOutputs[] = $iterationResults[$taskIndex]['output'];
+            $iterationContexts[] = $iterationResults[$taskIndex]['context'];
         }
 
         return [
@@ -312,6 +463,87 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
         return $this->executionPlanResolver->resolveBatches($workflowDefinition->agents);
     }
 
+    /**
+     * @param array<string, mixed> $providerConfig
+     * @param array<string, mixed> $runtimeContext
+     * @return array<string, mixed>
+     */
+    private function resolveProviderConfig(array $providerConfig, array $runtimeContext, string $agentName): array
+    {
+        $resolvedProviderConfig = $this->expressionResolver->resolve($providerConfig, $runtimeContext);
+
+        if (!is_array($resolvedProviderConfig)) {
+            throw new InvalidWorkflowDefinitionException(
+                "provider config for agent `{$agentName}` must resolve into an object"
+            );
+        }
+
+        return $resolvedProviderConfig;
+    }
+
+    /**
+     * @param array<string, mixed> $resolvedProviderConfig
+     */
+    private function resolveExecutionDriverKey(array $resolvedProviderConfig): string
+    {
+        $configuredDriver = $resolvedProviderConfig['execution_driver'] ?? null;
+
+        if (is_string($configuredDriver) && $configuredDriver !== '') {
+            return strtolower($configuredDriver);
+        }
+
+        return 'prism';
+    }
+
+    private function resolveModelName(mixed $resolvedModelExpression, string $agentName, string $providerDriver): string
+    {
+        if (is_array($resolvedModelExpression) && array_key_exists('$call', $resolvedModelExpression)) {
+            $callName = $resolvedModelExpression['$call'] ?? null;
+
+            if (!is_string($callName)) {
+                throw new ExpressionResolutionException("agent `{$agentName}` model call contains invalid call target");
+            }
+
+            if ($callName !== $providerDriver) {
+                throw new ExpressionResolutionException(
+                    "agent `{$agentName}` model provider call `{$callName}` does not match provider driver `{$providerDriver}`"
+                );
+            }
+
+            $callArguments = $resolvedModelExpression['args'] ?? [];
+
+            if (!is_array($callArguments) || $callArguments === []) {
+                throw new ExpressionResolutionException("agent `{$agentName}` model call must include at least one argument");
+            }
+
+            return $this->stringifyResolvedValue($callArguments[0], "agent `{$agentName}` model argument");
+        }
+
+        return $this->stringifyResolvedValue($resolvedModelExpression, "agent `{$agentName}` model");
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveExpectedOutputContract(AgentDefinition $agentDefinition, string $expectedOutputKey): array
+    {
+        if (!is_array($agentDefinition->output) || !array_key_exists($expectedOutputKey, $agentDefinition->output)) {
+            throw new InvalidWorkflowDefinitionException(
+                "agent `{$agentDefinition->name}` output contract is missing `{$expectedOutputKey}`"
+            );
+        }
+
+        $expectedOutput = $agentDefinition->output[$expectedOutputKey];
+
+        if (!is_array($expectedOutput)) {
+            throw new InvalidWorkflowDefinitionException(
+                "agent `{$agentDefinition->name}` output contract `{$expectedOutputKey}` must be an object"
+            );
+        }
+
+        return $expectedOutput;
+    }
+
     private function stringifyResolvedValue(mixed $resolvedValue, string $context): string
     {
         if (is_string($resolvedValue)) {
@@ -323,5 +555,39 @@ final class LaravelWorkflowRunner implements WorkflowRunnerInterface
         }
 
         throw new ExpressionResolutionException("{$context} must resolve to a scalar string value");
+    }
+}
+
+final class LaravelWorkflowExecutionPipelineContext
+{
+    /**
+     * @var list<list<string>>
+     */
+    public array $executionBatches = [];
+
+    /**
+     * @var array<string, mixed>
+     */
+    public array $agentOutputs = [];
+
+    /**
+     * @var array<string, mixed>
+     */
+    public array $agentContexts = [];
+
+    /**
+     * @var array<string, mixed>
+     */
+    public array $resolvedOutput = [];
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $secrets
+     */
+    public function __construct(
+        public readonly WorkflowDefinition $workflowDefinition,
+        public readonly array $input,
+        public readonly array $secrets,
+    ) {
     }
 }

@@ -8,13 +8,13 @@ final class ProviderDefinition
 {
     /**
      * @param array<string, mixed> $config
-     * @param list<string>|null $models
+     * @param mixed $models
      */
     public function __construct(
         public readonly string $name,
         public readonly string $driver,
         public readonly array $config,
-        public readonly ?array $models = null,
+        public readonly mixed $models = null,
     ) {
     }
 }

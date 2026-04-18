@@ -7,6 +7,7 @@ namespace Superwire\Laravel;
 use Illuminate\Support\ServiceProvider;
 use Superwire\Contracts\Contracts\DriverRegistryInterface;
 use Superwire\Contracts\Contracts\WorkflowRunnerInterface;
+use Superwire\Contracts\Support\LoopAgentDriver;
 use Superwire\Laravel\Driver\PrismAgentDriver;
 use Superwire\Laravel\Support\LaravelDriverRegistry;
 use Superwire\Laravel\Support\LaravelWorkflowRunner;
@@ -30,6 +31,6 @@ final class SuperwireLaravelServiceProvider extends ServiceProvider
             return;
         }
 
-        $driverRegistry->register('prism', new PrismAgentDriver());
+        $driverRegistry->register('prism', new LoopAgentDriver(new PrismAgentDriver()));
     }
 }
