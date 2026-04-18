@@ -1,0 +1,53 @@
+{
+    "name": "superwire/superwire-laravel",
+    "description": "Laravel execution layer for Superwire workflows with pluggable drivers.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "prism-php/prism": "^0.100",
+        "superwire/superwire-php": "*@dev"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0|^11.0",
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Superwire\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Superwire\\Laravel\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../superwire-php",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "audit": {
+            "block-insecure": false
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Superwire\\Laravel\\SuperwireLaravelServiceProvider"
+            ]
+        }
+    }
+}

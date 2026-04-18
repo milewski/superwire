@@ -1,0 +1,27 @@
+{
+    "name": "superwire/superwire-php",
+    "description": "Core contracts and helpers for executing Superwire workflow JSON.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Superwire\\Contracts\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Superwire\\Contracts\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
