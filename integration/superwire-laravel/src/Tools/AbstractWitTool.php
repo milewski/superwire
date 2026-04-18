@@ -6,8 +6,9 @@ namespace Superwire\Laravel\Tools;
 
 use RuntimeException;
 use Superwire\Laravel\Contracts\WitDefinedTool;
-use Superwire\Laravel\Wit\WitToolSchemaParser;
+use Superwire\Laravel\Wit\Schema\WitSchemaRecordKind;
 use Superwire\Laravel\Wit\Schema\WitToolSchema;
+use Superwire\Laravel\Wit\WitToolSchemaParser;
 
 abstract class AbstractWitTool extends AbstractTool implements WitDefinedTool
 {
@@ -29,6 +30,11 @@ abstract class AbstractWitTool extends AbstractTool implements WitDefinedTool
     final public static function endpointName(): string
     {
         return static::name();
+    }
+
+    final public static function definesRecord(WitSchemaRecordKind $recordKind): bool
+    {
+        return static::witSchema()->hasRecord($recordKind);
     }
 
     private static function witSchema(): WitToolSchema
@@ -53,7 +59,7 @@ abstract class AbstractWitTool extends AbstractTool implements WitDefinedTool
     {
         $toolTypeName = preg_replace_callback(
             '/(^|[^a-zA-Z0-9]+)([a-zA-Z0-9])/',
-            static fn (array $matches): string => strtoupper($matches[2]),
+            static fn (array $matches): string => strtoupper($matches[ 2 ]),
             static::name(),
         );
 
@@ -61,7 +67,7 @@ abstract class AbstractWitTool extends AbstractTool implements WitDefinedTool
             throw new RuntimeException(sprintf('failed to derive generated type prefix from `%s`', static::name()));
         }
 
-        return static::classNamespace() . '\\' . $toolTypeName . $suffix;
+        return static::classNamespace() . '\\Data\\' . $toolTypeName . $suffix;
     }
 
     private static function classNamespace(): string

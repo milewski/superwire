@@ -4,16 +4,12 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Wit\Schema;
 
-final readonly class WitSchemaRecord
+final readonly class WitSchemaVariantCase
 {
-    /**
-     * @param list<WitSchemaField> $fields
-     */
     public function __construct(
         public string $name,
-        public ?WitSchemaRecordKind $kind,
+        public ?string $payloadType,
         public ?string $description,
-        public array $fields,
     )
     {
     }

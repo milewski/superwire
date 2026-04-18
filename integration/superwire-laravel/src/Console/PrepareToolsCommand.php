@@ -7,10 +7,13 @@ namespace Superwire\Laravel\Console;
 use Illuminate\Console\Command;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use ReflectionClass;
 use Superwire\Laravel\Contracts\Tool;
 use Superwire\Laravel\Data\ToolBuildRequest;
 use Superwire\Laravel\Exceptions\ToolBuildException;
 use Superwire\Laravel\Execution\ToolCompiler;
+use Superwire\Laravel\Wit\Schema\WitSchemaRecordKind;
+use Superwire\Laravel\Wit\WitToolSchemaParser;
 use Throwable;
 
 final class PrepareToolsCommand extends Command
@@ -97,6 +100,24 @@ final class PrepareToolsCommand extends Command
             $referencedToolNames,
             static fn (string $toolName): bool => !array_key_exists($toolName, $toolClassesByName),
         ));
+
+        if ($unknownToolNames !== []) {
+
+            $generatedToolClasses = $this->scaffoldMissingToolClassesFromWit($unknownToolNames);
+
+            if ($generatedToolClasses !== []) {
+
+                $this->line(sprintf('Generated %d tool class stub(s) from WIT.', count($generatedToolClasses)));
+                $toolClasses = array_values(array_unique(array_merge($toolClasses, $generatedToolClasses)));
+                $toolClassesByName = $this->toolClassesByName($toolClasses);
+                $unknownToolNames = array_values(array_filter(
+                    $referencedToolNames,
+                    static fn (string $toolName): bool => !array_key_exists($toolName, $toolClassesByName),
+                ));
+
+            }
+
+        }
 
         if ($unknownToolNames !== []) {
 
@@ -554,6 +575,20 @@ final class PrepareToolsCommand extends Command
             return null;
         }
 
+        try {
+
+            $reflectionClass = new ReflectionClass($className);
+
+            if ($reflectionClass->isAbstract() || !$reflectionClass->isInstantiable()) {
+                return null;
+            }
+
+        } catch (Throwable) {
+
+            return null;
+
+        }
+
         return $className;
     }
 
@@ -650,5 +685,199 @@ final class PrepareToolsCommand extends Command
         }
 
         return $publishedArtifactCount;
+    }
+
+    /**
+     * @param list<string> $toolNames
+     * @return list<class-string<Tool>>
+     */
+    private function scaffoldMissingToolClassesFromWit(array $toolNames): array
+    {
+        if ($toolNames === []) {
+            return [];
+        }
+
+        $toolNamesLookup = array_fill_keys($toolNames, true);
+        $generatedToolClasses = [];
+        $witSchemaParser = new WitToolSchemaParser();
+
+        foreach ($this->witFilePaths() as $witFilePath) {
+
+            try {
+
+                $witSchema = $witSchemaParser->parseFile($witFilePath);
+
+            } catch (Throwable) {
+
+                continue;
+
+            }
+
+            if (!isset($toolNamesLookup[ $witSchema->toolName ])) {
+                continue;
+            }
+
+            $generatedToolClass = $this->generateToolClassStubFromWit($witFilePath, $witSchema);
+
+            if ($generatedToolClass !== null) {
+                $generatedToolClasses[] = $generatedToolClass;
+            }
+
+        }
+
+        $generatedToolClasses = array_values(array_unique($generatedToolClasses));
+        sort($generatedToolClasses);
+
+        return $generatedToolClasses;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function witFilePaths(): array
+    {
+        $scanRoots = [ $this->scanRootDirectory() ];
+        $applicationRoot = app_path();
+
+        if (is_string($applicationRoot) && $applicationRoot !== '' && !in_array($applicationRoot, $scanRoots, true)) {
+            $scanRoots[] = $applicationRoot;
+        }
+
+        $witFilePaths = [];
+
+        foreach ($scanRoots as $scanRoot) {
+
+            if (!is_dir($scanRoot)) {
+                continue;
+            }
+
+            $directoryIterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($scanRoot, RecursiveDirectoryIterator::SKIP_DOTS),
+            );
+
+            foreach ($directoryIterator as $fileInfo) {
+
+                $absolutePath = $fileInfo->getPathname();
+
+                if ($this->shouldSkipPath($absolutePath)) {
+                    continue;
+                }
+
+                if (!$fileInfo->isFile()) {
+                    continue;
+                }
+
+                if ($fileInfo->getExtension() !== 'wit') {
+                    continue;
+                }
+
+                $witFilePaths[] = $absolutePath;
+
+            }
+
+        }
+
+        $witFilePaths = array_values(array_unique($witFilePaths));
+        sort($witFilePaths);
+
+        return $witFilePaths;
+    }
+
+    private function generateToolClassStubFromWit(string $witFilePath, object $witSchema): ?string
+    {
+        $toolDirectory = dirname($witFilePath);
+        $applicationRoot = app_path();
+
+        if (!str_starts_with($toolDirectory, $applicationRoot . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+
+        $toolClassName = $this->pascalCase($witSchema->toolName);
+        $toolClassPath = $toolDirectory . DIRECTORY_SEPARATOR . $toolClassName . '.php';
+
+        if (is_file($toolClassPath)) {
+
+            foreach ($this->classNamesFromPhpFile($toolClassPath) as $className) {
+
+                if (is_subclass_of($className, Tool::class)) {
+                    return $className;
+                }
+
+            }
+
+            return null;
+
+        }
+
+        $relativeDirectory = trim(substr($toolDirectory, strlen($applicationRoot)), DIRECTORY_SEPARATOR);
+        $namespaceSuffix = str_replace(DIRECTORY_SEPARATOR, '\\', $relativeDirectory);
+        $namespace = 'App' . ($namespaceSuffix !== '' ? '\\' . $namespaceSuffix : '');
+
+        $hasAgentInput = $witSchema->hasRecord(WitSchemaRecordKind::AgentInput);
+        $hasBoundInput = $witSchema->hasRecord(WitSchemaRecordKind::BoundInput);
+        $typePrefix = $this->pascalCase($witSchema->toolName);
+
+        $parameters = [];
+
+        if ($hasAgentInput) {
+            $parameters[] = sprintf('Data\\%sAgentInput $agentInput', $typePrefix);
+        }
+
+        if ($hasBoundInput) {
+            $parameters[] = sprintf('Data\\%sBoundInput $boundInput', $typePrefix);
+        }
+
+        $parameterCode = $parameters === []
+            ? ''
+            : "\n        " . implode(",\n        ", $parameters) . "\n    ";
+
+        $source = "<?php\n\ndeclare(strict_types = 1);\n\nnamespace {$namespace};\n\n"
+            . "use RuntimeException;\n"
+            . "use Superwire\\Laravel\\Tools\\AbstractWitTool;\n\n"
+            . "final class {$toolClassName} extends AbstractWitTool\n"
+            . "{\n"
+            . "    public static function witPath(): string\n"
+            . "    {\n"
+            . "        return __DIR__ . '/" . basename($witFilePath) . "';\n"
+            . "    }\n\n"
+            . "    protected function handle({$parameterCode}): Data\\{$typePrefix}Output\n"
+            . "    {\n"
+            . "        throw new RuntimeException('Implement handle() for this WIT-defined tool.');\n"
+            . "    }\n"
+            . "}\n";
+
+        $written = file_put_contents($toolClassPath, $source);
+
+        if ($written === false) {
+            return null;
+        }
+
+        require_once $toolClassPath;
+
+        $className = $namespace . '\\' . $toolClassName;
+
+        return is_subclass_of($className, Tool::class) ? $className : null;
+    }
+
+    private function pascalCase(string $value): string
+    {
+        $segments = preg_split('/[^a-zA-Z0-9]+/', $value) ?: [];
+        $result = '';
+
+        foreach ($segments as $segment) {
+
+            if ($segment === '') {
+                continue;
+            }
+
+            $result .= ucfirst($segment);
+
+        }
+
+        if ($result === '') {
+            return 'GeneratedTool';
+        }
+
+        return $result;
     }
 }

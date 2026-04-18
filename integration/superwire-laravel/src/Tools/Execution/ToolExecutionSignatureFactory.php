@@ -10,8 +10,10 @@ use ReflectionNamedType;
 use Spatie\LaravelData\Data;
 use Superwire\Laravel\Contracts\ToolBoundInputData;
 use Superwire\Laravel\Contracts\ToolInputData;
+use Superwire\Laravel\Contracts\WitDefinedTool;
 use Superwire\Laravel\Tools\Data\EmptyToolBoundInputData;
 use Superwire\Laravel\Tools\Data\EmptyToolInputData;
+use Superwire\Laravel\Wit\Schema\WitSchemaRecordKind;
 
 final class ToolExecutionSignatureFactory
 {
@@ -44,6 +46,13 @@ final class ToolExecutionSignatureFactory
         ] = $this->resolveHandleParameters($handleMethod, $toolClassName);
 
         $outputClass = $this->toolDataClassFromReturnType($handleMethod, $toolClassName);
+
+        $this->assertWitToolUsesGeneratedTypes(
+            toolClassName: $toolClassName,
+            agentInputClass: $agentInputClass,
+            boundInputClass: $boundInputClass,
+            outputClass: $outputClass,
+        );
 
         return new ToolExecutionSignature(
             agentInputClass: $agentInputClass,
@@ -181,5 +190,80 @@ final class ToolExecutionSignatureFactory
         }
 
         return $returnClassName;
+    }
+
+    /**
+     * @param class-string $toolClassName
+     * @param class-string<ToolInputData> $agentInputClass
+     * @param class-string<ToolBoundInputData> $boundInputClass
+     * @param class-string<Data> $outputClass
+     */
+    private function assertWitToolUsesGeneratedTypes(
+        string $toolClassName,
+        string $agentInputClass,
+        string $boundInputClass,
+        string $outputClass,
+    ): void {
+        if (!is_subclass_of($toolClassName, WitDefinedTool::class)) {
+            return;
+        }
+
+        if (!method_exists($toolClassName, 'generatedTypeClassName')) {
+
+            throw new LogicException(sprintf(
+                'WIT tool `%s` must extend `%s` so generated types can be enforced',
+                $toolClassName,
+                'Superwire\\Laravel\\Tools\\AbstractWitTool',
+            ));
+
+        }
+
+        $expectsAgentInput = method_exists($toolClassName, 'definesRecord')
+            ? $toolClassName::definesRecord(WitSchemaRecordKind::AgentInput)
+            : true;
+        $expectsBoundInput = method_exists($toolClassName, 'definesRecord')
+            ? $toolClassName::definesRecord(WitSchemaRecordKind::BoundInput)
+            : true;
+
+        $expectedAgentInputClass = $expectsAgentInput
+            ? $toolClassName::generatedTypeClassName('AgentInput')
+            : EmptyToolInputData::class;
+        $expectedBoundInputClass = $expectsBoundInput
+            ? $toolClassName::generatedTypeClassName('BoundInput')
+            : EmptyToolBoundInputData::class;
+        $expectedOutputClass = $toolClassName::generatedTypeClassName('Output');
+
+        if ($agentInputClass !== $expectedAgentInputClass) {
+
+            throw new LogicException(sprintf(
+                'WIT tool `%s` must use generated agent input `%s` in handle signature; received `%s`',
+                $toolClassName,
+                $expectedAgentInputClass,
+                $agentInputClass,
+            ));
+
+        }
+
+        if ($boundInputClass !== $expectedBoundInputClass) {
+
+            throw new LogicException(sprintf(
+                'WIT tool `%s` must use generated bound input `%s` in handle signature; received `%s`',
+                $toolClassName,
+                $expectedBoundInputClass,
+                $boundInputClass,
+            ));
+
+        }
+
+        if ($outputClass !== $expectedOutputClass) {
+
+            throw new LogicException(sprintf(
+                'WIT tool `%s` must return generated output `%s` from handle; received `%s`',
+                $toolClassName,
+                $expectedOutputClass,
+                $outputClass,
+            ));
+
+        }
     }
 }
