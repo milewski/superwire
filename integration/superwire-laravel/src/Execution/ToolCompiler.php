@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\Process;
 use JsonException;
 use RuntimeException;
+use Superwire\Laravel\Contracts\WitDefinedTool;
 use Superwire\Laravel\Data\ToolBuildRequest;
 use Superwire\Laravel\Data\ToolBuildResult;
-use Superwire\Laravel\Contracts\WitDefinedTool;
 use Superwire\Laravel\Exceptions\ToolBuildException;
 use Superwire\Laravel\Execution\Compiler\ToolClassValidator;
 use Superwire\Laravel\Execution\Compiler\ToolEndpointResolver;
@@ -74,11 +74,14 @@ final readonly class ToolCompiler
         $toolSourcePathByToolName = [];
 
         foreach ($validatedToolClasses as $toolClass) {
+
             if (is_subclass_of($toolClass, WitDefinedTool::class)) {
+
                 /** @var class-string<WitDefinedTool> $witDefinedToolClass */
                 $witDefinedToolClass = $toolClass;
                 $parsedWitSchema = $witToolSchemaParser->parseFile($witDefinedToolClass::witPath());
                 $witPhpToolTypesGenerator->generateForToolClass($witDefinedToolClass, $parsedWitSchema);
+
             }
 
             $toolName = $toolClass::name();
@@ -98,6 +101,7 @@ final readonly class ToolCompiler
             $toolSourcePathByToolName[ $toolName ] = $modulePath;
 
             if (is_subclass_of($toolClass, WitDefinedTool::class)) {
+
                 /** @var class-string<WitDefinedTool> $witDefinedToolClass */
                 $witDefinedToolClass = $toolClass;
                 $sourceWitPath = $witDefinedToolClass::witPath();
@@ -106,6 +110,7 @@ final readonly class ToolCompiler
                 if (!copy($sourceWitPath, $targetWitPath)) {
                     throw new ToolBuildException(sprintf('failed to copy WIT file from %s to %s', $sourceWitPath, $targetWitPath));
                 }
+
             }
 
         }

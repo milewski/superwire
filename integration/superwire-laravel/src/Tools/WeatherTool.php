@@ -5,6 +5,9 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Tools;
 
 use Illuminate\Support\Facades\Http;
+use Superwire\Laravel\Tools\Data\WeatherAgentInput;
+use Superwire\Laravel\Tools\Data\WeatherBoundInput;
+use Superwire\Laravel\Tools\Data\WeatherOutput;
 use Throwable;
 
 final class WeatherTool extends AbstractWitTool
