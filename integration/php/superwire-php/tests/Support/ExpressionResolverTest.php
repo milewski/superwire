@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Tests;
 
@@ -18,15 +18,15 @@ final class ExpressionResolverTest extends TestCase
             [
                 '$template' => [
                     'Hello ',
-                    ['$expr' => ['$ref' => 'input.name']],
+                    [ '$expr' => [ '$ref' => 'input.name' ] ],
                     ', summary=',
-                    ['$expr' => ['$ref' => 'agent.summary']],
+                    [ '$expr' => [ '$ref' => 'agent.summary' ] ],
                 ],
             ],
             [
-                'input' => ['name' => 'Rafael'],
-                'agent' => ['summary' => 'ready'],
-            ]
+                'input' => [ 'name' => 'Rafael' ],
+                'agent' => [ 'summary' => 'ready' ],
+            ],
         );
 
         self::assertSame('Hello Rafael, summary=ready', $resolvedTemplate);
@@ -38,6 +38,6 @@ final class ExpressionResolverTest extends TestCase
 
         $this->expectException(ExpressionResolutionException::class);
 
-        $resolver->resolve(['$ref' => 'missing.value'], ['input' => []]);
+        $resolver->resolve([ '$ref' => 'missing.value' ], [ 'input' => [] ]);
     }
 }

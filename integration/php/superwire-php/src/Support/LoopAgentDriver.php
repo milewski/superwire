@@ -1,20 +1,21 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support;
 
 use RuntimeException;
-use Superwire\Contracts\AgentConversationMessage;
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\AgentExecutionResult;
-use Superwire\Contracts\AgentToolCall;
-use Superwire\Contracts\AgentToolDefinition;
-use Superwire\Contracts\AgentToolResult;
-use Superwire\Contracts\AgentTurnRequest;
+use Superwire\Contracts\Agent\AgentConversationMessage;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentExecutionResult;
+use Superwire\Contracts\Agent\AgentToolCall;
+use Superwire\Contracts\Agent\AgentToolDefinition;
+use Superwire\Contracts\Agent\AgentToolResult;
+use Superwire\Contracts\Agent\AgentTurnRequest;
 use Superwire\Contracts\Contracts\AgentDriverInterface;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
+use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 use Superwire\Contracts\Support\Stages\CompletionToolLoopStage;
 use Superwire\Contracts\Support\Stages\WorkflowTypeValidationStage;
 
@@ -36,11 +37,12 @@ final class LoopAgentDriver implements AgentDriverInterface
 
     public function execute(AgentExecutionRequest $request): AgentExecutionResult
     {
-        $messages = [new AgentConversationMessage('user', ['content' => $request->prompt])];
+        $messages = [ new AgentConversationMessage('user', [ 'content' => $request->prompt ]) ];
         $completionPhaseEnabled = false;
         $recentRuntimeToolResults = [];
 
         for ($iterationIndex = 0; $iterationIndex < self::MAX_ITERATIONS; $iterationIndex++) {
+
             $tools = $this->buildTurnTools($request, $completionPhaseEnabled);
             $turnResponse = $this->turnDriver->generateTurn(new AgentTurnRequest(
                 provider: $request->provider->provider,
@@ -58,8 +60,9 @@ final class LoopAgentDriver implements AgentDriverInterface
 
             $finalization = $this->completionToolLoopStage->decide($this->toolCallsForDecision($turnResponse->toolCalls));
 
-            if ($finalization['status'] === 'success') {
-                $output = $this->resolvedFinalizeOutput($finalization['output'] ?? null, $recentRuntimeToolResults);
+            if ($finalization[ 'status' ] === 'success') {
+
+                $output = $this->resolvedFinalizeOutput($finalization[ 'output' ] ?? null, $recentRuntimeToolResults);
 
                 $this->workflowTypeValidationStage->validate($output, $request->expectedOutput->workflowType, "agent `{$request->agentName}` output");
 
@@ -69,34 +72,43 @@ final class LoopAgentDriver implements AgentDriverInterface
                     metadata: [
                         'mode' => 'tool_loop',
                         'iterations' => $iterationIndex + 1,
+                        'conversation' => $this->serializeMessages($messages),
                     ],
                 );
+
             }
 
-            if ($finalization['status'] === 'error') {
-                if (($finalization['reason'] ?? null) === 'unknown reason') {
+            if ($finalization[ 'status' ] === 'error') {
+
+                if (($finalization[ 'reason' ] ?? null) === 'unknown reason') {
+
                     $messages[] = new AgentConversationMessage('user', [
                         'content' => $this->completionToolLoopStage->completionInstruction() . "\nIf you call finalize_error, you must provide a non-empty reason.",
                     ]);
 
                     continue;
+
                 }
 
-                throw new RuntimeException("agent `{$request->agentName}` finalized with error: {$finalization['reason']}");
+                throw new RuntimeException("agent `{$request->agentName}` finalized with error: {$finalization[ 'reason' ]}");
+
             }
 
             if ($turnResponse->toolCalls === []) {
+
                 if ($completionPhaseEnabled) {
+
                     $syntheticToolCall = $this->synthesizeCompletionToolCallFromText($request, $turnResponse->text);
 
-                    $finalization = $this->completionToolLoopStage->decide([[
+                    $finalization = $this->completionToolLoopStage->decide([ [
                         'id' => $syntheticToolCall->id,
                         'name' => $syntheticToolCall->name,
                         'arguments' => $syntheticToolCall->arguments,
-                    ]]);
+                    ] ]);
 
-                    if ($finalization['status'] === 'success') {
-                        $output = $finalization['output'];
+                    if ($finalization[ 'status' ] === 'success') {
+
+                        $output = $finalization[ 'output' ];
 
                         $this->workflowTypeValidationStage->validate($output, $request->expectedOutput->workflowType, "agent `{$request->agentName}` output");
 
@@ -107,8 +119,10 @@ final class LoopAgentDriver implements AgentDriverInterface
                                 'mode' => 'tool_loop',
                                 'iterations' => $iterationIndex + 1,
                                 'synthetic_completion' => true,
+                                'conversation' => $this->serializeMessages($messages),
                             ],
                         );
+
                     }
 
                     $messages[] = new AgentConversationMessage('user', [
@@ -116,20 +130,25 @@ final class LoopAgentDriver implements AgentDriverInterface
                     ]);
 
                     continue;
+
                 }
 
                 $completionPhaseEnabled = true;
-                $messages[] = new AgentConversationMessage('user', ['content' => $this->completionToolLoopStage->completionInstruction()]);
+                $messages[] = new AgentConversationMessage('user', [ 'content' => $this->completionToolLoopStage->completionInstruction() ]);
 
                 continue;
+
             }
 
             $toolResults = $this->resolveToolResults($request, $turnResponse->toolCalls, $turnResponse->toolResults);
 
             if ($toolResults !== []) {
+
                 $recentRuntimeToolResults = $toolResults;
-                $messages[] = new AgentConversationMessage('tool_result', ['tool_results' => $toolResults]);
+                $messages[] = new AgentConversationMessage('tool_result', [ 'tool_results' => $toolResults ]);
+
             }
+
         }
 
         throw new RuntimeException("agent `{$request->agentName}` reached max iterations without completion tools");
@@ -138,27 +157,31 @@ final class LoopAgentDriver implements AgentDriverInterface
     private function synthesizeCompletionToolCallFromText(AgentExecutionRequest $request, string $text): AgentToolCall
     {
         if ($request->expectedOutput->isPlainString()) {
+
             return new AgentToolCall(
                 id: 'synthetic-finalize-success',
                 name: $this->completionToolLoopStage->finalizeSuccessToolName(),
-                arguments: ['answer' => $text],
+                arguments: [ 'answer' => $text ],
             );
+
         }
 
         $decoded = json_decode($text, true);
 
         if (is_array($decoded)) {
+
             return new AgentToolCall(
                 id: 'synthetic-finalize-success',
                 name: $this->completionToolLoopStage->finalizeSuccessToolName(),
-                arguments: ['answer' => $decoded],
+                arguments: [ 'answer' => $decoded ],
             );
+
         }
 
         return new AgentToolCall(
             id: 'synthetic-finalize-error',
             name: $this->completionToolLoopStage->finalizeErrorToolName(),
-            arguments: ['reason' => 'model ignored completion tools and returned non-json text'],
+            arguments: [ 'reason' => 'model ignored completion tools and returned non-json text' ],
         );
     }
 
@@ -172,17 +195,21 @@ final class LoopAgentDriver implements AgentDriverInterface
         }
 
         foreach (array_reverse($recentRuntimeToolResults) as $toolResult) {
+
             if (is_array($toolResult->result)) {
                 return $toolResult->result;
             }
 
             if (is_string($toolResult->result)) {
+
                 $decodedResult = json_decode($toolResult->result, true);
 
                 if (is_array($decodedResult)) {
                     return $decodedResult;
                 }
+
             }
+
         }
 
         return null;
@@ -214,6 +241,7 @@ final class LoopAgentDriver implements AgentDriverInterface
         $toolResults = [];
 
         foreach ($toolCalls as $toolCall) {
+
             if (
                 $toolCall->name === $this->completionToolLoopStage->finalizeSuccessToolName()
                 || $toolCall->name === $this->completionToolLoopStage->finalizeErrorToolName()
@@ -224,13 +252,16 @@ final class LoopAgentDriver implements AgentDriverInterface
             $existing = $this->existingToolResult($turnToolResults, $toolCall->id);
 
             if ($existing !== null) {
+
                 $toolResults[] = $existing;
 
                 continue;
+
             }
 
             $invoker = $this->runtimeToolInvoker ?? new DefaultRuntimeToolInvoker();
             $toolResults[] = $invoker->invoke($request, $toolCall);
+
         }
 
         return $toolResults;
@@ -242,9 +273,11 @@ final class LoopAgentDriver implements AgentDriverInterface
     private function existingToolResult(array $toolResults, string $toolCallId): ?AgentToolResult
     {
         foreach ($toolResults as $toolResult) {
+
             if ($toolResult->toolCallId === $toolCallId) {
                 return $toolResult;
             }
+
         }
 
         return null;
@@ -267,14 +300,16 @@ final class LoopAgentDriver implements AgentDriverInterface
         $runtimeTools = [];
 
         foreach ($request->tools as $toolExecution) {
+
             $runtimeTools[] = new AgentToolDefinition(
                 name: $toolExecution->name,
                 description: "Execute runtime tool `{$toolExecution->name}` and use result to continue",
                 parametersSchema: $this->runtimeToolParametersSchema($toolExecution->name),
             );
+
         }
 
-        return [...$runtimeTools, ...$completionTools];
+        return [ ...$runtimeTools, ...$completionTools ];
     }
 
     private function finalizeSuccessTool(AgentExecutionRequest $request): AgentToolDefinition
@@ -287,7 +322,7 @@ final class LoopAgentDriver implements AgentDriverInterface
                 'properties' => [
                     'answer' => $request->expectedOutput->jsonSchema,
                 ],
-                'required' => ['answer'],
+                'required' => [ 'answer' ],
                 'additionalProperties' => false,
             ],
         );
@@ -301,9 +336,9 @@ final class LoopAgentDriver implements AgentDriverInterface
             parametersSchema: [
                 'type' => 'object',
                 'properties' => [
-                    'reason' => ['type' => 'string'],
+                    'reason' => [ 'type' => 'string' ],
                 ],
-                'required' => ['reason'],
+                'required' => [ 'reason' ],
                 'additionalProperties' => false,
             ],
         );
@@ -314,20 +349,88 @@ final class LoopAgentDriver implements AgentDriverInterface
      */
     private function runtimeToolParametersSchema(string $toolName): array
     {
+        if ($this->runtimeToolInvoker instanceof RuntimeToolSchemaProviderInterface) {
+
+            $toolSchema = $this->runtimeToolInvoker->schemaForTool($toolName);
+
+            if (is_array($toolSchema)) {
+                return $toolSchema;
+            }
+
+        }
+
         if (str_contains($toolName, 'by_participant')) {
+
             return [
                 'type' => 'object',
                 'properties' => [
-                    'participant_id' => ['type' => 'integer'],
+                    'participant_id' => [ 'type' => 'integer' ],
                 ],
-                'required' => ['participant_id'],
+                'required' => [ 'participant_id' ],
                 'additionalProperties' => true,
             ];
+
         }
 
         return [
             'type' => 'object',
             'additionalProperties' => true,
         ];
+    }
+
+    /**
+     * @param array<int, AgentConversationMessage> $messages
+     * @return list<array{role: string, content?: string, tool_calls?: list<array{name: string, arguments: string}>, tool_results?: list<array{tool_call_id: string, result: string}>}>
+     */
+    private function serializeMessages(array $messages): array
+    {
+        return array_map(
+            function (AgentConversationMessage $message): array {
+
+                $payload = $message->payload;
+                $role = $message->role;
+
+                if ($role === 'tool_result') {
+
+                    return [
+                        'role' => 'tool',
+                        'tool_results' => array_map(
+                            function (AgentToolResult $tr): array {
+
+                                return [
+                                    'tool_call_id' => $tr->toolCallId,
+                                    'result' => is_string($tr->result) ? $tr->result : json_encode($tr->result),
+                                ];
+
+                            },
+                            $payload[ 'tool_results' ] ?? [],
+                        ),
+                    ];
+
+                }
+
+                $content = $payload[ 'content' ] ?? '';
+
+                if (($payload[ 'tool_calls' ] ?? []) !== []) {
+
+                    return [
+                        'role' => $role,
+                        'content' => $content,
+                        'tool_calls' => array_map(
+                            static fn (AgentToolCall $tc): array => [
+                                'name' => $tc->name,
+                                'arguments' => is_array($tc->arguments) ? json_encode($tc->arguments) : $tc->arguments,
+                            ],
+                            $payload[ 'tool_calls' ],
+                        ),
+                    ];
+
+                }
+
+                return [ 'role' => $role, 'content' => $content ];
+
+            },
+            $messages,
+        );
     }
 }

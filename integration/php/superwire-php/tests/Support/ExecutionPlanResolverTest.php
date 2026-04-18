@@ -1,11 +1,11 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Superwire\Contracts\AgentDefinition;
+use Superwire\Contracts\Agent\AgentDefinition;
 use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
 use Superwire\Contracts\Support\ExecutionPlanResolver;
 
@@ -19,15 +19,15 @@ final class ExecutionPlanResolverTest extends TestCase
             $this->agentDefinition('changelog', []),
             $this->agentDefinition('social_thread', []),
             $this->agentDefinition('customer_email', []),
-            $this->agentDefinition('review', ['changelog', 'social_thread', 'customer_email']),
+            $this->agentDefinition('review', [ 'changelog', 'social_thread', 'customer_email' ]),
         ]);
 
         self::assertSame(
             [
-                ['changelog', 'customer_email', 'social_thread'],
-                ['review'],
+                [ 'changelog', 'customer_email', 'social_thread' ],
+                [ 'review' ],
             ],
-            $batches
+            $batches,
         );
     }
 
@@ -38,7 +38,7 @@ final class ExecutionPlanResolverTest extends TestCase
         $this->expectException(InvalidWorkflowDefinitionException::class);
 
         $resolver->resolveBatches([
-            $this->agentDefinition('summary', ['missing']),
+            $this->agentDefinition('summary', [ 'missing' ]),
         ]);
     }
 
@@ -53,7 +53,7 @@ final class ExecutionPlanResolverTest extends TestCase
             inference: null,
             tools: [],
             forEach: null,
-            output: ['final_output' => ['workflow_type' => ['kind' => 'string']]],
+            output: [ 'final_output' => [ 'workflow_type' => [ 'kind' => 'string' ] ] ],
             dependencies: $dependencies,
             dependents: [],
             batch: 0,

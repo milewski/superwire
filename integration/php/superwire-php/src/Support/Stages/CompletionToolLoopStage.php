@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support\Stages;
 
@@ -32,53 +32,65 @@ final class CompletionToolLoopStage
         $finalizeErrorCalls = [];
 
         foreach ($toolCalls as $toolCall) {
-            $toolName = $toolCall['name'];
+
+            $toolName = $toolCall[ 'name' ];
 
             if ($toolName === $this->finalizeSuccessToolName()) {
+
                 $finalizeSuccessCalls[] = $toolCall;
 
                 continue;
+
             }
 
             if ($toolName === $this->finalizeErrorToolName()) {
+
                 $finalizeErrorCalls[] = $toolCall;
 
                 continue;
+
             }
 
             $runtimeToolCalls[] = [
                 'name' => $toolName,
-                'arguments' => $toolCall['arguments'],
-                'id' => $toolCall['id'],
+                'arguments' => $toolCall[ 'arguments' ],
+                'id' => $toolCall[ 'id' ],
             ];
+
         }
 
         if ($runtimeToolCalls !== []) {
+
             return [
                 'status' => 'continue',
                 'runtime_tool_calls' => $runtimeToolCalls,
             ];
+
         }
 
         if ($finalizeSuccessCalls !== [] && $finalizeErrorCalls === []) {
-            $finalizeCall = $finalizeSuccessCalls[count($finalizeSuccessCalls) - 1];
+
+            $finalizeCall = $finalizeSuccessCalls[ count($finalizeSuccessCalls) - 1 ];
 
             return [
                 'status' => 'success',
                 'runtime_tool_calls' => [],
-                'output' => $finalizeCall['arguments']['answer'] ?? null,
+                'output' => $finalizeCall[ 'arguments' ][ 'answer' ] ?? null,
             ];
+
         }
 
         if ($finalizeErrorCalls !== [] && $finalizeSuccessCalls === []) {
-            $finalizeCall = $finalizeErrorCalls[count($finalizeErrorCalls) - 1];
-            $reason = $finalizeCall['arguments']['reason'] ?? 'unknown reason';
+
+            $finalizeCall = $finalizeErrorCalls[ count($finalizeErrorCalls) - 1 ];
+            $reason = $finalizeCall[ 'arguments' ][ 'reason' ] ?? 'unknown reason';
 
             return [
                 'status' => 'error',
                 'runtime_tool_calls' => [],
                 'reason' => is_string($reason) ? $reason : 'unknown reason',
             ];
+
         }
 
         return [

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support;
 
@@ -18,23 +18,27 @@ final class ExpressionResolver
         }
 
         if (array_key_exists('$ref', $expression)) {
-            if (!is_string($expression['$ref'])) {
+
+            if (!is_string($expression[ '$ref' ])) {
                 throw new ExpressionResolutionException('reference expressions require string `$ref` values');
             }
 
-            return $this->resolveReferencePath($expression['$ref'], $runtimeContext);
+            return $this->resolveReferencePath($expression[ '$ref' ], $runtimeContext);
+
         }
 
         if (array_key_exists('$template', $expression)) {
-            if (!is_array($expression['$template'])) {
+
+            if (!is_array($expression[ '$template' ])) {
                 throw new ExpressionResolutionException('template expressions require array `$template` values');
             }
 
-            return $this->resolveTemplate($expression['$template'], $runtimeContext);
+            return $this->resolveTemplate($expression[ '$template' ], $runtimeContext);
+
         }
 
         if (array_key_exists('$expr', $expression)) {
-            return $this->resolve($expression['$expr'], $runtimeContext);
+            return $this->resolve($expression[ '$expr' ], $runtimeContext);
         }
 
         if (array_key_exists('$call', $expression)) {
@@ -44,7 +48,7 @@ final class ExpressionResolver
         $resolvedObject = [];
 
         foreach ($expression as $fieldName => $fieldValue) {
-            $resolvedObject[$fieldName] = $this->resolve($fieldValue, $runtimeContext);
+            $resolvedObject[ $fieldName ] = $this->resolve($fieldValue, $runtimeContext);
         }
 
         return $resolvedObject;
@@ -66,16 +70,20 @@ final class ExpressionResolver
             throw new ExpressionResolutionException("unknown reference root `{$rootSegment}` in `{$referencePath}`");
         }
 
-        $currentValue = $runtimeContext[$rootSegment];
+        $currentValue = $runtimeContext[ $rootSegment ];
 
         foreach ($pathSegments as $pathSegment) {
+
             if (is_array($currentValue) && array_key_exists($pathSegment, $currentValue)) {
-                $currentValue = $currentValue[$pathSegment];
+
+                $currentValue = $currentValue[ $pathSegment ];
 
                 continue;
+
             }
 
             throw new ExpressionResolutionException("unable to resolve `{$referencePath}`");
+
         }
 
         return $currentValue;
@@ -90,12 +98,15 @@ final class ExpressionResolver
         $resolvedTemplate = '';
 
         foreach ($templateParts as $templatePart) {
+
             $resolvedPart = $this->resolve($templatePart, $runtimeContext);
 
             if (is_scalar($resolvedPart) || $resolvedPart === null) {
+
                 $resolvedTemplate .= (string) $resolvedPart;
 
                 continue;
+
             }
 
             $encodedPart = json_encode($resolvedPart, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -105,6 +116,7 @@ final class ExpressionResolver
             }
 
             $resolvedTemplate .= $encodedPart;
+
         }
 
         return $resolvedTemplate;
@@ -117,7 +129,7 @@ final class ExpressionResolver
      */
     private function resolveCall(array $callExpression, array $runtimeContext): array
     {
-        $callName = $callExpression['$call'] ?? null;
+        $callName = $callExpression[ '$call' ] ?? null;
 
         if (!is_string($callName)) {
             throw new ExpressionResolutionException('call expressions require string `$call` values');
@@ -126,30 +138,36 @@ final class ExpressionResolver
         $resolvedArguments = [];
 
         if (array_key_exists('args', $callExpression)) {
-            if (!is_array($callExpression['args'])) {
+
+            if (!is_array($callExpression[ 'args' ])) {
                 throw new ExpressionResolutionException('call expressions require array `args` values when present');
             }
 
             $resolvedArguments = array_map(
                 fn (mixed $argumentValue): mixed => $this->resolve($argumentValue, $runtimeContext),
-                array_values($callExpression['args'])
+                array_values($callExpression[ 'args' ]),
             );
+
         }
 
         $resolvedNamedArguments = [];
 
         if (array_key_exists('named', $callExpression)) {
-            if (!is_array($callExpression['named'])) {
+
+            if (!is_array($callExpression[ 'named' ])) {
                 throw new ExpressionResolutionException('call expressions require object `named` values when present');
             }
 
-            foreach ($callExpression['named'] as $argumentName => $argumentValue) {
+            foreach ($callExpression[ 'named' ] as $argumentName => $argumentValue) {
+
                 if (!is_string($argumentName)) {
                     throw new ExpressionResolutionException('named call argument names must be strings');
                 }
 
-                $resolvedNamedArguments[$argumentName] = $this->resolve($argumentValue, $runtimeContext);
+                $resolvedNamedArguments[ $argumentName ] = $this->resolve($argumentValue, $runtimeContext);
+
             }
+
         }
 
         return [

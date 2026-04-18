@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support\Stages;
 
@@ -13,7 +13,7 @@ final class WorkflowTypeValidationStage
      */
     public function validate(mixed $value, array $workflowType, string $context): void
     {
-        $kind = $workflowType['kind'] ?? null;
+        $kind = $workflowType[ 'kind' ] ?? null;
 
         if (!is_string($kind) || $kind === '') {
             throw new InvalidWorkflowDefinitionException("{$context} workflow type is missing `kind`");
@@ -43,7 +43,7 @@ final class WorkflowTypeValidationStage
             $this->throwTypeMismatch($context, 'array', $value);
         }
 
-        $itemType = $workflowType['item_type'] ?? null;
+        $itemType = $workflowType[ 'item_type' ] ?? null;
 
         if (!is_array($itemType)) {
             throw new InvalidWorkflowDefinitionException("{$context} array type is missing object `item_type`");
@@ -63,7 +63,7 @@ final class WorkflowTypeValidationStage
             $this->throwTypeMismatch($context, 'tuple', $value);
         }
 
-        $tupleItems = $workflowType['items'] ?? null;
+        $tupleItems = $workflowType[ 'items' ] ?? null;
 
         if (!is_array($tupleItems)) {
             throw new InvalidWorkflowDefinitionException("{$context} tuple type is missing array `items`");
@@ -76,11 +76,13 @@ final class WorkflowTypeValidationStage
         }
 
         foreach (array_values($tupleItems) as $index => $itemType) {
+
             if (!is_array($itemType)) {
                 throw new InvalidWorkflowDefinitionException("{$context} tuple item type at index {$index} must be an object");
             }
 
-            $this->validate($normalizedValues[$index], $itemType, "{$context}[{$index}]");
+            $this->validate($normalizedValues[ $index ], $itemType, "{$context}[{$index}]");
+
         }
     }
 
@@ -93,13 +95,14 @@ final class WorkflowTypeValidationStage
             $this->throwTypeMismatch($context, 'object', $value);
         }
 
-        $fields = $workflowType['fields'] ?? null;
+        $fields = $workflowType[ 'fields' ] ?? null;
 
         if (!is_array($fields)) {
             throw new InvalidWorkflowDefinitionException("{$context} object type is missing object `fields`");
         }
 
         foreach ($fields as $fieldName => $fieldType) {
+
             if (!is_string($fieldName) || !is_array($fieldType)) {
                 throw new InvalidWorkflowDefinitionException("{$context} object type field definitions are invalid");
             }
@@ -108,7 +111,8 @@ final class WorkflowTypeValidationStage
                 throw new InvalidWorkflowDefinitionException("{$context} output is missing required field `{$fieldName}`");
             }
 
-            $this->validate($value[$fieldName], $fieldType, "{$context}.{$fieldName}");
+            $this->validate($value[ $fieldName ], $fieldType, "{$context}.{$fieldName}");
+
         }
     }
 
@@ -117,23 +121,27 @@ final class WorkflowTypeValidationStage
      */
     private function validateUnion(mixed $value, array $workflowType, string $context): void
     {
-        $members = $workflowType['members'] ?? null;
+        $members = $workflowType[ 'members' ] ?? null;
 
         if (!is_array($members) || $members === []) {
             throw new InvalidWorkflowDefinitionException("{$context} union type is missing array `members`");
         }
 
         foreach (array_values($members) as $memberType) {
+
             if (!is_array($memberType)) {
                 continue;
             }
 
             try {
+
                 $this->validate($value, $memberType, $context);
 
                 return;
+
             } catch (InvalidWorkflowDefinitionException) {
             }
+
         }
 
         throw new InvalidWorkflowDefinitionException("{$context} does not match any allowed union member type");

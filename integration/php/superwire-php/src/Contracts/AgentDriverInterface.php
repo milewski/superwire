@@ -1,11 +1,11 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Contracts;
 
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\AgentExecutionResult;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentExecutionResult;
 
 interface AgentDriverInterface
 {

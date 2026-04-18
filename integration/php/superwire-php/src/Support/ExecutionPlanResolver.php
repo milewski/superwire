@@ -1,10 +1,10 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support;
 
-use Superwire\Contracts\AgentDefinition;
+use Superwire\Contracts\Agent\AgentDefinition;
 use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
 
 final class ExecutionPlanResolver
@@ -19,20 +19,26 @@ final class ExecutionPlanResolver
         $dependenciesByName = [];
 
         foreach ($agents as $agentDefinition) {
-            $agentNamesByName[$agentDefinition->name] = true;
-            $dependenciesByName[$agentDefinition->name] = $agentDefinition->dependencies;
+
+            $agentNamesByName[ $agentDefinition->name ] = true;
+            $dependenciesByName[ $agentDefinition->name ] = $agentDefinition->dependencies;
+
         }
 
         foreach ($dependenciesByName as $agentName => $dependencyNames) {
+
             foreach ($dependencyNames as $dependencyName) {
+
                 if (array_key_exists($dependencyName, $agentNamesByName)) {
                     continue;
                 }
 
                 throw new InvalidWorkflowDefinitionException(
-                    "agent `{$agentName}` depends on unknown agent `{$dependencyName}`"
+                    "agent `{$agentName}` depends on unknown agent `{$dependencyName}`",
                 );
+
             }
+
         }
 
         $resolvedAgentNames = [];
@@ -40,13 +46,16 @@ final class ExecutionPlanResolver
         $executionBatches = [];
 
         while ($unresolvedAgentNames !== []) {
+
             $readyAgentNames = [];
 
             foreach (array_keys($unresolvedAgentNames) as $agentName) {
-                $dependencyNames = $dependenciesByName[$agentName];
+
+                $dependencyNames = $dependenciesByName[ $agentName ];
                 $isBlocked = false;
 
                 foreach ($dependencyNames as $dependencyName) {
+
                     if (array_key_exists($dependencyName, $resolvedAgentNames)) {
                         continue;
                     }
@@ -54,6 +63,7 @@ final class ExecutionPlanResolver
                     $isBlocked = true;
 
                     break;
+
                 }
 
                 if ($isBlocked) {
@@ -61,6 +71,7 @@ final class ExecutionPlanResolver
                 }
 
                 $readyAgentNames[] = $agentName;
+
             }
 
             if ($readyAgentNames === []) {
@@ -71,9 +82,12 @@ final class ExecutionPlanResolver
             $executionBatches[] = $readyAgentNames;
 
             foreach ($readyAgentNames as $readyAgentName) {
-                unset($unresolvedAgentNames[$readyAgentName]);
-                $resolvedAgentNames[$readyAgentName] = true;
+
+                unset($unresolvedAgentNames[ $readyAgentName ]);
+                $resolvedAgentNames[ $readyAgentName ] = true;
+
             }
+
         }
 
         return $executionBatches;

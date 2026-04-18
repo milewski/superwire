@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Tests;
 
@@ -21,7 +21,7 @@ final class JsonWorkflowDecoderTest extends TestCase
                 [
                     'name' => 'openai',
                     'driver' => 'prism',
-                    'models' => [['$ref' => 'secrets.max_model']],
+                    'models' => [ [ '$ref' => 'secrets.max_model' ] ],
                     'config' => [
                         'endpoint' => 'https://api.openai.com/v1',
                     ],
@@ -35,17 +35,17 @@ final class JsonWorkflowDecoderTest extends TestCase
                     'prompt' => [
                         '$template' => [
                             'Write update for ',
-                            ['$expr' => ['$ref' => 'input.product']],
+                            [ '$expr' => [ '$ref' => 'input.product' ] ],
                         ],
                     ],
                     'output' => [
                         'iteration' => [
-                            'workflow_type' => ['kind' => 'string'],
-                            'json_schema' => ['type' => 'string'],
+                            'workflow_type' => [ 'kind' => 'string' ],
+                            'json_schema' => [ 'type' => 'string' ],
                         ],
                         'final_output' => [
-                            'workflow_type' => ['kind' => 'string'],
-                            'json_schema' => ['type' => 'string'],
+                            'workflow_type' => [ 'kind' => 'string' ],
+                            'json_schema' => [ 'type' => 'string' ],
                         ],
                     ],
                     'dependencies' => [],
@@ -55,16 +55,16 @@ final class JsonWorkflowDecoderTest extends TestCase
             ],
             'output' => [
                 'fields' => [
-                    'message' => ['$ref' => 'agent.draft'],
+                    'message' => [ '$ref' => 'agent.draft' ],
                 ],
                 'contract' => [
-                    'workflow_type' => ['kind' => 'object', 'fields' => ['message' => ['kind' => 'string']]],
-                    'json_schema' => ['type' => 'object'],
+                    'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'message' => [ 'kind' => 'string' ] ] ],
+                    'json_schema' => [ 'type' => 'object' ],
                 ],
             ],
             'execution' => [
-                'order' => ['draft'],
-                'batches' => [['draft']],
+                'order' => [ 'draft' ],
+                'batches' => [ [ 'draft' ] ],
                 'edges' => [],
             ],
         ]);
@@ -72,9 +72,9 @@ final class JsonWorkflowDecoderTest extends TestCase
         self::assertSame('superwire_workflow_compact_v1', $workflowDefinition->format);
         self::assertSame('sample.wire', $workflowDefinition->workflowPath);
         self::assertCount(1, $workflowDefinition->providers);
-        self::assertSame('prism', $workflowDefinition->providers[0]->driver);
+        self::assertSame('prism', $workflowDefinition->providers[ 0 ]->driver);
         self::assertCount(1, $workflowDefinition->agents);
-        self::assertSame('draft', $workflowDefinition->agents[0]->name);
+        self::assertSame('draft', $workflowDefinition->agents[ 0 ]->name);
     }
 
     public function testItRejectsInvalidWorkflowJsonPayload(): void

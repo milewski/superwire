@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Contracts\Tests\Stages;
 
@@ -16,14 +16,14 @@ final class WorkflowTypeNormalizationStageTest extends TestCase
             [
                 'kind' => 'object',
                 'fields' => [
-                    'summary' => ['kind' => 'string'],
+                    'summary' => [ 'kind' => 'string' ],
                     'themes' => [
                         'kind' => 'array',
                         'item_type' => [
                             'kind' => 'object',
                             'fields' => [
-                                'theme' => ['kind' => 'string'],
-                                'times' => ['kind' => 'integer'],
+                                'theme' => [ 'kind' => 'string' ],
+                                'times' => [ 'kind' => 'integer' ],
                             ],
                         ],
                     ],
@@ -31,6 +31,6 @@ final class WorkflowTypeNormalizationStageTest extends TestCase
             ],
         );
 
-        self::assertSame(['summary' => '', 'themes' => []], $normalized);
+        self::assertSame([ 'summary' => '', 'themes' => [] ], $normalized);
     }
 }

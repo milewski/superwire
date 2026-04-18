@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Support;
 
@@ -18,7 +18,7 @@ final class LaravelDriverRegistry implements DriverRegistryInterface
     public function register(string $driverName, AgentDriverInterface $driver): void
     {
         $normalizedDriverName = trim(strtolower($driverName));
-        $this->driversByName[$normalizedDriverName] = $driver;
+        $this->driversByName[ $normalizedDriverName ] = $driver;
     }
 
     public function has(string $driverName): bool
@@ -33,7 +33,7 @@ final class LaravelDriverRegistry implements DriverRegistryInterface
         $normalizedDriverName = trim(strtolower($driverName));
 
         if ($this->has($normalizedDriverName)) {
-            return $this->driversByName[$normalizedDriverName];
+            return $this->driversByName[ $normalizedDriverName ];
         }
 
         throw new DriverNotFoundException("driver `{$driverName}` is not registered");

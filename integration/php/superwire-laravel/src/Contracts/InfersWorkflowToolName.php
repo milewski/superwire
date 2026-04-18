@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Contracts;
 
@@ -12,8 +12,10 @@ trait InfersWorkflowToolName
         $classBaseName = $className;
 
         if (str_contains($className, '\\')) {
+
             $segments = explode('\\', $className);
             $classBaseName = (string) end($segments);
+
         }
 
         $snakeName = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $classBaseName));

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
@@ -8,6 +8,7 @@ use RuntimeException;
 use Superwire\Contracts\Contracts\DriverRegistryInterface;
 use Superwire\Contracts\Contracts\WorkflowRunnerInterface;
 use Superwire\Contracts\Support\LoopAgentDriver;
+use Superwire\Laravel\Data\WorkflowRunResult;
 use Superwire\Laravel\Driver\PrismAgentDriver;
 use Superwire\Laravel\Support\CachedWorkflowDefinitionCompiler;
 use Superwire\Laravel\Support\LaravelRuntimeToolInvoker;
@@ -116,7 +117,7 @@ final class Workflow
         );
     }
 
-    public function run(): mixed
+    public function run(): WorkflowRunResult
     {
         $this->registerExecutionDriver();
 
@@ -127,25 +128,16 @@ final class Workflow
             $this->resolvedSecrets(),
         );
 
-        if ($this->outputClass === null) {
-            return $workflowResult->output;
-        }
-
-        if (!class_exists($this->outputClass)) {
-            throw new RuntimeException("mapped output class `{$this->outputClass}` does not exist");
-        }
-
-        if (!is_array($workflowResult->output)) {
-            throw new RuntimeException('workflow output must be an array to map into output class');
-        }
-
-        $outputClass = $this->outputClass;
-
-        if (method_exists($outputClass, 'from')) {
-            return $outputClass::from($workflowResult->output);
-        }
-
-        return new $outputClass(...$workflowResult->output);
+        return new WorkflowRunResult(
+            output: $this->mapOutput($workflowResult->output),
+            context: [
+                'workflow_output' => $workflowResult->output,
+                'agent_outputs' => $workflowResult->agentOutputs,
+                'agent_contexts' => $workflowResult->agentContexts,
+                'agent_metadata' => $workflowResult->agentMetadata,
+                'execution_history' => $workflowResult->executionHistory,
+            ],
+        );
     }
 
     private function registerExecutionDriver(): void
@@ -157,7 +149,7 @@ final class Workflow
         }
 
         $toolInvoker = app(LaravelRuntimeToolInvoker::class)->withTools($this->toolClasses);
-        $driverRegistry->register('prism', new LoopAgentDriver(new PrismAgentDriver(), $toolInvoker));
+        $driverRegistry->register('prism', new LoopAgentDriver(new PrismAgentDriver($this->driverConfiguration), $toolInvoker));
     }
 
     /**
@@ -165,6 +157,29 @@ final class Workflow
      */
     private function resolvedSecrets(): array
     {
-        return array_replace_recursive($this->secrets, $this->driverConfiguration);
+        return $this->secrets;
+    }
+
+    private function mapOutput(mixed $workflowOutput): mixed
+    {
+        if ($this->outputClass === null) {
+            return $workflowOutput;
+        }
+
+        if (!class_exists($this->outputClass)) {
+            throw new RuntimeException("mapped output class `{$this->outputClass}` does not exist");
+        }
+
+        if (!is_array($workflowOutput)) {
+            throw new RuntimeException('workflow output must be an array to map into output class');
+        }
+
+        $outputClass = $this->outputClass;
+
+        if (method_exists($outputClass, 'from')) {
+            return $outputClass::from($workflowOutput);
+        }
+
+        return new $outputClass(...$workflowOutput);
     }
 }

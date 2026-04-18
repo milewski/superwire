@@ -1,13 +1,13 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests;
 
 use Closure;
 use Illuminate\Support\Facades\Concurrency;
-use Superwire\Contracts\AgentExecutionRequest;
-use Superwire\Contracts\AgentExecutionResult;
+use Superwire\Contracts\Agent\AgentExecutionRequest;
+use Superwire\Contracts\Agent\AgentExecutionResult;
 use Superwire\Contracts\Contracts\AgentDriverInterface;
 use Superwire\Contracts\Contracts\DriverRegistryInterface;
 use Superwire\Contracts\Contracts\WorkflowRunnerInterface;
@@ -39,15 +39,15 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'prompt' => [
                         '$template' => [
                             'Create changelog for ',
-                            ['$expr' => ['$ref' => 'input.product']],
+                            [ '$expr' => [ '$ref' => 'input.product' ] ],
                         ],
                     ],
                     'output' => [
-                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
-                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'iteration' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
+                        'final_output' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
                     ],
                     'dependencies' => [],
-                    'dependents' => ['review'],
+                    'dependents' => [ 'review' ],
                     'batch' => 0,
                 ],
                 [
@@ -57,37 +57,37 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'prompt' => [
                         '$template' => [
                             'Review output: ',
-                            ['$expr' => ['$ref' => 'agent.changelog']],
+                            [ '$expr' => [ '$ref' => 'agent.changelog' ] ],
                         ],
                     ],
                     'output' => [
-                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
-                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'iteration' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
+                        'final_output' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
                     ],
-                    'dependencies' => ['changelog'],
+                    'dependencies' => [ 'changelog' ],
                     'dependents' => [],
                     'batch' => 1,
                 ],
             ],
             'output' => [
                 'fields' => [
-                    'review' => ['$ref' => 'agent.review'],
+                    'review' => [ '$ref' => 'agent.review' ],
                 ],
                 'contract' => [
-                    'workflow_type' => ['kind' => 'object', 'fields' => ['review' => ['kind' => 'string']]],
-                    'json_schema' => ['type' => 'object'],
+                    'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'review' => [ 'kind' => 'string' ] ] ],
+                    'json_schema' => [ 'type' => 'object' ],
                 ],
             ],
             'execution' => [
-                'order' => ['changelog', 'review'],
-                'batches' => [['changelog'], ['review']],
-                'edges' => [['from' => 'changelog', 'to' => 'review']],
+                'order' => [ 'changelog', 'review' ],
+                'batches' => [ [ 'changelog' ], [ 'review' ] ],
+                'edges' => [ [ 'from' => 'changelog', 'to' => 'review' ] ],
             ],
         ]);
 
-        $result = $workflowRunner->run($workflowDefinition, ['product' => 'Superwire']);
+        $result = $workflowRunner->run($workflowDefinition, [ 'product' => 'Superwire' ]);
 
-        self::assertSame('reply: Review output: reply: Create changelog for Superwire', $result->output['review']);
+        self::assertSame('reply: Review output: reply: Create changelog for Superwire', $result->output[ 'review' ]);
     }
 
     public function testItExecutesForEachAgentsAsArrayOutputs(): void
@@ -114,16 +114,16 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'prompt' => [
                         '$template' => [
                             'item=',
-                            ['$expr' => ['$ref' => 'item']],
+                            [ '$expr' => [ '$ref' => 'item' ] ],
                         ],
                     ],
                     'for_each' => [
-                        'pattern' => ['identifier' => 'item'],
-                        'iterable' => ['$ref' => 'input.items'],
+                        'pattern' => [ 'identifier' => 'item' ],
+                        'iterable' => [ '$ref' => 'input.items' ],
                     ],
                     'output' => [
-                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
-                        'final_output' => ['workflow_type' => ['kind' => 'array'], 'json_schema' => ['type' => 'array']],
+                        'iteration' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
+                        'final_output' => [ 'workflow_type' => [ 'kind' => 'array' ], 'json_schema' => [ 'type' => 'array' ] ],
                     ],
                     'dependencies' => [],
                     'dependents' => [],
@@ -132,23 +132,23 @@ final class LaravelWorkflowRunnerTest extends TestCase
             ],
             'output' => [
                 'fields' => [
-                    'items' => ['$ref' => 'agent.collector'],
+                    'items' => [ '$ref' => 'agent.collector' ],
                 ],
                 'contract' => [
-                    'workflow_type' => ['kind' => 'object', 'fields' => ['items' => ['kind' => 'array']]],
-                    'json_schema' => ['type' => 'object'],
+                    'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'items' => [ 'kind' => 'array' ] ] ],
+                    'json_schema' => [ 'type' => 'object' ],
                 ],
             ],
             'execution' => [
-                'order' => ['collector'],
-                'batches' => [['collector']],
+                'order' => [ 'collector' ],
+                'batches' => [ [ 'collector' ] ],
                 'edges' => [],
             ],
         ]);
 
-        $result = $workflowRunner->run($workflowDefinition, ['items' => [1, 2, 3]]);
+        $result = $workflowRunner->run($workflowDefinition, [ 'items' => [ 1, 2, 3 ] ]);
 
-        self::assertSame(['reply: item=1', 'reply: item=2', 'reply: item=3'], $result->output['items']);
+        self::assertSame([ 'reply: item=1', 'reply: item=2', 'reply: item=3' ], $result->output[ 'items' ]);
     }
 
     public function testItResolvesModelAndProviderModelsFromSecrets(): void
@@ -165,9 +165,9 @@ final class LaravelWorkflowRunnerTest extends TestCase
                 [
                     'name' => 'openai',
                     'driver' => 'openai',
-                    'models' => [['$ref' => 'secrets.max_model']],
+                    'models' => [ [ '$ref' => 'secrets.max_model' ] ],
                     'config' => [
-                        'models' => [['$ref' => 'secrets.max_model']],
+                        'models' => [ [ '$ref' => 'secrets.max_model' ] ],
                     ],
                 ],
             ],
@@ -177,13 +177,13 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'provider' => 'openai',
                     'model' => [
                         '$call' => 'openai',
-                        'args' => [['$ref' => 'secrets.max_model']],
+                        'args' => [ [ '$ref' => 'secrets.max_model' ] ],
                         'named' => [],
                     ],
                     'prompt' => 'run',
                     'output' => [
-                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
-                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'iteration' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
+                        'final_output' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
                     ],
                     'dependencies' => [],
                     'dependents' => [],
@@ -192,26 +192,26 @@ final class LaravelWorkflowRunnerTest extends TestCase
             ],
             'output' => [
                 'fields' => [
-                    'summary' => ['$ref' => 'agent.summary'],
+                    'summary' => [ '$ref' => 'agent.summary' ],
                 ],
                 'contract' => [
-                    'workflow_type' => ['kind' => 'object', 'fields' => ['summary' => ['kind' => 'string']]],
-                    'json_schema' => ['type' => 'object'],
+                    'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
+                    'json_schema' => [ 'type' => 'object' ],
                 ],
             ],
             'execution' => [
-                'order' => ['summary'],
-                'batches' => [['summary']],
+                'order' => [ 'summary' ],
+                'batches' => [ [ 'summary' ] ],
                 'edges' => [],
             ],
         ]);
 
-        $result = $workflowRunner->run($workflowDefinition, [], ['max_model' => 'gpt-4.1']);
+        $result = $workflowRunner->run($workflowDefinition, [], [ 'max_model' => 'gpt-4.1' ]);
 
-        self::assertSame('reply: run', $result->output['summary']);
+        self::assertSame('reply: run', $result->output[ 'summary' ]);
         self::assertNotNull($capturingDriver->lastRequest);
         self::assertSame('gpt-4.1', $capturingDriver->lastRequest->model);
-        self::assertSame(['gpt-4.1'], $capturingDriver->lastRequest->provider->configValue('models'));
+        self::assertSame([ 'gpt-4.1' ], $capturingDriver->lastRequest->provider->configValue('models'));
         self::assertSame('string', $capturingDriver->lastRequest->expectedOutput->kind());
     }
 
@@ -239,12 +239,12 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'prompt' => 'run',
                     'output' => [
                         'iteration' => [
-                            'workflow_type' => ['kind' => 'object', 'fields' => ['value' => ['kind' => 'string']]],
-                            'json_schema' => ['type' => 'object'],
+                            'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'value' => [ 'kind' => 'string' ] ] ],
+                            'json_schema' => [ 'type' => 'object' ],
                         ],
                         'final_output' => [
-                            'workflow_type' => ['kind' => 'object', 'fields' => ['value' => ['kind' => 'string']]],
-                            'json_schema' => ['type' => 'object'],
+                            'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'value' => [ 'kind' => 'string' ] ] ],
+                            'json_schema' => [ 'type' => 'object' ],
                         ],
                     ],
                     'dependencies' => [],
@@ -254,16 +254,16 @@ final class LaravelWorkflowRunnerTest extends TestCase
             ],
             'output' => [
                 'fields' => [
-                    'value' => ['$ref' => 'agent.structured.value'],
+                    'value' => [ '$ref' => 'agent.structured.value' ],
                 ],
                 'contract' => [
-                    'workflow_type' => ['kind' => 'object', 'fields' => ['value' => ['kind' => 'string']]],
-                    'json_schema' => ['type' => 'object'],
+                    'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'value' => [ 'kind' => 'string' ] ] ],
+                    'json_schema' => [ 'type' => 'object' ],
                 ],
             ],
             'execution' => [
-                'order' => ['structured'],
-                'batches' => [['structured']],
+                'order' => [ 'structured' ],
+                'batches' => [ [ 'structured' ] ],
                 'edges' => [],
             ],
         ]);
@@ -285,11 +285,11 @@ final class LaravelWorkflowRunnerTest extends TestCase
         $workflowDefinition = (new JsonWorkflowDecoder())->decodeFromArray([
             'format' => 'superwire_workflow_compact_v1',
             'workflow_path' => 'tests.wire',
-            'providers' => [[
+            'providers' => [ [
                 'name' => 'openai',
                 'driver' => 'openai',
                 'config' => [],
-            ]],
+            ] ],
             'agents' => [
                 [
                     'name' => 'first',
@@ -297,8 +297,8 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'model' => 'gpt-4.1-mini',
                     'prompt' => 'one',
                     'output' => [
-                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
-                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'iteration' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
+                        'final_output' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
                     ],
                     'dependencies' => [],
                     'dependents' => [],
@@ -310,8 +310,8 @@ final class LaravelWorkflowRunnerTest extends TestCase
                     'model' => 'gpt-4.1-mini',
                     'prompt' => 'two',
                     'output' => [
-                        'iteration' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
-                        'final_output' => ['workflow_type' => ['kind' => 'string'], 'json_schema' => ['type' => 'string']],
+                        'iteration' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
+                        'final_output' => [ 'workflow_type' => [ 'kind' => 'string' ], 'json_schema' => [ 'type' => 'string' ] ],
                     ],
                     'dependencies' => [],
                     'dependents' => [],
@@ -320,26 +320,26 @@ final class LaravelWorkflowRunnerTest extends TestCase
             ],
             'output' => [
                 'fields' => [
-                    'first' => ['$ref' => 'agent.first'],
-                    'second' => ['$ref' => 'agent.second'],
+                    'first' => [ '$ref' => 'agent.first' ],
+                    'second' => [ '$ref' => 'agent.second' ],
                 ],
                 'contract' => [
-                    'workflow_type' => ['kind' => 'object', 'fields' => ['first' => ['kind' => 'string'], 'second' => ['kind' => 'string']]],
-                    'json_schema' => ['type' => 'object'],
+                    'workflow_type' => [ 'kind' => 'object', 'fields' => [ 'first' => [ 'kind' => 'string' ], 'second' => [ 'kind' => 'string' ] ] ],
+                    'json_schema' => [ 'type' => 'object' ],
                 ],
             ],
             'execution' => [
-                'order' => ['first', 'second'],
-                'batches' => [['first', 'second']],
+                'order' => [ 'first', 'second' ],
+                'batches' => [ [ 'first', 'second' ] ],
                 'edges' => [],
             ],
         ]);
 
         $result = $workflowRunner->run($workflowDefinition);
 
-        self::assertSame('reply: one', $result->output['first']);
-        self::assertSame('reply: two', $result->output['second']);
-        self::assertSame([2], $fakeConcurrencyDriver->taskCounts);
+        self::assertSame('reply: one', $result->output[ 'first' ]);
+        self::assertSame('reply: two', $result->output[ 'second' ]);
+        self::assertSame([ 2 ], $fakeConcurrencyDriver->taskCounts);
     }
 }
 
@@ -357,7 +357,9 @@ final class FakeConcurrencyManager
 
 final class FakeConcurrencyDriver
 {
-    /** @var list<int> */
+    /**
+     * @var list<int>
+     */
     public array $taskCounts = [];
 
     /**
@@ -370,7 +372,7 @@ final class FakeConcurrencyDriver
         $results = [];
 
         foreach ($tasks as $taskKey => $task) {
-            $results[$taskKey] = $task();
+            $results[ $taskKey ] = $task();
         }
 
         return $results;
@@ -402,7 +404,7 @@ final class FakeAgentDriver implements AgentDriverInterface
             context: [
                 'model' => $request->model,
                 'agent' => $request->agentName,
-            ]
+            ],
         );
     }
 }
