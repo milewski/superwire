@@ -55,23 +55,7 @@ final class WorkflowDefinition
             $providerName = self::requiredString($providerPayload, 'name');
             $driverName = self::requiredString($providerPayload, 'driver');
             $providerConfig = self::requiredArray($providerPayload, 'config');
-            $providerModels = null;
-
-            if (array_key_exists('models', $providerPayload)) {
-                if (!is_array($providerPayload['models'])) {
-                    throw new InvalidWorkflowDefinitionException('provider models must be an array when present');
-                }
-
-                $providerModels = [];
-
-                foreach ($providerPayload['models'] as $modelName) {
-                    if (!is_string($modelName)) {
-                        throw new InvalidWorkflowDefinitionException('provider model entries must be strings');
-                    }
-
-                    $providerModels[] = $modelName;
-                }
-            }
+            $providerModels = $providerPayload['models'] ?? null;
 
             $providers[] = new ProviderDefinition($providerName, $driverName, $providerConfig, $providerModels);
         }

@@ -21,7 +21,7 @@ final class JsonWorkflowDecoderTest extends TestCase
                 [
                     'name' => 'openai',
                     'driver' => 'prism',
-                    'models' => ['gpt-4.1-mini'],
+                    'models' => [['$ref' => 'secrets.max_model']],
                     'config' => [
                         'endpoint' => 'https://api.openai.com/v1',
                     ],
