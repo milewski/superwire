@@ -78,28 +78,21 @@ fn exports_execution_graph_with_parallel_batches() {
 
     assert_eq!(
         exported_json.get("format").and_then(Value::as_str),
-        Some("superwire_workflow_representation_v1")
+        Some("superwire_workflow_compact_v1")
     );
+
+    assert_eq!(exported_json.pointer("/providers/0/models"), Some(&json!(["gpt-4.1-mini"])));
 
     assert_eq!(
         exported_json.pointer("/execution/batches"),
         Some(&json!([["changelog", "social_thread", "customer_email"], ["consistency_review"]]))
     );
 
-    assert_eq!(
-        exported_json.pointer("/execution/dependents_by_agent/changelog"),
-        Some(&json!(["consistency_review"]))
-    );
+    assert_eq!(exported_json.pointer("/agents/0/dependents"), Some(&json!(["consistency_review"])));
 
-    assert_eq!(
-        exported_json.pointer("/execution/dependents_by_agent/social_thread"),
-        Some(&json!(["consistency_review"]))
-    );
+    assert_eq!(exported_json.pointer("/agents/1/dependents"), Some(&json!(["consistency_review"])));
 
-    assert_eq!(
-        exported_json.pointer("/execution/dependents_by_agent/customer_email"),
-        Some(&json!(["consistency_review"]))
-    );
+    assert_eq!(exported_json.pointer("/agents/2/dependents"), Some(&json!(["consistency_review"])));
 }
 
 #[test]
@@ -146,16 +139,19 @@ fn writes_json_to_output_file_when_requested() {
 
     assert_eq!(exported_json.pointer("/execution/batches"), Some(&json!([["collect_note"]])));
 
-    assert_eq!(exported_json.pointer("/declarations/2/kind"), Some(&json!("agent")));
-
     assert_eq!(
-        exported_json.pointer("/declarations/2/for_loop/pattern/kind"),
-        Some(&json!("identifier"))
+        exported_json.pointer("/agents/0/for_each/pattern/identifier"),
+        Some(&json!("number_item"))
     );
 
     assert_eq!(
-        exported_json.pointer("/semantic/agents/0/final_output_type/kind"),
+        exported_json.pointer("/agents/0/output/final_output/workflow_type/kind"),
         Some(&json!("array"))
+    );
+
+    assert_eq!(
+        exported_json.pointer("/output/fields/notes/$ref"),
+        Some(&json!("agent.collect_note"))
     );
 }
 
