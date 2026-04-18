@@ -9,12 +9,16 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use superwire_agent::AgentError;
-use superwire_core::dsl::{parse_workflow, Declaration, TypeExpression, Workflow};
+use superwire_core::dsl::{
+    parse_workflow, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, Expression, FunctionCall, ObjectField,
+    Reference, ReferenceAccess, ReferenceRoot, SourcePosition, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
+};
 use superwire_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
 use superwire_core::runtime::{
     types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType},
     WorkflowRuntimeError,
 };
+use superwire_core::semantic::{compile_workflow_pipeline, ExecutionPlan, TypedWorkflowIr, WorkflowPipelineInput};
 use superwire_tool::ToolBackend;
 
 use crate::diagnostics::CommandError;
@@ -34,6 +38,7 @@ impl WorkflowCommand {
         match self.command {
             WorkflowSubcommand::Init(init_workflow_command) => init_workflow_command.execute(),
             WorkflowSubcommand::Inspect(inspect_command) => inspect_command.execute(),
+            WorkflowSubcommand::ToJson(to_json_workflow_command) => to_json_workflow_command.execute(),
             WorkflowSubcommand::Build(build_workflow_command) => build_workflow_command.execute(),
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
@@ -45,6 +50,7 @@ impl WorkflowCommand {
 enum WorkflowSubcommand {
     Init(InitWorkflowCommand),
     Inspect(InspectCommand),
+    ToJson(ToJsonWorkflowCommand),
     Build(BuildWorkflowCommand),
     Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
@@ -715,6 +721,842 @@ impl InspectCommand {
         println!("{json}");
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Args)]
+struct ToJsonWorkflowCommand {
+    #[arg(value_name = "WORKFLOW_PATH")]
+    workflow_path: PathBuf,
+
+    #[arg(short = 'o', long = "output", value_name = "OUTPUT_PATH")]
+    output_path: Option<PathBuf>,
+
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    compact: bool,
+}
+
+impl ToJsonWorkflowCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let workflow_source = fs::read_to_string(&self.workflow_path).map_err(|read_error| {
+            CommandError::invalid_input(format!(
+                "failed to read workflow file {}: {read_error}",
+                self.workflow_path.display()
+            ))
+        })?;
+
+        let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
+            CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &self.workflow_path.display().to_string()))
+        })?;
+
+        let runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
+            .map_err(|schema_context_error| CommandError::invalid_input(schema_context_error.message().to_string()))?;
+
+        let compiled_pipeline = runtime_schema_context
+            .with_scope(|| {
+                compile_workflow_pipeline::<DynamicWorkflowInput, DynamicWorkflowOutput>(WorkflowPipelineInput::Workflow(&parsed_workflow))
+            })
+            .map_err(|workflow_runtime_error| CommandError::invalid_input(workflow_runtime_error.to_string()))?;
+
+        let workflow_representation = WorkflowJsonRepresentation::from_compilation(
+            &self.workflow_path,
+            &workflow_source,
+            compiled_pipeline.typed_workflow_ir(),
+            compiled_pipeline.execution_plan(),
+            &parsed_workflow,
+        );
+
+        let serialized_json = if self.compact {
+            serde_json::to_string(&workflow_representation).map_err(|serialization_error| {
+                CommandError::internal(format!("failed to serialize workflow json: {serialization_error}"))
+            })?
+        } else {
+            serde_json::to_string_pretty(&workflow_representation).map_err(|serialization_error| {
+                CommandError::internal(format!("failed to serialize workflow json: {serialization_error}"))
+            })?
+        };
+
+        if let Some(output_path) = self.output_path {
+            fs::write(&output_path, serialized_json).map_err(|write_error| {
+                CommandError::internal(format!("failed to write workflow json to {}: {write_error}", output_path.display()))
+            })?;
+
+            return Ok(());
+        }
+
+        println!("{serialized_json}");
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct WorkflowJsonRepresentation {
+    format: String,
+    workflow_path: String,
+    source: String,
+    declarations: Vec<SerializableDeclaration>,
+    semantic: SerializableSemanticModel,
+    execution: SerializableExecutionModel,
+}
+
+impl WorkflowJsonRepresentation {
+    fn from_compilation(
+        workflow_path: &Path,
+        workflow_source: &str,
+        typed_workflow_ir: &TypedWorkflowIr,
+        execution_plan: &ExecutionPlan,
+        workflow: &Workflow,
+    ) -> Self {
+        let declaration_representations = workflow
+            .declarations()
+            .iter()
+            .map(SerializableDeclaration::from_declaration)
+            .collect::<Vec<_>>();
+
+        Self {
+            format: "superwire_workflow_representation_v1".to_string(),
+            workflow_path: workflow_path.display().to_string(),
+            source: workflow_source.to_string(),
+            declarations: declaration_representations,
+            semantic: SerializableSemanticModel::from_compilation(typed_workflow_ir, execution_plan),
+            execution: SerializableExecutionModel::from_execution_plan(execution_plan),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableSemanticModel {
+    input_type: Option<SerializableWorkflowType>,
+    input_json_schema: Option<Value>,
+    secrets_type: Option<SerializableWorkflowType>,
+    secrets_json_schema: Option<Value>,
+    workflow_output_type: SerializableWorkflowType,
+    workflow_output_json_schema: Value,
+    agents: Vec<SerializableAgentSemantic>,
+}
+
+impl SerializableSemanticModel {
+    fn from_compilation(typed_workflow_ir: &TypedWorkflowIr, execution_plan: &ExecutionPlan) -> Self {
+        let mut agent_semantics = Vec::new();
+
+        for typed_agent in &typed_workflow_ir.agents {
+            let planned_agent = execution_plan
+                .planned_agents
+                .get(&typed_agent.name)
+                .expect("planned agent should exist for each typed agent");
+
+            agent_semantics.push(SerializableAgentSemantic::from_compilation(
+                typed_agent,
+                planned_agent.dependencies.clone(),
+            ));
+        }
+
+        Self {
+            input_type: typed_workflow_ir
+                .input_type
+                .as_ref()
+                .map(SerializableWorkflowType::from_workflow_type),
+            input_json_schema: typed_workflow_ir.input_type.as_ref().map(workflow_type_to_json_schema),
+            secrets_type: typed_workflow_ir
+                .secrets_type
+                .as_ref()
+                .map(SerializableWorkflowType::from_workflow_type),
+            secrets_json_schema: typed_workflow_ir.secrets_type.as_ref().map(workflow_type_to_json_schema),
+            workflow_output_type: SerializableWorkflowType::from_workflow_type(&typed_workflow_ir.workflow_output_type),
+            workflow_output_json_schema: workflow_type_to_json_schema(&typed_workflow_ir.workflow_output_type),
+            agents: agent_semantics,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableAgentSemantic {
+    name: String,
+    provider_name: String,
+    model_expression: SerializableExpression,
+    dependencies: Vec<String>,
+    iteration_output_type: SerializableWorkflowType,
+    iteration_output_json_schema: Value,
+    final_output_type: SerializableWorkflowType,
+    final_output_json_schema: Value,
+}
+
+impl SerializableAgentSemantic {
+    fn from_compilation(typed_agent: &superwire_core::semantic::TypedAgentIr, dependencies: Vec<String>) -> Self {
+        Self {
+            name: typed_agent.name.clone(),
+            provider_name: typed_agent.provider_name.clone(),
+            model_expression: SerializableExpression::from_expression(&typed_agent.model_expression),
+            dependencies,
+            iteration_output_type: SerializableWorkflowType::from_workflow_type(&typed_agent.iteration_output_type),
+            iteration_output_json_schema: workflow_type_to_json_schema(&typed_agent.iteration_output_type),
+            final_output_type: SerializableWorkflowType::from_workflow_type(&typed_agent.final_output_type),
+            final_output_json_schema: workflow_type_to_json_schema(&typed_agent.final_output_type),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableExecutionModel {
+    order: Vec<String>,
+    batches: Vec<Vec<String>>,
+    dependency_edges: Vec<SerializableDependencyEdge>,
+    dependents_by_agent: BTreeMap<String, Vec<String>>,
+}
+
+impl SerializableExecutionModel {
+    fn from_execution_plan(execution_plan: &ExecutionPlan) -> Self {
+        let execution_order = execution_plan.agent_execution_order.clone();
+        let execution_batches = Self::resolve_batches(execution_plan, &execution_order);
+        let dependency_edges = Self::collect_dependency_edges(execution_plan);
+        let dependents_by_agent = Self::collect_dependents_by_agent(execution_plan);
+
+        Self {
+            order: execution_order,
+            batches: execution_batches,
+            dependency_edges,
+            dependents_by_agent,
+        }
+    }
+
+    fn resolve_batches(execution_plan: &ExecutionPlan, execution_order: &[String]) -> Vec<Vec<String>> {
+        let mut unresolved_agent_names = execution_order.iter().cloned().collect::<std::collections::HashSet<_>>();
+        let mut resolved_agent_names = std::collections::HashSet::<String>::new();
+        let mut execution_batches = Vec::<Vec<String>>::new();
+
+        while !unresolved_agent_names.is_empty() {
+            let mut ready_agent_names = Vec::<String>::new();
+
+            for agent_name in execution_order {
+                if !unresolved_agent_names.contains(agent_name) {
+                    continue;
+                }
+
+                let planned_agent = execution_plan
+                    .planned_agents
+                    .get(agent_name)
+                    .expect("agent from execution order should exist in execution plan");
+
+                if planned_agent
+                    .dependencies
+                    .iter()
+                    .any(|dependency_name| !resolved_agent_names.contains(dependency_name))
+                {
+                    continue;
+                }
+
+                ready_agent_names.push(agent_name.clone());
+            }
+
+            if ready_agent_names.is_empty() {
+                break;
+            }
+
+            for ready_agent_name in &ready_agent_names {
+                unresolved_agent_names.remove(ready_agent_name);
+                resolved_agent_names.insert(ready_agent_name.clone());
+            }
+
+            execution_batches.push(ready_agent_names);
+        }
+
+        execution_batches
+    }
+
+    fn collect_dependency_edges(execution_plan: &ExecutionPlan) -> Vec<SerializableDependencyEdge> {
+        let mut dependency_edges = Vec::<SerializableDependencyEdge>::new();
+
+        for agent_name in &execution_plan.agent_execution_order {
+            let planned_agent = execution_plan
+                .planned_agents
+                .get(agent_name)
+                .expect("agent from execution order should exist in execution plan");
+
+            for dependency_name in &planned_agent.dependencies {
+                dependency_edges.push(SerializableDependencyEdge {
+                    from: dependency_name.clone(),
+                    to: agent_name.clone(),
+                });
+            }
+        }
+
+        dependency_edges
+    }
+
+    fn collect_dependents_by_agent(execution_plan: &ExecutionPlan) -> BTreeMap<String, Vec<String>> {
+        let mut dependents_by_agent = BTreeMap::<String, Vec<String>>::new();
+
+        for agent_name in &execution_plan.agent_execution_order {
+            dependents_by_agent.entry(agent_name.clone()).or_default();
+        }
+
+        for agent_name in &execution_plan.agent_execution_order {
+            let planned_agent = execution_plan
+                .planned_agents
+                .get(agent_name)
+                .expect("agent from execution order should exist in execution plan");
+
+            for dependency_name in &planned_agent.dependencies {
+                dependents_by_agent
+                    .entry(dependency_name.clone())
+                    .or_default()
+                    .push(agent_name.clone());
+            }
+        }
+
+        for dependents in dependents_by_agent.values_mut() {
+            dependents.sort();
+            dependents.dedup();
+        }
+
+        dependents_by_agent
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableDependencyEdge {
+    from: String,
+    to: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableDeclaration {
+    Provider {
+        name: String,
+        properties: Vec<SerializableObjectField>,
+        span: SerializableSourceSpan,
+    },
+    Secrets {
+        fields: Vec<SerializableTypedField>,
+        span: SerializableSourceSpan,
+    },
+    Input {
+        fields: Vec<SerializableTypedField>,
+        span: SerializableSourceSpan,
+    },
+    Schema {
+        name: String,
+        fields: Vec<SerializableTypedField>,
+        span: SerializableSourceSpan,
+    },
+    Agent {
+        name: String,
+        for_loop: Option<SerializableAgentForLoop>,
+        properties: Vec<SerializableAgentProperty>,
+        span: SerializableSourceSpan,
+    },
+    Output {
+        fields: Vec<SerializableObjectField>,
+        span: SerializableSourceSpan,
+    },
+}
+
+impl SerializableDeclaration {
+    fn from_declaration(declaration: &Declaration) -> Self {
+        match declaration {
+            Declaration::Provider(provider_declaration) => Self::Provider {
+                name: provider_declaration.name.clone(),
+                properties: provider_declaration
+                    .properties
+                    .iter()
+                    .map(SerializableObjectField::from_object_field)
+                    .collect::<Vec<_>>(),
+                span: SerializableSourceSpan::from_source_span(provider_declaration.span),
+            },
+            Declaration::Secrets(secrets_declaration) => Self::Secrets {
+                fields: secrets_declaration
+                    .fields
+                    .iter()
+                    .map(SerializableTypedField::from_typed_field)
+                    .collect::<Vec<_>>(),
+                span: SerializableSourceSpan::from_source_span(secrets_declaration.span),
+            },
+            Declaration::Input(input_declaration) => Self::Input {
+                fields: input_declaration
+                    .fields
+                    .iter()
+                    .map(SerializableTypedField::from_typed_field)
+                    .collect::<Vec<_>>(),
+                span: SerializableSourceSpan::from_source_span(input_declaration.span),
+            },
+            Declaration::Schema(schema_declaration) => Self::Schema {
+                name: schema_declaration.name.clone(),
+                fields: schema_declaration
+                    .fields
+                    .iter()
+                    .map(SerializableTypedField::from_typed_field)
+                    .collect::<Vec<_>>(),
+                span: SerializableSourceSpan::from_source_span(schema_declaration.span),
+            },
+            Declaration::Agent(agent_declaration) => Self::Agent {
+                name: agent_declaration.name.clone(),
+                for_loop: agent_declaration
+                    .for_loop
+                    .as_ref()
+                    .map(SerializableAgentForLoop::from_agent_for_loop),
+                properties: agent_declaration
+                    .properties
+                    .iter()
+                    .map(SerializableAgentProperty::from_agent_property)
+                    .collect::<Vec<_>>(),
+                span: SerializableSourceSpan::from_source_span(agent_declaration.span),
+            },
+            Declaration::Output(output_declaration) => Self::Output {
+                fields: output_declaration
+                    .fields
+                    .iter()
+                    .map(SerializableObjectField::from_object_field)
+                    .collect::<Vec<_>>(),
+                span: SerializableSourceSpan::from_source_span(output_declaration.span),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableTypedField {
+    name: String,
+    field_type: SerializableTypeExpression,
+    description: Option<String>,
+    span: SerializableSourceSpan,
+}
+
+impl SerializableTypedField {
+    fn from_typed_field(typed_field: &TypedField) -> Self {
+        Self {
+            name: typed_field.name.clone(),
+            field_type: SerializableTypeExpression::from_type_expression(&typed_field.field_type),
+            description: typed_field.description.clone(),
+            span: SerializableSourceSpan::from_source_span(typed_field.span),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableObjectField {
+    name: String,
+    value: SerializableExpression,
+}
+
+impl SerializableObjectField {
+    fn from_object_field(object_field: &ObjectField) -> Self {
+        Self {
+            name: object_field.name.clone(),
+            value: SerializableExpression::from_expression(&object_field.value),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableAgentForLoop {
+    pattern: SerializableAgentForLoopPattern,
+    iterable: SerializableExpression,
+}
+
+impl SerializableAgentForLoop {
+    fn from_agent_for_loop(agent_for_loop: &AgentForLoop) -> Self {
+        Self {
+            pattern: SerializableAgentForLoopPattern::from_agent_for_loop_pattern(&agent_for_loop.pattern),
+            iterable: SerializableExpression::from_expression(&agent_for_loop.iterable),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableAgentForLoopPattern {
+    Identifier { name: String },
+    ObjectDestructuring { fields: Vec<String> },
+}
+
+impl SerializableAgentForLoopPattern {
+    fn from_agent_for_loop_pattern(agent_for_loop_pattern: &AgentForLoopPattern) -> Self {
+        match agent_for_loop_pattern {
+            AgentForLoopPattern::Identifier(identifier_name) => Self::Identifier {
+                name: identifier_name.clone(),
+            },
+            AgentForLoopPattern::ObjectDestructuring(field_names) => Self::ObjectDestructuring {
+                fields: field_names.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableAgentProperty {
+    Model {
+        expression: SerializableExpression,
+    },
+    Prompt {
+        expression: SerializableExpression,
+    },
+    Output {
+        output_type: SerializableTypeExpression,
+        description: Option<String>,
+    },
+    Context {
+        expression: SerializableExpression,
+    },
+    Inference {
+        expression: SerializableExpression,
+    },
+    Tools {
+        expression: SerializableExpression,
+    },
+}
+
+impl SerializableAgentProperty {
+    fn from_agent_property(agent_property: &AgentProperty) -> Self {
+        match agent_property {
+            AgentProperty::Model(expression) => Self::Model {
+                expression: SerializableExpression::from_expression(expression),
+            },
+            AgentProperty::Prompt(expression) => Self::Prompt {
+                expression: SerializableExpression::from_expression(expression),
+            },
+            AgentProperty::Output {
+                output_type_expression,
+                description,
+            } => Self::Output {
+                output_type: SerializableTypeExpression::from_type_expression(output_type_expression),
+                description: description.clone(),
+            },
+            AgentProperty::Context(expression) => Self::Context {
+                expression: SerializableExpression::from_expression(expression),
+            },
+            AgentProperty::Inference(expression) => Self::Inference {
+                expression: SerializableExpression::from_expression(expression),
+            },
+            AgentProperty::Tools(expression) => Self::Tools {
+                expression: SerializableExpression::from_expression(expression),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableTypeExpression {
+    String,
+    Number,
+    Float,
+    Boolean,
+    Null,
+    SchemaReference {
+        name: String,
+    },
+    StringEnum {
+        value: String,
+    },
+    StringEnumReference {
+        reference: SerializableReference,
+    },
+    Array {
+        item_type: Box<SerializableTypeExpression>,
+        fixed_length: Option<u64>,
+    },
+    Tuple {
+        items: Vec<SerializableTypeExpression>,
+    },
+    Object {
+        fields: Vec<SerializableTypedField>,
+    },
+    Union {
+        members: Vec<SerializableTypeExpression>,
+    },
+}
+
+impl SerializableTypeExpression {
+    fn from_type_expression(type_expression: &TypeExpression) -> Self {
+        match type_expression {
+            TypeExpression::String => Self::String,
+            TypeExpression::Number => Self::Number,
+            TypeExpression::Float => Self::Float,
+            TypeExpression::Boolean => Self::Boolean,
+            TypeExpression::Null => Self::Null,
+            TypeExpression::SchemaReference(schema_name) => Self::SchemaReference { name: schema_name.clone() },
+            TypeExpression::StringEnum(string_enum_value) => Self::StringEnum {
+                value: string_enum_value.clone(),
+            },
+            TypeExpression::StringEnumReference(string_enum_reference) => Self::StringEnumReference {
+                reference: SerializableReference::from_reference(string_enum_reference),
+            },
+            TypeExpression::Array { item_type, fixed_length } => Self::Array {
+                item_type: Box::new(Self::from_type_expression(item_type)),
+                fixed_length: *fixed_length,
+            },
+            TypeExpression::Tuple(tuple_items) => Self::Tuple {
+                items: tuple_items.iter().map(Self::from_type_expression).collect::<Vec<_>>(),
+            },
+            TypeExpression::Object(object_fields) => Self::Object {
+                fields: object_fields
+                    .iter()
+                    .map(SerializableTypedField::from_typed_field)
+                    .collect::<Vec<_>>(),
+            },
+            TypeExpression::Union(union_members) => Self::Union {
+                members: union_members.iter().map(Self::from_type_expression).collect::<Vec<_>>(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableExpression {
+    StringLiteral { value: String },
+    StringTemplate { parts: Vec<SerializableStringTemplatePart> },
+    NumberLiteral { value: String },
+    BooleanLiteral { value: bool },
+    NullLiteral,
+    Reference { reference: SerializableReference },
+    FunctionCall { function_call: SerializableFunctionCall },
+    ArrayLiteral { items: Vec<SerializableExpression> },
+    ObjectLiteral { fields: Vec<SerializableObjectField> },
+}
+
+impl SerializableExpression {
+    fn from_expression(expression: &Expression) -> Self {
+        match expression {
+            Expression::StringLiteral(string_literal) => Self::StringLiteral {
+                value: string_literal.clone(),
+            },
+            Expression::StringTemplate(string_template) => Self::StringTemplate {
+                parts: string_template
+                    .parts
+                    .iter()
+                    .map(SerializableStringTemplatePart::from_string_template_part)
+                    .collect::<Vec<_>>(),
+            },
+            Expression::NumberLiteral(number_literal) => Self::NumberLiteral {
+                value: number_literal.clone(),
+            },
+            Expression::BooleanLiteral(boolean_literal) => Self::BooleanLiteral { value: *boolean_literal },
+            Expression::NullLiteral => Self::NullLiteral,
+            Expression::Reference(reference) => Self::Reference {
+                reference: SerializableReference::from_reference(reference),
+            },
+            Expression::FunctionCall(function_call) => Self::FunctionCall {
+                function_call: SerializableFunctionCall::from_function_call(function_call),
+            },
+            Expression::ArrayLiteral(array_items) => Self::ArrayLiteral {
+                items: array_items.iter().map(Self::from_expression).collect::<Vec<_>>(),
+            },
+            Expression::ObjectLiteral(object_fields) => Self::ObjectLiteral {
+                fields: object_fields
+                    .iter()
+                    .map(SerializableObjectField::from_object_field)
+                    .collect::<Vec<_>>(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableStringTemplatePart {
+    Text { value: String },
+    Interpolation { expression: SerializableExpression },
+}
+
+impl SerializableStringTemplatePart {
+    fn from_string_template_part(string_template_part: &StringTemplatePart) -> Self {
+        match string_template_part {
+            StringTemplatePart::Text(text_segment) => Self::Text {
+                value: text_segment.clone(),
+            },
+            StringTemplatePart::Interpolation(interpolated_expression) => Self::Interpolation {
+                expression: SerializableExpression::from_expression(interpolated_expression),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableFunctionCall {
+    callee: SerializableReference,
+    arguments: Vec<SerializableCallArgument>,
+}
+
+impl SerializableFunctionCall {
+    fn from_function_call(function_call: &FunctionCall) -> Self {
+        Self {
+            callee: SerializableReference::from_reference(&function_call.callee),
+            arguments: function_call
+                .arguments
+                .iter()
+                .map(SerializableCallArgument::from_call_argument)
+                .collect::<Vec<_>>(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableCallArgument {
+    Positional { expression: SerializableExpression },
+    Named { name: String, value: SerializableExpression },
+}
+
+impl SerializableCallArgument {
+    fn from_call_argument(call_argument: &CallArgument) -> Self {
+        match call_argument {
+            CallArgument::Positional(positional_expression) => Self::Positional {
+                expression: SerializableExpression::from_expression(positional_expression),
+            },
+            CallArgument::Named(named_argument) => Self::Named {
+                name: named_argument.name.clone(),
+                value: SerializableExpression::from_expression(&named_argument.value),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableReference {
+    root: SerializableReferenceRoot,
+    accesses: Vec<SerializableReferenceAccess>,
+    rendered_path: String,
+    span: SerializableSourceSpan,
+}
+
+impl SerializableReference {
+    fn from_reference(reference: &Reference) -> Self {
+        Self {
+            root: SerializableReferenceRoot::from_reference_root(&reference.root),
+            accesses: reference
+                .accesses
+                .iter()
+                .map(SerializableReferenceAccess::from_reference_access)
+                .collect::<Vec<_>>(),
+            rendered_path: reference.render_path(),
+            span: SerializableSourceSpan::from_source_span(reference.span),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableReferenceRoot {
+    Keyword { value: String },
+    Identifier { value: String },
+}
+
+impl SerializableReferenceRoot {
+    fn from_reference_root(reference_root: &ReferenceRoot) -> Self {
+        match reference_root {
+            ReferenceRoot::Keyword(reference_keyword) => Self::Keyword {
+                value: reference_keyword.as_str().to_string(),
+            },
+            ReferenceRoot::Identifier(identifier_name) => Self::Identifier {
+                value: identifier_name.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableReferenceAccess {
+    field: String,
+    optional: bool,
+}
+
+impl SerializableReferenceAccess {
+    fn from_reference_access(reference_access: &ReferenceAccess) -> Self {
+        Self {
+            field: reference_access.field.clone(),
+            optional: reference_access.optional,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SerializableWorkflowType {
+    String,
+    Integer,
+    Float,
+    Boolean,
+    Null,
+    StringEnum {
+        values: Vec<String>,
+    },
+    Array {
+        item_type: Box<SerializableWorkflowType>,
+        fixed_length: Option<u64>,
+    },
+    Tuple {
+        items: Vec<SerializableWorkflowType>,
+    },
+    Object {
+        fields: BTreeMap<String, SerializableWorkflowType>,
+    },
+    Union {
+        members: Vec<SerializableWorkflowType>,
+    },
+}
+
+impl SerializableWorkflowType {
+    fn from_workflow_type(workflow_type: &WorkflowType) -> Self {
+        match workflow_type {
+            WorkflowType::String => Self::String,
+            WorkflowType::Integer => Self::Integer,
+            WorkflowType::Float => Self::Float,
+            WorkflowType::Boolean => Self::Boolean,
+            WorkflowType::Null => Self::Null,
+            WorkflowType::StringEnum(enum_values) => Self::StringEnum {
+                values: enum_values.clone(),
+            },
+            WorkflowType::Array { item_type, fixed_length } => Self::Array {
+                item_type: Box::new(Self::from_workflow_type(item_type)),
+                fixed_length: *fixed_length,
+            },
+            WorkflowType::Tuple(tuple_items) => Self::Tuple {
+                items: tuple_items.iter().map(Self::from_workflow_type).collect::<Vec<_>>(),
+            },
+            WorkflowType::Object(object_fields) => Self::Object {
+                fields: object_fields
+                    .iter()
+                    .map(|(field_name, field_type)| (field_name.clone(), SerializableWorkflowType::from_workflow_type(field_type)))
+                    .collect::<BTreeMap<_, _>>(),
+            },
+            WorkflowType::Union(union_members) => Self::Union {
+                members: union_members.iter().map(Self::from_workflow_type).collect::<Vec<_>>(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableSourcePosition {
+    line: usize,
+    column: usize,
+}
+
+impl SerializableSourcePosition {
+    fn from_source_position(source_position: SourcePosition) -> Self {
+        Self {
+            line: source_position.line,
+            column: source_position.column,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableSourceSpan {
+    start: SerializableSourcePosition,
+    end: SerializableSourcePosition,
+}
+
+impl SerializableSourceSpan {
+    fn from_source_span(source_span: SourceSpan) -> Self {
+        Self {
+            start: SerializableSourcePosition::from_source_position(source_span.start),
+            end: SerializableSourcePosition::from_source_position(source_span.end),
+        }
     }
 }
 
