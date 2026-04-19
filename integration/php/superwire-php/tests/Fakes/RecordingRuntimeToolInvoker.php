@@ -9,9 +9,10 @@ use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Agent\AgentToolResult;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
+use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 
-final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolSchemaProviderInterface
+final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolSchemaProviderInterface, RuntimeToolMetadataProviderInterface
 {
     /**
      * @param class-string|null $inputSchema
@@ -24,9 +25,11 @@ final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, 
         ?string $boundedSchema = null,
         array $output = [],
         string $id = 'tool-call-1',
+        ?string $description = null,
+        ?bool $strict = null,
     ): self
     {
-        return new self($name, $inputSchema, $boundedSchema, $output, $id);
+        return new self($name, $inputSchema, $boundedSchema, $output, $id, $description, $strict);
     }
 
     /**
@@ -45,6 +48,8 @@ final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, 
         private readonly ?string $boundedSchemaClass,
         private readonly array $output = [],
         private readonly string $id = 'tool-call-1',
+        private readonly ?string $description = null,
+        private readonly ?bool $strict = null,
     ) {
     }
 
@@ -82,6 +87,24 @@ final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, 
         }
 
         return $schema;
+    }
+
+    public function descriptionForTool(string $toolName): ?string
+    {
+        if ($toolName !== $this->name) {
+            return null;
+        }
+
+        return $this->description;
+    }
+
+    public function strictSchemaForTool(string $toolName): ?bool
+    {
+        if ($toolName !== $this->name) {
+            return null;
+        }
+
+        return $this->strict;
     }
 
     public function invoke(AgentExecutionRequest $request, AgentToolCall $toolCall): AgentToolResult

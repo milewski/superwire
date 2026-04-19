@@ -4,10 +4,10 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tools;
 
+use ReflectionClass;
 use ReflectionIntersectionType;
 use ReflectionNamedType;
 use ReflectionParameter;
-use ReflectionType;
 use ReflectionUnionType;
 use RuntimeException;
 use Spatie\LaravelData\Data;
@@ -19,7 +19,7 @@ abstract class WorkflowToolArguments extends Data
      */
     public static function fromPayload(array $payload): static
     {
-        $reflectionClass = new \ReflectionClass(static::class);
+        $reflectionClass = new ReflectionClass(static::class);
         $constructor = $reflectionClass->getConstructor();
 
         if ($constructor === null) {

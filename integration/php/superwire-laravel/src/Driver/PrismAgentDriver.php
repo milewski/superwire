@@ -102,6 +102,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
                         'name' => $tool->name,
                         'description' => $tool->description,
                         'parameters' => $tool->parametersSchema,
+                        'strict' => $tool->strict,
                     ],
                 ],
                 $request->tools,
@@ -364,6 +365,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
             $prismTool = (new PrismTool())
                 ->as($tool->name)
                 ->for($tool->description)
+                ->withProviderOptions([ 'strict' => $tool->strict ])
                 ->using(static fn (): string => 'ok');
 
             $properties = $tool->parametersSchema[ 'properties' ] ?? null;

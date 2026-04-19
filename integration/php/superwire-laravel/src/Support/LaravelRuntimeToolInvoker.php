@@ -15,13 +15,16 @@ use RuntimeException;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Agent\AgentToolResult;
+use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 use Superwire\Laravel\Contracts\WorkflowRuntimeTool;
 use Superwire\Laravel\Tools\WorkflowToolArguments;
 use Superwire\Laravel\Tools\WorkflowToolInput;
+use Superwire\Laravel\Tools\WorkflowToolResult;
+use Throwable;
 
-final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolSchemaProviderInterface
+final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolSchemaProviderInterface, RuntimeToolMetadataProviderInterface
 {
     /**
      * @param array<string, class-string> $toolClassesByName
@@ -71,11 +74,24 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
             throw new RuntimeException("configured tool class {$toolClass} must define invoke()");
         }
 
+        try {
+
+            $toolResult = $this->invokeTool($toolInstance, $this->toolBindings($request, $toolCall->name), $toolCall->arguments);
+
+        } catch (Throwable $throwable) {
+
+            $toolResult = WorkflowToolResult::fail('runtime tool invocation failed', [
+                'tool' => $toolCall->name,
+                'reason' => $throwable->getMessage(),
+            ]);
+
+        }
+
         return new AgentToolResult(
             toolCallId: $toolCall->id,
             toolName: $toolCall->name,
             arguments: $toolCall->arguments,
-            result: $this->invokeTool($toolInstance, $this->toolBindings($request, $toolCall->name), $toolCall->arguments),
+            result: $toolResult,
         );
     }
 
@@ -104,6 +120,48 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
         }
 
         return $inputClassName::jsonSchema();
+    }
+
+    public function descriptionForTool(string $toolName): ?string
+    {
+        $toolClass = $this->toolClassesByName[ $toolName ] ?? null;
+
+        if ($toolClass === null) {
+            return null;
+        }
+
+        if (!method_exists($toolClass, 'toolDescription')) {
+            return null;
+        }
+
+        $toolDescription = $toolClass::toolDescription();
+
+        if (!is_string($toolDescription) || trim($toolDescription) === '') {
+            return null;
+        }
+
+        return $toolDescription;
+    }
+
+    public function strictSchemaForTool(string $toolName): ?bool
+    {
+        $toolClass = $this->toolClassesByName[ $toolName ] ?? null;
+
+        if ($toolClass === null) {
+            return null;
+        }
+
+        if (!method_exists($toolClass, 'toolStrictSchema')) {
+            return true;
+        }
+
+        $strictSchema = $toolClass::toolStrictSchema();
+
+        if (!is_bool($strictSchema)) {
+            return true;
+        }
+
+        return $strictSchema;
     }
 
     /**
@@ -202,7 +260,7 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
 
                 return $argumentClassName::fromPayload($payload);
 
-            } catch (\Throwable $throwable) {
+            } catch (Throwable $throwable) {
 
                 throw new RuntimeException(
                     "failed to resolve {$payloadDescription} for `{$toolClass}` parameter `{$parameter->getName()}`: {$throwable->getMessage()}",

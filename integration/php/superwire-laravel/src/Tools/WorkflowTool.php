@@ -23,6 +23,16 @@ abstract class WorkflowTool implements WorkflowRuntimeTool
         return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $classBaseName));
     }
 
+    public static function toolDescription(): string
+    {
+        return sprintf('Execute `%s` and use the result to continue', static::toolName());
+    }
+
+    public static function toolStrictSchema(): bool
+    {
+        return true;
+    }
+
     protected function success(mixed $payload = null): WorkflowToolResult
     {
         return WorkflowToolResult::success($payload);
