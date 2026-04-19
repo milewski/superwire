@@ -8,10 +8,15 @@ use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Facades\Prism;
 use Prism\Prism\Testing\TextResponseFake;
 use Prism\Prism\Text\Request as TextRequest;
+use Prism\Prism\Tool as PrismTool;
+use Superwire\Contracts\Agent\AgentConversationMessage;
+use Superwire\Contracts\Agent\AgentToolDefinition;
+use Superwire\Contracts\Agent\AgentTurnRequest;
 use Prism\Prism\ValueObjects\ToolCall;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentExpectedOutput;
 use Superwire\Contracts\HasCompletionToolStage;
+use Superwire\Contracts\Agent\ConversationRole;
 use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Support\LoopAgentDriver;
 use Superwire\Laravel\Driver\PrismAgentDriver;
@@ -103,6 +108,54 @@ final class PrismAgentDriverTest extends TestCase
 
             $this->assertCount(1, $requests);
             $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
+
+        });
+    }
+
+    public function testItPassesToolDescriptionAndStrictModeToPrism(): void
+    {
+        $this->ensurePrismBinding();
+
+        $prismFake = Prism::fake([
+            TextResponseFake::make()->withText('ok'),
+        ]);
+
+        $driver = new PrismAgentDriver();
+
+        $driver->generateTurn(new AgentTurnRequest(
+            provider: 'openai',
+            model: 'gpt-4.1-mini',
+            providerConfig: [],
+            messages: [ new AgentConversationMessage(ConversationRole::User, [ 'content' => 'do something' ]) ],
+            tools: [
+                new AgentToolDefinition(
+                    name: 'get_answered_participants_for_task',
+                    description: 'Fetch participants that answered a task in this project',
+                    parametersSchema: [
+                        'type' => 'object',
+                        'properties' => [
+                            'task_id' => [ 'type' => 'integer' ],
+                        ],
+                        'required' => [ 'task_id' ],
+                        'additionalProperties' => false,
+                    ],
+                    strict: true,
+                ),
+            ],
+            requireToolCall: false,
+        ));
+
+        $prismFake->assertRequest(function (array $requests): void {
+
+            $this->assertCount(1, $requests);
+            $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
+
+            $tools = $requests[ 0 ]->tools();
+
+            $this->assertCount(1, $tools);
+            $this->assertInstanceOf(PrismTool::class, $tools[ 0 ]);
+            $this->assertSame('Fetch participants that answered a task in this project', $tools[ 0 ]->description());
+            $this->assertTrue((bool) $tools[ 0 ]->providerOptions('strict'));
 
         });
     }

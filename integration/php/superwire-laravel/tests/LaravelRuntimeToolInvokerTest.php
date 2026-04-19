@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests;
 
+use RuntimeException;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentExpectedOutput;
 use Superwire\Contracts\Agent\AgentToolCall;
@@ -109,6 +110,43 @@ final class LaravelRuntimeToolInvokerTest extends TestCase
         );
     }
 
+    public function testItUsesToolProvidedDescriptionAndStrictMetadata(): void
+    {
+        $runtimeToolInvoker = (new LaravelRuntimeToolInvoker($this->app))->withTools([ TypedWorkflowTool::class ]);
+
+        $this->assertSame('Retrieve one participant answer for a task', $runtimeToolInvoker->descriptionForTool('typed_workflow_tool'));
+        $this->assertTrue($runtimeToolInvoker->strictSchemaForTool('typed_workflow_tool'));
+    }
+
+    public function testItWrapsUnexpectedToolExceptionsAsFailurePayload(): void
+    {
+        $runtimeToolInvoker = (new LaravelRuntimeToolInvoker($this->app))->withTools([ ThrowingWorkflowTool::class ]);
+        $agentExecutionRequest = $this->requestForTool('throwing_workflow_tool', [ 'workspace_id' => 7 ]);
+        $toolCall = new AgentToolCall(
+            id: 'tool-call-4',
+            name: 'throwing_workflow_tool',
+            arguments: [
+                'participant_id' => 55,
+            ],
+        );
+
+        $agentToolResult = $runtimeToolInvoker->invoke($agentExecutionRequest, $toolCall);
+
+        $this->assertSame(
+            [
+                'status' => 'error',
+                'error' => [
+                    'reason' => 'runtime tool invocation failed',
+                    'details' => [
+                        'tool' => 'throwing_workflow_tool',
+                        'reason' => 'unexpected exception while building tool output',
+                    ],
+                ],
+            ],
+            json_decode((string) json_encode($agentToolResult->result), true),
+        );
+    }
+
     private function requestForTool(string $toolName, array $bindings): AgentExecutionRequest
     {
         return new AgentExecutionRequest(
@@ -156,6 +194,11 @@ final class OptionalWorkflowToolInput extends WorkflowToolInput
 
 final class TypedWorkflowTool extends WorkflowTool
 {
+    public static function toolDescription(): string
+    {
+        return 'Retrieve one participant answer for a task';
+    }
+
     public function invoke(TypedWorkflowToolBoundInput $boundInput, TypedWorkflowToolInput $input): WorkflowToolResult
     {
         return $this->success([
@@ -185,5 +228,13 @@ final class FailingWorkflowTool extends WorkflowTool
             'participant_id' => $input->participant_id,
             'workspace_id' => $boundInput->workspace_id,
         ]);
+    }
+}
+
+final class ThrowingWorkflowTool extends WorkflowTool
+{
+    public function invoke(TypedWorkflowToolBoundInput $boundInput, TypedWorkflowToolInput $input): WorkflowToolResult
+    {
+        throw new RuntimeException('unexpected exception while building tool output');
     }
 }

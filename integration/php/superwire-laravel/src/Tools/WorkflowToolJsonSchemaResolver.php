@@ -4,6 +4,8 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tools;
 
+use BackedEnum;
+use DateTimeInterface;
 use ReflectionClass;
 use ReflectionIntersectionType;
 use ReflectionNamedType;
@@ -32,10 +34,12 @@ final class WorkflowToolJsonSchemaResolver
     private function resolveDataClassSchema(string $dataClass, array $seenClasses): array
     {
         if (in_array($dataClass, $seenClasses, true)) {
+
             return [
                 'type' => 'object',
                 'additionalProperties' => true,
             ];
+
         }
 
         if (!class_exists($dataClass)) {
@@ -160,11 +164,13 @@ final class WorkflowToolJsonSchemaResolver
             return $this->resolveEnumSchema($typeName);
         }
 
-        if (is_a($typeName, \DateTimeInterface::class, true)) {
+        if (is_a($typeName, DateTimeInterface::class, true)) {
+
             return [
                 'type' => 'string',
                 'format' => 'date-time',
             ];
+
         }
 
         if (is_subclass_of($typeName, WorkflowToolArguments::class)) {
@@ -208,13 +214,13 @@ final class WorkflowToolJsonSchemaResolver
             return [];
         }
 
-        $firstValue = $enumCases[ 0 ] instanceof \BackedEnum ? $enumCases[ 0 ]->value : $enumCases[ 0 ]->name;
+        $firstValue = $enumCases[ 0 ] instanceof BackedEnum ? $enumCases[ 0 ]->value : $enumCases[ 0 ]->name;
         $schemaType = is_int($firstValue) ? 'integer' : 'string';
 
         return [
             'type' => $schemaType,
             'enum' => array_map(
-                static fn (UnitEnum $enumCase): string|int => $enumCase instanceof \BackedEnum ? $enumCase->value : $enumCase->name,
+                static fn (UnitEnum $enumCase): string|int => $enumCase instanceof BackedEnum ? $enumCase->value : $enumCase->name,
                 $enumCases,
             ),
         ];

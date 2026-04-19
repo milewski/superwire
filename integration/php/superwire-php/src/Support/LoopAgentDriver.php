@@ -17,6 +17,7 @@ use Superwire\Contracts\Contracts\AgentDriverInterface;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
 use Superwire\Contracts\Contracts\RuntimeToolBatchInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
+use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 use Superwire\Contracts\Support\Stages\CompletionToolLoopStage;
 use Superwire\Contracts\Support\Stages\WorkflowTypeValidationStage;
@@ -101,6 +102,21 @@ final class LoopAgentDriver implements AgentDriverInterface
 
                 }
 
+                if ($this->shouldRetryAfterToolResponseMissingError($finalization->reason, $recentRuntimeToolResults)) {
+
+                    $messages[] = new AgentConversationMessage(ConversationRole::User, [
+                        'content' => sprintf(
+                            'A runtime tool result is available in the previous tool_result message. Use that data and call %s with the final answer.',
+                            $this->completionToolLoopStage->finalizeSuccessToolName(),
+                        ),
+                    ]);
+
+                    $completionPhaseEnabled = true;
+
+                    continue;
+
+                }
+
                 throw new RuntimeException("agent `{$request->agentName}` finalized with error: {$finalization->reason}");
 
             }
@@ -177,6 +193,26 @@ final class LoopAgentDriver implements AgentDriverInterface
         }
 
         throw new RuntimeException("agent `{$request->agentName}` reached max iterations without completion tools");
+    }
+
+    /**
+     * @param array<int, AgentToolResult> $recentRuntimeToolResults
+     */
+    private function shouldRetryAfterToolResponseMissingError(string $reason, array $recentRuntimeToolResults): bool
+    {
+        if ($recentRuntimeToolResults === []) {
+            return false;
+        }
+
+        $normalizedReason = strtolower($reason);
+
+        if (!str_contains($normalizedReason, 'tool response')) {
+            return false;
+        }
+
+        return str_contains($normalizedReason, 'not received')
+            || str_contains($normalizedReason, 'no tool response')
+            || str_contains($normalizedReason, 'without actual tool payload');
     }
 
     private function synthesizeCompletionToolCallFromText(AgentExecutionRequest $request, string $text): AgentToolCall
@@ -329,8 +365,9 @@ final class LoopAgentDriver implements AgentDriverInterface
 
             $runtimeTools[] = new AgentToolDefinition(
                 name: $toolExecution->name,
-                description: "Execute runtime tool `{$toolExecution->name}` and use result to continue",
+                description: $this->runtimeToolDescription($toolExecution->name),
                 parametersSchema: $this->runtimeToolParametersSchema($toolExecution->name),
+                strict: $this->runtimeToolStrictMode($toolExecution->name),
             );
 
         }
@@ -393,15 +430,46 @@ final class LoopAgentDriver implements AgentDriverInterface
                     'participant_id' => [ 'type' => 'integer' ],
                 ],
                 'required' => [ 'participant_id' ],
-                'additionalProperties' => true,
+                'additionalProperties' => false,
             ];
 
         }
 
         return [
             'type' => 'object',
-            'additionalProperties' => true,
+            'properties' => [],
+            'additionalProperties' => false,
         ];
+    }
+
+    private function runtimeToolDescription(string $toolName): string
+    {
+        if ($this->runtimeToolInvoker instanceof RuntimeToolMetadataProviderInterface) {
+
+            $toolDescription = $this->runtimeToolInvoker->descriptionForTool($toolName);
+
+            if (is_string($toolDescription) && $toolDescription !== '') {
+                return $toolDescription;
+            }
+
+        }
+
+        return "Execute runtime tool `{$toolName}` and use result to continue";
+    }
+
+    private function runtimeToolStrictMode(string $toolName): bool
+    {
+        if ($this->runtimeToolInvoker instanceof RuntimeToolMetadataProviderInterface) {
+
+            $strictMode = $this->runtimeToolInvoker->strictSchemaForTool($toolName);
+
+            if (is_bool($strictMode)) {
+                return $strictMode;
+            }
+
+        }
+
+        return true;
     }
 
     /**

@@ -134,6 +134,104 @@ final class WireWorkflowToolArgumentsTest extends TestCase
         }
     }
 
+    public function test_finalize_error_retries_when_tool_response_missing_but_result_exists(): void
+    {
+        $runtimeToolInvoker = RecordingRuntimeToolInvoker::fake(
+            name: 'fetch_record_action',
+            output: [
+                'actor_id' => 99,
+                'summary' => 'runtime summary',
+            ],
+        );
+
+        $turnDriver = ScriptedTurnDriver::fake([
+            new AgentTurnResponse(
+                toolCalls: [
+                    new AgentToolCall($runtimeToolInvoker->id(), $runtimeToolInvoker->name(), [ 'entity_id' => 22 ]),
+                ],
+            ),
+            new AgentTurnResponse(
+                toolCalls: [
+                    new AgentToolCall(
+                        id: 'finalize-error-2',
+                        name: $this->completionStage->finalizeErrorToolName(),
+                        arguments: [
+                            'reason' => 'Tool responses not received for fetch_record_action calls',
+                        ],
+                    ),
+                ],
+            ),
+            new AgentTurnResponse(
+                toolCalls: [
+                    new AgentToolCall(
+                        id: 'finalize-success-2',
+                        name: $this->completionStage->finalizeSuccessToolName(),
+                        arguments: [
+                            'answer' => [
+                                'actor_id' => 99,
+                                'summary' => 'recovered after retry',
+                            ],
+                        ],
+                    ),
+                ],
+            ),
+        ]);
+
+        $loopAgentDriver = new LoopAgentDriver($turnDriver, $runtimeToolInvoker);
+        $agentExecutionResult = $loopAgentDriver->execute($this->make_agent_execution_request());
+
+        $this->assertSame([ 'actor_id' => 99, 'summary' => 'recovered after retry' ], $agentExecutionResult->output);
+        $this->assertSame(3, count($turnDriver->requests));
+        $this->assertSame(1, count($runtimeToolInvoker->invocations));
+    }
+
+    public function test_runtime_tool_metadata_uses_tool_description_and_strict_schema(): void
+    {
+        $runtimeToolInvoker = RecordingRuntimeToolInvoker::fake(
+            name: 'fetch_record_action',
+            inputSchema: InputSchema::class,
+            description: 'Fetch participant answers for the current task',
+            strict: true,
+        );
+
+        $turnDriver = ScriptedTurnDriver::fake([
+            new AgentTurnResponse(
+                toolCalls: [
+                    new AgentToolCall(
+                        id: 'finalize-success-3',
+                        name: $this->completionStage->finalizeSuccessToolName(),
+                        arguments: [
+                            'answer' => [
+                                'actor_id' => 99,
+                                'summary' => 'done',
+                            ],
+                        ],
+                    ),
+                ],
+            ),
+        ]);
+
+        $loopAgentDriver = new LoopAgentDriver($turnDriver, $runtimeToolInvoker);
+        $loopAgentDriver->execute($this->make_agent_execution_request());
+
+        $this->assertSame(1, count($turnDriver->requests));
+
+        $runtimeToolDefinition = null;
+
+        foreach ($turnDriver->requests[ 0 ]->tools as $toolDefinition) {
+
+            if ($toolDefinition->name === $runtimeToolInvoker->name()) {
+                $runtimeToolDefinition = $toolDefinition;
+                break;
+            }
+
+        }
+
+        $this->assertNotNull($runtimeToolDefinition);
+        $this->assertSame('Fetch participant answers for the current task', $runtimeToolDefinition->description);
+        $this->assertTrue($runtimeToolDefinition->strict);
+    }
+
     private function make_agent_execution_request(): AgentExecutionRequest
     {
         return WireFixtureWorkflowFactory::makeAgentExecutionRequest(
