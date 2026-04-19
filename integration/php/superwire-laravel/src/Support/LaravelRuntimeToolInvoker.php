@@ -15,8 +15,8 @@ use RuntimeException;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Agent\AgentToolResult;
-use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
+use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 use Superwire\Laravel\Contracts\WorkflowRuntimeTool;
 use Superwire\Laravel\Tools\WorkflowToolArguments;
@@ -24,7 +24,7 @@ use Superwire\Laravel\Tools\WorkflowToolInput;
 use Superwire\Laravel\Tools\WorkflowToolResult;
 use Throwable;
 
-final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolSchemaProviderInterface, RuntimeToolMetadataProviderInterface
+final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolMetadataProviderInterface, RuntimeToolSchemaProviderInterface
 {
     /**
      * @param array<string, class-string> $toolClassesByName
