@@ -11,6 +11,7 @@ use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Tool\ToolExecution;
 use Superwire\Laravel\Support\LaravelRuntimeToolInvoker;
+use Superwire\Laravel\Tools\Attributes\Description;
 use Superwire\Laravel\Tools\WorkflowTool;
 use Superwire\Laravel\Tools\WorkflowToolBoundInput;
 use Superwire\Laravel\Tools\WorkflowToolInput;
@@ -77,6 +78,7 @@ final class LaravelRuntimeToolInvokerTest extends TestCase
         $this->assertNotNull($schema);
         $this->assertSame('object', $schema[ 'type' ] ?? null);
         $this->assertSame('integer', $schema[ 'properties' ][ 'participant_id' ][ 'type' ] ?? null);
+        $this->assertSame('Participant identifier for answer lookup.', $schema[ 'properties' ][ 'participant_id' ][ 'description' ] ?? null);
         $this->assertSame('boolean', $schema[ 'properties' ][ 'include_archived' ][ 'type' ] ?? null);
         $this->assertSame([ 'participant_id' ], $schema[ 'required' ] ?? []);
     }
@@ -178,6 +180,7 @@ final class TypedWorkflowToolBoundInput extends WorkflowToolBoundInput
 final class TypedWorkflowToolInput extends WorkflowToolInput
 {
     public function __construct(
+        #[Description('Participant identifier for answer lookup.')]
         public int $participant_id,
         public bool $include_archived = false,
     ) {

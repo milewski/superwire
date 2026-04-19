@@ -6,13 +6,16 @@ namespace Superwire\Laravel\Tools;
 
 use BackedEnum;
 use DateTimeInterface;
+use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionIntersectionType;
 use ReflectionNamedType;
 use ReflectionParameter;
+use ReflectionProperty;
 use ReflectionType;
 use ReflectionUnionType;
 use RuntimeException;
+use Superwire\Laravel\Tools\Attributes\Description;
 use UnitEnum;
 
 final class WorkflowToolJsonSchemaResolver
@@ -56,7 +59,14 @@ final class WorkflowToolJsonSchemaResolver
 
             foreach ($constructor->getParameters() as $parameter) {
 
-                $properties[ $parameter->getName() ] = $this->resolveTypeSchema($parameter, $parameter->getType(), $nextSeenClasses);
+                $parameterSchema = $this->resolveTypeSchema($parameter, $parameter->getType(), $nextSeenClasses);
+                $parameterDescription = $this->resolveDescription($reflectionClass, $parameter);
+
+                if ($parameterDescription !== null) {
+                    $parameterSchema[ 'description' ] = $parameterDescription;
+                }
+
+                $properties[ $parameter->getName() ] = $parameterSchema;
 
                 if (!$parameter->isOptional() && !$parameter->allowsNull()) {
                     $required[] = $parameter->getName();
@@ -224,5 +234,51 @@ final class WorkflowToolJsonSchemaResolver
                 $enumCases,
             ),
         ];
+    }
+
+    private function resolveDescription(ReflectionClass $reflectionClass, ReflectionParameter $parameter): ?string
+    {
+        $parameterAttributeDescription = $this->descriptionFromAttributes($parameter->getAttributes(Description::class));
+
+        if ($parameterAttributeDescription !== null) {
+            return $parameterAttributeDescription;
+        }
+
+        if (!$reflectionClass->hasProperty($parameter->getName())) {
+            return null;
+        }
+
+        $reflectionProperty = $reflectionClass->getProperty($parameter->getName());
+
+        return $this->descriptionFromProperty($reflectionProperty);
+    }
+
+    /**
+     * @param array<int, ReflectionAttribute> $reflectionAttributes
+     */
+    private function descriptionFromAttributes(array $reflectionAttributes): ?string
+    {
+        foreach ($reflectionAttributes as $reflectionAttribute) {
+
+            $attributeInstance = $reflectionAttribute->newInstance();
+
+            if (!$attributeInstance instanceof Description) {
+                continue;
+            }
+
+            if (trim($attributeInstance->value) === '') {
+                return null;
+            }
+
+            return $attributeInstance->value;
+
+        }
+
+        return null;
+    }
+
+    private function descriptionFromProperty(ReflectionProperty $reflectionProperty): ?string
+    {
+        return $this->descriptionFromAttributes($reflectionProperty->getAttributes(Description::class));
     }
 }

@@ -326,7 +326,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
 
             }
 
-            if ($message->role === 'tool_result') {
+            if ($message->role === ConversationRole::ToolResult) {
 
                 $toolResults = $message->payload[ 'tool_results' ] ?? [];
 

@@ -484,10 +484,10 @@ final class LoopAgentDriver implements AgentDriverInterface
                 $payload = $message->payload;
                 $role = $message->role;
 
-                if ($role === 'tool_result') {
+                if ($role === ConversationRole::ToolResult) {
 
                     return [
-                        'role' => 'tool',
+                        'role' => ConversationRole::ToolResult->value,
                         'tool_results' => array_map(
                             function (AgentToolResult $tr): array {
 
