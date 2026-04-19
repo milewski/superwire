@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Agent;
 
-final class AgentTurnRequest
+final readonly class AgentTurnRequest
 {
     /**
      * @param array<int, AgentConversationMessage> $messages
@@ -12,12 +12,12 @@ final class AgentTurnRequest
      * @param array<string, mixed> $providerConfig
      */
     public function __construct(
-        public readonly string $provider,
-        public readonly string $model,
-        public readonly array $providerConfig,
-        public readonly array $messages,
-        public readonly array $tools,
-        public readonly bool $requireToolCall,
+        public string $provider,
+        public string $model,
+        public array $providerConfig,
+        public array $messages,
+        public array $tools,
+        public bool $requireToolCall,
     )
     {
     }

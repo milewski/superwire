@@ -4,15 +4,23 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests;
 
+use Prism\Prism\Enums\FinishReason;
 use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Facades\Prism;
 use Prism\Prism\Testing\TextResponseFake;
 use Prism\Prism\Text\Request as TextRequest;
-use Prism\Prism\Tool as PrismTool;
+use Prism\Prism\Text\Step as TextStep;
+use Prism\Prism\ValueObjects\Messages\AssistantMessage;
+use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
+use Prism\Prism\ValueObjects\Messages\UserMessage;
+use Prism\Prism\ValueObjects\Meta;
+use Prism\Prism\ValueObjects\ProviderTool;
 use Prism\Prism\ValueObjects\ToolCall;
+use Prism\Prism\ValueObjects\Usage;
 use Superwire\Contracts\Agent\AgentConversationMessage;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentExpectedOutput;
+use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Agent\AgentToolDefinition;
 use Superwire\Contracts\Agent\AgentToolResult;
 use Superwire\Contracts\Agent\AgentTurnRequest;
@@ -33,9 +41,11 @@ final class PrismAgentDriverTest extends TestCase
 
         $prismFake = Prism::fake([
             TextResponseFake::make()->withText('I think the answer is ready'),
-            TextResponseFake::make()->withToolCalls([
-                new ToolCall('tool-call-1', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => [ 'summary' => 'done' ] ]),
-            ]),
+            TextResponseFake::make()->withSteps(collect([
+                $this->buildTextStep(toolCalls: [
+                    new ToolCall('tool-call-1', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => [ 'summary' => 'done' ] ]),
+                ]),
+            ])),
         ]);
 
         $driver = new LoopAgentDriver(new PrismAgentDriver());
@@ -77,9 +87,11 @@ final class PrismAgentDriverTest extends TestCase
         $this->ensurePrismBinding();
 
         $prismFake = Prism::fake([
-            TextResponseFake::make()->withToolCalls([
-                new ToolCall('tool-call-2', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => 'plain result' ]),
-            ]),
+            TextResponseFake::make()->withSteps(collect([
+                $this->buildTextStep(toolCalls: [
+                    new ToolCall('tool-call-2', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => 'plain result' ]),
+                ]),
+            ])),
         ]);
 
         $driver = new LoopAgentDriver(new PrismAgentDriver());
@@ -145,16 +157,20 @@ final class PrismAgentDriverTest extends TestCase
             $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
 
             $tools = $requests[ 0 ]->tools();
+            $providerTools = $requests[ 0 ]->providerTools();
 
-            $this->assertCount(1, $tools);
-            $this->assertInstanceOf(PrismTool::class, $tools[ 0 ]);
-            $this->assertSame('Fetch participants that answered a task in this project', $tools[ 0 ]->description());
-            $this->assertTrue((bool) $tools[ 0 ]->providerOptions('strict'));
+            $this->assertCount(0, $tools);
+            $this->assertCount(1, $providerTools);
+            $this->assertInstanceOf(ProviderTool::class, $providerTools[ 0 ]);
+            $this->assertSame('function', $providerTools[ 0 ]->type);
+            $this->assertSame('get_answered_participants_for_task', $providerTools[ 0 ]->name);
+            $this->assertSame('Fetch participants that answered a task in this project', $providerTools[ 0 ]->options[ 'description' ]);
+            $this->assertTrue((bool) $providerTools[ 0 ]->options[ 'strict' ]);
 
         });
     }
 
-    public function testItIncludesToolResultsInConversationPrompt(): void
+    public function testItBuildsPrismConversationMessagesByRole(): void
     {
         $this->ensurePrismBinding();
 
@@ -170,6 +186,16 @@ final class PrismAgentDriverTest extends TestCase
             providerConfig: [],
             messages: [
                 new AgentConversationMessage(ConversationRole::User, [ 'content' => 'summarize participant' ]),
+                new AgentConversationMessage(ConversationRole::Assistant, [
+                    'content' => 'calling tool',
+                    'tool_calls' => [
+                        new AgentToolCall(
+                            id: 'tool-call-1',
+                            name: 'get_task_answer_by_participant',
+                            arguments: [ 'participant_id' => 1 ],
+                        ),
+                    ],
+                ]),
                 new AgentConversationMessage(ConversationRole::ToolResult, [
                     'tool_results' => [
                         new AgentToolResult(
@@ -198,10 +224,19 @@ final class PrismAgentDriverTest extends TestCase
 
             $messages = $requests[ 0 ]->messages();
 
-            $this->assertCount(1, $messages);
-            $this->assertStringContainsString('[tool_result]', $messages[ 0 ]->content);
-            $this->assertStringContainsString('get_task_answer_by_participant', $messages[ 0 ]->content);
-            $this->assertStringContainsString('hello world', $messages[ 0 ]->content);
+            $this->assertCount(3, $messages);
+            $this->assertInstanceOf(UserMessage::class, $messages[ 0 ]);
+            $this->assertInstanceOf(AssistantMessage::class, $messages[ 1 ]);
+            $this->assertInstanceOf(ToolResultMessage::class, $messages[ 2 ]);
+            $this->assertSame('summarize participant', $messages[ 0 ]->content);
+            $this->assertSame('calling tool', $messages[ 1 ]->content);
+            $this->assertCount(1, $messages[ 1 ]->toolCalls);
+            $this->assertSame('get_task_answer_by_participant', $messages[ 1 ]->toolCalls[ 0 ]->name);
+            $this->assertSame('tool-call-1', $messages[ 1 ]->toolCalls[ 0 ]->resultId);
+            $this->assertCount(1, $messages[ 2 ]->toolResults);
+            $this->assertSame('get_task_answer_by_participant', $messages[ 2 ]->toolResults[ 0 ]->toolName);
+            $this->assertSame('tool-call-1', $messages[ 2 ]->toolResults[ 0 ]->toolCallResultId);
+            $this->assertSame('hello world', $messages[ 2 ]->toolResults[ 0 ]->result[ 'payload' ][ 'answer' ][ 'text' ]);
 
         });
     }
@@ -213,5 +248,24 @@ final class PrismAgentDriverTest extends TestCase
         }
 
         $this->app->singleton('prism', static fn (): \Prism\Prism\Prism => new \Prism\Prism\Prism());
+    }
+
+    /**
+     * @param array<int, ToolCall> $toolCalls
+     */
+    private function buildTextStep(string $text = '', array $toolCalls = []): TextStep
+    {
+        return new TextStep(
+            text: $text,
+            finishReason: FinishReason::Stop,
+            toolCalls: $toolCalls,
+            toolResults: [],
+            providerToolCalls: [],
+            usage: new Usage(0, 0),
+            meta: new Meta('fake', 'fake'),
+            messages: [],
+            systemPrompts: [],
+            additionalContent: [],
+        );
     }
 }
