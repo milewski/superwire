@@ -15,10 +15,11 @@ use Superwire\Contracts\Agent\AgentTurnRequest;
 use Superwire\Contracts\Agent\ConversationRole;
 use Superwire\Contracts\Contracts\AgentDriverInterface;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
-use Superwire\Contracts\Contracts\RuntimeToolBatchInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
-use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
-use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
+use Superwire\Contracts\Support\Loop\CompletionToolDefinitionFactory;
+use Superwire\Contracts\Support\Loop\ConversationMessageSerializer;
+use Superwire\Contracts\Support\Loop\RuntimeToolDefinitionFactory;
+use Superwire\Contracts\Support\Loop\RuntimeToolResultResolver;
 use Superwire\Contracts\Support\Stages\CompletionToolLoopStage;
 use Superwire\Contracts\Support\Stages\WorkflowTypeValidationStage;
 
@@ -27,16 +28,33 @@ final class LoopAgentDriver implements AgentDriverInterface
     private const int MAX_ITERATIONS = 8;
 
     private CompletionToolLoopStage $completionToolLoopStage;
-
     private WorkflowTypeValidationStage $workflowTypeValidationStage;
+    private CompletionToolDefinitionFactory $completionToolDefinitionFactory;
+    private RuntimeToolDefinitionFactory $runtimeToolDefinitionFactory;
+    private RuntimeToolResultResolver $runtimeToolResultResolver;
+    private ConversationMessageSerializer $conversationMessageSerializer;
 
     public function __construct(
         private readonly AgentTurnDriverInterface $turnDriver,
         private readonly ?RuntimeToolInvokerInterface $runtimeToolInvoker = null,
+        ?CompletionToolLoopStage $completionToolLoopStage = null,
+        ?WorkflowTypeValidationStage $workflowTypeValidationStage = null,
+        ?CompletionToolDefinitionFactory $completionToolDefinitionFactory = null,
+        ?RuntimeToolDefinitionFactory $runtimeToolDefinitionFactory = null,
+        ?RuntimeToolResultResolver $runtimeToolResultResolver = null,
+        ?ConversationMessageSerializer $conversationMessageSerializer = null,
     )
     {
-        $this->completionToolLoopStage = new CompletionToolLoopStage();
-        $this->workflowTypeValidationStage = new WorkflowTypeValidationStage();
+        $this->completionToolLoopStage = $completionToolLoopStage ?? new CompletionToolLoopStage();
+        $this->workflowTypeValidationStage = $workflowTypeValidationStage ?? new WorkflowTypeValidationStage();
+        $this->completionToolDefinitionFactory = $completionToolDefinitionFactory ?? new CompletionToolDefinitionFactory($this->completionToolLoopStage);
+        $this->runtimeToolDefinitionFactory = $runtimeToolDefinitionFactory ?? new RuntimeToolDefinitionFactory($this->runtimeToolInvoker);
+        $this->runtimeToolResultResolver = $runtimeToolResultResolver ?? new RuntimeToolResultResolver(
+            $this->runtimeToolInvoker,
+            $this->completionToolLoopStage->finalizeSuccessToolName(),
+            $this->completionToolLoopStage->finalizeErrorToolName(),
+        );
+        $this->conversationMessageSerializer = $conversationMessageSerializer ?? new ConversationMessageSerializer();
     }
 
     public function execute(AgentExecutionRequest $request): AgentExecutionResult
@@ -80,7 +98,7 @@ final class LoopAgentDriver implements AgentDriverInterface
                     metadata: [
                         'mode' => 'tool_loop',
                         'iterations' => $iterationIndex + 1,
-                        'conversation' => $this->serializeMessages($messages),
+                        'conversation' => $this->conversationMessageSerializer->serialize($messages),
                     ],
                 );
 
@@ -142,7 +160,7 @@ final class LoopAgentDriver implements AgentDriverInterface
                                 'mode' => 'tool_loop',
                                 'iterations' => $iterationIndex + 1,
                                 'synthetic_completion' => true,
-                                'conversation' => $this->serializeMessages($messages),
+                                'conversation' => $this->conversationMessageSerializer->serialize($messages),
                             ],
                         );
 
@@ -168,7 +186,7 @@ final class LoopAgentDriver implements AgentDriverInterface
 
             }
 
-            $toolResults = $this->resolveToolResults($request, $turnResponse->toolCalls, $turnResponse->toolResults);
+            $toolResults = $this->runtimeToolResultResolver->resolve($request, $turnResponse->toolCalls, $turnResponse->toolResults);
 
             if ($toolResults !== []) {
 
@@ -277,82 +295,13 @@ final class LoopAgentDriver implements AgentDriverInterface
     }
 
     /**
-     * @param array<int, AgentToolCall> $toolCalls
-     * @param array<int, AgentToolResult> $turnToolResults
-     * @return array<int, AgentToolResult>
-     */
-    private function resolveToolResults(AgentExecutionRequest $request, array $toolCalls, array $turnToolResults): array
-    {
-        $invoker = $this->runtimeToolInvoker ?? new DefaultRuntimeToolInvoker();
-        $toolResults = [];
-        $pendingRuntimeToolCalls = [];
-
-        foreach ($toolCalls as $toolCall) {
-
-            if (
-                $toolCall->name === $this->completionToolLoopStage->finalizeSuccessToolName()
-                || $toolCall->name === $this->completionToolLoopStage->finalizeErrorToolName()
-            ) {
-                continue;
-            }
-
-            $existing = $this->existingToolResult($turnToolResults, $toolCall->id);
-
-            if ($existing !== null) {
-
-                $toolResults[] = $existing;
-
-                continue;
-
-            }
-
-            $pendingRuntimeToolCalls[] = $toolCall;
-
-        }
-
-        if ($pendingRuntimeToolCalls === []) {
-            return $toolResults;
-        }
-
-        if ($invoker instanceof RuntimeToolBatchInvokerInterface) {
-
-            $batchedToolResults = $invoker->invokeBatch($request, $pendingRuntimeToolCalls);
-
-            return [ ...$toolResults, ...$batchedToolResults ];
-
-        }
-
-        foreach ($pendingRuntimeToolCalls as $pendingRuntimeToolCall) {
-            $toolResults[] = $invoker->invoke($request, $pendingRuntimeToolCall);
-        }
-
-        return $toolResults;
-    }
-
-    /**
-     * @param array<int, AgentToolResult> $toolResults
-     */
-    private function existingToolResult(array $toolResults, string $toolCallId): ?AgentToolResult
-    {
-        foreach ($toolResults as $toolResult) {
-
-            if ($toolResult->toolCallId === $toolCallId) {
-                return $toolResult;
-            }
-
-        }
-
-        return null;
-    }
-
-    /**
      * @return array<int, AgentToolDefinition>
      */
     private function buildTurnTools(AgentExecutionRequest $request, bool $completionPhaseEnabled): array
     {
         $completionTools = [
-            $this->finalizeSuccessTool($request),
-            $this->finalizeErrorTool(),
+            $this->completionToolDefinitionFactory->finalizeSuccessTool($request),
+            $this->completionToolDefinitionFactory->finalizeErrorTool(),
         ];
 
         if ($completionPhaseEnabled) {
@@ -362,169 +311,9 @@ final class LoopAgentDriver implements AgentDriverInterface
         $runtimeTools = [];
 
         foreach ($request->tools as $toolExecution) {
-
-            $runtimeTools[] = new AgentToolDefinition(
-                name: $toolExecution->name,
-                description: $this->runtimeToolDescription($toolExecution->name),
-                parametersSchema: $this->runtimeToolParametersSchema($toolExecution->name),
-                strict: $this->runtimeToolStrictMode($toolExecution->name),
-            );
-
+            $runtimeTools[] = $this->runtimeToolDefinitionFactory->definitionForToolName($toolExecution->name);
         }
 
         return [ ...$runtimeTools, ...$completionTools ];
-    }
-
-    private function finalizeSuccessTool(AgentExecutionRequest $request): AgentToolDefinition
-    {
-        return new AgentToolDefinition(
-            name: $this->completionToolLoopStage->finalizeSuccessToolName(),
-            description: 'Call this only when the task is completed successfully and provide final answer',
-            parametersSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'answer' => $request->expectedOutput->jsonSchema,
-                ],
-                'required' => [ 'answer' ],
-                'additionalProperties' => false,
-            ],
-        );
-    }
-
-    private function finalizeErrorTool(): AgentToolDefinition
-    {
-        return new AgentToolDefinition(
-            name: $this->completionToolLoopStage->finalizeErrorToolName(),
-            description: 'Call this only when task cannot be completed and provide reason',
-            parametersSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'reason' => [ 'type' => 'string' ],
-                ],
-                'required' => [ 'reason' ],
-                'additionalProperties' => false,
-            ],
-        );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function runtimeToolParametersSchema(string $toolName): array
-    {
-        if ($this->runtimeToolInvoker instanceof RuntimeToolSchemaProviderInterface) {
-
-            $toolSchema = $this->runtimeToolInvoker->schemaForTool($toolName);
-
-            if (is_array($toolSchema)) {
-                return $toolSchema;
-            }
-
-        }
-
-        if (str_contains($toolName, 'by_participant')) {
-
-            return [
-                'type' => 'object',
-                'properties' => [
-                    'participant_id' => [ 'type' => 'integer' ],
-                ],
-                'required' => [ 'participant_id' ],
-                'additionalProperties' => false,
-            ];
-
-        }
-
-        return [
-            'type' => 'object',
-            'properties' => [],
-            'additionalProperties' => false,
-        ];
-    }
-
-    private function runtimeToolDescription(string $toolName): string
-    {
-        if ($this->runtimeToolInvoker instanceof RuntimeToolMetadataProviderInterface) {
-
-            $toolDescription = $this->runtimeToolInvoker->descriptionForTool($toolName);
-
-            if (is_string($toolDescription) && $toolDescription !== '') {
-                return $toolDescription;
-            }
-
-        }
-
-        return "Execute runtime tool `{$toolName}` and use result to continue";
-    }
-
-    private function runtimeToolStrictMode(string $toolName): bool
-    {
-        if ($this->runtimeToolInvoker instanceof RuntimeToolMetadataProviderInterface) {
-
-            $strictMode = $this->runtimeToolInvoker->strictSchemaForTool($toolName);
-
-            if (is_bool($strictMode)) {
-                return $strictMode;
-            }
-
-        }
-
-        return true;
-    }
-
-    /**
-     * @param array<int, AgentConversationMessage> $messages
-     * @return list<array{role: string, content?: string, tool_calls?: list<array{name: string, arguments: string}>, tool_results?: list<array{tool_call_id: string, result: string}>}>
-     */
-    private function serializeMessages(array $messages): array
-    {
-        return array_map(
-            function (AgentConversationMessage $message): array {
-
-                $payload = $message->payload;
-                $role = $message->role;
-
-                if ($role === ConversationRole::ToolResult) {
-
-                    return [
-                        'role' => ConversationRole::ToolResult->value,
-                        'tool_results' => array_map(
-                            function (AgentToolResult $tr): array {
-
-                                return [
-                                    'tool_call_id' => $tr->toolCallId,
-                                    'result' => is_string($tr->result) ? $tr->result : json_encode($tr->result),
-                                ];
-
-                            },
-                            $payload[ 'tool_results' ] ?? [],
-                        ),
-                    ];
-
-                }
-
-                $content = $payload[ 'content' ] ?? '';
-
-                if (($payload[ 'tool_calls' ] ?? []) !== []) {
-
-                    return [
-                        'role' => $role,
-                        'content' => $content,
-                        'tool_calls' => array_map(
-                            static fn (AgentToolCall $tc): array => [
-                                'name' => $tc->name,
-                                'arguments' => is_array($tc->arguments) ? json_encode($tc->arguments) : $tc->arguments,
-                            ],
-                            $payload[ 'tool_calls' ],
-                        ),
-                    ];
-
-                }
-
-                return [ 'role' => $role, 'content' => $content ];
-
-            },
-            $messages,
-        );
     }
 }
