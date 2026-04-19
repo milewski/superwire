@@ -221,8 +221,10 @@ final class WireWorkflowToolArgumentsTest extends TestCase
         foreach ($turnDriver->requests[ 0 ]->tools as $toolDefinition) {
 
             if ($toolDefinition->name === $runtimeToolInvoker->name()) {
+
                 $runtimeToolDefinition = $toolDefinition;
                 break;
+
             }
 
         }

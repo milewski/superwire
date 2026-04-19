@@ -12,7 +12,7 @@ use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 
-final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolSchemaProviderInterface, RuntimeToolMetadataProviderInterface
+final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolMetadataProviderInterface, RuntimeToolSchemaProviderInterface
 {
     /**
      * @param class-string|null $inputSchema
