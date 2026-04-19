@@ -22,6 +22,8 @@ final class PrismAgentDriverTest extends TestCase
 
     public function testItForcesFinalizeToolAfterPlainTextReply(): void
     {
+        $this->ensurePrismBinding();
+
         $prismFake = Prism::fake([
             TextResponseFake::make()->withText('I think the answer is ready'),
             TextResponseFake::make()->withToolCalls([
@@ -56,7 +58,7 @@ final class PrismAgentDriverTest extends TestCase
 
         $this->assertSame([ 'summary' => 'done' ], $result->output);
 
-        $prismFake->assertRequest(static function (array $requests): void {
+        $prismFake->assertRequest(function (array $requests): void {
 
             $this->assertCount(2, $requests);
             $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
@@ -69,6 +71,8 @@ final class PrismAgentDriverTest extends TestCase
 
     public function testItReturnsStringOnlyThroughFinalizeSuccessTool(): void
     {
+        $this->ensurePrismBinding();
+
         $prismFake = Prism::fake([
             TextResponseFake::make()->withToolCalls([
                 new ToolCall('tool-call-2', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => 'plain result' ]),
@@ -95,11 +99,20 @@ final class PrismAgentDriverTest extends TestCase
 
         $this->assertSame('plain result', $result->output);
 
-        $prismFake->assertRequest(static function (array $requests): void {
+        $prismFake->assertRequest(function (array $requests): void {
 
             $this->assertCount(1, $requests);
             $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
 
         });
+    }
+
+    private function ensurePrismBinding(): void
+    {
+        if ($this->app->bound('prism')) {
+            return;
+        }
+
+        $this->app->singleton('prism', static fn (): \Prism\Prism\Prism => new \Prism\Prism\Prism());
     }
 }

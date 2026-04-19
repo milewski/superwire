@@ -6,6 +6,7 @@ namespace Superwire\Laravel\Tests;
 
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use Prism\Prism\PrismServiceProvider;
+use Spatie\LaravelData\LaravelDataServiceProvider;
 use Superwire\Laravel\SuperwireLaravelServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
@@ -17,7 +18,8 @@ abstract class TestCase extends OrchestraTestCase
     protected function getPackageProviders($app): array
     {
         return [
-            PrismServiceProvider::class,
+//             PrismServiceProvider::class,
+//             LaravelDataServiceProvider::class,
             SuperwireLaravelServiceProvider::class,
         ];
     }

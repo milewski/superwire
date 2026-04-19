@@ -153,6 +153,8 @@ final class LaravelWorkflowRunnerTest extends TestCase
 
     public function testItResolvesModelAndProviderModelsFromSecrets(): void
     {
+        config([ 'superwire.parallel.driver' => 'sync' ]);
+
         $driverRegistry = $this->app->make(DriverRegistryInterface::class);
         $capturingDriver = new FakeAgentDriver();
         $driverRegistry->register('prism', $capturingDriver);
