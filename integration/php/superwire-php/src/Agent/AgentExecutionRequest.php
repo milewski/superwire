@@ -24,6 +24,7 @@ final class AgentExecutionRequest
         public readonly array $tools = [],
         public readonly ?AgentExecutionMetadata $metadata = null,
         public readonly ?ExecutionBindings $bindings = null,
-    ) {
+    )
+    {
     }
 }

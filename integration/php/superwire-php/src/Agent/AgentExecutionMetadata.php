@@ -15,6 +15,7 @@ final class AgentExecutionMetadata
         public readonly array $dependents,
         public readonly int $batch,
         public readonly mixed $outputContract = null,
-    ) {
+    )
+    {
     }
 }

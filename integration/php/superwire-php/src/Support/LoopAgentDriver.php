@@ -12,8 +12,10 @@ use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Agent\AgentToolDefinition;
 use Superwire\Contracts\Agent\AgentToolResult;
 use Superwire\Contracts\Agent\AgentTurnRequest;
+use Superwire\Contracts\Agent\ConversationRole;
 use Superwire\Contracts\Contracts\AgentDriverInterface;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
+use Superwire\Contracts\Contracts\RuntimeToolBatchInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 use Superwire\Contracts\Support\Stages\CompletionToolLoopStage;
@@ -21,7 +23,7 @@ use Superwire\Contracts\Support\Stages\WorkflowTypeValidationStage;
 
 final class LoopAgentDriver implements AgentDriverInterface
 {
-    private const MAX_ITERATIONS = 8;
+    private const int MAX_ITERATIONS = 8;
 
     private CompletionToolLoopStage $completionToolLoopStage;
 
@@ -30,14 +32,15 @@ final class LoopAgentDriver implements AgentDriverInterface
     public function __construct(
         private readonly AgentTurnDriverInterface $turnDriver,
         private readonly ?RuntimeToolInvokerInterface $runtimeToolInvoker = null,
-    ) {
+    )
+    {
         $this->completionToolLoopStage = new CompletionToolLoopStage();
         $this->workflowTypeValidationStage = new WorkflowTypeValidationStage();
     }
 
     public function execute(AgentExecutionRequest $request): AgentExecutionResult
     {
-        $messages = [ new AgentConversationMessage('user', [ 'content' => $request->prompt ]) ];
+        $messages = [ new AgentConversationMessage(ConversationRole::User, [ 'content' => $request->prompt ]) ];
         $completionPhaseEnabled = false;
         $recentRuntimeToolResults = [];
 
@@ -53,18 +56,22 @@ final class LoopAgentDriver implements AgentDriverInterface
                 requireToolCall: $completionPhaseEnabled,
             ));
 
-            $messages[] = new AgentConversationMessage('assistant', [
+            $messages[] = new AgentConversationMessage(ConversationRole::Assistant, [
                 'content' => $turnResponse->text,
                 'tool_calls' => $turnResponse->toolCalls,
             ]);
 
-            $finalization = $this->completionToolLoopStage->decide($this->toolCallsForDecision($turnResponse->toolCalls));
+            $finalization = $this->completionToolLoopStage->decide($turnResponse->toolCalls);
 
-            if ($finalization[ 'status' ] === 'success') {
+            if ($finalization->isSuccess()) {
 
-                $output = $this->resolvedFinalizeOutput($finalization[ 'output' ] ?? null, $recentRuntimeToolResults);
+                $output = $this->resolvedFinalizeOutput($finalization->output, $recentRuntimeToolResults);
 
-                $this->workflowTypeValidationStage->validate($output, $request->expectedOutput->workflowType, "agent `{$request->agentName}` output");
+                $this->workflowTypeValidationStage->validate(
+                    value: $output,
+                    workflowType: $request->expectedOutput->workflowType,
+                    context: sprintf('agent `%s` output', $request->agentName),
+                );
 
                 return new AgentExecutionResult(
                     output: $output,
@@ -78,19 +85,23 @@ final class LoopAgentDriver implements AgentDriverInterface
 
             }
 
-            if ($finalization[ 'status' ] === 'error') {
+            if ($finalization->isError()) {
 
-                if (($finalization[ 'reason' ] ?? null) === 'unknown reason') {
+                if ($finalization->reason === 'unknown reason') {
 
-                    $messages[] = new AgentConversationMessage('user', [
-                        'content' => $this->completionToolLoopStage->completionInstruction() . "\nIf you call finalize_error, you must provide a non-empty reason.",
+                    $messages[] = new AgentConversationMessage(ConversationRole::User, [
+                        'content' => sprintf(
+                            "%s\nIf you call %s, you must provide a non-empty reason.",
+                            $this->completionToolLoopStage->completionInstruction(),
+                            $this->completionToolLoopStage->finalizeErrorToolName(),
+                        ),
                     ]);
 
                     continue;
 
                 }
 
-                throw new RuntimeException("agent `{$request->agentName}` finalized with error: {$finalization[ 'reason' ]}");
+                throw new RuntimeException("agent `{$request->agentName}` finalized with error: {$finalization->reason}");
 
             }
 
@@ -100,15 +111,11 @@ final class LoopAgentDriver implements AgentDriverInterface
 
                     $syntheticToolCall = $this->synthesizeCompletionToolCallFromText($request, $turnResponse->text);
 
-                    $finalization = $this->completionToolLoopStage->decide([ [
-                        'id' => $syntheticToolCall->id,
-                        'name' => $syntheticToolCall->name,
-                        'arguments' => $syntheticToolCall->arguments,
-                    ] ]);
+                    $finalization = $this->completionToolLoopStage->decide([ $syntheticToolCall ]);
 
-                    if ($finalization[ 'status' ] === 'success') {
+                    if ($finalization->isSuccess()) {
 
-                        $output = $finalization[ 'output' ];
+                        $output = $finalization->output;
 
                         $this->workflowTypeValidationStage->validate($output, $request->expectedOutput->workflowType, "agent `{$request->agentName}` output");
 
@@ -125,8 +132,13 @@ final class LoopAgentDriver implements AgentDriverInterface
 
                     }
 
-                    $messages[] = new AgentConversationMessage('user', [
-                        'content' => $this->completionToolLoopStage->completionInstruction() . "\nThe previous reply did not include a valid completion tool call. Reply using finalize_success or finalize_error only.",
+                    $messages[] = new AgentConversationMessage(ConversationRole::User, [
+                        'content' => sprintf(
+                            "%s\n\nThe previous reply did not include a valid completion tool call. Reply using %s or %s only.",
+                            $this->completionToolLoopStage->completionInstruction(),
+                            $this->completionToolLoopStage->finalizeSuccessToolName(),
+                            $this->completionToolLoopStage->finalizeErrorToolName(),
+                        ),
                     ]);
 
                     continue;
@@ -134,7 +146,7 @@ final class LoopAgentDriver implements AgentDriverInterface
                 }
 
                 $completionPhaseEnabled = true;
-                $messages[] = new AgentConversationMessage('user', [ 'content' => $this->completionToolLoopStage->completionInstruction() ]);
+                $messages[] = new AgentConversationMessage(ConversationRole::User, [ 'content' => $this->completionToolLoopStage->completionInstruction() ]);
 
                 continue;
 
@@ -145,7 +157,20 @@ final class LoopAgentDriver implements AgentDriverInterface
             if ($toolResults !== []) {
 
                 $recentRuntimeToolResults = $toolResults;
-                $messages[] = new AgentConversationMessage('tool_result', [ 'tool_results' => $toolResults ]);
+                $messages[] = new AgentConversationMessage(ConversationRole::ToolResult, [ 'tool_results' => $toolResults ]);
+
+            }
+
+            if ($this->completionToolLoopStage->hasMixedFinalizeAndRuntimeToolCalls($turnResponse->toolCalls)) {
+
+                $messages[] = new AgentConversationMessage(ConversationRole::User, [
+                    'content' => sprintf(
+                        "%s\n\nFinalize tool calls were ignored because they were submitted with runtime tool calls. Call %s or %s alone in the next turn after tool results are available.",
+                        $this->completionToolLoopStage->completionInstruction(),
+                        $this->completionToolLoopStage->finalizeSuccessToolName(),
+                        $this->completionToolLoopStage->finalizeErrorToolName(),
+                    ),
+                ]);
 
             }
 
@@ -217,28 +242,14 @@ final class LoopAgentDriver implements AgentDriverInterface
 
     /**
      * @param array<int, AgentToolCall> $toolCalls
-     * @return array<int, array{name: string, arguments: array<string, mixed>, id: string}>
-     */
-    private function toolCallsForDecision(array $toolCalls): array
-    {
-        return array_map(
-            static fn (AgentToolCall $toolCall): array => [
-                'id' => $toolCall->id,
-                'name' => $toolCall->name,
-                'arguments' => $toolCall->arguments,
-            ],
-            $toolCalls,
-        );
-    }
-
-    /**
-     * @param array<int, AgentToolCall> $toolCalls
      * @param array<int, AgentToolResult> $turnToolResults
      * @return array<int, AgentToolResult>
      */
     private function resolveToolResults(AgentExecutionRequest $request, array $toolCalls, array $turnToolResults): array
     {
+        $invoker = $this->runtimeToolInvoker ?? new DefaultRuntimeToolInvoker();
         $toolResults = [];
+        $pendingRuntimeToolCalls = [];
 
         foreach ($toolCalls as $toolCall) {
 
@@ -259,9 +270,24 @@ final class LoopAgentDriver implements AgentDriverInterface
 
             }
 
-            $invoker = $this->runtimeToolInvoker ?? new DefaultRuntimeToolInvoker();
-            $toolResults[] = $invoker->invoke($request, $toolCall);
+            $pendingRuntimeToolCalls[] = $toolCall;
 
+        }
+
+        if ($pendingRuntimeToolCalls === []) {
+            return $toolResults;
+        }
+
+        if ($invoker instanceof RuntimeToolBatchInvokerInterface) {
+
+            $batchedToolResults = $invoker->invokeBatch($request, $pendingRuntimeToolCalls);
+
+            return [ ...$toolResults, ...$batchedToolResults ];
+
+        }
+
+        foreach ($pendingRuntimeToolCalls as $pendingRuntimeToolCall) {
+            $toolResults[] = $invoker->invoke($request, $pendingRuntimeToolCall);
         }
 
         return $toolResults;

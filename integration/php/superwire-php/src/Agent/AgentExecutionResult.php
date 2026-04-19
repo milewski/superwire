@@ -13,6 +13,7 @@ final class AgentExecutionResult
         public readonly mixed $output,
         public readonly mixed $context = null,
         public readonly array $metadata = [],
-    ) {
+    )
+    {
     }
 }

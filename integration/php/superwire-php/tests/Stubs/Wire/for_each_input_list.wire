@@ -1,0 +1,23 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    item_ids: [number]
+}
+
+agent item_note for item_id in input.item_ids {
+    model: openai("gpt-4.1-mini")
+    prompt: "Write note for item {{ item_id }}"
+    output: {
+        id: number
+        note: string
+    }
+}
+
+output {
+    notes: agent.item_note
+}

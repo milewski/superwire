@@ -1,0 +1,37 @@
+provider local_model {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "local-key"
+    models: ["local-small"]
+}
+
+provider cloud_model {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "cloud-key"
+    models: ["cloud-large"]
+}
+
+input {
+    notes: [string]
+}
+
+agent redact {
+    model: local_model("local-small")
+    prompt: "Redact notes {{ input.notes }}"
+    output: {
+        sanitized: [string]
+    }
+}
+
+agent synthesize {
+    model: cloud_model("cloud-large")
+    prompt: "Summarize {{ agent.redact.sanitized }}"
+    output: {
+        summary: string
+    }
+}
+
+output {
+    summary: agent.synthesize.summary
+}

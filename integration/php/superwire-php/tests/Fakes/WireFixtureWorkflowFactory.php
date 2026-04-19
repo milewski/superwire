@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Contracts\Tests\Support;
+namespace Superwire\Contracts\Tests\Fakes;
 
 use RuntimeException;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
@@ -18,12 +18,16 @@ final class WireFixtureWorkflowFactory
     /**
      * @param array<string, mixed> $input
      * @param array<string, mixed> $secrets
+     * @param array<string, mixed> $agent
+     * @param array<string, mixed> $context
      */
     public static function makeAgentExecutionRequest(
         string $fixturePath,
         string $agentName,
         array $input = [],
         array $secrets = [],
+        array $agent = [],
+        array $context = [],
     ): AgentExecutionRequest {
         $workflowDefinition = self::compileFixture($fixturePath);
         $agentDefinition = $workflowDefinition->agentByName($agentName);
@@ -42,20 +46,19 @@ final class WireFixtureWorkflowFactory
         $runtimeContext = [
             'input' => $input,
             'secrets' => $secrets,
-            'agent' => [],
-            'context' => [],
+            'agent' => $agent,
+            'context' => $context,
         ];
 
         $resolvedProviderConfig = $expressionResolver->resolve($providerDefinition->config, $runtimeContext);
         $resolvedModelExpression = $expressionResolver->resolve($agentDefinition->model, $runtimeContext);
-        $resolvedPrompt = $expressionResolver->resolve($agentDefinition->prompt, $runtimeContext);
+        $resolvedPromptExpression = $expressionResolver->resolve($agentDefinition->prompt, $runtimeContext);
+        $resolvedPrompt = self::resolvePromptString($fixturePath, $resolvedPromptExpression);
+        $resolvedContext = $expressionResolver->resolve($agentDefinition->context, $runtimeContext);
+        $resolvedInference = $expressionResolver->resolve($agentDefinition->inference, $runtimeContext);
 
         if (!is_array($resolvedProviderConfig)) {
             throw new RuntimeException("fixture `{$fixturePath}` provider config must resolve into an object");
-        }
-
-        if (!is_string($resolvedPrompt)) {
-            throw new RuntimeException("fixture `{$fixturePath}` prompt must resolve into a string");
         }
 
         if (!is_array($agentDefinition->output) || !array_key_exists('final_output', $agentDefinition->output)) {
@@ -88,6 +91,8 @@ final class WireFixtureWorkflowFactory
             model: self::resolveModelName($resolvedModelExpression, $providerDefinition->driver),
             prompt: $resolvedPrompt,
             expectedOutput: AgentExpectedOutput::fromContract($agentDefinition->output[ 'final_output' ]),
+            context: $resolvedContext,
+            inference: $resolvedInference,
             tools: $resolvedToolExecutions,
         );
     }
@@ -95,15 +100,23 @@ final class WireFixtureWorkflowFactory
     public static function compileFixture(string $fixturePath): WorkflowDefinition
     {
         self::assertFixtureFileExists($fixturePath);
+
         $compilerCommand = sprintf(
-            '%s workflow to-json %s --compact',
+            '%s workflow to-json %s --compact 2>&1',
             escapeshellarg(self::compilerBinaryPath()),
             escapeshellarg($fixturePath),
         );
+
         $compilerOutput = shell_exec($compilerCommand);
 
         if (!is_string($compilerOutput) || trim($compilerOutput) === '') {
             throw new RuntimeException("failed to compile fixture `{$fixturePath}`");
+        }
+
+        $trimmedCompilerOutput = ltrim($compilerOutput);
+
+        if (!str_starts_with($trimmedCompilerOutput, '{')) {
+            throw new RuntimeException("failed to compile fixture `{$fixturePath}`: {$trimmedCompilerOutput}");
         }
 
         return (new JsonWorkflowDecoder())->decodeFromJson($compilerOutput);
@@ -157,5 +170,73 @@ final class WireFixtureWorkflowFactory
         }
 
         return $resolvedModelExpression;
+    }
+
+    private static function resolvePromptString(string $fixturePath, mixed $resolvedPromptExpression): string
+    {
+        if (is_string($resolvedPromptExpression)) {
+            return $resolvedPromptExpression;
+        }
+
+        if (
+            is_array($resolvedPromptExpression)
+            && ($resolvedPromptExpression[ '$call' ] ?? null) === 'template'
+            && is_array($resolvedPromptExpression[ 'args' ] ?? null)
+        ) {
+            return self::renderTemplatePrompt($fixturePath, $resolvedPromptExpression[ 'args' ]);
+        }
+
+        throw new RuntimeException("fixture `{$fixturePath}` prompt must resolve into a string");
+    }
+
+    /**
+     * @param list<mixed> $templateArguments
+     */
+    private static function renderTemplatePrompt(string $fixturePath, array $templateArguments): string
+    {
+        $templatePathArgument = $templateArguments[ 0 ] ?? null;
+        $templateBindingsArgument = $templateArguments[ 1 ] ?? null;
+
+        if (!is_string($templatePathArgument)) {
+            throw new RuntimeException("fixture `{$fixturePath}` template prompt requires a string path argument");
+        }
+
+        if (!is_array($templateBindingsArgument)) {
+            throw new RuntimeException("fixture `{$fixturePath}` template prompt requires an object bindings argument");
+        }
+
+        $templateFilePath = dirname($fixturePath) . '/' . ltrim($templatePathArgument, '/');
+
+        if (!is_file($templateFilePath)) {
+            throw new RuntimeException("fixture `{$fixturePath}` template file `{$templatePathArgument}` was not found");
+        }
+
+        $templateContent = file_get_contents($templateFilePath);
+
+        if (!is_string($templateContent)) {
+            throw new RuntimeException("fixture `{$fixturePath}` template file `{$templatePathArgument}` could not be read");
+        }
+
+        $resolvedPrompt = $templateContent;
+
+        foreach ($templateBindingsArgument as $bindingName => $bindingValue) {
+
+            if (!is_string($bindingName)) {
+                throw new RuntimeException("fixture `{$fixturePath}` template binding names must be strings");
+            }
+
+            $encodedBindingValue = is_scalar($bindingValue) || $bindingValue === null
+                ? (string) $bindingValue
+                : json_encode($bindingValue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            if ($encodedBindingValue === false) {
+                throw new RuntimeException("fixture `{$fixturePath}` template binding `{$bindingName}` could not be encoded");
+            }
+
+            $resolvedPrompt = str_replace('{{' . $bindingName . '}}', $encodedBindingValue, $resolvedPrompt);
+
+        }
+
+        return $resolvedPrompt;
     }
 }

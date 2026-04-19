@@ -14,8 +14,8 @@ final class ServiceProviderTest extends TestCase
         $driverRegistry = $this->app->make(DriverRegistryInterface::class);
         $workflowRunner = $this->app->make(WorkflowRunnerInterface::class);
 
-        self::assertInstanceOf(DriverRegistryInterface::class, $driverRegistry);
-        self::assertInstanceOf(WorkflowRunnerInterface::class, $workflowRunner);
-        self::assertTrue($driverRegistry->has('prism'));
+        $this->assertInstanceOf(DriverRegistryInterface::class, $driverRegistry);
+        $this->assertInstanceOf(WorkflowRunnerInterface::class, $workflowRunner);
+        $this->assertTrue($driverRegistry->has('prism'));
     }
 }

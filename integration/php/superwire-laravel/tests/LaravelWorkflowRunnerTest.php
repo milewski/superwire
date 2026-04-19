@@ -87,7 +87,7 @@ final class LaravelWorkflowRunnerTest extends TestCase
 
         $result = $workflowRunner->run($workflowDefinition, [ 'product' => 'Superwire' ]);
 
-        self::assertSame('reply: Review output: reply: Create changelog for Superwire', $result->output[ 'review' ]);
+        $this->assertSame('reply: Review output: reply: Create changelog for Superwire', $result->output[ 'review' ]);
     }
 
     public function testItExecutesForEachAgentsAsArrayOutputs(): void
@@ -148,7 +148,7 @@ final class LaravelWorkflowRunnerTest extends TestCase
 
         $result = $workflowRunner->run($workflowDefinition, [ 'items' => [ 1, 2, 3 ] ]);
 
-        self::assertSame([ 'reply: item=1', 'reply: item=2', 'reply: item=3' ], $result->output[ 'items' ]);
+        $this->assertSame([ 'reply: item=1', 'reply: item=2', 'reply: item=3' ], $result->output[ 'items' ]);
     }
 
     public function testItResolvesModelAndProviderModelsFromSecrets(): void
@@ -208,11 +208,11 @@ final class LaravelWorkflowRunnerTest extends TestCase
 
         $result = $workflowRunner->run($workflowDefinition, [], [ 'max_model' => 'gpt-4.1' ]);
 
-        self::assertSame('reply: run', $result->output[ 'summary' ]);
-        self::assertNotNull($capturingDriver->lastRequest);
-        self::assertSame('gpt-4.1', $capturingDriver->lastRequest->model);
-        self::assertSame([ 'gpt-4.1' ], $capturingDriver->lastRequest->provider->configValue('models'));
-        self::assertSame('string', $capturingDriver->lastRequest->expectedOutput->kind());
+        $this->assertSame('reply: run', $result->output[ 'summary' ]);
+        $this->assertNotNull($capturingDriver->lastRequest);
+        $this->assertSame('gpt-4.1', $capturingDriver->lastRequest->model);
+        $this->assertSame([ 'gpt-4.1' ], $capturingDriver->lastRequest->provider->configValue('models'));
+        $this->assertSame('string', $capturingDriver->lastRequest->expectedOutput->kind());
     }
 
     public function testItFailsWhenDriverReturnsUnstructuredOutputForStructuredContract(): void
@@ -337,9 +337,9 @@ final class LaravelWorkflowRunnerTest extends TestCase
 
         $result = $workflowRunner->run($workflowDefinition);
 
-        self::assertSame('reply: one', $result->output[ 'first' ]);
-        self::assertSame('reply: two', $result->output[ 'second' ]);
-        self::assertSame([ 2 ], $fakeConcurrencyDriver->taskCounts);
+        $this->assertSame('reply: one', $result->output[ 'first' ]);
+        $this->assertSame('reply: two', $result->output[ 'second' ]);
+        $this->assertSame([ 2 ], $fakeConcurrencyDriver->taskCounts);
     }
 }
 

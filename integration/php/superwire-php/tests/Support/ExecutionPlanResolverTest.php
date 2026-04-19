@@ -11,7 +11,7 @@ use Superwire\Contracts\Support\ExecutionPlanResolver;
 
 final class ExecutionPlanResolverTest extends TestCase
 {
-    public function testItGroupsIndependentAgentsInParallelBatches(): void
+    public function test_it_groups_independent_agents_in_parallel_batches(): void
     {
         $resolver = new ExecutionPlanResolver();
 
@@ -22,16 +22,13 @@ final class ExecutionPlanResolverTest extends TestCase
             $this->agentDefinition('review', [ 'changelog', 'social_thread', 'customer_email' ]),
         ]);
 
-        self::assertSame(
-            [
-                [ 'changelog', 'customer_email', 'social_thread' ],
-                [ 'review' ],
-            ],
-            $batches,
+        $this->assertSame(
+            expected: [ [ 'changelog', 'customer_email', 'social_thread' ], [ 'review' ] ],
+            actual: $batches,
         );
     }
 
-    public function testItRejectsUnknownDependencies(): void
+    public function test_it_rejects_unknown_dependencies(): void
     {
         $resolver = new ExecutionPlanResolver();
 
@@ -39,6 +36,19 @@ final class ExecutionPlanResolverTest extends TestCase
 
         $resolver->resolveBatches([
             $this->agentDefinition('summary', [ 'missing' ]),
+        ]);
+    }
+
+    public function test_it_rejects_cyclic_dependencies(): void
+    {
+        $resolver = new ExecutionPlanResolver();
+
+        $this->expectException(InvalidWorkflowDefinitionException::class);
+        $this->expectExceptionMessage('execution graph contains a cycle or unresolved dependency');
+
+        $resolver->resolveBatches([
+            $this->agentDefinition('alpha', [ 'beta' ]),
+            $this->agentDefinition('beta', [ 'alpha' ]),
         ]);
     }
 

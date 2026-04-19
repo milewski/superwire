@@ -15,7 +15,8 @@ final class AgentExpectedOutput
     public function __construct(
         public readonly array $workflowType,
         public readonly array $jsonSchema,
-    ) {
+    )
+    {
     }
 
     /**

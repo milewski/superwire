@@ -14,6 +14,7 @@ final class AgentToolResult
         public readonly string $toolName,
         public readonly array $arguments,
         public readonly mixed $result,
-    ) {
+    )
+    {
     }
 }

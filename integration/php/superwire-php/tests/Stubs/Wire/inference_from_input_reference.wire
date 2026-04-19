@@ -1,0 +1,27 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    max_tokens: number
+    topic: string
+}
+
+agent summary {
+    model: openai("gpt-4.1-mini")
+    inference: {
+        max_tokens: input.max_tokens
+        temperature: 0.2
+    }
+    prompt: "Write summary for {{ input.topic }}"
+    output: {
+        text: string
+    }
+}
+
+output {
+    text: agent.summary.text
+}
