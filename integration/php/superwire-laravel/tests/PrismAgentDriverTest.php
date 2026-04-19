@@ -21,6 +21,7 @@ use Superwire\Contracts\HasCompletionToolStage;
 use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Support\LoopAgentDriver;
 use Superwire\Laravel\Driver\PrismAgentDriver;
+use Swaggest\JsonSchema\Schema;
 
 final class PrismAgentDriverTest extends TestCase
 {
@@ -49,14 +50,10 @@ final class PrismAgentDriverTest extends TestCase
             prompt: 'Analyze this',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-                jsonSchema: [
-                    'type' => 'object',
-                    'properties' => [
-                        'summary' => [ 'type' => 'string' ],
-                    ],
-                    'required' => [ 'summary' ],
-                    'additionalProperties' => false,
-                ],
+                jsonSchema: Schema::object()
+                    ->setProperty('summary', Schema::string())
+                    ->setRequired([ 'summary' ])
+                    ->setAdditionalProperties(false),
             ),
         );
 
@@ -97,7 +94,7 @@ final class PrismAgentDriverTest extends TestCase
             prompt: 'Say hi',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'string' ],
-                jsonSchema: [ 'type' => 'string' ],
+                jsonSchema: Schema::string(),
             ),
         );
 
@@ -132,14 +129,10 @@ final class PrismAgentDriverTest extends TestCase
                 new AgentToolDefinition(
                     name: 'get_answered_participants_for_task',
                     description: 'Fetch participants that answered a task in this project',
-                    parametersSchema: [
-                        'type' => 'object',
-                        'properties' => [
-                            'task_id' => [ 'type' => 'integer' ],
-                        ],
-                        'required' => [ 'task_id' ],
-                        'additionalProperties' => false,
-                    ],
+                    parametersSchema: Schema::object()
+                        ->setProperty('task_id', Schema::integer())
+                        ->setRequired([ 'task_id' ])
+                        ->setAdditionalProperties(false),
                     strict: true,
                 ),
             ],

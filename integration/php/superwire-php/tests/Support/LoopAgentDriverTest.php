@@ -17,6 +17,7 @@ use Superwire\Contracts\Support\LoopAgentDriver;
 use Superwire\Contracts\Tests\Fakes\BatchRecordingRuntimeToolInvoker;
 use Superwire\Contracts\Tests\Fakes\FakeTurnDriver;
 use Superwire\Contracts\Tool\ToolExecution;
+use Swaggest\JsonSchema\Schema;
 
 final class LoopAgentDriverTest extends TestCase
 {
@@ -40,7 +41,7 @@ final class LoopAgentDriverTest extends TestCase
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-                jsonSchema: [ 'type' => 'object' ],
+                jsonSchema: Schema::object(),
             ),
         ));
 
@@ -66,7 +67,7 @@ final class LoopAgentDriverTest extends TestCase
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'string' ],
-                jsonSchema: [ 'type' => 'string' ],
+                jsonSchema: Schema::string(),
             ),
         ));
 
@@ -106,7 +107,7 @@ final class LoopAgentDriverTest extends TestCase
                 prompt: 'do work',
                 expectedOutput: new AgentExpectedOutput(
                     workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-                    jsonSchema: [ 'type' => 'object' ],
+                    jsonSchema: Schema::object(),
                 ),
             ));
 
@@ -137,7 +138,7 @@ final class LoopAgentDriverTest extends TestCase
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-                jsonSchema: [ 'type' => 'object' ],
+                jsonSchema: Schema::object(),
             ),
             tools: [
                 new ToolExecution('lookup_a', []),
@@ -173,7 +174,7 @@ final class LoopAgentDriverTest extends TestCase
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-                jsonSchema: [ 'type' => 'object' ],
+                jsonSchema: Schema::object(),
             ),
             tools: [
                 new ToolExecution('lookup_a', []),
@@ -214,7 +215,7 @@ final class LoopAgentDriverTest extends TestCase
             prompt: 'do work',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-                jsonSchema: [ 'type' => 'object' ],
+                jsonSchema: Schema::object(),
             ),
             tools: [
                 new ToolExecution('lookup_a', []),

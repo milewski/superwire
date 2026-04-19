@@ -19,21 +19,6 @@ final class InputSchema
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    public static function json_schema(): array
-    {
-        $encodedSchema = json_encode(self::schema(), JSON_THROW_ON_ERROR);
-        $decodedSchema = json_decode($encodedSchema, true);
-
-        if (!is_array($decodedSchema)) {
-            throw new RuntimeException('invalid schema export from fluent schema object');
-        }
-
-        return $decodedSchema;
-    }
-
-    /**
      * @param array<string, mixed> $arguments
      */
     public static function validate(array $arguments): void

@@ -11,6 +11,7 @@ use Superwire\Contracts\Agent\AgentToolResult;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
+use Swaggest\JsonSchema\Schema;
 
 final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolMetadataProviderInterface, RuntimeToolSchemaProviderInterface
 {
@@ -63,10 +64,7 @@ final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, 
         return $this->name;
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function schemaForTool(string $toolName): ?array
+    public function schemaForTool(string $toolName): ?Schema
     {
         if ($toolName !== $this->name) {
             return null;
@@ -76,14 +74,14 @@ final class RecordingRuntimeToolInvoker implements RuntimeToolInvokerInterface, 
             return null;
         }
 
-        if (!method_exists($this->inputSchemaClass, 'json_schema')) {
-            throw new RuntimeException("invalid input schema class `{$this->inputSchemaClass}`: missing json_schema()");
+        if (!method_exists($this->inputSchemaClass, 'schema')) {
+            throw new RuntimeException("invalid input schema class `{$this->inputSchemaClass}`: missing schema()");
         }
 
-        $schema = $this->inputSchemaClass::json_schema();
+        $schema = $this->inputSchemaClass::schema();
 
-        if (!is_array($schema)) {
-            throw new RuntimeException("invalid input schema class `{$this->inputSchemaClass}`: json_schema() must return array");
+        if (!$schema instanceof Schema) {
+            throw new RuntimeException("invalid input schema class `{$this->inputSchemaClass}`: schema() must return Schema");
         }
 
         return $schema;

@@ -12,6 +12,7 @@ use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
 use Superwire\Contracts\Support\Loop\RuntimeToolDefinitionFactory;
+use Swaggest\JsonSchema\Schema;
 
 final class RuntimeToolDefinitionFactoryTest extends TestCase
 {
@@ -23,16 +24,12 @@ final class RuntimeToolDefinitionFactoryTest extends TestCase
                 return new AgentToolResult($toolCall->id, $toolCall->name, $toolCall->arguments, [ 'ok' => true ]);
             }
 
-            public function schemaForTool(string $toolName): ?array
+            public function schemaForTool(string $toolName): ?Schema
             {
-                return [
-                    'type' => 'object',
-                    'properties' => [
-                        'entity_id' => [ 'type' => 'integer' ],
-                    ],
-                    'required' => [ 'entity_id' ],
-                    'additionalProperties' => false,
-                ];
+                return Schema::object()
+                    ->setProperty('entity_id', Schema::integer())
+                    ->setRequired([ 'entity_id' ])
+                    ->setAdditionalProperties(false);
             }
 
             public function descriptionForTool(string $toolName): ?string
@@ -48,10 +45,11 @@ final class RuntimeToolDefinitionFactoryTest extends TestCase
 
         $runtimeToolDefinitionFactory = new RuntimeToolDefinitionFactory($runtimeToolInvoker);
         $toolDefinition = $runtimeToolDefinitionFactory->definitionForToolName('fetch_entity');
+        $schema = $this->schemaToArray($toolDefinition->parametersSchema);
 
         $this->assertSame('fetch_entity', $toolDefinition->name);
         $this->assertSame('fetch entity details by id', $toolDefinition->description);
-        $this->assertSame('integer', $toolDefinition->parametersSchema[ 'properties' ][ 'entity_id' ][ 'type' ] ?? null);
+        $this->assertSame('integer', $schema[ 'properties' ][ 'entity_id' ][ 'type' ] ?? null);
         $this->assertFalse($toolDefinition->strict);
     }
 
@@ -59,12 +57,25 @@ final class RuntimeToolDefinitionFactoryTest extends TestCase
     {
         $runtimeToolDefinitionFactory = new RuntimeToolDefinitionFactory(null);
         $toolDefinition = $runtimeToolDefinitionFactory->definitionForToolName('get_task_by_participant');
+        $schema = $this->schemaToArray($toolDefinition->parametersSchema);
 
         $this->assertSame('get_task_by_participant', $toolDefinition->name);
         $this->assertSame('Execute runtime tool `get_task_by_participant` and use result to continue', $toolDefinition->description);
-        $this->assertSame('object', $toolDefinition->parametersSchema[ 'type' ] ?? null);
-        $this->assertSame([], $toolDefinition->parametersSchema[ 'properties' ] ?? null);
-        $this->assertFalse(array_key_exists('required', $toolDefinition->parametersSchema));
+        $this->assertSame('object', $schema[ 'type' ] ?? null);
+        $this->assertSame([], $schema[ 'properties' ] ?? null);
+        $this->assertFalse(array_key_exists('required', $schema));
         $this->assertTrue($toolDefinition->strict);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function schemaToArray(Schema $schema): array
+    {
+        $decodedSchema = json_decode(json_encode($schema, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertIsArray($decodedSchema);
+
+        return $decodedSchema;
     }
 }

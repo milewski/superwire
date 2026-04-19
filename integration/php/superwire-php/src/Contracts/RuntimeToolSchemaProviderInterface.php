@@ -4,10 +4,9 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Contracts;
 
+use Swaggest\JsonSchema\Schema;
+
 interface RuntimeToolSchemaProviderInterface
 {
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function schemaForTool(string $toolName): ?array;
+    public function schemaForTool(string $toolName): ?Schema;
 }

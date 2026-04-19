@@ -4,17 +4,19 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Agent;
 
+use JsonException;
 use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
+use Swaggest\JsonSchema\InvalidValue;
+use Swaggest\JsonSchema\Schema;
 
 final class AgentExpectedOutput
 {
     /**
      * @param array<string, mixed> $workflowType
-     * @param array<string, mixed> $jsonSchema
      */
     public function __construct(
         public readonly array $workflowType,
-        public readonly array $jsonSchema,
+        public readonly Schema $jsonSchema,
     )
     {
     }
@@ -31,7 +33,10 @@ final class AgentExpectedOutput
             throw new InvalidWorkflowDefinitionException('agent expected output contract requires `workflow_type` and `json_schema` objects');
         }
 
-        return new self($workflowType, $jsonSchema);
+        return new self(
+            workflowType: $workflowType,
+            jsonSchema: self::schemaFromArray($jsonSchema),
+        );
     }
 
     public function kind(): string
@@ -48,5 +53,24 @@ final class AgentExpectedOutput
     public function isPlainString(): bool
     {
         return $this->kind() === 'string';
+    }
+
+    /**
+     * @param array<string, mixed> $schemaPayload
+     */
+    private static function schemaFromArray(array $schemaPayload): Schema
+    {
+        try {
+
+            return Schema::import(json_decode(json_encode($schemaPayload, JSON_THROW_ON_ERROR), false, 512, JSON_THROW_ON_ERROR));
+
+        } catch (InvalidValue|JsonException $error) {
+
+            throw new InvalidWorkflowDefinitionException(
+                'agent expected output `json_schema` must be a valid JSON Schema object',
+                previous: $error,
+            );
+
+        }
     }
 }
