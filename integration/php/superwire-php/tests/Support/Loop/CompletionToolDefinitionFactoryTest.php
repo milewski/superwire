@@ -10,6 +10,7 @@ use Superwire\Contracts\Agent\AgentExpectedOutput;
 use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Support\Loop\CompletionToolDefinitionFactory;
 use Superwire\Contracts\Support\Stages\CompletionToolLoopStage;
+use Swaggest\JsonSchema\Schema;
 
 final class CompletionToolDefinitionFactoryTest extends TestCase
 {
@@ -24,27 +25,38 @@ final class CompletionToolDefinitionFactoryTest extends TestCase
             prompt: 'summarize',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object' ],
-                jsonSchema: [
-                    'type' => 'object',
-                    'properties' => [
-                        'summary' => [ 'type' => 'string' ],
-                    ],
-                    'required' => [ 'summary' ],
-                    'additionalProperties' => false,
-                ],
+                jsonSchema: Schema::object()
+                    ->setProperty('summary', Schema::string())
+                    ->setRequired([ 'summary' ])
+                    ->setAdditionalProperties(false),
             ),
         );
 
         $successToolDefinition = $completionToolDefinitionFactory->finalizeSuccessTool($agentExecutionRequest);
         $errorToolDefinition = $completionToolDefinitionFactory->finalizeErrorTool();
+        $successToolSchema = $this->schemaToArray($successToolDefinition->parametersSchema);
+        $errorToolSchema = $this->schemaToArray($errorToolDefinition->parametersSchema);
+        $expectedOutputSchema = $this->schemaToArray($agentExecutionRequest->expectedOutput->jsonSchema);
 
         $this->assertSame($completionToolLoopStage->finalizeSuccessToolName(), $successToolDefinition->name);
-        $this->assertSame('object', $successToolDefinition->parametersSchema[ 'type' ] ?? null);
-        $this->assertSame([ 'answer' ], $successToolDefinition->parametersSchema[ 'required' ] ?? null);
-        $this->assertSame($agentExecutionRequest->expectedOutput->jsonSchema, $successToolDefinition->parametersSchema[ 'properties' ][ 'answer' ] ?? null);
+        $this->assertSame('object', $successToolSchema[ 'type' ] ?? null);
+        $this->assertSame([ 'answer' ], $successToolSchema[ 'required' ] ?? null);
+        $this->assertSame($expectedOutputSchema, $successToolSchema[ 'properties' ][ 'answer' ] ?? null);
 
         $this->assertSame($completionToolLoopStage->finalizeErrorToolName(), $errorToolDefinition->name);
-        $this->assertSame([ 'reason' ], $errorToolDefinition->parametersSchema[ 'required' ] ?? null);
-        $this->assertSame('string', $errorToolDefinition->parametersSchema[ 'properties' ][ 'reason' ][ 'type' ] ?? null);
+        $this->assertSame([ 'reason' ], $errorToolSchema[ 'required' ] ?? null);
+        $this->assertSame('string', $errorToolSchema[ 'properties' ][ 'reason' ][ 'type' ] ?? null);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function schemaToArray(Schema $schema): array
+    {
+        $decodedSchema = json_decode(json_encode($schema, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertIsArray($decodedSchema);
+
+        return $decodedSchema;
     }
 }

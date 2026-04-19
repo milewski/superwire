@@ -8,6 +8,7 @@ use Superwire\Contracts\Agent\AgentToolDefinition;
 use Superwire\Contracts\Contracts\RuntimeToolInvokerInterface;
 use Superwire\Contracts\Contracts\RuntimeToolMetadataProviderInterface;
 use Superwire\Contracts\Contracts\RuntimeToolSchemaProviderInterface;
+use Swaggest\JsonSchema\Schema;
 
 final readonly class RuntimeToolDefinitionFactory
 {
@@ -27,26 +28,21 @@ final readonly class RuntimeToolDefinitionFactory
         );
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function runtimeToolParametersSchema(string $toolName): array
+    private function runtimeToolParametersSchema(string $toolName): Schema
     {
         if ($this->runtimeToolInvoker instanceof RuntimeToolSchemaProviderInterface) {
 
             $toolSchema = $this->runtimeToolInvoker->schemaForTool($toolName);
 
-            if (is_array($toolSchema)) {
+            if ($toolSchema instanceof Schema) {
                 return $toolSchema;
             }
 
         }
 
-        return [
-            'type' => 'object',
-            'properties' => [],
-            'additionalProperties' => false,
-        ];
+        return Schema::object()
+            ->setProperties((object) [])
+            ->setAdditionalProperties(false);
     }
 
     private function runtimeToolDescription(string $toolName): string

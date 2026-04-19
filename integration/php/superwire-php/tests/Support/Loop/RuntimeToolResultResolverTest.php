@@ -14,6 +14,7 @@ use Superwire\Contracts\Support\Loop\RuntimeToolResultResolver;
 use Superwire\Contracts\Support\Stages\CompletionToolLoopStage;
 use Superwire\Contracts\Tests\Fakes\BatchRecordingRuntimeToolInvoker;
 use Superwire\Contracts\Tool\ToolExecution;
+use Swaggest\JsonSchema\Schema;
 
 final class RuntimeToolResultResolverTest extends TestCase
 {
@@ -34,7 +35,7 @@ final class RuntimeToolResultResolverTest extends TestCase
             prompt: 'summarize',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'object' ],
-                jsonSchema: [ 'type' => 'object' ],
+                jsonSchema: Schema::object(),
             ),
             tools: [
                 new ToolExecution('lookup_a', []),

@@ -20,6 +20,7 @@ use Superwire\Contracts\Agent\AgentTurnRequest;
 use Superwire\Contracts\Agent\AgentTurnResponse;
 use Superwire\Contracts\Agent\ConversationRole;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
+use Swaggest\JsonSchema\Schema;
 use Throwable;
 
 final class PrismAgentDriver implements AgentTurnDriverInterface
@@ -101,7 +102,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
                     'function' => [
                         'name' => $tool->name,
                         'description' => $tool->description,
-                        'parameters' => $tool->parametersSchema,
+                        'parameters' => self::schemaToArray($tool->parametersSchema),
                         'strict' => $tool->strict,
                     ],
                 ],
@@ -362,13 +363,15 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
 
         foreach ($tools as $tool) {
 
+            $toolSchema = self::schemaToArray($tool->parametersSchema);
+
             $prismTool = (new PrismTool())
                 ->as($tool->name)
                 ->for($tool->description)
                 ->withProviderOptions([ 'strict' => $tool->strict ])
                 ->using(static fn (): string => 'ok');
 
-            $properties = $tool->parametersSchema[ 'properties' ] ?? null;
+            $properties = $toolSchema[ 'properties' ] ?? null;
 
             if (is_array($properties)) {
 
@@ -389,6 +392,20 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
         }
 
         return $prismTools;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function schemaToArray(Schema $schema): array
+    {
+        $decodedSchema = json_decode(json_encode($schema, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+
+        if (!is_array($decodedSchema)) {
+            throw new RuntimeException('tool schema must encode into an object payload');
+        }
+
+        return $decodedSchema;
     }
 
     /**

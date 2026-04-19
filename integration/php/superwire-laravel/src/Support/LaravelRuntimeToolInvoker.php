@@ -22,6 +22,7 @@ use Superwire\Laravel\Contracts\WorkflowRuntimeTool;
 use Superwire\Laravel\Tools\WorkflowToolArguments;
 use Superwire\Laravel\Tools\WorkflowToolInput;
 use Superwire\Laravel\Tools\WorkflowToolResult;
+use Swaggest\JsonSchema\Schema;
 use Throwable;
 
 final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, RuntimeToolMetadataProviderInterface, RuntimeToolSchemaProviderInterface
@@ -95,10 +96,7 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
         );
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function schemaForTool(string $toolName): ?array
+    public function schemaForTool(string $toolName): ?Schema
     {
         $toolClass = $this->toolClassesByName[ $toolName ] ?? null;
 
@@ -119,7 +117,7 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
             return null;
         }
 
-        return $inputClassName::jsonSchema();
+        return $inputClassName::schema();
     }
 
     public function descriptionForTool(string $toolName): ?string

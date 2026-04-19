@@ -16,6 +16,7 @@ use Superwire\Laravel\Tools\WorkflowTool;
 use Superwire\Laravel\Tools\WorkflowToolBoundInput;
 use Superwire\Laravel\Tools\WorkflowToolInput;
 use Superwire\Laravel\Tools\WorkflowToolResult;
+use Swaggest\JsonSchema\Schema;
 
 final class LaravelRuntimeToolInvokerTest extends TestCase
 {
@@ -74,13 +75,14 @@ final class LaravelRuntimeToolInvokerTest extends TestCase
     {
         $runtimeToolInvoker = (new LaravelRuntimeToolInvoker($this->app))->withTools([ TypedWorkflowTool::class ]);
         $schema = $runtimeToolInvoker->schemaForTool('typed_workflow_tool');
+        $schemaArray = $schema !== null ? $this->schemaToArray($schema) : null;
 
-        $this->assertNotNull($schema);
-        $this->assertSame('object', $schema[ 'type' ] ?? null);
-        $this->assertSame('integer', $schema[ 'properties' ][ 'participant_id' ][ 'type' ] ?? null);
-        $this->assertSame('Participant identifier for answer lookup.', $schema[ 'properties' ][ 'participant_id' ][ 'description' ] ?? null);
-        $this->assertSame('boolean', $schema[ 'properties' ][ 'include_archived' ][ 'type' ] ?? null);
-        $this->assertSame([ 'participant_id' ], $schema[ 'required' ] ?? []);
+        $this->assertNotNull($schemaArray);
+        $this->assertSame('object', $schemaArray[ 'type' ] ?? null);
+        $this->assertSame('integer', $schemaArray[ 'properties' ][ 'participant_id' ][ 'type' ] ?? null);
+        $this->assertSame('Participant identifier for answer lookup.', $schemaArray[ 'properties' ][ 'participant_id' ][ 'description' ] ?? null);
+        $this->assertSame('boolean', $schemaArray[ 'properties' ][ 'include_archived' ][ 'type' ] ?? null);
+        $this->assertSame([ 'participant_id' ], $schemaArray[ 'required' ] ?? []);
     }
 
     public function testItReturnsStandardizedFailurePayload(): void
@@ -162,10 +164,22 @@ final class LaravelRuntimeToolInvokerTest extends TestCase
             prompt: 'run tool',
             expectedOutput: new AgentExpectedOutput(
                 workflowType: [ 'kind' => 'string' ],
-                jsonSchema: [ 'type' => 'string' ],
+                jsonSchema: Schema::string(),
             ),
             tools: [ new ToolExecution($toolName, $bindings) ],
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function schemaToArray(Schema $schema): array
+    {
+        $decodedSchema = json_decode(json_encode($schema, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertIsArray($decodedSchema);
+
+        return $decodedSchema;
     }
 }
 

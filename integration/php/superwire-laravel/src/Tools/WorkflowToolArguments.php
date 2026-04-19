@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tools;
 
+use JsonException;
 use ReflectionClass;
 use ReflectionIntersectionType;
 use ReflectionNamedType;
@@ -11,6 +12,8 @@ use ReflectionParameter;
 use ReflectionUnionType;
 use RuntimeException;
 use Spatie\LaravelData\Data;
+use Swaggest\JsonSchema\InvalidValue;
+use Swaggest\JsonSchema\Schema;
 
 abstract class WorkflowToolArguments extends Data
 {
@@ -66,6 +69,22 @@ abstract class WorkflowToolArguments extends Data
     public static function jsonSchema(): array
     {
         return WorkflowToolJsonSchemaResolver::forDataClass(static::class);
+    }
+
+    public static function schema(): Schema
+    {
+        try {
+
+            return Schema::import(json_decode(json_encode(static::jsonSchema(), JSON_THROW_ON_ERROR), false, 512, JSON_THROW_ON_ERROR));
+
+        } catch (InvalidValue|JsonException $error) {
+
+            throw new RuntimeException(
+                sprintf('failed to resolve json schema for `%s`: %s', static::class, $error->getMessage()),
+                previous: $error,
+            );
+
+        }
     }
 
     private static function resolveParameterValue(ReflectionParameter $parameter, mixed $rawValue): mixed
