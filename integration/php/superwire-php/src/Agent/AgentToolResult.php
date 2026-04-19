@@ -4,6 +4,8 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Agent;
 
+use Superwire\Laravel\Tools\WorkflowToolResult;
+
 final class AgentToolResult
 {
     /**
@@ -13,7 +15,7 @@ final class AgentToolResult
         public readonly string $toolCallId,
         public readonly string $toolName,
         public readonly array $arguments,
-        public readonly mixed $result,
+        public readonly WorkflowToolResult $result,
     )
     {
     }
