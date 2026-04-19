@@ -1,0 +1,28 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    study_name: string
+    audience: string
+    findings: [string]
+}
+
+agent research_brief {
+    model: openai("gpt-4.1-mini")
+    prompt: template("prompts/research_brief.md", {
+        study_name: input.study_name
+        audience: input.audience
+        findings: input.findings
+    })
+    output: {
+        summary: string
+    }
+}
+
+output {
+    summary: agent.research_brief.summary
+}

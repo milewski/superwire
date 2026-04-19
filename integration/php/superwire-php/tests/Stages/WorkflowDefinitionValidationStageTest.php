@@ -11,7 +11,7 @@ use Superwire\Contracts\Support\Stages\WorkflowDefinitionValidationStage;
 
 final class WorkflowDefinitionValidationStageTest extends TestCase
 {
-    public function testItRejectsUnknownAgentProvider(): void
+    public function test_it_rejects_unknown_agent_provider(): void
     {
         $definition = (new JsonWorkflowDecoder())->decodeFromArray([
             'format' => 'superwire_workflow_compact_v1',

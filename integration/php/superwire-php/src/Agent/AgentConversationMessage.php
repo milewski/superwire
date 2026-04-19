@@ -4,14 +4,12 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Agent;
 
-final class AgentConversationMessage
+final readonly class AgentConversationMessage
 {
-    /**
-     * @param array<string, mixed> $payload
-     */
     public function __construct(
-        public readonly string $role,
-        public readonly array $payload,
-    ) {
+        public ConversationRole $role,
+        public array $payload,
+    )
+    {
     }
 }

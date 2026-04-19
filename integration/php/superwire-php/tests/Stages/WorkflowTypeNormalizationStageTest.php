@@ -9,11 +9,11 @@ use Superwire\Contracts\Support\Stages\WorkflowTypeNormalizationStage;
 
 final class WorkflowTypeNormalizationStageTest extends TestCase
 {
-    public function testItFillsMissingObjectFieldsWithTypeDefaults(): void
+    public function test_it_fills_missing_object_fields_with_type_defaults(): void
     {
         $normalized = (new WorkflowTypeNormalizationStage())->normalize(
-            [],
-            [
+            value: [],
+            workflowType: [
                 'kind' => 'object',
                 'fields' => [
                     'summary' => [ 'kind' => 'string' ],
@@ -31,6 +31,6 @@ final class WorkflowTypeNormalizationStageTest extends TestCase
             ],
         );
 
-        self::assertSame([ 'summary' => '', 'themes' => [] ], $normalized);
+        $this->assertSame([ 'summary' => '', 'themes' => [] ], $normalized);
     }
 }

@@ -1,0 +1,38 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    product_name: string
+}
+
+agent release_summary {
+    model: openai("gpt-4.1-mini")
+    prompt: "Write summary for {{ input.product_name }}"
+    output: {
+        summary: string
+    }
+}
+
+agent launch_message {
+    model: openai("gpt-4.1-mini")
+    prompt: "Launch message from {{ agent.release_summary.summary }}"
+    output: {
+        body: string
+    }
+}
+
+agent qa_check {
+    model: openai("gpt-4.1-mini")
+    prompt: "Review {{ agent.release_summary.summary }} and {{ agent.launch_message.body }}"
+    output: {
+        approved: boolean
+    }
+}
+
+output {
+    approved: agent.qa_check.approved
+}

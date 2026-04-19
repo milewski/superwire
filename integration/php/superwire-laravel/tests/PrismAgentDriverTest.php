@@ -11,18 +11,21 @@ use Prism\Prism\Text\Request as TextRequest;
 use Prism\Prism\ValueObjects\ToolCall;
 use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentExpectedOutput;
+use Superwire\Contracts\HasCompletionToolStage;
 use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Support\LoopAgentDriver;
 use Superwire\Laravel\Driver\PrismAgentDriver;
 
 final class PrismAgentDriverTest extends TestCase
 {
+    use HasCompletionToolStage;
+
     public function testItForcesFinalizeToolAfterPlainTextReply(): void
     {
         $prismFake = Prism::fake([
             TextResponseFake::make()->withText('I think the answer is ready'),
             TextResponseFake::make()->withToolCalls([
-                new ToolCall('tool-call-1', 'finalize_success', [ 'answer' => [ 'summary' => 'done' ] ]),
+                new ToolCall('tool-call-1', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => [ 'summary' => 'done' ] ]),
             ]),
         ]);
 
@@ -51,15 +54,15 @@ final class PrismAgentDriverTest extends TestCase
 
         $result = $driver->execute($request);
 
-        self::assertSame([ 'summary' => 'done' ], $result->output);
+        $this->assertSame([ 'summary' => 'done' ], $result->output);
 
         $prismFake->assertRequest(static function (array $requests): void {
 
-            self::assertCount(2, $requests);
-            self::assertInstanceOf(TextRequest::class, $requests[ 0 ]);
-            self::assertInstanceOf(TextRequest::class, $requests[ 1 ]);
-            self::assertSame(ToolChoice::Auto, $requests[ 0 ]->toolChoice());
-            self::assertSame(ToolChoice::Any, $requests[ 1 ]->toolChoice());
+            $this->assertCount(2, $requests);
+            $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
+            $this->assertInstanceOf(TextRequest::class, $requests[ 1 ]);
+            $this->assertSame(ToolChoice::Auto, $requests[ 0 ]->toolChoice());
+            $this->assertSame(ToolChoice::Any, $requests[ 1 ]->toolChoice());
 
         });
     }
@@ -68,7 +71,7 @@ final class PrismAgentDriverTest extends TestCase
     {
         $prismFake = Prism::fake([
             TextResponseFake::make()->withToolCalls([
-                new ToolCall('tool-call-2', 'finalize_success', [ 'answer' => 'plain result' ]),
+                new ToolCall('tool-call-2', $this->completionStage->finalizeSuccessToolName(), [ 'answer' => 'plain result' ]),
             ]),
         ]);
 
@@ -90,12 +93,12 @@ final class PrismAgentDriverTest extends TestCase
 
         $result = $driver->execute($request);
 
-        self::assertSame('plain result', $result->output);
+        $this->assertSame('plain result', $result->output);
 
         $prismFake->assertRequest(static function (array $requests): void {
 
-            self::assertCount(1, $requests);
-            self::assertInstanceOf(TextRequest::class, $requests[ 0 ]);
+            $this->assertCount(1, $requests);
+            $this->assertInstanceOf(TextRequest::class, $requests[ 0 ]);
 
         });
     }

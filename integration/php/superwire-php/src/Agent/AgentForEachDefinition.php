@@ -12,6 +12,7 @@ final class AgentForEachDefinition
     public function __construct(
         public readonly array $pattern,
         public readonly mixed $iterable,
-    ) {
+    )
+    {
     }
 }

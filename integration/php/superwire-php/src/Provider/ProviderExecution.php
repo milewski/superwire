@@ -4,16 +4,17 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Provider;
 
-final class ProviderExecution
+final readonly class ProviderExecution
 {
     /**
      * @param array<string, mixed> $config
      */
     public function __construct(
-        public readonly string $name,
-        public readonly string $provider,
-        public readonly array $config = [],
-    ) {
+        public string $name,
+        public string $provider,
+        public array $config = [],
+    )
+    {
     }
 
     public function hasConfig(string $key): bool

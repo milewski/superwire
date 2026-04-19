@@ -4,6 +4,8 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Support\Stages;
 
+use Superwire\Contracts\Agent\AgentToolCall;
+
 final class CompletionToolLoopStage
 {
     public function finalizeSuccessToolName(): string
@@ -18,14 +20,17 @@ final class CompletionToolLoopStage
 
     public function completionInstruction(): string
     {
-        return 'You must call exactly one completion tool now: `finalize_success` when done, or `finalize_error` with the reason when blocked.';
+        return sprintf(
+            'You must call exactly one completion tool now: `%s` when done, or `%s` with the reason when blocked.',
+            $this->finalizeSuccessToolName(),
+            $this->finalizeErrorToolName(),
+        );
     }
 
     /**
-     * @param array<int, array{name: string, arguments: array<string, mixed>}> $toolCalls
-     * @return array{status: string, runtime_tool_calls: array<int, array{name: string, arguments: array<string, mixed>, id: string}>, output?: mixed, reason?: string}
+     * @param array<int, AgentToolCall> $toolCalls
      */
-    public function decide(array $toolCalls): array
+    public function decide(array $toolCalls): CompletionToolDecision
     {
         $runtimeToolCalls = [];
         $finalizeSuccessCalls = [];
@@ -33,7 +38,7 @@ final class CompletionToolLoopStage
 
         foreach ($toolCalls as $toolCall) {
 
-            $toolName = $toolCall[ 'name' ];
+            $toolName = $toolCall->name;
 
             if ($toolName === $this->finalizeSuccessToolName()) {
 
@@ -51,51 +56,56 @@ final class CompletionToolLoopStage
 
             }
 
-            $runtimeToolCalls[] = [
-                'name' => $toolName,
-                'arguments' => $toolCall[ 'arguments' ],
-                'id' => $toolCall[ 'id' ],
-            ];
+            $runtimeToolCalls[] = $toolCall;
 
         }
 
         if ($runtimeToolCalls !== []) {
-
-            return [
-                'status' => 'continue',
-                'runtime_tool_calls' => $runtimeToolCalls,
-            ];
-
+            return CompletionToolDecision::continue($runtimeToolCalls);
         }
 
         if ($finalizeSuccessCalls !== [] && $finalizeErrorCalls === []) {
 
             $finalizeCall = $finalizeSuccessCalls[ count($finalizeSuccessCalls) - 1 ];
 
-            return [
-                'status' => 'success',
-                'runtime_tool_calls' => [],
-                'output' => $finalizeCall[ 'arguments' ][ 'answer' ] ?? null,
-            ];
+            return CompletionToolDecision::success($finalizeCall->arguments[ 'answer' ] ?? null);
 
         }
 
         if ($finalizeErrorCalls !== [] && $finalizeSuccessCalls === []) {
 
             $finalizeCall = $finalizeErrorCalls[ count($finalizeErrorCalls) - 1 ];
-            $reason = $finalizeCall[ 'arguments' ][ 'reason' ] ?? 'unknown reason';
+            $reason = $finalizeCall->arguments[ 'reason' ] ?? 'unknown reason';
 
-            return [
-                'status' => 'error',
-                'runtime_tool_calls' => [],
-                'reason' => is_string($reason) ? $reason : 'unknown reason',
-            ];
+            return CompletionToolDecision::error(is_string($reason) ? $reason : 'unknown reason');
 
         }
 
-        return [
-            'status' => 'continue',
-            'runtime_tool_calls' => [],
-        ];
+        return CompletionToolDecision::continue([]);
+    }
+
+    /**
+     * @param array<int, AgentToolCall> $toolCalls
+     */
+    public function hasMixedFinalizeAndRuntimeToolCalls(array $toolCalls): bool
+    {
+        $hasFinalizeToolCall = false;
+        $hasRuntimeToolCall = false;
+
+        foreach ($toolCalls as $toolCall) {
+
+            if ($toolCall->name === $this->finalizeSuccessToolName() || $toolCall->name === $this->finalizeErrorToolName()) {
+
+                $hasFinalizeToolCall = true;
+
+                continue;
+
+            }
+
+            $hasRuntimeToolCall = true;
+
+        }
+
+        return $hasFinalizeToolCall && $hasRuntimeToolCall;
     }
 }

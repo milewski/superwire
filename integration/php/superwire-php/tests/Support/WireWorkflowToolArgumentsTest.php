@@ -10,15 +10,17 @@ use Superwire\Contracts\Agent\AgentExecutionRequest;
 use Superwire\Contracts\Agent\AgentToolCall;
 use Superwire\Contracts\Agent\AgentTurnResponse;
 use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
+use Superwire\Contracts\HasCompletionToolStage;
 use Superwire\Contracts\Support\LoopAgentDriver;
-use Superwire\Contracts\Tests\Fakes\BoundedRecordSchema;
 use Superwire\Contracts\Tests\Fakes\InputSchema;
 use Superwire\Contracts\Tests\Fakes\RecordingRuntimeToolInvoker;
 use Superwire\Contracts\Tests\Fakes\ScriptedTurnDriver;
-use Superwire\Contracts\Tests\Support\WireFixtureWorkflowFactory;
+use Superwire\Contracts\Tests\Fakes\WireFixtureWorkflowFactory;
 
 final class WireWorkflowToolArgumentsTest extends TestCase
 {
+    use HasCompletionToolStage;
+
     public function test_tool_invocation_bails_out_when_arguments_do_not_match_tool_schema(): void
     {
         $this->expectException(RuntimeException::class);
@@ -27,7 +29,6 @@ final class WireWorkflowToolArgumentsTest extends TestCase
         $runtimeToolInvoker = RecordingRuntimeToolInvoker::fake(
             name: 'fetch_record_action',
             inputSchema: InputSchema::class,
-            boundedSchema: BoundedRecordSchema::class,
         );
 
         $turnDriver = ScriptedTurnDriver::fake([
@@ -52,7 +53,7 @@ final class WireWorkflowToolArgumentsTest extends TestCase
                 toolCalls: [
                     new AgentToolCall(
                         id: 'finalize-1',
-                        name: 'finalize_success',
+                        name: $this->completionStage->finalizeSuccessToolName(),
                         arguments: [
                             'answer' => [
                                 'actor_id' => 99,
@@ -74,7 +75,7 @@ final class WireWorkflowToolArgumentsTest extends TestCase
                 toolCalls: [
                     new AgentToolCall(
                         id: 'finalize-1',
-                        name: 'finalize_success',
+                        name: $this->completionStage->finalizeSuccessToolName(),
                         arguments: [
                             'answer' => [
                                 'actor_id' => 99,
@@ -106,7 +107,7 @@ final class WireWorkflowToolArgumentsTest extends TestCase
                 toolCalls: [
                     new AgentToolCall(
                         id: 'finalize-error-1',
-                        name: 'finalize_error',
+                        name: $this->completionStage->finalizeErrorToolName(),
                         arguments: [
                             'reason' => 'unable to continue due to missing upstream data',
                         ],

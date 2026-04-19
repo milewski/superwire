@@ -13,6 +13,7 @@ final class AgentToolDefinition
         public readonly string $name,
         public readonly string $description,
         public readonly array $parametersSchema,
-    ) {
+    )
+    {
     }
 }

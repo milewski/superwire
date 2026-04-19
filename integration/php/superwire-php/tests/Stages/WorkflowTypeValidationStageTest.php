@@ -10,25 +10,25 @@ use Superwire\Contracts\Support\Stages\WorkflowTypeValidationStage;
 
 final class WorkflowTypeValidationStageTest extends TestCase
 {
-    public function testItAcceptsMatchingObjectOutput(): void
+    public function test_it_accepts_matching_object_output(): void
     {
         (new WorkflowTypeValidationStage())->validate(
-            [ 'summary' => 'ok' ],
-            [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-            'agent output',
+            value: [ 'summary' => 'ok' ],
+            workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
+            context: 'agent output',
         );
 
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
-    public function testItRejectsMismatchedObjectOutput(): void
+    public function test_it_rejects_mismatched_object_output(): void
     {
         $this->expectException(InvalidWorkflowDefinitionException::class);
 
         (new WorkflowTypeValidationStage())->validate(
-            [ 'summary' => 123 ],
-            [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
-            'agent output',
+            value: [ 'summary' => 123 ],
+            workflowType: [ 'kind' => 'object', 'fields' => [ 'summary' => [ 'kind' => 'string' ] ] ],
+            context: 'agent output',
         );
     }
 }

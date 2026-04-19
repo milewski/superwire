@@ -24,6 +24,7 @@ final class AgentDefinition
         public readonly array $dependencies,
         public readonly array $dependents,
         public readonly int $batch,
-    ) {
+    )
+    {
     }
 }

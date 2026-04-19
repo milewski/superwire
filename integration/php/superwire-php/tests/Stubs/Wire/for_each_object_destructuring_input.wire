@@ -1,0 +1,29 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    participants: [{
+        id: number
+        profile: {
+            team: string
+            city: string
+        }
+    }]
+}
+
+agent participant_note for { id, profile } in input.participants {
+    model: openai("gpt-4.1-mini")
+    prompt: "Participant #{{ id }} in {{ profile.team }} from {{ profile.city }}"
+    output: {
+        id: number
+        note: string
+    }
+}
+
+output {
+    notes: agent.participant_note
+}

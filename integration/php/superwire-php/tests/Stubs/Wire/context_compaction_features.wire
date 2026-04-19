@@ -1,0 +1,53 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    feedback: [string]
+}
+
+agent research_analysis {
+    model: openai("gpt-4.1-mini")
+    prompt: "Analyze feedback {{ input.feedback }}"
+    output: {
+        themes: [string]
+    }
+}
+
+agent full_context_summary {
+    model: openai("gpt-4.1-mini")
+    context: context(agent.research_analysis)
+    prompt: "Summarize context"
+    output: string
+}
+
+agent compact_context_summary {
+    model: openai("gpt-4.1-mini")
+    context: compact(agent.research_analysis)
+    prompt: "Summarize compact context"
+    output: string
+}
+
+agent custom_compact_context_summary {
+    model: openai("gpt-4.1-mini")
+    context: compact(
+        agent: agent.research_analysis,
+        model: openai("gpt-4.1-mini"),
+        inference: {
+            temperature: 0.1
+            max_tokens: 1000
+        },
+        prompt: "compact now"
+    )
+    prompt: "Summarize custom compact context"
+    output: string
+}
+
+output {
+    full: agent.full_context_summary
+    compact: agent.compact_context_summary
+    custom: agent.custom_compact_context_summary
+}

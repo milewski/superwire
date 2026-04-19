@@ -10,12 +10,12 @@ use Superwire\Contracts\Support\ExpressionResolver;
 
 final class ExpressionResolverTest extends TestCase
 {
-    public function testItResolvesReferencesAndTemplatesFromRuntimeContext(): void
+    public function test_it_resolves_references_and_templates_from_runtime_context(): void
     {
         $resolver = new ExpressionResolver();
 
         $resolvedTemplate = $resolver->resolve(
-            [
+            expression: [
                 '$template' => [
                     'Hello ',
                     [ '$expr' => [ '$ref' => 'input.name' ] ],
@@ -23,16 +23,16 @@ final class ExpressionResolverTest extends TestCase
                     [ '$expr' => [ '$ref' => 'agent.summary' ] ],
                 ],
             ],
-            [
+            runtimeContext: [
                 'input' => [ 'name' => 'Rafael' ],
                 'agent' => [ 'summary' => 'ready' ],
             ],
         );
 
-        self::assertSame('Hello Rafael, summary=ready', $resolvedTemplate);
+        $this->assertSame('Hello Rafael, summary=ready', $resolvedTemplate);
     }
 
-    public function testItThrowsForMissingReferenceRoots(): void
+    public function test_it_throws_for_missing_reference_roots(): void
     {
         $resolver = new ExpressionResolver();
 

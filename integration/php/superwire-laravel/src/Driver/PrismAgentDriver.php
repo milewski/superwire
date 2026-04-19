@@ -18,6 +18,7 @@ use Superwire\Contracts\Agent\AgentToolDefinition;
 use Superwire\Contracts\Agent\AgentToolResult;
 use Superwire\Contracts\Agent\AgentTurnRequest;
 use Superwire\Contracts\Agent\AgentTurnResponse;
+use Superwire\Contracts\Agent\ConversationRole;
 use Superwire\Contracts\Contracts\AgentTurnDriverInterface;
 use Throwable;
 
@@ -291,7 +292,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
 
         foreach ($messages as $message) {
 
-            if ($message->role === 'user') {
+            if ($message->role === ConversationRole::User) {
 
                 $segments[] = "[user]\n" . (string) ($message->payload[ 'content' ] ?? '');
 
@@ -299,7 +300,7 @@ final class PrismAgentDriver implements AgentTurnDriverInterface
 
             }
 
-            if ($message->role === 'assistant') {
+            if ($message->role === ConversationRole::Assistant) {
 
                 $content = (string) ($message->payload[ 'content' ] ?? '');
                 $segments[] = "[assistant]\n{$content}";

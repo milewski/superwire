@@ -10,7 +10,7 @@ use Superwire\Contracts\Support\JsonWorkflowDecoder;
 
 final class JsonWorkflowDecoderTest extends TestCase
 {
-    public function testItDecodesCompactWorkflowJsonIntoDomainObjects(): void
+    public function test_it_decodes_compact_workflow_json_into_domain_objects(): void
     {
         $decoder = new JsonWorkflowDecoder();
 
@@ -69,20 +69,20 @@ final class JsonWorkflowDecoderTest extends TestCase
             ],
         ]);
 
-        self::assertSame('superwire_workflow_compact_v1', $workflowDefinition->format);
-        self::assertSame('sample.wire', $workflowDefinition->workflowPath);
-        self::assertCount(1, $workflowDefinition->providers);
-        self::assertSame('prism', $workflowDefinition->providers[ 0 ]->driver);
-        self::assertCount(1, $workflowDefinition->agents);
-        self::assertSame('draft', $workflowDefinition->agents[ 0 ]->name);
+        $this->assertSame('superwire_workflow_compact_v1', $workflowDefinition->format);
+        $this->assertSame('sample.wire', $workflowDefinition->workflowPath);
+        $this->assertCount(1, $workflowDefinition->providers);
+        $this->assertSame('prism', $workflowDefinition->providers[ 0 ]->driver);
+        $this->assertCount(1, $workflowDefinition->agents);
+        $this->assertSame('draft', $workflowDefinition->agents[ 0 ]->name);
     }
 
-    public function testItRejectsInvalidWorkflowJsonPayload(): void
+    public function test_it_rejects_invalid_workflow_json_payload(): void
     {
         $decoder = new JsonWorkflowDecoder();
 
         $this->expectException(InvalidWorkflowDefinitionException::class);
 
-        $decoder->decodeFromJson('{"invalid": true}');
+        $decoder->decodeFromJson('{ "invalid": true }');
     }
 }

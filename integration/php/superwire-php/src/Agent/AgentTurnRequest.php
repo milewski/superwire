@@ -18,6 +18,7 @@ final class AgentTurnRequest
         public readonly array $messages,
         public readonly array $tools,
         public readonly bool $requireToolCall,
-    ) {
+    )
+    {
     }
 }

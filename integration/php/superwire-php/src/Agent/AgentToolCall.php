@@ -4,15 +4,16 @@ declare(strict_types = 1);
 
 namespace Superwire\Contracts\Agent;
 
-final class AgentToolCall
+final readonly class AgentToolCall
 {
     /**
      * @param array<string, mixed> $arguments
      */
     public function __construct(
-        public readonly string $id,
-        public readonly string $name,
-        public readonly array $arguments,
-    ) {
+        public string $id,
+        public string $name,
+        public array $arguments,
+    )
+    {
     }
 }
