@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
+use JsonException;
 use RuntimeException;
 use Superwire\Contracts\Contracts\DriverRegistryInterface;
 use Superwire\Contracts\Contracts\WorkflowRunnerInterface;
@@ -14,6 +15,8 @@ use Superwire\Laravel\Data\WorkflowRunResult;
 use Superwire\Laravel\Driver\PrismAgentDriver;
 use Superwire\Laravel\Support\CachedWorkflowDefinitionCompiler;
 use Superwire\Laravel\Support\LaravelRuntimeToolInvoker;
+use Swaggest\JsonSchema\Exception as JsonSchemaException;
+use Swaggest\JsonSchema\InvalidValue;
 use Swaggest\JsonSchema\Schema;
 
 final class Workflow
@@ -226,6 +229,39 @@ final class Workflow
 
                 }
 
+                foreach ($toolBindings as $bindingName => $bindingExpression) {
+
+                    if (!is_string($bindingName)) {
+                        continue;
+                    }
+
+                    $bindingPropertySchema = $bindingProperties[ $bindingName ] ?? null;
+
+                    if (!is_array($bindingPropertySchema)) {
+                        continue;
+                    }
+
+                    $bindingSamples = $this->bindingValidationSamples($bindingExpression, $workflowDefinition);
+
+                    if ($bindingSamples === []) {
+                        continue;
+                    }
+
+                    $bindingPropertySchemaObject = $this->schemaFromArray(
+                        $bindingPropertySchema,
+                        "tool `{$toolName}` binding `{$bindingName}` schema",
+                    );
+
+                    if ($this->bindingSamplesMatchSchema($bindingSamples, $bindingPropertySchemaObject)) {
+                        continue;
+                    }
+
+                    throw new InvalidWorkflowDefinitionException(
+                        "agent `{$agentDefinition->name}` tool `{$toolName}` binding `{$bindingName}` does not match bound input schema",
+                    );
+
+                }
+
             }
 
         }
@@ -243,6 +279,242 @@ final class Workflow
         }
 
         return $decodedSchema;
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function bindingValidationSamples(mixed $bindingExpression, WorkflowDefinition $workflowDefinition): array
+    {
+        if (!is_array($bindingExpression) || !array_key_exists('$ref', $bindingExpression) || !is_string($bindingExpression[ '$ref' ])) {
+            return [ $bindingExpression ];
+        }
+
+        $resolvedBindingKind = $this->resolvedReferenceKind($bindingExpression[ '$ref' ], $workflowDefinition);
+
+        if (!is_string($resolvedBindingKind)) {
+            return [];
+        }
+
+        return match ($resolvedBindingKind) {
+            'string' => [ 'sample' ],
+            'integer' => [ 1 ],
+            'float' => [ 1.5 ],
+            'boolean' => [ true ],
+            'null' => [ null ],
+            'array' => [ [] ],
+            'object' => [ (object) [] ],
+            default => [],
+        };
+    }
+
+    /**
+     * @param list<mixed> $bindingSamples
+     */
+    private function bindingSamplesMatchSchema(array $bindingSamples, Schema $bindingPropertySchema): bool
+    {
+        foreach ($bindingSamples as $bindingSample) {
+
+            try {
+
+                $bindingPropertySchema->in($this->jsonSchemaCompatibleValue($bindingSample));
+
+                return true;
+
+            } catch (JsonSchemaException) {
+            }
+
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $schemaPayload
+     */
+    private function schemaFromArray(array $schemaPayload, string $context): Schema
+    {
+        try {
+
+            return Schema::import(json_decode(json_encode($schemaPayload, JSON_THROW_ON_ERROR), false, 512, JSON_THROW_ON_ERROR));
+
+        } catch (InvalidValue|JsonException $error) {
+
+            throw new InvalidWorkflowDefinitionException("{$context} is invalid: {$error->getMessage()}");
+
+        }
+    }
+
+    private function jsonSchemaCompatibleValue(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        if (array_is_list($value)) {
+
+            $normalizedValues = [];
+
+            foreach ($value as $listValue) {
+                $normalizedValues[] = $this->jsonSchemaCompatibleValue($listValue);
+            }
+
+            return $normalizedValues;
+
+        }
+
+        $normalizedObject = [];
+
+        foreach ($value as $objectKey => $objectValue) {
+
+            if (!is_string($objectKey)) {
+                continue;
+            }
+
+            $normalizedObject[ $objectKey ] = $this->jsonSchemaCompatibleValue($objectValue);
+
+        }
+
+        return (object) $normalizedObject;
+    }
+
+    private function resolvedReferenceKind(string $referencePath, WorkflowDefinition $workflowDefinition): ?string
+    {
+        $referenceSegments = explode('.', $referencePath);
+
+        if ($referenceSegments === []) {
+            return null;
+        }
+
+        $referenceRoot = array_shift($referenceSegments);
+
+        if (!is_string($referenceRoot) || $referenceRoot === '') {
+            return null;
+        }
+
+        if ($referenceRoot === 'input') {
+            return $this->resolvedKindFromRootWorkflowType($workflowDefinition->input[ 'workflow_type' ] ?? null, $referenceSegments);
+        }
+
+        if ($referenceRoot === 'secrets') {
+            return $this->resolvedKindFromRootWorkflowType($workflowDefinition->secrets[ 'workflow_type' ] ?? null, $referenceSegments);
+        }
+
+        if ($referenceRoot === 'agent') {
+
+            $agentName = array_shift($referenceSegments);
+
+            if (!is_string($agentName) || $agentName === '') {
+                return null;
+            }
+
+            $referencedAgent = $workflowDefinition->agentByName($agentName);
+
+            if ($referencedAgent === null) {
+                return null;
+            }
+
+            return $this->resolvedKindFromRootWorkflowType(
+                $referencedAgent->output[ 'final_output' ][ 'workflow_type' ] ?? null,
+                $referenceSegments,
+            );
+
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed>|null $workflowType
+     * @param list<string> $referenceSegments
+     */
+    private function resolvedKindFromRootWorkflowType(?array $workflowType, array $referenceSegments): ?string
+    {
+        if (!is_array($workflowType)) {
+            return null;
+        }
+
+        if ($referenceSegments === []) {
+            return $this->normalizedWorkflowKind($workflowType[ 'kind' ] ?? null);
+        }
+
+        $workflowKind = $workflowType[ 'kind' ] ?? null;
+
+        if (!is_string($workflowKind)) {
+            return null;
+        }
+
+        $segment = array_shift($referenceSegments);
+
+        if (!is_string($segment) || $segment === '') {
+            return null;
+        }
+
+        if ($workflowKind === 'object') {
+
+            $fields = $workflowType[ 'fields' ] ?? null;
+
+            if (!is_array($fields) || !array_key_exists($segment, $fields) || !is_array($fields[ $segment ])) {
+                return null;
+            }
+
+            return $this->resolvedKindFromRootWorkflowType($fields[ $segment ], $referenceSegments);
+
+        }
+
+        if ($workflowKind === 'array') {
+
+            if (!ctype_digit($segment)) {
+                return null;
+            }
+
+            $itemType = $workflowType[ 'item_type' ] ?? null;
+
+            if (!is_array($itemType)) {
+                return null;
+            }
+
+            return $this->resolvedKindFromRootWorkflowType($itemType, $referenceSegments);
+
+        }
+
+        if ($workflowKind === 'tuple') {
+
+            if (!ctype_digit($segment)) {
+                return null;
+            }
+
+            $tupleItems = $workflowType[ 'items' ] ?? null;
+
+            if (!is_array($tupleItems)) {
+                return null;
+            }
+
+            $tupleIndex = (int) $segment;
+            $tupleItemType = $tupleItems[ $tupleIndex ] ?? null;
+
+            if (!is_array($tupleItemType)) {
+                return null;
+            }
+
+            return $this->resolvedKindFromRootWorkflowType($tupleItemType, $referenceSegments);
+
+        }
+
+        return null;
+    }
+
+    private function normalizedWorkflowKind(mixed $workflowKind): ?string
+    {
+        if (!is_string($workflowKind)) {
+            return null;
+        }
+
+        return match ($workflowKind) {
+            'string', 'integer', 'float', 'boolean', 'null', 'array', 'object' => $workflowKind,
+            'string_enum' => 'string',
+            default => null,
+        };
     }
 
     /**
