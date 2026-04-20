@@ -1,0 +1,26 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "local-test-key"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    project_id: number
+    task_id: number
+}
+
+agent helper {
+    model: openai("gpt-4.1-mini")
+    tools: [
+        tool.numeric_lookup(project_id: input.project_id, task_id: input.task_id),
+    ]
+    prompt: "Validate numeric bindings"
+    output: {
+        answer: string
+    }
+}
+
+output {
+    answer: agent.helper.answer
+}
