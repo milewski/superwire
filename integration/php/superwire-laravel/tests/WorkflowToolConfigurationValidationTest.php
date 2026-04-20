@@ -46,9 +46,30 @@ final class WorkflowToolConfigurationValidationTest extends TestCase
             ->run();
     }
 
+    public function testItFailsBeforeExecutionWhenBindingTypeDoesNotMatchToolBoundInputType(): void
+    {
+        $this->expectException(InvalidWorkflowDefinitionException::class);
+        $this->expectExceptionMessage('agent `helper` tool `numeric_lookup` binding `project_id` does not match bound input schema');
+
+        Workflow::fromFile($this->toolBindingTypeFixturePath())
+            ->withTools([
+                NumericLookupToolWithStringBoundInput::class,
+            ])
+            ->withInputs([
+                'project_id' => 10,
+                'task_id' => 20,
+            ])
+            ->run();
+    }
+
     private function toolBindingFixturePath(): string
     {
         return __DIR__ . '/../../superwire-php/tests/Stubs/Wire/tool_bindings_resolution.wire';
+    }
+
+    private function toolBindingTypeFixturePath(): string
+    {
+        return __DIR__ . '/../../superwire-php/tests/Stubs/Wire/tool_binding_type_validation.wire';
     }
 
     private function superwireCliPath(): string
@@ -112,6 +133,31 @@ final class FilterLookupTool extends WorkflowTool
         return [
             'query' => $boundInput->query,
             'limit' => $boundInput->limit,
+        ];
+    }
+}
+
+final class NumericLookupBoundInputWithStrings extends WorkflowToolBoundInput
+{
+    public function __construct(
+        public string $project_id,
+        public string $task_id,
+    ) {
+    }
+}
+
+final class NumericLookupToolWithStringBoundInput extends WorkflowTool
+{
+    public static function toolName(): string
+    {
+        return 'numeric_lookup';
+    }
+
+    public function invoke(NumericLookupBoundInputWithStrings $boundInput): array
+    {
+        return [
+            'project_id' => $boundInput->project_id,
+            'task_id' => $boundInput->task_id,
         ];
     }
 }
