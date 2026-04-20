@@ -7,11 +7,14 @@ namespace Superwire\Laravel;
 use RuntimeException;
 use Superwire\Contracts\Contracts\DriverRegistryInterface;
 use Superwire\Contracts\Contracts\WorkflowRunnerInterface;
+use Superwire\Contracts\Exception\InvalidWorkflowDefinitionException;
 use Superwire\Contracts\Support\LoopAgentDriver;
+use Superwire\Contracts\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Data\WorkflowRunResult;
 use Superwire\Laravel\Driver\PrismAgentDriver;
 use Superwire\Laravel\Support\CachedWorkflowDefinitionCompiler;
 use Superwire\Laravel\Support\LaravelRuntimeToolInvoker;
+use Swaggest\JsonSchema\Schema;
 
 final class Workflow
 {
@@ -119,9 +122,12 @@ final class Workflow
 
     public function run(): WorkflowRunResult
     {
-        $this->registerExecutionDriver();
-
         $workflowDefinition = app(CachedWorkflowDefinitionCompiler::class)->compile($this->workflowPath);
+        $runtimeToolInvoker = $this->resolveRuntimeToolInvoker();
+
+        $this->validateConfiguredWorkflowTools($workflowDefinition, $runtimeToolInvoker);
+        $this->registerExecutionDriver($runtimeToolInvoker);
+
         $workflowResult = app(WorkflowRunnerInterface::class)->run(
             $workflowDefinition,
             $this->input,
@@ -140,7 +146,7 @@ final class Workflow
         );
     }
 
-    private function registerExecutionDriver(): void
+    private function registerExecutionDriver(LaravelRuntimeToolInvoker $toolInvoker): void
     {
         $driverRegistry = app(DriverRegistryInterface::class);
 
@@ -148,8 +154,95 @@ final class Workflow
             throw new RuntimeException("unsupported workflow driver `{$this->driverName}`");
         }
 
-        $toolInvoker = app(LaravelRuntimeToolInvoker::class)->withTools($this->toolClasses);
         $driverRegistry->register('prism', new LoopAgentDriver(new PrismAgentDriver($this->driverConfiguration), $toolInvoker));
+    }
+
+    private function resolveRuntimeToolInvoker(): LaravelRuntimeToolInvoker
+    {
+        return app(LaravelRuntimeToolInvoker::class)->withTools($this->toolClasses);
+    }
+
+    private function validateConfiguredWorkflowTools(WorkflowDefinition $workflowDefinition, LaravelRuntimeToolInvoker $runtimeToolInvoker): void
+    {
+        foreach ($workflowDefinition->agents as $agentDefinition) {
+
+            foreach ($agentDefinition->tools as $toolConfiguration) {
+
+                $toolName = $toolConfiguration[ 'name' ];
+                $toolBindings = $toolConfiguration[ 'bind' ];
+
+                if (!$runtimeToolInvoker->hasTool($toolName)) {
+                    throw new InvalidWorkflowDefinitionException("agent `{$agentDefinition->name}` references unregistered tool `{$toolName}`");
+                }
+
+                $bindingSchema = $runtimeToolInvoker->bindingSchemaForTool($toolName);
+
+                if (!$bindingSchema instanceof Schema) {
+                    continue;
+                }
+
+                $bindingSchemaArray = $this->schemaToArray($bindingSchema, "tool `{$toolName}` binding schema");
+                $requiredBindingKeys = $bindingSchemaArray[ 'required' ] ?? [];
+                $bindingProperties = $bindingSchemaArray[ 'properties' ] ?? [];
+                $allowsAdditionalBindings = ($bindingSchemaArray[ 'additionalProperties' ] ?? true) !== false;
+
+                foreach ($requiredBindingKeys as $requiredBindingKey) {
+
+                    if (!is_string($requiredBindingKey)) {
+                        continue;
+                    }
+
+                    if (array_key_exists($requiredBindingKey, $toolBindings)) {
+                        continue;
+                    }
+
+                    throw new InvalidWorkflowDefinitionException(
+                        "agent `{$agentDefinition->name}` tool `{$toolName}` is missing required binding `{$requiredBindingKey}`",
+                    );
+
+                }
+
+                if ($allowsAdditionalBindings) {
+                    continue;
+                }
+
+                if (!is_array($bindingProperties)) {
+                    continue;
+                }
+
+                foreach (array_keys($toolBindings) as $bindingName) {
+
+                    if (!is_string($bindingName)) {
+                        continue;
+                    }
+
+                    if (array_key_exists($bindingName, $bindingProperties)) {
+                        continue;
+                    }
+
+                    throw new InvalidWorkflowDefinitionException(
+                        "agent `{$agentDefinition->name}` tool `{$toolName}` contains unknown binding `{$bindingName}`",
+                    );
+
+                }
+
+            }
+
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function schemaToArray(Schema $schema, string $context): array
+    {
+        $decodedSchema = json_decode(json_encode($schema, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+
+        if (!is_array($decodedSchema)) {
+            throw new InvalidWorkflowDefinitionException("{$context} must encode into object payload");
+        }
+
+        return $decodedSchema;
     }
 
     /**

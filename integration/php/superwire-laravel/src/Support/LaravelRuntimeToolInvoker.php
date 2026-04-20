@@ -96,15 +96,42 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
         );
     }
 
-    public function schemaForTool(string $toolName): ?Schema
+    public function hasTool(string $toolName): bool
     {
-        $toolClass = $this->toolClassesByName[ $toolName ] ?? null;
+        return array_key_exists($toolName, $this->toolClassesByName);
+    }
 
-        if ($toolClass === null || !method_exists($toolClass, 'invoke')) {
+    public function bindingSchemaForTool(string $toolName): ?Schema
+    {
+        $invokeMethod = $this->invokeMethodForTool($toolName);
+
+        if (!$invokeMethod instanceof ReflectionMethod) {
             return null;
         }
 
-        $invokeMethod = new ReflectionMethod($toolClass, 'invoke');
+        $invokeParameters = $invokeMethod->getParameters();
+
+        if (!array_key_exists(0, $invokeParameters)) {
+            return null;
+        }
+
+        $boundInputClassName = $this->resolveWorkflowToolArgumentClassName($invokeParameters[ 0 ]->getType(), WorkflowToolArguments::class);
+
+        if ($boundInputClassName === null) {
+            return null;
+        }
+
+        return $boundInputClassName::schema();
+    }
+
+    public function schemaForTool(string $toolName): ?Schema
+    {
+        $invokeMethod = $this->invokeMethodForTool($toolName);
+
+        if (!$invokeMethod instanceof ReflectionMethod) {
+            return null;
+        }
+
         $invokeParameters = $invokeMethod->getParameters();
 
         if (!array_key_exists(1, $invokeParameters)) {
@@ -200,6 +227,17 @@ final class LaravelRuntimeToolInvoker implements RuntimeToolInvokerInterface, Ru
         }
 
         return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $classBaseName));
+    }
+
+    private function invokeMethodForTool(string $toolName): ?ReflectionMethod
+    {
+        $toolClass = $this->toolClassesByName[ $toolName ] ?? null;
+
+        if ($toolClass === null || !method_exists($toolClass, 'invoke')) {
+            return null;
+        }
+
+        return new ReflectionMethod($toolClass, 'invoke');
     }
 
     /**

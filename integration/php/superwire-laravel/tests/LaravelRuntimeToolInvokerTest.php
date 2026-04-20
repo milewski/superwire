@@ -64,10 +64,13 @@ final class LaravelRuntimeToolInvokerTest extends TestCase
 
         $this->assertSame(
             [
-                'workspace_id' => 22,
-                'has_input' => false,
+                'status' => 'success',
+                'payload' => [
+                    'workspace_id' => 22,
+                    'has_input' => false,
+                ],
             ],
-            $agentToolResult->result,
+            json_decode((string) json_encode($agentToolResult->result), true),
         );
     }
 
@@ -228,12 +231,12 @@ final class TypedWorkflowTool extends WorkflowTool
 
 final class OptionalInputWorkflowTool extends WorkflowTool
 {
-    public function invoke(TypedWorkflowToolBoundInput $boundInput, ?OptionalWorkflowToolInput $input = null): array
+    public function invoke(TypedWorkflowToolBoundInput $boundInput, ?OptionalWorkflowToolInput $input = null): WorkflowToolResult
     {
-        return [
+        return $this->success([
             'workspace_id' => $boundInput->workspace_id,
             'has_input' => $input !== null,
-        ];
+        ]);
     }
 }
 

@@ -10,11 +10,11 @@ use Prism\Prism\Facades\Prism;
 use Prism\Prism\Testing\TextResponseFake;
 use Prism\Prism\Text\Request as TextRequest;
 use Prism\Prism\Text\Step as TextStep;
+use Prism\Prism\Tool as PrismTool;
 use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
 use Prism\Prism\ValueObjects\Meta;
-use Prism\Prism\ValueObjects\ProviderTool;
 use Prism\Prism\ValueObjects\ToolCall;
 use Prism\Prism\ValueObjects\Usage;
 use Superwire\Contracts\Agent\AgentConversationMessage;
@@ -29,6 +29,7 @@ use Superwire\Contracts\HasCompletionToolStage;
 use Superwire\Contracts\Provider\ProviderExecution;
 use Superwire\Contracts\Support\LoopAgentDriver;
 use Superwire\Laravel\Driver\PrismAgentDriver;
+use Superwire\Laravel\Tools\WorkflowToolResult;
 use Swaggest\JsonSchema\Schema;
 
 final class PrismAgentDriverTest extends TestCase
@@ -159,13 +160,11 @@ final class PrismAgentDriverTest extends TestCase
             $tools = $requests[ 0 ]->tools();
             $providerTools = $requests[ 0 ]->providerTools();
 
-            $this->assertCount(0, $tools);
-            $this->assertCount(1, $providerTools);
-            $this->assertInstanceOf(ProviderTool::class, $providerTools[ 0 ]);
-            $this->assertSame('function', $providerTools[ 0 ]->type);
-            $this->assertSame('get_answered_participants_for_task', $providerTools[ 0 ]->name);
-            $this->assertSame('Fetch participants that answered a task in this project', $providerTools[ 0 ]->options[ 'description' ]);
-            $this->assertTrue((bool) $providerTools[ 0 ]->options[ 'strict' ]);
+            $this->assertCount(1, $tools);
+            $this->assertCount(0, $providerTools);
+            $this->assertInstanceOf(PrismTool::class, $tools[ 0 ]);
+            $this->assertSame('Fetch participants that answered a task in this project', $tools[ 0 ]->description());
+            $this->assertTrue((bool) $tools[ 0 ]->providerOptions('strict'));
 
         });
     }
@@ -202,13 +201,13 @@ final class PrismAgentDriverTest extends TestCase
                             toolCallId: 'tool-call-1',
                             toolName: 'get_task_answer_by_participant',
                             arguments: [ 'participant_id' => 1 ],
-                            result: [
+                            result: WorkflowToolResult::success([
                                 'status' => 'success',
                                 'payload' => [
                                     'participant_id' => 1,
                                     'answer' => [ 'text' => 'hello world' ],
                                 ],
-                            ],
+                            ]),
                         ),
                     ],
                 ]),
@@ -236,7 +235,7 @@ final class PrismAgentDriverTest extends TestCase
             $this->assertCount(1, $messages[ 2 ]->toolResults);
             $this->assertSame('get_task_answer_by_participant', $messages[ 2 ]->toolResults[ 0 ]->toolName);
             $this->assertSame('tool-call-1', $messages[ 2 ]->toolResults[ 0 ]->toolCallResultId);
-            $this->assertSame('hello world', $messages[ 2 ]->toolResults[ 0 ]->result[ 'payload' ][ 'answer' ][ 'text' ]);
+            $this->assertSame('hello world', $messages[ 2 ]->toolResults[ 0 ]->result[ 'payload' ][ 'payload' ][ 'answer' ][ 'text' ]);
 
         });
     }
