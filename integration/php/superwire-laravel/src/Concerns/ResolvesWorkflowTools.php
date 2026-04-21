@@ -13,7 +13,7 @@ use Superwire\Laravel\Tools\WorkflowTool;
 trait ResolvesWorkflowTools
 {
     /**
-     * @return array<int, Tool|WorkflowTool|string>
+     * @return array<int, string|Tool|WorkflowTool>
      */
     private function resolveToolsForAgent(Agent $agent): array
     {
@@ -24,13 +24,16 @@ trait ResolvesWorkflowTools
         $availableToolsByName = [];
 
         foreach ($this->tools as $tool) {
+
             $toolName = $this->resolveConfiguredToolName($tool);
             $availableToolsByName[ $toolName ] = $tool;
+
         }
 
         $resolvedTools = [];
 
         foreach ($agent->tools as $toolDefinition) {
+
             $toolName = is_array($toolDefinition) ? ($toolDefinition[ 'name' ] ?? null) : null;
 
             if (!is_string($toolName) || !array_key_exists($toolName, $availableToolsByName)) {
@@ -38,6 +41,7 @@ trait ResolvesWorkflowTools
             }
 
             $resolvedTools[] = $availableToolsByName[ $toolName ];
+
         }
 
         return $resolvedTools;
@@ -53,6 +57,7 @@ trait ResolvesWorkflowTools
         $resolvedBindings = [];
 
         foreach ($agent->tools as $toolDefinition) {
+
             if (!is_array($toolDefinition)) {
                 continue;
             }
@@ -70,6 +75,7 @@ trait ResolvesWorkflowTools
             }
 
             $resolvedBindings[ $toolName ] = $this->resolveToolBindingValues($toolBind, $agentOutputs, $scope);
+
         }
 
         return $resolvedBindings;

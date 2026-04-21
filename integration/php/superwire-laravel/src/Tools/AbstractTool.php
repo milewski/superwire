@@ -50,16 +50,18 @@ abstract class AbstractTool implements WorkflowTool
             ->withoutErrorHandling();
 
         foreach ($this->agentInputSchemas() as $parameterSchema) {
-            $tool->withParameter(new RawSchema($parameterSchema['name'], $parameterSchema['schema']), $parameterSchema['required']);
+            $tool->withParameter(new RawSchema($parameterSchema[ 'name' ], $parameterSchema[ 'schema' ]), $parameterSchema[ 'required' ]);
         }
 
         return $tool->using(function (...$agentArguments) use ($boundArguments): string {
+
             $result = $this->execute(
                 agentInput: static::resolveAgentInput($agentArguments),
                 boundInput: static::resolveBoundInput($boundArguments),
             );
 
             return json_encode($result, JSON_THROW_ON_ERROR);
+
         });
     }
 
@@ -69,18 +71,23 @@ abstract class AbstractTool implements WorkflowTool
         $arguments = [];
 
         foreach ($executionMethod->getParameters() as $parameter) {
+
             $parameterClass = $this->parameterClassName($parameter);
 
             if ($parameterClass !== null && is_a($parameterClass, ToolInputData::class, true)) {
+
                 $arguments[] = $agentInput;
 
                 continue;
+
             }
 
             if ($parameterClass !== null && is_a($parameterClass, ToolBoundInputData::class, true)) {
+
                 $arguments[] = $boundInput;
 
                 continue;
+
             }
 
             throw new RuntimeException(sprintf(
@@ -90,6 +97,7 @@ abstract class AbstractTool implements WorkflowTool
                 ToolInputData::class,
                 ToolBoundInputData::class,
             ));
+
         }
 
         $result = $this->{$executionMethod->getName()}(...$arguments);
@@ -155,11 +163,13 @@ abstract class AbstractTool implements WorkflowTool
         $schemas = [];
 
         foreach ($dataClass->properties as $property) {
+
             $schemas[] = [
                 'name' => $property->name,
                 'schema' => $this->schemaForDataProperty($property),
                 'required' => !$property->hasDefaultValue && !$property->type->isNullable,
             ];
+
         }
 
         return $schemas;
@@ -174,7 +184,7 @@ abstract class AbstractTool implements WorkflowTool
         $description = $this->descriptionFromProperty($property->className, $property->name);
 
         if ($description !== null) {
-            $schema['description'] = $description;
+            $schema[ 'description' ] = $description;
         }
 
         return $schema;
@@ -190,10 +200,12 @@ abstract class AbstractTool implements WorkflowTool
         }
 
         if ($type->kind->isDataCollectable() && $type->iterableItemType !== null) {
+
             return [
                 'type' => 'array',
                 'items' => $this->schemaForIterableItemType($type->iterableItemType),
             ];
+
         }
 
         if ($type->acceptsType('string')) {
@@ -236,11 +248,13 @@ abstract class AbstractTool implements WorkflowTool
         $required = [];
 
         foreach ($dataClass->properties as $property) {
-            $properties[$property->name] = $this->schemaForDataProperty($property);
+
+            $properties[ $property->name ] = $this->schemaForDataProperty($property);
 
             if (!$property->hasDefaultValue && !$property->type->isNullable) {
                 $required[] = $property->name;
             }
+
         }
 
         return array_filter([
@@ -280,7 +294,7 @@ abstract class AbstractTool implements WorkflowTool
     private function schemaForEnum(string $enumClass): array
     {
         $enumValues = array_map(static fn (BackedEnum $case): string|int => $case->value, $enumClass::cases());
-        $schemaType = is_int($enumValues[0] ?? null) ? 'integer' : 'string';
+        $schemaType = is_int($enumValues[ 0 ] ?? null) ? 'integer' : 'string';
 
         return [
             'type' => $schemaType,
@@ -291,11 +305,13 @@ abstract class AbstractTool implements WorkflowTool
     private function normalizeExecutionResult(mixed $result): mixed
     {
         if ($result instanceof WorkflowToolResult) {
+
             if (!$result->isSuccess()) {
                 throw new RuntimeException((string) $result->reason());
             }
 
             return $result->payload ?? [];
+
         }
 
         if ($result instanceof BaseData && method_exists($result, 'toArray')) {
@@ -318,11 +334,13 @@ abstract class AbstractTool implements WorkflowTool
     private static function parameterClassMatchingInterface(string $interfaceName): ?string
     {
         foreach (static::executionMethodReflection()->getParameters() as $parameter) {
+
             $parameterClass = static::parameterClassFromReflection($parameter);
 
             if ($parameterClass !== null && is_a($parameterClass, $interfaceName, true)) {
                 return $parameterClass;
             }
+
         }
 
         return null;
@@ -378,11 +396,13 @@ abstract class AbstractTool implements WorkflowTool
         $reflectionClass = new ReflectionClass(static::class);
 
         foreach ($reflectionClass->getAttributes() as $attribute) {
+
             $instance = $attribute->newInstance();
 
             if (property_exists($instance, 'text') && is_string($instance->text)) {
                 return $instance->text;
             }
+
         }
 
         return null;
@@ -393,11 +413,13 @@ abstract class AbstractTool implements WorkflowTool
         $reflectionProperty = new ReflectionProperty($className, $propertyName);
 
         foreach ($reflectionProperty->getAttributes() as $attribute) {
+
             $instance = $attribute->newInstance();
 
             if (property_exists($instance, 'text') && is_string($instance->text)) {
                 return $instance->text;
             }
+
         }
 
         return null;

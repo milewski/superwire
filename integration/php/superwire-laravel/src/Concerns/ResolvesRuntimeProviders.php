@@ -56,8 +56,10 @@ trait ResolvesRuntimeProviders
         $normalizedConfig = $this->resolveConfigReferences($providerConfig);
 
         if (array_key_exists('endpoint', $normalizedConfig)) {
+
             $normalizedConfig[ 'url' ] = $normalizedConfig[ 'endpoint' ];
             unset($normalizedConfig[ 'endpoint' ]);
+
         }
 
         unset($normalizedConfig[ 'driver' ], $normalizedConfig[ 'models' ]);
@@ -112,7 +114,7 @@ trait ResolvesRuntimeProviders
 
     private function shouldStreamResponses(): bool
     {
-        return (bool)config('superwire.runtime.stream', true);
+        return (bool) config('superwire.runtime.stream', true);
     }
 
     /**

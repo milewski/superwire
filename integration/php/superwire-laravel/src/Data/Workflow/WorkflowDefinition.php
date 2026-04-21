@@ -37,8 +37,8 @@ final class WorkflowDefinition
         return new self(
             format: self::string($payload, 'format'),
             workflowPath: self::string($payload, 'workflow_path'),
-            input: isset($payload['input']) && is_array($payload['input']) ? WorkflowValueDefinition::fromArray($payload['input']) : null,
-            secrets: isset($payload['secrets']) && is_array($payload['secrets']) ? WorkflowValueDefinition::fromArray($payload['secrets']) : null,
+            input: isset($payload[ 'input' ]) && is_array($payload[ 'input' ]) ? WorkflowValueDefinition::fromArray($payload[ 'input' ]) : null,
+            secrets: isset($payload[ 'secrets' ]) && is_array($payload[ 'secrets' ]) ? WorkflowValueDefinition::fromArray($payload[ 'secrets' ]) : null,
             schemas: Schemas::fromArray(self::list($payload, 'schemas')),
             providers: Providers::fromArray(self::list($payload, 'providers')),
             agents: Agents::fromArray(self::list($payload, 'agents')),
@@ -64,11 +64,13 @@ final class WorkflowDefinition
     public function validateInputValues(array $values): void
     {
         if ($this->input === null) {
+
             if ($values !== []) {
                 throw new InvalidArgumentException('workflow does not define input');
             }
 
             return;
+
         }
 
         $this->input->validateValues($values, 'input');
@@ -80,11 +82,13 @@ final class WorkflowDefinition
     public function validateSecretValues(array $values): void
     {
         if ($this->secrets === null) {
+
             if ($values !== []) {
                 throw new InvalidArgumentException('workflow does not define secrets');
             }
 
             return;
+
         }
 
         $this->secrets->validateValues($values, 'secrets');

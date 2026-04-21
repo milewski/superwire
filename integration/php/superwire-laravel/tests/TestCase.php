@@ -30,7 +30,7 @@ abstract class TestCase extends OrchestraTestCase
 
     protected function getEnvironmentSetUp($app): void
     {
-        $app['config']->set('superwire.cli.path', realpath(__DIR__ . '/../../../../superwire-cli'));
+        $app[ 'config' ]->set('superwire.cli.path', realpath(__DIR__ . '/../../../../superwire-cli'));
     }
 
     protected function compileWorkflow(string $fixtureName): WorkflowDefinition
@@ -62,7 +62,7 @@ abstract class TestCase extends OrchestraTestCase
     {
         $provider = new ToolLoopProvider($resultsByPrompt);
 
-        app()->instance(PrismManager::class, new class(app(), $provider) extends PrismManager {
+        app()->instance(PrismManager::class, new class (app(), $provider) extends PrismManager {
             public function __construct($app, private readonly ToolLoopProvider $provider)
             {
                 parent::__construct($app);

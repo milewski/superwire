@@ -31,7 +31,7 @@ final class Output
         $fields = [];
 
         foreach ($fieldsPayload as $key => $value) {
-            $fields[$key] = OutputFieldReference::fromArray($value);
+            $fields[ $key ] = OutputFieldReference::fromArray($value);
         }
 
         return new self(

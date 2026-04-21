@@ -27,10 +27,12 @@ final class FinalizeErrorTool implements WorkflowTool
             ->withoutErrorHandling()
             ->withStringParameter('message', 'The reason the agent cannot complete successfully.')
             ->using(function (string $message): string {
+
                 $this->wasCalled = true;
                 $this->reason = $message;
 
                 return 'OK';
+
             });
     }
 

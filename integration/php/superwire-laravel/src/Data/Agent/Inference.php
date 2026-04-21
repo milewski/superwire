@@ -31,7 +31,7 @@ final class Inference
         return $this->definition !== null;
     }
 
-    public function temperature(): int | float | null
+    public function temperature(): int|float|null
     {
         $temperature = $this->definition[ 'temperature' ] ?? null;
 
@@ -53,7 +53,7 @@ final class Inference
         throw new InvalidArgumentException('agent inference max_tokens must be an int');
     }
 
-    public function topP(): int | float | null
+    public function topP(): int|float|null
     {
         $topP = $this->definition[ 'top_p' ] ?? null;
 

@@ -14,11 +14,6 @@ return [
     ],
 
     'prism' => [
-        'providers' => [
-            // 'openai' => [
-            //     'api_key' => env('OPENAI_API_KEY'),
-            //     'url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-            // ],
-        ],
+        'providers' => [],
     ],
 ];

@@ -146,6 +146,7 @@ trait ExecutesWorkflowAgents
             if ($finalizedExecutionResult !== null) {
                 return $finalizedExecutionResult;
             }
+
         }
 
         throw new RuntimeException(

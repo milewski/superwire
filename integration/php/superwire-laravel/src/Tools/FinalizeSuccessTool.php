@@ -36,10 +36,12 @@ class FinalizeSuccessTool implements WorkflowTool
             ->withoutErrorHandling()
             ->withParameter(new RawSchema('result', $this->outputSchema))
             ->using(function (mixed $result): string {
+
                 $this->wasCalled = true;
                 $this->result = $result;
 
                 return 'OK';
+
             });
     }
 
