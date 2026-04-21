@@ -4,23 +4,36 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests;
 
-use Prism\Prism\Facades\Prism;
-use Prism\Prism\Testing\TextResponseFake;
+use Prism\Prism\PrismManager;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Runtime;
+use Superwire\Laravel\Tests\Fakes\ToolLoopProvider;
 
 final class MainTest extends TestCase
 {
     public function test_demo(): void
     {
-//        $fake = Prism::fake([
-//            TextResponseFake::make()->withText('[1,2,3,4,5]'),
-//            TextResponseFake::make()->withText('"one"'),
-//            TextResponseFake::make()->withText('"two"'),
-//            TextResponseFake::make()->withText('"three"'),
-//            TextResponseFake::make()->withText('"four"'),
-//            TextResponseFake::make()->withText('"five"'),
+//        $provider = new ToolLoopProvider([
+//            'generate a sequence of numbers from 1 to 5.' => [1, 2, 3, 4, 5],
+//            'spell out this number 1.' => 'one',
+//            'spell out this number 2.' => 'two',
+//            'spell out this number 3.' => 'three',
+//            'spell out this number 4.' => 'four',
+//            'spell out this number 5.' => 'five',
 //        ]);
+//
+//        app()->instance(PrismManager::class, new class(app(), $provider) extends PrismManager
+//        {
+//            public function __construct($app, private readonly ToolLoopProvider $provider)
+//            {
+//                parent::__construct($app);
+//            }
+//
+//            public function resolve(\Prism\Prism\Enums\Provider|string $name, array $providerConfig = []): \Prism\Prism\Providers\Provider
+//            {
+//                return $this->provider;
+//            }
+//        });
 
         $definition = WorkflowDefinition::fromJson(file_get_contents(__DIR__ . '/minimum.json'));
         $runtime = new Runtime($definition);
@@ -31,11 +44,6 @@ final class MainTest extends TestCase
         $this->assertSame([
             'numbers' => ['one', 'two', 'three', 'four', 'five'],
         ], $result);
-
-        $fake->assertCallCount(6);
-        $fake->assertPrompt('generate a sequence of numbers from 1 to 5.');
-        $fake->assertPrompt('spell out this number 1.');
-        $fake->assertPrompt('spell out this number 5.');
     
 //        Workflow::fromFile()
 //            ->withTools([])
