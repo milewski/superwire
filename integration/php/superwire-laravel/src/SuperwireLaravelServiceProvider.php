@@ -10,11 +10,25 @@ final class SuperwireLaravelServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->mergeConfigFrom(__DIR__ . '/../config/superwire.php', 'superwire');
 
+        $this->app->singleton(WorkflowCompiler::class, function (): WorkflowCompiler {
+            return new WorkflowCompiler((string) config('superwire.cli.path'));
+        });
+
+        config()->set(
+            'prism.providers',
+            array_replace_recursive(
+                config('prism.providers', []),
+                config('superwire.prism.providers', []),
+            ),
+        );
     }
 
     public function boot(): void
     {
-
+        $this->publishes([
+            __DIR__ . '/../config/superwire.php' => config_path('superwire.php'),
+        ], 'superwire-config');
     }
 }

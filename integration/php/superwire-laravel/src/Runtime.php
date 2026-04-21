@@ -8,10 +8,10 @@ use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Container\CircularDependencyException;
 use JsonException;
 use Prism\Prism\Enums\Provider;
-use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Providers\Provider as PrismProvider;
 use Prism\Prism\PrismManager;
 use Prism\Prism\Text\PendingRequest;
+use Prism\Prism\Tool;
 use RuntimeException;
 use Spatie\Fork\Fork;
 use Superwire\Laravel\AgentExecutionResult;
@@ -26,14 +26,12 @@ use Superwire\Laravel\Tools\FinalizeSuccessTool;
 
 final readonly class Runtime
 {
-    private const int MAX_AGENT_REQUEST_ATTEMPTS = 10;
-    private const int MAX_AGENT_TOOL_STEPS = 20;
-
     public function __construct(
         private WorkflowDefinition $definition,
         private PromptParser $promptParser = new PromptParser(),
         private array $inputValues = [],
         private array $secretValues = [],
+        private array $tools = [],
     )
     {
     }
@@ -43,7 +41,7 @@ final readonly class Runtime
      */
     public function withInputs(array $inputValues): self
     {
-        return new self($this->definition, $this->promptParser, $inputValues, $this->secretValues);
+        return new self($this->definition, $this->promptParser, $inputValues, $this->secretValues, $this->tools);
     }
 
     /**
@@ -51,7 +49,15 @@ final readonly class Runtime
      */
     public function withSecrets(array $secretValues): self
     {
-        return new self($this->definition, $this->promptParser, $this->inputValues, $secretValues);
+        return new self($this->definition, $this->promptParser, $this->inputValues, $secretValues, $this->tools);
+    }
+
+    /**
+     * @param array<int, Tool> $tools
+     */
+    public function withTools(array $tools): self
+    {
+        return new self($this->definition, $this->promptParser, $this->inputValues, $this->secretValues, $tools);
     }
 
     public function run(): WorkflowExecutionResult
@@ -108,7 +114,7 @@ final readonly class Runtime
         $resolvedResults = [];
 
         foreach (array_values(array_keys($agents)) as $index => $agentName) {
-            $resolvedResults[ $agentName ] = $batchResults[ $index ];
+            $resolvedResults[ $agentName ] = $this->normalizeExecutionResult($batchResults[$index], sprintf('batch agent %s', $agentName));
         }
 
         return $resolvedResults;
@@ -209,7 +215,7 @@ final readonly class Runtime
             ksort($results);
 
             $iterationResults = array_map(
-                callback: $this->normalizeExecutionResult(...),
+                callback: fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
                 array: array_values($results),
             );
 
@@ -242,11 +248,17 @@ final readonly class Runtime
         }
 
         return new AgentExecutionResult(
-            output: array_map(
-                callback: fn (AgentExecutionResult $iterationResult): mixed => $iterationResult->output,
-                array: array_map($this->normalizeExecutionResult(...), $results),
+                output: array_map(
+                    callback: fn (AgentExecutionResult $iterationResult): mixed => $iterationResult->output,
+                    array: array_map(
+                        fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
+                        $results,
+                    ),
+                ),
+            iterations: array_map(
+                fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
+                $results,
             ),
-            iterations: array_map($this->normalizeExecutionResult(...), $results),
         );
     }
 
@@ -305,12 +317,12 @@ final readonly class Runtime
         $conversationMessages = [];
         $debugMessages = [$this->userMessage($prompt)];
 
-        for ($attemptNumber = 1; $attemptNumber <= self::MAX_AGENT_REQUEST_ATTEMPTS; $attemptNumber++) {
+        for ($attemptNumber = 1; $attemptNumber <= $this->maxAgentRequestAttempts(); $attemptNumber++) {
 
-            $request = $this->agentRequest($agent)
+                $request = $this->agentRequest($agent)
                 ->withSystemPrompt($this->finalizationPrompt($outputSchema))
-                ->withTools([ $finalizeSuccessTool, $finalizeErrorTool ])
-                ->withMaxSteps(self::MAX_AGENT_TOOL_STEPS);
+                ->withTools([...$this->tools, $finalizeSuccessTool, $finalizeErrorTool])
+                ->withMaxSteps($this->maxAgentToolSteps());
 
             if ($conversationMessages === []) {
                 $request->withPrompt($prompt);
@@ -345,7 +357,7 @@ final readonly class Runtime
         }
 
         throw new RuntimeException(
-            message: sprintf('Agent %s did not call finalize_success or finalize_error after %d attempts.', $agent->name, self::MAX_AGENT_REQUEST_ATTEMPTS),
+            message: sprintf('Agent %s did not call finalize_success or finalize_error after %d attempts.', $agent->name, $this->maxAgentRequestAttempts()),
         );
     }
 
@@ -422,13 +434,28 @@ final readonly class Runtime
         return $this->promptParser->resolveReference($reference->ref, $agentOutputs);
     }
 
-    private function normalizeExecutionResult(mixed $result): AgentExecutionResult
+    private function normalizeExecutionResult(mixed $result, string $context): AgentExecutionResult
     {
         if ($result instanceof AgentExecutionResult) {
             return $result;
         }
 
-        return new AgentExecutionResult(output: $result);
+        throw new RuntimeException(sprintf(
+            'Invalid execution result returned for %s. Expected %s, received %s.',
+            $context,
+            AgentExecutionResult::class,
+            get_debug_type($result),
+        ));
+    }
+
+    private function maxAgentRequestAttempts(): int
+    {
+        return (int) config('superwire.runtime.max_agent_request_attempts', 10);
+    }
+
+    private function maxAgentToolSteps(): int
+    {
+        return (int) config('superwire.runtime.max_agent_tool_steps', 20);
     }
 
     /**
