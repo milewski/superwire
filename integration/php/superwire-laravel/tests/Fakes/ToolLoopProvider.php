@@ -4,9 +4,17 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests\Fakes;
 
+use Generator;
 use Illuminate\Support\Collection;
 use Prism\Prism\Enums\FinishReason;
 use Prism\Prism\Providers\Provider;
+use Prism\Prism\Streaming\EventID;
+use Prism\Prism\Streaming\Events\StepFinishEvent;
+use Prism\Prism\Streaming\Events\StepStartEvent;
+use Prism\Prism\Streaming\Events\StreamEndEvent;
+use Prism\Prism\Streaming\Events\StreamStartEvent;
+use Prism\Prism\Streaming\Events\ToolCallEvent;
+use Prism\Prism\Streaming\Events\ToolResultEvent;
 use Prism\Prism\Testing\TextResponseFake;
 use Prism\Prism\Text\Request as TextRequest;
 use Prism\Prism\Text\Step;
@@ -28,6 +36,16 @@ final class ToolLoopProvider extends Provider
     private array $requests = [];
 
     /**
+     * @var array<int, TextRequest>
+     */
+    private array $textRequests = [];
+
+    /**
+     * @var array<int, TextRequest>
+     */
+    private array $streamRequests = [];
+
+    /**
      * @var array<int, array<string, mixed>>
      */
     private array $providerConfigs = [];
@@ -44,19 +62,69 @@ final class ToolLoopProvider extends Provider
     public function text(TextRequest $request): TextResponseFake
     {
         $this->requests[] = $request;
+        $this->textRequests[] = $request;
 
-        $prompt = $request->prompt();
+        return $this->responseForRequest($request);
+    }
 
-        if ($prompt === null || !array_key_exists($prompt, $this->resultsByPrompt)) {
-            throw new RuntimeException(sprintf('No fake tool-loop response registered for prompt: %s', $prompt ?? 'null'));
+    /**
+     * @return Generator<\Prism\Prism\Streaming\Events\StreamEvent>
+     */
+    public function stream(TextRequest $request): Generator
+    {
+        $this->requests[] = $request;
+        $this->streamRequests[] = $request;
+
+        $response = $this->responseForRequest($request);
+        $messageId = EventID::generate();
+
+        yield new StreamStartEvent(
+            id: EventID::generate(),
+            timestamp: time(),
+            model: $request->model(),
+            provider: 'fake',
+        );
+
+        yield new StepStartEvent(
+            id: EventID::generate(),
+            timestamp: time(),
+        );
+
+        foreach ($response->toolCalls as $toolCall) {
+            yield new ToolCallEvent(
+                id: EventID::generate(),
+                timestamp: time(),
+                toolCall: $toolCall,
+                messageId: $messageId,
+            );
         }
 
-        $result = $this->resultsByPrompt[ $prompt ];
-
-        if ($result instanceof Throwable) {
-            throw $result;
+        foreach ($response->toolResults as $toolResult) {
+            yield new ToolResultEvent(
+                id: EventID::generate(),
+                timestamp: time(),
+                toolResult: $toolResult,
+                messageId: $messageId,
+                success: true,
+            );
         }
 
+        yield new StepFinishEvent(
+            id: EventID::generate(),
+            timestamp: time(),
+        );
+
+        yield new StreamEndEvent(
+            id: EventID::generate(),
+            timestamp: time(),
+            finishReason: $response->finishReason,
+            usage: $response->usage,
+        );
+    }
+
+    private function responseForRequest(TextRequest $request): TextResponseFake
+    {
+        $result = $this->resultForPrompt($request->prompt());
         $finalizeTool = $this->resolveTool('finalize_success', $request->tools());
 
         $toolCall = new ToolCall(
@@ -103,6 +171,21 @@ final class ToolLoopProvider extends Provider
             ]));
     }
 
+    private function resultForPrompt(?string $prompt): mixed
+    {
+        if ($prompt === null || !array_key_exists($prompt, $this->resultsByPrompt)) {
+            throw new RuntimeException(sprintf('No fake tool-loop response registered for prompt: %s', $prompt ?? 'null'));
+        }
+
+        $result = $this->resultsByPrompt[ $prompt ];
+
+        if ($result instanceof Throwable) {
+            throw $result;
+        }
+
+        return $result;
+    }
+
     /**
      * @param array<string, mixed> $providerConfig
      */
@@ -117,6 +200,22 @@ final class ToolLoopProvider extends Provider
     public function requests(): array
     {
         return $this->requests;
+    }
+
+    /**
+     * @return array<int, TextRequest>
+     */
+    public function textRequests(): array
+    {
+        return $this->textRequests;
+    }
+
+    /**
+     * @return array<int, TextRequest>
+     */
+    public function streamRequests(): array
+    {
+        return $this->streamRequests;
     }
 
     /**

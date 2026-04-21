@@ -43,7 +43,7 @@ final class MainTest extends TestCase
 
     public function test_can_run_compiled_greeting_workflow(): void
     {
-        $this->fakeToolLoopProvider([
+        $provider = $this->fakeToolLoopProvider([
             'Write a short welcome message.' => 'Welcome aboard!',
         ]);
 
@@ -56,6 +56,8 @@ final class MainTest extends TestCase
         $this->assertSame('assistant', $result->agents[ 'greeting' ]->messages[ 1 ][ 'type' ]);
         $this->assertSame('tool_result', $result->agents[ 'greeting' ]->messages[ 2 ][ 'type' ]);
         $this->assertSame('finalize_success', $result->agents[ 'greeting' ]->messages[ 2 ][ 'tool_results' ][ 0 ][ 'tool_name' ]);
+        $this->assertCount(0, $provider->textRequests());
+        $this->assertCount(1, $provider->streamRequests());
     }
 
     public function test_can_run_inputs_secrets_and_for_each_workflow(): void
@@ -119,6 +121,21 @@ final class MainTest extends TestCase
         $this->assertSame(0.2, $provider->requests()[ 0 ]->temperature());
         $this->assertSame(12000, $provider->requests()[ 0 ]->maxTokens());
         $this->assertSame(0.9, $provider->requests()[ 0 ]->topP());
+    }
+
+    public function test_can_disable_streaming_globally(): void
+    {
+        config()->set('superwire.runtime.stream', false);
+
+        $provider = $this->fakeToolLoopProvider([
+            'Write a short welcome message.' => 'Welcome aboard!',
+        ]);
+
+        $result = Workflow::fromFile(__DIR__ . '/stubs/greeting.wire')->run();
+
+        $this->assertSame([ 'greeting' => 'Welcome aboard!' ], $result->output);
+        $this->assertCount(1, $provider->textRequests());
+        $this->assertCount(0, $provider->streamRequests());
     }
 
     public function test_bubbles_real_exception_for_forked_iterations(): void
