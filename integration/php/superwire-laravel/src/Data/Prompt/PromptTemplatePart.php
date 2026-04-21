@@ -21,13 +21,13 @@ final class PromptTemplatePart
             return new self($value, null);
         }
 
-        if (! is_array($value) || ! isset($value['$expr']) || ! is_array($value['$expr'])) {
+        if (!is_array($value) || !isset($value[ '$expr' ]) || !is_array($value[ '$expr' ])) {
             throw new InvalidArgumentException('prompt template part must be a string or $expr object');
         }
 
         return new self(
             text: null,
-            expression: PromptExpression::fromArray($value['$expr']),
+            expression: PromptExpression::fromArray($value[ '$expr' ]),
         );
     }
 

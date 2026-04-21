@@ -49,7 +49,7 @@ final readonly class WorkflowToolResult implements JsonSerializable
 
     public function reason(): ?string
     {
-        return is_array($this->error) ? ($this->error['reason'] ?? null) : null;
+        return is_array($this->error) ? ($this->error[ 'reason' ] ?? null) : null;
     }
 
     public function jsonSerialize(): array

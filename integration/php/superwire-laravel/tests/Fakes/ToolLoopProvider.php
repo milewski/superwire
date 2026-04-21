@@ -91,15 +91,18 @@ final class ToolLoopProvider extends Provider
         );
 
         foreach ($response->toolCalls as $toolCall) {
+
             yield new ToolCallEvent(
                 id: EventID::generate(),
                 timestamp: time(),
                 toolCall: $toolCall,
                 messageId: $messageId,
             );
+
         }
 
         foreach ($response->toolResults as $toolResult) {
+
             yield new ToolResultEvent(
                 id: EventID::generate(),
                 timestamp: time(),
@@ -107,6 +110,7 @@ final class ToolLoopProvider extends Provider
                 messageId: $messageId,
                 success: true,
             );
+
         }
 
         yield new StepFinishEvent(
@@ -319,9 +323,11 @@ final class ToolLoopProvider extends Provider
     private function resolveTool(string $name, array $tools): Tool
     {
         foreach ($tools as $tool) {
+
             if ($tool->name() === $name) {
                 return $tool;
             }
+
         }
 
         throw new RuntimeException(sprintf('Tool not found in fake provider: %s', $name));

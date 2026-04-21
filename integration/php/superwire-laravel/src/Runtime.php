@@ -64,7 +64,7 @@ final readonly class Runtime
     }
 
     /**
-     * @param array<int, Tool|WorkflowTool|string> $tools
+     * @param array<int, string|Tool|WorkflowTool> $tools
      */
     public function withTools(array $tools): self
     {

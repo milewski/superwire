@@ -22,7 +22,7 @@ final class AgentToolset
     }
 
     /**
-     * @param array<int, Tool|WorkflowTool|string> $tools
+     * @param array<int, string|Tool|WorkflowTool> $tools
      * @param array<string, mixed> $outputSchema
      * @param array<string, array<string, mixed>> $toolBindings
      */
@@ -31,11 +31,13 @@ final class AgentToolset
         $normalizedTools = [];
 
         foreach ($tools as $tool) {
+
             $workflowTool = self::normalizeTool($tool);
             $normalizedTools[] = [
                 'tool' => $workflowTool,
                 'bound_arguments' => $toolBindings[ $workflowTool->name() ] ?? [],
             ];
+
         }
 
         return new self(
@@ -74,9 +76,11 @@ final class AgentToolset
     public function finalizeExecutionResult(string $agentName, array $messages): ?AgentExecutionResult
     {
         if ($this->finalizeErrorTool->wasCalled()) {
+
             throw new RuntimeException(
                 message: sprintf('Agent %s failed: %s', $agentName, $this->finalizeErrorTool->reason()),
             );
+
         }
 
         if (!$this->finalizeSuccessTool->wasCalled()) {

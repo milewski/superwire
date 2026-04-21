@@ -13,7 +13,7 @@ final readonly class Workflow
     /**
      * @param array<string, mixed> $inputValues
      * @param array<string, mixed> $secretValues
-     * @param array<int, Tool|WorkflowTool|string> $tools
+     * @param array<int, string|Tool|WorkflowTool> $tools
      */
     private function __construct(
         private string $workflowPath,
@@ -47,7 +47,7 @@ final readonly class Workflow
     }
 
     /**
-     * @param array<int, Tool|WorkflowTool|string> $tools
+     * @param array<int, string|Tool|WorkflowTool> $tools
      */
     public function withTools(array $tools): self
     {
