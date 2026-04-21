@@ -4,6 +4,7 @@
 // Provider defines where models come from.
 provider ollama {
     driver: "ollama"
+    endpoint: "test"
     models: ["qwen3.5:32b"]
 }
 
