@@ -61,7 +61,12 @@ trait HandlesForkedWorkflowExecution
         $tasks = [];
 
         foreach ($agents as $agent) {
-            $tasks[] = fn (): ForkExecutionFailure|AgentExecutionResult => $this->runAgentInFork($agent, $agentOutputs);
+
+            $tasks[] = static fn (): ForkExecutionFailure|AgentExecutionResult => $this->runAgentInFork(
+                agent: $agent,
+                agentOutputs: $agentOutputs,
+            );
+
         }
 
         return $tasks;
