@@ -6,7 +6,7 @@ namespace Superwire\Laravel\Data\Workflow;
 
 use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
 
-final class AgentData
+final class Agent
 {
     use ValidatesPayload;
 

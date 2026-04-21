@@ -18,7 +18,7 @@ abstract class TestCase extends OrchestraTestCase
     protected function getPackageProviders($app): array
     {
         return [
-            //             PrismServiceProvider::class,
+                         PrismServiceProvider::class,
             //             LaravelDataServiceProvider::class,
             SuperwireLaravelServiceProvider::class,
         ];
