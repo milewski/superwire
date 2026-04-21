@@ -50,6 +50,11 @@ final class MainTest extends TestCase
 
         $this->assertSame([ 'greeting' => 'Welcome aboard!' ], $result->output);
         $this->assertSame('Welcome aboard!', $result->agents[ 'greeting' ]->output);
+        $this->assertCount(3, $result->agents[ 'greeting' ]->messages);
+        $this->assertSame('user', $result->agents[ 'greeting' ]->messages[ 0 ][ 'type' ]);
+        $this->assertSame('assistant', $result->agents[ 'greeting' ]->messages[ 1 ][ 'type' ]);
+        $this->assertSame('tool_result', $result->agents[ 'greeting' ]->messages[ 2 ][ 'type' ]);
+        $this->assertSame('finalize_success', $result->agents[ 'greeting' ]->messages[ 2 ][ 'tool_results' ][ 0 ][ 'tool_name' ]);
     }
 
     public function test_can_run_inputs_secrets_and_for_each_workflow(): void
