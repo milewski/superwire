@@ -8,9 +8,8 @@ use Illuminate\Support\Str;
 use Prism\Prism\Schema\RawSchema;
 use Prism\Prism\Tool;
 use RuntimeException;
-use Spatie\LaravelData\Contracts\BaseData;
-use Superwire\Laravel\Contracts\ToolBoundInputData;
-use Superwire\Laravel\Contracts\ToolInputData;
+use Superwire\Laravel\Contracts\BoundInput;
+use Superwire\Laravel\Contracts\ToolInput;
 use Superwire\Laravel\Support\JsonSchemaFactory;
 use Superwire\Laravel\Tools\Concerns\InfersToolInputSchemas;
 use Superwire\Laravel\Tools\Concerns\ReflectsToolSignature;
@@ -68,16 +67,16 @@ abstract class AbstractTool implements WorkflowTool
         });
     }
 
-    public function execute(mixed $agentInput = null, mixed $boundInput = null): mixed
+    public function execute(mixed $agentInput = null, mixed $boundInput = null): array
     {
-        $executionMethod = $this->executionMethod();
+        $executionMethod = static::executionMethodReflection();
         $arguments = [];
 
         foreach ($executionMethod->getParameters() as $parameter) {
 
-            $parameterClass = $this->parameterClassName($parameter);
+            $parameterClass = static::parameterClassFromReflection($parameter);
 
-            if ($parameterClass !== null && is_a($parameterClass, ToolInputData::class, true)) {
+            if ($parameterClass !== null && is_a($parameterClass, ToolInput::class, true)) {
 
                 $arguments[] = $agentInput;
 
@@ -85,7 +84,7 @@ abstract class AbstractTool implements WorkflowTool
 
             }
 
-            if ($parameterClass !== null && is_a($parameterClass, ToolBoundInputData::class, true)) {
+            if ($parameterClass !== null && is_a($parameterClass, BoundInput::class, true)) {
 
                 $arguments[] = $boundInput;
 
@@ -97,41 +96,16 @@ abstract class AbstractTool implements WorkflowTool
                 'Tool `%s` has unsupported execution parameter `%s`. Use %s or %s implementations only.',
                 $this->name(),
                 $parameter->getName(),
-                ToolInputData::class,
-                ToolBoundInputData::class,
+                ToolInput::class,
+                BoundInput::class,
             ));
 
         }
 
         $result = $this->{$executionMethod->getName()}(...$arguments);
 
-        return $this->normalizeExecutionResult($result);
-    }
-
-    protected function success(array $payload): WorkflowToolResult
-    {
-        return WorkflowToolResult::success($payload);
-    }
-
-    protected function fail(string $reason, array $context = []): WorkflowToolResult
-    {
-        return WorkflowToolResult::fail($reason, $context);
-    }
-
-    private function normalizeExecutionResult(mixed $result): mixed
-    {
-        if ($result instanceof WorkflowToolResult) {
-
-            if (!$result->isSuccess()) {
-                throw new RuntimeException((string) $result->reason());
-            }
-
-            return $result->payload ?? [];
-
-        }
-
-        if ($result instanceof BaseData && method_exists($result, 'toArray')) {
-            return $result->toArray();
+        if (!is_array($result)) {
+            throw new RuntimeException(sprintf('Tool `%s` must return an array from handle().', static::class));
         }
 
         return $result;

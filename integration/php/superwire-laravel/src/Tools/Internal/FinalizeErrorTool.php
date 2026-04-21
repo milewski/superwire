@@ -2,9 +2,10 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Tools;
+namespace Superwire\Laravel\Tools\Internal;
 
 use Prism\Prism\Tool;
+use Superwire\Laravel\Tools\WorkflowTool;
 
 final class FinalizeErrorTool implements WorkflowTool
 {

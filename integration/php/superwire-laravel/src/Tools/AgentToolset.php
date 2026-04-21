@@ -4,11 +4,14 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tools;
 
+use InvalidArgumentException;
 use Prism\Prism\Tool;
 use RuntimeException;
 use Superwire\Laravel\AgentExecutionResult;
+use Superwire\Laravel\Tools\Internal\FinalizeErrorTool;
+use Superwire\Laravel\Tools\Internal\FinalizeSuccessTool;
 
-final class AgentToolset
+final readonly class AgentToolset
 {
     /**
      * @param array<int, array{tool: WorkflowTool, bound_arguments: array<string, mixed>}> $userTools
@@ -22,7 +25,7 @@ final class AgentToolset
     }
 
     /**
-     * @param array<int, string|Tool|WorkflowTool> $tools
+     * @param array<int, string|WorkflowTool> $tools
      * @param array<string, mixed> $outputSchema
      * @param array<string, array<string, mixed>> $toolBindings
      */
@@ -93,7 +96,7 @@ final class AgentToolset
         );
     }
 
-    private static function normalizeTool(Tool|WorkflowTool|string $tool): WorkflowTool
+    private static function normalizeTool(WorkflowTool|string $tool): WorkflowTool
     {
         if (is_string($tool)) {
             $tool = app($tool);
@@ -103,6 +106,10 @@ final class AgentToolset
             return $tool;
         }
 
-        return new PrismWorkflowTool($tool);
+        throw new InvalidArgumentException(sprintf(
+            'Configured tool `%s` must implement %s.',
+            is_object($tool) ? $tool::class : gettype($tool),
+            WorkflowTool::class,
+        ));
     }
 }
