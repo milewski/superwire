@@ -2,10 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Tools;
+namespace Superwire\Laravel\Tools\Internal;
 
 use Prism\Prism\Schema\RawSchema;
 use Prism\Prism\Tool;
+use Superwire\Laravel\Tools\WorkflowTool;
 
 class FinalizeSuccessTool implements WorkflowTool
 {

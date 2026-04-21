@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
-use Prism\Prism\Tool;
 use Spatie\LaravelData\Data;
 use Superwire\Laravel\Concerns\ExecutesWorkflowAgents;
 use Superwire\Laravel\Concerns\HandlesForkedWorkflowExecution;
@@ -64,7 +63,7 @@ final readonly class Runtime
     }
 
     /**
-     * @param array<int, string|Tool|WorkflowTool> $tools
+     * @param array<int, string|WorkflowTool> $tools
      */
     public function withTools(array $tools): self
     {

@@ -10,8 +10,8 @@ use ReflectionNamedType;
 use ReflectionParameter;
 use RuntimeException;
 use Spatie\LaravelData\Contracts\BaseData;
-use Superwire\Laravel\Contracts\ToolBoundInputData;
-use Superwire\Laravel\Contracts\ToolInputData;
+use Superwire\Laravel\Contracts\BoundInput;
+use Superwire\Laravel\Contracts\ToolInput;
 
 trait ReflectsToolSignature
 {
@@ -37,25 +37,14 @@ trait ReflectsToolSignature
         return static::resolveDataObject($boundInputClass, $input);
     }
 
-    public static function outputClass(): ?string
-    {
-        $returnType = static::executionMethodReflection()->getReturnType();
-
-        if (!$returnType instanceof ReflectionNamedType || $returnType->isBuiltin()) {
-            return null;
-        }
-
-        return $returnType->getName();
-    }
-
     protected static function agentInputClass(): ?string
     {
-        return static::parameterClassMatchingInterface(ToolInputData::class);
+        return static::parameterClassMatchingInterface(ToolInput::class);
     }
 
     protected static function boundInputClass(): ?string
     {
-        return static::parameterClassMatchingInterface(ToolBoundInputData::class);
+        return static::parameterClassMatchingInterface(BoundInput::class);
     }
 
     protected static function parameterClassMatchingInterface(string $interfaceName): ?string
@@ -77,25 +66,11 @@ trait ReflectsToolSignature
     {
         $reflectionClass = new ReflectionClass(static::class);
 
-        if ($reflectionClass->hasMethod('invoke') && $reflectionClass->getMethod('invoke')->getDeclaringClass()->getName() !== self::class) {
-            return $reflectionClass->getMethod('invoke');
-        }
-
         if ($reflectionClass->hasMethod('handle') && $reflectionClass->getMethod('handle')->getDeclaringClass()->getName() !== self::class) {
             return $reflectionClass->getMethod('handle');
         }
 
-        throw new RuntimeException(sprintf('Tool `%s` must define `invoke()` or `handle()`.', static::class));
-    }
-
-    protected function executionMethod(): ReflectionMethod
-    {
-        return static::executionMethodReflection();
-    }
-
-    protected function parameterClassName(ReflectionParameter $parameter): ?string
-    {
-        return static::parameterClassFromReflection($parameter);
+        throw new RuntimeException(sprintf('Tool `%s` must define `handle()`.', static::class));
     }
 
     protected static function parameterClassFromReflection(ReflectionParameter $parameter): ?string

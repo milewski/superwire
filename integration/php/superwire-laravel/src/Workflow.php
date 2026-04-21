@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
-use Prism\Prism\Tool;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Tools\WorkflowTool;
 
@@ -13,7 +12,7 @@ final readonly class Workflow
     /**
      * @param array<string, mixed> $inputValues
      * @param array<string, mixed> $secretValues
-     * @param array<int, string|Tool|WorkflowTool> $tools
+     * @param array<int, string|WorkflowTool> $tools
      */
     private function __construct(
         private string $workflowPath,
@@ -47,7 +46,7 @@ final readonly class Workflow
     }
 
     /**
-     * @param array<int, string|Tool|WorkflowTool> $tools
+     * @param array<int, string|WorkflowTool> $tools
      */
     public function withTools(array $tools): self
     {

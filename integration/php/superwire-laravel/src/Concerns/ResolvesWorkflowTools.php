@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Concerns;
 
-use Prism\Prism\Tool;
 use RuntimeException;
 use Superwire\Laravel\AgentExecutionResult;
 use Superwire\Laravel\Data\Agent\Agent;
@@ -13,7 +12,7 @@ use Superwire\Laravel\Tools\WorkflowTool;
 trait ResolvesWorkflowTools
 {
     /**
-     * @return array<int, string|Tool|WorkflowTool>
+     * @return array<int, string|WorkflowTool>
      */
     private function resolveToolsForAgent(Agent $agent): array
     {
@@ -126,10 +125,6 @@ trait ResolvesWorkflowTools
         }
 
         if ($tool instanceof WorkflowTool) {
-            return $tool->name();
-        }
-
-        if ($tool instanceof Tool) {
             return $tool->name();
         }
 
