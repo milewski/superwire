@@ -18,6 +18,7 @@ use Prism\Prism\ValueObjects\ToolCall;
 use Prism\Prism\ValueObjects\ToolResult;
 use Prism\Prism\ValueObjects\Usage;
 use RuntimeException;
+use Throwable;
 
 final class ToolLoopProvider extends Provider
 {
@@ -51,6 +52,11 @@ final class ToolLoopProvider extends Provider
         }
 
         $result = $this->resultsByPrompt[ $prompt ];
+
+        if ($result instanceof Throwable) {
+            throw $result;
+        }
+
         $finalizeTool = $this->resolveTool('finalize_success', $request->tools());
 
         $toolCall = new ToolCall(

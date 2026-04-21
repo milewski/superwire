@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Tests;
 
 use InvalidArgumentException;
+use RuntimeException;
 use Superwire\Laravel\Workflow;
 
 final class MainTest extends TestCase
@@ -118,6 +119,24 @@ final class MainTest extends TestCase
         $this->assertSame(0.2, $provider->requests()[ 0 ]->temperature());
         $this->assertSame(12000, $provider->requests()[ 0 ]->maxTokens());
         $this->assertSame(0.9, $provider->requests()[ 0 ]->topP());
+    }
+
+    public function test_bubbles_real_exception_for_forked_iterations(): void
+    {
+        $this->fakeToolLoopProvider([
+            'generate a sequence of numbers from 1 to 3.' => [ 1, 2, 3 ],
+            'spell out this number: 1.' => 'one',
+            'spell out this number: 2.' => new RuntimeException('OpenAI: unhandled finish reason "unknown" (status: n/a, type: n/a)'),
+            'spell out this number: 3.' => 'three',
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Execution failed for iteration agent counter: RuntimeException: OpenAI: unhandled finish reason "unknown" (status: n/a, type: n/a)');
+
+        Workflow::fromFile(__DIR__ . '/stubs/inputs_secrets_loop.wire')
+            ->withInputs([ 'min' => 1, 'max' => 3 ])
+            ->withSecrets([ 'api_key' => 'secret-token', 'model' => 'secret-model' ])
+            ->run();
     }
 
     public function test_validates_required_input_values(): void
