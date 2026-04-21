@@ -1,0 +1,28 @@
+provider openai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: [secrets.model]
+}
+
+secrets {
+    api_key: string
+    model: string
+    endpoint: string
+}
+
+agent counter {
+    model: openai(secrets.model)
+    prompt: "List out numbers from 1 to 5"
+    output: [number]
+}
+
+agent speller for number in agent.counter {
+    model: openai(secrets.model)
+    prompt: "Please speel out the number: {{ number }}."
+    output: string
+}
+
+output {
+    numbers: agent.speller
+}

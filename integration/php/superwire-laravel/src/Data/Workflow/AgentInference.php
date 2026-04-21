@@ -30,4 +30,37 @@ final class AgentInference
     {
         return $this->definition !== null;
     }
+
+    public function temperature(): int|float|null
+    {
+        $temperature = $this->definition['temperature'] ?? null;
+
+        if ($temperature === null || is_int($temperature) || is_float($temperature)) {
+            return $temperature;
+        }
+
+        throw new InvalidArgumentException('agent inference temperature must be a number');
+    }
+
+    public function maxTokens(): ?int
+    {
+        $maxTokens = $this->definition['max_tokens'] ?? null;
+
+        if ($maxTokens === null || is_int($maxTokens)) {
+            return $maxTokens;
+        }
+
+        throw new InvalidArgumentException('agent inference max_tokens must be an int');
+    }
+
+    public function topP(): int|float|null
+    {
+        $topP = $this->definition['top_p'] ?? null;
+
+        if ($topP === null || is_int($topP) || is_float($topP)) {
+            return $topP;
+        }
+
+        throw new InvalidArgumentException('agent inference top_p must be a number');
+    }
 }

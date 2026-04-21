@@ -9,17 +9,27 @@ use InvalidArgumentException;
 final class AgentModel
 {
     public function __construct(
-        public readonly string $name,
+        public readonly ?string $name,
+        public readonly ?string $reference,
     )
     {
     }
 
     public static function fromValue(mixed $value): self
     {
-        if (! is_string($value)) {
-            throw new InvalidArgumentException('agent model must be a string');
+        if (is_string($value)) {
+            return new self($value, null);
         }
 
-        return new self($value);
+        if (is_array($value) && isset($value[ '$ref' ]) && is_string($value[ '$ref' ])) {
+            return new self(null, $value[ '$ref' ]);
+        }
+
+        throw new InvalidArgumentException('agent model must be a string or $ref object');
+    }
+
+    public function isReference(): bool
+    {
+        return $this->reference !== null;
     }
 }

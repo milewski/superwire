@@ -1,2 +1,2 @@
 generate:
-    ./superwire-cli workflow to-json ./tests/minimum.wire > ./tests/minimum.json
+    ./superwire-cli workflow to-json ./tests/stubs/dynamic_model.wire > ./tests/minimum.json

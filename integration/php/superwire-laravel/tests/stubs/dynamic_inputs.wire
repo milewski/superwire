@@ -1,0 +1,31 @@
+// This file shows the smallest useful workflow shape:
+// provider -> agent -> output
+
+// Provider defines where models come from.
+provider openai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: [secrets.model]
+}
+
+secrets {
+   model: string
+   api_key: string
+   endpoint: string
+}
+
+input {
+    min: number
+    max: number
+}
+
+agent numbers {
+    model: openai(secrets.model)
+    prompt: "generate a sequence of numbers from {{ input.min }} to {{ input.max }}."
+    output: [number]
+}
+
+output {
+    numbers: agent.numbers
+}

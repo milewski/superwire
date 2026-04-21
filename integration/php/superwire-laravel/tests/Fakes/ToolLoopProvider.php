@@ -12,6 +12,16 @@ use RuntimeException;
 final class ToolLoopProvider extends Provider
 {
     /**
+     * @var array<int, TextRequest>
+     */
+    private array $requests = [];
+
+    /**
+     * @var array<int, array<string, mixed>>
+     */
+    private array $providerConfigs = [];
+
+    /**
      * @param array<string, mixed> $resultsByPrompt
      */
     public function __construct(
@@ -22,6 +32,8 @@ final class ToolLoopProvider extends Provider
 
     public function text(TextRequest $request): never
     {
+        $this->requests[] = $request;
+
         $prompt = $request->prompt();
 
         if ($prompt === null || !array_key_exists($prompt, $this->resultsByPrompt)) {
@@ -34,6 +46,30 @@ final class ToolLoopProvider extends Provider
         $finalizeTool->handle(...[ 'result' => $result ]);
 
         throw new RuntimeException('Finalize tool did not terminate execution.');
+    }
+
+    /**
+     * @param array<string, mixed> $providerConfig
+     */
+    public function recordProviderConfig(array $providerConfig): void
+    {
+        $this->providerConfigs[] = $providerConfig;
+    }
+
+    /**
+     * @return array<int, TextRequest>
+     */
+    public function requests(): array
+    {
+        return $this->requests;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function providerConfigs(): array
+    {
+        return $this->providerConfigs;
     }
 
     /**

@@ -1,0 +1,33 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://example.test/v1"
+    api_key: "test-key"
+    models: ["test-model"]
+}
+
+input {
+    product_name: string
+    audience: string
+}
+
+agent release_summary {
+    model: openai("test-model")
+    prompt: "Summarize {{ input.product_name }} for {{ input.audience }}."
+    output: {
+        summary: string
+        tagline: string
+    }
+}
+
+agent launch_message {
+    model: openai("test-model")
+    prompt: "Write a launch note for {{ input.audience }} about {{ agent.release_summary.summary }} with tagline {{ agent.release_summary.tagline }}."
+    output: {
+        body: string
+    }
+}
+
+output {
+    summary: agent.release_summary.summary
+    body: agent.launch_message.body
+}
