@@ -30,21 +30,42 @@
       "type": "object"
     }
   },
-  "secrets": null,
+  "secrets": {
+    "workflow_type": {
+      "kind": "object",
+      "fields": {
+        "model": {
+          "kind": "string"
+        }
+      }
+    },
+    "json_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "type": "object"
+    }
+  },
   "schemas": [],
   "providers": [
     {
       "name": "openai",
       "driver": "openai",
-      "models": [
-        "qwen3.5-9b"
-      ],
+      "models": null,
       "config": {
         "api_key": "sk-S2Wcfi5cJhGGhFpTHjHcClDmQoR6IwTx1PNl9cmIZF6Wtuxz",
         "driver": "openai",
         "endpoint": "http://100.118.249.48:3000/v1",
         "models": [
-          "qwen3.5-9b"
+          {
+            "$ref": "secrets.model"
+          }
         ]
       }
     }
