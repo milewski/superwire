@@ -6,8 +6,8 @@ namespace Superwire\Laravel\Support;
 
 use RuntimeException;
 use Superwire\Laravel\AgentExecutionResult;
-use Superwire\Laravel\Data\Workflow\AgentPrompt;
-use Superwire\Laravel\Data\Workflow\PromptTemplatePart;
+use Superwire\Laravel\Data\Prompt\Prompt;
+use Superwire\Laravel\Data\Prompt\PromptTemplatePart;
 
 final class PromptParser
 {
@@ -17,7 +17,7 @@ final class PromptParser
      * @param array<string, mixed> $inputValues
      * @param array<string, mixed> $secretValues
      */
-    public function render(AgentPrompt $prompt, array $agentOutputs, array $scope = [], array $inputValues = [], array $secretValues = []): string
+    public function render(Prompt $prompt, array $agentOutputs, array $scope = [], array $inputValues = [], array $secretValues = []): string
     {
         if ($prompt->isText()) {
             return $prompt->text ?? '';

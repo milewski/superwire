@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Prompt;
 
 use InvalidArgumentException;
 

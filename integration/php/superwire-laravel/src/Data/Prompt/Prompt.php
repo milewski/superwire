@@ -2,11 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Prompt;
 
 use InvalidArgumentException;
 
-final readonly class AgentPrompt
+final readonly class Prompt
 {
     /**
      * @param list<PromptTemplatePart> $templateParts
@@ -24,13 +24,13 @@ final readonly class AgentPrompt
             return new self($value, []);
         }
 
-        if (! is_array($value)) {
+        if (!is_array($value)) {
             throw new InvalidArgumentException('agent prompt must be a string or template array');
         }
 
-        $templatePayload = $value['$template'] ?? null;
+        $templatePayload = $value[ '$template' ] ?? null;
 
-        if (! is_array($templatePayload)) {
+        if (!is_array($templatePayload)) {
             throw new InvalidArgumentException('agent prompt template must contain a $template array');
         }
 

@@ -2,9 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Agent;
 
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Loop\ForEachData;
+use Superwire\Laravel\Data\Prompt\Prompt;
 use Superwire\Laravel\Support\JsonSchemaFactory;
 
 final class Agent
@@ -22,13 +24,13 @@ final class Agent
     public function __construct(
         public readonly string $name,
         public readonly string $provider,
-        public readonly AgentModel $model,
-        public readonly AgentPrompt $prompt,
-        public readonly AgentContext $context,
-        public readonly AgentInference $inference,
+        public readonly Model $model,
+        public readonly Prompt $prompt,
+        public readonly Context $context,
+        public readonly Inference $inference,
         public readonly array $tools,
         public readonly ?ForEachData $forEach,
-        public readonly AgentOutputData $output,
+        public readonly Output $output,
         public readonly array $dependencies,
         public readonly array $dependents,
         public readonly int $batch,
@@ -44,13 +46,13 @@ final class Agent
         return new self(
             name: self::string($payload, 'name'),
             provider: self::string($payload, 'provider'),
-            model: AgentModel::fromValue($payload['model'] ?? null),
-            prompt: AgentPrompt::fromValue($payload['prompt'] ?? null),
-            context: AgentContext::fromValue($payload['context'] ?? null),
-            inference: AgentInference::fromValue($payload['inference'] ?? null),
+            model: Model::fromValue($payload['model'] ?? null),
+            prompt: Prompt::fromValue($payload['prompt'] ?? null),
+            context: Context::fromValue($payload['context'] ?? null),
+            inference: Inference::fromValue($payload['inference'] ?? null),
             tools: self::list($payload, 'tools'),
             forEach: ForEachData::fromValue($payload['for_each'] ?? null),
-            output: AgentOutputData::fromArray(self::array($payload, 'output')),
+            output: Output::fromArray(self::array($payload, 'output')),
             dependencies: self::list($payload, 'dependencies'),
             dependents: self::list($payload, 'dependents'),
             batch: self::int($payload, 'batch'),

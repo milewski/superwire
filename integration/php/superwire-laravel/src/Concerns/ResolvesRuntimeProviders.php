@@ -11,7 +11,7 @@ use Prism\Prism\PrismManager;
 use Prism\Prism\Providers\Provider as PrismProvider;
 use Prism\Prism\Text\PendingRequest;
 use RuntimeException;
-use Superwire\Laravel\Data\Workflow\Agent;
+use Superwire\Laravel\Data\Agent\Agent;
 
 trait ResolvesRuntimeProviders
 {

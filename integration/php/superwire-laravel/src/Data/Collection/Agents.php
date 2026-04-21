@@ -2,10 +2,10 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow\Collection;
+namespace Superwire\Laravel\Data\Collection;
 
 use Illuminate\Support\Collection;
-use Superwire\Laravel\Data\Workflow\Agent;
+use Superwire\Laravel\Data\Agent\Agent;
 
 /**
  * @extends Collection<int, Agent>

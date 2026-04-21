@@ -4,7 +4,8 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Data\Workflow;
 
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Agent\OutputFieldReference;
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
 
 final class Output
 {

@@ -2,11 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Agent;
 
 use InvalidArgumentException;
 
-final class AgentContext
+final class Context
 {
     /**
      * @param array<string, mixed>|null $definition
@@ -19,7 +19,7 @@ final class AgentContext
 
     public static function fromValue(mixed $value): self
     {
-        if ($value !== null && ! is_array($value)) {
+        if ($value !== null && !is_array($value)) {
             throw new InvalidArgumentException('agent context must be null or an array');
         }
 

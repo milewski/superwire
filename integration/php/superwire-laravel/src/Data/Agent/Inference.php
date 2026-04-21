@@ -2,11 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Agent;
 
 use InvalidArgumentException;
 
-final class AgentInference
+final class Inference
 {
     /**
      * @param array<string, mixed>|null $definition
@@ -19,7 +19,7 @@ final class AgentInference
 
     public static function fromValue(mixed $value): self
     {
-        if ($value !== null && ! is_array($value)) {
+        if ($value !== null && !is_array($value)) {
             throw new InvalidArgumentException('agent inference must be null or an array');
         }
 
@@ -31,9 +31,9 @@ final class AgentInference
         return $this->definition !== null;
     }
 
-    public function temperature(): int|float|null
+    public function temperature(): int | float | null
     {
-        $temperature = $this->definition['temperature'] ?? null;
+        $temperature = $this->definition[ 'temperature' ] ?? null;
 
         if ($temperature === null || is_int($temperature) || is_float($temperature)) {
             return $temperature;
@@ -44,7 +44,7 @@ final class AgentInference
 
     public function maxTokens(): ?int
     {
-        $maxTokens = $this->definition['max_tokens'] ?? null;
+        $maxTokens = $this->definition[ 'max_tokens' ] ?? null;
 
         if ($maxTokens === null || is_int($maxTokens)) {
             return $maxTokens;
@@ -53,9 +53,9 @@ final class AgentInference
         throw new InvalidArgumentException('agent inference max_tokens must be an int');
     }
 
-    public function topP(): int|float|null
+    public function topP(): int | float | null
     {
-        $topP = $this->definition['top_p'] ?? null;
+        $topP = $this->definition[ 'top_p' ] ?? null;
 
         if ($topP === null || is_int($topP) || is_float($topP)) {
             return $topP;

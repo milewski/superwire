@@ -2,10 +2,10 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Loop;
 
 use InvalidArgumentException;
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
 
 final class ForEachData
 {
@@ -35,7 +35,7 @@ final class ForEachData
             return null;
         }
 
-        if (! is_array($value)) {
+        if (!is_array($value)) {
             throw new InvalidArgumentException('agent for_each must be null or an array');
         }
 

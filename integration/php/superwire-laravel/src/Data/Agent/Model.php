@@ -2,11 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Agent;
 
 use InvalidArgumentException;
 
-final class AgentModel
+final class Model
 {
     public function __construct(
         public readonly ?string $name,
