@@ -1,0 +1,35 @@
+// This file shows the smallest useful workflow shape:
+// provider -> agent -> output
+
+// Provider defines where models come from.
+provider openai {
+    driver: "openai"
+    endpoint: "http://100.118.249.48:3000/v1"
+    api_key: "sk-S2Wcfi5cJhGGhFpTHjHcClDmQoR6IwTx1PNl9cmIZF6Wtuxz"
+    models: ["qwen3.5-9b"]
+}
+
+// Create one agent named `greeting`.
+agent numbers {
+    // Select a model from the `ollama` provider.
+    model: openai("qwen3.5-9b")
+
+    // Provide the instruction sent to the model.
+    prompt: "generate a sequence of numbers from 1 to 5."
+
+    // Define the expected output type for this agent.
+    output: [number]
+}
+
+agent counter for number in agent.numbers {
+    model: openai("qwen3.5-9b")
+    prompt: "spell out this number {{ number }}."
+    output: string
+}
+
+// Define the workflow's final output object.
+output {
+    numbers: agent.counter
+}
+
+// Result shape: { "greeting": "..." }

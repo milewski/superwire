@@ -1,0 +1,2 @@
+generate:
+    ./superwire-cli workflow to-json ./tests/minimum.wire > ./tests/minimum.json

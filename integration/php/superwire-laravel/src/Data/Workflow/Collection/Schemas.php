@@ -12,11 +12,6 @@ use Superwire\Laravel\Data\Workflow\Schema;
  */
 final class Schemas extends Collection
 {
-    public function __construct(?array $items = null)
-    {
-        parent::__construct($items ?? []);
-    }
-
     public static function fromArray(array $payload): self
     {
         $items = [];

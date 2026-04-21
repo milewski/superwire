@@ -12,11 +12,6 @@ use Superwire\Laravel\Data\Workflow\Agent;
  */
 final class Agents extends Collection
 {
-    public function __construct(?array $items = null)
-    {
-        parent::__construct($items ?? []);
-    }
-
     public static function fromArray(array $payload): self
     {
         $items = [];
@@ -26,5 +21,10 @@ final class Agents extends Collection
         }
 
         return new self($items);
+    }
+
+    public function findByName(string $name): Agent
+    {
+        return $this->where('name', $name)->firstOrFail();
     }
 }
