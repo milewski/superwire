@@ -48,7 +48,7 @@ final class PromptParser
             throw new RuntimeException('Prompt template part must contain text or an expression.');
         }
 
-        return (string) $this->resolveReference($templatePart->expression->reference, $agentOutputs, $scope, $inputValues, $secretValues);
+        return (string)$this->resolveReference($templatePart->expression->reference, $agentOutputs, $scope, $inputValues, $secretValues);
     }
 
     /**
@@ -64,9 +64,9 @@ final class PromptParser
         }
 
         $segments = explode('.', $reference);
-        $referenceRoot = $segments[0] ?? null;
+        $referenceRoot = $segments[ 0 ] ?? null;
 
-        if (! is_string($referenceRoot)) {
+        if (!is_string($referenceRoot)) {
             throw new RuntimeException(sprintf('Unsupported reference: %s', $reference));
         }
 
@@ -94,13 +94,19 @@ final class PromptParser
             throw new RuntimeException(sprintf('Invalid agent reference: %s', $reference));
         }
 
-        $agentName = $segments[1];
+        $agentName = $segments[ 1 ];
 
-        if (! array_key_exists($agentName, $agentOutputs)) {
+        if (!array_key_exists($agentName, $agentOutputs)) {
             throw new RuntimeException(sprintf('Referenced agent output is not available: %s', $reference));
         }
 
-        return $agentOutputs[$agentName];
+        $resolvedValue = $agentOutputs[ $agentName ];
+
+        if ($resolvedValue instanceof AgentExecutionResult) {
+            return $resolvedValue->output;
+        }
+
+        return $resolvedValue;
     }
 
     /**
@@ -109,19 +115,17 @@ final class PromptParser
     private function resolveSegments(string $reference, mixed $resolvedValue, array $segments): mixed
     {
         foreach ($segments as $segmentIndex => $segment) {
+
             if ($segmentIndex === 0 && $segment === 'agent') {
                 continue;
             }
 
-            if (! is_array($resolvedValue) || ! array_key_exists($segment, $resolvedValue)) {
+            if (!is_array($resolvedValue) || !array_key_exists($segment, $resolvedValue)) {
                 throw new RuntimeException(sprintf('Reference segment could not be resolved: %s', $reference));
             }
 
-            $resolvedValue = $resolvedValue[$segment];
-        }
+            $resolvedValue = $resolvedValue[ $segment ];
 
-        if ($resolvedValue instanceof AgentExecutionResult) {
-            return $resolvedValue->output;
         }
 
         return $resolvedValue;

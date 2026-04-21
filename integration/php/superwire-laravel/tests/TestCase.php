@@ -38,10 +38,27 @@ abstract class TestCase extends OrchestraTestCase
         return $this->app->make(WorkflowCompiler::class)->compile(__DIR__ . '/stubs/' . $fixtureName);
     }
 
+    protected function shouldUseRealProvider(): bool
+    {
+        return filter_var(env('SUPERWIRE_TEST_USE_REAL_PROVIDER', false), FILTER_VALIDATE_BOOL);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function realProviderSecrets(): array
+    {
+        return [
+            'model' => (string) env('SUPERWIRE_TEST_MODEL', ''),
+            'endpoint' => (string) env('SUPERWIRE_TEST_ENDPOINT', ''),
+            'api_key' => (string) env('SUPERWIRE_TEST_API_KEY', ''),
+        ];
+    }
+
     /**
      * @param array<string, mixed> $resultsByPrompt
      */
-    protected function fakeToolLoopProvider(array $resultsByPrompt): void
+    protected function fakeToolLoopProvider(array $resultsByPrompt): ToolLoopProvider
     {
         $provider = new ToolLoopProvider($resultsByPrompt);
 
@@ -53,8 +70,12 @@ abstract class TestCase extends OrchestraTestCase
 
             public function resolve(Provider|string $name, array $providerConfig = []): \Prism\Prism\Providers\Provider
             {
+                $this->provider->recordProviderConfig($providerConfig);
+
                 return $this->provider;
             }
         });
+
+        return $provider;
     }
 }

@@ -6,15 +6,13 @@ namespace Superwire\Laravel;
 
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Container\CircularDependencyException;
-use JsonException;
 use Prism\Prism\Enums\Provider;
-use Prism\Prism\Providers\Provider as PrismProvider;
 use Prism\Prism\PrismManager;
+use Prism\Prism\Providers\Provider as PrismProvider;
 use Prism\Prism\Text\PendingRequest;
 use Prism\Prism\Tool;
 use RuntimeException;
 use Spatie\Fork\Fork;
-use Superwire\Laravel\AgentExecutionResult;
 use Superwire\Laravel\Data\Workflow\Agent;
 use Superwire\Laravel\Data\Workflow\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
@@ -114,7 +112,7 @@ final readonly class Runtime
         $resolvedResults = [];
 
         foreach (array_values(array_keys($agents)) as $index => $agentName) {
-            $resolvedResults[ $agentName ] = $this->normalizeExecutionResult($batchResults[$index], sprintf('batch agent %s', $agentName));
+            $resolvedResults[ $agentName ] = $this->normalizeExecutionResult($batchResults[ $index ], sprintf('batch agent %s', $agentName));
         }
 
         return $resolvedResults;
@@ -248,13 +246,13 @@ final readonly class Runtime
         }
 
         return new AgentExecutionResult(
-                output: array_map(
-                    callback: fn (AgentExecutionResult $iterationResult): mixed => $iterationResult->output,
-                    array: array_map(
-                        fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
-                        $results,
-                    ),
+            output: array_map(
+                callback: fn (AgentExecutionResult $iterationResult): mixed => $iterationResult->output,
+                array: array_map(
+                    fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
+                    $results,
                 ),
+            ),
             iterations: array_map(
                 fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
                 $results,
@@ -315,13 +313,12 @@ final readonly class Runtime
         $finalizeSuccessTool = new FinalizeSuccessTool($outputSchema);
         $finalizeErrorTool = new FinalizeErrorTool();
         $conversationMessages = [];
-        $debugMessages = [$this->userMessage($prompt)];
 
         for ($attemptNumber = 1; $attemptNumber <= $this->maxAgentRequestAttempts(); $attemptNumber++) {
 
-                $request = $this->agentRequest($agent)
+            $request = $this->agentRequest($agent)
                 ->withSystemPrompt($this->finalizationPrompt($outputSchema))
-                ->withTools([...$this->tools, $finalizeSuccessTool, $finalizeErrorTool])
+                ->withTools([ ...$this->tools, $finalizeSuccessTool, $finalizeErrorTool ])
                 ->withMaxSteps($this->maxAgentToolSteps());
 
             if ($conversationMessages === []) {
@@ -340,7 +337,7 @@ final readonly class Runtime
 
                 return new AgentExecutionResult(
                     output: $finalizeSuccess->result,
-                    messages: [...$debugMessages, ...$this->finalizeMessages('finalize_success', ['result' => $finalizeSuccess->result], 'success finalized')],
+                    messages: $conversationMessages,
                 );
 
             } catch (FinalizeError $finalizeError) {
@@ -353,7 +350,6 @@ final readonly class Runtime
             }
 
             $conversationMessages = $response->messages->all();
-            $debugMessages = $this->messagesToArray($conversationMessages);
         }
 
         throw new RuntimeException(
@@ -365,13 +361,27 @@ final readonly class Runtime
     {
         $provider = $this->definition->providers->findByName($agent->provider);
 
-        return prism()
+        $request = prism()
             ->text()
             ->using(
                 $this->intoProvider($provider->driver),
-                $agent->model->name,
+                $this->resolveModel($agent),
                 $this->normalizeProviderConfig($provider->config),
             );
+
+        if ($agent->inference->temperature() !== null) {
+            $request->usingTemperature($agent->inference->temperature());
+        }
+
+        if ($agent->inference->maxTokens() !== null) {
+            $request->withMaxTokens($agent->inference->maxTokens());
+        }
+
+        if ($agent->inference->topP() !== null) {
+            $request->usingTopP($agent->inference->topP());
+        }
+
+        return $request;
     }
 
     private function normalizeProviderConfig(array $providerConfig): array
@@ -407,6 +417,32 @@ final readonly class Runtime
         return $resolvedValue;
     }
 
+    private function resolveModel(Agent $agent): string
+    {
+        if ($agent->model->name !== null) {
+            return $agent->model->name;
+        }
+
+        if ($agent->model->reference !== null) {
+
+            $resolvedModel = $this->promptParser->resolveReference(
+                reference: $agent->model->reference,
+                agentOutputs: [],
+                inputValues: $this->inputValues,
+                secretValues: $this->secretValues,
+            );
+
+            if (!is_string($resolvedModel)) {
+                throw new RuntimeException(sprintf('Resolved model reference for agent %s must be a string.', $agent->name));
+            }
+
+            return $resolvedModel;
+
+        }
+
+        throw new RuntimeException(sprintf('Agent %s does not define a resolvable model.', $agent->name));
+    }
+
     private function finalizationPrompt(array $outputSchema): string
     {
         return sprintf(
@@ -440,22 +476,21 @@ final readonly class Runtime
             return $result;
         }
 
-        throw new RuntimeException(sprintf(
-            'Invalid execution result returned for %s. Expected %s, received %s.',
-            $context,
-            AgentExecutionResult::class,
-            get_debug_type($result),
-        ));
+        throw new RuntimeException(
+            message: sprintf(
+                'Invalid execution result returned for %s. Expected %s, received %s.', $context, AgentExecutionResult::class, get_debug_type($result),
+            ),
+        );
     }
 
     private function maxAgentRequestAttempts(): int
     {
-        return (int) config('superwire.runtime.max_agent_request_attempts', 10);
+        return (int)config('superwire.runtime.max_agent_request_attempts', 10);
     }
 
     private function maxAgentToolSteps(): int
     {
-        return (int) config('superwire.runtime.max_agent_tool_steps', 20);
+        return (int)config('superwire.runtime.max_agent_tool_steps', 20);
     }
 
     /**
@@ -465,7 +500,7 @@ final readonly class Runtime
     private function messagesToArray(array $messages): array
     {
         return array_map(
-            callback: static fn (object $message): array => method_exists($message, 'toArray') ? $message->toArray() : ['type' => 'unknown'],
+            callback: static fn (object $message): array => method_exists($message, 'toArray') ? $message->toArray() : [ 'type' => 'unknown' ],
             array: $messages,
         );
     }
@@ -480,26 +515,26 @@ final readonly class Runtime
             [
                 'type' => 'assistant',
                 'content' => '',
-                'tool_calls' => [[
+                'tool_calls' => [ [
                     'id' => null,
                     'name' => $toolName,
                     'arguments' => $arguments,
                     'result_id' => null,
                     'reasoning_id' => null,
                     'reasoning_summary' => [],
-                ]],
+                ] ],
                 'additional_content' => [],
             ],
             [
                 'type' => 'tool_result',
-                'tool_results' => [[
+                'tool_results' => [ [
                     'tool_call_id' => null,
                     'tool_name' => $toolName,
                     'args' => $arguments,
                     'result' => $toolResult,
                     'tool_call_result_id' => null,
                     'artifacts' => [],
-                ]],
+                ] ],
             ],
         ];
     }
@@ -513,7 +548,7 @@ final readonly class Runtime
             'type' => 'user',
             'content' => $prompt,
             'additional_content' => [
-                ['text' => $prompt],
+                [ 'text' => $prompt ],
             ],
             'additional_attributes' => [],
         ];
