@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Data\Workflow;
 
 use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Support\JsonSchemaFactory;
 
 final class Agent
 {
@@ -84,7 +85,7 @@ final class Agent
      */
     public function iterationJsonSchema(): array
     {
-        return $this->output->iteration->jsonSchema;
+        return JsonSchemaFactory::toArray($this->output->iteration->jsonSchema);
     }
 
     /**
@@ -92,6 +93,6 @@ final class Agent
      */
     public function finalOutputJsonSchema(): array
     {
-        return $this->output->finalOutput->jsonSchema;
+        return JsonSchemaFactory::toArray($this->output->finalOutput->jsonSchema);
     }
 }

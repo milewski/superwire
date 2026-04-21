@@ -8,11 +8,13 @@ use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Container\CircularDependencyException;
 use JsonException;
 use Prism\Prism\Enums\Provider;
+use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Providers\Provider as PrismProvider;
 use Prism\Prism\PrismManager;
 use Prism\Prism\Text\PendingRequest;
 use RuntimeException;
 use Spatie\Fork\Fork;
+use Superwire\Laravel\AgentExecutionResult;
 use Superwire\Laravel\Data\Workflow\Agent;
 use Superwire\Laravel\Data\Workflow\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
@@ -30,15 +32,33 @@ final readonly class Runtime
     public function __construct(
         private WorkflowDefinition $definition,
         private PromptParser $promptParser = new PromptParser(),
+        private array $inputValues = [],
+        private array $secretValues = [],
     )
     {
     }
 
     /**
-     * @return array<string, mixed>
+     * @param array<string, mixed> $inputValues
      */
-    public function run(): array
+    public function withInputs(array $inputValues): self
     {
+        return new self($this->definition, $this->promptParser, $inputValues, $this->secretValues);
+    }
+
+    /**
+     * @param array<string, mixed> $secretValues
+     */
+    public function withSecrets(array $secretValues): self
+    {
+        return new self($this->definition, $this->promptParser, $this->inputValues, $secretValues);
+    }
+
+    public function run(): WorkflowExecutionResult
+    {
+        $this->definition->validateInputValues($this->inputValues);
+        $this->definition->validateSecretValues($this->secretValues);
+
         $agentOutputs = [];
 
         foreach ($this->definition->execution->batches as $batchAgentNames) {
@@ -50,7 +70,10 @@ final readonly class Runtime
 
         }
 
-        return $this->resolveWorkflowOutput($agentOutputs);
+        return new WorkflowExecutionResult(
+            output: $this->resolveWorkflowOutput($agentOutputs),
+            agents: $agentOutputs,
+        );
     }
 
     private function runBatch(array $batchAgentNames, array $agentOutputs): array
@@ -143,7 +166,7 @@ final readonly class Runtime
         };
     }
 
-    private function runAgent(Agent $agent, array $agentOutputs): mixed
+    private function runAgent(Agent $agent, array $agentOutputs): AgentExecutionResult
     {
         /**
          * If the agent is not within a for each loop then it can be executed direcly,
@@ -152,7 +175,7 @@ final readonly class Runtime
 
             return $this->executeAgent(
                 agent: $agent,
-                prompt: $this->promptParser->render($agent->prompt, $agentOutputs),
+                prompt: $this->promptParser->render($agent->prompt, $agentOutputs, [], $this->inputValues, $this->secretValues),
                 outputSchema: $agent->finalOutputJsonSchema(),
             );
 
@@ -185,15 +208,30 @@ final readonly class Runtime
 
             ksort($results);
 
-            return array_values($results);
+            $iterationResults = array_map(
+                callback: $this->normalizeExecutionResult(...),
+                array: array_values($results),
+            );
+
+            return new AgentExecutionResult(
+                output: array_map(
+                    callback: fn (AgentExecutionResult $iterationResult): mixed => $iterationResult->output,
+                    array: $iterationResults,
+                ),
+                iterations: $iterationResults,
+            );
 
         }
 
         foreach ($iterationValues as $iterationValue) {
 
-            $prompt = $this->promptParser->render($agent->prompt, $agentOutputs, [
-                $iterationIdentifier => $iterationValue,
-            ]);
+            $prompt = $this->promptParser->render(
+                prompt: $agent->prompt,
+                agentOutputs: $agentOutputs,
+                scope: [ $iterationIdentifier => $iterationValue ],
+                inputValues: $this->inputValues,
+                secretValues: $this->secretValues,
+            );
 
             $results[] = $this->executeAgent(
                 agent: $agent,
@@ -203,7 +241,13 @@ final readonly class Runtime
 
         }
 
-        return $results;
+        return new AgentExecutionResult(
+            output: array_map(
+                callback: fn (AgentExecutionResult $iterationResult): mixed => $iterationResult->output,
+                array: array_map($this->normalizeExecutionResult(...), $results),
+            ),
+            iterations: array_map($this->normalizeExecutionResult(...), $results),
+        );
     }
 
     /**
@@ -217,7 +261,7 @@ final readonly class Runtime
 
             $tasks[] = fn (): mixed => $this->executeAgent(
                 agent: $agent,
-                prompt: $this->promptParser->render($agent->prompt, $agentOutputs, [ $iterationIdentifier => $iterationValue ]),
+                prompt: $this->promptParser->render($agent->prompt, $agentOutputs, [ $iterationIdentifier => $iterationValue ], $this->inputValues, $this->secretValues),
                 outputSchema: $agent->iterationJsonSchema(),
             );
 
@@ -245,7 +289,7 @@ final readonly class Runtime
             throw new RuntimeException(sprintf('Agent %s is missing a for_each iterable reference.', $agent->name));
         }
 
-        $resolvedValue = $this->promptParser->resolveReference($reference, $agentOutputs);
+        $resolvedValue = $this->promptParser->resolveReference($reference, $agentOutputs, [], $this->inputValues, $this->secretValues);
 
         if (!is_array($resolvedValue)) {
             throw new RuntimeException(sprintf('Agent %s for_each iterable must resolve to an array.', $agent->name));
@@ -254,11 +298,12 @@ final readonly class Runtime
         return array_values($resolvedValue);
     }
 
-    private function executeAgent(Agent $agent, string $prompt, array $outputSchema): mixed
+    private function executeAgent(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult
     {
         $finalizeSuccessTool = new FinalizeSuccessTool($outputSchema);
         $finalizeErrorTool = new FinalizeErrorTool();
         $conversationMessages = [];
+        $debugMessages = [$this->userMessage($prompt)];
 
         for ($attemptNumber = 1; $attemptNumber <= self::MAX_AGENT_REQUEST_ATTEMPTS; $attemptNumber++) {
 
@@ -281,7 +326,10 @@ final readonly class Runtime
 
             } catch (FinalizeSuccess $finalizeSuccess) {
 
-                return $finalizeSuccess->result;
+                return new AgentExecutionResult(
+                    output: $finalizeSuccess->result,
+                    messages: [...$debugMessages, ...$this->finalizeMessages('finalize_success', ['result' => $finalizeSuccess->result], 'success finalized')],
+                );
 
             } catch (FinalizeError $finalizeError) {
 
@@ -293,6 +341,7 @@ final readonly class Runtime
             }
 
             $conversationMessages = $response->messages->all();
+            $debugMessages = $this->messagesToArray($conversationMessages);
         }
 
         throw new RuntimeException(
@@ -315,7 +364,7 @@ final readonly class Runtime
 
     private function normalizeProviderConfig(array $providerConfig): array
     {
-        $normalizedConfig = $providerConfig;
+        $normalizedConfig = $this->resolveConfigReferences($providerConfig);
 
         if (array_key_exists('endpoint', $normalizedConfig)) {
             $normalizedConfig[ 'url' ] = $normalizedConfig[ 'endpoint' ];
@@ -325,6 +374,25 @@ final readonly class Runtime
         unset($normalizedConfig[ 'driver' ], $normalizedConfig[ 'models' ]);
 
         return $normalizedConfig;
+    }
+
+    private function resolveConfigReferences(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        if (array_keys($value) === [ '$ref' ] && is_string($value[ '$ref' ])) {
+            return $this->promptParser->resolveReference($value[ '$ref' ], [], [], $this->inputValues, $this->secretValues);
+        }
+
+        $resolvedValue = [];
+
+        foreach ($value as $key => $itemValue) {
+            $resolvedValue[ $key ] = $this->resolveConfigReferences($itemValue);
+        }
+
+        return $resolvedValue;
     }
 
     private function finalizationPrompt(array $outputSchema): string
@@ -352,6 +420,76 @@ final readonly class Runtime
     private function resolveOutputField(OutputFieldReference $reference, array $agentOutputs): mixed
     {
         return $this->promptParser->resolveReference($reference->ref, $agentOutputs);
+    }
+
+    private function normalizeExecutionResult(mixed $result): AgentExecutionResult
+    {
+        if ($result instanceof AgentExecutionResult) {
+            return $result;
+        }
+
+        return new AgentExecutionResult(output: $result);
+    }
+
+    /**
+     * @param array<int, object> $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function messagesToArray(array $messages): array
+    {
+        return array_map(
+            callback: static fn (object $message): array => method_exists($message, 'toArray') ? $message->toArray() : ['type' => 'unknown'],
+            array: $messages,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     * @return array<int, array<string, mixed>>
+     */
+    private function finalizeMessages(string $toolName, array $arguments, string $toolResult): array
+    {
+        return [
+            [
+                'type' => 'assistant',
+                'content' => '',
+                'tool_calls' => [[
+                    'id' => null,
+                    'name' => $toolName,
+                    'arguments' => $arguments,
+                    'result_id' => null,
+                    'reasoning_id' => null,
+                    'reasoning_summary' => [],
+                ]],
+                'additional_content' => [],
+            ],
+            [
+                'type' => 'tool_result',
+                'tool_results' => [[
+                    'tool_call_id' => null,
+                    'tool_name' => $toolName,
+                    'args' => $arguments,
+                    'result' => $toolResult,
+                    'tool_call_result_id' => null,
+                    'artifacts' => [],
+                ]],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function userMessage(string $prompt): array
+    {
+        return [
+            'type' => 'user',
+            'content' => $prompt,
+            'additional_content' => [
+                ['text' => $prompt],
+            ],
+            'additional_attributes' => [],
+        ];
     }
 
     /**

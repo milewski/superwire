@@ -6,7 +6,11 @@ provider openai {
     driver: "openai"
     endpoint: "http://100.118.249.48:3000/v1"
     api_key: "sk-S2Wcfi5cJhGGhFpTHjHcClDmQoR6IwTx1PNl9cmIZF6Wtuxz"
-    models: ["qwen3.5-9b"]
+    models: [secrets.model]
+}
+
+secrets {
+   model: string
 }
 
 input {
