@@ -19,6 +19,7 @@ use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Support\PromptParser;
 use Superwire\Laravel\Tools\AgentToolset;
 use Superwire\Laravel\Tools\WorkflowTool;
+use Throwable;
 
 final readonly class Runtime
 {
@@ -126,7 +127,7 @@ final readonly class Runtime
         $tasks = [];
 
         foreach ($agents as $agent) {
-            $tasks[] = fn (): mixed => $this->runAgent($agent, $agentOutputs);
+            $tasks[] = fn (): mixed => $this->runAgentInFork($agent, $agentOutputs);
         }
 
         return $tasks;
@@ -267,7 +268,7 @@ final readonly class Runtime
 
         foreach ($iterationValues as $iterationValue) {
 
-            $tasks[] = fn (): mixed => $this->executeAgent(
+            $tasks[] = fn (): mixed => $this->executeAgentInFork(
                 agent: $agent,
                 prompt: $this->promptParser->render($agent->prompt, $agentOutputs, [ $iterationIdentifier => $iterationValue ], $this->inputValues, $this->secretValues),
                 outputSchema: $agent->iterationJsonSchema(),
@@ -466,11 +467,36 @@ final readonly class Runtime
             return $result;
         }
 
+        if ($result instanceof ForkExecutionFailure) {
+            throw $result->toRuntimeException($context);
+        }
+
         throw new RuntimeException(
             message: sprintf(
-                'Invalid execution result returned for %s. Expected %s, received %s.', $context, AgentExecutionResult::class, get_debug_type($result),
+                'Invalid execution result returned for %s. Expected %s, received %s. This usually means a forked child process terminated before returning a valid result.',
+                $context,
+                AgentExecutionResult::class,
+                get_debug_type($result),
             ),
         );
+    }
+
+    private function runAgentInFork(Agent $agent, array $agentOutputs): AgentExecutionResult|ForkExecutionFailure
+    {
+        try {
+            return $this->runAgent($agent, $agentOutputs);
+        } catch (Throwable $throwable) {
+            return ForkExecutionFailure::fromThrowable($throwable);
+        }
+    }
+
+    private function executeAgentInFork(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult|ForkExecutionFailure
+    {
+        try {
+            return $this->executeAgent($agent, $prompt, $outputSchema);
+        } catch (Throwable $throwable) {
+            return ForkExecutionFailure::fromThrowable($throwable);
+        }
     }
 
     private function maxAgentToolSteps(): int
