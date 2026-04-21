@@ -7,10 +7,10 @@ namespace Superwire\Laravel;
 use RuntimeException;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 
-final class WorkflowCompiler
+final readonly class WorkflowCompiler
 {
     public function __construct(
-        private readonly string $cliPath,
+        private string $cliPath,
     )
     {
     }
@@ -22,11 +22,11 @@ final class WorkflowCompiler
 
     public function compileToJson(string $workflowPath): string
     {
-        if (! is_file($this->cliPath)) {
+        if (!is_file($this->cliPath)) {
             throw new RuntimeException(sprintf('Superwire CLI was not found at %s.', $this->cliPath));
         }
 
-        if (! is_file($workflowPath)) {
+        if (!is_file($workflowPath)) {
             throw new RuntimeException(sprintf('Workflow file was not found at %s.', $workflowPath));
         }
 

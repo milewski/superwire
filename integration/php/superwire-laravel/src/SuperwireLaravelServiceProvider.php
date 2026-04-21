@@ -27,8 +27,6 @@ final class SuperwireLaravelServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->publishes([
-            __DIR__ . '/../config/superwire.php' => config_path('superwire.php'),
-        ], 'superwire-config');
+        $this->publishes([ __DIR__ . '/../config/superwire.php' => config_path('superwire.php') ], 'superwire-config');
     }
 }

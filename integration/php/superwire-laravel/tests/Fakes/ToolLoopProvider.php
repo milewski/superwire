@@ -125,6 +125,15 @@ final class ToolLoopProvider extends Provider
     private function responseForRequest(TextRequest $request): TextResponseFake
     {
         $result = $this->resultForPrompt($request->prompt());
+
+        if ($result instanceof FinalizeErrorResponse) {
+            return $this->finalizeErrorResponse($request, $result->message);
+        }
+
+        if ($result instanceof NoFinalizationResponse) {
+            return $this->unfinishedResponse($request, $result->text);
+        }
+
         $finalizeTool = $this->resolveTool('finalize_success', $request->tools());
 
         $toolCall = new ToolCall(
@@ -168,6 +177,84 @@ final class ToolLoopProvider extends Provider
                 ...$request->messages(),
                 $assistantMessage,
                 $toolResultMessage,
+            ]));
+    }
+
+    private function finalizeErrorResponse(TextRequest $request, string $message): TextResponseFake
+    {
+        $finalizeTool = $this->resolveTool('finalize_error', $request->tools());
+
+        $toolCall = new ToolCall(
+            id: 'fake-finalize-error',
+            name: 'finalize_error',
+            arguments: [ 'message' => $message ],
+        );
+
+        $toolResultValue = $finalizeTool->handle(...[ 'message' => $message ]);
+
+        $toolResult = new ToolResult(
+            toolCallId: $toolCall->id,
+            toolName: $toolCall->name,
+            args: $toolCall->arguments(),
+            result: $toolResultValue,
+        );
+
+        $assistantMessage = new AssistantMessage(content: '', toolCalls: [ $toolCall ]);
+        $toolResultMessage = new ToolResultMessage([ $toolResult ]);
+
+        return TextResponseFake::make()
+            ->withFinishReason(FinishReason::ToolCalls)
+            ->withToolCalls([ $toolCall ])
+            ->withToolResults([ $toolResult ])
+            ->withUsage(new Usage(0, 0))
+            ->withMeta(new Meta('fake', 'fake'))
+            ->withSteps(collect([
+                new Step(
+                    text: '',
+                    finishReason: FinishReason::ToolCalls,
+                    toolCalls: [ $toolCall ],
+                    toolResults: [ $toolResult ],
+                    providerToolCalls: [],
+                    usage: new Usage(0, 0),
+                    meta: new Meta('fake', 'fake'),
+                    messages: $request->messages(),
+                    systemPrompts: $request->systemPrompts(),
+                ),
+            ]))
+            ->withMessages(new Collection([
+                ...$request->messages(),
+                $assistantMessage,
+                $toolResultMessage,
+            ]));
+    }
+
+    private function unfinishedResponse(TextRequest $request, string $text): TextResponseFake
+    {
+        $assistantMessage = new AssistantMessage(content: $text, toolCalls: []);
+
+        return TextResponseFake::make()
+            ->withText($text)
+            ->withFinishReason(FinishReason::Stop)
+            ->withToolCalls([])
+            ->withToolResults([])
+            ->withUsage(new Usage(0, 0))
+            ->withMeta(new Meta('fake', 'fake'))
+            ->withSteps(collect([
+                new Step(
+                    text: $text,
+                    finishReason: FinishReason::Stop,
+                    toolCalls: [],
+                    toolResults: [],
+                    providerToolCalls: [],
+                    usage: new Usage(0, 0),
+                    meta: new Meta('fake', 'fake'),
+                    messages: $request->messages(),
+                    systemPrompts: $request->systemPrompts(),
+                ),
+            ]))
+            ->withMessages(new Collection([
+                ...$request->messages(),
+                $assistantMessage,
             ]));
     }
 

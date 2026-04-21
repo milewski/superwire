@@ -20,7 +20,8 @@ final readonly class Workflow
         private array $inputValues = [],
         private array $secretValues = [],
         private array $tools = [],
-    ) {
+    )
+    {
     }
 
     public static function fromFile(string $workflowPath): self
