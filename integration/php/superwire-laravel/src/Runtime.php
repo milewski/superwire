@@ -4,6 +4,8 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
+use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Contracts\Container\CircularDependencyException;
 use JsonException;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Providers\Provider as PrismProvider;
@@ -14,6 +16,8 @@ use Spatie\Fork\Fork;
 use Superwire\Laravel\Data\Workflow\Agent;
 use Superwire\Laravel\Data\Workflow\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
+use Superwire\Laravel\Exceptions\FinalizeError;
+use Superwire\Laravel\Exceptions\FinalizeSuccess;
 use Superwire\Laravel\Support\PromptParser;
 use Superwire\Laravel\Tools\FinalizeErrorTool;
 use Superwire\Laravel\Tools\FinalizeSuccessTool;
@@ -21,7 +25,6 @@ use Superwire\Laravel\Tools\FinalizeSuccessTool;
 final readonly class Runtime
 {
     private const int MAX_AGENT_REQUEST_ATTEMPTS = 10;
-
     private const int MAX_AGENT_TOOL_STEPS = 20;
 
     public function __construct(
@@ -50,11 +53,6 @@ final readonly class Runtime
         return $this->resolveWorkflowOutput($agentOutputs);
     }
 
-    /**
-     * @param list<string> $batchAgentNames
-     * @param array<string, mixed> $agentOutputs
-     * @return array<string, mixed>
-     */
     private function runBatch(array $batchAgentNames, array $agentOutputs): array
     {
         $agents = [];
@@ -116,21 +114,23 @@ final readonly class Runtime
     private function validateAgentDependencies(Agent $agent, array $agentOutputs, array $batchAgentNames): void
     {
         foreach ($agent->dependencies as $dependencyName) {
+
             if (in_array($dependencyName, $batchAgentNames, true)) {
-                throw new RuntimeException(sprintf(
-                    'Agent %s cannot run in parallel with dependency %s in the same batch.',
-                    $agent->name,
-                    $dependencyName,
-                ));
+
+                throw new RuntimeException(
+                    message: sprintf('Agent %s cannot run in parallel with dependency %s in the same batch.', $agent->name, $dependencyName),
+                );
+
             }
 
             if (!array_key_exists($dependencyName, $agentOutputs)) {
-                throw new RuntimeException(sprintf(
-                    'Agent %s dependency %s has not completed before its batch.',
-                    $agent->name,
-                    $dependencyName,
-                ));
+
+                throw new RuntimeException(
+                    message: sprintf('Agent %s dependency %s has not completed before its batch.', $agent->name, $dependencyName),
+                );
+
             }
+
         }
     }
 
@@ -143,9 +143,6 @@ final readonly class Runtime
         };
     }
 
-    /**
-     * @param array<string, mixed> $agentOutputs
-     */
     private function runAgent(Agent $agent, array $agentOutputs): mixed
     {
         /**
@@ -179,12 +176,16 @@ final readonly class Runtime
          */
         if ($this->shouldForkIterations($agent, $iterationValues)) {
 
-            return Fork::new()->run(...$this->iterationTasks(
+            $results = Fork::new()->run(...$this->iterationTasks(
                 agent: $agent,
                 agentOutputs: $agentOutputs,
                 iterationIdentifier: $iterationIdentifier,
                 iterationValues: $iterationValues,
             ));
+
+            ksort($results);
+
+            return array_values($results);
 
         }
 
@@ -206,8 +207,6 @@ final readonly class Runtime
     }
 
     /**
-     * @param array<string, mixed> $agentOutputs
-     * @param list<mixed> $iterationValues
      * @return array<int, callable(): mixed>
      */
     private function iterationTasks(Agent $agent, array $agentOutputs, string $iterationIdentifier, array $iterationValues): array
@@ -227,9 +226,6 @@ final readonly class Runtime
         return $tasks;
     }
 
-    /**
-     * @param list<mixed> $iterationValues
-     */
     private function shouldForkIterations(Agent $agent, array $iterationValues): bool
     {
         if (count($iterationValues) < 2) {
@@ -241,10 +237,6 @@ final readonly class Runtime
         return !str_starts_with($providerInstance::class, 'Prism\\Prism\\Testing\\');
     }
 
-    /**
-     * @param array<string, mixed> $agentOutputs
-     * @return list<mixed>
-     */
     private function resolveForEachValues(Agent $agent, array $agentOutputs): array
     {
         $reference = $agent->forEachReference();
@@ -262,10 +254,6 @@ final readonly class Runtime
         return array_values($resolvedValue);
     }
 
-    /**
-     * @param array<string, mixed> $outputSchema
-     * @throws JsonException
-     */
     private function executeAgent(Agent $agent, string $prompt, array $outputSchema): mixed
     {
         $finalizeSuccessTool = new FinalizeSuccessTool($outputSchema);
@@ -287,28 +275,29 @@ final readonly class Runtime
                 $request->withMessages($conversationMessages);
             }
 
-            $response = $request->asText();
+            try {
 
-            if ($finalizeSuccessTool->wasCalled()) {
-                return $finalizeSuccessTool->result();
-            }
+                $response = $request->asText();
 
-            if ($finalizeErrorTool->wasCalled()) {
+            } catch (FinalizeSuccess $finalizeSuccess) {
 
-                throw new RuntimeException(sprintf(
-                    'Agent %s failed: %s', $agent->name, $finalizeErrorTool->message() ?? 'Unknown error',
-                ));
+                return $finalizeSuccess->result;
+
+            } catch (FinalizeError $finalizeError) {
+
+                throw new RuntimeException(
+                    message: sprintf('Agent %s failed: %s', $agent->name, $finalizeError->reason),
+                    previous: $finalizeError,
+                );
 
             }
 
             $conversationMessages = $response->messages->all();
         }
 
-        throw new RuntimeException(sprintf(
-            'Agent %s did not call finalize_success or finalize_error after %d attempts.',
-            $agent->name,
-            self::MAX_AGENT_REQUEST_ATTEMPTS,
-        ));
+        throw new RuntimeException(
+            message: sprintf('Agent %s did not call finalize_success or finalize_error after %d attempts.', $agent->name, self::MAX_AGENT_REQUEST_ATTEMPTS),
+        );
     }
 
     private function agentRequest(Agent $agent): PendingRequest
@@ -324,10 +313,6 @@ final readonly class Runtime
             );
     }
 
-    /**
-     * @param array<string, mixed> $providerConfig
-     * @return array<string, mixed>
-     */
     private function normalizeProviderConfig(array $providerConfig): array
     {
         $normalizedConfig = $providerConfig;
@@ -342,10 +327,6 @@ final readonly class Runtime
         return $normalizedConfig;
     }
 
-    /**
-     * @param array<string, mixed> $outputSchema
-     * @throws JsonException
-     */
     private function finalizationPrompt(array $outputSchema): string
     {
         return sprintf(
@@ -360,48 +341,23 @@ final readonly class Runtime
         );
     }
 
-    private function decodeAgentResponse(string $agentName, string $responseText): mixed
-    {
-        $normalizedResponseText = trim($responseText);
-
-        if (str_starts_with($normalizedResponseText, '```')) {
-            $normalizedResponseText = preg_replace('/^```(?:json)?\s*|\s*```$/', '', $normalizedResponseText) ?? $normalizedResponseText;
-            $normalizedResponseText = trim($normalizedResponseText);
-        }
-
-        try {
-            return json_decode($normalizedResponseText, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $jsonException) {
-            throw new RuntimeException(
-                sprintf('Agent %s returned invalid JSON: %s', $agentName, $responseText),
-                previous: $jsonException,
-            );
-        }
-    }
-
-    /**
-     * @param array<string, mixed> $agentOutputs
-     * @return array<string, mixed>
-     */
     private function resolveWorkflowOutput(array $agentOutputs): array
     {
-        $output = [];
-
-        foreach ($this->definition->output->fields as $fieldName => $reference) {
-            $output[ $fieldName ] = $this->resolveOutputField($reference, $agentOutputs);
-        }
-
-        return $output;
+        return array_map(
+            callback: fn (OutputFieldReference $reference) => $this->resolveOutputField($reference, $agentOutputs),
+            array: $this->definition->output->fields,
+        );
     }
 
-    /**
-     * @param array<string, mixed> $agentOutputs
-     */
     private function resolveOutputField(OutputFieldReference $reference, array $agentOutputs): mixed
     {
         return $this->promptParser->resolveReference($reference->ref, $agentOutputs);
     }
 
+    /**
+     * @throws CircularDependencyException
+     * @throws BindingResolutionException
+     */
     private function providerInstance(Agent $agent): PrismProvider
     {
         $provider = $this->definition->providers->findByName($agent->provider);

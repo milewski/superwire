@@ -1,7 +1,35 @@
 {
   "format": "superwire_workflow_compact_v1",
   "workflow_path": "./tests/minimum.wire",
-  "input": null,
+  "input": {
+    "workflow_type": {
+      "kind": "object",
+      "fields": {
+        "max": {
+          "kind": "integer"
+        },
+        "min": {
+          "kind": "integer"
+        }
+      }
+    },
+    "json_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "max": {
+          "type": "integer"
+        },
+        "min": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max",
+        "min"
+      ],
+      "type": "object"
+    }
+  },
   "secrets": null,
   "schemas": [],
   "providers": [
@@ -26,7 +54,23 @@
       "name": "numbers",
       "provider": "openai",
       "model": "qwen3.5-9b",
-      "prompt": "generate a sequence of numbers from 1 to 5.",
+      "prompt": {
+        "$template": [
+          "generate a sequence of numbers from ",
+          {
+            "$expr": {
+              "$ref": "input.min"
+            }
+          },
+          " to ",
+          {
+            "$expr": {
+              "$ref": "input.max"
+            }
+          },
+          "."
+        ]
+      },
       "context": null,
       "inference": null,
       "tools": [],
@@ -75,7 +119,7 @@
       "model": "qwen3.5-9b",
       "prompt": {
         "$template": [
-          "spell out this number ",
+          "spell out this number: ",
           {
             "$expr": {
               "$ref": "number"
