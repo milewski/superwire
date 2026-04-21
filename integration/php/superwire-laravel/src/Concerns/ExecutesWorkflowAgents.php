@@ -186,7 +186,7 @@ trait ExecutesWorkflowAgents
 
     private function maxAgentToolSteps(): int
     {
-        return (int)config('superwire.runtime.max_agent_tool_steps', 20);
+        return (int) config('superwire.runtime.max_agent_tool_steps', 20);
     }
 
     /**

@@ -4,16 +4,16 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
-final class AgentExecutionResult
+final readonly class AgentExecutionResult
 {
     /**
      * @param array<int, array<string, mixed>> $messages
      * @param list<AgentExecutionResult> $iterations
      */
     public function __construct(
-        public readonly mixed $output,
-        public readonly array $messages = [],
-        public readonly array $iterations = [],
+        public mixed $output,
+        public array $messages = [],
+        public array $iterations = [],
     )
     {
     }
