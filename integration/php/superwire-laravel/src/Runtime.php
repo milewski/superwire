@@ -4,17 +4,26 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel;
 
+use JsonException;
 use Prism\Prism\Enums\Provider;
+use Prism\Prism\Providers\Provider as PrismProvider;
 use Prism\Prism\PrismManager;
+use Prism\Prism\Text\PendingRequest;
 use RuntimeException;
 use Spatie\Fork\Fork;
 use Superwire\Laravel\Data\Workflow\Agent;
 use Superwire\Laravel\Data\Workflow\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Support\PromptParser;
+use Superwire\Laravel\Tools\FinalizeErrorTool;
+use Superwire\Laravel\Tools\FinalizeSuccessTool;
 
 final readonly class Runtime
 {
+    private const int MAX_AGENT_REQUEST_ATTEMPTS = 10;
+
+    private const int MAX_AGENT_TOOL_STEPS = 20;
+
     public function __construct(
         private WorkflowDefinition $definition,
         private PromptParser $promptParser = new PromptParser(),
@@ -227,11 +236,7 @@ final readonly class Runtime
             return false;
         }
 
-        $provider = $this->definition->providers->findByName($agent->provider);
-        $providerInstance = app(PrismManager::class)->resolve(
-            $this->intoProvider($provider->driver),
-            $this->normalizeProviderConfig($provider->config),
-        );
+        $providerInstance = $this->providerInstance($agent);
 
         return !str_starts_with($providerInstance::class, 'Prism\\Prism\\Testing\\');
     }
@@ -259,18 +264,64 @@ final readonly class Runtime
 
     /**
      * @param array<string, mixed> $outputSchema
+     * @throws JsonException
      */
     private function executeAgent(Agent $agent, string $prompt, array $outputSchema): mixed
     {
-        $provider = $this->definition->providers->findByName($agent->provider);
-        $response = prism()
-            ->text()
-            ->using($this->intoProvider($provider->driver), $agent->model->name, $this->normalizeProviderConfig($provider->config))
-            ->withSystemPrompt($this->outputSchemaPrompt($outputSchema))
-            ->withPrompt($prompt)
-            ->asText();
+        $finalizeSuccessTool = new FinalizeSuccessTool($outputSchema);
+        $finalizeErrorTool = new FinalizeErrorTool();
+        $conversationMessages = [];
 
-        return $this->decodeAgentResponse($agent->name, $response->text);
+        for ($attemptNumber = 1; $attemptNumber <= self::MAX_AGENT_REQUEST_ATTEMPTS; $attemptNumber++) {
+
+            $request = $this->agentRequest($agent)
+                ->withSystemPrompt($this->finalizationPrompt($outputSchema))
+                ->withTools([ $finalizeSuccessTool, $finalizeErrorTool ])
+                ->withMaxSteps(self::MAX_AGENT_TOOL_STEPS);
+
+            if ($conversationMessages === []) {
+                $request->withPrompt($prompt);
+            }
+
+            if ($conversationMessages !== []) {
+                $request->withMessages($conversationMessages);
+            }
+
+            $response = $request->asText();
+
+            if ($finalizeSuccessTool->wasCalled()) {
+                return $finalizeSuccessTool->result();
+            }
+
+            if ($finalizeErrorTool->wasCalled()) {
+
+                throw new RuntimeException(sprintf(
+                    'Agent %s failed: %s', $agent->name, $finalizeErrorTool->message() ?? 'Unknown error',
+                ));
+
+            }
+
+            $conversationMessages = $response->messages->all();
+        }
+
+        throw new RuntimeException(sprintf(
+            'Agent %s did not call finalize_success or finalize_error after %d attempts.',
+            $agent->name,
+            self::MAX_AGENT_REQUEST_ATTEMPTS,
+        ));
+    }
+
+    private function agentRequest(Agent $agent): PendingRequest
+    {
+        $provider = $this->definition->providers->findByName($agent->provider);
+
+        return prism()
+            ->text()
+            ->using(
+                $this->intoProvider($provider->driver),
+                $agent->model->name,
+                $this->normalizeProviderConfig($provider->config),
+            );
     }
 
     /**
@@ -293,11 +344,18 @@ final readonly class Runtime
 
     /**
      * @param array<string, mixed> $outputSchema
+     * @throws JsonException
      */
-    private function outputSchemaPrompt(array $outputSchema): string
+    private function finalizationPrompt(array $outputSchema): string
     {
         return sprintf(
-            "Respond only with valid JSON matching this schema exactly. Do not include markdown, code fences, or explanation. Schema: %s",
+            <<<Prompt
+            You must finish by calling exactly one tool: `finalize_success` or `finalize_error`.
+            Call finalize_success when you have the final agent output.
+            The finalize_success result argument must match this JSON schema exactly: %s.
+            If you cannot complete the task, call finalize_error with a clear message.
+            Do not end with plain text without calling one of these tools.
+            Prompt,
             json_encode($outputSchema, JSON_THROW_ON_ERROR),
         );
     }
@@ -313,7 +371,7 @@ final readonly class Runtime
 
         try {
             return json_decode($normalizedResponseText, true, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException $jsonException) {
+        } catch (JsonException $jsonException) {
             throw new RuntimeException(
                 sprintf('Agent %s returned invalid JSON: %s', $agentName, $responseText),
                 previous: $jsonException,
@@ -342,5 +400,15 @@ final readonly class Runtime
     private function resolveOutputField(OutputFieldReference $reference, array $agentOutputs): mixed
     {
         return $this->promptParser->resolveReference($reference->ref, $agentOutputs);
+    }
+
+    private function providerInstance(Agent $agent): PrismProvider
+    {
+        $provider = $this->definition->providers->findByName($agent->provider);
+
+        return app(PrismManager::class)->resolve(
+            $this->intoProvider($provider->driver),
+            $this->normalizeProviderConfig($provider->config),
+        );
     }
 }
