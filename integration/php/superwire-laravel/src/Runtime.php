@@ -5,9 +5,11 @@ declare(strict_types = 1);
 namespace Superwire\Laravel;
 
 use Prism\Prism\Tool;
+use Spatie\LaravelData\Data;
 use Superwire\Laravel\Concerns\ExecutesWorkflowAgents;
 use Superwire\Laravel\Concerns\HandlesForkedWorkflowExecution;
 use Superwire\Laravel\Concerns\ResolvesRuntimeProviders;
+use Superwire\Laravel\Concerns\ResolvesWorkflowTools;
 use Superwire\Laravel\Data\Agent\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Support\PromptParser;
@@ -18,6 +20,7 @@ final readonly class Runtime
     use ExecutesWorkflowAgents;
     use HandlesForkedWorkflowExecution;
     use ResolvesRuntimeProviders;
+    use ResolvesWorkflowTools;
 
     public function __construct(
         private WorkflowDefinition $definition,
@@ -25,6 +28,7 @@ final readonly class Runtime
         private array $inputValues = [],
         private array $secretValues = [],
         private array $tools = [],
+        private ?string $outputClass = null,
     )
     {
     }
@@ -34,7 +38,14 @@ final readonly class Runtime
      */
     public function withInputs(array $inputValues): self
     {
-        return new self($this->definition, $this->promptParser, $inputValues, $this->secretValues, $this->tools);
+        return new self(
+            definition: $this->definition,
+            promptParser: $this->promptParser,
+            inputValues: $inputValues,
+            secretValues: $this->secretValues,
+            tools: $this->tools,
+            outputClass: $this->outputClass,
+        );
     }
 
     /**
@@ -42,15 +53,44 @@ final readonly class Runtime
      */
     public function withSecrets(array $secretValues): self
     {
-        return new self($this->definition, $this->promptParser, $this->inputValues, $secretValues, $this->tools);
+        return new self(
+            definition: $this->definition,
+            promptParser: $this->promptParser,
+            inputValues: $this->inputValues,
+            secretValues: $secretValues,
+            tools: $this->tools,
+            outputClass: $this->outputClass,
+        );
     }
 
     /**
-     * @param array<int, Tool|WorkflowTool> $tools
+     * @param array<int, Tool|WorkflowTool|string> $tools
      */
     public function withTools(array $tools): self
     {
-        return new self($this->definition, $this->promptParser, $this->inputValues, $this->secretValues, $tools);
+        return new self(
+            definition: $this->definition,
+            promptParser: $this->promptParser,
+            inputValues: $this->inputValues,
+            secretValues: $this->secretValues,
+            tools: $tools,
+            outputClass: $this->outputClass,
+        );
+    }
+
+    /**
+     * @param class-string|null $outputClass
+     */
+    public function mapInto(?string $outputClass): self
+    {
+        return new self(
+            definition: $this->definition,
+            promptParser: $this->promptParser,
+            inputValues: $this->inputValues,
+            secretValues: $this->secretValues,
+            tools: $this->tools,
+            outputClass: $outputClass,
+        );
     }
 
     public function run(): WorkflowExecutionResult
@@ -69,10 +109,40 @@ final readonly class Runtime
 
         }
 
+        $workflowOutput = $this->resolveWorkflowOutput($agentOutputs);
+
         return new WorkflowExecutionResult(
-            output: $this->resolveWorkflowOutput($agentOutputs),
+            output: $this->mapOutput($workflowOutput),
             agents: $agentOutputs,
+            context: [
+                'agent_outputs' => array_map(
+                    static fn (AgentExecutionResult $agentExecutionResult): mixed => $agentExecutionResult->output,
+                    $agentOutputs,
+                ),
+                'inputs' => $this->inputValues,
+                'secrets' => $this->secretValues,
+            ],
         );
+    }
+
+    /**
+     * @param array<string, mixed> $workflowOutput
+     */
+    private function mapOutput(array $workflowOutput): mixed
+    {
+        if ($this->outputClass === null) {
+            return $workflowOutput;
+        }
+
+        if (is_subclass_of($this->outputClass, Data::class)) {
+            return $this->outputClass::from($workflowOutput);
+        }
+
+        if (method_exists($this->outputClass, 'from')) {
+            return $this->outputClass::from($workflowOutput);
+        }
+
+        return new ($this->outputClass)(...$workflowOutput);
     }
 
     private function resolveWorkflowOutput(array $agentOutputs): array

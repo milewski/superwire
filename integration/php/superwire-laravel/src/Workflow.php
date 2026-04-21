@@ -13,13 +13,14 @@ final readonly class Workflow
     /**
      * @param array<string, mixed> $inputValues
      * @param array<string, mixed> $secretValues
-     * @param array<int, Tool|WorkflowTool> $tools
+     * @param array<int, Tool|WorkflowTool|string> $tools
      */
     private function __construct(
         private string $workflowPath,
         private array $inputValues = [],
         private array $secretValues = [],
         private array $tools = [],
+        private ?string $outputClass = null,
     )
     {
     }
@@ -34,7 +35,7 @@ final readonly class Workflow
      */
     public function withInputs(array $inputValues): self
     {
-        return new self($this->workflowPath, $inputValues, $this->secretValues, $this->tools);
+        return new self($this->workflowPath, $inputValues, $this->secretValues, $this->tools, $this->outputClass);
     }
 
     /**
@@ -42,15 +43,23 @@ final readonly class Workflow
      */
     public function withSecrets(array $secretValues): self
     {
-        return new self($this->workflowPath, $this->inputValues, $secretValues, $this->tools);
+        return new self($this->workflowPath, $this->inputValues, $secretValues, $this->tools, $this->outputClass);
     }
 
     /**
-     * @param array<int, Tool|WorkflowTool> $tools
+     * @param array<int, Tool|WorkflowTool|string> $tools
      */
     public function withTools(array $tools): self
     {
-        return new self($this->workflowPath, $this->inputValues, $this->secretValues, $tools);
+        return new self($this->workflowPath, $this->inputValues, $this->secretValues, $tools, $this->outputClass);
+    }
+
+    /**
+     * @param class-string $outputClass
+     */
+    public function mapInto(string $outputClass): self
+    {
+        return new self($this->workflowPath, $this->inputValues, $this->secretValues, $this->tools, $outputClass);
     }
 
     public function definition(): WorkflowDefinition
@@ -63,7 +72,8 @@ final readonly class Workflow
         return (new Runtime($this->definition()))
             ->withInputs($this->inputValues)
             ->withSecrets($this->secretValues)
-            ->withTools($this->tools);
+            ->withTools($this->tools)
+            ->mapInto($this->outputClass);
     }
 
     public function run(): WorkflowExecutionResult

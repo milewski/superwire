@@ -13,7 +13,13 @@ final class SuperwireLaravelServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../config/superwire.php', 'superwire');
 
         $this->app->singleton(WorkflowCompiler::class, function (): WorkflowCompiler {
-            return new WorkflowCompiler((string) config('superwire.cli.path'));
+            $configuredCliPath = (string) config('superwire.cli.path', '');
+
+            if ($configuredCliPath === '') {
+                $configuredCliPath = (string) config('superwire.cli.binary', '');
+            }
+
+            return new WorkflowCompiler($configuredCliPath);
         });
 
         config()->set(

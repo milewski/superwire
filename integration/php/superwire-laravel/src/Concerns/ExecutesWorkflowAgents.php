@@ -26,6 +26,7 @@ trait ExecutesWorkflowAgents
                 agent: $agent,
                 prompt: $this->promptParser->render($agent->prompt, $agentOutputs, [], $this->inputValues, $this->secretValues),
                 outputSchema: $agent->finalOutputJsonSchema(),
+                agentOutputs: $agentOutputs,
             );
 
         }
@@ -86,6 +87,8 @@ trait ExecutesWorkflowAgents
                 agent: $agent,
                 prompt: $prompt,
                 outputSchema: $agent->iterationJsonSchema(),
+                agentOutputs: $agentOutputs,
+                scope: [ $iterationIdentifier => $iterationValue ],
             );
 
         }
@@ -105,9 +108,14 @@ trait ExecutesWorkflowAgents
         );
     }
 
-    private function executeAgent(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult
+    private function executeAgent(Agent $agent, string $prompt, array $outputSchema, array $agentOutputs, array $scope = []): AgentExecutionResult
     {
-        $toolset = AgentToolset::fromArray($this->tools, $outputSchema);
+        $toolset = AgentToolset::fromArray(
+            tools: $this->resolveToolsForAgent($agent),
+            outputSchema: $outputSchema,
+            toolBindings: $this->resolveToolBindingsForAgent($agent, $agentOutputs, $scope),
+        );
+
         $conversationMessages = [];
 
         for ($toolStepNumber = 1; $toolStepNumber <= $this->maxAgentToolSteps(); $toolStepNumber++) {
