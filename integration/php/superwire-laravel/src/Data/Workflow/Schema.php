@@ -6,19 +6,16 @@ namespace Superwire\Laravel\Data\Workflow;
 
 use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
 
-final class ProviderData
+final class Schema
 {
     use ValidatesPayload;
 
     /**
-     * @param list<string> $models
-     * @param array<string, mixed> $config
+     * @param list<array<string, mixed>> $fields
      */
     public function __construct(
         public readonly string $name,
-        public readonly string $driver,
-        public readonly array $models,
-        public readonly array $config,
+        public readonly array $fields,
     )
     {
     }
@@ -30,9 +27,7 @@ final class ProviderData
     {
         return new self(
             name: self::string($payload, 'name'),
-            driver: self::string($payload, 'driver'),
-            models: self::list($payload, 'models'),
-            config: self::array($payload, 'config'),
+            fields: self::list($payload, 'fields'),
         );
     }
 }

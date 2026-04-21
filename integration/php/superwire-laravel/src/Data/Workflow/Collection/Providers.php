@@ -5,10 +5,10 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Data\Workflow\Collection;
 
 use Illuminate\Support\Collection;
-use Superwire\Laravel\Data\Workflow\ProviderData;
+use Superwire\Laravel\Data\Workflow\Provider;
 
 /**
- * @extends Collection<int, ProviderData>
+ * @extends Collection<int, Provider>
  */
 final class Providers extends Collection
 {
@@ -22,7 +22,7 @@ final class Providers extends Collection
         $items = [];
 
         foreach ($payload as $providerPayload) {
-            $items[] = ProviderData::fromArray($providerPayload);
+            $items[] = Provider::fromArray($providerPayload);
         }
 
         return new self($items);

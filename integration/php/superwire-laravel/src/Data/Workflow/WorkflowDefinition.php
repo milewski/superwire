@@ -10,7 +10,7 @@ use Superwire\Laravel\Data\Workflow\Collection\Providers;
 use Superwire\Laravel\Data\Workflow\Collection\Schemas;
 use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
 
-final class WorkflowDefinitionData
+final class WorkflowDefinition
 {
     use ValidatesPayload;
 

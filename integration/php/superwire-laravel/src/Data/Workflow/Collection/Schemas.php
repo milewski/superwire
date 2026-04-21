@@ -5,10 +5,10 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Data\Workflow\Collection;
 
 use Illuminate\Support\Collection;
-use Superwire\Laravel\Data\Workflow\SchemaData;
+use Superwire\Laravel\Data\Workflow\Schema;
 
 /**
- * @extends Collection<int, SchemaData>
+ * @extends Collection<int, Schema>
  */
 final class Schemas extends Collection
 {
@@ -22,7 +22,7 @@ final class Schemas extends Collection
         $items = [];
 
         foreach ($payload as $schemaPayload) {
-            $items[] = SchemaData::fromArray($schemaPayload);
+            $items[] = Schema::fromArray($schemaPayload);
         }
 
         return new self($items);
