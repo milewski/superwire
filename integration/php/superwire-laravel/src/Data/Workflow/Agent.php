@@ -21,12 +21,12 @@ final class Agent
     public function __construct(
         public readonly string $name,
         public readonly string $provider,
-        public readonly mixed $model,
-        public readonly mixed $prompt,
-        public readonly mixed $context,
-        public readonly mixed $inference,
+        public readonly AgentModel $model,
+        public readonly AgentPrompt $prompt,
+        public readonly AgentContext $context,
+        public readonly AgentInference $inference,
         public readonly array $tools,
-        public readonly mixed $forEach,
+        public readonly ?ForEachData $forEach,
         public readonly AgentOutputData $output,
         public readonly array $dependencies,
         public readonly array $dependents,
@@ -43,16 +43,55 @@ final class Agent
         return new self(
             name: self::string($payload, 'name'),
             provider: self::string($payload, 'provider'),
-            model: $payload['model'] ?? null,
-            prompt: $payload['prompt'] ?? null,
-            context: $payload['context'] ?? null,
-            inference: $payload['inference'] ?? null,
+            model: AgentModel::fromValue($payload['model'] ?? null),
+            prompt: AgentPrompt::fromValue($payload['prompt'] ?? null),
+            context: AgentContext::fromValue($payload['context'] ?? null),
+            inference: AgentInference::fromValue($payload['inference'] ?? null),
             tools: self::list($payload, 'tools'),
-            forEach: $payload['for_each'] ?? null,
+            forEach: ForEachData::fromValue($payload['for_each'] ?? null),
             output: AgentOutputData::fromArray(self::array($payload, 'output')),
             dependencies: self::list($payload, 'dependencies'),
             dependents: self::list($payload, 'dependents'),
             batch: self::int($payload, 'batch'),
         );
+    }
+
+    public function runsForEach(): bool
+    {
+        return $this->forEach !== null;
+    }
+
+    public function forEachIdentifier(): ?string
+    {
+        if ($this->forEach === null) {
+            return null;
+        }
+
+        return $this->forEach->pattern->identifier;
+    }
+
+    public function forEachReference(): ?string
+    {
+        if ($this->forEach === null) {
+            return null;
+        }
+
+        return $this->forEach->iterable->reference;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function iterationJsonSchema(): array
+    {
+        return $this->output->iteration->jsonSchema;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function finalOutputJsonSchema(): array
+    {
+        return $this->output->finalOutput->jsonSchema;
     }
 }
