@@ -12,11 +12,6 @@ use Superwire\Laravel\Data\Workflow\Provider;
  */
 final class Providers extends Collection
 {
-    public function __construct(?array $items = null)
-    {
-        parent::__construct($items ?? []);
-    }
-
     public static function fromArray(array $payload): self
     {
         $items = [];

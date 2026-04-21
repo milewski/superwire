@@ -1,0 +1,186 @@
+{
+  "format": "superwire_workflow_compact_v1",
+  "workflow_path": "./tests/minimum.wire",
+  "input": null,
+  "secrets": null,
+  "schemas": [],
+  "providers": [
+    {
+      "name": "openai",
+      "driver": "openai",
+      "models": [
+        "qwen3.5-9b"
+      ],
+      "config": {
+        "api_key": "sk-S2Wcfi5cJhGGhFpTHjHcClDmQoR6IwTx1PNl9cmIZF6Wtuxz",
+        "driver": "openai",
+        "endpoint": "http://100.118.249.48:3000/v1",
+        "models": [
+          "qwen3.5-9b"
+        ]
+      }
+    }
+  ],
+  "agents": [
+    {
+      "name": "numbers",
+      "provider": "openai",
+      "model": "qwen3.5-9b",
+      "prompt": "generate a sequence of numbers from 1 to 5.",
+      "context": null,
+      "inference": null,
+      "tools": [],
+      "for_each": null,
+      "output": {
+        "iteration": {
+          "workflow_type": {
+            "kind": "array",
+            "item_type": {
+              "kind": "integer"
+            },
+            "fixed_length": null
+          },
+          "json_schema": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "final_output": {
+          "workflow_type": {
+            "kind": "array",
+            "item_type": {
+              "kind": "integer"
+            },
+            "fixed_length": null
+          },
+          "json_schema": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "dependencies": [],
+      "dependents": [
+        "counter"
+      ],
+      "batch": 0
+    },
+    {
+      "name": "counter",
+      "provider": "openai",
+      "model": "qwen3.5-9b",
+      "prompt": {
+        "$template": [
+          "spell out this number ",
+          {
+            "$expr": {
+              "$ref": "number"
+            }
+          },
+          "."
+        ]
+      },
+      "context": null,
+      "inference": null,
+      "tools": [],
+      "for_each": {
+        "pattern": {
+          "identifier": "number"
+        },
+        "iterable": {
+          "$ref": "agent.numbers"
+        }
+      },
+      "output": {
+        "iteration": {
+          "workflow_type": {
+            "kind": "string"
+          },
+          "json_schema": {
+            "type": "string"
+          }
+        },
+        "final_output": {
+          "workflow_type": {
+            "kind": "array",
+            "item_type": {
+              "kind": "string"
+            },
+            "fixed_length": null
+          },
+          "json_schema": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "dependencies": [
+        "numbers"
+      ],
+      "dependents": [],
+      "batch": 1
+    }
+  ],
+  "output": {
+    "fields": {
+      "numbers": {
+        "$ref": "agent.counter"
+      }
+    },
+    "contract": {
+      "workflow_type": {
+        "kind": "object",
+        "fields": {
+          "numbers": {
+            "kind": "array",
+            "item_type": {
+              "kind": "string"
+            },
+            "fixed_length": null
+          }
+        }
+      },
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "numbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "numbers"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "execution": {
+    "order": [
+      "numbers",
+      "counter"
+    ],
+    "batches": [
+      [
+        "numbers"
+      ],
+      [
+        "counter"
+      ]
+    ],
+    "edges": [
+      {
+        "from": "numbers",
+        "to": "counter"
+      }
+    ]
+  }
+}
