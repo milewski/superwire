@@ -5,10 +5,11 @@ declare(strict_types = 1);
 namespace Superwire\Laravel\Data\Workflow;
 
 use InvalidArgumentException;
-use Superwire\Laravel\Data\Workflow\Collection\Agents;
-use Superwire\Laravel\Data\Workflow\Collection\Providers;
-use Superwire\Laravel\Data\Workflow\Collection\Schemas;
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Agent\Execution;
+use Superwire\Laravel\Data\Collection\Agents;
+use Superwire\Laravel\Data\Collection\Providers;
+use Superwire\Laravel\Data\Collection\Schemas;
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
 
 final class WorkflowDefinition
 {

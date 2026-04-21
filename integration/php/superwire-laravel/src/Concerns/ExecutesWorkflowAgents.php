@@ -10,7 +10,7 @@ use Prism\Prism\Text\Response;
 use RuntimeException;
 use Spatie\Fork\Fork;
 use Superwire\Laravel\AgentExecutionResult;
-use Superwire\Laravel\Data\Workflow\Agent;
+use Superwire\Laravel\Data\Agent\Agent;
 use Superwire\Laravel\Tools\AgentToolset;
 
 trait ExecutesWorkflowAgents
@@ -99,8 +99,8 @@ trait ExecutesWorkflowAgents
                 ),
             ),
             iterations: array_map(
-                fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
-                $results,
+                callback: fn (mixed $result): AgentExecutionResult => $this->normalizeExecutionResult($result, sprintf('iteration agent %s', $agent->name)),
+                array: $results,
             ),
         );
     }

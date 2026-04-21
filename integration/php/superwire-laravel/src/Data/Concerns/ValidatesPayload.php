@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow\Concerns;
+namespace Superwire\Laravel\Data\Concerns;
 
 use InvalidArgumentException;
 

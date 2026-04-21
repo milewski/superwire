@@ -2,13 +2,13 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Agent;
 
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
 use Superwire\Laravel\Support\JsonSchemaFactory;
 use Swaggest\JsonSchema\Schema;
 
-final class OutputFieldData
+final class OutputField
 {
     use ValidatesPayload;
 

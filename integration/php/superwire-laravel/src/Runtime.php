@@ -8,7 +8,7 @@ use Prism\Prism\Tool;
 use Superwire\Laravel\Concerns\ExecutesWorkflowAgents;
 use Superwire\Laravel\Concerns\HandlesForkedWorkflowExecution;
 use Superwire\Laravel\Concerns\ResolvesRuntimeProviders;
-use Superwire\Laravel\Data\Workflow\OutputFieldReference;
+use Superwire\Laravel\Data\Agent\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\Support\PromptParser;
 use Superwire\Laravel\Tools\WorkflowTool;

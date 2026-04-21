@@ -4,8 +4,8 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Data\Workflow;
 
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
 use Superwire\Laravel\Support\JsonSchemaFactory;
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
 use Swaggest\JsonSchema\Schema;
 
 final class WorkflowValueDefinition

@@ -2,10 +2,10 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Data\Workflow;
+namespace Superwire\Laravel\Data\Prompt;
 
 use InvalidArgumentException;
-use Superwire\Laravel\Data\Workflow\Concerns\ValidatesPayload;
+use Superwire\Laravel\Data\Concerns\ValidatesPayload;
 
 final class PromptExpression
 {
@@ -27,7 +27,7 @@ final class PromptExpression
 
     public static function fromValue(mixed $value): self
     {
-        if (! is_array($value)) {
+        if (!is_array($value)) {
             throw new InvalidArgumentException('prompt expression must be an array');
         }
 

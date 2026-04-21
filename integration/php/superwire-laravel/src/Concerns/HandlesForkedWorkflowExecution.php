@@ -7,8 +7,9 @@ namespace Superwire\Laravel\Concerns;
 use RuntimeException;
 use Spatie\Fork\Fork;
 use Superwire\Laravel\AgentExecutionResult;
-use Superwire\Laravel\Data\Workflow\Agent;
+use Superwire\Laravel\Data\Agent\Agent;
 use Superwire\Laravel\ForkExecutionFailure;
+use Throwable;
 
 trait HandlesForkedWorkflowExecution
 {
@@ -60,7 +61,7 @@ trait HandlesForkedWorkflowExecution
         $tasks = [];
 
         foreach ($agents as $agent) {
-            $tasks[] = fn (): mixed => $this->runAgentInFork($agent, $agentOutputs);
+            $tasks[] = fn (): ForkExecutionFailure | AgentExecutionResult => $this->runAgentInFork($agent, $agentOutputs);
         }
 
         return $tasks;
@@ -102,9 +103,15 @@ trait HandlesForkedWorkflowExecution
 
         foreach ($iterationValues as $iterationValue) {
 
-            $tasks[] = fn (): mixed => $this->executeAgentInFork(
+            $tasks[] = fn (): ForkExecutionFailure | AgentExecutionResult => $this->executeAgentInFork(
                 agent: $agent,
-                prompt: $this->promptParser->render($agent->prompt, $agentOutputs, [ $iterationIdentifier => $iterationValue ], $this->inputValues, $this->secretValues),
+                prompt: $this->promptParser->render(
+                    prompt: $agent->prompt,
+                    agentOutputs: $agentOutputs,
+                    scope: [ $iterationIdentifier => $iterationValue ],
+                    inputValues: $this->inputValues,
+                    secretValues: $this->secretValues,
+                ),
                 outputSchema: $agent->iterationJsonSchema(),
             );
 
@@ -161,20 +168,20 @@ trait HandlesForkedWorkflowExecution
         );
     }
 
-    private function runAgentInFork(Agent $agent, array $agentOutputs): AgentExecutionResult|ForkExecutionFailure
+    private function runAgentInFork(Agent $agent, array $agentOutputs): AgentExecutionResult | ForkExecutionFailure
     {
         try {
             return $this->runAgent($agent, $agentOutputs);
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             return ForkExecutionFailure::fromThrowable($throwable);
         }
     }
 
-    private function executeAgentInFork(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult|ForkExecutionFailure
+    private function executeAgentInFork(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult | ForkExecutionFailure
     {
         try {
             return $this->executeAgent($agent, $prompt, $outputSchema);
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             return ForkExecutionFailure::fromThrowable($throwable);
         }
     }
