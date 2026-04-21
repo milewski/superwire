@@ -22,4 +22,9 @@ final class Providers extends Collection
 
         return new self($items);
     }
+
+    public function findByName(string $name): Provider
+    {
+        return $this->where('name', $name)->firstOrFail();
+    }
 }
