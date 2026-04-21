@@ -6,14 +6,10 @@ namespace Superwire\Laravel\Tools;
 
 use Prism\Prism\Schema\RawSchema;
 use Prism\Prism\Tool;
-use Prism\Prism\ValueObjects\ToolOutput;
+use Superwire\Laravel\Exceptions\FinalizeSuccess;
 
 final class FinalizeSuccessTool extends Tool
 {
-    private mixed $result = null;
-
-    private bool $wasCalled = false;
-
     /**
      * @param array<string, mixed> $outputSchema
      */
@@ -24,22 +20,8 @@ final class FinalizeSuccessTool extends Tool
         $this
             ->as('finalize_success')
             ->for('Finish the agent successfully with the final output payload.')
+            ->withoutErrorHandling()
             ->withParameter(new RawSchema('result', $outputSchema))
-            ->using(function (mixed $result): ToolOutput {
-                $this->wasCalled = true;
-                $this->result = $result;
-
-                return new ToolOutput('success finalized');
-            });
-    }
-
-    public function wasCalled(): bool
-    {
-        return $this->wasCalled;
-    }
-
-    public function result(): mixed
-    {
-        return $this->result;
+            ->using(fn (mixed $result) => throw new FinalizeSuccess($result));
     }
 }
