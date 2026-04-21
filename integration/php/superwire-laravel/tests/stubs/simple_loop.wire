@@ -19,7 +19,7 @@ agent counter {
 
 agent speller for number in agent.counter {
     model: openai(secrets.model)
-    prompt: "Please speel out the number: {{ number }}."
+    prompt: "Please speel out the number: {{ number }} in lowercase."
     output: string
 }
 

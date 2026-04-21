@@ -16,11 +16,9 @@ use Spatie\Fork\Fork;
 use Superwire\Laravel\Data\Workflow\Agent;
 use Superwire\Laravel\Data\Workflow\OutputFieldReference;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
-use Superwire\Laravel\Exceptions\FinalizeError;
-use Superwire\Laravel\Exceptions\FinalizeSuccess;
 use Superwire\Laravel\Support\PromptParser;
-use Superwire\Laravel\Tools\FinalizeErrorTool;
-use Superwire\Laravel\Tools\FinalizeSuccessTool;
+use Superwire\Laravel\Tools\AgentToolset;
+use Superwire\Laravel\Tools\WorkflowTool;
 
 final readonly class Runtime
 {
@@ -51,7 +49,7 @@ final readonly class Runtime
     }
 
     /**
-     * @param array<int, Tool> $tools
+     * @param array<int, Tool|WorkflowTool> $tools
      */
     public function withTools(array $tools): self
     {
@@ -310,16 +308,18 @@ final readonly class Runtime
 
     private function executeAgent(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult
     {
-        $finalizeSuccessTool = new FinalizeSuccessTool($outputSchema);
-        $finalizeErrorTool = new FinalizeErrorTool();
+        $toolset = AgentToolset::fromArray($this->tools, $outputSchema);
+
         $conversationMessages = [];
 
-        for ($attemptNumber = 1; $attemptNumber <= $this->maxAgentRequestAttempts(); $attemptNumber++) {
+        for ($toolStepNumber = 1; $toolStepNumber <= $this->maxAgentToolSteps(); $toolStepNumber++) {
+
+            $toolset->resetFinalization();
 
             $request = $this->agentRequest($agent)
                 ->withSystemPrompt($this->finalizationPrompt($outputSchema))
-                ->withTools([ ...$this->tools, $finalizeSuccessTool, $finalizeErrorTool ])
-                ->withMaxSteps($this->maxAgentToolSteps());
+                ->withTools($toolset->prismTools())
+                ->withMaxSteps(1);
 
             if ($conversationMessages === []) {
                 $request->withPrompt($prompt);
@@ -329,31 +329,21 @@ final readonly class Runtime
                 $request->withMessages($conversationMessages);
             }
 
-            try {
-
-                $response = $request->asText();
-
-            } catch (FinalizeSuccess $finalizeSuccess) {
-
-                return new AgentExecutionResult(
-                    output: $finalizeSuccess->result,
-                    messages: $conversationMessages,
-                );
-
-            } catch (FinalizeError $finalizeError) {
-
-                throw new RuntimeException(
-                    message: sprintf('Agent %s failed: %s', $agent->name, $finalizeError->reason),
-                    previous: $finalizeError,
-                );
-
-            }
-
+            $response = $request->asText();
             $conversationMessages = $response->messages->all();
+
+            $finalizedExecutionResult = $toolset->finalizeExecutionResult(
+                agentName: $agent->name,
+                messages: $this->messagesToArray($conversationMessages),
+            );
+
+            if ($finalizedExecutionResult !== null) {
+                return $finalizedExecutionResult;
+            }
         }
 
         throw new RuntimeException(
-            message: sprintf('Agent %s did not call finalize_success or finalize_error after %d attempts.', $agent->name, $this->maxAgentRequestAttempts()),
+            message: sprintf('Agent %s did not call finalize_success or finalize_error after %d tool steps.', $agent->name, $this->maxAgentToolSteps()),
         );
     }
 
@@ -483,11 +473,6 @@ final readonly class Runtime
         );
     }
 
-    private function maxAgentRequestAttempts(): int
-    {
-        return (int)config('superwire.runtime.max_agent_request_attempts', 10);
-    }
-
     private function maxAgentToolSteps(): int
     {
         return (int)config('superwire.runtime.max_agent_tool_steps', 20);
@@ -503,55 +488,6 @@ final readonly class Runtime
             callback: static fn (object $message): array => method_exists($message, 'toArray') ? $message->toArray() : [ 'type' => 'unknown' ],
             array: $messages,
         );
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     * @return array<int, array<string, mixed>>
-     */
-    private function finalizeMessages(string $toolName, array $arguments, string $toolResult): array
-    {
-        return [
-            [
-                'type' => 'assistant',
-                'content' => '',
-                'tool_calls' => [ [
-                    'id' => null,
-                    'name' => $toolName,
-                    'arguments' => $arguments,
-                    'result_id' => null,
-                    'reasoning_id' => null,
-                    'reasoning_summary' => [],
-                ] ],
-                'additional_content' => [],
-            ],
-            [
-                'type' => 'tool_result',
-                'tool_results' => [ [
-                    'tool_call_id' => null,
-                    'tool_name' => $toolName,
-                    'args' => $arguments,
-                    'result' => $toolResult,
-                    'tool_call_result_id' => null,
-                    'artifacts' => [],
-                ] ],
-            ],
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function userMessage(string $prompt): array
-    {
-        return [
-            'type' => 'user',
-            'content' => $prompt,
-            'additional_content' => [
-                [ 'text' => $prompt ],
-            ],
-            'additional_attributes' => [],
-        ];
     }
 
     /**
