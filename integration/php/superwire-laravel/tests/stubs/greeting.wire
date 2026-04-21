@@ -1,0 +1,16 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://example.test/v1"
+    api_key: "test-key"
+    models: ["test-model"]
+}
+
+agent greeting {
+    model: openai("test-model")
+    prompt: "Write a short welcome message."
+    output: string
+}
+
+output {
+    greeting: agent.greeting
+}
