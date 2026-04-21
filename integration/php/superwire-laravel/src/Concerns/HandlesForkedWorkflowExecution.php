@@ -113,6 +113,8 @@ trait HandlesForkedWorkflowExecution
                     secretValues: $this->secretValues,
                 ),
                 outputSchema: $agent->iterationJsonSchema(),
+                agentOutputs: $agentOutputs,
+                scope: [ $iterationIdentifier => $iterationValue ],
             );
 
         }
@@ -122,6 +124,10 @@ trait HandlesForkedWorkflowExecution
 
     private function shouldForkIterations(Agent $agent, array $iterationValues): bool
     {
+        if (!(bool) config('superwire.runtime.fork', false)) {
+            return false;
+        }
+
         if (count($iterationValues) < 2) {
             return false;
         }
@@ -177,10 +183,10 @@ trait HandlesForkedWorkflowExecution
         }
     }
 
-    private function executeAgentInFork(Agent $agent, string $prompt, array $outputSchema): AgentExecutionResult | ForkExecutionFailure
+    private function executeAgentInFork(Agent $agent, string $prompt, array $outputSchema, array $agentOutputs, array $scope = []): AgentExecutionResult | ForkExecutionFailure
     {
         try {
-            return $this->executeAgent($agent, $prompt, $outputSchema);
+            return $this->executeAgent($agent, $prompt, $outputSchema, $agentOutputs, $scope);
         } catch (Throwable $throwable) {
             return ForkExecutionFailure::fromThrowable($throwable);
         }

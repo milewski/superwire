@@ -11,7 +11,7 @@ use Superwire\Laravel\AgentExecutionResult;
 final class AgentToolset
 {
     /**
-     * @param array<int, WorkflowTool> $userTools
+     * @param array<int, array{tool: WorkflowTool, bound_arguments: array<string, mixed>}> $userTools
      */
     private function __construct(
         private array $userTools,
@@ -22,13 +22,24 @@ final class AgentToolset
     }
 
     /**
-     * @param array<int, Tool|WorkflowTool> $tools
+     * @param array<int, Tool|WorkflowTool|string> $tools
      * @param array<string, mixed> $outputSchema
+     * @param array<string, array<string, mixed>> $toolBindings
      */
-    public static function fromArray(array $tools, array $outputSchema): self
+    public static function fromArray(array $tools, array $outputSchema, array $toolBindings = []): self
     {
+        $normalizedTools = [];
+
+        foreach ($tools as $tool) {
+            $workflowTool = self::normalizeTool($tool);
+            $normalizedTools[] = [
+                'tool' => $workflowTool,
+                'bound_arguments' => $toolBindings[ $workflowTool->name() ] ?? [],
+            ];
+        }
+
         return new self(
-            userTools: array_map(self::normalizeTool(...), $tools),
+            userTools: $normalizedTools,
             finalizeSuccessTool: new FinalizeSuccessTool($outputSchema),
             finalizeErrorTool: new FinalizeErrorTool(),
         );
@@ -37,12 +48,18 @@ final class AgentToolset
     /**
      * @return array<int, Tool>
      */
-    public function prismTools(array $boundArguments = []): array
+    public function prismTools(): array
     {
-        return array_map(
-            static fn (WorkflowTool $tool): Tool => $tool->toPrismTool($boundArguments),
-            [ ...$this->userTools, $this->finalizeSuccessTool, $this->finalizeErrorTool ],
-        );
+        $tools = [];
+
+        foreach ($this->userTools as $boundTool) {
+            $tools[] = $boundTool[ 'tool' ]->toPrismTool($boundTool[ 'bound_arguments' ]);
+        }
+
+        $tools[] = $this->finalizeSuccessTool->toPrismTool();
+        $tools[] = $this->finalizeErrorTool->toPrismTool();
+
+        return $tools;
     }
 
     public function resetFinalization(): void
@@ -72,8 +89,12 @@ final class AgentToolset
         );
     }
 
-    private static function normalizeTool(Tool|WorkflowTool $tool): WorkflowTool
+    private static function normalizeTool(Tool|WorkflowTool|string $tool): WorkflowTool
     {
+        if (is_string($tool)) {
+            $tool = app($tool);
+        }
+
         if ($tool instanceof WorkflowTool) {
             return $tool;
         }

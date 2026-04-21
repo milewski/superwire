@@ -48,7 +48,21 @@ final class PromptParser
             throw new RuntimeException('Prompt template part must contain text or an expression.');
         }
 
-        return (string)$this->resolveReference($templatePart->expression->reference, $agentOutputs, $scope, $inputValues, $secretValues);
+        $resolvedValue = $this->resolveReference($templatePart->expression->reference, $agentOutputs, $scope, $inputValues, $secretValues);
+
+        if (is_array($resolvedValue)) {
+            return json_encode($resolvedValue, JSON_THROW_ON_ERROR);
+        }
+
+        if (is_bool($resolvedValue)) {
+            return $resolvedValue ? 'true' : 'false';
+        }
+
+        if ($resolvedValue === null) {
+            return 'null';
+        }
+
+        return (string) $resolvedValue;
     }
 
     /**
@@ -68,6 +82,10 @@ final class PromptParser
 
         if (!is_string($referenceRoot)) {
             throw new RuntimeException(sprintf('Unsupported reference: %s', $reference));
+        }
+
+        if (array_key_exists($referenceRoot, $scope)) {
+            return $this->resolveSegments($reference, $scope[ $referenceRoot ], array_slice($segments, 1));
         }
 
         $rootValue = match ($referenceRoot) {
