@@ -4,25 +4,11 @@ declare(strict_types = 1);
 
 namespace Superwire\Laravel\Tests\Feature;
 
-use Generator;
-use Illuminate\Support\Collection;
-use Prism\Prism\Enums\FinishReason;
-use Prism\Prism\Enums\Provider as EnumProvider;
-use Prism\Prism\PrismManager;
-use Prism\Prism\Providers\Provider;
-use Prism\Prism\Streaming\Events\StreamEvent;
 use Prism\Prism\Testing\TextResponseFake;
 use Prism\Prism\Text\Request as TextRequest;
-use Prism\Prism\Text\Step;
-use Prism\Prism\Tool;
-use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
-use Prism\Prism\ValueObjects\Meta;
 use Prism\Prism\ValueObjects\ToolCall;
-use Prism\Prism\ValueObjects\ToolError;
-use Prism\Prism\ValueObjects\ToolResult;
-use Prism\Prism\ValueObjects\Usage;
-use RuntimeException;
+use Superwire\Laravel\Tests\Fakes\ScriptedToolLoopProvider;
 use Superwire\Laravel\Tests\TestCase;
 use Superwire\Laravel\Tools\AbstractTool;
 use Superwire\Laravel\Tools\WorkflowBoundInput;
@@ -62,72 +48,27 @@ final class ToolSchemaValidationTest extends TestCase
     {
         $provider = new RetryingToolProvider();
 
-        app()->instance(PrismManager::class, new class (app(), $provider) extends PrismManager {
-            public function __construct($app, private readonly RetryingToolProvider $provider)
-            {
-                parent::__construct($app);
-            }
-
-            public function resolve(EnumProvider |string $name, array $providerConfig = []): Provider
-            {
-                return $this->provider;
-            }
-        });
+        $this->useFakeProvider($provider);
 
         return $provider;
     }
 }
 
-final class RetryingToolProvider extends Provider
+final class RetryingToolProvider extends ScriptedToolLoopProvider
 {
-    /**
-     * @var array<int, TextRequest>
-     */
-    private array $requests = [];
-
     private ?string $invalidToolResultMessage = null;
 
     private bool $sawInvalidToolResultOnRetry = false;
 
     private string|array|null $validToolResult = null;
 
-    public function text(TextRequest $request): TextResponseFake
+    public function __construct()
     {
-        $this->requests[] = $request;
-
-        return match (count($this->requests)) {
-            1 => $this->invalidToolCallResponse($request),
-            2 => $this->validToolCallResponse($request),
-            3 => $this->finalizeSuccessResponse($request),
-            default => throw new RuntimeException('Unexpected extra text request in retrying tool provider.'),
-        };
-    }
-
-    /**
-     * @return Generator<StreamEvent>
-     */
-    public function stream(TextRequest $request): Generator
-    {
-        throw new RuntimeException('Streaming is disabled for this test provider.');
-    }
-
-    public function registeredTool(string $toolName): ?Tool
-    {
-        $firstRequest = $this->requests[ 0 ] ?? null;
-
-        if (!$firstRequest instanceof TextRequest) {
-            return null;
-        }
-
-        foreach ($firstRequest->tools() as $tool) {
-
-            if ($tool->name() === $toolName) {
-                return $tool;
-            }
-
-        }
-
-        return null;
+        parent::__construct([
+            fn (TextRequest $request, ScriptedToolLoopProvider $provider) => $this->invalidToolCallResponse($request, $provider),
+            fn (TextRequest $request, ScriptedToolLoopProvider $provider) => $this->validToolCallResponse($request, $provider),
+            fn (TextRequest $request, ScriptedToolLoopProvider $provider) => $this->finalizeSuccessResponse($request, $provider),
+        ]);
     }
 
     public function invalidToolResultMessage(): ?string
@@ -145,7 +86,7 @@ final class RetryingToolProvider extends Provider
         return $this->validToolResult;
     }
 
-    private function invalidToolCallResponse(TextRequest $request): TextResponseFake
+    private function invalidToolCallResponse(TextRequest $request, ScriptedToolLoopProvider $provider): TextResponseFake
     {
         $toolCall = new ToolCall(
             id: 'invalid-retry-weather-tool-call',
@@ -153,14 +94,14 @@ final class RetryingToolProvider extends Provider
             arguments: [ 'country' => 'portugal' ],
         );
 
-        [ 'toolResult' => $toolResult ] = $this->executeToolCall($request, $toolCall);
+        $toolResult = $provider->executeToolCall($request, $toolCall);
 
         $this->invalidToolResultMessage = is_string($toolResult->result) ? $toolResult->result : null;
 
-        return $this->toolResponse($request, $toolCall, $toolResult);
+        return $provider->toolResponse($request, $toolCall, $toolResult);
     }
 
-    private function finalizeSuccessResponse(TextRequest $request): TextResponseFake
+    private function finalizeSuccessResponse(TextRequest $request, ScriptedToolLoopProvider $provider): TextResponseFake
     {
         $toolCall = new ToolCall(
             id: 'finalize-success-tool-call',
@@ -172,12 +113,12 @@ final class RetryingToolProvider extends Provider
             ],
         );
 
-        [ 'toolResult' => $toolResult ] = $this->executeToolCall($request, $toolCall);
+        $toolResult = $provider->executeToolCall($request, $toolCall);
 
-        return $this->toolResponse($request, $toolCall, $toolResult);
+        return $provider->toolResponse($request, $toolCall, $toolResult);
     }
 
-    private function validToolCallResponse(TextRequest $request): TextResponseFake
+    private function validToolCallResponse(TextRequest $request, ScriptedToolLoopProvider $provider): TextResponseFake
     {
         $this->sawInvalidToolResultOnRetry = $this->requestContainsInvalidToolResult($request);
 
@@ -189,29 +130,11 @@ final class RetryingToolProvider extends Provider
             ],
         );
 
-        [ 'toolResult' => $toolResult ] = $this->executeToolCall($request, $toolCall);
+        $toolResult = $provider->executeToolCall($request, $toolCall);
 
         $this->validToolResult = $toolResult->result;
 
-        return $this->toolResponse($request, $toolCall, $toolResult);
-    }
-
-    /**
-     * @return array{toolResult: ToolResult}
-     */
-    private function executeToolCall(TextRequest $request, ToolCall $toolCall): array
-    {
-        $tool = $this->resolveTool($toolCall->name, $request->tools());
-        $output = $tool->handle(...$toolCall->arguments());
-
-        $toolResult = new ToolResult(
-            toolCallId: $toolCall->id,
-            toolName: $toolCall->name,
-            args: $toolCall->arguments(),
-            result: $output instanceof ToolError ? $output->message : $output,
-        );
-
-        return [ 'toolResult' => $toolResult ];
+        return $provider->toolResponse($request, $toolCall, $toolResult);
     }
 
     private function requestContainsInvalidToolResult(TextRequest $request): bool
@@ -237,53 +160,6 @@ final class RetryingToolProvider extends Provider
         }
 
         return false;
-    }
-
-    private function toolResponse(TextRequest $request, ToolCall $toolCall, ToolResult $toolResult): TextResponseFake
-    {
-        $assistantMessage = new AssistantMessage(content: '', toolCalls: [ $toolCall ]);
-        $toolResultMessage = new ToolResultMessage([ $toolResult ]);
-
-        return TextResponseFake::make()
-            ->withFinishReason(FinishReason::ToolCalls)
-            ->withToolCalls([ $toolCall ])
-            ->withToolResults([ $toolResult ])
-            ->withUsage(new Usage(0, 0))
-            ->withMeta(new Meta('fake', 'fake'))
-            ->withSteps(collect([
-                new Step(
-                    text: '',
-                    finishReason: FinishReason::ToolCalls,
-                    toolCalls: [ $toolCall ],
-                    toolResults: [ $toolResult ],
-                    providerToolCalls: [],
-                    usage: new Usage(0, 0),
-                    meta: new Meta('fake', 'fake'),
-                    messages: $request->messages(),
-                    systemPrompts: $request->systemPrompts(),
-                ),
-            ]))
-            ->withMessages(new Collection([
-                ...$request->messages(),
-                $assistantMessage,
-                $toolResultMessage,
-            ]));
-    }
-
-    /**
-     * @param array<int, Tool> $tools
-     */
-    private function resolveTool(string $name, array $tools): Tool
-    {
-        foreach ($tools as $tool) {
-
-            if ($tool->name() === $name) {
-                return $tool;
-            }
-
-        }
-
-        throw new RuntimeException(sprintf('Tool not found in retrying tool provider: %s', $name));
     }
 }
 
