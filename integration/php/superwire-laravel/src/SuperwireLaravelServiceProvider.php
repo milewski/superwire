@@ -25,9 +25,7 @@ final class SuperwireLaravelServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(WorkflowCompiler::class, function (): WorkflowCompiler {
-
             return new WorkflowCompiler($this->app->make(WorkflowExecutor::class));
-
         });
 
         config()->set(

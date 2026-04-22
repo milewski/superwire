@@ -6,8 +6,8 @@ namespace Superwire\Laravel\Tests\Feature;
 
 use Illuminate\Support\Facades\File;
 use Superwire\Laravel\Exceptions\WorkflowExecutionException;
-use Superwire\Laravel\WorkflowExecutor;
 use Superwire\Laravel\Tests\TestCase;
+use Superwire\Laravel\WorkflowExecutor;
 
 final class WorkflowExecutorTest extends TestCase
 {
@@ -18,14 +18,14 @@ final class WorkflowExecutorTest extends TestCase
 
         File::ensureDirectoryExists(dirname($scriptPath));
         File::put($scriptPath, <<<'BASH'
-#!/usr/bin/env sh
-if [ "$1" = "fmt" ]; then
-  printf 'formatted workflow\n' > "$2"
-  exit 0
-fi
-exit 1
-BASH);
-        chmod($scriptPath, 0755);
+        #!/usr/bin/env sh
+        if [ "$1" = "fmt" ]; then
+          printf 'formatted workflow\n' > "$2"
+          exit 0
+        fi
+        exit 1
+        BASH);
+        chmod($scriptPath, 0o755);
         File::put($workflowPath, "original workflow\n");
 
         config()->set('superwire.cli.path', $scriptPath);
@@ -44,14 +44,14 @@ BASH);
 
         File::ensureDirectoryExists(dirname($scriptPath));
         File::put($scriptPath, <<<'BASH'
-#!/usr/bin/env sh
-if [ "$1" = "workflow" ] && [ "$2" = "check" ]; then
-  printf 'workflow is valid\n'
-  exit 0
-fi
-exit 1
-BASH);
-        chmod($scriptPath, 0755);
+        #!/usr/bin/env sh
+        if [ "$1" = "workflow" ] && [ "$2" = "check" ]; then
+          printf 'workflow is valid\n'
+          exit 0
+        fi
+        exit 1
+        BASH);
+        chmod($scriptPath, 0o755);
         File::put($workflowPath, "output { ok: true }\n");
 
         config()->set('superwire.cli.path', $scriptPath);
@@ -68,11 +68,11 @@ BASH);
 
         File::ensureDirectoryExists(dirname($scriptPath));
         File::put($scriptPath, <<<'BASH'
-#!/usr/bin/env sh
-printf 'invalid workflow\n' >&2
-exit 2
-BASH);
-        chmod($scriptPath, 0755);
+        #!/usr/bin/env sh
+        printf 'invalid workflow\n' >&2
+        exit 2
+        BASH);
+        chmod($scriptPath, 0o755);
         File::put($workflowPath, "bad workflow\n");
 
         config()->set('superwire.cli.path', $scriptPath);

@@ -15,7 +15,8 @@ final readonly class Workflow
      * @param array<int, string|WorkflowTool> $tools
      */
     private function __construct(
-        private string $workflowPath,
+        private ?string $workflowPath = null,
+        private ?WorkflowDefinition $workflowDefinition = null,
         private array $inputValues = [],
         private array $secretValues = [],
         private array $tools = [],
@@ -26,7 +27,15 @@ final readonly class Workflow
 
     public static function fromFile(string $workflowPath): self
     {
-        return new self($workflowPath);
+        return new self(workflowPath: $workflowPath);
+    }
+
+    public static function fromSource(string $workflowSource, ?string $workflowPath = null): self
+    {
+        return new self(
+            workflowPath: $workflowPath,
+            workflowDefinition: app(WorkflowCompiler::class)->compileSource($workflowSource, $workflowPath),
+        );
     }
 
     /**
@@ -34,7 +43,7 @@ final readonly class Workflow
      */
     public function withInputs(array $inputValues): self
     {
-        return new self($this->workflowPath, $inputValues, $this->secretValues, $this->tools, $this->outputClass);
+        return new self($this->workflowPath, $this->workflowDefinition, $inputValues, $this->secretValues, $this->tools, $this->outputClass);
     }
 
     /**
@@ -42,7 +51,7 @@ final readonly class Workflow
      */
     public function withSecrets(array $secretValues): self
     {
-        return new self($this->workflowPath, $this->inputValues, $secretValues, $this->tools, $this->outputClass);
+        return new self($this->workflowPath, $this->workflowDefinition, $this->inputValues, $secretValues, $this->tools, $this->outputClass);
     }
 
     /**
@@ -50,7 +59,7 @@ final readonly class Workflow
      */
     public function withTools(array $tools): self
     {
-        return new self($this->workflowPath, $this->inputValues, $this->secretValues, $tools, $this->outputClass);
+        return new self($this->workflowPath, $this->workflowDefinition, $this->inputValues, $this->secretValues, $tools, $this->outputClass);
     }
 
     /**
@@ -58,12 +67,12 @@ final readonly class Workflow
      */
     public function mapInto(string $outputClass): self
     {
-        return new self($this->workflowPath, $this->inputValues, $this->secretValues, $this->tools, $outputClass);
+        return new self($this->workflowPath, $this->workflowDefinition, $this->inputValues, $this->secretValues, $this->tools, $outputClass);
     }
 
     public function definition(): WorkflowDefinition
     {
-        return app(WorkflowCompiler::class)->compile($this->workflowPath);
+        return $this->workflowDefinition ?? app(WorkflowCompiler::class)->compile((string) $this->workflowPath);
     }
 
     public function runtime(): Runtime
