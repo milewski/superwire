@@ -60,6 +60,7 @@ final readonly class WorkflowExecutor
             ->run(array_merge([ $this->cliPath ], $arguments));
 
         if (!$process->successful()) {
+
             $message = trim($process->errorOutput() . PHP_EOL . $process->output());
 
             throw new WorkflowExecutionException(sprintf(
@@ -67,6 +68,7 @@ final readonly class WorkflowExecutor
                 $failureContext,
                 $message,
             ));
+
         }
 
         return $process->output();
