@@ -41,7 +41,7 @@ trait HandlesForkedWorkflowExecution
 
         }
 
-        $batchResults = Fork::new()->run(...$this->batchTasks($agents, $agentOutputs));
+        $batchResults = $this->forkRunner()->run(...$this->batchTasks($agents, $agentOutputs));
         $resolvedResults = [];
 
         foreach (array_values(array_keys($agents)) as $index => $agentName) {
@@ -140,6 +140,33 @@ trait HandlesForkedWorkflowExecution
         $providerInstance = $this->providerInstance($agent);
 
         return !str_starts_with($providerInstance::class, 'Prism\\Prism\\Testing\\');
+    }
+
+    private function forkRunner(): Fork
+    {
+        return Fork::new()->before(
+            child: function (): void {
+                $this->prepareForkedChildProcess();
+            },
+        );
+    }
+
+    private function prepareForkedChildProcess(): void
+    {
+        if (!app()->bound('db')) {
+            return;
+        }
+
+        $databaseManager = app('db');
+
+        if (!method_exists($databaseManager, 'getConnections') || !method_exists($databaseManager, 'purge')) {
+            return;
+        }
+
+        // Forked children must not reuse inherited PDO sockets from the parent process.
+        foreach (array_keys($databaseManager->getConnections()) as $connectionName) {
+            $databaseManager->purge($connectionName);
+        }
     }
 
     private function resolveForEachValues(Agent $agent, array $agentOutputs): array
