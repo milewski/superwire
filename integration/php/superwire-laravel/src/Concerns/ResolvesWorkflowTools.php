@@ -121,11 +121,17 @@ trait ResolvesWorkflowTools
     private function resolveConfiguredToolName(mixed $tool): string
     {
         if (is_string($tool)) {
-            $tool = app($tool);
+
+            if (is_a($tool, WorkflowTool::class, true)) {
+                return $tool::name();
+            }
+
+            throw new RuntimeException(sprintf('Unsupported tool configuration type: %s', $tool));
+
         }
 
         if ($tool instanceof WorkflowTool) {
-            return $tool->name();
+            return $tool::name();
         }
 
         throw new RuntimeException(sprintf('Unsupported tool configuration type: %s', get_debug_type($tool)));

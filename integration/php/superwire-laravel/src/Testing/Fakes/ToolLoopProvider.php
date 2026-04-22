@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace Superwire\Laravel\Tests\Fakes;
+namespace Superwire\Laravel\Testing\Fakes;
 
 use Generator;
 use Prism\Prism\Streaming\EventID;
@@ -15,10 +15,7 @@ use Prism\Prism\Streaming\Events\ToolCallEvent;
 use Prism\Prism\Streaming\Events\ToolResultEvent;
 use Prism\Prism\Testing\TextResponseFake;
 use Prism\Prism\Text\Request as TextRequest;
-use Prism\Prism\ValueObjects\ToolCall;
 use RuntimeException;
-use Superwire\Laravel\Tools\Internal\FinalizeErrorTool;
-use Superwire\Laravel\Tools\Internal\FinalizeSuccessTool;
 use Throwable;
 
 final class ToolLoopProvider extends AbstractToolLoopProvider
@@ -109,24 +106,7 @@ final class ToolLoopProvider extends AbstractToolLoopProvider
             return $this->textResponse($request, $result->text);
         }
 
-        $toolCall = new ToolCall(
-            id: 'fake-finalize-success',
-            name: FinalizeSuccessTool::name(),
-            arguments: [ 'result' => $result ],
-        );
-
-        return $this->toolResponse($request, $toolCall, $this->executeToolCall($request, $toolCall));
-    }
-
-    private function finalizeErrorResponse(TextRequest $request, string $message): TextResponseFake
-    {
-        $toolCall = new ToolCall(
-            id: 'fake-finalize-error',
-            name: FinalizeErrorTool::name(),
-            arguments: [ 'message' => $message ],
-        );
-
-        return $this->toolResponse($request, $toolCall, $this->executeToolCall($request, $toolCall));
+        return $this->finalizeSuccessResponse($request, $result);
     }
 
     private function resultForPrompt(?string $prompt): mixed

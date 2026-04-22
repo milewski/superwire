@@ -11,6 +11,7 @@ use Prism\Prism\ValueObjects\ToolCall;
 use Superwire\Laravel\Tests\Fakes\ScriptedToolLoopProvider;
 use Superwire\Laravel\Tests\TestCase;
 use Superwire\Laravel\Tools\AbstractTool;
+use Superwire\Laravel\Tools\Internal\FinalizeSuccessTool;
 use Superwire\Laravel\Tools\WorkflowBoundInput;
 use Superwire\Laravel\Tools\WorkflowToolInput;
 use Superwire\Laravel\Workflow;
@@ -29,7 +30,7 @@ final class ToolSchemaValidationTest extends TestCase
             ->withTools([ new BoundSchemaTool(), new RetryWeatherTool() ])
             ->run();
 
-        $registeredTool = $provider->registeredTool('bound_schema_tool');
+        $registeredTool = $provider->registeredTool(BoundSchemaTool::name());
 
         $this->assertNotNull($registeredTool);
         $this->assertSame([ 'city' ], $registeredTool->requiredParameters());
@@ -90,7 +91,7 @@ final class RetryingToolProvider extends ScriptedToolLoopProvider
     {
         $toolCall = new ToolCall(
             id: 'invalid-retry-weather-tool-call',
-            name: 'retry_weather_tool',
+            name: RetryWeatherTool::name(),
             arguments: [ 'country' => 'portugal' ],
         );
 
@@ -105,7 +106,7 @@ final class RetryingToolProvider extends ScriptedToolLoopProvider
     {
         $toolCall = new ToolCall(
             id: 'finalize-success-tool-call',
-            name: 'finalize_success',
+            name: FinalizeSuccessTool::name(),
             arguments: [
                 'result' => [
                     'weather' => 'sunny in lisbon',
@@ -124,7 +125,7 @@ final class RetryingToolProvider extends ScriptedToolLoopProvider
 
         $toolCall = new ToolCall(
             id: 'valid-retry-weather-tool-call',
-            name: 'retry_weather_tool',
+            name: RetryWeatherTool::name(),
             arguments: [
                 'city' => 'lisbon',
             ],
@@ -147,7 +148,7 @@ final class RetryingToolProvider extends ScriptedToolLoopProvider
 
             foreach ($message->toolResults as $toolResult) {
 
-                if ($toolResult->toolName !== 'retry_weather_tool') {
+                if ($toolResult->toolName !== RetryWeatherTool::name()) {
                     continue;
                 }
 

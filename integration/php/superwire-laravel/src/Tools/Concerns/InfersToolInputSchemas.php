@@ -112,7 +112,7 @@ trait InfersToolInputSchemas
 
         foreach ($dataClass->properties as $property) {
 
-            $properties[ $property->name ] = $this->schemaForDataProperty($property);
+            $properties[ $property->name ] = JsonSchemaFactory::toArray($this->schemaForDataProperty($property));
 
             if (!$property->hasDefaultValue && !$property->type->isNullable) {
                 $required[] = $property->name;
