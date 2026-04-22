@@ -8,7 +8,6 @@ use Prism\Prism\Streaming\StreamCollector;
 use Prism\Prism\Text\PendingRequest;
 use Prism\Prism\Text\Response;
 use RuntimeException;
-use Spatie\Fork\Fork;
 use Superwire\Laravel\AgentExecutionResult;
 use Superwire\Laravel\Data\Agent\Agent;
 use Superwire\Laravel\Tools\AgentToolset;
@@ -49,7 +48,7 @@ trait ExecutesWorkflowAgents
          */
         if ($this->shouldForkIterations($agent, $iterationValues)) {
 
-            $results = Fork::new()->run(...$this->iterationTasks(
+            $results = $this->forkRunner()->run(...$this->iterationTasks(
                 agent: $agent,
                 agentOutputs: $agentOutputs,
                 iterationIdentifier: $iterationIdentifier,
