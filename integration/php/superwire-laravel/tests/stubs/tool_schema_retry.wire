@@ -1,0 +1,22 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://example.test/v1"
+    api_key: "test-key"
+    models: ["test-model"]
+}
+
+agent assistant {
+    model: openai("test-model")
+    tools: [
+        tool.bound_schema_tool(tenant_id: "tenant-123"),
+        tool.retry_weather_tool
+    ]
+    prompt: "Use the weather tool and finish with the weather summary."
+    output: {
+        weather: string
+    }
+}
+
+output {
+    weather: agent.assistant.weather
+}

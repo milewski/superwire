@@ -43,8 +43,7 @@ abstract class AbstractTool implements WorkflowTool
 
         $tool
             ->as($this->name())
-            ->for(static::description())
-            ->withoutErrorHandling();
+            ->for(static::description());
 
         foreach ($this->agentInputSchemas() as $parameterSchema) {
 
