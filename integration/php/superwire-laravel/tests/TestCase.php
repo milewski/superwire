@@ -9,6 +9,7 @@ use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\PrismManager;
 use Prism\Prism\PrismServiceProvider;
+use Spatie\LaravelData\LaravelDataServiceProvider;
 use Superwire\Laravel\Data\Workflow\WorkflowDefinition;
 use Superwire\Laravel\SuperwireLaravelServiceProvider;
 use Superwire\Laravel\Tests\Fakes\ToolLoopProvider;
@@ -24,6 +25,7 @@ abstract class TestCase extends OrchestraTestCase
     {
         return [
             PrismServiceProvider::class,
+            LaravelDataServiceProvider::class,
             SuperwireLaravelServiceProvider::class,
         ];
     }

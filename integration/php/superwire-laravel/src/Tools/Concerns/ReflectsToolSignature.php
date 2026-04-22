@@ -10,8 +10,11 @@ use ReflectionNamedType;
 use ReflectionParameter;
 use RuntimeException;
 use Spatie\LaravelData\Contracts\BaseData;
+use Spatie\LaravelData\Support\Creation\CreationContextFactory;
 use Superwire\Laravel\Contracts\BoundInput;
 use Superwire\Laravel\Contracts\ToolInput;
+use Throwable;
+use TypeError;
 
 trait ReflectsToolSignature
 {
@@ -87,7 +90,23 @@ trait ReflectsToolSignature
     protected static function resolveDataObject(string $className, array $payload): mixed
     {
         if (is_a($className, BaseData::class, true)) {
-            return $className::from($payload);
+
+            $dataConfig = config('data');
+
+            if (!is_array($dataConfig)) {
+                $dataConfig = [ 'validation_strategy' => 'disabled' ];
+            }
+
+            try {
+
+                return CreationContextFactory::createFromConfig($className, $dataConfig)->from($payload);
+
+            } catch (Throwable $throwable) {
+
+                throw new TypeError($throwable->getMessage(), previous: $throwable);
+
+            }
+
         }
 
         return app()->make($className, $payload);
