@@ -91,7 +91,15 @@ trait InfersToolInputSchemas
         }
 
         if ($type->kind === DataTypeKind::Array) {
-            return $this->schemaFromDefinition([ 'type' => 'array' ], sprintf('tool array property schema `%s`', $propertyName));
+
+            $definition = [ 'type' => 'array' ];
+
+            if ($type->iterableItemType !== null) {
+                $definition[ 'items' ] = $this->schemaForIterableItemType($type->iterableItemType);
+            }
+
+            return $this->schemaFromDefinition($definition, sprintf('tool array property schema `%s`', $propertyName));
+
         }
 
         $reflectionProperty = new ReflectionProperty($className, $propertyName);
