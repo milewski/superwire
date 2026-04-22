@@ -33,7 +33,31 @@ abstract class TestCase extends OrchestraTestCase
 
     protected function getEnvironmentSetUp($app): void
     {
-        $app[ 'config' ]->set('superwire.cli.path', realpath(__DIR__ . '/../../../../superwire-cli'));
+        $configuredPath = env('SUPERWIRE_CLI_PATH');
+
+        if (!is_string($configuredPath) || $configuredPath === '') {
+            $configuredPath = $this->resolveDefaultCliPath();
+        }
+
+        $app[ 'config' ]->set('superwire.cli.path', $configuredPath);
+    }
+
+    protected function resolveDefaultCliPath(): string
+    {
+        $candidates = [
+            realpath(__DIR__ . '/../../../superwire/superwire-cli'),
+            realpath(__DIR__ . '/../../../superwire-cli'),
+        ];
+
+        foreach ($candidates as $candidate) {
+
+            if (is_string($candidate) && $candidate !== '') {
+                return $candidate;
+            }
+
+        }
+
+        return '';
     }
 
     protected function compileWorkflow(string $fixtureName): WorkflowDefinition

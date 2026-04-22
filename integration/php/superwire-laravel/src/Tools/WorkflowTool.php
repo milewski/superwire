@@ -8,7 +8,7 @@ use Prism\Prism\Tool;
 
 interface WorkflowTool
 {
-    public function name(): string;
+    public static function name(): string;
 
     public function toPrismTool(array $boundArguments = []): Tool;
 }

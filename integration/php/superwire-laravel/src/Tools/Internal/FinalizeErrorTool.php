@@ -13,7 +13,7 @@ final class FinalizeErrorTool implements WorkflowTool
 
     private ?string $reason = null;
 
-    public function name(): string
+    public static function name(): string
     {
         return 'finalize_error';
     }
@@ -23,7 +23,7 @@ final class FinalizeErrorTool implements WorkflowTool
         $tool = new Tool();
 
         return $tool
-            ->as($this->name())
+            ->as(self::name())
             ->for('Finish the agent with an error message when the task cannot be completed.')
             ->withoutErrorHandling()
             ->withStringParameter('message', 'The reason the agent cannot complete successfully.')

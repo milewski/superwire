@@ -11,6 +11,7 @@ use Prism\Prism\ValueObjects\ToolCall;
 use RuntimeException;
 use Superwire\Laravel\Tests\Fakes\AbstractToolLoopProvider;
 use Superwire\Laravel\Tests\TestCase;
+use Superwire\Laravel\Tools\Internal\FinalizeSuccessTool;
 use Superwire\Laravel\Workflow;
 
 final class LoopExecutionTest extends TestCase
@@ -118,7 +119,7 @@ final class DatabaseQueryToolLoopProvider extends AbstractToolLoopProvider
     {
         $toolCall = new ToolCall(
             id: 'fake-finalize-success',
-            name: 'finalize_success',
+            name: FinalizeSuccessTool::name(),
             arguments: [ 'result' => $result ],
         );
 

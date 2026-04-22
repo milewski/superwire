@@ -38,7 +38,7 @@ final readonly class AgentToolset
             $workflowTool = self::normalizeTool($tool);
             $normalizedTools[] = [
                 'tool' => $workflowTool,
-                'bound_arguments' => $toolBindings[ $workflowTool->name() ] ?? [],
+                'bound_arguments' => $toolBindings[ $workflowTool::name() ] ?? [],
             ];
 
         }

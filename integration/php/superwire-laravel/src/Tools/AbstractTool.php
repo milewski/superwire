@@ -21,7 +21,7 @@ abstract class AbstractTool implements WorkflowTool
     use ReflectsToolSignature;
     use ResolvesToolDescriptions;
 
-    public function name(): string
+    public static function name(): string
     {
         return Str::snake(class_basename(static::class));
     }
@@ -42,7 +42,7 @@ abstract class AbstractTool implements WorkflowTool
         $tool = new Tool();
 
         $tool
-            ->as($this->name())
+            ->as(static::name())
             ->for(static::description());
 
         foreach ($this->agentInputSchemas() as $parameterSchema) {
@@ -93,7 +93,7 @@ abstract class AbstractTool implements WorkflowTool
 
             throw new RuntimeException(sprintf(
                 'Tool `%s` has unsupported execution parameter `%s`. Use %s or %s implementations only.',
-                $this->name(),
+                static::name(),
                 $parameter->getName(),
                 ToolInput::class,
                 BoundInput::class,

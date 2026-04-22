@@ -6,6 +6,7 @@ namespace Superwire\Laravel\Tests\Feature;
 
 use InvalidArgumentException;
 use Superwire\Laravel\Tests\TestCase;
+use Superwire\Laravel\Tools\Internal\FinalizeSuccessTool;
 use Superwire\Laravel\Workflow;
 
 final class BasicExecutionTest extends TestCase
@@ -24,7 +25,7 @@ final class BasicExecutionTest extends TestCase
         $this->assertSame('user', $result->agents[ 'greeting' ]->messages[ 0 ][ 'type' ]);
         $this->assertSame('assistant', $result->agents[ 'greeting' ]->messages[ 1 ][ 'type' ]);
         $this->assertSame('tool_result', $result->agents[ 'greeting' ]->messages[ 2 ][ 'type' ]);
-        $this->assertSame('finalize_success', $result->agents[ 'greeting' ]->messages[ 2 ][ 'tool_results' ][ 0 ][ 'tool_name' ]);
+        $this->assertSame(FinalizeSuccessTool::name(), $result->agents[ 'greeting' ]->messages[ 2 ][ 'tool_results' ][ 0 ][ 'tool_name' ]);
         $this->assertCount(0, $provider->textRequests());
         $this->assertCount(1, $provider->streamRequests());
     }

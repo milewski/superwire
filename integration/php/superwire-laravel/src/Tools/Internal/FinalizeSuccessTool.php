@@ -22,7 +22,7 @@ class FinalizeSuccessTool implements WorkflowTool
     {
     }
 
-    public function name(): string
+    public static function name(): string
     {
         return 'finalize_success';
     }
@@ -32,7 +32,7 @@ class FinalizeSuccessTool implements WorkflowTool
         $tool = new Tool();
 
         return $tool
-            ->as($this->name())
+            ->as(static::name())
             ->for('Finish the agent successfully with the final output payload.')
             ->withoutErrorHandling()
             ->withParameter(new RawSchema('result', $this->outputSchema))
