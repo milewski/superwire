@@ -19,7 +19,6 @@ use superwire_core::runtime::{
     WorkflowRuntimeError,
 };
 use superwire_core::semantic::{compile_workflow_pipeline, ExecutionPlan, TypedWorkflowIr, WorkflowPipelineInput};
-use superwire_tool::ToolBackend;
 
 use crate::diagnostics::CommandError;
 
@@ -36,10 +35,7 @@ pub struct WorkflowCommand {
 impl WorkflowCommand {
     pub fn execute(self) -> Result<(), CommandError> {
         match self.command {
-            WorkflowSubcommand::Init(init_workflow_command) => init_workflow_command.execute(),
-            WorkflowSubcommand::Inspect(inspect_command) => inspect_command.execute(),
             WorkflowSubcommand::ToJson(to_json_workflow_command) => to_json_workflow_command.execute(),
-            WorkflowSubcommand::Build(build_workflow_command) => build_workflow_command.execute(),
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
         }
@@ -48,10 +44,7 @@ impl WorkflowCommand {
 
 #[derive(Debug, Subcommand)]
 enum WorkflowSubcommand {
-    Init(InitWorkflowCommand),
-    Inspect(InspectCommand),
     ToJson(ToJsonWorkflowCommand),
-    Build(BuildWorkflowCommand),
     Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
 }
@@ -77,15 +70,8 @@ impl CheckWorkflowCommand {
 
         let runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
             .map_err(|schema_context_error| CommandError::invalid_input(schema_context_error.message().to_string()))?;
-        let workflow_directory = self.workflow_path.parent().unwrap_or_else(|| Path::new("."));
-
         runtime_schema_context
-            .with_scope(|| {
-                superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new_with_workflow_directory(
-                    parsed_workflow,
-                    workflow_directory,
-                )
-            })
+            .with_scope(|| superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new(parsed_workflow))
             .map_err(Self::map_workflow_runtime_error)?;
 
         println!("workflow is valid");
@@ -142,15 +128,8 @@ impl RunWorkflowCommand {
         })?;
 
         let runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)?;
-        let workflow_directory = self.workflow_path.parent().unwrap_or_else(|| Path::new("."));
-
         let workflow_runtime = runtime_schema_context
-            .with_scope(|| {
-                superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new_with_workflow_directory(
-                    parsed_workflow.clone(),
-                    workflow_directory,
-                )
-            })
+            .with_scope(|| superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new(parsed_workflow.clone()))
             .map_err(|error| CommandError::internal(error.to_string()))?;
 
         let output_value = async_runtime
@@ -548,179 +527,6 @@ impl CliWorkflowTypeInference {
         }
 
         Ok(WorkflowType::Object(output_field_types).normalize())
-    }
-}
-
-#[derive(Debug, Args)]
-struct InitWorkflowCommand {
-    #[arg(value_name = "DIRECTORY", default_value = ".")]
-    directory: PathBuf,
-}
-
-impl InitWorkflowCommand {
-    fn execute(self) -> Result<(), CommandError> {
-        let workflow_directory = if self.directory.is_absolute() {
-            self.directory.clone()
-        } else {
-            Path::new(".").join(&self.directory)
-        };
-
-        fs::create_dir_all(&workflow_directory).map_err(|error| CommandError::internal(format!("create directory: {error}")))?;
-
-        let main_wire = workflow_directory.join("main.wire");
-        let tool_sources_directory = workflow_directory.join("tool-sources");
-        let tool_sources_source_directory = tool_sources_directory.join("src");
-        let tool_sources_wit_directory = tool_sources_directory.join("wit");
-        let tools_directory = workflow_directory.join("tools");
-
-        if main_wire.exists() {
-            return Err(CommandError::invalid_input(format!("file exists: {}", main_wire.display())));
-        }
-
-        if tool_sources_directory.exists() {
-            return Err(CommandError::invalid_input(format!(
-                "dir exists: {}",
-                tool_sources_directory.display()
-            )));
-        }
-
-        if tools_directory.exists() {
-            return Err(CommandError::invalid_input(format!("dir exists: {}", tools_directory.display())));
-        }
-
-        fs::write(&main_wire, WORKFLOW_INIT_TPL).map_err(|error| CommandError::internal(format!("write main file: {error}")))?;
-        self.scaffold_tool_files(
-            &tool_sources_directory,
-            &tool_sources_source_directory,
-            &tool_sources_wit_directory,
-            &tools_directory,
-        )?;
-        self.write_gitignore(&workflow_directory)?;
-
-        println!("initialized {}", main_wire.display());
-        println!("initialized {}", tool_sources_directory.join("Cargo.toml").display());
-        println!("initialized {}", tool_sources_source_directory.join("lib.rs").display());
-        println!("initialized {}", tool_sources_wit_directory.join("tool.wit").display());
-        println!("initialized {}", tools_directory.display());
-        println!("next: superwire-cli workflow build {}", workflow_directory.display());
-        println!("next: superwire-cli workflow check {}", main_wire.display());
-        Ok(())
-    }
-
-    fn scaffold_tool_files(
-        &self,
-        tool_sources_directory: &Path,
-        tool_sources_source_directory: &Path,
-        tool_sources_wit_directory: &Path,
-        tools_directory: &Path,
-    ) -> Result<(), CommandError> {
-        fs::create_dir_all(tool_sources_source_directory)
-            .map_err(|error| CommandError::internal(format!("create tool source directory: {error}")))?;
-        fs::create_dir_all(tool_sources_wit_directory)
-            .map_err(|error| CommandError::internal(format!("create tool wit directory: {error}")))?;
-        fs::create_dir_all(tools_directory).map_err(|error| CommandError::internal(format!("create tools directory: {error}")))?;
-
-        fs::write(tool_sources_directory.join("Cargo.toml"), TOOL_CARGO_TPL)
-            .map_err(|error| CommandError::internal(format!("write tool cargo manifest: {error}")))?;
-
-        let lib_rs_content = r##"mod bindings {
-    wit_bindgen::generate!({
-        path: "wit/tool.wit",
-        world: "superwire-tool",
-    });
-}
-
-use bindings::exports::superwire::tool::tool::{Guest, ToolDefinition, ToolError};
-use crate::bindings::export;
-
-pub struct ExampleTool;
-
-impl Guest for ExampleTool {
-    fn definition() -> Result<ToolDefinition, String> {
-        Ok(ToolDefinition {
-            name: "example_tool".to_string(),
-            description: "A simple example tool".to_string(),
-            parameters_schema_json: r#"{"type":"object","properties":{"query":{"type":"string"}}}"#.to_string(),
-            bound_parameters_schema_json: r#"{"type":"object"}"#.to_string(),
-            output_schema_json: r#"{"type":"object","properties":{"message":{"type":"string"}}}"#.to_string(),
-        })
-    }
-
-    fn execute(agent_input_json: String, _bound_input_json: String) -> Result<String, ToolError> {
-        let input: serde_json::Value = serde_json::from_str(&agent_input_json)
-            .map_err(|e| ToolError {
-                code: "parse_error".to_string(),
-                message: e.to_string(),
-            })?;
-
-        let query = input.get("query")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-
-        let output = serde_json::json!({
-            "message": format!("processed: {}", query)
-        });
-
-        Ok(output.to_string())
-    }
-}
-
-export!(ExampleTool with_types_in bindings);
-"##;
-
-        fs::write(tool_sources_source_directory.join("lib.rs"), lib_rs_content)
-            .map_err(|error| CommandError::internal(format!("write tool source: {error}")))?;
-        fs::write(tool_sources_wit_directory.join("tool.wit"), TOOL_WIT_TPL)
-            .map_err(|error| CommandError::internal(format!("write tool wit: {error}")))?;
-
-        Ok(())
-    }
-
-    fn write_gitignore(&self, dir: &Path) -> Result<(), CommandError> {
-        let gitignore_content = r"# Build artifacts
-/target/
-/tool-sources/target/
-
-# WASM components (generated during build)
-/tools/*.wasm
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-";
-        fs::write(dir.join(".gitignore"), gitignore_content).map_err(|e| CommandError::internal(format!("gitignore: {e}")))?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Args)]
-struct InspectCommand {
-    #[arg(value_name = "TOOL_PATH")]
-    tool_path: PathBuf,
-}
-
-impl InspectCommand {
-    fn execute(self) -> Result<(), CommandError> {
-        let path = self.tool_path;
-
-        if !path.exists() {
-            return Err(CommandError::invalid_input(format!("tool file not found: {}", path.display())));
-        }
-
-        let backend = superwire_tool::backend::wasm::WasmBackend::new(&path).map_err(|e| CommandError::internal(e.to_string()))?;
-
-        let descriptor = backend.describe().map_err(|e| CommandError::internal(e.to_string()))?;
-
-        let json = serde_json::to_string_pretty(&descriptor).map_err(|e| CommandError::internal(e.to_string()))?;
-
-        println!("{json}");
-
-        Ok(())
     }
 }
 
@@ -1520,221 +1326,5 @@ impl SerializableWorkflowType {
                 members: union_members.iter().map(Self::from_workflow_type).collect::<Vec<_>>(),
             },
         }
-    }
-}
-
-const WORKFLOW_INIT_TPL: &str = r#"input {
-    query: string
-}
-
-provider openai {
-    driver: "openai"
-    endpoint: "http://169.254.83.107:1234/v1"
-    api_key: "1234"
-    models: ["qwen3.5-9b"]
-}
-
-agent assistant {
-    model: openai("qwen3.5-9b")
-    tools: [tool.example_tool]
-
-    prompt: "You are a helpful assistant."
-
-    output: {
-        result: string
-    }
-}
-
-output {
-    result: agent.assistant.result
-}
-"#;
-
-const TOOL_CARGO_TPL: &str = r#"[package]
-name = "tool-sources"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-path = "src/lib.rs"
-crate-type = ["cdylib"]
-
-[workspace]
-
-[dependencies]
-serde_json = "1.0"
-wit-bindgen = "0"
-"#;
-
-const TOOL_WIT_TPL: &str = r"package superwire:tool@0.1.0;
-
-interface tool {
-    record tool-definition {
-        name: string,
-        description: string,
-        parameters-schema-json: string,
-        bound-parameters-schema-json: string,
-        output-schema-json: string,
-    }
-
-    record tool-error {
-        code: string,
-        message: string,
-    }
-
-    definition: func() -> result<tool-definition, string>;
-    execute: func(agent-input-json: string, bound-input-json: string) -> result<string, tool-error>;
-}
-
-interface marker {}
-
-world superwire-tool {
-    export tool;
-    export marker;
-}
-";
-
-#[derive(Debug, Args)]
-struct BuildWorkflowCommand {
-    #[arg(value_name = "DIRECTORY", default_value = ".")]
-    directory: PathBuf,
-}
-
-impl BuildWorkflowCommand {
-    fn execute(self) -> Result<(), CommandError> {
-        let current_working_directory =
-            std::env::current_dir().map_err(|error| CommandError::internal(format!("read current directory: {error}")))?;
-
-        let workflow_directory = if self.directory.is_absolute() {
-            if self.directory.join("main.wire").exists() {
-                self.directory.clone()
-            } else {
-                current_working_directory.join(&self.directory)
-            }
-        } else {
-            current_working_directory.join(&self.directory)
-        };
-
-        let main_wire = workflow_directory.join("main.wire");
-        let tool_sources_directory = workflow_directory.join("tool-sources");
-        let tool_sources_source_directory = tool_sources_directory.join("src");
-        let tool_sources_wit_directory = tool_sources_directory.join("wit");
-
-        if !main_wire.exists() {
-            return Err(CommandError::invalid_input(format!("workflow not found: {}", main_wire.display())));
-        }
-
-        if !tool_sources_source_directory.is_dir() {
-            return Err(CommandError::invalid_input(format!(
-                "tool source directory not found: {}",
-                tool_sources_source_directory.display()
-            )));
-        }
-
-        if !tool_sources_wit_directory.is_dir() {
-            return Err(CommandError::invalid_input(format!(
-                "tool wit directory not found: {}",
-                tool_sources_wit_directory.display()
-            )));
-        }
-
-        let tools_directory = workflow_directory.join("tools");
-
-        if !tools_directory.exists() {
-            fs::create_dir_all(&tools_directory).map_err(|error| CommandError::internal(format!("create tools directory: {error}")))?;
-        }
-
-        self.build_tools(&workflow_directory, &tool_sources_directory, &tools_directory)?;
-
-        Ok(())
-    }
-
-    fn build_tools(&self, workflow_directory: &Path, tool_sources_directory: &Path, tools_directory: &Path) -> Result<(), CommandError> {
-        let cargo_manifest_path = tool_sources_directory.join("Cargo.toml");
-        let wit_directory = tool_sources_directory.join("wit");
-
-        if !cargo_manifest_path.exists() {
-            return Err(CommandError::invalid_input(format!(
-                "tool sources manifest not found: {}",
-                cargo_manifest_path.display()
-            )));
-        }
-
-        if !wit_directory.is_dir() {
-            return Err(CommandError::invalid_input(format!(
-                "tool wit directory not found: {}",
-                wit_directory.display()
-            )));
-        }
-
-        println!("compiling tools to wasm...");
-        let output = std::process::Command::new("cargo")
-            .arg("build")
-            .arg("--manifest-path")
-            .arg(&cargo_manifest_path)
-            .arg("--target")
-            .arg("wasm32-unknown-unknown")
-            .output()
-            .map_err(|error| CommandError::internal(format!("cargo build failed to launch: {error}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CommandError::internal(format!("build failed: {stderr}")));
-        }
-
-        let wasm_output_directory = tool_sources_directory.join("target/wasm32-unknown-unknown/debug");
-
-        let wasm_files: Vec<PathBuf> = std::fs::read_dir(&wasm_output_directory)
-            .map_err(|error| CommandError::internal(format!("read wasm output directory: {error}")))?
-            .filter_map(std::result::Result::ok)
-            .filter(|directory_entry| directory_entry.path().extension().is_some_and(|extension| extension == "wasm"))
-            .map(|directory_entry| directory_entry.path().clone())
-            .collect();
-
-        if wasm_files.is_empty() {
-            return Err(CommandError::invalid_input(format!(
-                "no wasm output in {}",
-                wasm_output_directory.display()
-            )));
-        }
-
-        for wasm_file in &wasm_files {
-            let file_name = wasm_file.file_name().unwrap_or_default().to_string_lossy();
-            let target_path = tools_directory.join(&*file_name);
-
-            let embed_path = workflow_directory.join(format!(".embed_{file_name}"));
-            let embed_output = std::process::Command::new("wasm-tools")
-                .arg("component")
-                .arg("embed")
-                .arg(&wit_directory)
-                .arg(wasm_file)
-                .arg("-o")
-                .arg(&embed_path)
-                .output()
-                .map_err(|error| CommandError::internal(format!("wasm-tools embed failed: {error}")))?;
-
-            if !embed_output.status.success() {
-                let stderr = String::from_utf8_lossy(&embed_output.stderr);
-                return Err(CommandError::internal(format!("wasm-tools embed failed: {stderr}")));
-            }
-
-            let component_output = std::process::Command::new("wasm-tools")
-                .arg("component")
-                .arg("new")
-                .arg(&embed_path)
-                .arg("-o")
-                .arg(&target_path)
-                .output()
-                .map_err(|error| CommandError::internal(format!("wasm-tools component new failed: {error}")))?;
-
-            if !component_output.status.success() {
-                let stderr = String::from_utf8_lossy(&component_output.stderr);
-                return Err(CommandError::internal(format!("wasm-tools component new failed: {stderr}")));
-            }
-
-            let _ = std::fs::remove_file(&embed_path);
-        }
-
-        Ok(())
     }
 }

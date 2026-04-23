@@ -23,7 +23,3 @@ strsim = "0.11"
 thiserror = { workspace = true }
 tokio = { workspace = true }
 ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
-wasmtime = "43.0.0"
-
-[dev-dependencies]
-wat = "1"

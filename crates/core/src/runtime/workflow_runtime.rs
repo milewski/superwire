@@ -8,7 +8,6 @@ use crate::runtime::inference::InferenceSetting;
 use crate::runtime::provider::ProviderConfig;
 use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
 use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
-use crate::runtime::wasm_tools::WasmToolRuntimeLoader;
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
 use futures::future::try_join_all;
 use schemars::{JsonSchema, Schema};
@@ -314,12 +313,6 @@ where
         Self::new_with_runtime_tools(workflow, Vec::new())
     }
 
-    pub fn new_with_workflow_directory(workflow: Workflow, workflow_directory: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
-        let runtime_tools = WasmToolRuntimeLoader::from_workflow_directory(workflow_directory.as_ref()).discover_runtime_tools()?;
-
-        Self::new_with_runtime_tools(workflow, runtime_tools)
-    }
-
     pub(crate) fn new_with_runtime_tools(workflow: Workflow, runtime_tools: Vec<DynamicTool>) -> Result<Self, WorkflowRuntimeError> {
         let compiled_workflow = compile_workflow::<Input, Output>(&workflow)?;
         let runtime_tool_catalog = RuntimeToolCatalog::from_runtime_tools(runtime_tools.as_slice())?;
@@ -349,9 +342,7 @@ where
             }
         })?;
 
-        let workflow_directory = workflow_path.parent().unwrap_or_else(|| Path::new("."));
-
-        Self::new_with_workflow_directory(parsed_workflow, workflow_directory)
+        Self::new(parsed_workflow)
     }
 
     #[must_use]
