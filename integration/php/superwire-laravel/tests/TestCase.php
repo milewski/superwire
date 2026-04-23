@@ -44,20 +44,73 @@ abstract class TestCase extends OrchestraTestCase
 
     protected function resolveDefaultCliPath(): string
     {
+        $workspaceRoot = $this->workspaceRoot();
+
         $candidates = [
-            realpath(__DIR__ . '/../../../superwire/superwire-cli'),
-            realpath(__DIR__ . '/../../../superwire-cli'),
+            $workspaceRoot . '/target/debug/superwire-cli',
+            $workspaceRoot . '/target/release/superwire-cli',
+            $workspaceRoot . '/superwire-cli',
+            $workspaceRoot . '/crates/cli/target/debug/superwire-cli',
+            $workspaceRoot . '/crates/cli/target/release/superwire-cli',
         ];
 
         foreach ($candidates as $candidate) {
 
-            if (is_string($candidate) && $candidate !== '') {
+            if ($this->isUsableCliPath($candidate)) {
                 return $candidate;
             }
 
         }
 
-        return '';
+        foreach ($this->globCliPathCandidates($workspaceRoot) as $candidate) {
+
+            if ($this->isUsableCliPath($candidate)) {
+                return $candidate;
+            }
+
+        }
+
+        return $workspaceRoot . '/target/debug/superwire-cli';
+    }
+
+    protected function workspaceRoot(): string
+    {
+        $workspaceRoot = realpath(__DIR__ . '/../../../..');
+
+        return is_string($workspaceRoot) && $workspaceRoot !== ''
+            ? $workspaceRoot
+            : dirname(__DIR__, 4);
+    }
+
+    protected function isUsableCliPath(string $candidate): bool
+    {
+        return $candidate !== '' && is_file($candidate);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function globCliPathCandidates(string $workspaceRoot): array
+    {
+        $patterns = [
+            $workspaceRoot . '/target/debug/superwire-cli*',
+            $workspaceRoot . '/target/release/superwire-cli*',
+            $workspaceRoot . '/target/*/superwire-cli*',
+            $workspaceRoot . '/crates/cli/target/debug/superwire-cli*',
+            $workspaceRoot . '/crates/cli/target/release/superwire-cli*',
+        ];
+
+        $candidates = [];
+
+        foreach ($patterns as $pattern) {
+
+            foreach (glob($pattern) ?: [] as $candidate) {
+                $candidates[] = $candidate;
+            }
+
+        }
+
+        return array_values(array_unique($candidates));
     }
 
     protected function compileWorkflow(string $fixtureName): WorkflowDefinition
