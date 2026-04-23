@@ -1,0 +1,3 @@
+[submodule "integration/superwire-laravel"]
+	path = integration/superwire-laravel
+	url = git@github.com:milewski/superwire-laravel.git
