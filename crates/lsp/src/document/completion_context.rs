@@ -240,7 +240,9 @@ impl ToolCallCompletionContext {
             return None;
         }
 
-        let current_argument_prefix = arguments_prefix.rsplit_once(',').map_or(arguments_prefix, |(_, after_comma)| after_comma);
+        let current_argument_prefix = arguments_prefix
+            .rsplit_once(',')
+            .map_or(arguments_prefix, |(_, after_comma)| after_comma);
 
         if current_argument_prefix.contains(':') {
             return None;

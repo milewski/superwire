@@ -629,33 +629,7 @@ impl SemanticIndex {
             })
             .collect::<Vec<_>>();
 
-        let tools = tooling_snapshot
-            .tools()
-            .iter()
-            .map(|(tool_name, tool_schema_summary)| {
-                (
-                    tool_name.clone(),
-                    ToolSummary {
-                        description: tool_schema_summary.description.clone(),
-                        bounded_fields: tool_schema_summary.bounded_fields.clone(),
-                        bounded_field_metadata: field_metadata_from_type_map(&tool_schema_summary.bounded_fields),
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>();
-
-        let mut tool_names = tooling_snapshot.tools().keys().cloned().collect::<Vec<_>>();
-        tool_names.sort();
-        tool_names.dedup();
-
-        let tool_locations = tooling_snapshot
-            .declaration_index()
-            .symbols_by_category(ToolingSymbolCategory::Tool)
-            .map(|named_symbol_span| NamedSpan {
-                name: named_symbol_span.name.clone(),
-                span: named_symbol_span.span,
-            })
-            .collect::<Vec<_>>();
+        let (tools, tool_names, tool_locations) = Self::tool_index_from_snapshot(tooling_snapshot);
 
         let agents = tooling_snapshot
             .agents()
@@ -712,6 +686,38 @@ impl SemanticIndex {
             has_output_declaration: false,
             tooling_snapshot: tooling_snapshot.clone(),
         }
+    }
+
+    fn tool_index_from_snapshot(tooling_snapshot: &SemanticToolingSnapshot) -> (HashMap<String, ToolSummary>, Vec<String>, Vec<NamedSpan>) {
+        let tools = tooling_snapshot
+            .tools()
+            .iter()
+            .map(|(tool_name, tool_schema_summary)| {
+                (
+                    tool_name.clone(),
+                    ToolSummary {
+                        description: tool_schema_summary.description.clone(),
+                        bounded_fields: tool_schema_summary.bounded_fields.clone(),
+                        bounded_field_metadata: field_metadata_from_type_map(&tool_schema_summary.bounded_fields),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut tool_names = tooling_snapshot.tools().keys().cloned().collect::<Vec<_>>();
+        tool_names.sort();
+        tool_names.dedup();
+
+        let tool_locations = tooling_snapshot
+            .declaration_index()
+            .symbols_by_category(ToolingSymbolCategory::Tool)
+            .map(|named_symbol_span| NamedSpan {
+                name: named_symbol_span.name.clone(),
+                span: named_symbol_span.span,
+            })
+            .collect::<Vec<_>>();
+
+        (tools, tool_names, tool_locations)
     }
 
     fn source_has_named_block_declaration(source_text: &str, declaration_keyword: &str) -> bool {
