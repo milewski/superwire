@@ -514,17 +514,12 @@ fn suppresses_builtin_functions_in_top_level_scope() {
         DeclarationKeyword::Provider,
         DeclarationKeyword::Agent,
         DeclarationKeyword::Schema,
+        DeclarationKeyword::Tool,
         SingletonDeclarationKind::Input,
         SingletonDeclarationKind::Secrets
     );
 
-    assert_completion_excludes_labels!(
-        &completion_suggestions,
-        SingletonDeclarationKind::Output,
-        "tool",
-        "string",
-        "number"
-    );
+    assert_completion_excludes_labels!(&completion_suggestions, SingletonDeclarationKind::Output, "string", "number");
     assert_completion_excludes_labels!(&completion_suggestions, BuiltinFunctionName);
     assert!(completion_suggestions
         .iter()
@@ -558,7 +553,8 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
         &completion_suggestions,
         DeclarationKeyword::Provider,
         DeclarationKeyword::Agent,
-        DeclarationKeyword::Schema
+        DeclarationKeyword::Schema,
+        DeclarationKeyword::Tool
     );
 
     assert_completion_excludes_labels!(
@@ -566,7 +562,6 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
         SingletonDeclarationKind::Input,
         SingletonDeclarationKind::Secrets,
         SingletonDeclarationKind::Output,
-        "tool",
         "string",
         "number"
     );
