@@ -212,6 +212,7 @@ impl SemanticToolingSnapshot {
                     declaration_index.push_symbol(ToolingSymbolCategory::Agent, agent_declaration.name.clone(), agent_declaration.span);
                     agents.insert(agent_declaration.name.clone(), agent_declaration.output_type().cloned());
                 }
+                Declaration::Tool(_) => {}
                 Declaration::Output(_) => {}
             }
         }

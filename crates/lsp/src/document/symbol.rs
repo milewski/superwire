@@ -83,6 +83,24 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: child_symbols,
                 }
             }
+            Self::Tool(tool_declaration) => {
+                let declaration_range = source_span_to_range(source_text, tool_declaration.span);
+                let child_symbols = tool_declaration
+                    .input_fields
+                    .iter()
+                    .chain(tool_declaration.bounded_fields.iter())
+                    .map(|typed_field| typed_field.document_symbol_node(source_text))
+                    .collect();
+
+                DocumentSymbolNode {
+                    name: tool_declaration.name.clone(),
+                    detail: Some("tool declaration".to_string()),
+                    kind: SymbolKind::Function,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: child_symbols,
+                }
+            }
             Self::Input(input_declaration) => {
                 let declaration_range = source_span_to_range(source_text, input_declaration.span);
                 let child_symbols = input_declaration

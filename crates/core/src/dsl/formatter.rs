@@ -4,7 +4,8 @@ use thiserror::Error;
 
 use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, Expression,
-    ForClauseKeyword, FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    ForClauseKeyword, FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolDeclaration, TypeExpression,
+    TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -264,6 +265,7 @@ impl Declaration {
 
                 formatter.push_declaration_block_end();
             }
+            Self::Tool(tool_declaration) => tool_declaration.push_to_formatter(formatter),
             Self::Agent(agent_declaration) => {
                 agent_declaration.push_to_formatter(formatter);
             }
@@ -314,6 +316,46 @@ impl AgentDeclaration {
             }
 
             formatter.output.push_str(&rendered_property.text);
+        }
+
+        formatter.push_declaration_block_end();
+    }
+}
+
+impl ToolDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Tool.as_str(), self.name));
+
+        if let Some(description) = &self.description {
+            formatter.push_line(&format!("description: {}", render_plain_string_literal(description)));
+
+            if !self.input_fields.is_empty() || !self.bounded_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.input_fields.is_empty() {
+            formatter.push_declaration_block_start("input");
+
+            for typed_field in &self.input_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.bounded_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.bounded_fields.is_empty() {
+            formatter.push_declaration_block_start("bounded");
+
+            for typed_field in &self.bounded_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
         }
 
         formatter.push_declaration_block_end();

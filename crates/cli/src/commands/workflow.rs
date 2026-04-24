@@ -602,6 +602,7 @@ struct WorkflowJsonRepresentation {
     input: Option<SerializableContractType>,
     secrets: Option<SerializableContractType>,
     schemas: Vec<SerializableSchema>,
+    tools: Vec<SerializableToolDeclaration>,
     providers: Vec<SerializableProvider>,
     agents: Vec<SerializableAgent>,
     output: SerializableWorkflowOutput,
@@ -622,6 +623,7 @@ impl WorkflowJsonRepresentation {
 
         let mut providers = Vec::new();
         let mut schemas = Vec::new();
+        let mut tools = Vec::new();
 
         for declaration in declarations {
             match declaration {
@@ -630,6 +632,9 @@ impl WorkflowJsonRepresentation {
                 }
                 Declaration::Schema(schema_declaration) => {
                     schemas.push(SerializableSchema::from_declaration(schema_declaration));
+                }
+                Declaration::Tool(tool_declaration) => {
+                    tools.push(SerializableToolDeclaration::from_declaration(tool_declaration));
                 }
                 Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
             }
@@ -675,6 +680,7 @@ impl WorkflowJsonRepresentation {
                 .as_ref()
                 .map(SerializableContractType::from_workflow_type),
             schemas,
+            tools,
             providers,
             agents,
             output: SerializableWorkflowOutput::from_output_declaration(
@@ -802,6 +808,33 @@ impl SerializableSchema {
             name: schema_declaration.name.clone(),
             fields: schema_declaration
                 .fields
+                .iter()
+                .map(SerializableTypedField::from_typed_field)
+                .collect::<Vec<_>>(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableToolDeclaration {
+    name: String,
+    description: Option<String>,
+    input: Vec<SerializableTypedField>,
+    bounded: Vec<SerializableTypedField>,
+}
+
+impl SerializableToolDeclaration {
+    fn from_declaration(tool_declaration: &superwire_core::dsl::ToolDeclaration) -> Self {
+        Self {
+            name: tool_declaration.name.clone(),
+            description: tool_declaration.description.clone(),
+            input: tool_declaration
+                .input_fields
+                .iter()
+                .map(SerializableTypedField::from_typed_field)
+                .collect::<Vec<_>>(),
+            bounded: tool_declaration
+                .bounded_fields
                 .iter()
                 .map(SerializableTypedField::from_typed_field)
                 .collect::<Vec<_>>(),

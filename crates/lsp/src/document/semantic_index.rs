@@ -362,6 +362,7 @@ impl SemanticIndex {
             Declaration::Agent(agent_declaration) => {
                 self.insert_agent_declaration(agent_declaration);
             }
+            Declaration::Tool(_) => {}
             Declaration::Output(output_declaration) => {
                 self.has_output_declaration = true;
                 self.output_locations.push(output_declaration.span);

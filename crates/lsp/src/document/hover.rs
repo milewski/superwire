@@ -165,6 +165,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Secrets => "Secrets declaration",
             DeclarationKeyword::Input => "Input declaration",
             DeclarationKeyword::Schema => "Schema declaration",
+            DeclarationKeyword::Tool => "Tool declaration",
             DeclarationKeyword::Agent => "Agent declaration",
             DeclarationKeyword::Output => "Output declaration",
         }
@@ -176,6 +177,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Secrets => "Declares workflow secret fields.",
             DeclarationKeyword::Input => "Declares workflow input fields.",
             DeclarationKeyword::Schema => "Declares a reusable named schema type.",
+            DeclarationKeyword::Tool => "Declares a tool schema that agents can reference.",
             DeclarationKeyword::Agent => "Declares an executable workflow agent.",
             DeclarationKeyword::Output => "Declares final workflow output fields.",
         }
@@ -204,7 +206,7 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
     ))
 }
 
-fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 6] {
+fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 7] {
     [
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Provider.as_str(),
@@ -223,6 +225,12 @@ fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 6] {
             kind: CompletionKind::Keyword,
             detail: DeclarationKeyword::Schema.completion_detail(),
             documentation: DeclarationKeyword::Schema.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Tool.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Tool.completion_detail(),
+            documentation: DeclarationKeyword::Tool.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: SingletonDeclarationKind::Input.as_str(),

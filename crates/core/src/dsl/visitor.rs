@@ -1,8 +1,8 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, Expression, FunctionCall,
     InputDeclaration, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
-    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, TypeExpression, TypedField,
-    Workflow,
+    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolDeclaration, TypeExpression,
+    TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -52,6 +52,7 @@ impl AstVisitor {
             Rule::secrets_declaration => self.visit_secrets_declaration(declaration_pair),
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
+            Rule::tool_declaration => self.visit_tool_declaration(declaration_pair),
             Rule::agent_declaration => self.visit_agent_declaration(declaration_pair),
             Rule::output_declaration => self.visit_output_declaration(declaration_pair),
             _ => Err(DslParseError::unexpected_with_span(
@@ -114,6 +115,47 @@ impl AstVisitor {
         Ok(Declaration::Schema(SchemaDeclaration {
             name: schema_name,
             fields,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_tool_declaration(&self, tool_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&tool_pair);
+        let mut inner_pairs = tool_pair.into_inner();
+
+        let tool_name = self.next_identifier(&mut inner_pairs, "tool name", "tool declaration")?;
+        let tool_block_pair = self.next_pair(&mut inner_pairs, "tool block", "tool declaration")?;
+        let mut description = None;
+        let mut input_fields = Vec::new();
+        let mut bounded_fields = Vec::new();
+
+        for tool_property_pair in tool_block_pair.into_inner() {
+            match tool_property_pair.as_rule() {
+                Rule::tool_description_property => {
+                    let description_pair = self.first_inner_pair(tool_property_pair, "tool description property")?;
+                    description = Some(self.parse_string_literal(description_pair)?);
+                }
+                Rule::tool_input_property => {
+                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool input property")?;
+                    input_fields.extend(self.visit_typed_block(typed_block_pair)?);
+                }
+                Rule::tool_bounded_property => {
+                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool bounded property")?;
+                    bounded_fields.extend(self.visit_typed_block(typed_block_pair)?);
+                }
+                Rule::tool_input_field => {
+                    let typed_field_pair = self.first_inner_pair(tool_property_pair, "tool input field")?;
+                    input_fields.push(self.visit_typed_field(typed_field_pair)?);
+                }
+                _ => unreachable!("tool block should contain only valid tool property rules"),
+            }
+        }
+
+        Ok(Declaration::Tool(ToolDeclaration {
+            name: tool_name,
+            description,
+            input_fields,
+            bounded_fields,
             span: declaration_span,
         }))
     }

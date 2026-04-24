@@ -5,6 +5,7 @@ declaration = _{
     | secrets_declaration
     | input_declaration
     | schema_declaration
+    | tool_declaration
     | agent_declaration
     | output_declaration
 }
@@ -13,6 +14,14 @@ provider_declaration = { "provider" ~ identifier ~ object_expression }
 secrets_declaration = { "secrets" ~ typed_block }
 input_declaration = { "input" ~ typed_block }
 schema_declaration = { "schema" ~ identifier ~ typed_block }
+tool_declaration = { "tool" ~ identifier ~ tool_block }
+
+tool_block = { "{" ~ tool_property* ~ "}" }
+tool_property = _{ tool_description_property | tool_input_property | tool_bounded_property | tool_input_field }
+tool_description_property = { "description" ~ ":" ~ plain_string_literal }
+tool_input_property = { "input" ~ typed_block }
+tool_bounded_property = { "bounded" ~ typed_block }
+tool_input_field = { typed_field }
 
 agent_declaration = { "agent" ~ identifier ~ for_clause? ~ agent_block }
 for_clause = { "for" ~ for_loop_pattern ~ "in" ~ expression }
@@ -39,7 +48,7 @@ tools_property = { "tools" ~ ":" ~ expression }
 output_declaration = { "output" ~ object_expression }
 
 typed_block = { "{" ~ typed_field* ~ "}" }
-typed_field = { identifier ~ ":" ~ type_expression ~ plain_string_literal? }
+typed_field = { identifier ~ ":" ~ type_expression ~ plain_string_literal? ~ ","? }
 
 type_expression = { type_term ~ ("|" ~ type_term)* }
 

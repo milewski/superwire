@@ -7,12 +7,15 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use superwire_agent::tool::{registered_runtime_tools, RuntimeTool, ToolError};
-use superwire_agent::{Agent, AgentConfig, Context as AgentContext, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider};
+use superwire_agent::{
+    Agent, AgentConfig, Context as AgentContext, DynamicTool, LoopExecutor, OllamaProvider, OpenAIProvider, Provider, ToolDefinition,
+};
 
 #[derive(Debug, Clone)]
 pub struct RequestedAgentTool {
     pub name: String,
     pub bound_arguments: Map<String, Value>,
+    pub definition_override: Option<ToolDefinition>,
 }
 
 #[derive(Clone)]
@@ -43,6 +46,10 @@ impl Debug for BoundRuntimeTool {
 #[async_trait]
 impl RuntimeTool for BoundRuntimeTool {
     fn definition(&self) -> Result<superwire_agent::ToolDefinition, ToolError> {
+        if let Some(definition_override) = &self.requested_tool.definition_override {
+            return Ok(definition_override.clone());
+        }
+
         self.inner_tool.definition()
     }
 
@@ -213,7 +220,7 @@ impl LoopAgentRunner {
                 });
             };
 
-            if requested_tool.bound_arguments.is_empty() {
+            if requested_tool.bound_arguments.is_empty() && requested_tool.definition_override.is_none() {
                 resolved_tools.push(Arc::clone(resolved_tool));
 
                 continue;
