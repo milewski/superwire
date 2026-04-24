@@ -617,6 +617,7 @@ impl WorkflowJsonRepresentation {
         execution_plan: &ExecutionPlan,
     ) -> Self {
         let declarations = workflow.declarations();
+        let named_schema_types = CliWorkflowTypeInference::collect_named_schema_types(&workflow);
         let dependents_by_agent = Self::collect_dependents_by_agent(execution_plan);
         let execution_batches = Self::resolve_execution_batches(execution_plan);
         let batch_indexes_by_agent = Self::batch_indexes_by_agent(&execution_batches);
@@ -634,7 +635,7 @@ impl WorkflowJsonRepresentation {
                     schemas.push(SerializableSchema::from_declaration(schema_declaration));
                 }
                 Declaration::Tool(tool_declaration) => {
-                    tools.push(SerializableToolDeclaration::from_declaration(tool_declaration));
+                    tools.push(SerializableToolDeclaration::from_declaration(tool_declaration, &named_schema_types));
                 }
                 Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
             }
@@ -820,11 +821,16 @@ struct SerializableToolDeclaration {
     name: String,
     description: Option<String>,
     input: Vec<SerializableTypedField>,
+    input_schema: Value,
     bounded: Vec<SerializableTypedField>,
+    bounded_schema: Value,
 }
 
 impl SerializableToolDeclaration {
-    fn from_declaration(tool_declaration: &superwire_core::dsl::ToolDeclaration) -> Self {
+    fn from_declaration(
+        tool_declaration: &superwire_core::dsl::ToolDeclaration,
+        named_schema_types: &HashMap<String, TypeExpression>,
+    ) -> Self {
         Self {
             name: tool_declaration.name.clone(),
             description: tool_declaration.description.clone(),
@@ -833,12 +839,22 @@ impl SerializableToolDeclaration {
                 .iter()
                 .map(SerializableTypedField::from_typed_field)
                 .collect::<Vec<_>>(),
+            input_schema: Self::json_schema_for_fields(&tool_declaration.input_fields, named_schema_types),
             bounded: tool_declaration
                 .bounded_fields
                 .iter()
                 .map(SerializableTypedField::from_typed_field)
                 .collect::<Vec<_>>(),
+            bounded_schema: Self::json_schema_for_fields(&tool_declaration.bounded_fields, named_schema_types),
         }
+    }
+
+    fn json_schema_for_fields(typed_fields: &[TypedField], named_schema_types: &HashMap<String, TypeExpression>) -> Value {
+        let object_type_expression = TypeExpression::Object(typed_fields.to_vec());
+        let workflow_type = workflow_type_from_dsl(&object_type_expression, named_schema_types)
+            .expect("tool declaration field schemas should resolve during workflow compilation");
+
+        workflow_type_to_json_schema(&workflow_type)
     }
 }
 

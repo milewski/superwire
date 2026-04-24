@@ -155,6 +155,65 @@ fn writes_json_to_output_file_when_requested() {
     );
 }
 
+#[test]
+fn exports_tool_input_and_bounded_schemas() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        tool issue_tracker_lookup {
+            input {
+                issue_id: number
+            }
+
+            bounded {
+                project: string
+                status: "open" | "closed"
+            }
+        }
+
+        agent assistant {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.issue_tracker_lookup(project: "superwire", status: "open")]
+            prompt: "lookup issue"
+            output: string
+        }
+
+        output {
+            result: agent.assistant
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("tool-schemas.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/input_schema/properties/issue_id/type"),
+        Some(&json!("integer"))
+    );
+
+    assert_eq!(exported_json.pointer("/tools/0/input_schema/required"), Some(&json!(["issue_id"])));
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/bounded_schema/properties/project/type"),
+        Some(&json!("string"))
+    );
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/bounded_schema/properties/status/enum"),
+        Some(&json!(["closed", "open"]))
+    );
+}
+
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {
     let mut command = Command::new(cli_binary_path());
     command.arg("workflow").arg("to-json");
