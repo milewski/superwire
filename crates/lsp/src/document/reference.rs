@@ -261,8 +261,17 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Agent) => {
                 self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint, current_agent_name)
             }
-            Some(ReferenceKeyword::Tool) | None => Vec::new(),
+            Some(ReferenceKeyword::Tool) => self.tool_namespace_reference_suggestions(reference_completion_path),
+            None => Vec::new(),
         }
+    }
+
+    fn tool_namespace_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+        if !reference_completion_path.complete_accesses.is_empty() {
+            return Vec::new();
+        }
+
+        self.tool_reference_suggestions(&reference_completion_path.pending_prefix)
     }
 
     fn for_loop_binding_reference_suggestions(

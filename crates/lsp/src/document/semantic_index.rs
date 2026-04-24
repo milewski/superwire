@@ -14,7 +14,7 @@ use super::hover::builtin_symbol_suggestions;
 use super::position::source_span_contains_position;
 use super::reference::ReferenceCompletionPath;
 use super::text_utils::trailing_identifier;
-use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion};
+use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
 pub struct SemanticIndex {
@@ -24,6 +24,9 @@ pub struct SemanticIndex {
     pub schema_names: Vec<String>,
     pub schema_locations: Vec<NamedSpan>,
     schema_field_locations: HashMap<String, SourceSpan>,
+    pub tools: HashMap<String, ToolSummary>,
+    pub tool_names: Vec<String>,
+    pub tool_locations: Vec<NamedSpan>,
     pub input_fields: BTreeMap<String, TypeExpression>,
     pub input_field_metadata: BTreeMap<String, FieldMetadata>,
     input_field_locations: HashMap<String, SourceSpan>,
@@ -54,6 +57,13 @@ pub struct ProviderSummary {
 pub struct SchemaSummary {
     pub fields: BTreeMap<String, TypeExpression>,
     pub field_metadata: BTreeMap<String, FieldMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolSummary {
+    pub description: Option<String>,
+    pub bounded_fields: BTreeMap<String, TypeExpression>,
+    pub bounded_field_metadata: BTreeMap<String, FieldMetadata>,
 }
 
 #[derive(Debug, Clone)]
@@ -303,6 +313,59 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn tool_reference_suggestions(&self, tool_prefix: &str) -> Vec<CompletionSuggestion> {
+        self.tool_names
+            .iter()
+            .filter(|tool_name| tool_name.starts_with(tool_prefix))
+            .map(|tool_name| {
+                let tool_summary = self.tools.get(tool_name);
+
+                CompletionSuggestion {
+                    label: tool_name.clone(),
+                    kind: CompletionKind::Function,
+                    detail: "Declared tool".to_string(),
+                    documentation: tool_summary
+                        .and_then(|summary| summary.description.clone())
+                        .unwrap_or_else(|| "Tool declared in this document.".to_string()),
+                    insert_text: format!("{tool_name}($1)"),
+                }
+            })
+            .collect()
+    }
+
+    pub fn tool_bounded_argument_suggestions(
+        &self,
+        tool_name: &str,
+        argument_prefix: &str,
+        existing_argument_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
+        let Some(tool_summary) = self.tools.get(tool_name) else {
+            return Vec::new();
+        };
+
+        tool_summary
+            .bounded_fields
+            .iter()
+            .filter(|(field_name, _)| field_name.starts_with(argument_prefix))
+            .filter(|(field_name, _)| !existing_argument_names.contains(field_name))
+            .map(|(field_name, field_type)| CompletionSuggestion {
+                label: field_name.clone(),
+                kind: CompletionKind::Property,
+                detail: tool_summary
+                    .bounded_field_metadata
+                    .get(field_name)
+                    .and_then(|field_metadata| field_metadata.description.clone())
+                    .unwrap_or_else(|| format!("Bound tool argument: {}", field_type.render_type())),
+                documentation: tool_summary
+                    .bounded_field_metadata
+                    .get(field_name)
+                    .and_then(|field_metadata| field_metadata.description.clone())
+                    .unwrap_or_else(|| "Bound argument for this tool call.".to_string()),
+                insert_text: format!("{field_name}: $1"),
+            })
+            .collect()
+    }
+
     pub fn from_workflow(workflow: &Workflow) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
         let mut semantic_index = Self {
@@ -312,6 +375,9 @@ impl SemanticIndex {
             schema_names: Vec::new(),
             schema_locations: Vec::new(),
             schema_field_locations: HashMap::new(),
+            tools: HashMap::new(),
+            tool_names: Vec::new(),
+            tool_locations: Vec::new(),
             input_fields: BTreeMap::new(),
             input_field_metadata: BTreeMap::new(),
             input_field_locations: HashMap::new(),
@@ -342,6 +408,9 @@ impl SemanticIndex {
         semantic_index.agent_names.sort();
         semantic_index.agent_names.dedup();
 
+        semantic_index.tool_names.sort();
+        semantic_index.tool_names.dedup();
+
         semantic_index
     }
 
@@ -362,7 +431,9 @@ impl SemanticIndex {
             Declaration::Agent(agent_declaration) => {
                 self.insert_agent_declaration(agent_declaration);
             }
-            Declaration::Tool(_) => {}
+            Declaration::Tool(tool_declaration) => {
+                self.insert_tool_declaration(tool_declaration);
+            }
             Declaration::Output(output_declaration) => {
                 self.has_output_declaration = true;
                 self.output_locations.push(output_declaration.span);
@@ -419,6 +490,24 @@ impl SemanticIndex {
         }
 
         self.typed_declaration_locations.push(secrets_declaration.span);
+    }
+
+    fn insert_tool_declaration(&mut self, tool_declaration: &superwire_core::dsl::ToolDeclaration) {
+        self.tools.insert(
+            tool_declaration.name.clone(),
+            ToolSummary {
+                description: tool_declaration.description.clone(),
+                bounded_fields: typed_fields_to_map(&tool_declaration.bounded_fields),
+                bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.bounded_fields),
+            },
+        );
+
+        self.tool_names.push(tool_declaration.name.clone());
+        self.tool_locations.push(NamedSpan {
+            name: tool_declaration.name.clone(),
+            span: tool_declaration.span,
+        });
+        self.typed_declaration_locations.push(tool_declaration.span);
     }
 
     fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
@@ -540,6 +629,34 @@ impl SemanticIndex {
             })
             .collect::<Vec<_>>();
 
+        let tools = tooling_snapshot
+            .tools()
+            .iter()
+            .map(|(tool_name, tool_schema_summary)| {
+                (
+                    tool_name.clone(),
+                    ToolSummary {
+                        description: tool_schema_summary.description.clone(),
+                        bounded_fields: tool_schema_summary.bounded_fields.clone(),
+                        bounded_field_metadata: field_metadata_from_type_map(&tool_schema_summary.bounded_fields),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut tool_names = tooling_snapshot.tools().keys().cloned().collect::<Vec<_>>();
+        tool_names.sort();
+        tool_names.dedup();
+
+        let tool_locations = tooling_snapshot
+            .declaration_index()
+            .symbols_by_category(ToolingSymbolCategory::Tool)
+            .map(|named_symbol_span| NamedSpan {
+                name: named_symbol_span.name.clone(),
+                span: named_symbol_span.span,
+            })
+            .collect::<Vec<_>>();
+
         let agents = tooling_snapshot
             .agents()
             .iter()
@@ -573,6 +690,9 @@ impl SemanticIndex {
             schema_names,
             schema_locations,
             schema_field_locations: HashMap::new(),
+            tools,
+            tool_names,
+            tool_locations,
             input_fields: tooling_snapshot.input_fields().clone(),
             input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
             input_field_locations: HashMap::new(),
@@ -1022,6 +1142,10 @@ impl SemanticIndex {
             return true;
         }
 
+        if declaration_label == DeclarationKeyword::Tool.as_str() {
+            return true;
+        }
+
         if declaration_label == SingletonDeclarationKind::Input.as_str() {
             return !self.has_input_declaration;
         }
@@ -1082,6 +1206,14 @@ impl SemanticIndex {
             .agent_locations
             .iter()
             .any(|agent_location| source_span_contains_position(agent_location.span, position))
+        {
+            return false;
+        }
+
+        if self
+            .tool_locations
+            .iter()
+            .any(|tool_location| source_span_contains_position(tool_location.span, position))
         {
             return false;
         }

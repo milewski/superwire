@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 pub enum ToolingSymbolCategory {
     Provider,
     Schema,
+    Tool,
     Agent,
 }
 
@@ -17,6 +18,7 @@ impl ToolingSymbolCategory {
         match self {
             Self::Provider => DeclarationKeyword::Provider,
             Self::Schema => DeclarationKeyword::Schema,
+            Self::Tool => DeclarationKeyword::Tool,
             Self::Agent => DeclarationKeyword::Agent,
         }
     }
@@ -86,6 +88,11 @@ impl ToolingDeclarationIndex {
     #[must_use]
     pub fn agent_name_at_position(&self, source_position: SourcePosition) -> Option<&str> {
         self.symbol_name_at_position(ToolingSymbolCategory::Agent, source_position)
+    }
+
+    #[must_use]
+    pub fn tool_name_at_position(&self, source_position: SourcePosition) -> Option<&str> {
+        self.symbol_name_at_position(ToolingSymbolCategory::Tool, source_position)
     }
 }
 
@@ -167,9 +174,17 @@ pub struct SemanticToolingSnapshot {
     input_fields: BTreeMap<String, TypeExpression>,
     secrets_fields: BTreeMap<String, TypeExpression>,
     schemas: BTreeMap<String, BTreeMap<String, TypeExpression>>,
+    tools: BTreeMap<String, ToolSchemaSummary>,
     agents: BTreeMap<String, Option<TypeExpression>>,
     construction: ToolingSnapshotConstruction,
     parse_error_span: Option<SourceSpan>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ToolSchemaSummary {
+    pub description: Option<String>,
+    pub input_fields: BTreeMap<String, TypeExpression>,
+    pub bounded_fields: BTreeMap<String, TypeExpression>,
 }
 
 impl SemanticToolingSnapshot {
@@ -179,6 +194,7 @@ impl SemanticToolingSnapshot {
         let mut input_fields = BTreeMap::new();
         let mut secrets_fields = BTreeMap::new();
         let mut schemas = BTreeMap::new();
+        let mut tools = BTreeMap::new();
         let mut agents = BTreeMap::new();
 
         for declaration in workflow.declarations() {
@@ -212,7 +228,17 @@ impl SemanticToolingSnapshot {
                     declaration_index.push_symbol(ToolingSymbolCategory::Agent, agent_declaration.name.clone(), agent_declaration.span);
                     agents.insert(agent_declaration.name.clone(), agent_declaration.output_type().cloned());
                 }
-                Declaration::Tool(_) => {}
+                Declaration::Tool(tool_declaration) => {
+                    declaration_index.push_symbol(ToolingSymbolCategory::Tool, tool_declaration.name.clone(), tool_declaration.span);
+                    tools.insert(
+                        tool_declaration.name.clone(),
+                        ToolSchemaSummary {
+                            description: tool_declaration.description.clone(),
+                            input_fields: typed_fields_to_map(&tool_declaration.input_fields),
+                            bounded_fields: typed_fields_to_map(&tool_declaration.bounded_fields),
+                        },
+                    );
+                }
                 Declaration::Output(_) => {}
             }
         }
@@ -222,6 +248,7 @@ impl SemanticToolingSnapshot {
             input_fields,
             secrets_fields,
             schemas,
+            tools,
             agents,
             construction: ToolingSnapshotConstruction::ParsedWorkflow,
             parse_error_span: None,
@@ -275,6 +302,11 @@ impl SemanticToolingSnapshot {
     #[must_use]
     pub fn schemas(&self) -> &BTreeMap<String, BTreeMap<String, TypeExpression>> {
         &self.schemas
+    }
+
+    #[must_use]
+    pub fn tools(&self) -> &BTreeMap<String, ToolSchemaSummary> {
+        &self.tools
     }
 
     #[must_use]
@@ -531,6 +563,7 @@ impl<'source> TolerantSourceExtractor<'source> {
         for category in [
             ToolingSymbolCategory::Provider,
             ToolingSymbolCategory::Schema,
+            ToolingSymbolCategory::Tool,
             ToolingSymbolCategory::Agent,
         ] {
             for named_symbol in self.collect_named_symbols(category) {
@@ -548,11 +581,17 @@ impl<'source> TolerantSourceExtractor<'source> {
             .map(|named_symbol| (named_symbol.name.clone(), None))
             .collect();
 
+        let tools = declaration_index
+            .symbols_by_category(ToolingSymbolCategory::Tool)
+            .map(|named_symbol| (named_symbol.name.clone(), ToolSchemaSummary::default()))
+            .collect();
+
         SemanticToolingSnapshot {
             declaration_index,
             input_fields: self.collect_singleton_field_types(SingletonDeclarationKind::Input),
             secrets_fields: self.collect_singleton_field_types(SingletonDeclarationKind::Secrets),
             schemas,
+            tools,
             agents,
             construction: ToolingSnapshotConstruction::TolerantSourceFallback,
             parse_error_span,
