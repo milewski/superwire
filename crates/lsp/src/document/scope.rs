@@ -8,6 +8,7 @@ use super::{CompletionKind, CompletionSuggestion};
 pub enum CompletionScope {
     General,
     AgentProperties,
+    ToolProperties,
     InferenceSettings,
     TypedDeclarations,
 }
@@ -16,6 +17,7 @@ pub enum CompletionScope {
 enum ScopeBlock {
     Other,
     Agent,
+    Tool,
     Inference,
     TypedDeclaration,
 }
@@ -63,6 +65,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
     match scope_blocks.last().copied() {
         Some(ScopeBlock::Inference) => CompletionScope::InferenceSettings,
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
+        Some(ScopeBlock::Tool) => CompletionScope::ToolProperties,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
         Some(ScopeBlock::Other) | None => CompletionScope::General,
     }
@@ -101,6 +104,15 @@ impl ScopeScannerTokenState {
         };
 
         if parent_block == Some(ScopeBlock::TypedDeclaration) {
+            return ScopeBlock::TypedDeclaration;
+        }
+
+        if parent_block == Some(ScopeBlock::Tool)
+            && matches!(
+                ToolPropertyName::from_identifier(last_identifier),
+                Some(ToolPropertyName::Input | ToolPropertyName::Bounded)
+            )
+        {
             return ScopeBlock::TypedDeclaration;
         }
 
@@ -146,6 +158,20 @@ impl ScopeScannerTokenState {
                     && DeclarationKeyword::from_identifier(schema_name_identifier).is_none()
                 {
                     return ScopeBlock::TypedDeclaration;
+                }
+            }
+        }
+
+        if let Some(tool_keyword_index) = self
+            .recent_identifiers
+            .iter()
+            .position(|identifier| DeclarationKeyword::from_identifier(identifier) == Some(DeclarationKeyword::Tool))
+        {
+            if let Some(tool_name_identifier) = self.recent_identifiers.get(tool_keyword_index + 1) {
+                if ForClauseKeyword::from_identifier(tool_name_identifier).is_none()
+                    && DeclarationKeyword::from_identifier(tool_name_identifier).is_none()
+                {
+                    return ScopeBlock::Tool;
                 }
             }
         }
@@ -301,4 +327,47 @@ pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionS
             insert_text: inference_setting.key().to_string(),
         })
         .collect()
+}
+
+pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    ToolPropertyName::all()
+        .into_iter()
+        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
+        .map(|property_name| CompletionSuggestion {
+            label: property_name.as_str().to_string(),
+            kind: CompletionKind::Property,
+            detail: "Tool declaration property".to_string(),
+            documentation: "Property available inside a `tool` declaration.".to_string(),
+            insert_text: property_name.as_str().to_string(),
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolPropertyName {
+    Description,
+    Input,
+    Bounded,
+}
+
+impl ToolPropertyName {
+    fn all() -> [Self; 3] {
+        [Self::Description, Self::Input, Self::Bounded]
+    }
+
+    fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all()
+            .into_iter()
+            .find(|tool_property_name| tool_property_name.as_str() == identifier)
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Description => "description",
+            Self::Input => SingletonDeclarationKind::Input.as_str(),
+            Self::Bounded => "bounded",
+        }
+    }
 }

@@ -225,6 +225,7 @@ impl SemanticIndex {
         reference_completion_path: &ReferenceCompletionPath,
         reference_completion_constraint: ReferenceCompletionConstraint,
         position: Position,
+        existing_tool_call_parentheses: bool,
     ) -> Vec<CompletionSuggestion> {
         let current_schema_name = self.schema_name_at_position(position);
         let current_agent_name = self.agent_name_at_position(position);
@@ -261,17 +262,23 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Agent) => {
                 self.agent_reference_suggestions(reference_completion_path, reference_completion_constraint, current_agent_name)
             }
-            Some(ReferenceKeyword::Tool) => self.tool_namespace_reference_suggestions(reference_completion_path),
+            Some(ReferenceKeyword::Tool) => {
+                self.tool_namespace_reference_suggestions(reference_completion_path, existing_tool_call_parentheses)
+            }
             None => Vec::new(),
         }
     }
 
-    fn tool_namespace_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+    fn tool_namespace_reference_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        existing_tool_call_parentheses: bool,
+    ) -> Vec<CompletionSuggestion> {
         if !reference_completion_path.complete_accesses.is_empty() {
             return Vec::new();
         }
 
-        self.tool_reference_suggestions(&reference_completion_path.pending_prefix)
+        self.tool_reference_suggestions(&reference_completion_path.pending_prefix, existing_tool_call_parentheses)
     }
 
     fn for_loop_binding_reference_suggestions(

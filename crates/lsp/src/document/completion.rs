@@ -11,7 +11,10 @@ use super::completion_context::{
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
-use super::scope::{agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, CompletionScope};
+use super::scope::{
+    agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, tool_property_scope_suggestions,
+    CompletionScope,
+};
 use super::semantic_index::SemanticIndex;
 use super::text_utils::{
     is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
@@ -27,6 +30,7 @@ impl DocumentState {
         let Some(line_prefix) = self.line_prefix(position) else {
             return Vec::new();
         };
+        let line_suffix = self.line_suffix(position).unwrap_or_default();
 
         let inside_interpolation_expression = is_inside_interpolation_expression(&line_prefix);
 
@@ -66,9 +70,9 @@ impl DocumentState {
         if let Some(reference_suggestions) = self.reference_completion_suggestions(
             &semantic_index,
             &line_prefix,
+            &line_suffix,
             position,
             inside_interpolation_expression,
-            line_has_property_separator,
             inference_setting_value_completion_context.as_ref(),
         ) {
             return reference_suggestions;
@@ -329,14 +333,12 @@ impl DocumentState {
                 return Some(declaration_header_completion_context.completion_suggestions());
             }
 
-            match completion_scope {
-                CompletionScope::InferenceSettings => {
-                    return Some(inference_setting_scope_suggestions(line_prefix));
-                }
-                CompletionScope::AgentProperties => {
-                    return Some(agent_property_scope_suggestions(line_prefix));
-                }
-                CompletionScope::General | CompletionScope::TypedDeclarations => {}
+            if Self::should_defer_to_reference_completion(line_prefix) {
+                return None;
+            }
+
+            if let Some(scope_suggestions) = Self::property_scope_suggestions(completion_scope, line_prefix) {
+                return Some(scope_suggestions);
             }
 
             if completion_scope == CompletionScope::General && semantic_index.is_root_declaration_position(position) {
@@ -345,6 +347,29 @@ impl DocumentState {
         }
 
         self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
+    }
+
+    fn property_scope_suggestions(completion_scope: CompletionScope, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+        match completion_scope {
+            CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
+            CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
+            CompletionScope::ToolProperties => Some(tool_property_scope_suggestions(line_prefix)),
+            CompletionScope::General | CompletionScope::TypedDeclarations => None,
+        }
+    }
+
+    fn should_defer_to_reference_completion(line_prefix: &str) -> bool {
+        let Some(reference_completion_path) = ReferenceCompletionPath::from_line_prefix(line_prefix) else {
+            return false;
+        };
+
+        reference_completion_path.root_keyword().is_some()
+            || reference_completion_path.is_schema_root()
+            || !reference_completion_path.complete_accesses.is_empty()
+    }
+
+    fn has_existing_tool_call_parentheses(line_suffix: &str) -> bool {
+        line_suffix.trim_start().starts_with('(')
     }
 
     fn provider_non_reference_suggestions(
@@ -409,11 +434,12 @@ impl DocumentState {
         &self,
         semantic_index: &SemanticIndex,
         line_prefix: &str,
+        line_suffix: &str,
         position: Position,
         inside_interpolation_expression: bool,
-        line_has_property_separator: bool,
         inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
     ) -> Option<Vec<CompletionSuggestion>> {
+        let line_has_property_separator = line_prefix.trim_start().contains(':');
         let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
         let for_loop_iterable_reference_context = matches!(
             reference_completion_path.root_keyword(),
@@ -426,8 +452,12 @@ impl DocumentState {
             self.reference_completion_constraint(line_prefix, inference_setting_value_completion_context)
         };
 
-        let reference_suggestions =
-            semantic_index.reference_path_suggestions(&reference_completion_path, reference_completion_constraint, position);
+        let reference_suggestions = semantic_index.reference_path_suggestions(
+            &reference_completion_path,
+            reference_completion_constraint,
+            position,
+            Self::has_existing_tool_call_parentheses(line_suffix),
+        );
 
         if let Some(inference_suggestions) = self.inference_reference_completion_suggestions(
             semantic_index,

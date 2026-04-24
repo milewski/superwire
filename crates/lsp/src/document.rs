@@ -65,6 +65,14 @@ impl DocumentState {
         Some(line_characters.into_iter().take(cursor_index).collect())
     }
 
+    fn line_suffix(&self, position: Position) -> Option<String> {
+        let line_text = self.text.lines().nth(position.line as usize)?;
+        let line_characters: Vec<char> = line_text.chars().collect();
+        let cursor_index = usize::min(position.character as usize, line_characters.len());
+
+        Some(line_characters.into_iter().skip(cursor_index).collect())
+    }
+
     fn symbol_token_at_position(&self, position: Position) -> Option<SymbolTokenAtPosition> {
         let line_text = self.text.lines().nth(position.line as usize)?;
         let line_characters: Vec<char> = line_text.chars().collect();

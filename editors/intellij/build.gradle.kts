@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.superwire"
-version = "0.1.3"
+version = "0.1.4"
 
 data class LspBundleTarget(
     val rustTargetTriple: String,
