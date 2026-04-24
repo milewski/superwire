@@ -853,8 +853,20 @@ impl SerializableToolDeclaration {
         let object_type_expression = TypeExpression::Object(typed_fields.to_vec());
         let workflow_type = workflow_type_from_dsl(&object_type_expression, named_schema_types)
             .expect("tool declaration field schemas should resolve during workflow compilation");
+        let mut json_schema_value = workflow_type_to_json_schema(&workflow_type);
 
-        workflow_type_to_json_schema(&workflow_type)
+        if let Some(json_schema_object) = json_schema_value.as_object_mut() {
+            let has_empty_required = json_schema_object
+                .get("required")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty);
+
+            if has_empty_required {
+                json_schema_object.remove("required");
+            }
+        }
+
+        json_schema_value
     }
 }
 

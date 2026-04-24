@@ -204,6 +204,11 @@ fn exports_tool_input_and_bounded_schemas() {
     assert_eq!(exported_json.pointer("/tools/0/input_schema/required"), Some(&json!(["issue_id"])));
 
     assert_eq!(
+        exported_json.pointer("/tools/0/bounded_schema/required"),
+        Some(&json!(["project", "status"]))
+    );
+
+    assert_eq!(
         exported_json.pointer("/tools/0/bounded_schema/properties/project/type"),
         Some(&json!("string"))
     );
@@ -212,6 +217,46 @@ fn exports_tool_input_and_bounded_schemas() {
         exported_json.pointer("/tools/0/bounded_schema/properties/status/enum"),
         Some(&json!(["closed", "open"]))
     );
+}
+
+#[test]
+fn omits_empty_required_array_for_tool_without_agent_input() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        tool list_all_participants {
+            bounded {
+                project_id: number
+            }
+        }
+
+        agent assistant {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.list_all_participants(project_id: 1)]
+            prompt: "list participants"
+            output: string
+        }
+
+        output {
+            result: agent.assistant
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("tool-empty-input-schema.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(exported_json.pointer("/tools/0/input_schema/type"), Some(&json!("object")));
+    assert_eq!(exported_json.pointer("/tools/0/input_schema/required"), None);
 }
 
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {
