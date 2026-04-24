@@ -29,6 +29,143 @@ fn suggests_declared_tools_for_tool_namespace_reference() {
 }
 
 #[test]
+fn suggests_declared_tools_for_multiline_tool_namespace_reference() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool issue_tracker_lookup {
+            input {
+                issue_id: number
+            }
+        }
+
+        agent tooling {
+            tools: [
+                tool.<cursor>,
+            ]
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "issue_tracker_lookup");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "context",
+        "inference",
+        "model",
+        "output",
+        "prompt",
+        "tools",
+    );
+
+    assert!(
+        completion_suggestions
+            .iter()
+            .all(|completion_suggestion| completion_suggestion.label == "issue_tracker_lookup"),
+        "expected only declared tool suggestions; got {completion_suggestions:?}"
+    );
+}
+
+#[test]
+fn inserts_plain_tool_name_for_tool_without_bounded_arguments() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool web_search {
+            input {
+                query: string
+            }
+        }
+
+        agent tooling {
+            tools: [tool.<cursor>]
+        }
+    };
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "web_search");
+
+    assert_eq!(completion_suggestion.insert_text, "web_search");
+}
+
+#[test]
+fn inserts_call_for_tool_with_bounded_arguments_when_parentheses_do_not_exist() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool issue_tracker_lookup {
+            bounded {
+                password: string
+            }
+        }
+
+        agent tooling {
+            tools: [tool.<cursor>]
+        }
+    };
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "issue_tracker_lookup");
+
+    assert_eq!(completion_suggestion.insert_text, "issue_tracker_lookup($1)");
+}
+
+#[test]
+fn inserts_plain_tool_name_when_call_parentheses_already_exist() {
+    let completion_suggestions = inline_completion_suggestions! {
+        secrets {
+            knowledge_base_password: string
+        }
+
+        tool issue_tracker_lookup {
+            bounded {
+                password: string
+            }
+        }
+
+        agent tooling {
+            tools: [tool.<cursor>(password: secrets.knowledge_base_password)]
+        }
+    };
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "issue_tracker_lookup");
+
+    assert_eq!(completion_suggestion.insert_text, "issue_tracker_lookup");
+}
+
+#[test]
+fn suggests_only_tool_properties_inside_tool_block() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool issue_tracker_lookup {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "description", "input", "bounded");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Schema,
+        DeclarationKeyword::Tool,
+        DeclarationKeyword::Agent,
+        "string",
+        "number",
+    );
+}
+
+#[test]
+fn suggests_types_inside_tool_bounded_field() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool issue_tracker_lookup {
+            bounded {
+                project: <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        "description",
+        "input",
+        "bounded",
+    );
+}
+
+#[test]
 fn suggests_bounded_arguments_inside_tool_call() {
     let completion_suggestions = inline_completion_suggestions! {
         tool knowledge_base_search {

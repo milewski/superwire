@@ -313,12 +313,18 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn tool_reference_suggestions(&self, tool_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn tool_reference_suggestions(&self, tool_prefix: &str, existing_tool_call_parentheses: bool) -> Vec<CompletionSuggestion> {
         self.tool_names
             .iter()
             .filter(|tool_name| tool_name.starts_with(tool_prefix))
             .map(|tool_name| {
                 let tool_summary = self.tools.get(tool_name);
+                let has_bounded_fields = tool_summary.is_some_and(|summary| !summary.bounded_fields.is_empty());
+                let insert_text = if has_bounded_fields && !existing_tool_call_parentheses {
+                    format!("{tool_name}($1)")
+                } else {
+                    tool_name.clone()
+                };
 
                 CompletionSuggestion {
                     label: tool_name.clone(),
@@ -327,7 +333,7 @@ impl SemanticIndex {
                     documentation: tool_summary
                         .and_then(|summary| summary.description.clone())
                         .unwrap_or_else(|| "Tool declared in this document.".to_string()),
-                    insert_text: format!("{tool_name}($1)"),
+                    insert_text,
                 }
             })
             .collect()
