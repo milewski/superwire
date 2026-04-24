@@ -1,12 +1,5 @@
-// This example demonstrates agent tool usage.
-// Tools are not defined in this DSL file.
-// They must be created and injected by the runtime before execution.
-// Once available, pass them to an agent with `tools: [tool.name, ...]`.
-// Tool entries can also receive arguments: `tool.name(arg: value)`.
-// This file shows three patterns:
-// 1) tool with no arguments
-// 2) tool with one argument
-// 3) tool with multiple arguments
+// This example demonstrates top-level tool declarations and agent tool usage.
+// Tool declarations define the model-facing input schema and bounded arguments.
 
 secrets {
     knowledge_base_password: string
@@ -22,11 +15,45 @@ input {
     question: string
 }
 
+tool web_search {
+    description: "Search the public web"
+
+    input {
+        query: string
+    }
+}
+
+tool knowledge_base_search {
+    description: "Search the internal knowledge base"
+
+    input {
+        query: string
+    }
+
+    bounded {
+        password: string
+    }
+}
+
+tool issue_tracker_lookup {
+    description: "Retrieve details about an issue"
+
+    input {
+        issue_id: number
+    }
+
+    bounded {
+        project: string
+        status: "open" | "closed"
+        token: string
+    }
+}
+
 agent assistant_with_tools {
     model: openai("gpt-4.1-mini")
 
     // The agent can decide when to call these tools.
-    // Tool arguments can use literals, references, and secrets.
+    // Bounded tool arguments can use literals, references, and secrets.
     tools: [
         // No arguments.
         tool.web_search,

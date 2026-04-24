@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword,
-    SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ObjectField, Reference,
+    ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
@@ -93,6 +93,7 @@ impl SingletonDeclarationKind {
 pub enum ValidationContext {
     Provider(String),
     Schema(String),
+    Tool(String),
     Agent(String),
     Input,
     Secrets,
@@ -105,6 +106,7 @@ impl ValidationContext {
         match self {
             Self::Provider(provider_name) => format!("provider `{provider_name}`"),
             Self::Schema(schema_name) => format!("schema `{schema_name}`"),
+            Self::Tool(tool_name) => format!("tool `{tool_name}`"),
             Self::Agent(agent_name) => format!("agent `{agent_name}`"),
             Self::Input => "input declaration".to_string(),
             Self::Secrets => "secrets declaration".to_string(),
@@ -120,6 +122,9 @@ pub enum ValidationIssue {
     },
     DuplicateSchema {
         schema_name: String,
+    },
+    DuplicateTool {
+        tool_name: String,
     },
     DuplicateAgent {
         agent_name: String,
@@ -199,6 +204,10 @@ pub enum ValidationIssue {
         referenced_schema: String,
         context: ValidationContext,
     },
+    UnknownToolReference {
+        tool_name: String,
+        agent_name: String,
+    },
     InvalidTypeExpressionReference {
         reference_path: String,
         context: ValidationContext,
@@ -214,6 +223,7 @@ impl ValidationIssue {
         match self {
             Self::DuplicateProvider { .. } => "duplicate_provider",
             Self::DuplicateSchema { .. } => "duplicate_schema",
+            Self::DuplicateTool { .. } => "duplicate_tool",
             Self::DuplicateAgent { .. } => "duplicate_agent",
             Self::DuplicateSingletonDeclaration { .. } => "duplicate_singleton_declaration",
             Self::DuplicateProperty { .. } => "duplicate_property",
@@ -234,6 +244,7 @@ impl ValidationIssue {
             Self::InvalidReferencePath { .. } => "invalid_reference_path",
             Self::InvalidForLoopIterableType { .. } => "invalid_for_loop_iterable_type",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
+            Self::UnknownToolReference { .. } => "unknown_tool_reference",
             Self::InvalidTypeExpressionReference { .. } => "invalid_type_expression_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
         }
@@ -248,6 +259,9 @@ impl ValidationIssue {
             }
             Self::DuplicateSchema { schema_name } => {
                 format!("Schema `{schema_name}` is declared more than once.")
+            }
+            Self::DuplicateTool { tool_name } => {
+                format!("Tool `{tool_name}` is declared more than once.")
             }
             Self::DuplicateAgent { agent_name } => {
                 format!("Agent `{agent_name}` is declared more than once.")
@@ -286,6 +300,9 @@ impl ValidationIssue {
             }
             Self::UnknownAgentReference { referenced_agent, context } => {
                 format!("Unknown agent `{referenced_agent}` referenced in {}.", context.describe())
+            }
+            Self::UnknownToolReference { tool_name, agent_name } => {
+                format!("Agent `{agent_name}` references undeclared tool `tool.{tool_name}`.")
             }
             Self::InvalidKeywordReferenceRoot { keyword, context } => {
                 format!("`{}` reference requires a field path in {}.", keyword.as_str(), context.describe())
@@ -368,6 +385,7 @@ impl ValidationIssue {
         match self {
             Self::DuplicateProvider { .. }
             | Self::DuplicateSchema { .. }
+            | Self::DuplicateTool { .. }
             | Self::DuplicateAgent { .. }
             | Self::DuplicateSingletonDeclaration { .. }
             | Self::DuplicateProperty { .. } => Some(self.duplicate_declaration_help_message()),
@@ -419,6 +437,10 @@ impl ValidationIssue {
                 referenced_schema: _,
                 context: _,
             }
+            | Self::UnknownToolReference {
+                tool_name: _,
+                agent_name: _,
+            }
             | Self::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -436,6 +458,9 @@ impl ValidationIssue {
             }
             Self::DuplicateSchema { schema_name } => {
                 format!("Keep a single `schema {schema_name}` declaration, or rename one schema.")
+            }
+            Self::DuplicateTool { tool_name } => {
+                format!("Keep a single `tool {tool_name}` declaration, or rename one tool.")
             }
             Self::DuplicateAgent { agent_name } => {
                 format!("Keep a single `agent {agent_name}` declaration, or rename one agent.")
@@ -547,6 +572,9 @@ impl ValidationIssue {
             } => {
                 format!("Declare `schema {referenced_schema} {{ ... }}` before using `schema.{referenced_schema}`.")
             }
+            Self::UnknownToolReference { tool_name, agent_name: _ } => {
+                format!("Declare `tool {tool_name} {{ ... }}` before using `tool.{tool_name}` in an agent `tools` list.")
+            }
             Self::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -582,6 +610,7 @@ impl From<&ValidationIssue> for DiagnosticCode {
         match validation_issue {
             ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
             ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
+            ValidationIssue::DuplicateTool { tool_name: _ } => Self::DuplicateSchema,
             ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
             ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
             ValidationIssue::DuplicateProperty {
@@ -640,6 +669,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 referenced_schema: _,
                 context: _,
             } => Self::UnknownSchemaReference,
+            ValidationIssue::UnknownToolReference {
+                tool_name: _,
+                agent_name: _,
+            } => Self::UnknownSchemaReference,
             ValidationIssue::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -658,6 +691,7 @@ struct ProviderInfo {
 struct ValidationIndex {
     provider_infos: HashMap<String, ProviderInfo>,
     agent_names: HashSet<String>,
+    tool_names: HashSet<String>,
     schema_names: HashSet<String>,
     schema_field_types: HashMap<String, HashMap<String, TypeExpression>>,
     input_field_types: Option<HashMap<String, TypeExpression>>,
@@ -674,12 +708,14 @@ pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
     validate_schema_references(workflow, &validation_index, &mut validation_report);
     validate_agent_inference_settings(workflow, &mut validation_report);
     validate_agent_model_bindings(workflow, &validation_index, &mut validation_report);
+    validate_agent_tool_references(workflow, &validation_index, &mut validation_report);
     validate_agent_references(workflow, &validation_index, &mut validation_report);
     validate_agent_dependency_cycles(workflow, &validation_index, &mut validation_report);
 
     validation_report
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_validation_index(workflow: &Workflow, validation_report: &mut ValidationReport) -> ValidationIndex {
     let mut validation_index = ValidationIndex::default();
 
@@ -725,6 +761,18 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 validation_index
                     .schema_field_types
                     .insert(schema_declaration.name.clone(), schema_field_types);
+            }
+            Declaration::Tool(tool_declaration) => {
+                let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
+
+                if !inserted_tool {
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateTool {
+                            tool_name: tool_declaration.name.clone(),
+                        },
+                        Some(tool_declaration.span),
+                    );
+                }
             }
             Declaration::Agent(agent_declaration) => {
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
@@ -802,6 +850,7 @@ fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpre
         .collect()
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut ValidationReport) {
     for declaration in workflow.declarations() {
         match declaration {
@@ -831,6 +880,20 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
 
                 for schema_field in &schema_declaration.fields {
                     report_duplicate_type_expression_fields(&schema_field.field_type, schema_context.clone(), validation_report);
+                }
+            }
+            Declaration::Tool(tool_declaration) => {
+                let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
+
+                report_duplicate_typed_field_names(tool_declaration.input_fields.as_slice(), tool_context.clone(), validation_report);
+                report_duplicate_typed_field_names(tool_declaration.bounded_fields.as_slice(), tool_context.clone(), validation_report);
+
+                for input_field in &tool_declaration.input_fields {
+                    report_duplicate_type_expression_fields(&input_field.field_type, tool_context.clone(), validation_report);
+                }
+
+                for bounded_field in &tool_declaration.bounded_fields {
+                    report_duplicate_type_expression_fields(&bounded_field.field_type, tool_context.clone(), validation_report);
                 }
             }
             Declaration::Agent(agent_declaration) => {
@@ -1165,6 +1228,33 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     }
                 }
             }
+            Declaration::Tool(tool_declaration) => {
+                let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
+
+                for input_field in &tool_declaration.input_fields {
+                    validate_type_expression_for_schemas(
+                        &input_field.field_type,
+                        tool_context.clone(),
+                        Some(input_field.span),
+                        validation_index,
+                        validation_report,
+                        &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
+                    );
+                }
+
+                for bounded_field in &tool_declaration.bounded_fields {
+                    validate_type_expression_for_schemas(
+                        &bounded_field.field_type,
+                        tool_context.clone(),
+                        Some(bounded_field.span),
+                        validation_index,
+                        validation_report,
+                        &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
+                    );
+                }
+            }
             Declaration::Provider(_) | Declaration::Output(_) => {}
         }
     }
@@ -1409,6 +1499,90 @@ fn validate_model_expression(
     );
 }
 
+fn validate_agent_tool_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
+    let mut reported_unknown_tools = HashSet::<(String, String)>::new();
+
+    for declaration in workflow.declarations() {
+        let Declaration::Agent(agent_declaration) = declaration else {
+            continue;
+        };
+
+        let Some(tools_expression) = agent_declaration.expression_property(crate::dsl::AgentExpressionPropertyName::Tools) else {
+            continue;
+        };
+
+        for tool_name in tools_expression.referenced_tool_names() {
+            if validation_index.tool_names.contains(&tool_name) {
+                continue;
+            }
+
+            let issue_key = (agent_declaration.name.clone(), tool_name.clone());
+
+            if !reported_unknown_tools.insert(issue_key.clone()) {
+                continue;
+            }
+
+            validation_report.push_issue_with_span(
+                ValidationIssue::UnknownToolReference {
+                    agent_name: issue_key.0,
+                    tool_name: issue_key.1,
+                },
+                Some(agent_declaration.span),
+            );
+        }
+    }
+}
+
+trait ToolReferenceCollector {
+    fn referenced_tool_names(&self) -> Vec<String>;
+}
+
+impl ToolReferenceCollector for Expression {
+    fn referenced_tool_names(&self) -> Vec<String> {
+        let Expression::ArrayLiteral(tool_expressions) = self else {
+            return Vec::new();
+        };
+
+        tool_expressions.iter().filter_map(Expression::direct_tool_name).collect()
+    }
+}
+
+trait DirectToolName {
+    fn direct_tool_name(&self) -> Option<String>;
+}
+
+impl DirectToolName for Expression {
+    fn direct_tool_name(&self) -> Option<String> {
+        match self {
+            Self::Reference(reference) => reference.direct_tool_name(),
+            Self::FunctionCall(function_call) => function_call.direct_tool_name(),
+            Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => None,
+        }
+    }
+}
+
+impl DirectToolName for FunctionCall {
+    fn direct_tool_name(&self) -> Option<String> {
+        self.callee.direct_tool_name()
+    }
+}
+
+impl DirectToolName for Reference {
+    fn direct_tool_name(&self) -> Option<String> {
+        if self.root_keyword() != Some(ReferenceKeyword::Tool) || self.accesses.len() != 1 || self.accesses[0].optional {
+            return None;
+        }
+
+        Some(self.accesses[0].field.clone())
+    }
+}
+
 fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut keyword_reference_validation_state = KeywordReferenceValidationState::new(workflow, validation_index, validation_report);
 
@@ -1472,7 +1646,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                     );
                 }
             }
-            Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) => {}
+            Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {}
         }
     }
 }
@@ -2146,6 +2320,9 @@ mod tests {
             schema User { name: string }
             schema User { id: string }
 
+            tool search { query: string }
+            tool search { query: string }
+
             agent researcher {}
             agent researcher {}
         };
@@ -2154,7 +2331,44 @@ mod tests {
             workflow,
             ValidationIssue::DuplicateProvider { provider_name } if provider_name == "openai",
             ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User",
+            ValidationIssue::DuplicateTool { tool_name } if tool_name == "search",
             ValidationIssue::DuplicateAgent { agent_name } if agent_name == "researcher"
+        );
+    }
+
+    #[test]
+    fn reports_unknown_tool_reference() {
+        let workflow = parse_inline_workflow! {
+            agent researcher {
+                tools: [tool.web_search]
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::UnknownToolReference { tool_name, agent_name }
+                if tool_name == "web_search" && agent_name == "researcher"
+        );
+    }
+
+    #[test]
+    fn accepts_declared_tool_reference() {
+        let workflow = parse_inline_workflow! {
+            tool web_search {
+                query: string
+            }
+
+            agent researcher {
+                tools: [tool.web_search]
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(
+            workflow,
+            ValidationIssue::UnknownToolReference {
+                tool_name: _,
+                agent_name: _
+            }
         );
     }
 

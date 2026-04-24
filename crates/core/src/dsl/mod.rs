@@ -10,7 +10,7 @@ pub use ast::{
     BuiltinFunctionArgumentName, BuiltinFunctionName, CallArgument, Declaration, DeclarationKeyword, Expression, ForClauseKeyword,
     FunctionCall, InputDeclaration, ModelCallArgumentName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference,
     ReferenceAccess, ReferenceKeyword, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate,
-    StringTemplatePart, TypeExpression, TypedField, Workflow,
+    StringTemplatePart, ToolDeclaration, TypeExpression, TypedField, Workflow,
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};

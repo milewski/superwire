@@ -1,13 +1,17 @@
 use crate::dsl::{
     parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, CallArgument, Expression,
-    FunctionCall, Reference, ReferenceKeyword, Workflow,
+    FunctionCall, Reference, ReferenceKeyword, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
 use crate::runtime::inference::InferenceSetting;
 use crate::runtime::provider::ProviderConfig;
 use crate::runtime::runner::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, LoopAgentRunner, RequestedAgentTool};
-use crate::runtime::types::{validate_value_against_type, value_kind_name, workflow_type_to_schemars_schema, WorkflowType};
+use crate::runtime::type_inference::TypeInferenceContext;
+use crate::runtime::types::{
+    ensure_type_matches, validate_value_against_type, value_kind_name, workflow_type_from_dsl, workflow_type_to_schemars_schema,
+    WorkflowType,
+};
 use crate::semantic::{compile_workflow_pipeline, ExecutionPlan, PlannedAgent, WorkflowPipelineInput};
 use futures::future::try_join_all;
 use schemars::{JsonSchema, Schema};
@@ -65,6 +69,7 @@ struct PreparedAgentExecution<'workflow> {
 struct AgentToolBinding {
     tool_name: String,
     argument_expressions: Vec<AgentToolArgumentExpression>,
+    definition: Option<ToolDefinition>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +88,7 @@ struct CompletedAgentExecution {
 #[derive(Debug, Clone)]
 struct RuntimeToolCatalog {
     tool_definitions: HashMap<String, ToolDefinition>,
+    bound_argument_types: HashMap<String, HashMap<String, WorkflowType>>,
 }
 
 impl CompletedAgentExecution {
@@ -92,42 +98,147 @@ impl CompletedAgentExecution {
     }
 }
 
+impl ExecutionPlan {
+    fn type_inference_context(&self) -> TypeInferenceContext {
+        let agent_output_types = self
+            .planned_agents
+            .iter()
+            .map(|(agent_name, planned_agent)| (agent_name.clone(), planned_agent.final_output_type.clone()))
+            .collect::<HashMap<_, _>>();
+
+        TypeInferenceContext {
+            input_type: self.input_type.clone(),
+            secrets_type: self.secrets_type.clone(),
+            agent_output_types,
+            local_binding_types: HashMap::new(),
+        }
+    }
+}
+
+trait WorkflowToolSchemaExt {
+    fn named_schema_types(&self) -> HashMap<String, TypeExpression>;
+}
+
+impl WorkflowToolSchemaExt for Workflow {
+    fn named_schema_types(&self) -> HashMap<String, TypeExpression> {
+        self.declarations()
+            .iter()
+            .filter_map(|declaration| match declaration {
+                crate::dsl::Declaration::Schema(schema_declaration) => Some((
+                    schema_declaration.name.clone(),
+                    TypeExpression::Object(schema_declaration.fields.clone()),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+impl ToolDeclaration {
+    fn to_tool_definition(&self, named_schema_types: &HashMap<String, TypeExpression>) -> Result<ToolDefinition, WorkflowRuntimeError> {
+        let input_type = WorkflowType::from_tool_fields(self.input_fields.clone(), named_schema_types)?;
+        let bounded_type = WorkflowType::from_tool_fields(self.bounded_fields.clone(), named_schema_types)?;
+        let parameters_schema = workflow_type_to_schemars_schema(&input_type, None)?;
+        let bound_parameters_schema = if self.bounded_fields.is_empty() {
+            None
+        } else {
+            Some(workflow_type_to_schemars_schema(&bounded_type, None)?)
+        };
+
+        Ok(ToolDefinition {
+            name: self.name.clone(),
+            description: self.description.clone().unwrap_or_default(),
+            parameters_schema,
+            bound_parameters_schema,
+            output_schema: None,
+        })
+    }
+
+    fn bound_argument_types(
+        &self,
+        named_schema_types: &HashMap<String, TypeExpression>,
+    ) -> Result<HashMap<String, WorkflowType>, WorkflowRuntimeError> {
+        let mut bound_argument_types = HashMap::new();
+
+        for bounded_field in &self.bounded_fields {
+            let bound_argument_type = workflow_type_from_dsl(&bounded_field.field_type, named_schema_types)?;
+            bound_argument_types.insert(bounded_field.name.clone(), bound_argument_type);
+        }
+
+        Ok(bound_argument_types)
+    }
+}
+
+trait ToolFieldsWorkflowTypeExt {
+    fn from_tool_fields(
+        fields: Vec<crate::dsl::TypedField>,
+        named_schema_types: &HashMap<String, TypeExpression>,
+    ) -> Result<Self, WorkflowRuntimeError>
+    where
+        Self: Sized;
+}
+
+impl ToolFieldsWorkflowTypeExt for WorkflowType {
+    fn from_tool_fields(
+        fields: Vec<crate::dsl::TypedField>,
+        named_schema_types: &HashMap<String, TypeExpression>,
+    ) -> Result<Self, WorkflowRuntimeError> {
+        workflow_type_from_dsl(&TypeExpression::Object(fields), named_schema_types)
+    }
+}
+
 impl RuntimeToolCatalog {
-    fn from_runtime_tools(dynamic_runtime_tools: &[DynamicTool]) -> Result<Self, WorkflowRuntimeError> {
+    fn from_workflow_and_runtime_tools(workflow: &Workflow, dynamic_runtime_tools: &[DynamicTool]) -> Result<Self, WorkflowRuntimeError> {
         let mut tool_definitions = HashMap::<String, ToolDefinition>::new();
+        let mut bound_argument_types = HashMap::<String, HashMap<String, WorkflowType>>::new();
+
+        let named_schema_types = workflow.named_schema_types();
+
+        for declaration in workflow.declarations() {
+            let crate::dsl::Declaration::Tool(tool_declaration) = declaration else {
+                continue;
+            };
+
+            let tool_definition = tool_declaration.to_tool_definition(&named_schema_types)?;
+            let tool_bound_argument_types = tool_declaration.bound_argument_types(&named_schema_types)?;
+
+            if tool_definitions
+                .insert(tool_definition.name.clone(), tool_definition.clone())
+                .is_some()
+            {
+                return Err(WorkflowRuntimeError::Other {
+                    message: format!("duplicate runtime tool name `{}` while building tool catalog", tool_definition.name),
+                });
+            }
+
+            bound_argument_types.insert(tool_definition.name.clone(), tool_bound_argument_types);
+        }
 
         for registered_tool in registered_runtime_tools() {
             let tool_definition = registered_tool.definition().map_err(|error| WorkflowRuntimeError::Other {
                 message: format!("failed to read definition for registered runtime tool: {error}"),
             })?;
 
-            if tool_definitions
-                .insert(tool_definition.name.clone(), tool_definition.clone())
-                .is_some()
-            {
-                return Err(WorkflowRuntimeError::Other {
-                    message: format!("duplicate runtime tool name `{}` while building tool catalog", tool_definition.name),
-                });
-            }
+            tool_definitions.entry(tool_definition.name.clone()).or_insert(tool_definition);
         }
 
         for dynamic_runtime_tool in dynamic_runtime_tools {
             let tool_definition = dynamic_runtime_tool.tool_definition().clone();
 
-            if tool_definitions
-                .insert(tool_definition.name.clone(), tool_definition.clone())
-                .is_some()
-            {
-                return Err(WorkflowRuntimeError::Other {
-                    message: format!("duplicate runtime tool name `{}` while building tool catalog", tool_definition.name),
-                });
-            }
+            tool_definitions.entry(tool_definition.name.clone()).or_insert(tool_definition);
         }
 
-        Ok(Self { tool_definitions })
+        Ok(Self {
+            tool_definitions,
+            bound_argument_types,
+        })
     }
 
-    fn validate_workflow_tool_bindings(&self, workflow: &Workflow) -> Result<(), WorkflowRuntimeError> {
+    fn validate_workflow_tool_bindings(
+        &self,
+        workflow: &Workflow,
+        type_inference_context: &TypeInferenceContext,
+    ) -> Result<(), WorkflowRuntimeError> {
         for declaration in workflow.declarations() {
             let crate::dsl::Declaration::Agent(agent_declaration) = declaration else {
                 continue;
@@ -137,10 +248,10 @@ impl RuntimeToolCatalog {
                 continue;
             };
 
-            let parsed_tool_bindings = tools_expression.parse_agent_tools_expression(agent_declaration)?;
+            let parsed_tool_bindings = tools_expression.parse_agent_tools_expression(agent_declaration, self)?;
 
             for tool_binding in parsed_tool_bindings {
-                tool_binding.validate_required_bound_arguments(agent_declaration, self)?;
+                tool_binding.validate_bound_arguments(agent_declaration, self, type_inference_context)?;
             }
         }
 
@@ -150,17 +261,25 @@ impl RuntimeToolCatalog {
     fn tool_definition(&self, tool_name: &str) -> Option<&ToolDefinition> {
         self.tool_definitions.get(tool_name)
     }
+
+    fn bound_argument_types(&self, tool_name: &str) -> Option<&HashMap<String, WorkflowType>> {
+        self.bound_argument_types.get(tool_name)
+    }
 }
 
 impl AgentToolBinding {
-    fn validate_required_bound_arguments(
+    fn validate_bound_arguments(
         &self,
         agent_declaration: &AgentDeclaration,
         runtime_tool_catalog: &RuntimeToolCatalog,
+        type_inference_context: &TypeInferenceContext,
     ) -> Result<(), WorkflowRuntimeError> {
         let Some(tool_definition) = runtime_tool_catalog.tool_definition(&self.tool_name) else {
             return Ok(());
         };
+
+        self.validate_known_bound_arguments(agent_declaration, runtime_tool_catalog)?;
+        self.validate_bound_argument_types(agent_declaration, runtime_tool_catalog, type_inference_context)?;
 
         let required_bound_argument_names = tool_definition.required_bound_argument_names()?;
 
@@ -197,6 +316,73 @@ impl AgentToolBinding {
                 self.tool_name, formatted_missing_argument_names
             ),
         })
+    }
+
+    fn validate_known_bound_arguments(
+        &self,
+        agent_declaration: &AgentDeclaration,
+        runtime_tool_catalog: &RuntimeToolCatalog,
+    ) -> Result<(), WorkflowRuntimeError> {
+        let Some(bound_argument_types) = runtime_tool_catalog.bound_argument_types(&self.tool_name) else {
+            return Ok(());
+        };
+
+        for argument_expression in &self.argument_expressions {
+            if bound_argument_types.contains_key(&argument_expression.argument_name) {
+                continue;
+            }
+
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                message: format!(
+                    "tool `tool.{}` does not define bound argument `{}`",
+                    self.tool_name, argument_expression.argument_name
+                ),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn validate_bound_argument_types(
+        &self,
+        agent_declaration: &AgentDeclaration,
+        runtime_tool_catalog: &RuntimeToolCatalog,
+        type_inference_context: &TypeInferenceContext,
+    ) -> Result<(), WorkflowRuntimeError> {
+        let Some(bound_argument_types) = runtime_tool_catalog.bound_argument_types(&self.tool_name) else {
+            return Ok(());
+        };
+
+        for argument_expression in &self.argument_expressions {
+            let Some(expected_argument_type) = bound_argument_types.get(&argument_expression.argument_name) else {
+                continue;
+            };
+
+            let actual_argument_type = argument_expression.expression.infer_type(
+                type_inference_context,
+                &format!(
+                    "tool `tool.{}` bound argument `{}`",
+                    self.tool_name, argument_expression.argument_name
+                ),
+            )?;
+
+            if ensure_type_matches(expected_argument_type, &actual_argument_type) {
+                continue;
+            }
+
+            return Err(WorkflowRuntimeError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                message: format!(
+                    "tool `tool.{}` bound argument `{}` expects {}, found {}",
+                    self.tool_name, argument_expression.argument_name, expected_argument_type, actual_argument_type
+                ),
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -315,8 +501,8 @@ where
 
     pub(crate) fn new_with_runtime_tools(workflow: Workflow, runtime_tools: Vec<DynamicTool>) -> Result<Self, WorkflowRuntimeError> {
         let compiled_workflow = compile_workflow::<Input, Output>(&workflow)?;
-        let runtime_tool_catalog = RuntimeToolCatalog::from_runtime_tools(runtime_tools.as_slice())?;
-        runtime_tool_catalog.validate_workflow_tool_bindings(&workflow)?;
+        let runtime_tool_catalog = RuntimeToolCatalog::from_workflow_and_runtime_tools(&workflow, runtime_tools.as_slice())?;
+        runtime_tool_catalog.validate_workflow_tool_bindings(&workflow, &compiled_workflow.execution_plan.type_inference_context())?;
 
         Ok(Self {
             workflow,
@@ -324,6 +510,10 @@ where
             runtime_tools,
             phantom: PhantomData,
         })
+    }
+
+    fn runtime_tool_catalog(&self) -> Result<RuntimeToolCatalog, WorkflowRuntimeError> {
+        RuntimeToolCatalog::from_workflow_and_runtime_tools(&self.workflow, self.runtime_tools.as_slice())
     }
 
     pub fn from_file(workflow_path: impl AsRef<Path>) -> Result<Self, WorkflowRuntimeError> {
@@ -607,7 +797,7 @@ where
             })?;
 
         let tools = if let Some(tools_expression) = agent_declaration.expression_property(AgentExpressionPropertyName::Tools) {
-            tools_expression.parse_agent_tools_expression(agent_declaration)?
+            tools_expression.parse_agent_tools_expression(agent_declaration, &self.runtime_tool_catalog()?)?
         } else {
             Vec::new()
         };
@@ -755,6 +945,7 @@ where
             resolved_tools.push(RequestedAgentTool {
                 name: tool_binding.tool_name.clone(),
                 bound_arguments: resolved_bound_arguments,
+                definition_override: tool_binding.definition.clone(),
             });
         }
 
@@ -872,7 +1063,11 @@ impl Expression {
         Ok(model_name.to_string())
     }
 
-    fn parse_agent_tools_expression(&self, agent_declaration: &AgentDeclaration) -> Result<Vec<AgentToolBinding>, WorkflowRuntimeError> {
+    fn parse_agent_tools_expression(
+        &self,
+        agent_declaration: &AgentDeclaration,
+        runtime_tool_catalog: &RuntimeToolCatalog,
+    ) -> Result<Vec<AgentToolBinding>, WorkflowRuntimeError> {
         let Expression::ArrayLiteral(tool_expressions) = self else {
             return Err(WorkflowRuntimeError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
@@ -884,23 +1079,29 @@ impl Expression {
         let mut parsed_tools = Vec::new();
 
         for tool_expression in tool_expressions {
-            parsed_tools.push(tool_expression.parse_agent_tool_binding(agent_declaration)?);
+            parsed_tools.push(tool_expression.parse_agent_tool_binding(agent_declaration, runtime_tool_catalog)?);
         }
 
         Ok(parsed_tools)
     }
 
-    fn parse_agent_tool_binding(&self, agent_declaration: &AgentDeclaration) -> Result<AgentToolBinding, WorkflowRuntimeError> {
+    fn parse_agent_tool_binding(
+        &self,
+        agent_declaration: &AgentDeclaration,
+        runtime_tool_catalog: &RuntimeToolCatalog,
+    ) -> Result<AgentToolBinding, WorkflowRuntimeError> {
         match self {
             Self::Reference(reference) => {
                 let tool_name = reference.parse_agent_tool_name(agent_declaration)?;
+                let definition = runtime_tool_catalog.tool_definition(&tool_name).cloned();
 
                 Ok(AgentToolBinding {
                     tool_name,
                     argument_expressions: Vec::new(),
+                    definition,
                 })
             }
-            Self::FunctionCall(function_call) => function_call.parse_agent_tool_call(agent_declaration),
+            Self::FunctionCall(function_call) => function_call.parse_agent_tool_call(agent_declaration, runtime_tool_catalog),
             _ => Err(WorkflowRuntimeError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
                 property: AgentExpressionPropertyName::Tools.as_str().to_string(),
@@ -933,8 +1134,13 @@ impl Reference {
 }
 
 impl FunctionCall {
-    fn parse_agent_tool_call(&self, agent_declaration: &AgentDeclaration) -> Result<AgentToolBinding, WorkflowRuntimeError> {
+    fn parse_agent_tool_call(
+        &self,
+        agent_declaration: &AgentDeclaration,
+        runtime_tool_catalog: &RuntimeToolCatalog,
+    ) -> Result<AgentToolBinding, WorkflowRuntimeError> {
         let tool_name = self.callee.parse_agent_tool_name(agent_declaration)?;
+        let definition = runtime_tool_catalog.tool_definition(&tool_name).cloned();
         let mut argument_expressions = Vec::new();
         let mut seen_argument_names = std::collections::HashSet::<String>::new();
 
@@ -969,6 +1175,7 @@ impl FunctionCall {
         Ok(AgentToolBinding {
             tool_name,
             argument_expressions,
+            definition,
         })
     }
 }

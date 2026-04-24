@@ -884,6 +884,19 @@ async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
             country: string
         }
 
+        tool weather {
+            query: string
+        }
+
+        tool lookup_weather {
+            query: string
+
+            bounded {
+                country: string
+                static_mode: boolean
+            }
+        }
+
         agent assistant {
             model: openai("model-a")
             tools: [
@@ -962,6 +975,14 @@ async fn evaluates_tool_bound_arguments_from_secrets_context() {
 
         secrets {
             key: string
+        }
+
+        tool weather {
+            query: string
+
+            bounded {
+                key: string
+            }
         }
 
         agent assistant {
@@ -1046,6 +1067,15 @@ fn fails_workflow_compilation_when_required_tool_bound_arguments_are_missing() {
             task_id: number
         }
 
+        tool get_answered_participants_for_task {
+            query: string
+
+            bounded {
+                project_id: number
+                task_id: number
+            }
+        }
+
         agent participants_fetcher {
             model: openai("model-a")
             tools: [
@@ -1093,6 +1123,65 @@ fn fails_workflow_compilation_when_required_tool_bound_arguments_are_missing() {
 }
 
 #[test]
+fn fails_workflow_compilation_when_tool_bound_argument_type_is_invalid() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        question: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct Output {
+        #[expect(dead_code)]
+        answer: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        #BASE_PROVIDER_WORKFLOW;
+
+        input {
+            question: string
+        }
+
+        tool knowledge_base_search {
+            query: string
+
+            bounded {
+                password: string
+            }
+        }
+
+        agent assistant {
+            model: openai("model-a")
+            tools: [tool.knowledge_base_search(password: 123)]
+            prompt: input.question
+            output: string
+        }
+
+        output {
+            answer: agent.assistant
+        }
+    };
+
+    let runtime_result = WorkflowRuntime::<Input, Output>::new(workflow);
+    let Err(runtime_error) = runtime_result else {
+        panic!("workflow compilation should fail when tool bound argument has wrong type");
+    };
+
+    match runtime_error {
+        WorkflowRuntimeError::InvalidAgentProperty {
+            agent_name,
+            property,
+            message,
+        } => {
+            assert_eq!(agent_name, "assistant");
+            assert_eq!(property, "tools");
+            assert!(message.contains("tool `tool.knowledge_base_search` bound argument `password` expects string, found number"));
+        }
+        _ => panic!("expected invalid agent property error for wrong tool bound argument type"),
+    }
+}
+
+#[test]
 fn compiles_workflow_when_required_tool_bound_arguments_are_provided() {
     #[derive(Debug, Serialize, JsonSchema)]
     struct Input {
@@ -1123,6 +1212,15 @@ fn compiles_workflow_when_required_tool_bound_arguments_are_provided() {
         input {
             project_id: number
             task_id: number
+        }
+
+        tool get_answered_participants_for_task {
+            query: string
+
+            bounded {
+                project_id: number
+                task_id: number
+            }
         }
 
         agent participants_fetcher {

@@ -123,6 +123,14 @@ impl Workflow {
     }
 
     #[must_use]
+    pub fn find_tool(&self, tool_name: &str) -> Option<&ToolDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Tool(tool_declaration) if tool_declaration.name == tool_name => Some(tool_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
     pub fn find_agent(&self, agent_name: &str) -> Option<&AgentDeclaration> {
         self.declarations.iter().find_map(|declaration| match declaration {
             Declaration::Agent(agent_declaration) if agent_declaration.name == agent_name => Some(agent_declaration),
@@ -145,6 +153,7 @@ pub enum Declaration {
     Secrets(SecretsDeclaration),
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
+    Tool(ToolDeclaration),
     Agent(AgentDeclaration),
     Output(OutputDeclaration),
 }
@@ -155,6 +164,7 @@ pub enum DeclarationKeyword {
     Secrets,
     Input,
     Schema,
+    Tool,
     Agent,
     Output,
 }
@@ -192,6 +202,7 @@ impl DeclarationKeyword {
             "secrets" => Some(Self::Secrets),
             "input" => Some(Self::Input),
             "schema" => Some(Self::Schema),
+            "tool" => Some(Self::Tool),
             "agent" => Some(Self::Agent),
             "output" => Some(Self::Output),
             _ => None,
@@ -205,6 +216,7 @@ impl DeclarationKeyword {
             Self::Secrets => "secrets",
             Self::Input => "input",
             Self::Schema => "schema",
+            Self::Tool => "tool",
             Self::Agent => "agent",
             Self::Output => "output",
         }
@@ -234,6 +246,15 @@ pub struct InputDeclaration {
 pub struct SchemaDeclaration {
     pub name: String,
     pub fields: Vec<TypedField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDeclaration {
+    pub name: String,
+    pub description: Option<String>,
+    pub input_fields: Vec<TypedField>,
+    pub bounded_fields: Vec<TypedField>,
     pub span: SourceSpan,
 }
 

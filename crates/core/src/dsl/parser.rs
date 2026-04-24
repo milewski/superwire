@@ -457,6 +457,42 @@ mod tests {
     }
 
     #[test]
+    fn parses_tool_declarations_with_input_and_bounded_fields() {
+        let workflow = parse_inline_workflow! {
+            tool web_search {
+                query: string
+            }
+
+            tool issue_tracker_lookup {
+                description: "retrieve details about an issue"
+
+                input {
+                    issue_id: number
+                }
+
+                bounded {
+                    project: string,
+                    status: "open" | "closed",
+                    token: string,
+                }
+            }
+        };
+
+        let web_search_tool = workflow.find_tool("web_search").expect("missing web_search tool declaration");
+
+        assert_eq!(web_search_tool.input_fields.len(), 1);
+        assert_eq!(web_search_tool.input_fields[0].name, "query");
+
+        let issue_tracker_tool = workflow
+            .find_tool("issue_tracker_lookup")
+            .expect("missing issue_tracker_lookup tool declaration");
+
+        assert_eq!(issue_tracker_tool.description.as_deref(), Some("retrieve details about an issue"));
+        assert_eq!(issue_tracker_tool.input_fields.len(), 1);
+        assert_eq!(issue_tracker_tool.bounded_fields.len(), 3);
+    }
+
+    #[test]
     fn parses_schema_union_types_and_optional_access() {
         let workflow = parse_inline_workflow! {
             schema AllTypes {
