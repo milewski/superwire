@@ -8,6 +8,8 @@ secrets {
 
 provider openai {
     driver: "openai"
+    endpoint: "http://localhost"
+    api_key: "123"
     models: ["gpt-4.1-mini"]
 }
 
