@@ -19,6 +19,9 @@
       "include": "#schema"
     },
     {
+      "include": "#tool"
+    },
+    {
       "include": "#input-block"
     },
     {
@@ -85,6 +88,46 @@
         },
         "2": {
           "name": "entity.name.type.schema.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool": {
+      "begin": "\\b(tool)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.function.tool.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#tool-field-block"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool-field-block": {
+      "begin": "\\b(input|bounded)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
         }
       },
       "end": "\\}",
@@ -166,11 +209,11 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|api_key|models|model|tools|context|output|prompt|inference)\\b(?=\\s*:)",
+          "match": "\\b(driver|endpoint|api_key|models|model|tools|context|output|prompt|inference|description)\\b(?=\\s*:)",
           "name": "variable.parameter.wire"
         },
         {
-          "match": "\\b(provider|schema|agent|input|output|secrets|for|in)\\b",
+          "match": "\\b(provider|schema|tool|agent|input|bounded|output|secrets|for|in)\\b",
           "name": "keyword.control.wire"
         },
         {

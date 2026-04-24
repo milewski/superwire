@@ -331,17 +331,44 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expects_empty_suggestions: false,
         },
         CompletionMatrixCase {
-            case_name: "tool_namespace_excludes_member_suggestions",
+            case_name: "tool_namespace_suggests_declared_tools",
             context: CompletionMatrixContext::Tools,
-            expectation_kind: CompletionExpectationKind::Negative,
+            expectation_kind: CompletionExpectationKind::Positive,
             source_template: inline_document_template! {
+                tool knowledge_base_search {
+                    query: string
+                }
+
                 agent tooling {
                     tools: [tool.<cursor>]
                 }
             },
-            expected_present_labels: vec![],
+            expected_present_labels: vec!["knowledge_base_search"],
             expected_absent_labels: vec![],
-            expects_empty_suggestions: true,
+            expects_empty_suggestions: false,
+        },
+        CompletionMatrixCase {
+            case_name: "tool_call_excludes_input_field_arguments",
+            context: CompletionMatrixContext::Tools,
+            expectation_kind: CompletionExpectationKind::Negative,
+            source_template: inline_document_template! {
+                tool knowledge_base_search {
+                    input {
+                        query: string
+                    }
+
+                    bounded {
+                        password: string
+                    }
+                }
+
+                agent tooling {
+                    tools: [tool.knowledge_base_search(<cursor>)]
+                }
+            },
+            expected_present_labels: vec!["password"],
+            expected_absent_labels: vec!["query"],
+            expects_empty_suggestions: false,
         },
     ]
 }

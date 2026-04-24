@@ -1,6 +1,8 @@
-use super::text_utils::{for_clause_iterable_prefix, is_identifier, leading_identifier, split_for_clause_binding, trailing_identifier};
+use super::text_utils::{
+    for_clause_iterable_prefix, is_identifier, leading_identifier, split_for_clause_binding, trailing_identifier, trailing_reference_token,
+};
 use super::{CompletionKind, CompletionSuggestion};
-use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword};
+use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword};
 use superwire_core::runtime::InferenceSetting;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,6 +191,13 @@ pub struct ModelCallCompletionContext {
     pub inside_string_literal: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct ToolCallCompletionContext {
+    pub tool_name: String,
+    pub argument_prefix: String,
+    pub existing_argument_names: Vec<String>,
+}
+
 impl ModelCallCompletionContext {
     pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
         let trimmed_prefix = line_prefix.trim_end();
@@ -208,6 +217,39 @@ impl ModelCallCompletionContext {
             provider_name,
             model_prefix: value_completion_context.value_prefix,
             inside_string_literal: value_completion_context.inside_string_literal,
+        })
+    }
+}
+
+impl ToolCallCompletionContext {
+    pub fn from_line_prefix(line_prefix: &str) -> Option<Self> {
+        let trimmed_prefix = line_prefix.trim_end();
+        let open_parenthesis_index = trimmed_prefix.rfind('(')?;
+        let callee_prefix = trimmed_prefix[..open_parenthesis_index].trim_end();
+        let callee_token = trailing_reference_token(callee_prefix)?;
+        let tool_namespace_prefix = format!("{}.", ReferenceKeyword::Tool.as_str());
+        let tool_name = callee_token.strip_prefix(tool_namespace_prefix.as_str())?;
+
+        if !is_identifier(tool_name) {
+            return None;
+        }
+
+        let arguments_prefix = &trimmed_prefix[open_parenthesis_index + 1..];
+
+        if arguments_prefix.contains(')') {
+            return None;
+        }
+
+        let current_argument_prefix = arguments_prefix.rsplit_once(',').map_or(arguments_prefix, |(_, after_comma)| after_comma);
+
+        if current_argument_prefix.contains(':') {
+            return None;
+        }
+
+        Some(Self {
+            tool_name: tool_name.to_string(),
+            argument_prefix: trailing_identifier(current_argument_prefix).unwrap_or_default().to_string(),
+            existing_argument_names: parse_existing_tool_argument_names(arguments_prefix),
         })
     }
 }
@@ -387,6 +429,18 @@ fn parse_existing_destructuring_field_names(destructuring_prefix: &str) -> Vec<S
     }
 
     field_names
+}
+
+fn parse_existing_tool_argument_names(arguments_prefix: &str) -> Vec<String> {
+    arguments_prefix
+        .split(',')
+        .filter_map(|argument_segment| {
+            let (argument_name_segment, _) = argument_segment.split_once(':')?;
+            let argument_name = trailing_identifier(argument_name_segment.trim_end())?;
+
+            Some(argument_name.to_string())
+        })
+        .collect()
 }
 
 impl OutputValueCompletionContext {

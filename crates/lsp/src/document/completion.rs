@@ -7,7 +7,7 @@ use crate::protocol::{Position, Range};
 use super::completion_context::{
     AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
     ForLoopDestructuringBindingCompletionContext, ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext,
-    ModelCallCompletionContext, OutputValueCompletionContext, ValueCompletionContext,
+    ModelCallCompletionContext, OutputValueCompletionContext, ToolCallCompletionContext, ValueCompletionContext,
 };
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
@@ -275,6 +275,14 @@ impl DocumentState {
                     }
                 }
             }
+        }
+
+        if let Some(tool_call_completion_context) = ToolCallCompletionContext::from_line_prefix(line_prefix) {
+            return Some(semantic_index.tool_bounded_argument_suggestions(
+                &tool_call_completion_context.tool_name,
+                &tool_call_completion_context.argument_prefix,
+                &tool_call_completion_context.existing_argument_names,
+            ));
         }
 
         if let Some(model_call_context) = ModelCallCompletionContext::from_line_prefix(line_prefix) {
