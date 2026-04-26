@@ -1,5 +1,5 @@
 // This example demonstrates top-level tool declarations and agent tool usage.
-// Tool declarations define the model-facing input schema and bounded arguments.
+// Tool declarations define the model-facing input schema and bindings arguments.
 
 secrets {
     knowledge_base_password: string
@@ -32,7 +32,7 @@ tool knowledge_base_search {
         query: string
     }
 
-    bounded {
+    bindings {
         password: string
     }
 }
@@ -44,7 +44,7 @@ tool issue_tracker_lookup {
         issue_id: number
     }
 
-    bounded {
+    bindings {
         project: string
         status: "open" | "closed"
         token: string

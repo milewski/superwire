@@ -774,6 +774,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
             }
+            Declaration::Let(_) => {}
             Declaration::Agent(agent_declaration) => {
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
 
@@ -886,14 +887,19 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                 let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
 
                 report_duplicate_typed_field_names(tool_declaration.input_fields.as_slice(), tool_context.clone(), validation_report);
-                report_duplicate_typed_field_names(tool_declaration.bounded_fields.as_slice(), tool_context.clone(), validation_report);
+                report_duplicate_typed_field_names(tool_declaration.binding_fields.as_slice(), tool_context.clone(), validation_report);
+                report_duplicate_typed_field_names(tool_declaration.output_fields.as_slice(), tool_context.clone(), validation_report);
 
                 for input_field in &tool_declaration.input_fields {
                     report_duplicate_type_expression_fields(&input_field.field_type, tool_context.clone(), validation_report);
                 }
 
-                for bounded_field in &tool_declaration.bounded_fields {
-                    report_duplicate_type_expression_fields(&bounded_field.field_type, tool_context.clone(), validation_report);
+                for binding_field in &tool_declaration.binding_fields {
+                    report_duplicate_type_expression_fields(&binding_field.field_type, tool_context.clone(), validation_report);
+                }
+
+                for output_field in &tool_declaration.output_fields {
+                    report_duplicate_type_expression_fields(&output_field.field_type, tool_context.clone(), validation_report);
                 }
             }
             Declaration::Agent(agent_declaration) => {
@@ -915,6 +921,14 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                     }
 
                     match agent_property {
+                        AgentProperty::Let(let_binding) => {
+                            report_duplicate_expression_object_fields(
+                                &let_binding.value,
+                                agent_context.clone(),
+                                Some(agent_declaration.span),
+                                validation_report,
+                            );
+                        }
                         AgentProperty::Model(expression)
                         | AgentProperty::Prompt(expression)
                         | AgentProperty::Context(expression)
@@ -972,6 +986,14 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                         validation_report,
                     );
                 }
+            }
+            Declaration::Let(let_binding) => {
+                report_duplicate_expression_object_fields(
+                    &let_binding.value,
+                    ValidationContext::Output,
+                    Some(let_binding.span),
+                    validation_report,
+                );
             }
         }
     }
@@ -1063,6 +1085,28 @@ fn report_duplicate_expression_object_fields(
         Expression::FunctionCall(function_call) => {
             for call_argument in &function_call.arguments {
                 report_duplicate_expression_object_fields(call_argument.expression(), context.clone(), duplicate_span, validation_report);
+            }
+        }
+        Expression::ToolCall(tool_call) => {
+            report_duplicate_object_field_names(
+                tool_call.input_fields.as_slice(),
+                context.clone(),
+                duplicate_span,
+                validation_report,
+            );
+            report_duplicate_object_field_names(
+                tool_call.binding_fields.as_slice(),
+                context.clone(),
+                duplicate_span,
+                validation_report,
+            );
+
+            for object_field in &tool_call.input_fields {
+                report_duplicate_expression_object_fields(&object_field.value, context.clone(), duplicate_span, validation_report);
+            }
+
+            for object_field in &tool_call.binding_fields {
+                report_duplicate_expression_object_fields(&object_field.value, context.clone(), duplicate_span, validation_report);
             }
         }
         Expression::ArrayLiteral(array_values) => {
@@ -1160,6 +1204,7 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_schema_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut unknown_schema_references = HashSet::new();
     let mut invalid_type_expression_references = HashSet::new();
@@ -1243,7 +1288,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     );
                 }
 
-                for bounded_field in &tool_declaration.bounded_fields {
+                for bounded_field in &tool_declaration.binding_fields {
                     validate_type_expression_for_schemas(
                         &bounded_field.field_type,
                         tool_context.clone(),
@@ -1254,8 +1299,20 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                         &mut invalid_type_expression_references,
                     );
                 }
+
+                for output_field in &tool_declaration.output_fields {
+                    validate_type_expression_for_schemas(
+                        &output_field.field_type,
+                        tool_context.clone(),
+                        Some(output_field.span),
+                        validation_index,
+                        validation_report,
+                        &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
+                    );
+                }
             }
-            Declaration::Provider(_) | Declaration::Output(_) => {}
+            Declaration::Provider(_) | Declaration::Let(_) | Declaration::Output(_) => {}
         }
     }
 }
@@ -1556,6 +1613,7 @@ impl DirectToolName for Expression {
         match self {
             Self::Reference(reference) => reference.direct_tool_name(),
             Self::FunctionCall(function_call) => function_call.direct_tool_name(),
+            Self::ToolCall(tool_call) => tool_call.callee.direct_tool_name(),
             Self::StringLiteral(_)
             | Self::StringTemplate(_)
             | Self::NumberLiteral(_)
@@ -1621,6 +1679,13 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                 SecretReferencePolicy::Forbid,
                             );
                         }
+                        AgentProperty::Let(let_binding) => {
+                            keyword_reference_validation_state.validate_expression(
+                                &let_binding.value,
+                                agent_context.clone(),
+                                SecretReferencePolicy::Allow,
+                            );
+                        }
                         AgentProperty::Model(model_expression)
                         | AgentProperty::Inference(model_expression)
                         | AgentProperty::Tools(model_expression) => {
@@ -1645,6 +1710,13 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         SecretReferencePolicy::Forbid,
                     );
                 }
+            }
+            Declaration::Let(let_binding) => {
+                keyword_reference_validation_state.validate_expression(
+                    &let_binding.value,
+                    ValidationContext::Output,
+                    SecretReferencePolicy::Allow,
+                );
             }
             Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {}
         }
@@ -1741,6 +1813,9 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             input_type,
             secrets_type,
             agent_output_types,
+            tool_input_types: HashMap::new(),
+            tool_binding_types: HashMap::new(),
+            tool_output_types: HashMap::new(),
             local_binding_types: HashMap::new(),
         }
     }
@@ -1780,6 +1855,17 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
                 for call_argument in &function_call.arguments {
                     self.validate_expression(call_argument.expression(), context.clone(), secret_reference_policy);
+                }
+            }
+            Expression::ToolCall(tool_call) => {
+                self.validate_reference(&tool_call.callee, context.clone(), secret_reference_policy);
+
+                for object_field in &tool_call.input_fields {
+                    self.validate_expression(&object_field.value, context.clone(), secret_reference_policy);
+                }
+
+                for object_field in &tool_call.binding_fields {
+                    self.validate_expression(&object_field.value, context.clone(), secret_reference_policy);
                 }
             }
             Expression::ArrayLiteral(array_values) => {
@@ -2147,6 +2233,9 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
 
         for agent_property in &agent_declaration.properties {
             match agent_property {
+                AgentProperty::Let(let_binding) => {
+                    collect_agent_dependencies_from_expression(&let_binding.value, &mut referenced_agents);
+                }
                 AgentProperty::Model(model_expression)
                 | AgentProperty::Prompt(model_expression)
                 | AgentProperty::Context(model_expression)
@@ -2207,6 +2296,17 @@ fn collect_agent_dependencies_from_expression(expression: &Expression, reference
 
             for call_argument in &function_call.arguments {
                 collect_agent_dependencies_from_expression(call_argument.expression(), referenced_agents);
+            }
+        }
+        Expression::ToolCall(tool_call) => {
+            collect_agent_dependency_from_reference(&tool_call.callee, referenced_agents);
+
+            for object_field in &tool_call.input_fields {
+                collect_agent_dependencies_from_expression(&object_field.value, referenced_agents);
+            }
+
+            for object_field in &tool_call.binding_fields {
+                collect_agent_dependencies_from_expression(&object_field.value, referenced_agents);
             }
         }
         Expression::ArrayLiteral(array_values) => {

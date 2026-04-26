@@ -1,6 +1,6 @@
 use crate::dsl::{
     AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, OutputDeclaration, ProviderDeclaration, SchemaDeclaration,
-    SecretsDeclaration, TypeExpression, Workflow,
+    SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::collect_agent_dependencies;
@@ -60,9 +60,16 @@ where
         })?
         .clone();
 
+    let tool_types = collect_tool_types(workflow, &named_schema_types)?;
     let (agents, agent_output_types) = collect_typed_agents(workflow, &named_schema_types)?;
-    let workflow_output_type =
-        infer_workflow_output_type(&output_declaration, input_type.clone(), secrets_type.clone(), &agent_output_types)?;
+    let workflow_output_type = infer_workflow_output_type(
+        workflow,
+        &output_declaration,
+        input_type.clone(),
+        secrets_type.clone(),
+        &agent_output_types,
+        &tool_types,
+    )?;
 
     validate_input_type_compatibility::<Input>(input_type.as_ref())?;
     validate_output_type_compatibility::<Output>(&workflow_output_type)?;
@@ -74,6 +81,49 @@ where
         workflow_output_type,
         agents,
     })
+}
+
+struct ToolTypes {
+    input: HashMap<String, WorkflowType>,
+    bindings: HashMap<String, WorkflowType>,
+    output: HashMap<String, WorkflowType>,
+}
+
+fn collect_tool_types(
+    workflow: &Workflow,
+    named_schema_types: &HashMap<String, TypeExpression>,
+) -> Result<ToolTypes, WorkflowRuntimeError> {
+    let mut input = HashMap::new();
+    let mut bindings = HashMap::new();
+    let mut output = HashMap::new();
+
+    for declaration in workflow.declarations() {
+        let Declaration::Tool(ToolDeclaration {
+            name,
+            input_fields,
+            binding_fields,
+            output_fields,
+            ..
+        }) = declaration
+        else {
+            continue;
+        };
+
+        input.insert(
+            name.clone(),
+            workflow_type_from_dsl(&TypeExpression::Object(input_fields.clone()), named_schema_types)?,
+        );
+        bindings.insert(
+            name.clone(),
+            workflow_type_from_dsl(&TypeExpression::Object(binding_fields.clone()), named_schema_types)?,
+        );
+        output.insert(
+            name.clone(),
+            workflow_type_from_dsl(&TypeExpression::Object(output_fields.clone()), named_schema_types)?,
+        );
+    }
+
+    Ok(ToolTypes { input, bindings, output })
 }
 
 fn collect_named_schema_types(workflow: &Workflow) -> HashMap<String, TypeExpression> {
@@ -177,6 +227,9 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
             | AgentProperty::Tools(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
             }
+            AgentProperty::Let(let_binding) => {
+                collect_agent_dependencies(&let_binding.value, &mut dependencies);
+            }
             AgentProperty::Output {
                 output_type_expression: _,
                 description: _,
@@ -193,17 +246,33 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
 }
 
 fn infer_workflow_output_type(
+    workflow: &Workflow,
     output_declaration: &OutputDeclaration,
     input_type: Option<WorkflowType>,
     secrets_type: Option<WorkflowType>,
     agent_output_types: &HashMap<String, WorkflowType>,
+    tool_types: &ToolTypes,
 ) -> Result<WorkflowType, WorkflowRuntimeError> {
-    let inference_context = TypeInferenceContext {
+    let mut inference_context = TypeInferenceContext {
         input_type,
         secrets_type,
         agent_output_types: agent_output_types.clone(),
+        tool_input_types: tool_types.input.clone(),
+        tool_binding_types: tool_types.bindings.clone(),
+        tool_output_types: tool_types.output.clone(),
         local_binding_types: HashMap::new(),
     };
+
+    for declaration in workflow.declarations() {
+        let Declaration::Let(let_binding) = declaration else {
+            continue;
+        };
+
+        let binding_type = let_binding
+            .value
+            .infer_type(&inference_context, &format!("let binding `{}` type inference", let_binding.name))?;
+        inference_context.local_binding_types.insert(let_binding.name.clone(), binding_type);
+    }
 
     let mut output_fields = BTreeMap::new();
 
@@ -348,7 +417,8 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_) => {}
+            | AgentProperty::Tools(_)
+            | AgentProperty::Let(_) => {}
         }
     }
 

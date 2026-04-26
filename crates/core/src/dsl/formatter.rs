@@ -4,8 +4,8 @@ use thiserror::Error;
 
 use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, Expression,
-    ForClauseKeyword, FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolDeclaration, TypeExpression,
-    TypedField, Workflow,
+    ForClauseKeyword, FunctionCall, LetBinding, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
+    TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -266,6 +266,7 @@ impl Declaration {
                 formatter.push_declaration_block_end();
             }
             Self::Tool(tool_declaration) => tool_declaration.push_to_formatter(formatter),
+            Self::Let(let_binding) => let_binding.push_to_formatter(formatter),
             Self::Agent(agent_declaration) => {
                 agent_declaration.push_to_formatter(formatter);
             }
@@ -329,7 +330,7 @@ impl ToolDeclaration {
         if let Some(description) = &self.description {
             formatter.push_line(&format!("description: {}", render_plain_string_literal(description)));
 
-            if !self.input_fields.is_empty() || !self.bounded_fields.is_empty() {
+            if !self.input_fields.is_empty() || !self.binding_fields.is_empty() || !self.output_fields.is_empty() {
                 formatter.push_newline();
             }
         }
@@ -343,15 +344,29 @@ impl ToolDeclaration {
 
             formatter.push_declaration_block_end();
 
-            if !self.bounded_fields.is_empty() {
+            if !self.binding_fields.is_empty() || !self.output_fields.is_empty() {
                 formatter.push_newline();
             }
         }
 
-        if !self.bounded_fields.is_empty() {
-            formatter.push_declaration_block_start("bounded");
+        if !self.binding_fields.is_empty() {
+            formatter.push_declaration_block_start("bindings");
 
-            for typed_field in &self.bounded_fields {
+            for typed_field in &self.binding_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.output_fields.is_empty() {
+            formatter.push_declaration_block_start("output");
+
+            for typed_field in &self.output_fields {
                 typed_field.push_to_formatter(formatter);
             }
 
@@ -374,6 +389,7 @@ impl AgentForLoopPattern {
 impl AgentProperty {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
+            Self::Let(let_binding) => let_binding.push_to_formatter(formatter),
             Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
             Self::Prompt(expression) => formatter.push_agent_property_expression(AgentPropertyName::Prompt.as_str(), expression),
             Self::Output {
@@ -415,6 +431,17 @@ impl AgentProperty {
                 }
             ),
         }
+    }
+}
+
+impl LetBinding {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_indent();
+        formatter.output.push_str("let ");
+        formatter.output.push_str(&self.name);
+        formatter.output.push_str(" = ");
+        self.value.push_to_formatter(formatter, ExpressionFormat::Canonical);
+        formatter.push_newline();
     }
 }
 
@@ -541,6 +568,7 @@ impl Expression {
             Self::NullLiteral => formatter.output.push_str("null"),
             Self::Reference(reference) => reference.push_to_formatter(formatter),
             Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
+            Self::ToolCall(tool_call) => tool_call.push_to_formatter(formatter),
             Self::ArrayLiteral(array_items) => {
                 self.push_array_literal_to_formatter(formatter, array_items, expression_format);
             }
@@ -705,7 +733,8 @@ impl Expression {
             | Self::BooleanLiteral(_)
             | Self::NullLiteral
             | Self::Reference(_)
-            | Self::FunctionCall(_) => true,
+            | Self::FunctionCall(_)
+            | Self::ToolCall(_) => true,
         }
     }
 
@@ -898,6 +927,44 @@ impl FunctionCall {
     }
 }
 
+impl ToolCall {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.output.push_str("call ");
+        self.callee.push_to_formatter(formatter);
+        formatter.output.push_str(" {");
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        if !self.input_fields.is_empty() {
+            formatter.push_declaration_block_start("input");
+
+            for object_field in &self.input_fields {
+                object_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.binding_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.binding_fields.is_empty() {
+            formatter.push_declaration_block_start("bindings");
+
+            for object_field in &self.binding_fields {
+                object_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
+    }
+}
+
 impl CallArgument {
     fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
         match self {
@@ -945,6 +1012,7 @@ impl Expression {
             | Self::NullLiteral
             | Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::ToolCall(_)
             | Self::ArrayLiteral(_) => false,
         }
     }

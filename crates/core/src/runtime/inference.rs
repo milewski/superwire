@@ -92,7 +92,8 @@ impl InferenceSetting {
             | Expression::BooleanLiteral(_)
             | Expression::NullLiteral
             | Expression::ArrayLiteral(_)
-            | Expression::ObjectLiteral(_) => false,
+            | Expression::ObjectLiteral(_)
+            | Expression::ToolCall(_) => false,
         }
     }
 

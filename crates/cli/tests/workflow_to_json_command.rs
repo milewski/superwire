@@ -156,7 +156,7 @@ fn writes_json_to_output_file_when_requested() {
 }
 
 #[test]
-fn exports_tool_input_and_bounded_schemas() {
+fn exports_tool_input_and_binding_schemas() {
     let temporary_workspace = TemporaryWorkspace::new();
     let workflow_source = workflow_template! {
         provider openai {
@@ -171,7 +171,7 @@ fn exports_tool_input_and_bounded_schemas() {
                 issue_id: number
             }
 
-            bounded {
+            bindings {
                 project: string
                 status: "open" | "closed"
             }
@@ -204,17 +204,17 @@ fn exports_tool_input_and_bounded_schemas() {
     assert_eq!(exported_json.pointer("/tools/0/input_schema/required"), Some(&json!(["issue_id"])));
 
     assert_eq!(
-        exported_json.pointer("/tools/0/bounded_schema/required"),
+        exported_json.pointer("/tools/0/binding_schema/required"),
         Some(&json!(["project", "status"]))
     );
 
     assert_eq!(
-        exported_json.pointer("/tools/0/bounded_schema/properties/project/type"),
+        exported_json.pointer("/tools/0/binding_schema/properties/project/type"),
         Some(&json!("string"))
     );
 
     assert_eq!(
-        exported_json.pointer("/tools/0/bounded_schema/properties/status/enum"),
+        exported_json.pointer("/tools/0/binding_schema/properties/status/enum"),
         Some(&json!(["closed", "open"]))
     );
 }
@@ -231,7 +231,7 @@ fn omits_empty_required_array_for_tool_without_agent_input() {
         }
 
         tool list_all_participants {
-            bounded {
+            bindings {
                 project_id: number
             }
         }

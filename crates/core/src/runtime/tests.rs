@@ -891,7 +891,7 @@ async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
         tool lookup_weather {
             query: string
 
-            bounded {
+            bindings {
                 country: string
                 static_mode: boolean
             }
@@ -980,7 +980,7 @@ async fn evaluates_tool_bound_arguments_from_secrets_context() {
         tool weather {
             query: string
 
-            bounded {
+            bindings {
                 key: string
             }
         }
@@ -1070,7 +1070,7 @@ fn fails_workflow_compilation_when_required_tool_bound_arguments_are_missing() {
         tool get_answered_participants_for_task {
             query: string
 
-            bounded {
+            bindings {
                 project_id: number
                 task_id: number
             }
@@ -1145,7 +1145,7 @@ fn fails_workflow_compilation_when_tool_bound_argument_type_is_invalid() {
         tool knowledge_base_search {
             query: string
 
-            bounded {
+            bindings {
                 password: string
             }
         }
@@ -1217,7 +1217,7 @@ fn compiles_workflow_when_required_tool_bound_arguments_are_provided() {
         tool get_answered_participants_for_task {
             query: string
 
-            bounded {
+            bindings {
                 project_id: number
                 task_id: number
             }
@@ -1251,6 +1251,254 @@ fn compiles_workflow_when_required_tool_bound_arguments_are_provided() {
     let runtime = WorkflowRuntime::<Input, Output>::new_with_runtime_tools(workflow, vec![tool]);
 
     assert!(runtime.is_ok());
+}
+
+#[tokio::test]
+async fn executes_deterministic_tool_call_let_binding() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        repository: String,
+        release_tag: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        commit_count: i32,
+        repository: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolInput {
+        release_tag: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolBindings {
+        repository: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, JsonSchema)]
+    struct ToolOutput {
+        commit_count: i32,
+        repository: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        input {
+            repository: string
+            release_tag: string
+        }
+
+        tool fetch_release_commits {
+            description: "Fetch release commits"
+
+            bindings {
+                repository: string
+            }
+
+            input {
+                release_tag: string
+            }
+
+            output {
+                commit_count: number
+                repository: string
+            }
+        }
+
+        let release_commits = call tool.fetch_release_commits {
+            input {
+                release_tag: input.release_tag
+            }
+
+            bindings {
+                repository: input.repository
+            }
+        }
+
+        output {
+            commit_count: release_commits.commit_count
+            repository: release_commits.repository
+        }
+    };
+
+    let tool = DynamicTool::new_with_bound_arguments(
+        ToolDefinition {
+            name: "fetch_release_commits".to_string(),
+            description: "Fetch release commits".to_string(),
+            parameters_schema: schema_for!(ToolInput),
+            bound_parameters_schema: Some(schema_for!(ToolBindings)),
+            output_schema: Some(schema_for!(ToolOutput)),
+        },
+        |tool_input, binding_input| async move {
+            assert_eq!(tool_input, json!({ "release_tag": "v1.0.0" }));
+            assert_eq!(binding_input.get("repository"), Some(&json!("superwire")));
+
+            Ok::<Value, ToolError>(json!({
+                "commit_count": 3,
+                "repository": binding_input.get("repository").cloned().unwrap_or(Value::Null)
+            }))
+        },
+    );
+
+    let runtime = WorkflowRuntime::<Input, Output>::new_with_runtime_tools(workflow, vec![tool]).expect("workflow should compile");
+    let output = runtime
+        .run(Input {
+            repository: "superwire".to_string(),
+            release_tag: "v1.0.0".to_string(),
+        })
+        .await
+        .expect("workflow should run");
+
+    assert_eq!(
+        output,
+        Output {
+            commit_count: 3,
+            repository: "superwire".to_string(),
+        }
+    );
+}
+
+#[test]
+fn rejects_deterministic_tool_call_with_unknown_input_field() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        release_tag: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct Output {
+        #[expect(dead_code)]
+        value: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        input {
+            release_tag: string
+        }
+
+        tool fetch_release_commits {
+            input {
+                release_tag: string
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        let release_commits = call tool.fetch_release_commits {
+            input {
+                release_tag: input.release_tag
+                unknown: "extra"
+            }
+        }
+
+        output {
+            value: release_commits.value
+        }
+    };
+
+    let runtime_result = WorkflowRuntime::<Input, Output>::new(workflow);
+    let Err(runtime_error) = runtime_result else {
+        panic!("workflow compilation should reject unknown tool call input field");
+    };
+
+    assert!(runtime_error.to_string().contains("does not declare `input` field `unknown`"));
+}
+
+#[test]
+fn rejects_deterministic_tool_call_with_missing_binding_field() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input {
+        release_tag: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct Output {
+        #[expect(dead_code)]
+        value: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        input {
+            release_tag: string
+        }
+
+        tool fetch_release_commits {
+            bindings {
+                repository: string
+            }
+
+            input {
+                release_tag: string
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        let release_commits = call tool.fetch_release_commits {
+            input {
+                release_tag: input.release_tag
+            }
+        }
+
+        output {
+            value: release_commits.value
+        }
+    };
+
+    let runtime_result = WorkflowRuntime::<Input, Output>::new(workflow);
+    let Err(runtime_error) = runtime_result else {
+        panic!("workflow compilation should reject missing tool call binding field");
+    };
+
+    assert!(runtime_error.to_string().contains("missing required `bindings` field `repository`"));
+}
+
+#[test]
+fn rejects_deterministic_tool_call_with_invalid_input_field_type() {
+    #[derive(Debug, Serialize, JsonSchema)]
+    struct Input;
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct Output {
+        #[expect(dead_code)]
+        value: String,
+    }
+
+    let workflow = parse_inline_workflow! {
+        tool fetch_release_commits {
+            input {
+                release_tag: string
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        let release_commits = call tool.fetch_release_commits {
+            input {
+                release_tag: 123
+            }
+        }
+
+        output {
+            value: release_commits.value
+        }
+    };
+
+    let runtime_result = WorkflowRuntime::<Input, Output>::new(workflow);
+    let Err(runtime_error) = runtime_result else {
+        panic!("workflow compilation should reject invalid tool call input field type");
+    };
+
+    assert!(runtime_error
+        .to_string()
+        .contains("`input` field `release_tag` expects string, found number"));
 }
 
 #[tokio::test]

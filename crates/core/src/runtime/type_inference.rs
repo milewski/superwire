@@ -1,6 +1,6 @@
-use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
+use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall};
 use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::types::WorkflowType;
+use crate::runtime::types::{ensure_type_matches, WorkflowType};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -8,6 +8,9 @@ pub struct TypeInferenceContext {
     pub input_type: Option<WorkflowType>,
     pub secrets_type: Option<WorkflowType>,
     pub agent_output_types: HashMap<String, WorkflowType>,
+    pub tool_input_types: HashMap<String, WorkflowType>,
+    pub tool_binding_types: HashMap<String, WorkflowType>,
+    pub tool_output_types: HashMap<String, WorkflowType>,
     pub local_binding_types: HashMap<String, WorkflowType>,
 }
 
@@ -49,6 +52,7 @@ impl Expression {
                     expression.infer_type(type_inference_context, context)
                 })
             }
+            Self::ToolCall(tool_call) => tool_call.infer_type(type_inference_context, context),
             Self::ArrayLiteral(array_items) => {
                 if array_items.is_empty() {
                     return Err(WorkflowRuntimeError::ExpressionEvaluation {
@@ -81,6 +85,104 @@ impl Expression {
                 Ok(WorkflowType::Object(field_types))
             }
         }
+    }
+}
+
+impl ToolCall {
+    pub fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowRuntimeError> {
+        let Some(tool_name) = self.callee.first_access_field() else {
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "tool call requires a tool name".to_string(),
+            });
+        };
+
+        let Some(tool_output_type) = type_inference_context.tool_output_types.get(tool_name) else {
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("unknown tool call `tool.{tool_name}`"),
+            });
+        };
+
+        self.validate_object_fields(
+            tool_name,
+            "input",
+            &self.input_fields,
+            type_inference_context.tool_input_types.get(tool_name),
+            type_inference_context,
+            context,
+        )?;
+
+        self.validate_object_fields(
+            tool_name,
+            "bindings",
+            &self.binding_fields,
+            type_inference_context.tool_binding_types.get(tool_name),
+            type_inference_context,
+            context,
+        )?;
+
+        Ok(tool_output_type.clone())
+    }
+
+    fn validate_object_fields(
+        &self,
+        tool_name: &str,
+        field_group_name: &str,
+        fields: &[crate::dsl::ObjectField],
+        expected_type: Option<&WorkflowType>,
+        type_inference_context: &TypeInferenceContext,
+        context: &str,
+    ) -> Result<(), WorkflowRuntimeError> {
+        let Some(WorkflowType::Object(expected_fields)) = expected_type else {
+            if fields.is_empty() {
+                return Ok(());
+            }
+
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("tool `tool.{tool_name}` does not declare `{field_group_name}` fields"),
+            });
+        };
+
+        for expected_field_name in expected_fields.keys() {
+            if fields.iter().any(|field| &field.name == expected_field_name) {
+                continue;
+            }
+
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("tool `tool.{tool_name}` missing required `{field_group_name}` field `{expected_field_name}`"),
+            });
+        }
+
+        for field in fields {
+            let Some(expected_field_type) = expected_fields.get(&field.name) else {
+                return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!(
+                        "tool `tool.{tool_name}` does not declare `{field_group_name}` field `{}`",
+                        field.name
+                    ),
+                });
+            };
+
+            let found_field_type = field.value.infer_type(type_inference_context, context)?;
+
+            if ensure_type_matches(expected_field_type, &found_field_type) {
+                continue;
+            }
+
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!(
+                    "tool `tool.{tool_name}` `{field_group_name}` field `{}` expects {}, found {}",
+                    field.name, expected_field_type, found_field_type
+                ),
+            });
+        }
+
+        Ok(())
     }
 }
 

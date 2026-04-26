@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, CallArgument, Expression,
-    FunctionCall, Reference, ReferenceKeyword, ToolDeclaration, TypeExpression, Workflow,
+    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument,
+    Declaration, Expression, FunctionCall, Reference, ReferenceKeyword, ToolCall, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
@@ -22,9 +22,11 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::marker::PhantomData;
 use std::path::Path;
+use std::sync::Arc;
 use superwire_agent::tool::registered_runtime_tools;
 use superwire_agent::AgentConfig;
 use superwire_agent::DynamicTool;
+use superwire_agent::RuntimeTool;
 use superwire_agent::ToolDefinition;
 
 #[derive(Debug, Clone)]
@@ -33,6 +35,7 @@ struct RuntimeState {
     secret_values: Map<String, Value>,
     agent_outputs: HashMap<String, Value>,
     agent_contexts: HashMap<String, Value>,
+    local_bindings: HashMap<String, Value>,
 }
 
 impl RuntimeState {
@@ -43,6 +46,7 @@ impl RuntimeState {
             secret_values,
             agent_outputs: HashMap::new(),
             agent_contexts: HashMap::new(),
+            local_bindings: HashMap::new(),
         }
     }
 }
@@ -55,6 +59,7 @@ struct CompiledWorkflow {
 #[derive(Debug, Clone)]
 struct PreparedAgentExecution<'workflow> {
     agent_name: String,
+    agent_declaration: &'workflow AgentDeclaration,
     provider_config: ProviderConfig,
     model_expression: &'workflow Expression,
     prompt_expression: &'workflow Expression,
@@ -110,6 +115,9 @@ impl ExecutionPlan {
             input_type: self.input_type.clone(),
             secrets_type: self.secrets_type.clone(),
             agent_output_types,
+            tool_input_types: HashMap::new(),
+            tool_binding_types: HashMap::new(),
+            tool_output_types: HashMap::new(),
             local_binding_types: HashMap::new(),
         }
     }
@@ -137,12 +145,18 @@ impl WorkflowToolSchemaExt for Workflow {
 impl ToolDeclaration {
     fn to_tool_definition(&self, named_schema_types: &HashMap<String, TypeExpression>) -> Result<ToolDefinition, WorkflowRuntimeError> {
         let input_type = WorkflowType::from_tool_fields(self.input_fields.clone(), named_schema_types)?;
-        let bounded_type = WorkflowType::from_tool_fields(self.bounded_fields.clone(), named_schema_types)?;
+        let bounded_type = WorkflowType::from_tool_fields(self.binding_fields.clone(), named_schema_types)?;
         let parameters_schema = workflow_type_to_schemars_schema(&input_type, None)?;
-        let bound_parameters_schema = if self.bounded_fields.is_empty() {
+        let bound_parameters_schema = if self.binding_fields.is_empty() {
             None
         } else {
             Some(workflow_type_to_schemars_schema(&bounded_type, None)?)
+        };
+        let output_type = WorkflowType::from_tool_fields(self.output_fields.clone(), named_schema_types)?;
+        let output_schema = if self.output_fields.is_empty() {
+            None
+        } else {
+            Some(workflow_type_to_schemars_schema(&output_type, None)?)
         };
 
         Ok(ToolDefinition {
@@ -150,7 +164,7 @@ impl ToolDeclaration {
             description: self.description.clone().unwrap_or_default(),
             parameters_schema,
             bound_parameters_schema,
-            output_schema: None,
+            output_schema,
         })
     }
 
@@ -160,7 +174,7 @@ impl ToolDeclaration {
     ) -> Result<HashMap<String, WorkflowType>, WorkflowRuntimeError> {
         let mut bound_argument_types = HashMap::new();
 
-        for bounded_field in &self.bounded_fields {
+        for bounded_field in &self.binding_fields {
             let bound_argument_type = workflow_type_from_dsl(&bounded_field.field_type, named_schema_types)?;
             bound_argument_types.insert(bounded_field.name.clone(), bound_argument_type);
         }
@@ -582,6 +596,8 @@ where
         let secret_values = self.resolve_secret_values(&serialized_secrets)?;
 
         let mut runtime_state = RuntimeState::new(input_values, secret_values);
+        self.execute_workflow_let_bindings(&mut runtime_state).await?;
+
         let execution_order = self.resolve_agent_execution_order();
         let execution_batches = self.resolve_agent_execution_batches(&execution_order)?;
 
@@ -623,6 +639,27 @@ where
 
         serde_json::from_value::<Output>(workflow_output_value)
             .map_err(|source| WorkflowRuntimeError::OutputDeserializationFailed { source })
+    }
+
+    async fn execute_workflow_let_bindings(&self, runtime_state: &mut RuntimeState) -> Result<(), WorkflowRuntimeError> {
+        for declaration in self.workflow.declarations() {
+            let Declaration::Let(let_binding) = declaration else {
+                continue;
+            };
+
+            let binding_value = self
+                .evaluate_binding_expression(
+                    &let_binding.value,
+                    runtime_state,
+                    HashMap::new(),
+                    &format!("let binding `{}`", let_binding.name),
+                )
+                .await?;
+
+            runtime_state.local_bindings.insert(let_binding.name.clone(), binding_value);
+        }
+
+        Ok(())
     }
 
     fn resolve_input_values(&self, serialized_input: &Value) -> Result<Map<String, Value>, WorkflowRuntimeError> {
@@ -808,6 +845,7 @@ where
 
         Ok(PreparedAgentExecution {
             agent_name,
+            agent_declaration,
             provider_config,
             model_expression: &planned_agent.model_expression,
             prompt_expression,
@@ -845,7 +883,11 @@ where
         let mut pending_iteration_executions = Vec::new();
 
         for iterable_item in iterable_items {
-            let local_bindings = agent_for_loop.local_bindings_for_iteration_item(iterable_item, &prepared_agent_execution.agent_name)?;
+            let mut local_bindings =
+                agent_for_loop.local_bindings_for_iteration_item(iterable_item, &prepared_agent_execution.agent_name)?;
+            local_bindings = self
+                .evaluate_agent_let_bindings(prepared_agent_execution, runtime_state, local_bindings)
+                .await?;
 
             let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
 
@@ -895,10 +937,13 @@ where
     where
         RunnerType: AgentRunner,
     {
-        let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, HashMap::new())?;
-        let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, HashMap::new())?;
-        let context = self.evaluate_agent_context(prepared_agent_execution, runtime_state, HashMap::new())?;
-        let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, HashMap::new())?;
+        let local_bindings = self
+            .evaluate_agent_let_bindings(prepared_agent_execution, runtime_state, HashMap::new())
+            .await?;
+        let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
+        let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings.clone())?;
+        let context = self.evaluate_agent_context(prepared_agent_execution, runtime_state, local_bindings.clone())?;
+        let tools = self.evaluate_agent_tools(prepared_agent_execution, runtime_state, local_bindings)?;
         let agent_result = self
             .run_agent_request(prepared_agent_execution, model_name, prompt, context, tools, runner)
             .await?;
@@ -914,6 +959,35 @@ where
             output: agent_result.output,
             context: agent_result.context,
         })
+    }
+
+    async fn evaluate_agent_let_bindings(
+        &self,
+        prepared_agent_execution: &PreparedAgentExecution<'_>,
+        runtime_state: &RuntimeState,
+        mut local_bindings: HashMap<String, Value>,
+    ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
+        for agent_property in &prepared_agent_execution.agent_declaration.properties {
+            let AgentProperty::Let(let_binding) = agent_property else {
+                continue;
+            };
+
+            let binding_value = self
+                .evaluate_binding_expression(
+                    &let_binding.value,
+                    runtime_state,
+                    local_bindings.clone(),
+                    &format!(
+                        "let binding `{}` for agent `{}`",
+                        let_binding.name, prepared_agent_execution.agent_name
+                    ),
+                )
+                .await?;
+
+            local_bindings.insert(let_binding.name.clone(), binding_value);
+        }
+
+        Ok(local_bindings)
     }
 
     fn evaluate_agent_tools(
@@ -1036,6 +1110,99 @@ where
         }
 
         Ok(Value::Object(output_fields))
+    }
+
+    async fn evaluate_binding_expression(
+        &self,
+        expression: &Expression,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+        context: &str,
+    ) -> Result<Value, WorkflowRuntimeError> {
+        match expression {
+            Expression::ToolCall(tool_call) => self.execute_tool_call(tool_call, runtime_state, local_bindings, context).await,
+            _ => evaluate_expression(
+                expression,
+                &runtime_state_to_evaluation_context(runtime_state, local_bindings),
+                context,
+            ),
+        }
+    }
+
+    async fn execute_tool_call(
+        &self,
+        tool_call: &ToolCall,
+        runtime_state: &RuntimeState,
+        local_bindings: HashMap<String, Value>,
+        context: &str,
+    ) -> Result<Value, WorkflowRuntimeError> {
+        if tool_call.callee.root_keyword() != Some(ReferenceKeyword::Tool) || tool_call.callee.accesses.len() != 1 {
+            return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "tool call callee must be a direct `tool.name` reference".to_string(),
+            });
+        }
+
+        let tool_name = tool_call
+            .callee
+            .first_access_field()
+            .expect("tool call callee should have one access")
+            .to_string();
+        let evaluation_context = runtime_state_to_evaluation_context(runtime_state, local_bindings);
+        let input_value = Self::evaluate_tool_call_fields(&tool_call.input_fields, &evaluation_context, context)?;
+        let binding_values = Self::evaluate_tool_call_fields(&tool_call.binding_fields, &evaluation_context, context)?;
+        let runtime_tool = self.resolve_runtime_tool(tool_name.as_str())?;
+
+        runtime_tool
+            .execute_with_bound_arguments(Value::Object(input_value), binding_values)
+            .await
+            .map_err(|tool_error| WorkflowRuntimeError::Other {
+                message: format!("tool `tool.{tool_name}` execution failed: {tool_error}"),
+            })
+    }
+
+    fn evaluate_tool_call_fields(
+        fields: &[crate::dsl::ObjectField],
+        evaluation_context: &EvaluationContext,
+        context: &str,
+    ) -> Result<Map<String, Value>, WorkflowRuntimeError> {
+        let mut field_values = Map::new();
+
+        for field in fields {
+            let field_value = evaluate_expression(&field.value, evaluation_context, context)?;
+            field_values.insert(field.name.clone(), field_value);
+        }
+
+        Ok(field_values)
+    }
+
+    fn resolve_runtime_tool(&self, tool_name: &str) -> Result<Arc<dyn RuntimeTool>, WorkflowRuntimeError> {
+        for registered_tool in registered_runtime_tools() {
+            let tool_definition = registered_tool.definition().map_err(|tool_error| WorkflowRuntimeError::Other {
+                message: format!("failed to inspect registered tool: {tool_error}"),
+            })?;
+
+            if tool_definition.name == tool_name {
+                return Ok(registered_tool);
+            }
+        }
+
+        for dynamic_tool in &self.runtime_tools {
+            let dynamic_runtime_tool: Arc<dyn RuntimeTool> = Arc::new(dynamic_tool.clone());
+            let tool_definition = dynamic_runtime_tool
+                .definition()
+                .map_err(|tool_error| WorkflowRuntimeError::Other {
+                    message: format!("failed to inspect dynamic tool: {tool_error}"),
+                })?;
+
+            if tool_definition.name == tool_name {
+                return Ok(dynamic_runtime_tool);
+            }
+        }
+
+        Err(WorkflowRuntimeError::Other {
+            message: format!("tool `tool.{tool_name}` is not available at runtime"),
+        })
     }
 }
 
@@ -1270,11 +1437,17 @@ fn normalize_prompt(prompt_value: Value) -> String {
 }
 
 fn runtime_state_to_evaluation_context(runtime_state: &RuntimeState, local_bindings: HashMap<String, Value>) -> EvaluationContext {
+    let mut merged_local_bindings = runtime_state.local_bindings.clone();
+
+    for (binding_name, binding_value) in local_bindings {
+        merged_local_bindings.insert(binding_name, binding_value);
+    }
+
     EvaluationContext {
         input_values: runtime_state.input_values.clone(),
         secret_values: runtime_state.secret_values.clone(),
         agent_outputs: runtime_state.agent_outputs.clone(),
         agent_contexts: runtime_state.agent_contexts.clone(),
-        local_bindings,
+        local_bindings: merged_local_bindings,
     }
 }
