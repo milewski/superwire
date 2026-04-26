@@ -1,8 +1,8 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, Expression, FunctionCall,
-    InputDeclaration, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
-    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolDeclaration, TypeExpression,
-    TypedField, Workflow,
+    InputDeclaration, LetBinding, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
+    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
+    ToolDeclaration, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -53,6 +53,7 @@ impl AstVisitor {
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
             Rule::tool_declaration => self.visit_tool_declaration(declaration_pair),
+            Rule::let_declaration => self.visit_let_declaration(declaration_pair).map(Declaration::Let),
             Rule::agent_declaration => self.visit_agent_declaration(declaration_pair),
             Rule::output_declaration => self.visit_output_declaration(declaration_pair),
             _ => Err(DslParseError::unexpected_with_span(
@@ -127,7 +128,8 @@ impl AstVisitor {
         let tool_block_pair = self.next_pair(&mut inner_pairs, "tool block", "tool declaration")?;
         let mut description = None;
         let mut input_fields = Vec::new();
-        let mut bounded_fields = Vec::new();
+        let mut binding_fields = Vec::new();
+        let mut output_fields = Vec::new();
 
         for tool_property_pair in tool_block_pair.into_inner() {
             match tool_property_pair.as_rule() {
@@ -139,9 +141,13 @@ impl AstVisitor {
                     let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool input property")?;
                     input_fields.extend(self.visit_typed_block(typed_block_pair)?);
                 }
-                Rule::tool_bounded_property => {
-                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool bounded property")?;
-                    bounded_fields.extend(self.visit_typed_block(typed_block_pair)?);
+                Rule::tool_bindings_property => {
+                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool bindings property")?;
+                    binding_fields.extend(self.visit_typed_block(typed_block_pair)?);
+                }
+                Rule::tool_output_property => {
+                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool output property")?;
+                    output_fields.extend(self.visit_typed_block(typed_block_pair)?);
                 }
                 Rule::tool_input_field => {
                     let typed_field_pair = self.first_inner_pair(tool_property_pair, "tool input field")?;
@@ -155,9 +161,24 @@ impl AstVisitor {
             name: tool_name,
             description,
             input_fields,
-            bounded_fields,
+            binding_fields,
+            output_fields,
             span: declaration_span,
         }))
+    }
+
+    fn visit_let_declaration(&self, let_pair: Pair<'_, Rule>) -> Result<LetBinding, DslParseError> {
+        let declaration_span = source_span_from_pair(&let_pair);
+        let mut inner_pairs = let_pair.into_inner();
+        let binding_name = self.next_identifier(&mut inner_pairs, "let binding name", "let declaration")?;
+        let value_pair = self.next_pair(&mut inner_pairs, "let binding value", "let declaration")?;
+        let value = self.visit_expression(value_pair)?;
+
+        Ok(LetBinding {
+            name: binding_name,
+            value,
+            span: declaration_span,
+        })
     }
 
     fn visit_agent_declaration(&self, agent_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
@@ -244,6 +265,7 @@ impl AstVisitor {
 
     fn visit_agent_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
         match property_pair.as_rule() {
+            Rule::let_property => self.visit_let_declaration(property_pair).map(AgentProperty::Let),
             Rule::model_property => {
                 let expression_pair = self.first_inner_pair(property_pair, "model property")?;
                 Ok(AgentProperty::Model(self.visit_expression(expression_pair)?))
@@ -413,6 +435,7 @@ impl AstVisitor {
     fn visit_expression(&self, expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
         match expression_pair.as_rule() {
             Rule::function_call => Ok(Expression::FunctionCall(self.visit_function_call(expression_pair)?)),
+            Rule::tool_call_expression => Ok(Expression::ToolCall(self.visit_tool_call_expression(expression_pair)?)),
             Rule::object_expression => Ok(Expression::ObjectLiteral(self.visit_object_expression(expression_pair)?)),
             Rule::array_expression => Ok(Expression::ArrayLiteral(self.visit_array_expression(expression_pair)?)),
             Rule::boolean_literal => Ok(Expression::BooleanLiteral(expression_pair.as_str() == "true")),
@@ -473,6 +496,37 @@ impl AstVisitor {
         };
 
         Ok(FunctionCall { callee, arguments })
+    }
+
+    fn visit_tool_call_expression(&self, tool_call_pair: Pair<'_, Rule>) -> Result<ToolCall, DslParseError> {
+        let tool_call_span = source_span_from_pair(&tool_call_pair);
+        let mut inner_pairs = tool_call_pair.into_inner();
+        let callee_pair = self.next_pair(&mut inner_pairs, "tool call callee", "tool call expression")?;
+        let callee = self.visit_reference(callee_pair)?;
+        let block_pair = self.next_pair(&mut inner_pairs, "tool call block", "tool call expression")?;
+        let mut input_fields = Vec::new();
+        let mut binding_fields = Vec::new();
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::tool_call_input_property => {
+                    let object_expression_pair = self.first_inner_pair(property_pair, "tool call input property")?;
+                    input_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                Rule::tool_call_bindings_property => {
+                    let object_expression_pair = self.first_inner_pair(property_pair, "tool call bindings property")?;
+                    binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                _ => unreachable!("tool call block should contain only valid tool call property rules"),
+            }
+        }
+
+        Ok(ToolCall {
+            callee,
+            input_fields,
+            binding_fields,
+            span: tool_call_span,
+        })
     }
 
     fn visit_call_arguments(&self, call_arguments_pair: Pair<'_, Rule>) -> Result<Vec<CallArgument>, DslParseError> {

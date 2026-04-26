@@ -52,6 +52,7 @@ trait DeclarationDocumentSymbolExt {
 }
 
 impl DeclarationDocumentSymbolExt for Declaration {
+    #[allow(clippy::too_many_lines)]
     fn document_symbol_node(&self, source_text: &str) -> DocumentSymbolNode {
         match self {
             Self::Provider(provider_declaration) => {
@@ -88,7 +89,8 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 let child_symbols = tool_declaration
                     .input_fields
                     .iter()
-                    .chain(tool_declaration.bounded_fields.iter())
+                    .chain(tool_declaration.binding_fields.iter())
+                    .chain(tool_declaration.output_fields.iter())
                     .map(|typed_field| typed_field.document_symbol_node(source_text))
                     .collect();
 
@@ -142,6 +144,18 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     name: agent_declaration.name.clone(),
                     detail: Some("agent declaration".to_string()),
                     kind: SymbolKind::Function,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: Vec::new(),
+                }
+            }
+            Self::Let(let_binding) => {
+                let declaration_range = source_span_to_range(source_text, let_binding.span);
+
+                DocumentSymbolNode {
+                    name: let_binding.name.clone(),
+                    detail: Some("let binding".to_string()),
+                    kind: SymbolKind::Field,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),

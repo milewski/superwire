@@ -86,7 +86,7 @@ fn inserts_plain_tool_name_for_tool_without_bounded_arguments() {
 fn inserts_call_for_tool_with_bounded_arguments_when_parentheses_do_not_exist() {
     let completion_suggestions = inline_completion_suggestions! {
         tool issue_tracker_lookup {
-            bounded {
+            bindings {
                 password: string
             }
         }
@@ -109,7 +109,7 @@ fn inserts_plain_tool_name_when_call_parentheses_already_exist() {
         }
 
         tool issue_tracker_lookup {
-            bounded {
+            bindings {
                 password: string
             }
         }
@@ -132,7 +132,7 @@ fn suggests_only_tool_properties_inside_tool_block() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "description", "input", "bounded");
+    assert_completion_contains_labels!(&completion_suggestions, "description", "input", "bindings");
     assert_completion_excludes_labels!(
         &completion_suggestions,
         DeclarationKeyword::Provider,
@@ -148,7 +148,7 @@ fn suggests_only_tool_properties_inside_tool_block() {
 fn suggests_types_inside_tool_bounded_field() {
     let completion_suggestions = inline_completion_suggestions! {
         tool issue_tracker_lookup {
-            bounded {
+            bindings {
                 project: <cursor>
             }
         }
@@ -161,7 +161,7 @@ fn suggests_types_inside_tool_bounded_field() {
         DeclarationKeyword::Agent,
         "description",
         "input",
-        "bounded",
+        "bindings",
     );
 }
 
@@ -173,7 +173,7 @@ fn suggests_bounded_arguments_inside_tool_call() {
                 query: string
             }
 
-            bounded {
+            bindings {
                 password: string
                 token: string
             }

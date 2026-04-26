@@ -110,7 +110,7 @@ impl ScopeScannerTokenState {
         if parent_block == Some(ScopeBlock::Tool)
             && matches!(
                 ToolPropertyName::from_identifier(last_identifier),
-                Some(ToolPropertyName::Input | ToolPropertyName::Bounded)
+                Some(ToolPropertyName::Input | ToolPropertyName::Bindings | ToolPropertyName::Output)
             )
         {
             return ScopeBlock::TypedDeclaration;
@@ -236,6 +236,7 @@ trait AgentPropertyCompletionDoc {
 impl AgentPropertyCompletionDoc for AgentPropertyName {
     fn completion_detail(self) -> &'static str {
         match self {
+            Self::Let => "Let binding",
             Self::Model => "Model binding (required)",
             Self::Prompt => "Prompt expression (required)",
             Self::Output => "Output type",
@@ -247,6 +248,7 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
 
     fn completion_documentation(self) -> &'static str {
         match self {
+            Self::Let => "Declares an immutable value available to downstream agent properties.",
             Self::Model => "Selects provider and model call used by this agent.",
             Self::Prompt => "Defines the prompt sent to the provider.",
             Self::Output => "Declares the expected structured output type.",
@@ -349,12 +351,13 @@ pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSugge
 enum ToolPropertyName {
     Description,
     Input,
-    Bounded,
+    Bindings,
+    Output,
 }
 
 impl ToolPropertyName {
-    fn all() -> [Self; 3] {
-        [Self::Description, Self::Input, Self::Bounded]
+    fn all() -> [Self; 4] {
+        [Self::Description, Self::Input, Self::Bindings, Self::Output]
     }
 
     fn from_identifier(identifier: &str) -> Option<Self> {
@@ -367,7 +370,8 @@ impl ToolPropertyName {
         match self {
             Self::Description => "description",
             Self::Input => SingletonDeclarationKind::Input.as_str(),
-            Self::Bounded => "bounded",
+            Self::Bindings => "bindings",
+            Self::Output => SingletonDeclarationKind::Output.as_str(),
         }
     }
 }

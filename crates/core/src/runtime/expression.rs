@@ -53,6 +53,9 @@ impl Expression {
                     expression.evaluate(evaluation_context, context)
                 })
             }
+            Self::ToolCall(_) => Err(WorkflowRuntimeError::UnsupportedFeature {
+                feature: "deterministic tool calls must be executed by the workflow runtime".to_string(),
+            }),
             Self::ArrayLiteral(array_items) => {
                 let mut evaluated_items = Vec::with_capacity(array_items.len());
 
@@ -221,6 +224,17 @@ impl Expression {
 
                 for call_argument in &function_call.arguments {
                     call_argument.expression().collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::ToolCall(tool_call) => {
+                collect_reference_dependency(&tool_call.callee, agent_dependencies);
+
+                for object_field in &tool_call.input_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+
+                for object_field in &tool_call.binding_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
                 }
             }
             Self::ArrayLiteral(array_items) => {

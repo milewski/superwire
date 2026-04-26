@@ -514,6 +514,9 @@ impl CliWorkflowTypeInference {
             input_type,
             secrets_type,
             agent_output_types,
+            tool_input_types: HashMap::new(),
+            tool_binding_types: HashMap::new(),
+            tool_output_types: HashMap::new(),
             local_binding_types: HashMap::new(),
         };
 
@@ -637,7 +640,7 @@ impl WorkflowJsonRepresentation {
                 Declaration::Tool(tool_declaration) => {
                     tools.push(SerializableToolDeclaration::from_declaration(tool_declaration, &named_schema_types));
                 }
-                Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
+                Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Let(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
             }
         }
 
@@ -822,8 +825,8 @@ struct SerializableToolDeclaration {
     description: Option<String>,
     input: Vec<SerializableTypedField>,
     input_schema: Value,
-    bounded: Vec<SerializableTypedField>,
-    bounded_schema: Value,
+    bindings: Vec<SerializableTypedField>,
+    binding_schema: Value,
 }
 
 impl SerializableToolDeclaration {
@@ -840,12 +843,12 @@ impl SerializableToolDeclaration {
                 .map(SerializableTypedField::from_typed_field)
                 .collect::<Vec<_>>(),
             input_schema: Self::json_schema_for_fields(&tool_declaration.input_fields, named_schema_types),
-            bounded: tool_declaration
-                .bounded_fields
+            bindings: tool_declaration
+                .binding_fields
                 .iter()
                 .map(SerializableTypedField::from_typed_field)
                 .collect::<Vec<_>>(),
-            bounded_schema: Self::json_schema_for_fields(&tool_declaration.bounded_fields, named_schema_types),
+            binding_schema: Self::json_schema_for_fields(&tool_declaration.binding_fields, named_schema_types),
         }
     }
 
@@ -1105,7 +1108,8 @@ impl SerializableToolBinding {
                 | Expression::BooleanLiteral(_)
                 | Expression::NullLiteral
                 | Expression::ArrayLiteral(_)
-                | Expression::ObjectLiteral(_) => {}
+                | Expression::ObjectLiteral(_)
+                | Expression::ToolCall(_) => {}
             }
         }
 
@@ -1250,6 +1254,24 @@ impl SerializableExpression {
                     "$call": function_call.callee.render_path(),
                     "args": positional_arguments,
                     "named": named_arguments,
+                })
+            }
+            Expression::ToolCall(tool_call) => {
+                let mut input_values = Map::<String, Value>::new();
+                let mut binding_values = Map::<String, Value>::new();
+
+                for object_field in &tool_call.input_fields {
+                    input_values.insert(object_field.name.clone(), Self::to_compact_json(&object_field.value));
+                }
+
+                for object_field in &tool_call.binding_fields {
+                    binding_values.insert(object_field.name.clone(), Self::to_compact_json(&object_field.value));
+                }
+
+                json!({
+                    "$tool_call": tool_call.callee.render_path(),
+                    "input": input_values,
+                    "bindings": binding_values,
                 })
             }
             Expression::ArrayLiteral(array_values) => Value::Array(array_values.iter().map(Self::to_compact_json).collect::<Vec<_>>()),

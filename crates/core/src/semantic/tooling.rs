@@ -235,11 +235,11 @@ impl SemanticToolingSnapshot {
                         ToolSchemaSummary {
                             description: tool_declaration.description.clone(),
                             input_fields: typed_fields_to_map(&tool_declaration.input_fields),
-                            bounded_fields: typed_fields_to_map(&tool_declaration.bounded_fields),
+                            bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
                         },
                     );
                 }
-                Declaration::Output(_) => {}
+                Declaration::Let(_) | Declaration::Output(_) => {}
             }
         }
 

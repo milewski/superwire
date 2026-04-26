@@ -440,6 +440,7 @@ impl SemanticIndex {
             Declaration::Tool(tool_declaration) => {
                 self.insert_tool_declaration(tool_declaration);
             }
+            Declaration::Let(_) => {}
             Declaration::Output(output_declaration) => {
                 self.has_output_declaration = true;
                 self.output_locations.push(output_declaration.span);
@@ -503,8 +504,8 @@ impl SemanticIndex {
             tool_declaration.name.clone(),
             ToolSummary {
                 description: tool_declaration.description.clone(),
-                bounded_fields: typed_fields_to_map(&tool_declaration.bounded_fields),
-                bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.bounded_fields),
+                bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
+                bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.binding_fields),
             },
         );
 
@@ -526,7 +527,8 @@ impl SemanticIndex {
             | AgentProperty::Prompt(_)
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_) => None,
+            | AgentProperty::Tools(_)
+            | AgentProperty::Let(_) => None,
         });
 
         if let Some(output_type_expression) = output_type_expression {
@@ -820,6 +822,7 @@ impl SemanticIndex {
                 | Expression::NullLiteral
                 | Expression::Reference(_)
                 | Expression::FunctionCall(_)
+                | Expression::ToolCall(_)
                 | Expression::ArrayLiteral(_)
                 | Expression::ObjectLiteral(_) => None,
             });
@@ -1388,7 +1391,7 @@ impl SemanticIndex {
             Expression::BooleanLiteral(_) => Some(TypeExpression::Boolean),
             Expression::NullLiteral => Some(TypeExpression::Null),
             Expression::Reference(reference) => self.reference_expression_type(reference),
-            Expression::FunctionCall(_) => None,
+            Expression::FunctionCall(_) | Expression::ToolCall(_) => None,
             Expression::ArrayLiteral(array_items) => {
                 let mut array_item_types = array_items
                     .iter()

@@ -357,7 +357,7 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                         query: string
                     }
 
-                    bounded {
+                    bindings {
                         password: string
                     }
                 }

@@ -6,6 +6,7 @@ declaration = _{
     | input_declaration
     | schema_declaration
     | tool_declaration
+    | let_declaration
     | agent_declaration
     | output_declaration
 }
@@ -17,11 +18,14 @@ schema_declaration = { "schema" ~ identifier ~ typed_block }
 tool_declaration = { "tool" ~ identifier ~ tool_block }
 
 tool_block = { "{" ~ tool_property* ~ "}" }
-tool_property = _{ tool_description_property | tool_input_property | tool_bounded_property | tool_input_field }
+tool_property = _{ tool_description_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
 tool_description_property = { "description" ~ ":" ~ plain_string_literal }
 tool_input_property = { "input" ~ typed_block }
-tool_bounded_property = { "bounded" ~ typed_block }
+tool_bindings_property = { "bindings" ~ typed_block }
+tool_output_property = { "output" ~ typed_block }
 tool_input_field = { typed_field }
+
+let_declaration = { "let" ~ identifier ~ "=" ~ expression }
 
 agent_declaration = { "agent" ~ identifier ~ for_clause? ~ agent_block }
 for_clause = { "for" ~ for_loop_pattern ~ "in" ~ expression }
@@ -30,7 +34,8 @@ object_destructuring_pattern = { "{" ~ identifier ~ ("," ~ identifier)* ~ ","? ~
 agent_block = { "{" ~ agent_property* ~ "}" }
 
 agent_property = _{
-    model_property
+    let_property
+    | model_property
     | prompt_property
     | output_property
     | context_property
@@ -38,6 +43,7 @@ agent_property = _{
     | tools_property
 }
 
+let_property = { "let" ~ identifier ~ "=" ~ expression }
 model_property = { "model" ~ ":" ~ expression }
 prompt_property = { "prompt" ~ ":" ~ expression }
 output_property = { "output" ~ ":" ~ type_expression ~ plain_string_literal? }
@@ -69,7 +75,8 @@ tuple_type = { "(" ~ type_expression ~ ("," ~ type_expression)* ~ ")" }
 type_object = { "{" ~ typed_field* ~ "}" }
 
 expression = _{
-    function_call
+    tool_call_expression
+    | function_call
     | object_expression
     | array_expression
     | boolean_literal
@@ -78,6 +85,12 @@ expression = _{
     | string_expression
     | reference
 }
+
+tool_call_expression = { "call" ~ reference ~ tool_call_block }
+tool_call_block = { "{" ~ tool_call_property* ~ "}" }
+tool_call_property = _{ tool_call_input_property | tool_call_bindings_property }
+tool_call_input_property = { "input" ~ object_expression }
+tool_call_bindings_property = { "bindings" ~ object_expression }
 
 object_expression = { "{" ~ object_field* ~ "}" }
 object_field = { identifier ~ ":" ~ expression }

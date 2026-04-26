@@ -457,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_tool_declarations_with_input_and_bounded_fields() {
+    fn parses_tool_declarations_with_input_bindings_and_output_fields() {
         let workflow = parse_inline_workflow! {
             tool web_search {
                 query: string
@@ -470,10 +470,14 @@ mod tests {
                     issue_id: number
                 }
 
-                bounded {
+                bindings {
                     project: string,
                     status: "open" | "closed",
                     token: string,
+                }
+
+                output {
+                    title: string
                 }
             }
         };
@@ -489,7 +493,65 @@ mod tests {
 
         assert_eq!(issue_tracker_tool.description.as_deref(), Some("retrieve details about an issue"));
         assert_eq!(issue_tracker_tool.input_fields.len(), 1);
-        assert_eq!(issue_tracker_tool.bounded_fields.len(), 3);
+        assert_eq!(issue_tracker_tool.binding_fields.len(), 3);
+        assert_eq!(issue_tracker_tool.output_fields.len(), 1);
+    }
+
+    #[test]
+    fn parses_let_bindings_and_deterministic_tool_calls() {
+        let workflow = parse_inline_workflow! {
+            tool fetch_issue {
+                description: "Fetch issue"
+
+                bindings {
+                    repository: string
+                }
+
+                input {
+                    sha: string
+                }
+
+                output {
+                    title: string
+                }
+            }
+
+            let issue = call tool.fetch_issue {
+                input {
+                    sha: input.sha
+                }
+
+                bindings {
+                    repository: input.repository
+                }
+            }
+
+            agent summarize {
+                let local_issue = call tool.fetch_issue {
+                    input {
+                        sha: issue.title
+                    }
+                }
+
+                prompt: "{{ local_issue.title }}"
+                output: string
+            }
+        };
+
+        let Declaration::Let(let_binding) = &workflow.declarations[1] else {
+            panic!("second declaration should be let binding");
+        };
+
+        assert_eq!(let_binding.name, "issue");
+
+        let Expression::ToolCall(tool_call) = &let_binding.value else {
+            panic!("let value should be a tool call");
+        };
+
+        assert_eq!(tool_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Tool));
+        assert_eq!(tool_call.callee.accesses[0].field, "fetch_issue");
+        assert_eq!(tool_call.input_fields.len(), 1);
+        assert_eq!(tool_call.binding_fields.len(), 1);
     }
 
     #[test]

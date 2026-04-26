@@ -154,6 +154,7 @@ pub enum Declaration {
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
     Tool(ToolDeclaration),
+    Let(LetBinding),
     Agent(AgentDeclaration),
     Output(OutputDeclaration),
 }
@@ -254,7 +255,15 @@ pub struct ToolDeclaration {
     pub name: String,
     pub description: Option<String>,
     pub input_fields: Vec<TypedField>,
-    pub bounded_fields: Vec<TypedField>,
+    pub binding_fields: Vec<TypedField>,
+    pub output_fields: Vec<TypedField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LetBinding {
+    pub name: String,
+    pub value: Expression,
     pub span: SourceSpan,
 }
 
@@ -276,6 +285,7 @@ impl AgentDeclaration {
                 AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => return Some(expression),
                 AgentProperty::Inference(expression) if property_name == AgentExpressionPropertyName::Inference => return Some(expression),
                 AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
+                AgentProperty::Let(_) => {}
                 AgentProperty::Model(_)
                 | AgentProperty::Prompt(_)
                 | AgentProperty::Output {
@@ -379,6 +389,7 @@ impl AgentForLoopPattern {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentProperty {
+    Let(LetBinding),
     Model(Expression),
     Prompt(Expression),
     Output {
@@ -394,6 +405,7 @@ impl AgentProperty {
     #[must_use]
     pub fn name(&self) -> AgentPropertyName {
         match self {
+            Self::Let(_) => AgentPropertyName::Let,
             Self::Model(_) => AgentPropertyName::Model,
             Self::Prompt(_) => AgentPropertyName::Prompt,
             Self::Output {
@@ -409,6 +421,7 @@ impl AgentProperty {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentPropertyName {
+    Let,
     Model,
     Prompt,
     Output,
@@ -419,14 +432,23 @@ pub enum AgentPropertyName {
 
 impl AgentPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 6] {
-        [Self::Model, Self::Prompt, Self::Output, Self::Context, Self::Inference, Self::Tools]
+    pub fn all() -> [Self; 7] {
+        [
+            Self::Let,
+            Self::Model,
+            Self::Prompt,
+            Self::Output,
+            Self::Context,
+            Self::Inference,
+            Self::Tools,
+        ]
     }
 
     #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "model" => Some(Self::Model),
+            "let" => Some(Self::Let),
             "prompt" => Some(Self::Prompt),
             "output" => Some(Self::Output),
             "context" => Some(Self::Context),
@@ -440,6 +462,7 @@ impl AgentPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Model => "model",
+            Self::Let => "let",
             Self::Prompt => "prompt",
             Self::Output => "output",
             Self::Context => "context",
@@ -601,8 +624,17 @@ pub enum Expression {
     NullLiteral,
     Reference(Reference),
     FunctionCall(FunctionCall),
+    ToolCall(ToolCall),
     ArrayLiteral(Vec<Expression>),
     ObjectLiteral(Vec<ObjectField>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolCall {
+    pub callee: Reference,
+    pub input_fields: Vec<ObjectField>,
+    pub binding_fields: Vec<ObjectField>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
