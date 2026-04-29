@@ -472,6 +472,7 @@ mod tests {
 
                 bindings {
                     project: string,
+                    endpoint: "https://example.test",
                     status: "open" | "closed",
                     token: string,
                 }
@@ -494,6 +495,8 @@ mod tests {
         assert_eq!(issue_tracker_tool.description.as_deref(), Some("retrieve details about an issue"));
         assert_eq!(issue_tracker_tool.input_fields.len(), 1);
         assert_eq!(issue_tracker_tool.binding_fields.len(), 3);
+        assert_eq!(issue_tracker_tool.fixed_binding_fields.len(), 1);
+        assert_eq!(issue_tracker_tool.fixed_binding_fields[0].name, "endpoint");
         assert_eq!(issue_tracker_tool.output_fields.len(), 1);
     }
 
