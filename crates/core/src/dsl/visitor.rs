@@ -207,7 +207,18 @@ impl AstVisitor {
                         span: binding_field_span,
                     });
                 }
-                Rule::expression => {
+                Rule::expression
+                | Rule::tool_call_expression
+                | Rule::function_call
+                | Rule::object_expression
+                | Rule::array_expression
+                | Rule::boolean_literal
+                | Rule::null_literal
+                | Rule::number_literal
+                | Rule::string_expression
+                | Rule::quoted_string_expression
+                | Rule::multiline_string_expression
+                | Rule::reference => {
                     fixed_fields.push(ObjectField {
                         name: field_name,
                         value: self.visit_expression(field_value_pair)?,

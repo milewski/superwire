@@ -501,6 +501,65 @@ mod tests {
     }
 
     #[test]
+    fn parses_fixed_tool_bindings_from_references_and_literals() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: number
+                task_id: number
+            }
+
+            tool list_all_participants_who_has_answered_given_task {
+                bindings {
+                    project_id: input.project_id
+                    retry_count: 123
+                    task_id: agent.example.task_id
+                }
+
+                output {
+                    task_title: string
+                }
+            }
+        };
+
+        let tool_declaration = workflow
+            .find_tool("list_all_participants_who_has_answered_given_task")
+            .expect("missing tool declaration");
+
+        assert!(tool_declaration.binding_fields.is_empty());
+        assert_eq!(tool_declaration.fixed_binding_fields.len(), 3);
+
+        let project_binding = &tool_declaration.fixed_binding_fields[0];
+        assert_eq!(project_binding.name, "project_id");
+
+        let Expression::Reference(project_reference) = &project_binding.value else {
+            panic!("project_id binding should be a reference");
+        };
+
+        assert_eq!(project_reference.root, ReferenceRoot::Keyword(ReferenceKeyword::Input));
+        assert_eq!(project_reference.accesses[0].field, "project_id");
+
+        let retry_binding = &tool_declaration.fixed_binding_fields[1];
+        assert_eq!(retry_binding.name, "retry_count");
+
+        let Expression::NumberLiteral(retry_count) = &retry_binding.value else {
+            panic!("retry_count binding should be a number literal");
+        };
+
+        assert_eq!(retry_count, "123");
+
+        let task_binding = &tool_declaration.fixed_binding_fields[2];
+        assert_eq!(task_binding.name, "task_id");
+
+        let Expression::Reference(task_reference) = &task_binding.value else {
+            panic!("task_id binding should be a reference");
+        };
+
+        assert_eq!(task_reference.root, ReferenceRoot::Keyword(ReferenceKeyword::Agent));
+        assert_eq!(task_reference.accesses[0].field, "example");
+        assert_eq!(task_reference.accesses[1].field, "task_id");
+    }
+
+    #[test]
     fn parses_dynamic_blocks_and_deterministic_tool_calls() {
         let workflow = parse_inline_workflow! {
             tool fetch_issue {
