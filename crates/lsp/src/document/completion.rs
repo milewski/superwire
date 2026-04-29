@@ -45,10 +45,12 @@ impl DocumentState {
             return Vec::new();
         }
 
-        if let Some(typed_declaration_suggestions) =
-            self.typed_declaration_scope_suggestions(completion_scope, &line_prefix, position, &semantic_index)
-        {
-            return typed_declaration_suggestions;
+        if !inside_interpolation_expression {
+            if let Some(typed_declaration_suggestions) =
+                self.typed_declaration_scope_suggestions(completion_scope, &line_prefix, position, &semantic_index)
+            {
+                return typed_declaration_suggestions;
+            }
         }
 
         let line_has_property_separator = line_prefix.trim_start().contains(':');

@@ -26,6 +26,59 @@ fn completes_agent_references_inside_prompt_string_interpolation() {
 }
 
 #[test]
+fn completes_dynamic_references_inside_tool_input_interpolation() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool format_response {
+            input {
+                content: string
+            }
+
+            output {
+                markdown: string
+            }
+        }
+
+        dynamic {
+            source_content: "release notes"
+            formatted_result: call tool.format_response {
+                input {
+                    content: "{{ dynamic.<cursor> }}"
+                }
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "source_content");
+    assert_completion_excludes_labels!(&completion_suggestions, "formatted_result");
+}
+
+#[test]
+fn completes_dynamic_root_inside_tool_input_interpolation() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool format_response {
+            input {
+                content: string
+            }
+
+            output {
+                markdown: string
+            }
+        }
+
+        dynamic {
+            source_content: "release notes"
+            formatted_result: call tool.format_response {
+                input {
+                    content: "{{ dyn<cursor> }}"
+                }
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, ReferenceKeyword::Dynamic);
+}
+
+#[test]
 fn suggests_only_agent_and_input_roots_inside_interpolation_expression() {
     let completion_suggestions = inline_completion_suggestions! {
         input {

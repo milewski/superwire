@@ -501,7 +501,7 @@
     "references": {
       "patterns": [
         {
-          "match": "\\b(agent|input|schema|tool|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
+          "match": "\\b(agent|dynamic|input|schema|tool|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
           "captures": {
             "1": {
               "name": "keyword.other.wire"
