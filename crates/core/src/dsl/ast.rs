@@ -272,6 +272,7 @@ pub struct ToolDeclaration {
     pub description: Option<String>,
     pub input_fields: Vec<TypedField>,
     pub binding_fields: Vec<TypedField>,
+    pub fixed_binding_fields: Vec<ObjectField>,
     pub output_fields: Vec<TypedField>,
     pub span: SourceSpan,
 }

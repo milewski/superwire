@@ -129,6 +129,7 @@ impl AstVisitor {
         let mut description = None;
         let mut input_fields = Vec::new();
         let mut binding_fields = Vec::new();
+        let mut fixed_binding_fields = Vec::new();
         let mut output_fields = Vec::new();
 
         for tool_property_pair in tool_block_pair.into_inner() {
@@ -142,8 +143,10 @@ impl AstVisitor {
                     input_fields.extend(self.visit_typed_block(typed_block_pair)?);
                 }
                 Rule::tool_bindings_property => {
-                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool bindings property")?;
-                    binding_fields.extend(self.visit_typed_block(typed_block_pair)?);
+                    let bindings_block_pair = self.first_inner_pair(tool_property_pair, "tool bindings property")?;
+                    let (typed_fields, fixed_fields) = self.visit_tool_bindings_block(bindings_block_pair)?;
+                    binding_fields.extend(typed_fields);
+                    fixed_binding_fields.extend(fixed_fields);
                 }
                 Rule::tool_output_property => {
                     let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool output property")?;
@@ -162,9 +165,140 @@ impl AstVisitor {
             description,
             input_fields,
             binding_fields,
+            fixed_binding_fields,
             output_fields,
             span: declaration_span,
         }))
+    }
+
+    fn visit_tool_bindings_block(&self, bindings_block_pair: Pair<'_, Rule>) -> Result<(Vec<TypedField>, Vec<ObjectField>), DslParseError> {
+        let mut typed_fields = Vec::new();
+        let mut fixed_fields = Vec::new();
+
+        for binding_field_pair in bindings_block_pair.into_inner() {
+            let binding_field_span = source_span_from_pair(&binding_field_pair);
+            let mut inner_pairs = binding_field_pair.into_inner();
+            let field_name = self.next_identifier(&mut inner_pairs, "binding field name", "tool bindings field")?;
+            let field_value_pair = self.next_pair(&mut inner_pairs, "binding field value", "tool bindings field")?;
+
+            match field_value_pair.as_rule() {
+                Rule::tool_binding_type_expression => {
+                    let field_type = self.visit_tool_binding_type_expression(field_value_pair)?;
+
+                    if let TypeExpression::StringEnum(string_value) = field_type {
+                        fixed_fields.push(ObjectField {
+                            name: field_name,
+                            value: Expression::StringLiteral(string_value),
+                            span: binding_field_span,
+                        });
+
+                        continue;
+                    }
+
+                    let description = inner_pairs
+                        .next()
+                        .map(|description_pair| self.parse_string_literal(description_pair))
+                        .transpose()?;
+
+                    typed_fields.push(TypedField {
+                        name: field_name,
+                        field_type,
+                        description,
+                        span: binding_field_span,
+                    });
+                }
+                Rule::expression => {
+                    fixed_fields.push(ObjectField {
+                        name: field_name,
+                        value: self.visit_expression(field_value_pair)?,
+                        span: binding_field_span,
+                    });
+                }
+                _ => {
+                    return Err(DslParseError::unexpected_with_span(
+                        field_value_pair.as_rule(),
+                        "tool bindings field value",
+                        source_span_from_pair(&field_value_pair),
+                    ));
+                }
+            }
+        }
+
+        Ok((typed_fields, fixed_fields))
+    }
+
+    fn visit_tool_binding_type_expression(&self, type_expression_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
+        let mut type_terms = Vec::new();
+
+        for type_term_pair in type_expression_pair.into_inner() {
+            type_terms.push(self.visit_tool_binding_type_term(type_term_pair)?);
+        }
+
+        if type_terms.len() == 1 {
+            Ok(type_terms.remove(0))
+        } else {
+            Ok(TypeExpression::Union(type_terms))
+        }
+    }
+
+    fn visit_tool_binding_type_term(&self, type_term_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
+        match type_term_pair.as_rule() {
+            Rule::scalar_type => {
+                let scalar_type = match type_term_pair.as_str() {
+                    "string" => TypeExpression::String,
+                    "number" => TypeExpression::Number,
+                    "float" => TypeExpression::Float,
+                    "boolean" => TypeExpression::Boolean,
+                    "null" => TypeExpression::Null,
+                    _ => unreachable!("scalar type should be one of the grammar literals"),
+                };
+
+                Ok(scalar_type)
+            }
+            Rule::schema_reference => {
+                let mut inner_pairs = type_term_pair.into_inner();
+                let schema_name = self.next_identifier(&mut inner_pairs, "schema name", "schema reference")?;
+                Ok(TypeExpression::SchemaReference(schema_name))
+            }
+            Rule::plain_quoted_string | Rule::plain_multiline_string => {
+                let enum_value = self.parse_string_literal(type_term_pair)?;
+                Ok(TypeExpression::StringEnum(enum_value))
+            }
+            Rule::array_type => {
+                let mut inner_pairs = type_term_pair.into_inner();
+                let item_type_pair = self.next_pair(&mut inner_pairs, "array item type", "array type")?;
+                let item_type = self.visit_type_expression(item_type_pair)?;
+
+                let fixed_length = if let Some(length_pair) = inner_pairs.next() {
+                    Some(self.parse_unsigned_integer(length_pair, "array fixed length")?)
+                } else {
+                    None
+                };
+
+                Ok(TypeExpression::Array {
+                    item_type: Box::new(item_type),
+                    fixed_length,
+                })
+            }
+            Rule::tuple_type => {
+                let mut tuple_items = Vec::new();
+
+                for tuple_item_pair in type_term_pair.into_inner() {
+                    tuple_items.push(self.visit_type_expression(tuple_item_pair)?);
+                }
+
+                Ok(TypeExpression::Tuple(tuple_items))
+            }
+            Rule::tool_binding_type_object => {
+                let fields = self.visit_typed_block(type_term_pair)?;
+                Ok(TypeExpression::Object(fields))
+            }
+            _ => Err(DslParseError::unexpected_with_span(
+                type_term_pair.as_rule(),
+                "tool binding type term",
+                source_span_from_pair(&type_term_pair),
+            )),
+        }
     }
 
     fn visit_dynamic_declaration(&self, dynamic_pair: Pair<'_, Rule>) -> Result<DynamicBlock, DslParseError> {

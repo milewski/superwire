@@ -330,7 +330,11 @@ impl ToolDeclaration {
         if let Some(description) = &self.description {
             formatter.push_line(&format!("description: {}", render_plain_string_literal(description)));
 
-            if !self.input_fields.is_empty() || !self.binding_fields.is_empty() || !self.output_fields.is_empty() {
+            if !self.input_fields.is_empty()
+                || !self.binding_fields.is_empty()
+                || !self.fixed_binding_fields.is_empty()
+                || !self.output_fields.is_empty()
+            {
                 formatter.push_newline();
             }
         }
@@ -344,16 +348,20 @@ impl ToolDeclaration {
 
             formatter.push_declaration_block_end();
 
-            if !self.binding_fields.is_empty() || !self.output_fields.is_empty() {
+            if !self.binding_fields.is_empty() || !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
                 formatter.push_newline();
             }
         }
 
-        if !self.binding_fields.is_empty() {
+        if !self.binding_fields.is_empty() || !self.fixed_binding_fields.is_empty() {
             formatter.push_declaration_block_start("bindings");
 
             for typed_field in &self.binding_fields {
                 typed_field.push_to_formatter(formatter);
+            }
+
+            for object_field in &self.fixed_binding_fields {
+                object_field.push_to_formatter(formatter);
             }
 
             formatter.push_declaration_block_end();

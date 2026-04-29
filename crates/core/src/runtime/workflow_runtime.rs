@@ -94,6 +94,7 @@ struct CompletedAgentExecution {
 struct RuntimeToolCatalog {
     tool_definitions: HashMap<String, ToolDefinition>,
     bound_argument_types: HashMap<String, HashMap<String, WorkflowType>>,
+    fixed_bound_arguments: HashMap<String, Vec<ObjectField>>,
 }
 
 impl CompletedAgentExecution {
@@ -205,6 +206,7 @@ impl RuntimeToolCatalog {
     fn from_workflow_and_runtime_tools(workflow: &Workflow, dynamic_runtime_tools: &[DynamicTool]) -> Result<Self, WorkflowRuntimeError> {
         let mut tool_definitions = HashMap::<String, ToolDefinition>::new();
         let mut bound_argument_types = HashMap::<String, HashMap<String, WorkflowType>>::new();
+        let mut fixed_bound_arguments = HashMap::<String, Vec<ObjectField>>::new();
 
         let named_schema_types = workflow.named_schema_types();
 
@@ -215,6 +217,7 @@ impl RuntimeToolCatalog {
 
             let tool_definition = tool_declaration.to_tool_definition(&named_schema_types)?;
             let tool_bound_argument_types = tool_declaration.bound_argument_types(&named_schema_types)?;
+            let tool_fixed_bound_arguments = tool_declaration.fixed_binding_fields.clone();
 
             if tool_definitions
                 .insert(tool_definition.name.clone(), tool_definition.clone())
@@ -226,6 +229,7 @@ impl RuntimeToolCatalog {
             }
 
             bound_argument_types.insert(tool_definition.name.clone(), tool_bound_argument_types);
+            fixed_bound_arguments.insert(tool_definition.name.clone(), tool_fixed_bound_arguments);
         }
 
         for registered_tool in registered_runtime_tools() {
@@ -245,6 +249,7 @@ impl RuntimeToolCatalog {
         Ok(Self {
             tool_definitions,
             bound_argument_types,
+            fixed_bound_arguments,
         })
     }
 
@@ -278,6 +283,10 @@ impl RuntimeToolCatalog {
 
     fn bound_argument_types(&self, tool_name: &str) -> Option<&HashMap<String, WorkflowType>> {
         self.bound_argument_types.get(tool_name)
+    }
+
+    fn fixed_bound_arguments(&self, tool_name: &str) -> &[ObjectField] {
+        self.fixed_bound_arguments.get(tool_name).map(Vec::as_slice).unwrap_or_default()
     }
 }
 
@@ -1045,9 +1054,17 @@ where
         let mut resolved_tools = Vec::new();
 
         let evaluation_context = runtime_state_to_evaluation_context(runtime_state, local_bindings);
+        let runtime_tool_catalog = self.runtime_tool_catalog()?;
 
         for tool_binding in &prepared_agent_execution.tools {
-            let mut resolved_bound_arguments = Map::new();
+            let mut resolved_bound_arguments = Self::evaluate_tool_call_fields(
+                runtime_tool_catalog.fixed_bound_arguments(&tool_binding.tool_name),
+                &evaluation_context,
+                &format!(
+                    "tool `tool.{}` fixed bindings for agent `{}`",
+                    tool_binding.tool_name, prepared_agent_execution.agent_name
+                ),
+            )?;
 
             for argument_expression in &tool_binding.argument_expressions {
                 let argument_value = evaluate_expression(
@@ -1196,8 +1213,18 @@ where
             .to_string();
         let evaluation_context = runtime_state_to_evaluation_context(runtime_state, local_bindings);
         let input_value = Self::evaluate_tool_call_fields(&tool_call.input_fields, &evaluation_context, context)?;
-        let binding_values = Self::evaluate_tool_call_fields(&tool_call.binding_fields, &evaluation_context, context)?;
         let runtime_tool = self.resolve_runtime_tool(tool_name.as_str())?;
+        let runtime_tool_catalog = self.runtime_tool_catalog()?;
+        let mut binding_values = Self::evaluate_tool_call_fields(
+            runtime_tool_catalog.fixed_bound_arguments(tool_name.as_str()),
+            &evaluation_context,
+            context,
+        )?;
+        binding_values.extend(Self::evaluate_tool_call_fields(
+            &tool_call.binding_fields,
+            &evaluation_context,
+            context,
+        )?);
 
         runtime_tool
             .execute_with_bound_arguments(Value::Object(input_value), binding_values)

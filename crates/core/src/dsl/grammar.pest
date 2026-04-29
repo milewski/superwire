@@ -21,7 +21,7 @@ tool_block = { "{" ~ tool_property* ~ "}" }
 tool_property = _{ tool_description_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
 tool_description_property = { "description" ~ ":" ~ plain_string_literal }
 tool_input_property = { "input" ~ typed_block }
-tool_bindings_property = { "bindings" ~ typed_block }
+tool_bindings_property = { "bindings" ~ tool_bindings_block }
 tool_output_property = { "output" ~ typed_block }
 tool_input_field = { typed_field }
 
@@ -55,6 +55,19 @@ output_declaration = { "output" ~ object_expression }
 
 typed_block = { "{" ~ typed_field* ~ "}" }
 typed_field = { identifier ~ ":" ~ type_expression ~ plain_string_literal? ~ ","? }
+
+tool_bindings_block = { "{" ~ tool_binding_field* ~ "}" }
+tool_binding_field = { identifier ~ ":" ~ (tool_binding_type_expression | expression) ~ plain_string_literal? ~ ","? }
+tool_binding_type_expression = { tool_binding_type_term ~ ("|" ~ tool_binding_type_term)* }
+tool_binding_type_object = { "{" ~ typed_field* ~ "}" }
+tool_binding_type_term = _{
+    scalar_type
+    | schema_reference
+    | plain_string_literal
+    | array_type
+    | tuple_type
+    | tool_binding_type_object
+}
 
 type_expression = { type_term ~ ("|" ~ type_term)* }
 

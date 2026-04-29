@@ -433,6 +433,125 @@ fn exports_workflow_dynamic_tool_calls_used_by_output_fields() {
     );
 }
 
+#[test]
+fn exports_fixed_tool_bindings_without_requiring_them_in_calls() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        tool example {
+            bindings {
+                property_a: number
+                property_b: "direct assignment"
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        dynamic {
+            example: call tool.example {
+                bindings {
+                    property_a: 123
+                }
+            }
+        }
+
+        output {
+            value: dynamic.example.value
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("fixed-tool-bindings.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(exported_json.pointer("/tools/0/bindings/0/name"), Some(&json!("property_a")));
+    assert_eq!(
+        exported_json.pointer("/tools/0/fixed_bindings/property_b"),
+        Some(&json!("direct assignment"))
+    );
+    assert_eq!(
+        exported_json.pointer("/tools/0/binding_schema/required"),
+        Some(&json!(["property_a"]))
+    );
+}
+
+#[test]
+fn rejects_dynamic_tool_calls_missing_required_typed_bindings() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        tool example {
+            bindings {
+                property_a: number
+                property_b: "direct assignment"
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        dynamic {
+            example: call tool.example {
+            }
+        }
+
+        output {
+            value: dynamic.example.value
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("missing-tool-binding.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(!command_output.status.success(), "workflow to-json command should fail");
+
+    let stderr = String::from_utf8_lossy(&command_output.stderr);
+    assert!(
+        stderr.contains("missing required `bindings` field `property_a`"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn rejects_dynamic_tool_calls_with_wrong_typed_binding_type() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        tool example {
+            bindings {
+                property_a: number
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        dynamic {
+            example: call tool.example {
+                bindings {
+                    property_a: "wrong"
+                }
+            }
+        }
+
+        output {
+            value: dynamic.example.value
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("wrong-tool-binding-type.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(!command_output.status.success(), "workflow to-json command should fail");
+
+    let stderr = String::from_utf8_lossy(&command_output.stderr);
+    assert!(stderr.contains("expects number, found string"), "unexpected stderr: {stderr}");
+}
+
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {
     let mut command = Command::new(cli_binary_path());
     command.arg("workflow").arg("to-json");

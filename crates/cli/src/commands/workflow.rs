@@ -933,6 +933,7 @@ struct SerializableToolDeclaration {
     input: Vec<SerializableTypedField>,
     input_schema: Value,
     bindings: Vec<SerializableTypedField>,
+    fixed_bindings: BTreeMap<String, Value>,
     binding_schema: Value,
 }
 
@@ -955,6 +956,11 @@ impl SerializableToolDeclaration {
                 .iter()
                 .map(SerializableTypedField::from_typed_field)
                 .collect::<Vec<_>>(),
+            fixed_bindings: tool_declaration
+                .fixed_binding_fields
+                .iter()
+                .map(|field| (field.name.clone(), SerializableExpression::to_compact_json(&field.value)))
+                .collect::<BTreeMap<_, _>>(),
             binding_schema: Self::json_schema_for_fields(&tool_declaration.binding_fields, named_schema_types),
         }
     }
