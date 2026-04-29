@@ -480,6 +480,54 @@ fn exports_fixed_tool_bindings_without_requiring_them_in_calls() {
 }
 
 #[test]
+fn exports_fixed_tool_bindings_from_references_and_literals() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        tool example {
+            bindings {
+                project_id: input.project_id
+                retry_count: 123
+                task_id: input.task_id
+            }
+
+            output {
+                value: string
+            }
+        }
+
+        dynamic {
+            example: call tool.example
+        }
+
+        output {
+            value: dynamic.example.value
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("fixed-tool-reference-bindings.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/fixed_bindings/project_id/$ref"),
+        Some(&json!("input.project_id"))
+    );
+    assert_eq!(exported_json.pointer("/tools/0/fixed_bindings/retry_count"), Some(&json!(123)));
+    assert_eq!(
+        exported_json.pointer("/tools/0/fixed_bindings/task_id/$ref"),
+        Some(&json!("input.task_id"))
+    );
+}
+
+#[test]
 fn rejects_dynamic_tool_calls_missing_required_typed_bindings() {
     let temporary_workspace = TemporaryWorkspace::new();
     let workflow_source = workflow_template! {
