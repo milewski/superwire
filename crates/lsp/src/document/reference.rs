@@ -5,6 +5,7 @@ use superwire_core::semantic::ToolingReferencePath;
 
 use crate::protocol::Position;
 
+use super::position::source_span_contains_position;
 use super::semantic_index::{FieldMetadata, SemanticIndex};
 use super::text_utils::{for_clause_iterable_prefix, is_identifier, trailing_reference_token};
 use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
@@ -291,6 +292,32 @@ impl SemanticIndex {
         position: Position,
     ) -> Vec<CompletionSuggestion> {
         let (dynamic_fields, dynamic_field_metadata) = self.dynamic_scope_at_position(position);
+
+        if reference_completion_path.complete_accesses.is_empty() {
+            let dynamic_field_locations = self.dynamic_field_locations_at_position(position);
+            let visible_dynamic_fields = dynamic_fields
+                .iter()
+                .filter(|(field_name, _)| {
+                    dynamic_field_locations
+                        .get(*field_name)
+                        .is_none_or(|field_span| !source_span_contains_position(*field_span, position))
+                })
+                .map(|(field_name, field_type)| (field_name.clone(), field_type.clone()))
+                .collect::<BTreeMap<_, _>>();
+            let visible_dynamic_field_metadata = dynamic_field_metadata
+                .iter()
+                .filter(|(field_name, _)| visible_dynamic_fields.contains_key(*field_name))
+                .map(|(field_name, field_metadata)| (field_name.clone(), field_metadata.clone()))
+                .collect::<BTreeMap<_, _>>();
+
+            return self.singleton_reference_suggestions(
+                &visible_dynamic_fields,
+                Some(&visible_dynamic_field_metadata),
+                "Dynamic field",
+                reference_completion_constraint,
+                reference_completion_path,
+            );
+        }
 
         self.singleton_reference_suggestions(
             dynamic_fields,

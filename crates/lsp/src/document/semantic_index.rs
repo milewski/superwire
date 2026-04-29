@@ -1406,7 +1406,7 @@ impl SemanticIndex {
         (scoped_dynamic_fields, scoped_dynamic_field_metadata)
     }
 
-    fn dynamic_field_locations_at_position(&self, position: Position) -> &HashMap<String, SourceSpan> {
+    pub(in crate::document) fn dynamic_field_locations_at_position(&self, position: Position) -> &HashMap<String, SourceSpan> {
         let Some(agent_name) = self.agent_name_at_position(position) else {
             return &self.dynamic_field_locations;
         };
