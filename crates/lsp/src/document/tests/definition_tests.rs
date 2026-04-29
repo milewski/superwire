@@ -72,3 +72,113 @@ fn definition_resolves_for_loop_binding_field_to_iterable_item_field_declaration
 
     assert_eq!(definition_range.start.line, expected_field_line);
 }
+
+#[test]
+fn definition_resolves_dynamic_field_reference_and_nested_tool_output_field() {
+    let source_template = inline_document_template! {
+        tool searchable_web {
+            output {
+                title: string
+                snippet: string
+            }
+        }
+
+        dynamic {
+            search_result: call tool.searchable_web {
+                input {
+                    query: "release notes"
+                }
+            }
+        }
+
+        output {
+            result: dynamic.<cursor>search_result.title
+        }
+    };
+
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let expected_field_line = source
+        .lines()
+        .position(|source_line| source_line.contains("search_result: call tool.searchable_web"))
+        .and_then(|line_index| u32::try_from(line_index).ok())
+        .expect("source should include dynamic search_result field declaration");
+
+    let document_state = DocumentState::new(source);
+    let definition_range = document_state
+        .definition_range(cursor_position)
+        .expect("definition should resolve to dynamic field declaration");
+
+    assert_eq!(definition_range.start.line, expected_field_line);
+
+    let nested_source_template = inline_document_template! {
+        tool searchable_web {
+            output {
+                title: string
+                snippet: string
+            }
+        }
+
+        dynamic {
+            search_result: call tool.searchable_web {
+                input {
+                    query: "release notes"
+                }
+            }
+        }
+
+        output {
+            result: dynamic.search_result.<cursor>title
+        }
+    };
+
+    let (nested_source, nested_cursor_position) = source_with_cursor(nested_source_template);
+    let expected_nested_field_line = nested_source
+        .lines()
+        .position(|source_line| source_line.contains("title: string"))
+        .and_then(|line_index| u32::try_from(line_index).ok())
+        .expect("source should include tool output title field declaration");
+
+    let nested_document_state = DocumentState::new(nested_source);
+    let nested_definition_range = nested_document_state
+        .definition_range(nested_cursor_position)
+        .expect("definition should resolve to tool output field declaration");
+
+    assert_eq!(nested_definition_range.start.line, expected_nested_field_line);
+}
+
+#[test]
+fn definition_resolves_tool_reference_inside_dynamic_tool_call() {
+    let source_template = inline_document_template! {
+        tool format_response {
+            input {
+                content: string
+            }
+
+            output {
+                markdown: string
+            }
+        }
+
+        dynamic {
+            formatted_result: call tool.<cursor>format_response {
+                input {
+                    content: "hello"
+                }
+            }
+        }
+    };
+
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let expected_tool_line = source
+        .lines()
+        .position(|source_line| source_line.contains("tool format_response {"))
+        .and_then(|line_index| u32::try_from(line_index).ok())
+        .expect("source should include tool declaration");
+
+    let document_state = DocumentState::new(source);
+    let definition_range = document_state
+        .definition_range(cursor_position)
+        .expect("definition should resolve to tool declaration");
+
+    assert_eq!(definition_range.start.line, expected_tool_line);
+}

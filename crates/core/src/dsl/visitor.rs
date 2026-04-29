@@ -461,13 +461,18 @@ impl AstVisitor {
     }
 
     fn visit_object_field(&self, object_field_pair: Pair<'_, Rule>) -> Result<ObjectField, DslParseError> {
+        let object_field_span = source_span_from_pair(&object_field_pair);
         let mut inner_pairs = object_field_pair.into_inner();
 
         let field_name = self.next_identifier(&mut inner_pairs, "object field name", "object field")?;
         let expression_pair = self.next_pair(&mut inner_pairs, "object field value", "object field")?;
         let value = self.visit_expression(expression_pair)?;
 
-        Ok(ObjectField { name: field_name, value })
+        Ok(ObjectField {
+            name: field_name,
+            value,
+            span: object_field_span,
+        })
     }
 
     fn visit_array_expression(&self, array_expression_pair: Pair<'_, Rule>) -> Result<Vec<Expression>, DslParseError> {
