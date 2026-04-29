@@ -55,7 +55,7 @@ impl DeclarationHeaderCompletionContext {
 
                 None
             }
-            DeclarationKeyword::Input | DeclarationKeyword::Secrets | DeclarationKeyword::Output => {
+            DeclarationKeyword::Dynamic | DeclarationKeyword::Input | DeclarationKeyword::Secrets | DeclarationKeyword::Output => {
                 if trimmed_line_after_keyword.starts_with('{') {
                     return None;
                 }

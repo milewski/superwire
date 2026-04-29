@@ -239,7 +239,7 @@ impl SemanticToolingSnapshot {
                         },
                     );
                 }
-                Declaration::Let(_) | Declaration::Output(_) => {}
+                Declaration::Dynamic(_) | Declaration::Output(_) => {}
             }
         }
 

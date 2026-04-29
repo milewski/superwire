@@ -1131,6 +1131,17 @@ fn completion_text_edit_range_replaces_model_provider_prefix() {
 }
 
 #[test]
+fn suggests_dynamic_agent_property_keyword() {
+    let agent_property_completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&agent_property_completion_suggestions, "dynamic");
+}
+
+#[test]
 fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         provider openai {

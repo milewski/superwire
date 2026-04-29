@@ -236,7 +236,7 @@ trait AgentPropertyCompletionDoc {
 impl AgentPropertyCompletionDoc for AgentPropertyName {
     fn completion_detail(self) -> &'static str {
         match self {
-            Self::Let => "Let binding",
+            Self::Dynamic => "Dynamic block",
             Self::Model => "Model binding (required)",
             Self::Prompt => "Prompt expression (required)",
             Self::Output => "Output type",
@@ -248,7 +248,7 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
 
     fn completion_documentation(self) -> &'static str {
         match self {
-            Self::Let => "Declares an immutable value available to downstream agent properties.",
+            Self::Dynamic => "Declares one or more dynamic values available as `dynamic.<field>`.",
             Self::Model => "Selects provider and model call used by this agent.",
             Self::Prompt => "Defines the prompt sent to the provider.",
             Self::Output => "Declares the expected structured output type.",

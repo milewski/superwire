@@ -131,6 +131,8 @@ pub enum DiagnosticCode {
     DuplicateProvider,
     #[serde(rename = "duplicate_schema")]
     DuplicateSchema,
+    #[serde(rename = "duplicate_tool")]
+    DuplicateTool,
     #[serde(rename = "duplicate_agent")]
     DuplicateAgent,
     #[serde(rename = "duplicate_singleton_declaration")]
@@ -151,10 +153,14 @@ pub enum DiagnosticCode {
     UnknownAgentReference,
     #[serde(rename = "invalid_keyword_reference_root")]
     InvalidKeywordReferenceRoot,
+    #[serde(rename = "missing_dynamic_declaration")]
+    MissingDynamicDeclaration,
     #[serde(rename = "missing_input_declaration")]
     MissingInputDeclaration,
     #[serde(rename = "missing_secrets_declaration")]
     MissingSecretsDeclaration,
+    #[serde(rename = "unknown_dynamic_field_reference")]
+    UnknownDynamicFieldReference,
     #[serde(rename = "unknown_input_field_reference")]
     UnknownInputFieldReference,
     #[serde(rename = "unknown_secrets_field_reference")]
@@ -171,6 +177,8 @@ pub enum DiagnosticCode {
     InvalidForLoopIterableType,
     #[serde(rename = "unknown_schema_reference")]
     UnknownSchemaReference,
+    #[serde(rename = "unknown_tool_reference")]
+    UnknownToolReference,
     #[serde(rename = "invalid_type_expression_reference")]
     InvalidTypeExpressionReference,
     #[serde(rename = "agent_dependency_cycle")]

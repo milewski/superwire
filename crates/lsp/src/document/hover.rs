@@ -58,6 +58,7 @@ impl SemanticIndex {
         }
 
         match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Dynamic) => Some(format!("**{hovered_symbol}**\n\nDynamic reference.")),
             Some(ReferenceKeyword::Input) => {
                 let field_type = self.resolve_singleton_reference_type(&self.input_fields, resolved_accesses.as_slice())?;
 
@@ -166,6 +167,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Input => "Input declaration",
             DeclarationKeyword::Schema => "Schema declaration",
             DeclarationKeyword::Tool => "Tool declaration",
+            DeclarationKeyword::Dynamic => "Dynamic declaration",
             DeclarationKeyword::Agent => "Agent declaration",
             DeclarationKeyword::Output => "Output declaration",
         }
@@ -178,6 +180,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Input => "Declares workflow input fields.",
             DeclarationKeyword::Schema => "Declares a reusable named schema type.",
             DeclarationKeyword::Tool => "Declares a tool schema that agents can reference.",
+            DeclarationKeyword::Dynamic => "Declares dynamic values available through `dynamic.<field>` references.",
             DeclarationKeyword::Agent => "Declares an executable workflow agent.",
             DeclarationKeyword::Output => "Declares final workflow output fields.",
         }
@@ -206,7 +209,7 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
     ))
 }
 
-fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 7] {
+fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 8] {
     [
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Provider.as_str(),
@@ -231,6 +234,12 @@ fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 7] {
             kind: CompletionKind::Keyword,
             detail: DeclarationKeyword::Tool.completion_detail(),
             documentation: DeclarationKeyword::Tool.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Dynamic.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Dynamic.completion_detail(),
+            documentation: DeclarationKeyword::Dynamic.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: SingletonDeclarationKind::Input.as_str(),

@@ -443,7 +443,7 @@ impl DocumentState {
         let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
         let for_loop_iterable_reference_context = matches!(
             reference_completion_path.root_keyword(),
-            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets)
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic | ReferenceKeyword::Secrets)
         ) && Self::is_for_loop_iterable_clause_context(line_prefix);
 
         let reference_completion_constraint = if for_loop_iterable_reference_context {
@@ -518,7 +518,7 @@ impl DocumentState {
         let can_suggest_inference_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
 
         match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic) => {
                 if can_suggest_inference_roots {
                     return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -553,7 +553,7 @@ impl DocumentState {
             semantic_index.has_for_loop_binding_at_position(position, reference_completion_path.root_identifier());
 
         match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic) => {
                 if can_suggest_interpolation_roots {
                     return Some(semantic_index.interpolation_root_suggestions(reference_completion_path.root_identifier(), position));
                 }
@@ -590,7 +590,7 @@ impl DocumentState {
         let can_suggest_output_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
 
         match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Secrets) => {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic | ReferenceKeyword::Secrets) => {
                 if can_suggest_output_roots {
                     return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -628,7 +628,7 @@ impl DocumentState {
         let can_suggest_prompt_roots = Self::can_suggest_reference_roots(line_prefix, reference_completion_path);
 
         match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent) => {
+            Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic) => {
                 if can_suggest_prompt_roots {
                     return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
                 }

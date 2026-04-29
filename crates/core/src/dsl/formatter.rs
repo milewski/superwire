@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use super::ast::{
-    AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, Expression,
-    ForClauseKeyword, FunctionCall, LetBinding, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
+    AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
+    Expression, ForClauseKeyword, FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
     TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
@@ -266,7 +266,7 @@ impl Declaration {
                 formatter.push_declaration_block_end();
             }
             Self::Tool(tool_declaration) => tool_declaration.push_to_formatter(formatter),
-            Self::Let(let_binding) => let_binding.push_to_formatter(formatter),
+            Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Agent(agent_declaration) => {
                 agent_declaration.push_to_formatter(formatter);
             }
@@ -389,7 +389,7 @@ impl AgentForLoopPattern {
 impl AgentProperty {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
-            Self::Let(let_binding) => let_binding.push_to_formatter(formatter),
+            Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
             Self::Prompt(expression) => formatter.push_agent_property_expression(AgentPropertyName::Prompt.as_str(), expression),
             Self::Output {
@@ -434,13 +434,21 @@ impl AgentProperty {
     }
 }
 
-impl LetBinding {
+impl DynamicBlock {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
-        formatter.output.push_str("let ");
-        formatter.output.push_str(&self.name);
-        formatter.output.push_str(" = ");
-        self.value.push_to_formatter(formatter, ExpressionFormat::Canonical);
+        formatter.output.push_str("dynamic ");
+        formatter.output.push('{');
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for field in &self.fields {
+            field.push_to_formatter(formatter);
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
         formatter.push_newline();
     }
 }

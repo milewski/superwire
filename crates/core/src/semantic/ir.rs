@@ -227,8 +227,10 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
             | AgentProperty::Tools(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
             }
-            AgentProperty::Let(let_binding) => {
-                collect_agent_dependencies(&let_binding.value, &mut dependencies);
+            AgentProperty::Dynamic(dynamic_block) => {
+                for field in &dynamic_block.fields {
+                    collect_agent_dependencies(&field.value, &mut dependencies);
+                }
             }
             AgentProperty::Output {
                 output_type_expression: _,
@@ -264,14 +266,17 @@ fn infer_workflow_output_type(
     };
 
     for declaration in workflow.declarations() {
-        let Declaration::Let(let_binding) = declaration else {
+        let Declaration::Dynamic(dynamic_block) = declaration else {
             continue;
         };
 
-        let binding_type = let_binding
-            .value
-            .infer_type(&inference_context, &format!("let binding `{}` type inference", let_binding.name))?;
-        inference_context.local_binding_types.insert(let_binding.name.clone(), binding_type);
+        for field in &dynamic_block.fields {
+            let field_type = field
+                .value
+                .infer_type(&inference_context, &format!("dynamic field `{}` type inference", field.name))?;
+
+            inference_context.local_binding_types.insert(field.name.clone(), field_type);
+        }
     }
 
     let mut output_fields = BTreeMap::new();
@@ -418,7 +423,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Tools(_)
-            | AgentProperty::Let(_) => {}
+            | AgentProperty::Dynamic(_) => {}
         }
     }
 

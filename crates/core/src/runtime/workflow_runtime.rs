@@ -596,7 +596,8 @@ where
         let secret_values = self.resolve_secret_values(&serialized_secrets)?;
 
         let mut runtime_state = RuntimeState::new(input_values, secret_values);
-        self.execute_workflow_let_bindings(&mut runtime_state).await?;
+
+        self.execute_workflow_dynamic_blocks(&mut runtime_state).await?;
 
         let execution_order = self.resolve_agent_execution_order();
         let execution_batches = self.resolve_agent_execution_batches(&execution_order)?;
@@ -641,22 +642,27 @@ where
             .map_err(|source| WorkflowRuntimeError::OutputDeserializationFailed { source })
     }
 
-    async fn execute_workflow_let_bindings(&self, runtime_state: &mut RuntimeState) -> Result<(), WorkflowRuntimeError> {
+    async fn execute_workflow_dynamic_blocks(&self, runtime_state: &mut RuntimeState) -> Result<(), WorkflowRuntimeError> {
         for declaration in self.workflow.declarations() {
-            let Declaration::Let(let_binding) = declaration else {
+            let Declaration::Dynamic(dynamic_block) = declaration else {
                 continue;
             };
 
-            let binding_value = self
-                .evaluate_binding_expression(
-                    &let_binding.value,
-                    runtime_state,
-                    HashMap::new(),
-                    &format!("let binding `{}`", let_binding.name),
-                )
-                .await?;
+            let mut local_dynamic_values = HashMap::new();
 
-            runtime_state.local_bindings.insert(let_binding.name.clone(), binding_value);
+            for field in &dynamic_block.fields {
+                let field_value = self
+                    .evaluate_binding_expression(
+                        &field.value,
+                        runtime_state,
+                        local_dynamic_values.clone(),
+                        &format!("dynamic field `{}`", field.name),
+                    )
+                    .await?;
+
+                local_dynamic_values.insert(field.name.clone(), field_value.clone());
+                runtime_state.local_bindings.insert(field.name.clone(), field_value);
+            }
         }
 
         Ok(())
@@ -886,7 +892,7 @@ where
             let mut local_bindings =
                 agent_for_loop.local_bindings_for_iteration_item(iterable_item, &prepared_agent_execution.agent_name)?;
             local_bindings = self
-                .evaluate_agent_let_bindings(prepared_agent_execution, runtime_state, local_bindings)
+                .evaluate_agent_dynamic_blocks(prepared_agent_execution, runtime_state, local_bindings)
                 .await?;
 
             let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
@@ -938,7 +944,7 @@ where
         RunnerType: AgentRunner,
     {
         let local_bindings = self
-            .evaluate_agent_let_bindings(prepared_agent_execution, runtime_state, HashMap::new())
+            .evaluate_agent_dynamic_blocks(prepared_agent_execution, runtime_state, HashMap::new())
             .await?;
         let model_name = self.evaluate_agent_model_name(prepared_agent_execution, runtime_state, local_bindings.clone())?;
         let prompt = self.evaluate_agent_prompt(prepared_agent_execution, runtime_state, local_bindings.clone())?;
@@ -961,30 +967,29 @@ where
         })
     }
 
-    async fn evaluate_agent_let_bindings(
+    async fn evaluate_agent_dynamic_blocks(
         &self,
         prepared_agent_execution: &PreparedAgentExecution<'_>,
         runtime_state: &RuntimeState,
         mut local_bindings: HashMap<String, Value>,
     ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
         for agent_property in &prepared_agent_execution.agent_declaration.properties {
-            let AgentProperty::Let(let_binding) = agent_property else {
+            let AgentProperty::Dynamic(dynamic_block) = agent_property else {
                 continue;
             };
 
-            let binding_value = self
-                .evaluate_binding_expression(
-                    &let_binding.value,
-                    runtime_state,
-                    local_bindings.clone(),
-                    &format!(
-                        "let binding `{}` for agent `{}`",
-                        let_binding.name, prepared_agent_execution.agent_name
-                    ),
-                )
-                .await?;
+            for field in &dynamic_block.fields {
+                let field_value = self
+                    .evaluate_binding_expression(
+                        &field.value,
+                        runtime_state,
+                        local_bindings.clone(),
+                        &format!("dynamic field `{}` for agent `{}`", field.name, prepared_agent_execution.agent_name),
+                    )
+                    .await?;
 
-            local_bindings.insert(let_binding.name.clone(), binding_value);
+                local_bindings.insert(field.name.clone(), field_value);
+            }
         }
 
         Ok(local_bindings)

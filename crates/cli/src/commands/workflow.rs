@@ -604,6 +604,7 @@ struct WorkflowJsonRepresentation {
     workflow_path: String,
     input: Option<SerializableContractType>,
     secrets: Option<SerializableContractType>,
+    dynamic: BTreeMap<String, Value>,
     schemas: Vec<SerializableSchema>,
     tools: Vec<SerializableToolDeclaration>,
     providers: Vec<SerializableProvider>,
@@ -628,6 +629,7 @@ impl WorkflowJsonRepresentation {
         let mut providers = Vec::new();
         let mut schemas = Vec::new();
         let mut tools = Vec::new();
+        let mut dynamic = BTreeMap::<String, Value>::new();
 
         for declaration in declarations {
             match declaration {
@@ -640,7 +642,15 @@ impl WorkflowJsonRepresentation {
                 Declaration::Tool(tool_declaration) => {
                     tools.push(SerializableToolDeclaration::from_declaration(tool_declaration, &named_schema_types));
                 }
-                Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Let(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
+                Declaration::Dynamic(dynamic_block) => {
+                    for dynamic_field in &dynamic_block.fields {
+                        dynamic.insert(
+                            dynamic_field.name.clone(),
+                            SerializableExpression::to_compact_json(&dynamic_field.value),
+                        );
+                    }
+                }
+                Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
             }
         }
 
@@ -683,6 +693,7 @@ impl WorkflowJsonRepresentation {
                 .secrets_type
                 .as_ref()
                 .map(SerializableContractType::from_workflow_type),
+            dynamic,
             schemas,
             tools,
             providers,
@@ -972,6 +983,7 @@ struct SerializableAgent {
     context: Option<Value>,
     inference: Option<Value>,
     tools: Vec<SerializableToolBinding>,
+    dynamic: BTreeMap<String, Value>,
     for_each: Option<SerializableForEach>,
     output: SerializableAgentOutput,
     dependencies: Vec<String>,
@@ -1003,6 +1015,16 @@ impl SerializableAgent {
             .expression_property(superwire_core::dsl::AgentExpressionPropertyName::Tools)
             .map(SerializableToolBinding::from_tools_expression)
             .unwrap_or_default();
+        let dynamic = agent_declaration
+            .dynamic_blocks()
+            .flat_map(|dynamic_block| dynamic_block.fields.iter())
+            .map(|dynamic_field| {
+                (
+                    dynamic_field.name.clone(),
+                    SerializableExpression::to_compact_json(&dynamic_field.value),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
         let for_each = agent_declaration.for_loop.as_ref().map(SerializableForEach::from_for_loop);
 
         Self {
@@ -1013,6 +1035,7 @@ impl SerializableAgent {
             context: context_value,
             inference: inference_value,
             tools,
+            dynamic,
             for_each,
             output: SerializableAgentOutput::from_compilation(&typed_agent.iteration_output_type, &typed_agent.final_output_type),
             dependencies,

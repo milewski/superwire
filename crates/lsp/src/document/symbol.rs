@@ -149,12 +149,12 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: Vec::new(),
                 }
             }
-            Self::Let(let_binding) => {
-                let declaration_range = source_span_to_range(source_text, let_binding.span);
+            Self::Dynamic(dynamic_block) => {
+                let declaration_range = source_span_to_range(source_text, dynamic_block.span);
 
                 DocumentSymbolNode {
-                    name: let_binding.name.clone(),
-                    detail: Some("let binding".to_string()),
+                    name: DeclarationKeyword::Dynamic.as_str().to_string(),
+                    detail: Some("dynamic declaration".to_string()),
                     kind: SymbolKind::Field,
                     range: declaration_range,
                     selection_range: declaration_range,
