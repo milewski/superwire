@@ -2,6 +2,7 @@ use super::{CompletionKind, CompletionSuggestion, DocumentDiagnostic, DocumentSt
 use crate::protocol::DiagnosticCode;
 use superwire_core::dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, SingletonDeclarationKind,
+    ToolCallKeyword,
 };
 use superwire_core::runtime::InferenceSetting;
 
@@ -204,6 +205,12 @@ impl CompletionLabel for AgentExpressionPropertyName {
 }
 
 impl CompletionLabel for BuiltinFunctionName {
+    fn completion_label(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+impl CompletionLabel for ToolCallKeyword {
     fn completion_label(self) -> &'static str {
         self.as_str()
     }

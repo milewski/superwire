@@ -98,6 +98,38 @@ fn reports_invalid_bare_tool_reference_diagnostic() {
 }
 
 #[test]
+fn reports_dynamic_dependency_cycle_diagnostic() {
+    let diagnostics = inline_diagnostics! {
+        dynamic {
+            a: dynamic.b
+        }
+
+        dynamic {
+            b: dynamic.a
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::DynamicDependencyCycle);
+}
+
+#[test]
+fn allows_dynamic_references_to_later_dynamic_blocks() {
+    let diagnostics = inline_diagnostics! {
+        dynamic {
+            a: dynamic.max_results
+        }
+
+        dynamic {
+            max_results: 5
+            timeout_seconds: 30
+        }
+    };
+
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::UnknownDynamicFieldReference));
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::DynamicDependencyCycle));
+}
+
+#[test]
 fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
     let diagnostics = inline_diagnostics! {
         provider openai {

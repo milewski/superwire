@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
     AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration,
-    ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField, Workflow,
+    ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
 };
 use superwire_core::runtime::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
@@ -232,6 +232,63 @@ impl SemanticIndex {
                     insert_text: literal_label.to_string(),
                 }),
         );
+
+        completion_suggestions
+    }
+
+    pub fn dynamic_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = [
+            ReferenceKeyword::Agent,
+            ReferenceKeyword::Dynamic,
+            ReferenceKeyword::Input,
+            ReferenceKeyword::Secrets,
+        ]
+        .into_iter()
+        .filter(|reference_keyword| reference_keyword.as_str().starts_with(value_prefix))
+        .map(|reference_keyword| CompletionSuggestion {
+            label: reference_keyword.as_str().to_string(),
+            kind: CompletionKind::Module,
+            detail: "Dynamic value reference root".to_string(),
+            documentation: format!("Use `{}.<path>` in dynamic value expressions.", reference_keyword.as_str()),
+            insert_text: format!("{}.", reference_keyword.as_str()),
+        })
+        .collect::<Vec<_>>();
+
+        let function_suggestion_specs = [
+            (
+                ToolCallKeyword::Call.as_str(),
+                "Tool call expression",
+                "Calls a declared tool and stores its output.",
+                "call tool.",
+            ),
+            (
+                BuiltinFunctionName::Compact.as_str(),
+                "Builtin function",
+                "Compacts nullable values in object-like data.",
+                "compact($1)",
+            ),
+            (
+                BuiltinFunctionName::Template.as_str(),
+                "Builtin function",
+                "Renders a string template from source and bindings.",
+                "template($1)",
+            ),
+        ];
+
+        completion_suggestions.extend(
+            function_suggestion_specs
+                .into_iter()
+                .filter(|(label, _, _, _)| label.starts_with(value_prefix))
+                .map(|(label, detail, documentation, insert_text)| CompletionSuggestion {
+                    label: label.to_string(),
+                    kind: CompletionKind::Function,
+                    detail: detail.to_string(),
+                    documentation: documentation.to_string(),
+                    insert_text: insert_text.to_string(),
+                }),
+        );
+
+        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 
         completion_suggestions
     }
@@ -862,20 +919,32 @@ impl SemanticIndex {
         dynamic_field_metadata: &mut BTreeMap<String, FieldMetadata>,
         dynamic_field_locations: &mut HashMap<String, SourceSpan>,
     ) {
-        for dynamic_field in &dynamic_block.fields {
-            let Some(dynamic_field_type) = self.expression_type_with_dynamic_scope(&dynamic_field.value, dynamic_fields) else {
-                continue;
-            };
+        let mut pending_dynamic_fields = dynamic_block.fields.iter().collect::<Vec<_>>();
 
-            dynamic_fields.insert(dynamic_field.name.clone(), dynamic_field_type.clone());
-            dynamic_field_metadata.insert(
-                dynamic_field.name.clone(),
-                FieldMetadata {
-                    field_type: dynamic_field_type,
-                    description: None,
-                },
-            );
-            dynamic_field_locations.insert(dynamic_field.name.clone(), dynamic_field.span);
+        while !pending_dynamic_fields.is_empty() {
+            let pending_count_before_pass = pending_dynamic_fields.len();
+
+            pending_dynamic_fields.retain(|dynamic_field| {
+                let Some(dynamic_field_type) = self.expression_type_with_dynamic_scope(&dynamic_field.value, dynamic_fields) else {
+                    return true;
+                };
+
+                dynamic_fields.insert(dynamic_field.name.clone(), dynamic_field_type.clone());
+                dynamic_field_metadata.insert(
+                    dynamic_field.name.clone(),
+                    FieldMetadata {
+                        field_type: dynamic_field_type,
+                        description: None,
+                    },
+                );
+                dynamic_field_locations.insert(dynamic_field.name.clone(), dynamic_field.span);
+
+                false
+            });
+
+            if pending_dynamic_fields.len() == pending_count_before_pass {
+                break;
+            }
         }
     }
 

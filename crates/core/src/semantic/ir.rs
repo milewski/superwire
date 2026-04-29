@@ -1,6 +1,6 @@
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, OutputDeclaration, ProviderDeclaration, SchemaDeclaration,
-    SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
+    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ObjectField, OutputDeclaration, ProviderDeclaration,
+    SchemaDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::collect_agent_dependencies;
@@ -265,19 +265,17 @@ fn infer_workflow_output_type(
         local_binding_types: HashMap::new(),
     };
 
-    for declaration in workflow.declarations() {
-        let Declaration::Dynamic(dynamic_block) = declaration else {
-            continue;
-        };
+    let dynamic_fields = workflow
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Dynamic(dynamic_block) => Some(dynamic_block.fields.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .collect::<Vec<_>>();
 
-        for field in &dynamic_block.fields {
-            let field_type = field
-                .value
-                .infer_type(&inference_context, &format!("dynamic field `{}` type inference", field.name))?;
-
-            inference_context.local_binding_types.insert(field.name.clone(), field_type);
-        }
-    }
+    infer_dynamic_field_types(dynamic_fields, &mut inference_context)?;
 
     let mut output_fields = BTreeMap::new();
 
@@ -289,6 +287,46 @@ fn infer_workflow_output_type(
     }
 
     Ok(WorkflowType::Object(output_fields).normalize())
+}
+
+fn infer_dynamic_field_types(
+    dynamic_fields: Vec<&ObjectField>,
+    inference_context: &mut TypeInferenceContext,
+) -> Result<(), WorkflowRuntimeError> {
+    let mut pending_dynamic_fields = dynamic_fields;
+
+    while !pending_dynamic_fields.is_empty() {
+        let pending_count_before_pass = pending_dynamic_fields.len();
+        let mut last_error = None;
+
+        pending_dynamic_fields.retain(|dynamic_field| {
+            match dynamic_field
+                .value
+                .infer_type(inference_context, &format!("dynamic field `{}` type inference", dynamic_field.name))
+            {
+                Ok(field_type) => {
+                    inference_context.local_binding_types.insert(dynamic_field.name.clone(), field_type);
+
+                    false
+                }
+                Err(error) => {
+                    last_error = Some(error);
+
+                    true
+                }
+            }
+        });
+
+        if pending_dynamic_fields.len() == pending_count_before_pass {
+            if let Some(error) = last_error {
+                return Err(error);
+            }
+
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_input_type_compatibility<Input>(input_type: Option<&WorkflowType>) -> Result<(), WorkflowRuntimeError>

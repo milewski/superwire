@@ -511,6 +511,33 @@ async fn executes_string_workflow_and_returns_typed_output() {
 }
 
 #[tokio::test]
+async fn evaluates_dynamic_fields_independent_of_declaration_order() {
+    #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+    struct Output {
+        value: i64,
+    }
+
+    let workflow = parse_inline_workflow! {
+        dynamic {
+            value: dynamic.max_results
+        }
+
+        dynamic {
+            max_results: 5
+        }
+
+        output {
+            value: dynamic.value
+        }
+    };
+
+    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
+    let output = runtime.run(()).await.expect("workflow should run successfully");
+
+    assert_eq!(output, Output { value: 5 });
+}
+
+#[tokio::test]
 async fn rejects_nested_object_when_declared_output_is_string() {
     #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
     struct Output {

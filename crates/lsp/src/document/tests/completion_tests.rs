@@ -1208,6 +1208,113 @@ fn suggests_global_and_local_dynamic_fields_inside_agent() {
 }
 
 #[test]
+fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            topic: string
+        }
+
+        secrets {
+            api_key: string
+        }
+
+        agent writer {
+            prompt: "hello"
+            output: string
+        }
+
+        dynamic {
+            rendered_prompt: <cursor>
+        }
+    };
+
+    assert_completion_contains!(
+        &completion_suggestions,
+        ReferenceKeyword::Agent,
+        ReferenceKeyword::Dynamic,
+        ReferenceKeyword::Input,
+        ReferenceKeyword::Secrets,
+        ToolCallKeyword::Call,
+        BuiltinFunctionName::Compact,
+        BuiltinFunctionName::Template
+    );
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "string",
+        "number",
+        "boolean",
+        "float",
+        "null",
+        "true",
+        "false",
+        "{}",
+        "[]",
+        "\"\"",
+        BuiltinFunctionName::Context,
+        DeclarationKeyword::Provider
+    );
+}
+
+#[test]
+fn filters_dynamic_value_roots_by_prefix() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            rendered_prompt: str.<cursor>
+        }
+    };
+
+    assert!(
+        completion_suggestions.is_empty(),
+        "unexpected suggestions: {completion_suggestions:?}"
+    );
+}
+
+#[test]
+fn suggests_other_dynamic_fields_inside_dynamic_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            previous_value: "ready"
+            current_value: dynamic.<cursor>
+            future_value: "later"
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "previous_value", "future_value");
+    assert_completion_excludes_labels!(&completion_suggestions, "current_value");
+}
+
+#[test]
+fn suppresses_suggestions_before_dynamic_field_key() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            <cursor>
+        }
+    };
+
+    assert!(
+        completion_suggestions.is_empty(),
+        "unexpected suggestions: {completion_suggestions:?}"
+    );
+}
+
+#[test]
+fn suggests_dynamic_fields_from_later_blocks() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            a: dynamic.<cursor>
+        }
+
+        dynamic {
+            max_results: 5
+            timeout_seconds: 30
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "max_results", "timeout_seconds");
+    assert_completion_excludes_labels!(&completion_suggestions, "a");
+}
+
+#[test]
 fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         provider openai {

@@ -183,6 +183,8 @@ pub enum DiagnosticCode {
     InvalidTypeExpressionReference,
     #[serde(rename = "agent_dependency_cycle")]
     AgentDependencyCycle,
+    #[serde(rename = "dynamic_dependency_cycle")]
+    DynamicDependencyCycle,
     #[serde(rename = "workflow_compilation_error")]
     WorkflowCompilationError,
 }

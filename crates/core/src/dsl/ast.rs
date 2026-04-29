@@ -775,6 +775,52 @@ impl FunctionCall {
     }
 }
 
+impl Expression {
+    pub(crate) fn collect_dynamic_dependencies(&self, referenced_dynamic_fields: &mut std::collections::HashSet<String>) {
+        match self {
+            Self::Reference(reference) => {
+                reference.collect_dynamic_dependency(referenced_dynamic_fields);
+            }
+            Self::FunctionCall(function_call) => {
+                function_call.callee.collect_dynamic_dependency(referenced_dynamic_fields);
+
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::ToolCall(tool_call) => {
+                tool_call.callee.collect_dynamic_dependency(referenced_dynamic_fields);
+
+                for object_field in &tool_call.input_fields {
+                    object_field.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+
+                for object_field in &tool_call.binding_fields {
+                    object_field.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::ArrayLiteral(array_values) => {
+                for array_value in array_values {
+                    array_value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        interpolation_expression.collect_dynamic_dependencies(referenced_dynamic_fields);
+                    }
+                }
+            }
+            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => {}
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallArgument {
     Positional(Expression),
@@ -862,6 +908,18 @@ impl Reference {
         }
 
         rendered_reference
+    }
+
+    pub(crate) fn collect_dynamic_dependency(&self, referenced_dynamic_fields: &mut std::collections::HashSet<String>) {
+        if self.root_keyword() != Some(ReferenceKeyword::Dynamic) {
+            return;
+        }
+
+        let Some(dynamic_field_name) = self.first_access_field() else {
+            return;
+        };
+
+        referenced_dynamic_fields.insert(dynamic_field_name.to_string());
     }
 }
 
@@ -956,6 +1014,28 @@ impl BuiltinFunctionName {
             Self::Context => "context",
             Self::Template => "template",
             Self::Compact => "compact",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolCallKeyword {
+    Call,
+}
+
+impl ToolCallKeyword {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "call" => Some(Self::Call),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Call => "call",
         }
     }
 }

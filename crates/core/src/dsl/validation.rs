@@ -224,6 +224,9 @@ pub enum ValidationIssue {
     AgentDependencyCycle {
         agent_names: Vec<String>,
     },
+    DynamicDependencyCycle {
+        field_names: Vec<String>,
+    },
 }
 
 impl ValidationIssue {
@@ -258,6 +261,7 @@ impl ValidationIssue {
             Self::UnknownToolReference { .. } => "unknown_tool_reference",
             Self::InvalidTypeExpressionReference { .. } => "invalid_type_expression_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
+            Self::DynamicDependencyCycle { .. } => "dynamic_dependency_cycle",
         }
     }
 
@@ -383,6 +387,9 @@ impl ValidationIssue {
             Self::AgentDependencyCycle { agent_names } => {
                 format!("Circular agent dependency detected: {}.", agent_names.join(", "))
             }
+            Self::DynamicDependencyCycle { field_names } => {
+                format!("Circular dynamic dependency detected: {}.", field_names.join(", "))
+            }
         }
     }
 
@@ -465,6 +472,7 @@ impl ValidationIssue {
                 context: _,
             }
             | Self::AgentDependencyCycle { agent_names: _ }
+            | Self::DynamicDependencyCycle { field_names: _ }
             | Self::MissingInputDeclaration { context: _ }
             | Self::MissingSecretsDeclaration { context: _ } => Some(self.reference_resolution_help_message()),
         }
@@ -613,6 +621,12 @@ impl ValidationIssue {
                     agent_names.join(" -> ")
                 )
             }
+            Self::DynamicDependencyCycle { field_names } => {
+                format!(
+                    "Break the cycle by removing at least one dependency among: {}.",
+                    field_names.join(" -> ")
+                )
+            }
             _ => "Fix reference paths and declarations so all references resolve.".to_string(),
         }
     }
@@ -705,6 +719,7 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 context: _,
             } => Self::InvalidTypeExpressionReference,
             ValidationIssue::AgentDependencyCycle { agent_names: _ } => Self::AgentDependencyCycle,
+            ValidationIssue::DynamicDependencyCycle { field_names: _ } => Self::DynamicDependencyCycle,
         }
     }
 }
@@ -740,6 +755,7 @@ pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
     validate_agent_model_bindings(workflow, &validation_index, &mut validation_report);
     validate_agent_tool_references(workflow, &validation_index, &mut validation_report);
     validate_agent_references(workflow, &validation_index, &mut validation_report);
+    validate_dynamic_dependency_cycles(workflow, &mut validation_report);
     validate_agent_dependency_cycles(workflow, &validation_index, &mut validation_report);
 
     validation_report
@@ -1765,6 +1781,17 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
         .for_loop_type_inference_context
         .local_binding_types
         .clone();
+    let workflow_dynamic_fields = workflow
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Dynamic(dynamic_block) => Some(dynamic_block.fields.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+
+    keyword_reference_validation_state.infer_dynamic_field_types(workflow_dynamic_fields.as_slice(), &mut workflow_dynamic_field_types);
 
     for declaration in workflow.declarations() {
         match declaration {
@@ -1788,17 +1815,15 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         ValidationContext::Dynamic,
                         SecretReferencePolicy::Allow,
                     );
-
-                    keyword_reference_validation_state.infer_dynamic_field_type(
-                        &dynamic_field.name,
-                        &dynamic_field.value,
-                        &mut workflow_dynamic_field_types,
-                    );
                 }
             }
             Declaration::Agent(agent_declaration) => {
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
                 let mut agent_dynamic_field_types = workflow_dynamic_field_types.clone();
+                let agent_dynamic_fields = agent_declaration
+                    .dynamic_blocks()
+                    .flat_map(|dynamic_block| dynamic_block.fields.iter())
+                    .collect::<Vec<_>>();
 
                 if let Some(agent_for_loop) = &agent_declaration.for_loop {
                     keyword_reference_validation_state.validate_expression(
@@ -1817,6 +1842,9 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                     }
                 }
 
+                keyword_reference_validation_state
+                    .infer_dynamic_field_types(agent_dynamic_fields.as_slice(), &mut agent_dynamic_field_types);
+
                 for agent_property in &agent_declaration.properties {
                     match agent_property {
                         AgentProperty::Prompt(model_expression) | AgentProperty::Context(model_expression) => {
@@ -1834,12 +1862,6 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                     &agent_dynamic_field_types,
                                     agent_context.clone(),
                                     SecretReferencePolicy::Allow,
-                                );
-
-                                keyword_reference_validation_state.infer_dynamic_field_type(
-                                    &dynamic_field.name,
-                                    &dynamic_field.value,
-                                    &mut agent_dynamic_field_types,
                                 );
                             }
                         }
@@ -2089,20 +2111,35 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn infer_dynamic_field_type(
+    fn infer_dynamic_field_types(
         &self,
-        field_name: &str,
-        expression: &Expression,
+        dynamic_fields: &[&ObjectField],
         dynamic_field_types: &mut HashMap<String, crate::runtime::types::WorkflowType>,
     ) {
-        let mut type_inference_context = self.for_loop_type_inference_context.clone();
-        type_inference_context.local_binding_types.clone_from(dynamic_field_types);
+        let mut pending_dynamic_fields = dynamic_fields.to_vec();
 
-        let Ok(dynamic_field_type) = infer_expression_type(expression, &type_inference_context, field_name) else {
-            return;
-        };
+        while !pending_dynamic_fields.is_empty() {
+            let pending_count_before_pass = pending_dynamic_fields.len();
 
-        dynamic_field_types.insert(field_name.to_string(), dynamic_field_type);
+            pending_dynamic_fields.retain(|dynamic_field| {
+                let mut type_inference_context = self.for_loop_type_inference_context.clone();
+                type_inference_context.local_binding_types.clone_from(dynamic_field_types);
+
+                let Ok(dynamic_field_type) =
+                    infer_expression_type(&dynamic_field.value, &type_inference_context, dynamic_field.name.as_str())
+                else {
+                    return true;
+                };
+
+                dynamic_field_types.insert(dynamic_field.name.clone(), dynamic_field_type);
+
+                false
+            });
+
+            if pending_dynamic_fields.len() == pending_count_before_pass {
+                break;
+            }
+        }
     }
 
     fn validate_expression(
@@ -2627,6 +2664,92 @@ fn workflow_type_can_be_null(workflow_type: &crate::runtime::types::WorkflowType
         }
         | crate::runtime::types::WorkflowType::Tuple(_)
         | crate::runtime::types::WorkflowType::Object(_) => false,
+    }
+}
+
+fn validate_dynamic_dependency_cycles(workflow: &Workflow, validation_report: &mut ValidationReport) {
+    let workflow_dynamic_fields = workflow
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Dynamic(dynamic_block) => Some(dynamic_block.fields.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+
+    report_dynamic_dependency_cycles(workflow_dynamic_fields.as_slice(), validation_report);
+
+    for declaration in workflow.declarations() {
+        let Declaration::Agent(agent_declaration) = declaration else {
+            continue;
+        };
+
+        let agent_dynamic_fields = agent_declaration
+            .dynamic_blocks()
+            .flat_map(|dynamic_block| dynamic_block.fields.iter())
+            .collect::<Vec<_>>();
+
+        report_dynamic_dependency_cycles(agent_dynamic_fields.as_slice(), validation_report);
+    }
+}
+
+fn report_dynamic_dependency_cycles(dynamic_fields: &[&ObjectField], validation_report: &mut ValidationReport) {
+    let mut dependency_graph = DiGraph::<String, ()>::new();
+    let mut node_index_by_field_name = HashMap::<String, NodeIndex>::new();
+    let mut sorted_field_names = dynamic_fields
+        .iter()
+        .map(|dynamic_field| dynamic_field.name.clone())
+        .collect::<Vec<_>>();
+
+    sorted_field_names.sort();
+
+    for field_name in &sorted_field_names {
+        let node_index = dependency_graph.add_node(field_name.clone());
+        node_index_by_field_name.insert(field_name.clone(), node_index);
+    }
+
+    for dynamic_field in dynamic_fields {
+        let Some(source_node) = node_index_by_field_name.get(&dynamic_field.name).copied() else {
+            continue;
+        };
+
+        let mut referenced_dynamic_fields = HashSet::new();
+        dynamic_field.value.collect_dynamic_dependencies(&mut referenced_dynamic_fields);
+
+        for referenced_dynamic_field in referenced_dynamic_fields {
+            let Some(target_node) = node_index_by_field_name.get(&referenced_dynamic_field).copied() else {
+                continue;
+            };
+
+            if dependency_graph.find_edge(source_node, target_node).is_none() {
+                dependency_graph.add_edge(source_node, target_node, ());
+            }
+        }
+    }
+
+    for strongly_connected_component in kosaraju_scc(&dependency_graph) {
+        let has_cycle = if strongly_connected_component.len() > 1 {
+            true
+        } else {
+            let node_index = strongly_connected_component[0];
+            dependency_graph.find_edge(node_index, node_index).is_some()
+        };
+
+        if !has_cycle {
+            continue;
+        }
+
+        let mut cycle_field_names = strongly_connected_component
+            .into_iter()
+            .map(|node_index| dependency_graph[node_index].clone())
+            .collect::<Vec<_>>();
+
+        cycle_field_names.sort();
+
+        validation_report.push_issue(ValidationIssue::DynamicDependencyCycle {
+            field_names: cycle_field_names,
+        });
     }
 }
 
