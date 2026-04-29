@@ -405,13 +405,21 @@ struct CliWorkflowTypeInference {
     workflow_output_type: WorkflowType,
 }
 
+struct CliToolTypes {
+    input: HashMap<String, WorkflowType>,
+    bindings: HashMap<String, WorkflowType>,
+    output: HashMap<String, WorkflowType>,
+}
+
 impl CliWorkflowTypeInference {
     fn from_workflow(workflow: &Workflow) -> Result<Self, CommandError> {
         let named_schema_types = Self::collect_named_schema_types(workflow);
         let input_type = Self::build_input_type(workflow, &named_schema_types)?;
         let secrets_type = Self::build_secrets_type(workflow, &named_schema_types)?;
+        let tool_types = Self::collect_tool_types(workflow, &named_schema_types)?;
         let agent_output_types = Self::collect_agent_output_types(workflow, &named_schema_types)?;
-        let workflow_output_type = Self::infer_workflow_output_type(workflow, input_type.clone(), secrets_type, agent_output_types)?;
+        let workflow_output_type =
+            Self::infer_workflow_output_type(workflow, input_type.clone(), secrets_type, agent_output_types, tool_types)?;
 
         Ok(Self {
             input_type,
@@ -500,11 +508,42 @@ impl CliWorkflowTypeInference {
         Ok(agent_output_types)
     }
 
+    fn collect_tool_types(workflow: &Workflow, named_schema_types: &HashMap<String, TypeExpression>) -> Result<CliToolTypes, CommandError> {
+        let mut input = HashMap::new();
+        let mut bindings = HashMap::new();
+        let mut output = HashMap::new();
+
+        for declaration in workflow.declarations() {
+            let Declaration::Tool(tool_declaration) = declaration else {
+                continue;
+            };
+
+            input.insert(
+                tool_declaration.name.clone(),
+                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), named_schema_types)
+                    .map_err(|runtime_error| CommandError::internal(runtime_error.to_string()))?,
+            );
+            bindings.insert(
+                tool_declaration.name.clone(),
+                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.binding_fields.clone()), named_schema_types)
+                    .map_err(|runtime_error| CommandError::internal(runtime_error.to_string()))?,
+            );
+            output.insert(
+                tool_declaration.name.clone(),
+                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), named_schema_types)
+                    .map_err(|runtime_error| CommandError::internal(runtime_error.to_string()))?,
+            );
+        }
+
+        Ok(CliToolTypes { input, bindings, output })
+    }
+
     fn infer_workflow_output_type(
         workflow: &Workflow,
         input_type: Option<WorkflowType>,
         secrets_type: Option<WorkflowType>,
         agent_output_types: HashMap<String, WorkflowType>,
+        tool_types: CliToolTypes,
     ) -> Result<WorkflowType, CommandError> {
         let Some(output_declaration) = workflow.find_output() else {
             return Err(CommandError::internal(String::from("workflow requires an `output` block")));
@@ -514,9 +553,9 @@ impl CliWorkflowTypeInference {
             input_type,
             secrets_type,
             agent_output_types,
-            tool_input_types: HashMap::new(),
-            tool_binding_types: HashMap::new(),
-            tool_output_types: HashMap::new(),
+            tool_input_types: tool_types.input,
+            tool_binding_types: tool_types.bindings,
+            tool_output_types: tool_types.output,
             local_binding_types: HashMap::new(),
         };
 
