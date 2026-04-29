@@ -142,6 +142,29 @@ fn resolve_reference_root(
 
             Ok((input_field_value.clone(), 1))
         }
+        ReferenceRoot::Keyword(ReferenceKeyword::Dynamic) => {
+            if reference.accesses.is_empty() {
+                let dynamic_values = evaluation_context
+                    .local_bindings
+                    .iter()
+                    .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
+                    .collect::<Map<String, Value>>();
+
+                return Ok((Value::Object(dynamic_values), 0));
+            }
+
+            let dynamic_field_name = reference
+                .first_access_field()
+                .expect("dynamic keyword reference must have first access when not empty");
+            let Some(dynamic_field_value) = evaluation_context.local_bindings.get(dynamic_field_name) else {
+                return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!("unknown dynamic field `{dynamic_field_name}`"),
+                });
+            };
+
+            Ok((dynamic_field_value.clone(), 1))
+        }
         ReferenceRoot::Keyword(ReferenceKeyword::Secrets) => {
             if reference.accesses.is_empty() {
                 return Ok((Value::Object(evaluation_context.secret_values.clone()), 0));
@@ -189,7 +212,7 @@ fn resolve_reference_root(
             let Some(local_binding_value) = evaluation_context.local_bindings.get(identifier) else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
-                    message: format!("unknown local binding `{identifier}`"),
+                    message: format!("unknown identifier `{identifier}`"),
                 });
             };
 

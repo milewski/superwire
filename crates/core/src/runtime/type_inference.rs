@@ -202,6 +202,23 @@ fn infer_reference_type(
 
             (input_type.clone(), 0)
         }
+        ReferenceRoot::Keyword(ReferenceKeyword::Dynamic) => {
+            let Some(dynamic_field_name) = reference.first_access_field() else {
+                return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: "dynamic reference requires a field name".to_string(),
+                });
+            };
+
+            let Some(dynamic_field_type) = type_inference_context.local_binding_types.get(dynamic_field_name) else {
+                return Err(WorkflowRuntimeError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!("unknown dynamic field `{dynamic_field_name}`"),
+                });
+            };
+
+            (dynamic_field_type.clone(), 1)
+        }
         ReferenceRoot::Keyword(ReferenceKeyword::Secrets) => {
             let Some(secrets_type) = &type_inference_context.secrets_type else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
@@ -238,7 +255,7 @@ fn infer_reference_type(
             let Some(local_binding_type) = type_inference_context.local_binding_types.get(identifier) else {
                 return Err(WorkflowRuntimeError::ExpressionEvaluation {
                     context: context.to_string(),
-                    message: format!("unknown local binding `{identifier}`"),
+                    message: format!("unknown identifier `{identifier}`"),
                 });
             };
 

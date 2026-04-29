@@ -259,6 +259,55 @@ fn omits_empty_required_array_for_tool_without_agent_input() {
     assert_eq!(exported_json.pointer("/tools/0/input_schema/required"), None);
 }
 
+#[test]
+fn exports_workflow_and_agent_dynamic_blocks() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        dynamic {
+            prompt_seed: "hello"
+        }
+
+        agent assistant {
+            model: openai("gpt-4.1-mini")
+
+            dynamic {
+                rendered_prompt: dynamic.prompt_seed
+            }
+
+            prompt: dynamic.rendered_prompt
+            output: string
+        }
+
+        output {
+            result: agent.assistant
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("dynamic-to-json.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(exported_json.pointer("/dynamic/prompt_seed"), Some(&json!("hello")));
+    assert_eq!(
+        exported_json.pointer("/agents/0/dynamic/rendered_prompt/$ref"),
+        Some(&json!("dynamic.prompt_seed"))
+    );
+    assert_eq!(
+        exported_json.pointer("/agents/0/prompt/$ref"),
+        Some(&json!("dynamic.rendered_prompt"))
+    );
+}
+
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {
     let mut command = Command::new(cli_binary_path());
     command.arg("workflow").arg("to-json");

@@ -95,6 +95,7 @@ pub enum ValidationContext {
     Schema(String),
     Tool(String),
     Agent(String),
+    Dynamic,
     Input,
     Secrets,
     Output,
@@ -108,6 +109,7 @@ impl ValidationContext {
             Self::Schema(schema_name) => format!("schema `{schema_name}`"),
             Self::Tool(tool_name) => format!("tool `{tool_name}`"),
             Self::Agent(agent_name) => format!("agent `{agent_name}`"),
+            Self::Dynamic => "dynamic declaration".to_string(),
             Self::Input => "input declaration".to_string(),
             Self::Secrets => "secrets declaration".to_string(),
             Self::Output => "output declaration".to_string(),
@@ -164,6 +166,9 @@ pub enum ValidationIssue {
         keyword: ReferenceKeyword,
         context: ValidationContext,
     },
+    MissingDynamicDeclaration {
+        context: ValidationContext,
+    },
     MissingInputDeclaration {
         context: ValidationContext,
     },
@@ -171,6 +176,10 @@ pub enum ValidationIssue {
         context: ValidationContext,
     },
     UnknownInputFieldReference {
+        field_name: String,
+        context: ValidationContext,
+    },
+    UnknownDynamicFieldReference {
         field_name: String,
         context: ValidationContext,
     },
@@ -234,9 +243,11 @@ impl ValidationIssue {
             Self::UnknownModelForProvider { .. } => "unknown_model_for_provider",
             Self::UnknownAgentReference { .. } => "unknown_agent_reference",
             Self::InvalidKeywordReferenceRoot { .. } => "invalid_keyword_reference_root",
+            Self::MissingDynamicDeclaration { .. } => "missing_dynamic_declaration",
             Self::MissingInputDeclaration { .. } => "missing_input_declaration",
             Self::MissingSecretsDeclaration { .. } => "missing_secrets_declaration",
             Self::UnknownInputFieldReference { .. } => "unknown_input_field_reference",
+            Self::UnknownDynamicFieldReference { .. } => "unknown_dynamic_field_reference",
             Self::UnknownSecretsFieldReference { .. } => "unknown_secrets_field_reference",
             Self::SecretReferenceInLlmContext { .. } => "secret_reference_in_llm_context",
             Self::MissingAgentOutputTypeForFieldReference { .. } => "missing_agent_output_type_for_field_reference",
@@ -307,6 +318,9 @@ impl ValidationIssue {
             Self::InvalidKeywordReferenceRoot { keyword, context } => {
                 format!("`{}` reference requires a field path in {}.", keyword.as_str(), context.describe())
             }
+            Self::MissingDynamicDeclaration { context } => {
+                format!("Missing `dynamic` declaration required by {}.", context.describe())
+            }
             Self::MissingInputDeclaration { context } => {
                 format!("Missing `input` declaration required by {}.", context.describe())
             }
@@ -315,6 +329,9 @@ impl ValidationIssue {
             }
             Self::UnknownInputFieldReference { field_name, context } => {
                 format!("Unknown input field `{field_name}` referenced in {}.", context.describe())
+            }
+            Self::UnknownDynamicFieldReference { field_name, context } => {
+                format!("Unknown dynamic field `{field_name}` referenced in {}.", context.describe())
             }
             Self::UnknownSecretsFieldReference { field_name, context } => {
                 format!("Unknown secrets field `{field_name}` referenced in {}.", context.describe())
@@ -412,7 +429,9 @@ impl ValidationIssue {
                 context: _,
             }
             | Self::InvalidKeywordReferenceRoot { keyword: _, context: _ }
+            | Self::MissingDynamicDeclaration { context: _ }
             | Self::UnknownInputFieldReference { field_name: _, context: _ }
+            | Self::UnknownDynamicFieldReference { field_name: _, context: _ }
             | Self::UnknownSecretsFieldReference { field_name: _, context: _ }
             | Self::SecretReferenceInLlmContext {
                 reference_path: _,
@@ -525,6 +544,9 @@ impl ValidationIssue {
             Self::InvalidKeywordReferenceRoot { keyword, context: _ } => {
                 format!("Add a field path after `{}`.", keyword.as_str())
             }
+            Self::MissingDynamicDeclaration { context: _ } => {
+                "Add a `dynamic { ... }` block with the fields used by `dynamic.<field>` references.".to_string()
+            }
             Self::MissingInputDeclaration { context: _ } => {
                 "Add an `input { ... }` declaration with the fields used by `input.<field>` references.".to_string()
             }
@@ -533,6 +555,9 @@ impl ValidationIssue {
             }
             Self::UnknownInputFieldReference { field_name, context: _ } => {
                 format!("Add `{field_name}: <type>` to `input`, or reference an existing input field.")
+            }
+            Self::UnknownDynamicFieldReference { field_name, context: _ } => {
+                format!("Add `{field_name}: <value>` to a `dynamic` block, or reference an existing dynamic field.")
             }
             Self::UnknownSecretsFieldReference { field_name, context: _ } => {
                 format!("Add `{field_name}: <type>` to `secrets`, or reference an existing secrets field.")
@@ -610,7 +635,7 @@ impl From<&ValidationIssue> for DiagnosticCode {
         match validation_issue {
             ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
             ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
-            ValidationIssue::DuplicateTool { tool_name: _ } => Self::DuplicateSchema,
+            ValidationIssue::DuplicateTool { tool_name: _ } => Self::DuplicateTool,
             ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
             ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
             ValidationIssue::DuplicateProperty {
@@ -640,9 +665,11 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 context: _,
             } => Self::UnknownAgentReference,
             ValidationIssue::InvalidKeywordReferenceRoot { keyword: _, context: _ } => Self::InvalidKeywordReferenceRoot,
+            ValidationIssue::MissingDynamicDeclaration { context: _ } => Self::MissingDynamicDeclaration,
             ValidationIssue::MissingInputDeclaration { context: _ } => Self::MissingInputDeclaration,
             ValidationIssue::MissingSecretsDeclaration { context: _ } => Self::MissingSecretsDeclaration,
             ValidationIssue::UnknownInputFieldReference { field_name: _, context: _ } => Self::UnknownInputFieldReference,
+            ValidationIssue::UnknownDynamicFieldReference { field_name: _, context: _ } => Self::UnknownDynamicFieldReference,
             ValidationIssue::UnknownSecretsFieldReference { field_name: _, context: _ } => Self::UnknownSecretsFieldReference,
             ValidationIssue::SecretReferenceInLlmContext {
                 reference_path: _,
@@ -672,7 +699,7 @@ impl From<&ValidationIssue> for DiagnosticCode {
             ValidationIssue::UnknownToolReference {
                 tool_name: _,
                 agent_name: _,
-            } => Self::UnknownSchemaReference,
+            } => Self::UnknownToolReference,
             ValidationIssue::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -697,6 +724,9 @@ struct ValidationIndex {
     input_field_types: Option<HashMap<String, TypeExpression>>,
     secrets_field_types: Option<HashMap<String, TypeExpression>>,
     agent_output_types: HashMap<String, Option<TypeExpression>>,
+    tool_input_types: HashMap<String, crate::runtime::types::WorkflowType>,
+    tool_binding_types: HashMap<String, crate::runtime::types::WorkflowType>,
+    tool_output_types: HashMap<String, crate::runtime::types::WorkflowType>,
 }
 
 #[must_use]
@@ -765,6 +795,52 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             Declaration::Tool(tool_declaration) => {
                 let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
 
+                let named_schema_types = validation_index
+                    .schema_field_types
+                    .iter()
+                    .map(|(schema_name, field_types)| {
+                        (
+                            schema_name.clone(),
+                            TypeExpression::Object(
+                                field_types
+                                    .iter()
+                                    .map(|(field_name, field_type)| TypedField {
+                                        name: field_name.clone(),
+                                        field_type: field_type.clone(),
+                                        description: None,
+                                        span: tool_declaration.span,
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                if let Ok(tool_input_type) =
+                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
+                {
+                    validation_index
+                        .tool_input_types
+                        .insert(tool_declaration.name.clone(), tool_input_type);
+                }
+
+                if let Ok(tool_binding_type) = workflow_type_from_dsl(
+                    &TypeExpression::Object(tool_declaration.binding_fields.clone()),
+                    &named_schema_types,
+                ) {
+                    validation_index
+                        .tool_binding_types
+                        .insert(tool_declaration.name.clone(), tool_binding_type);
+                }
+
+                if let Ok(tool_output_type) =
+                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
+                {
+                    validation_index
+                        .tool_output_types
+                        .insert(tool_declaration.name.clone(), tool_output_type);
+                }
+
                 if !inserted_tool {
                     validation_report.push_issue_with_span(
                         ValidationIssue::DuplicateTool {
@@ -774,7 +850,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
             }
-            Declaration::Let(_) => {}
+            Declaration::Dynamic(_) => {}
             Declaration::Agent(agent_declaration) => {
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
 
@@ -853,6 +929,8 @@ fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpre
 
 #[allow(clippy::too_many_lines)]
 fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut ValidationReport) {
+    let mut seen_workflow_dynamic_field_names = HashSet::<String>::new();
+
     for declaration in workflow.declarations() {
         match declaration {
             Declaration::Provider(provider_declaration) => {
@@ -906,11 +984,12 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
                 let mut seen_agent_properties = HashSet::<AgentPropertyName>::new();
+                let mut seen_agent_dynamic_field_names = HashSet::<String>::new();
 
                 for agent_property in &agent_declaration.properties {
                     let agent_property_name = agent_property.name();
 
-                    if !seen_agent_properties.insert(agent_property_name) {
+                    if agent_property_name != AgentPropertyName::Dynamic && !seen_agent_properties.insert(agent_property_name) {
                         validation_report.push_issue_with_span(
                             ValidationIssue::DuplicateProperty {
                                 property_name: agent_property_name.as_str().to_string(),
@@ -921,13 +1000,32 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                     }
 
                     match agent_property {
-                        AgentProperty::Let(let_binding) => {
-                            report_duplicate_expression_object_fields(
-                                &let_binding.value,
+                        AgentProperty::Dynamic(dynamic_block) => {
+                            report_duplicate_object_field_names(
+                                dynamic_block.fields.as_slice(),
                                 agent_context.clone(),
-                                Some(agent_declaration.span),
+                                Some(dynamic_block.span),
                                 validation_report,
                             );
+
+                            for dynamic_field in &dynamic_block.fields {
+                                if !seen_agent_dynamic_field_names.insert(dynamic_field.name.clone()) {
+                                    validation_report.push_issue_with_span(
+                                        ValidationIssue::DuplicateProperty {
+                                            property_name: dynamic_field.name.clone(),
+                                            context: agent_context.clone(),
+                                        },
+                                        Some(dynamic_block.span),
+                                    );
+                                }
+
+                                report_duplicate_expression_object_fields(
+                                    &dynamic_field.value,
+                                    agent_context.clone(),
+                                    Some(dynamic_block.span),
+                                    validation_report,
+                                );
+                            }
                         }
                         AgentProperty::Model(expression)
                         | AgentProperty::Prompt(expression)
@@ -987,13 +1085,32 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                     );
                 }
             }
-            Declaration::Let(let_binding) => {
-                report_duplicate_expression_object_fields(
-                    &let_binding.value,
-                    ValidationContext::Output,
-                    Some(let_binding.span),
+            Declaration::Dynamic(dynamic_block) => {
+                report_duplicate_object_field_names(
+                    dynamic_block.fields.as_slice(),
+                    ValidationContext::Dynamic,
+                    Some(dynamic_block.span),
                     validation_report,
                 );
+
+                for dynamic_field in &dynamic_block.fields {
+                    if !seen_workflow_dynamic_field_names.insert(dynamic_field.name.clone()) {
+                        validation_report.push_issue_with_span(
+                            ValidationIssue::DuplicateProperty {
+                                property_name: dynamic_field.name.clone(),
+                                context: ValidationContext::Dynamic,
+                            },
+                            Some(dynamic_block.span),
+                        );
+                    }
+
+                    report_duplicate_expression_object_fields(
+                        &dynamic_field.value,
+                        ValidationContext::Dynamic,
+                        Some(dynamic_block.span),
+                        validation_report,
+                    );
+                }
             }
         }
     }
@@ -1312,7 +1429,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     );
                 }
             }
-            Declaration::Provider(_) | Declaration::Let(_) | Declaration::Output(_) => {}
+            Declaration::Provider(_) | Declaration::Dynamic(_) | Declaration::Output(_) => {}
         }
     }
 }
@@ -1641,8 +1758,13 @@ impl DirectToolName for Reference {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut keyword_reference_validation_state = KeywordReferenceValidationState::new(workflow, validation_index, validation_report);
+    let mut workflow_dynamic_field_types = keyword_reference_validation_state
+        .for_loop_type_inference_context
+        .local_binding_types
+        .clone();
 
     for declaration in workflow.declarations() {
         match declaration {
@@ -1652,22 +1774,47 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                 for provider_property in &provider_declaration.properties {
                     keyword_reference_validation_state.validate_expression(
                         &provider_property.value,
+                        &workflow_dynamic_field_types,
                         provider_context.clone(),
                         SecretReferencePolicy::Allow,
                     );
                 }
             }
+            Declaration::Dynamic(dynamic_block) => {
+                for dynamic_field in &dynamic_block.fields {
+                    keyword_reference_validation_state.validate_expression(
+                        &dynamic_field.value,
+                        &workflow_dynamic_field_types,
+                        ValidationContext::Dynamic,
+                        SecretReferencePolicy::Allow,
+                    );
+
+                    keyword_reference_validation_state.infer_dynamic_field_type(
+                        &dynamic_field.name,
+                        &dynamic_field.value,
+                        &mut workflow_dynamic_field_types,
+                    );
+                }
+            }
             Declaration::Agent(agent_declaration) => {
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
+                let mut agent_dynamic_field_types = workflow_dynamic_field_types.clone();
 
                 if let Some(agent_for_loop) = &agent_declaration.for_loop {
                     keyword_reference_validation_state.validate_expression(
                         &agent_for_loop.iterable,
+                        &agent_dynamic_field_types,
                         agent_context.clone(),
                         SecretReferencePolicy::Allow,
                     );
 
                     keyword_reference_validation_state.validate_for_loop_iterable_type(agent_declaration, agent_for_loop);
+
+                    if let Some(iterable_item_type) = keyword_reference_validation_state.infer_for_loop_item_type(agent_for_loop) {
+                        for bound_identifier_name in agent_for_loop.bound_identifier_names() {
+                            agent_dynamic_field_types.insert(bound_identifier_name.to_string(), iterable_item_type.clone());
+                        }
+                    }
                 }
 
                 for agent_property in &agent_declaration.properties {
@@ -1675,22 +1822,33 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         AgentProperty::Prompt(model_expression) | AgentProperty::Context(model_expression) => {
                             keyword_reference_validation_state.validate_expression(
                                 model_expression,
+                                &agent_dynamic_field_types,
                                 agent_context.clone(),
                                 SecretReferencePolicy::Forbid,
                             );
                         }
-                        AgentProperty::Let(let_binding) => {
-                            keyword_reference_validation_state.validate_expression(
-                                &let_binding.value,
-                                agent_context.clone(),
-                                SecretReferencePolicy::Allow,
-                            );
+                        AgentProperty::Dynamic(dynamic_block) => {
+                            for dynamic_field in &dynamic_block.fields {
+                                keyword_reference_validation_state.validate_expression(
+                                    &dynamic_field.value,
+                                    &agent_dynamic_field_types,
+                                    agent_context.clone(),
+                                    SecretReferencePolicy::Allow,
+                                );
+
+                                keyword_reference_validation_state.infer_dynamic_field_type(
+                                    &dynamic_field.name,
+                                    &dynamic_field.value,
+                                    &mut agent_dynamic_field_types,
+                                );
+                            }
                         }
                         AgentProperty::Model(model_expression)
                         | AgentProperty::Inference(model_expression)
                         | AgentProperty::Tools(model_expression) => {
                             keyword_reference_validation_state.validate_expression(
                                 model_expression,
+                                &agent_dynamic_field_types,
                                 agent_context.clone(),
                                 SecretReferencePolicy::Allow,
                             );
@@ -1706,17 +1864,11 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                 for output_field in &output_declaration.fields {
                     keyword_reference_validation_state.validate_expression(
                         &output_field.value,
+                        &workflow_dynamic_field_types,
                         ValidationContext::Output,
                         SecretReferencePolicy::Forbid,
                     );
                 }
-            }
-            Declaration::Let(let_binding) => {
-                keyword_reference_validation_state.validate_expression(
-                    &let_binding.value,
-                    ValidationContext::Output,
-                    SecretReferencePolicy::Allow,
-                );
             }
             Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {}
         }
@@ -1739,8 +1891,10 @@ struct KeywordReferenceValidationState<'validation> {
     missing_agent_output_type_references: HashSet<(ValidationContext, String)>,
     missing_optional_reference_accesses: HashSet<(ValidationContext, String, String)>,
     invalid_reference_paths: HashSet<(ValidationContext, String, String)>,
+    missing_dynamic_declaration_contexts: HashSet<ValidationContext>,
     missing_input_declaration_contexts: HashSet<ValidationContext>,
     missing_secrets_declaration_contexts: HashSet<ValidationContext>,
+    unknown_dynamic_field_references: HashSet<(ValidationContext, String)>,
     unknown_input_field_references: HashSet<(ValidationContext, String)>,
     unknown_secrets_field_references: HashSet<(ValidationContext, String)>,
 }
@@ -1763,8 +1917,10 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             missing_agent_output_type_references: HashSet::new(),
             missing_optional_reference_accesses: HashSet::new(),
             invalid_reference_paths: HashSet::new(),
+            missing_dynamic_declaration_contexts: HashSet::new(),
             missing_input_declaration_contexts: HashSet::new(),
             missing_secrets_declaration_contexts: HashSet::new(),
+            unknown_dynamic_field_references: HashSet::new(),
             unknown_input_field_references: HashSet::new(),
             unknown_secrets_field_references: HashSet::new(),
         }
@@ -1793,8 +1949,34 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         });
 
         let mut agent_output_types = HashMap::new();
+        let mut tool_input_types = HashMap::new();
+        let mut tool_binding_types = HashMap::new();
+        let mut tool_output_types = HashMap::new();
 
         for declaration in workflow.declarations() {
+            if let Declaration::Tool(tool_declaration) = declaration {
+                if let Ok(tool_input_type) =
+                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
+                {
+                    tool_input_types.insert(tool_declaration.name.clone(), tool_input_type);
+                }
+
+                if let Ok(tool_binding_type) = workflow_type_from_dsl(
+                    &TypeExpression::Object(tool_declaration.binding_fields.clone()),
+                    &named_schema_types,
+                ) {
+                    tool_binding_types.insert(tool_declaration.name.clone(), tool_binding_type);
+                }
+
+                if let Ok(tool_output_type) =
+                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
+                {
+                    tool_output_types.insert(tool_declaration.name.clone(), tool_output_type);
+                }
+
+                continue;
+            }
+
             let Declaration::Agent(agent_declaration) = declaration else {
                 continue;
             };
@@ -1809,15 +1991,36 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             agent_output_types.insert(agent_declaration.name.clone(), inferred_output_type);
         }
 
-        TypeInferenceContext {
+        let mut local_binding_types = HashMap::new();
+
+        let mut type_inference_context = TypeInferenceContext {
             input_type,
             secrets_type,
             agent_output_types,
-            tool_input_types: HashMap::new(),
-            tool_binding_types: HashMap::new(),
-            tool_output_types: HashMap::new(),
+            tool_input_types,
+            tool_binding_types,
+            tool_output_types,
             local_binding_types: HashMap::new(),
+        };
+
+        for dynamic_block in workflow.dynamic_blocks() {
+            for dynamic_field in &dynamic_block.fields {
+                let Ok(dynamic_field_type) = infer_expression_type(
+                    &dynamic_field.value,
+                    &type_inference_context,
+                    &format!("dynamic field `{}` type inference", dynamic_field.name),
+                ) else {
+                    continue;
+                };
+
+                local_binding_types.insert(dynamic_field.name.clone(), dynamic_field_type.clone());
+                type_inference_context
+                    .local_binding_types
+                    .insert(dynamic_field.name.clone(), dynamic_field_type);
+            }
         }
+
+        type_inference_context
     }
 
     fn validate_for_loop_iterable_type(&mut self, agent_declaration: &AgentDeclaration, agent_for_loop: &AgentForLoop) {
@@ -1845,43 +2048,116 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         );
     }
 
-    fn validate_expression(&mut self, expression: &Expression, context: ValidationContext, secret_reference_policy: SecretReferencePolicy) {
+    fn infer_for_loop_item_type(&self, agent_for_loop: &AgentForLoop) -> Option<crate::runtime::types::WorkflowType> {
+        let inferred_iterable_type = infer_expression_type(
+            &agent_for_loop.iterable,
+            &self.for_loop_type_inference_context,
+            "for-loop iterable item inference",
+        )
+        .ok()?;
+
+        match inferred_iterable_type {
+            crate::runtime::types::WorkflowType::Array {
+                item_type,
+                fixed_length: _,
+            } => Some(*item_type),
+            crate::runtime::types::WorkflowType::Union(union_members) => {
+                union_members.into_iter().find_map(|union_member| match union_member {
+                    crate::runtime::types::WorkflowType::Array {
+                        item_type,
+                        fixed_length: _,
+                    } => Some(*item_type),
+                    crate::runtime::types::WorkflowType::String
+                    | crate::runtime::types::WorkflowType::Integer
+                    | crate::runtime::types::WorkflowType::Float
+                    | crate::runtime::types::WorkflowType::Boolean
+                    | crate::runtime::types::WorkflowType::Null
+                    | crate::runtime::types::WorkflowType::StringEnum(_)
+                    | crate::runtime::types::WorkflowType::Union(_)
+                    | crate::runtime::types::WorkflowType::Tuple(_)
+                    | crate::runtime::types::WorkflowType::Object(_) => None,
+                })
+            }
+            crate::runtime::types::WorkflowType::String
+            | crate::runtime::types::WorkflowType::Integer
+            | crate::runtime::types::WorkflowType::Float
+            | crate::runtime::types::WorkflowType::Boolean
+            | crate::runtime::types::WorkflowType::Null
+            | crate::runtime::types::WorkflowType::StringEnum(_)
+            | crate::runtime::types::WorkflowType::Tuple(_)
+            | crate::runtime::types::WorkflowType::Object(_) => None,
+        }
+    }
+
+    fn infer_dynamic_field_type(
+        &self,
+        field_name: &str,
+        expression: &Expression,
+        dynamic_field_types: &mut HashMap<String, crate::runtime::types::WorkflowType>,
+    ) {
+        let mut type_inference_context = self.for_loop_type_inference_context.clone();
+        type_inference_context.local_binding_types.clone_from(dynamic_field_types);
+
+        let Ok(dynamic_field_type) = infer_expression_type(expression, &type_inference_context, field_name) else {
+            return;
+        };
+
+        dynamic_field_types.insert(field_name.to_string(), dynamic_field_type);
+    }
+
+    fn validate_expression(
+        &mut self,
+        expression: &Expression,
+        dynamic_field_types: &HashMap<String, crate::runtime::types::WorkflowType>,
+        context: ValidationContext,
+        secret_reference_policy: SecretReferencePolicy,
+    ) {
         match expression {
             Expression::Reference(reference) => {
-                self.validate_reference(reference, context, secret_reference_policy);
+                self.validate_reference(reference, dynamic_field_types, context, secret_reference_policy);
             }
             Expression::FunctionCall(function_call) => {
-                self.validate_reference(&function_call.callee, context.clone(), secret_reference_policy);
+                self.validate_reference(&function_call.callee, dynamic_field_types, context.clone(), secret_reference_policy);
 
                 for call_argument in &function_call.arguments {
-                    self.validate_expression(call_argument.expression(), context.clone(), secret_reference_policy);
+                    self.validate_expression(
+                        call_argument.expression(),
+                        dynamic_field_types,
+                        context.clone(),
+                        secret_reference_policy,
+                    );
                 }
             }
             Expression::ToolCall(tool_call) => {
-                self.validate_reference(&tool_call.callee, context.clone(), secret_reference_policy);
+                self.validate_reference(&tool_call.callee, dynamic_field_types, context.clone(), secret_reference_policy);
 
                 for object_field in &tool_call.input_fields {
-                    self.validate_expression(&object_field.value, context.clone(), secret_reference_policy);
+                    self.validate_expression(&object_field.value, dynamic_field_types, context.clone(), secret_reference_policy);
                 }
 
                 for object_field in &tool_call.binding_fields {
-                    self.validate_expression(&object_field.value, context.clone(), secret_reference_policy);
+                    self.validate_expression(&object_field.value, dynamic_field_types, context.clone(), secret_reference_policy);
                 }
             }
             Expression::ArrayLiteral(array_values) => {
                 for array_value in array_values {
-                    self.validate_expression(array_value, context.clone(), secret_reference_policy);
+                    self.validate_expression(array_value, dynamic_field_types, context.clone(), secret_reference_policy);
                 }
             }
             Expression::ObjectLiteral(object_fields) => {
                 for object_field in object_fields {
-                    self.validate_expression(&object_field.value, context.clone(), secret_reference_policy);
+                    self.validate_expression(&object_field.value, dynamic_field_types, context.clone(), secret_reference_policy);
                 }
             }
             Expression::StringTemplate(string_template) => {
                 for string_template_part in &string_template.parts {
                     if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
-                        self.validate_expression(interpolation_expression, context.clone(), secret_reference_policy);
+                        self.validate_expression(
+                            interpolation_expression,
+                            dynamic_field_types,
+                            context.clone(),
+                            secret_reference_policy,
+                        );
                     }
                 }
             }
@@ -1889,7 +2165,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn validate_reference(&mut self, reference: &Reference, context: ValidationContext, secret_reference_policy: SecretReferencePolicy) {
+    fn validate_reference(
+        &mut self,
+        reference: &Reference,
+        dynamic_field_types: &HashMap<String, crate::runtime::types::WorkflowType>,
+        context: ValidationContext,
+        secret_reference_policy: SecretReferencePolicy,
+    ) {
         let Some(reference_root_keyword) = reference.root_keyword() else {
             return;
         };
@@ -1917,6 +2199,9 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         match reference_root_keyword {
             ReferenceKeyword::Agent => {
                 self.validate_agent_reference(reference, context);
+            }
+            ReferenceKeyword::Dynamic => {
+                self.validate_dynamic_reference(reference, dynamic_field_types, context);
             }
             ReferenceKeyword::Input => {
                 self.validate_input_reference(reference, context);
@@ -1980,6 +2265,51 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 Some(reference_span),
             );
         }
+    }
+
+    fn validate_dynamic_reference(
+        &mut self,
+        reference: &Reference,
+        dynamic_field_types: &HashMap<String, crate::runtime::types::WorkflowType>,
+        context: ValidationContext,
+    ) {
+        let referenced_field_name = reference
+            .accesses
+            .first()
+            .expect("dynamic reference should include first field after root")
+            .field
+            .as_str();
+
+        let Some(dynamic_field_type) = dynamic_field_types.get(referenced_field_name) else {
+            if dynamic_field_types.is_empty() {
+                if self.missing_dynamic_declaration_contexts.insert(context.clone()) {
+                    self.validation_report
+                        .push_issue_with_span(ValidationIssue::MissingDynamicDeclaration { context }, Some(reference.span));
+                }
+
+                return;
+            }
+
+            let issue_key = (context.clone(), referenced_field_name.to_owned());
+
+            if self.unknown_dynamic_field_references.insert(issue_key) {
+                self.validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownDynamicFieldReference {
+                        field_name: referenced_field_name.to_owned(),
+                        context,
+                    },
+                    Some(reference.span),
+                );
+            }
+
+            return;
+        };
+
+        if reference.accesses.len() == 1 {
+            return;
+        }
+
+        self.validate_workflow_type_reference_path(reference, 1, dynamic_field_type.clone(), context);
     }
 
     fn validate_input_reference(&mut self, reference: &Reference, context: ValidationContext) {
@@ -2110,6 +2440,54 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
+    fn validate_workflow_type_reference_path(
+        &mut self,
+        reference: &Reference,
+        path_start_index: usize,
+        start_type: crate::runtime::types::WorkflowType,
+        context: ValidationContext,
+    ) {
+        let mut candidate_types = vec![start_type];
+
+        for reference_access in reference.accesses.iter().skip(path_start_index) {
+            if candidate_types.iter().any(workflow_type_can_be_null) && !reference_access.optional {
+                self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
+
+                return;
+            }
+
+            let mut next_candidate_types = Vec::new();
+
+            for candidate_type in &candidate_types {
+                Self::collect_next_workflow_types_for_field(candidate_type, reference_access.field.as_str(), &mut next_candidate_types);
+            }
+
+            if reference_access.optional {
+                next_candidate_types.push(crate::runtime::types::WorkflowType::Null);
+            }
+
+            if next_candidate_types.is_empty() {
+                let reference_path = self.reference_to_string(reference);
+                let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
+
+                if self.invalid_reference_paths.insert(issue_key) {
+                    self.validation_report.push_issue_with_span(
+                        ValidationIssue::InvalidReferencePath {
+                            reference_path,
+                            invalid_field: reference_access.field.clone(),
+                            context,
+                        },
+                        Some(reference.span),
+                    );
+                }
+
+                return;
+            }
+
+            candidate_types = next_candidate_types;
+        }
+    }
+
     fn push_missing_optional_reference_access(&mut self, reference: &Reference, field_name: &str, context: ValidationContext) {
         let reference_path = self.reference_to_string(reference);
         let issue_key = (context.clone(), reference_path.clone(), field_name.to_owned());
@@ -2167,6 +2545,36 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
+    fn collect_next_workflow_types_for_field(
+        candidate_type: &crate::runtime::types::WorkflowType,
+        field_name: &str,
+        next_candidate_types: &mut Vec<crate::runtime::types::WorkflowType>,
+    ) {
+        match candidate_type {
+            crate::runtime::types::WorkflowType::Object(fields) => {
+                if let Some(field_type) = fields.get(field_name) {
+                    next_candidate_types.push(field_type.clone());
+                }
+            }
+            crate::runtime::types::WorkflowType::Union(union_members) => {
+                for union_member in union_members {
+                    Self::collect_next_workflow_types_for_field(union_member, field_name, next_candidate_types);
+                }
+            }
+            crate::runtime::types::WorkflowType::String
+            | crate::runtime::types::WorkflowType::Integer
+            | crate::runtime::types::WorkflowType::Float
+            | crate::runtime::types::WorkflowType::Boolean
+            | crate::runtime::types::WorkflowType::Null
+            | crate::runtime::types::WorkflowType::StringEnum(_)
+            | crate::runtime::types::WorkflowType::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | crate::runtime::types::WorkflowType::Tuple(_) => {}
+        }
+    }
+
     fn reference_to_string(&self, reference: &Reference) -> String {
         reference.render_path()
     }
@@ -2204,6 +2612,24 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 }
 
+fn workflow_type_can_be_null(workflow_type: &crate::runtime::types::WorkflowType) -> bool {
+    match workflow_type {
+        crate::runtime::types::WorkflowType::Null => true,
+        crate::runtime::types::WorkflowType::Union(union_members) => union_members.iter().any(workflow_type_can_be_null),
+        crate::runtime::types::WorkflowType::String
+        | crate::runtime::types::WorkflowType::Integer
+        | crate::runtime::types::WorkflowType::Float
+        | crate::runtime::types::WorkflowType::Boolean
+        | crate::runtime::types::WorkflowType::StringEnum(_)
+        | crate::runtime::types::WorkflowType::Array {
+            item_type: _,
+            fixed_length: _,
+        }
+        | crate::runtime::types::WorkflowType::Tuple(_)
+        | crate::runtime::types::WorkflowType::Object(_) => false,
+    }
+}
+
 fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut dependency_graph = DiGraph::<String, ()>::new();
     let mut node_index_by_agent_name = HashMap::<String, NodeIndex>::new();
@@ -2233,8 +2659,10 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
 
         for agent_property in &agent_declaration.properties {
             match agent_property {
-                AgentProperty::Let(let_binding) => {
-                    collect_agent_dependencies_from_expression(&let_binding.value, &mut referenced_agents);
+                AgentProperty::Dynamic(dynamic_block) => {
+                    for dynamic_field in &dynamic_block.fields {
+                        collect_agent_dependencies_from_expression(&dynamic_field.value, &mut referenced_agents);
+                    }
                 }
                 AgentProperty::Model(model_expression)
                 | AgentProperty::Prompt(model_expression)
@@ -3346,6 +3774,41 @@ mod tests {
                 if agent_names.len() == 2
                     && agent_names.contains(&"alpha".to_owned())
                     && agent_names.contains(&"beta".to_owned())
+        );
+    }
+
+    #[test]
+    fn reports_duplicate_dynamic_fields_across_workflow_blocks() {
+        let workflow = parse_inline_workflow! {
+            dynamic {
+                max_results: 5
+            }
+
+            dynamic {
+                max_results: 10
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::DuplicateProperty { property_name, context }
+                if property_name == "max_results" && *context == ValidationContext::Dynamic
+        );
+    }
+
+    #[test]
+    fn reports_missing_dynamic_declaration_for_dynamic_reference() {
+        let workflow = parse_inline_workflow! {
+            agent researcher {
+                prompt: dynamic.topic
+                output: string
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::MissingDynamicDeclaration { context }
+                if *context == ValidationContext::Agent("researcher".to_owned())
         );
     }
 }

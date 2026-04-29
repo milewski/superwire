@@ -22,6 +22,9 @@
       "include": "#tool"
     },
     {
+      "include": "#dynamic-block"
+    },
+    {
       "include": "#input-block"
     },
     {
@@ -124,7 +127,24 @@
       ]
     },
     "tool-field-block": {
-      "begin": "\\b(input|bounded)\\s*\\{",
+      "begin": "\\b(input|bindings)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "dynamic-block": {
+      "begin": "\\b(dynamic)\\s*\\{",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.wire"
@@ -213,7 +233,7 @@
           "name": "variable.parameter.wire"
         },
         {
-          "match": "\\b(provider|schema|tool|agent|input|bounded|output|secrets|for|in)\\b",
+          "match": "\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call)\\b",
           "name": "keyword.control.wire"
         },
         {

@@ -245,6 +245,7 @@ impl SemanticIndex {
         }
 
         match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Dynamic) => Vec::new(),
             Some(ReferenceKeyword::Input) => self.singleton_reference_suggestions(
                 &self.input_fields,
                 Some(&self.input_field_metadata),

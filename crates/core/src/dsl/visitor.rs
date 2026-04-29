@@ -1,8 +1,8 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, Expression, FunctionCall,
-    InputDeclaration, LetBinding, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
-    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
-    ToolDeclaration, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DynamicBlock, Expression, FunctionCall,
+    InputDeclaration, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
+    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
+    TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -53,7 +53,7 @@ impl AstVisitor {
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
             Rule::tool_declaration => self.visit_tool_declaration(declaration_pair),
-            Rule::let_declaration => self.visit_let_declaration(declaration_pair).map(Declaration::Let),
+            Rule::dynamic_declaration => self.visit_dynamic_declaration(declaration_pair).map(Declaration::Dynamic),
             Rule::agent_declaration => self.visit_agent_declaration(declaration_pair),
             Rule::output_declaration => self.visit_output_declaration(declaration_pair),
             _ => Err(DslParseError::unexpected_with_span(
@@ -167,16 +167,13 @@ impl AstVisitor {
         }))
     }
 
-    fn visit_let_declaration(&self, let_pair: Pair<'_, Rule>) -> Result<LetBinding, DslParseError> {
-        let declaration_span = source_span_from_pair(&let_pair);
-        let mut inner_pairs = let_pair.into_inner();
-        let binding_name = self.next_identifier(&mut inner_pairs, "let binding name", "let declaration")?;
-        let value_pair = self.next_pair(&mut inner_pairs, "let binding value", "let declaration")?;
-        let value = self.visit_expression(value_pair)?;
+    fn visit_dynamic_declaration(&self, dynamic_pair: Pair<'_, Rule>) -> Result<DynamicBlock, DslParseError> {
+        let declaration_span = source_span_from_pair(&dynamic_pair);
+        let object_expression_pair = self.first_inner_pair(dynamic_pair, "dynamic declaration")?;
+        let fields = self.visit_object_expression(object_expression_pair)?;
 
-        Ok(LetBinding {
-            name: binding_name,
-            value,
+        Ok(DynamicBlock {
+            fields,
             span: declaration_span,
         })
     }
@@ -265,7 +262,7 @@ impl AstVisitor {
 
     fn visit_agent_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
         match property_pair.as_rule() {
-            Rule::let_property => self.visit_let_declaration(property_pair).map(AgentProperty::Let),
+            Rule::dynamic_property => self.visit_dynamic_declaration(property_pair).map(AgentProperty::Dynamic),
             Rule::model_property => {
                 let expression_pair = self.first_inner_pair(property_pair, "model property")?;
                 Ok(AgentProperty::Model(self.visit_expression(expression_pair)?))

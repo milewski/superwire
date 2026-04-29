@@ -104,21 +104,26 @@ impl SemanticIndex {
     }
 
     pub fn model_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
-        [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
-            .into_iter()
-            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
-            .map(|reference_keyword| CompletionSuggestion {
-                label: reference_keyword.as_str().to_string(),
-                kind: CompletionKind::Module,
-                detail: "Model expression reference root".to_string(),
-                documentation: format!("Use `{}.<path>` inside model expressions.", reference_keyword.as_str()),
-                insert_text: format!("{}.", reference_keyword.as_str()),
-            })
-            .collect()
+        [
+            ReferenceKeyword::Agent,
+            ReferenceKeyword::Dynamic,
+            ReferenceKeyword::Input,
+            ReferenceKeyword::Secrets,
+        ]
+        .into_iter()
+        .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+        .map(|reference_keyword| CompletionSuggestion {
+            label: reference_keyword.as_str().to_string(),
+            kind: CompletionKind::Module,
+            detail: "Model expression reference root".to_string(),
+            documentation: format!("Use `{}.<path>` inside model expressions.", reference_keyword.as_str()),
+            insert_text: format!("{}.", reference_keyword.as_str()),
+        })
+        .collect()
     }
 
     pub fn inference_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
-        [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+        [ReferenceKeyword::Agent, ReferenceKeyword::Dynamic, ReferenceKeyword::Input]
             .into_iter()
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
             .map(|reference_keyword| CompletionSuggestion {
@@ -147,17 +152,22 @@ impl SemanticIndex {
 
     pub fn for_loop_iterable_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
         let root_prefix = trailing_identifier(value_prefix).unwrap_or_default();
-        let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
-            .into_iter()
-            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
-            .map(|reference_keyword| CompletionSuggestion {
-                label: reference_keyword.as_str().to_string(),
-                kind: CompletionKind::Module,
-                detail: "For-loop iterable reference root".to_string(),
-                documentation: format!("Use `{}.<path>` in for-loop iterable expressions.", reference_keyword.as_str()),
-                insert_text: format!("{}.", reference_keyword.as_str()),
-            })
-            .collect::<Vec<_>>();
+        let mut completion_suggestions = [
+            ReferenceKeyword::Agent,
+            ReferenceKeyword::Dynamic,
+            ReferenceKeyword::Input,
+            ReferenceKeyword::Secrets,
+        ]
+        .into_iter()
+        .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+        .map(|reference_keyword| CompletionSuggestion {
+            label: reference_keyword.as_str().to_string(),
+            kind: CompletionKind::Module,
+            detail: "For-loop iterable reference root".to_string(),
+            documentation: format!("Use `{}.<path>` in for-loop iterable expressions.", reference_keyword.as_str()),
+            insert_text: format!("{}.", reference_keyword.as_str()),
+        })
+        .collect::<Vec<_>>();
 
         if value_prefix.trim().is_empty() {
             completion_suggestions.push(CompletionSuggestion {
@@ -173,17 +183,22 @@ impl SemanticIndex {
     }
 
     pub fn output_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
-        [ReferenceKeyword::Agent, ReferenceKeyword::Input, ReferenceKeyword::Secrets]
-            .into_iter()
-            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
-            .map(|reference_keyword| CompletionSuggestion {
-                label: reference_keyword.as_str().to_string(),
-                kind: CompletionKind::Module,
-                detail: "Output value reference root".to_string(),
-                documentation: format!("Use `{}.<path>` in output expressions.", reference_keyword.as_str()),
-                insert_text: reference_keyword.as_str().to_string(),
-            })
-            .collect()
+        [
+            ReferenceKeyword::Agent,
+            ReferenceKeyword::Dynamic,
+            ReferenceKeyword::Input,
+            ReferenceKeyword::Secrets,
+        ]
+        .into_iter()
+        .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+        .map(|reference_keyword| CompletionSuggestion {
+            label: reference_keyword.as_str().to_string(),
+            kind: CompletionKind::Module,
+            detail: "Output value reference root".to_string(),
+            documentation: format!("Use `{}.<path>` in output expressions.", reference_keyword.as_str()),
+            insert_text: reference_keyword.as_str().to_string(),
+        })
+        .collect()
     }
 
     pub fn output_value_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
@@ -215,7 +230,7 @@ impl SemanticIndex {
     }
 
     pub fn prompt_value_root_suggestions(&self, root_prefix: &str) -> Vec<CompletionSuggestion> {
-        [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+        [ReferenceKeyword::Agent, ReferenceKeyword::Dynamic, ReferenceKeyword::Input]
             .into_iter()
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
             .map(|reference_keyword| CompletionSuggestion {
@@ -269,7 +284,7 @@ impl SemanticIndex {
     }
 
     pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
-        let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Input]
+        let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Dynamic, ReferenceKeyword::Input]
             .into_iter()
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
             .map(|reference_keyword| CompletionSuggestion {
@@ -440,7 +455,7 @@ impl SemanticIndex {
             Declaration::Tool(tool_declaration) => {
                 self.insert_tool_declaration(tool_declaration);
             }
-            Declaration::Let(_) => {}
+            Declaration::Dynamic(_) => {}
             Declaration::Output(output_declaration) => {
                 self.has_output_declaration = true;
                 self.output_locations.push(output_declaration.span);
@@ -528,7 +543,7 @@ impl SemanticIndex {
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Tools(_)
-            | AgentProperty::Let(_) => None,
+            | AgentProperty::Dynamic(_) => None,
         });
 
         if let Some(output_type_expression) = output_type_expression {
@@ -1161,6 +1176,10 @@ impl SemanticIndex {
             return true;
         }
 
+        if declaration_label == DeclarationKeyword::Dynamic.as_str() {
+            return true;
+        }
+
         if declaration_label == SingletonDeclarationKind::Input.as_str() {
             return !self.has_input_declaration;
         }
@@ -1500,6 +1519,7 @@ impl SemanticIndex {
         selected_segment_index: usize,
     ) -> Option<SourceSpan> {
         match reference_root_keyword {
+            ReferenceKeyword::Dynamic => None,
             ReferenceKeyword::Input => self.singleton_reference_definition_span(
                 reference_completion_path,
                 selected_segment_index,
@@ -1694,6 +1714,7 @@ impl SemanticIndex {
             .collect::<Vec<_>>();
 
         match reference_keyword {
+            ReferenceKeyword::Dynamic => None,
             ReferenceKeyword::Input => self.resolve_singleton_reference_type(&self.input_fields, &reference_accesses),
             ReferenceKeyword::Secrets => self.resolve_singleton_reference_type(&self.secrets_fields, &reference_accesses),
             ReferenceKeyword::Agent => {

@@ -498,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_let_bindings_and_deterministic_tool_calls() {
+    fn parses_dynamic_blocks_and_deterministic_tool_calls() {
         let workflow = parse_inline_workflow! {
             tool fetch_issue {
                 description: "Fetch issue"
@@ -516,36 +516,41 @@ mod tests {
                 }
             }
 
-            let issue = call tool.fetch_issue {
-                input {
-                    sha: input.sha
-                }
+            dynamic {
+                issue: call tool.fetch_issue {
+                    input {
+                        sha: input.sha
+                    }
 
-                bindings {
-                    repository: input.repository
+                    bindings {
+                        repository: input.repository
+                    }
                 }
             }
 
             agent summarize {
-                let local_issue = call tool.fetch_issue {
-                    input {
-                        sha: issue.title
+                dynamic {
+                    local_issue: call tool.fetch_issue {
+                        input {
+                            sha: dynamic.issue.title
+                        }
                     }
                 }
 
-                prompt: "{{ local_issue.title }}"
+                prompt: "{{ dynamic.local_issue.title }}"
                 output: string
             }
         };
 
-        let Declaration::Let(let_binding) = &workflow.declarations[1] else {
-            panic!("second declaration should be let binding");
+        let Declaration::Dynamic(dynamic_block) = &workflow.declarations[1] else {
+            panic!("second declaration should be dynamic block");
         };
 
-        assert_eq!(let_binding.name, "issue");
+        assert_eq!(dynamic_block.fields.len(), 1);
+        assert_eq!(dynamic_block.fields[0].name, "issue");
 
-        let Expression::ToolCall(tool_call) = &let_binding.value else {
-            panic!("let value should be a tool call");
+        let Expression::ToolCall(tool_call) = &dynamic_block.fields[0].value else {
+            panic!("dynamic value should be a tool call");
         };
 
         assert_eq!(tool_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Tool));

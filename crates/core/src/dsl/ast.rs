@@ -145,6 +145,19 @@ impl Workflow {
             _ => None,
         })
     }
+
+    pub fn dynamic_blocks(&self) -> impl Iterator<Item = &DynamicBlock> {
+        self.declarations.iter().filter_map(|declaration| match declaration {
+            Declaration::Dynamic(dynamic_block) => Some(dynamic_block),
+            Declaration::Provider(_)
+            | Declaration::Secrets(_)
+            | Declaration::Input(_)
+            | Declaration::Schema(_)
+            | Declaration::Tool(_)
+            | Declaration::Agent(_)
+            | Declaration::Output(_) => None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,7 +167,7 @@ pub enum Declaration {
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
     Tool(ToolDeclaration),
-    Let(LetBinding),
+    Dynamic(DynamicBlock),
     Agent(AgentDeclaration),
     Output(OutputDeclaration),
 }
@@ -166,6 +179,7 @@ pub enum DeclarationKeyword {
     Input,
     Schema,
     Tool,
+    Dynamic,
     Agent,
     Output,
 }
@@ -204,6 +218,7 @@ impl DeclarationKeyword {
             "input" => Some(Self::Input),
             "schema" => Some(Self::Schema),
             "tool" => Some(Self::Tool),
+            "dynamic" => Some(Self::Dynamic),
             "agent" => Some(Self::Agent),
             "output" => Some(Self::Output),
             _ => None,
@@ -218,6 +233,7 @@ impl DeclarationKeyword {
             Self::Input => "input",
             Self::Schema => "schema",
             Self::Tool => "tool",
+            Self::Dynamic => "dynamic",
             Self::Agent => "agent",
             Self::Output => "output",
         }
@@ -261,10 +277,16 @@ pub struct ToolDeclaration {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LetBinding {
-    pub name: String,
-    pub value: Expression,
+pub struct DynamicBlock {
+    pub fields: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+impl DynamicBlock {
+    #[must_use]
+    pub fn field(&self, field_name: &str) -> Option<&ObjectField> {
+        self.fields.iter().find(|field| field.name == field_name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,6 +298,21 @@ pub struct AgentDeclaration {
 }
 
 impl AgentDeclaration {
+    pub fn dynamic_blocks(&self) -> impl Iterator<Item = &DynamicBlock> {
+        self.properties.iter().filter_map(|property| match property {
+            AgentProperty::Dynamic(dynamic_block) => Some(dynamic_block),
+            AgentProperty::Model(_)
+            | AgentProperty::Prompt(_)
+            | AgentProperty::Output {
+                output_type_expression: _,
+                description: _,
+            }
+            | AgentProperty::Context(_)
+            | AgentProperty::Inference(_)
+            | AgentProperty::Tools(_) => None,
+        })
+    }
+
     #[must_use]
     pub fn expression_property(&self, property_name: AgentExpressionPropertyName) -> Option<&Expression> {
         for agent_property in &self.properties {
@@ -285,7 +322,7 @@ impl AgentDeclaration {
                 AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => return Some(expression),
                 AgentProperty::Inference(expression) if property_name == AgentExpressionPropertyName::Inference => return Some(expression),
                 AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
-                AgentProperty::Let(_) => {}
+                AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
                 | AgentProperty::Prompt(_)
                 | AgentProperty::Output {
@@ -389,7 +426,7 @@ impl AgentForLoopPattern {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentProperty {
-    Let(LetBinding),
+    Dynamic(DynamicBlock),
     Model(Expression),
     Prompt(Expression),
     Output {
@@ -405,7 +442,7 @@ impl AgentProperty {
     #[must_use]
     pub fn name(&self) -> AgentPropertyName {
         match self {
-            Self::Let(_) => AgentPropertyName::Let,
+            Self::Dynamic(_) => AgentPropertyName::Dynamic,
             Self::Model(_) => AgentPropertyName::Model,
             Self::Prompt(_) => AgentPropertyName::Prompt,
             Self::Output {
@@ -421,7 +458,7 @@ impl AgentProperty {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentPropertyName {
-    Let,
+    Dynamic,
     Model,
     Prompt,
     Output,
@@ -434,7 +471,7 @@ impl AgentPropertyName {
     #[must_use]
     pub fn all() -> [Self; 7] {
         [
-            Self::Let,
+            Self::Dynamic,
             Self::Model,
             Self::Prompt,
             Self::Output,
@@ -448,7 +485,7 @@ impl AgentPropertyName {
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "model" => Some(Self::Model),
-            "let" => Some(Self::Let),
+            "dynamic" => Some(Self::Dynamic),
             "prompt" => Some(Self::Prompt),
             "output" => Some(Self::Output),
             "context" => Some(Self::Context),
@@ -462,7 +499,7 @@ impl AgentPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Model => "model",
-            Self::Let => "let",
+            Self::Dynamic => "dynamic",
             Self::Prompt => "prompt",
             Self::Output => "output",
             Self::Context => "context",
@@ -863,6 +900,7 @@ impl ReferenceRoot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReferenceKeyword {
     Agent,
+    Dynamic,
     Input,
     Secrets,
     Tool,
@@ -873,6 +911,7 @@ impl ReferenceKeyword {
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "agent" => Some(Self::Agent),
+            "dynamic" => Some(Self::Dynamic),
             "input" => Some(Self::Input),
             "secrets" => Some(Self::Secrets),
             "tool" => Some(Self::Tool),
@@ -884,6 +923,7 @@ impl ReferenceKeyword {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Agent => "agent",
+            Self::Dynamic => "dynamic",
             Self::Input => "input",
             Self::Secrets => "secrets",
             Self::Tool => "tool",
