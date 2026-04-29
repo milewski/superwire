@@ -55,6 +55,7 @@ pub enum DiagnosticCode {
     UnknownToolReference,
     InvalidTypeExpressionReference,
     AgentDependencyCycle,
+    DynamicDependencyCycle,
     WorkflowCompilationError,
 }
 
@@ -94,6 +95,7 @@ impl DiagnosticCode {
             Self::UnknownToolReference => "unknown_tool_reference",
             Self::InvalidTypeExpressionReference => "invalid_type_expression_reference",
             Self::AgentDependencyCycle => "agent_dependency_cycle",
+            Self::DynamicDependencyCycle => "dynamic_dependency_cycle",
             Self::WorkflowCompilationError => "workflow_compilation_error",
         }
     }

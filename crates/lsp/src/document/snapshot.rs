@@ -107,6 +107,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::UnknownToolReference => Self::UnknownToolReference,
             CoreDiagnosticCode::InvalidTypeExpressionReference => Self::InvalidTypeExpressionReference,
             CoreDiagnosticCode::AgentDependencyCycle => Self::AgentDependencyCycle,
+            CoreDiagnosticCode::DynamicDependencyCycle => Self::DynamicDependencyCycle,
             CoreDiagnosticCode::WorkflowCompilationError => Self::WorkflowCompilationError,
         }
     }

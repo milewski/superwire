@@ -24,6 +24,15 @@ use superwire_core::runtime::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
+struct ReferenceCompletionInputs<'completion> {
+    line_prefix: &'completion str,
+    line_suffix: &'completion str,
+    position: Position,
+    completion_scope: CompletionScope,
+    inside_interpolation_expression: bool,
+    inference_setting_value_completion_context: Option<&'completion InferenceSettingValueCompletionContext>,
+}
+
 impl DocumentState {
     #[must_use]
     pub fn completion_suggestions(&self, position: Position) -> Vec<CompletionSuggestion> {
@@ -71,11 +80,14 @@ impl DocumentState {
 
         if let Some(reference_suggestions) = self.reference_completion_suggestions(
             &semantic_index,
-            &line_prefix,
-            &line_suffix,
-            position,
-            inside_interpolation_expression,
-            inference_setting_value_completion_context.as_ref(),
+            ReferenceCompletionInputs {
+                line_prefix: &line_prefix,
+                line_suffix: &line_suffix,
+                position,
+                completion_scope,
+                inside_interpolation_expression,
+                inference_setting_value_completion_context: inference_setting_value_completion_context.as_ref(),
+            },
         ) {
             return reference_suggestions;
         }
@@ -256,18 +268,14 @@ impl DocumentState {
         }
 
         if line_has_property_separator {
-            if let Some(inference_value_completion_context) = InferenceSettingValueCompletionContext::from_line_prefix(line_prefix) {
-                if inference_value_completion_context.inside_string_literal {
-                    return Some(Vec::new());
-                }
+            if let Some(dynamic_value_suggestions) =
+                Self::dynamic_value_non_reference_suggestions(semantic_index, line_prefix, completion_scope)
+            {
+                return Some(dynamic_value_suggestions);
+            }
 
-                if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
-                    if inference_value_completion_context.value_prefix.is_empty() {
-                        return Some(semantic_index.inference_value_root_suggestions(""));
-                    }
-
-                    return Some(Vec::new());
-                }
+            if let Some(inference_value_suggestions) = Self::inference_value_non_reference_suggestions(semantic_index, line_prefix) {
+                return Some(inference_value_suggestions);
             }
 
             if !inside_interpolation_expression && Self::should_suppress_prompt_string_literal_suggestions(line_prefix) {
@@ -323,6 +331,10 @@ impl DocumentState {
         }
 
         if !line_has_property_separator && !inside_interpolation_expression {
+            if completion_scope == CompletionScope::DynamicValues {
+                return Some(Vec::new());
+            }
+
             if let Some(for_loop_iterable_value_completion_context) = ForLoopIterableValueCompletionContext::from_line_prefix(line_prefix) {
                 if ReferenceCompletionPath::from_line_prefix(line_prefix).is_none() {
                     return Some(
@@ -351,12 +363,48 @@ impl DocumentState {
         self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
     }
 
+    fn dynamic_value_non_reference_suggestions(
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        completion_scope: CompletionScope,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if completion_scope != CompletionScope::DynamicValues {
+            return None;
+        }
+
+        let dynamic_value_completion_context = OutputValueCompletionContext::from_line_prefix(line_prefix)?;
+
+        if ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
+            return None;
+        }
+
+        Some(semantic_index.dynamic_value_suggestions(&dynamic_value_completion_context.value_prefix))
+    }
+
+    fn inference_value_non_reference_suggestions(semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+        let inference_value_completion_context = InferenceSettingValueCompletionContext::from_line_prefix(line_prefix)?;
+
+        if inference_value_completion_context.inside_string_literal {
+            return Some(Vec::new());
+        }
+
+        if ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
+            return None;
+        }
+
+        if inference_value_completion_context.value_prefix.is_empty() {
+            return Some(semantic_index.inference_value_root_suggestions(""));
+        }
+
+        Some(Vec::new())
+    }
+
     fn property_scope_suggestions(completion_scope: CompletionScope, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
         match completion_scope {
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
             CompletionScope::ToolProperties => Some(tool_property_scope_suggestions(line_prefix)),
-            CompletionScope::General | CompletionScope::TypedDeclarations => None,
+            CompletionScope::General | CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => None,
         }
     }
 
@@ -435,57 +483,53 @@ impl DocumentState {
     fn reference_completion_suggestions(
         &self,
         semantic_index: &SemanticIndex,
-        line_prefix: &str,
-        line_suffix: &str,
-        position: Position,
-        inside_interpolation_expression: bool,
-        inference_setting_value_completion_context: Option<&InferenceSettingValueCompletionContext>,
+        inputs: ReferenceCompletionInputs<'_>,
     ) -> Option<Vec<CompletionSuggestion>> {
-        let line_has_property_separator = line_prefix.trim_start().contains(':');
-        let reference_completion_path = ReferenceCompletionPath::from_line_prefix(line_prefix)?;
+        let line_has_property_separator = inputs.line_prefix.trim_start().contains(':');
+        let reference_completion_path = ReferenceCompletionPath::from_line_prefix(inputs.line_prefix)?;
         let for_loop_iterable_reference_context = matches!(
             reference_completion_path.root_keyword(),
             Some(ReferenceKeyword::Input | ReferenceKeyword::Agent | ReferenceKeyword::Dynamic | ReferenceKeyword::Secrets)
-        ) && Self::is_for_loop_iterable_clause_context(line_prefix);
+        ) && Self::is_for_loop_iterable_clause_context(inputs.line_prefix);
 
         let reference_completion_constraint = if for_loop_iterable_reference_context {
             ReferenceCompletionConstraint::ForLoopIterable
         } else {
-            self.reference_completion_constraint(line_prefix, inference_setting_value_completion_context)
+            self.reference_completion_constraint(inputs.line_prefix, inputs.inference_setting_value_completion_context)
         };
 
         let reference_suggestions = semantic_index.reference_path_suggestions(
             &reference_completion_path,
             reference_completion_constraint,
-            position,
-            Self::has_existing_tool_call_parentheses(line_suffix),
+            inputs.position,
+            Self::has_existing_tool_call_parentheses(inputs.line_suffix),
         );
 
         if let Some(inference_suggestions) = self.inference_reference_completion_suggestions(
             semantic_index,
-            line_prefix,
+            inputs.line_prefix,
             &reference_completion_path,
             &reference_suggestions,
-            inference_setting_value_completion_context,
+            inputs.inference_setting_value_completion_context,
         ) {
             return Some(inference_suggestions);
         }
 
         if let Some(interpolation_suggestions) = self.interpolation_reference_completion_suggestions(
             semantic_index,
-            line_prefix,
-            position,
+            inputs.line_prefix,
+            inputs.position,
             &reference_completion_path,
             &reference_suggestions,
-            inside_interpolation_expression,
+            inputs.inside_interpolation_expression,
         ) {
             return Some(interpolation_suggestions);
         }
 
         if let Some(output_suggestions) = self.output_reference_completion_suggestions(
             semantic_index,
-            line_prefix,
-            position,
+            inputs.line_prefix,
+            inputs.position,
             &reference_completion_path,
             &reference_suggestions,
             line_has_property_separator,
@@ -495,13 +539,23 @@ impl DocumentState {
 
         if let Some(prompt_suggestions) = self.prompt_reference_completion_suggestions(
             semantic_index,
-            line_prefix,
+            inputs.line_prefix,
             &reference_completion_path,
             &reference_suggestions,
             line_has_property_separator,
-            inside_interpolation_expression,
+            inputs.inside_interpolation_expression,
         ) {
             return Some(prompt_suggestions);
+        }
+
+        if let Some(dynamic_value_suggestions) = Self::dynamic_value_reference_completion_suggestions(
+            semantic_index,
+            inputs.completion_scope,
+            inputs.line_prefix,
+            &reference_completion_path,
+            &reference_suggestions,
+        ) {
+            return Some(dynamic_value_suggestions);
         }
 
         self.default_reference_completion_suggestions(&reference_completion_path, &reference_suggestions, reference_completion_constraint)
@@ -644,6 +698,29 @@ impl DocumentState {
 
                 Some(Vec::new())
             }
+        }
+    }
+
+    fn dynamic_value_reference_completion_suggestions(
+        semantic_index: &SemanticIndex,
+        completion_scope: CompletionScope,
+        line_prefix: &str,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_suggestions: &[CompletionSuggestion],
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if completion_scope != CompletionScope::DynamicValues || !line_prefix.trim_start().contains(':') {
+            return None;
+        }
+
+        if Self::can_suggest_reference_roots(line_prefix, reference_completion_path) {
+            return Some(semantic_index.dynamic_value_suggestions(reference_completion_path.root_identifier()));
+        }
+
+        match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Agent | ReferenceKeyword::Dynamic | ReferenceKeyword::Input | ReferenceKeyword::Secrets) => {
+                Some(reference_suggestions.to_vec())
+            }
+            Some(ReferenceKeyword::Tool) | None => Some(Vec::new()),
         }
     }
 

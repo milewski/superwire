@@ -11,6 +11,7 @@ pub enum CompletionScope {
     ToolProperties,
     InferenceSettings,
     TypedDeclarations,
+    DynamicValues,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,7 @@ enum ScopeBlock {
     Tool,
     Inference,
     TypedDeclaration,
+    Dynamic,
 }
 
 pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> CompletionScope {
@@ -67,6 +69,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
         Some(ScopeBlock::Tool) => CompletionScope::ToolProperties,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
+        Some(ScopeBlock::Dynamic) => CompletionScope::DynamicValues,
         Some(ScopeBlock::Other) | None => CompletionScope::General,
     }
 }
@@ -132,6 +135,10 @@ impl ScopeScannerTokenState {
 
         if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
             return ScopeBlock::TypedDeclaration;
+        }
+
+        if DeclarationKeyword::from_identifier(last_identifier) == Some(DeclarationKeyword::Dynamic) {
+            return ScopeBlock::Dynamic;
         }
 
         if let Some(agent_keyword_index) = self

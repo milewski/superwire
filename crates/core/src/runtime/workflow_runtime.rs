@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument,
-    Declaration, Expression, FunctionCall, Reference, ReferenceKeyword, ToolCall, ToolDeclaration, TypeExpression, Workflow,
+    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration,
+    Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, ToolCall, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
@@ -643,27 +643,21 @@ where
     }
 
     async fn execute_workflow_dynamic_blocks(&self, runtime_state: &mut RuntimeState) -> Result<(), WorkflowRuntimeError> {
-        for declaration in self.workflow.declarations() {
-            let Declaration::Dynamic(dynamic_block) = declaration else {
-                continue;
-            };
+        let dynamic_fields = self
+            .workflow
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration {
+                Declaration::Dynamic(dynamic_block) => Some(dynamic_block.fields.as_slice()),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let dynamic_values = self
+            .evaluate_dynamic_fields(dynamic_fields, runtime_state, HashMap::new(), "dynamic field")
+            .await?;
 
-            let mut local_dynamic_values = HashMap::new();
-
-            for field in &dynamic_block.fields {
-                let field_value = self
-                    .evaluate_binding_expression(
-                        &field.value,
-                        runtime_state,
-                        local_dynamic_values.clone(),
-                        &format!("dynamic field `{}`", field.name),
-                    )
-                    .await?;
-
-                local_dynamic_values.insert(field.name.clone(), field_value.clone());
-                runtime_state.local_bindings.insert(field.name.clone(), field_value);
-            }
-        }
+        runtime_state.local_bindings.extend(dynamic_values);
 
         Ok(())
     }
@@ -973,26 +967,73 @@ where
         runtime_state: &RuntimeState,
         mut local_bindings: HashMap<String, Value>,
     ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
-        for agent_property in &prepared_agent_execution.agent_declaration.properties {
-            let AgentProperty::Dynamic(dynamic_block) = agent_property else {
-                continue;
-            };
+        let dynamic_fields = prepared_agent_execution
+            .agent_declaration
+            .dynamic_blocks()
+            .flat_map(|dynamic_block| dynamic_block.fields.iter())
+            .collect::<Vec<_>>();
+        let context_prefix = format!("dynamic field for agent `{}`", prepared_agent_execution.agent_name);
+        let dynamic_values = self
+            .evaluate_dynamic_fields(dynamic_fields, runtime_state, local_bindings.clone(), context_prefix.as_str())
+            .await?;
 
-            for field in &dynamic_block.fields {
-                let field_value = self
-                    .evaluate_binding_expression(
-                        &field.value,
-                        runtime_state,
-                        local_bindings.clone(),
-                        &format!("dynamic field `{}` for agent `{}`", field.name, prepared_agent_execution.agent_name),
-                    )
-                    .await?;
-
-                local_bindings.insert(field.name.clone(), field_value);
-            }
-        }
+        local_bindings.extend(dynamic_values);
 
         Ok(local_bindings)
+    }
+
+    async fn evaluate_dynamic_fields(
+        &self,
+        dynamic_fields: Vec<&ObjectField>,
+        runtime_state: &RuntimeState,
+        mut local_bindings: HashMap<String, Value>,
+        context_prefix: &str,
+    ) -> Result<HashMap<String, Value>, WorkflowRuntimeError> {
+        let dynamic_field_names = dynamic_fields
+            .iter()
+            .map(|dynamic_field| dynamic_field.name.clone())
+            .collect::<HashSet<_>>();
+        let mut pending_dynamic_fields = dynamic_fields;
+        let mut resolved_dynamic_values = HashMap::new();
+
+        while !pending_dynamic_fields.is_empty() {
+            let Some(next_field_index) = pending_dynamic_fields.iter().position(|dynamic_field| {
+                let mut referenced_dynamic_fields = HashSet::new();
+                dynamic_field.value.collect_dynamic_dependencies(&mut referenced_dynamic_fields);
+
+                referenced_dynamic_fields
+                    .into_iter()
+                    .filter(|field_name| dynamic_field_names.contains(field_name))
+                    .all(|field_name| resolved_dynamic_values.contains_key(&field_name))
+            }) else {
+                break;
+            };
+            let dynamic_field = pending_dynamic_fields.remove(next_field_index);
+            let field_value = self
+                .evaluate_binding_expression(
+                    &dynamic_field.value,
+                    runtime_state,
+                    local_bindings.clone(),
+                    &format!("{context_prefix} `{}`", dynamic_field.name),
+                )
+                .await?;
+
+            local_bindings.insert(dynamic_field.name.clone(), field_value.clone());
+            resolved_dynamic_values.insert(dynamic_field.name.clone(), field_value);
+        }
+
+        if let Some(dynamic_field) = pending_dynamic_fields.first() {
+            let _ = self
+                .evaluate_binding_expression(
+                    &dynamic_field.value,
+                    runtime_state,
+                    local_bindings,
+                    &format!("{context_prefix} `{}`", dynamic_field.name),
+                )
+                .await?;
+        }
+
+        Ok(resolved_dynamic_values)
     }
 
     fn evaluate_agent_tools(
