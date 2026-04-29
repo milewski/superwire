@@ -1,0 +1,47 @@
+// This example demonstrates `dynamic { ... }` blocks for reusable workflow values.
+// Multiple dynamic blocks merge, and values are referenced with `dynamic.<field>`.
+
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost"
+    api_key: "123"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    topic: string
+}
+
+dynamic {
+    max_bullets: 3
+    audience: "engineering"
+}
+
+dynamic {
+    prompt_prefix: "Write a concise project update"
+    metadata: {
+        workflow: "dynamic_values"
+        version: 1
+    }
+}
+
+agent writer {
+    model: openai("gpt-4.1-mini")
+
+    dynamic {
+        rendered_prompt: "{{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to {{ dynamic.max_bullets }} bullets."
+    }
+
+    prompt: dynamic.rendered_prompt
+    output: {
+        summary: string
+    }
+}
+
+output {
+    topic: input.topic
+    audience: dynamic.audience
+    max_bullets: dynamic.max_bullets
+    workflow_name: dynamic.metadata.workflow
+    summary: agent.writer.summary
+}

@@ -245,7 +245,9 @@ impl SemanticIndex {
         }
 
         match reference_completion_path.root_keyword() {
-            Some(ReferenceKeyword::Dynamic) => Vec::new(),
+            Some(ReferenceKeyword::Dynamic) => {
+                self.dynamic_reference_suggestions(reference_completion_path, reference_completion_constraint, position)
+            }
             Some(ReferenceKeyword::Input) => self.singleton_reference_suggestions(
                 &self.input_fields,
                 Some(&self.input_field_metadata),
@@ -280,6 +282,23 @@ impl SemanticIndex {
         }
 
         self.tool_reference_suggestions(&reference_completion_path.pending_prefix, existing_tool_call_parentheses)
+    }
+
+    fn dynamic_reference_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        reference_completion_constraint: ReferenceCompletionConstraint,
+        position: Position,
+    ) -> Vec<CompletionSuggestion> {
+        let (dynamic_fields, dynamic_field_metadata) = self.dynamic_scope_at_position(position);
+
+        self.singleton_reference_suggestions(
+            dynamic_fields,
+            Some(dynamic_field_metadata),
+            "Dynamic field",
+            reference_completion_constraint,
+            reference_completion_path,
+        )
     }
 
     fn for_loop_binding_reference_suggestions(

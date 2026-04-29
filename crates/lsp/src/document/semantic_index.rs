@@ -33,7 +33,11 @@ pub struct SemanticIndex {
     pub secrets_fields: BTreeMap<String, TypeExpression>,
     pub secrets_field_metadata: BTreeMap<String, FieldMetadata>,
     secrets_field_locations: HashMap<String, SourceSpan>,
+    pub dynamic_fields: BTreeMap<String, TypeExpression>,
+    pub dynamic_field_metadata: BTreeMap<String, FieldMetadata>,
     pub agents: HashMap<String, AgentSummary>,
+    pub agent_dynamic_fields: HashMap<String, BTreeMap<String, TypeExpression>>,
+    pub agent_dynamic_field_metadata: HashMap<String, BTreeMap<String, FieldMetadata>>,
     agent_output_field_locations: HashMap<String, SourceSpan>,
     pub agent_for_loop_bindings: HashMap<String, BTreeMap<String, Vec<TypeExpression>>>,
     pub agent_for_loop_iterable_item_types: HashMap<String, TypeExpression>,
@@ -64,6 +68,8 @@ pub struct ToolSummary {
     pub description: Option<String>,
     pub bounded_fields: BTreeMap<String, TypeExpression>,
     pub bounded_field_metadata: BTreeMap<String, FieldMetadata>,
+    pub output_fields: BTreeMap<String, TypeExpression>,
+    pub output_field_metadata: BTreeMap<String, FieldMetadata>,
 }
 
 #[derive(Debug, Clone)]
@@ -405,7 +411,11 @@ impl SemanticIndex {
             secrets_fields: BTreeMap::new(),
             secrets_field_metadata: BTreeMap::new(),
             secrets_field_locations: HashMap::new(),
+            dynamic_fields: BTreeMap::new(),
+            dynamic_field_metadata: BTreeMap::new(),
             agents: HashMap::new(),
+            agent_dynamic_fields: HashMap::new(),
+            agent_dynamic_field_metadata: HashMap::new(),
             agent_output_field_locations: HashMap::new(),
             agent_for_loop_bindings: HashMap::new(),
             agent_for_loop_iterable_item_types: HashMap::new(),
@@ -455,7 +465,9 @@ impl SemanticIndex {
             Declaration::Tool(tool_declaration) => {
                 self.insert_tool_declaration(tool_declaration);
             }
-            Declaration::Dynamic(_) => {}
+            Declaration::Dynamic(dynamic_block) => {
+                self.insert_workflow_dynamic_block(dynamic_block);
+            }
             Declaration::Output(output_declaration) => {
                 self.has_output_declaration = true;
                 self.output_locations.push(output_declaration.span);
@@ -521,6 +533,8 @@ impl SemanticIndex {
                 description: tool_declaration.description.clone(),
                 bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
                 bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.binding_fields),
+                output_fields: typed_fields_to_map(&tool_declaration.output_fields),
+                output_field_metadata: typed_fields_to_metadata_map(&tool_declaration.output_fields),
             },
         );
 
@@ -533,6 +547,13 @@ impl SemanticIndex {
     }
 
     fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
+        let mut agent_dynamic_fields = self.dynamic_fields.clone();
+        let mut agent_dynamic_field_metadata = self.dynamic_field_metadata.clone();
+
+        for dynamic_block in agent_declaration.dynamic_blocks() {
+            self.insert_dynamic_block_fields(dynamic_block, &mut agent_dynamic_fields, &mut agent_dynamic_field_metadata);
+        }
+
         let output_type_expression = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
             AgentProperty::Output {
                 output_type_expression,
@@ -565,6 +586,11 @@ impl SemanticIndex {
                 },
             },
         );
+
+        self.agent_dynamic_fields
+            .insert(agent_declaration.name.clone(), agent_dynamic_fields);
+        self.agent_dynamic_field_metadata
+            .insert(agent_declaration.name.clone(), agent_dynamic_field_metadata);
 
         if let Some(agent_for_loop) = &agent_declaration.for_loop {
             if let Some(iterable_item_type) = self.iterable_item_type(&agent_for_loop.iterable) {
@@ -601,6 +627,7 @@ impl SemanticIndex {
         semantic_index
     }
 
+    #[allow(clippy::too_many_lines)]
     fn from_tooling_snapshot(tooling_snapshot: &SemanticToolingSnapshot) -> Self {
         let providers = tooling_snapshot
             .declaration_index()
@@ -696,7 +723,11 @@ impl SemanticIndex {
             secrets_fields: tooling_snapshot.secrets_fields().clone(),
             secrets_field_metadata: field_metadata_from_type_map(tooling_snapshot.secrets_fields()),
             secrets_field_locations: HashMap::new(),
+            dynamic_fields: BTreeMap::new(),
+            dynamic_field_metadata: BTreeMap::new(),
             agents,
+            agent_dynamic_fields: HashMap::new(),
+            agent_dynamic_field_metadata: HashMap::new(),
             agent_output_field_locations: HashMap::new(),
             agent_for_loop_bindings: HashMap::new(),
             agent_for_loop_iterable_item_types: HashMap::new(),
@@ -722,6 +753,8 @@ impl SemanticIndex {
                         description: tool_schema_summary.description.clone(),
                         bounded_fields: tool_schema_summary.bounded_fields.clone(),
                         bounded_field_metadata: field_metadata_from_type_map(&tool_schema_summary.bounded_fields),
+                        output_fields: BTreeMap::new(),
+                        output_field_metadata: BTreeMap::new(),
                     },
                 )
             })
@@ -792,6 +825,38 @@ impl SemanticIndex {
             Self::agent_field_location_prefix(agent_name),
             typed_fields,
         );
+    }
+
+    fn insert_workflow_dynamic_block(&mut self, dynamic_block: &superwire_core::dsl::DynamicBlock) {
+        let mut dynamic_fields = self.dynamic_fields.clone();
+        let mut dynamic_field_metadata = self.dynamic_field_metadata.clone();
+
+        self.insert_dynamic_block_fields(dynamic_block, &mut dynamic_fields, &mut dynamic_field_metadata);
+
+        self.dynamic_fields = dynamic_fields;
+        self.dynamic_field_metadata = dynamic_field_metadata;
+    }
+
+    fn insert_dynamic_block_fields(
+        &self,
+        dynamic_block: &superwire_core::dsl::DynamicBlock,
+        dynamic_fields: &mut BTreeMap<String, TypeExpression>,
+        dynamic_field_metadata: &mut BTreeMap<String, FieldMetadata>,
+    ) {
+        for dynamic_field in &dynamic_block.fields {
+            let Some(dynamic_field_type) = self.expression_type_with_dynamic_scope(&dynamic_field.value, dynamic_fields) else {
+                continue;
+            };
+
+            dynamic_fields.insert(dynamic_field.name.clone(), dynamic_field_type.clone());
+            dynamic_field_metadata.insert(
+                dynamic_field.name.clone(),
+                FieldMetadata {
+                    field_type: dynamic_field_type,
+                    description: None,
+                },
+            );
+        }
     }
 
     fn insert_field_locations(
@@ -1307,6 +1372,20 @@ impl SemanticIndex {
         self.agent_for_loop_bindings.get(agent_name)?.get(binding_name).map(Vec::as_slice)
     }
 
+    pub fn dynamic_scope_at_position(&self, position: Position) -> (&BTreeMap<String, TypeExpression>, &BTreeMap<String, FieldMetadata>) {
+        let Some(agent_name) = self.agent_name_at_position(position) else {
+            return (&self.dynamic_fields, &self.dynamic_field_metadata);
+        };
+
+        let scoped_dynamic_fields = self.agent_dynamic_fields.get(agent_name).unwrap_or(&self.dynamic_fields);
+        let scoped_dynamic_field_metadata = self
+            .agent_dynamic_field_metadata
+            .get(agent_name)
+            .unwrap_or(&self.dynamic_field_metadata);
+
+        (scoped_dynamic_fields, scoped_dynamic_field_metadata)
+    }
+
     pub fn has_for_loop_binding_at_position(&self, position: Position, binding_name: &str) -> bool {
         self.for_loop_binding_types_at_position(position, binding_name).is_some()
     }
@@ -1398,6 +1477,14 @@ impl SemanticIndex {
     }
 
     fn expression_type(&self, expression: &Expression) -> Option<TypeExpression> {
+        self.expression_type_with_dynamic_scope(expression, &self.dynamic_fields)
+    }
+
+    fn expression_type_with_dynamic_scope(
+        &self,
+        expression: &Expression,
+        dynamic_fields: &BTreeMap<String, TypeExpression>,
+    ) -> Option<TypeExpression> {
         match expression {
             Expression::StringLiteral(_) | Expression::StringTemplate(_) => Some(TypeExpression::String),
             Expression::NumberLiteral(number_literal) => {
@@ -1409,12 +1496,35 @@ impl SemanticIndex {
             }
             Expression::BooleanLiteral(_) => Some(TypeExpression::Boolean),
             Expression::NullLiteral => Some(TypeExpression::Null),
-            Expression::Reference(reference) => self.reference_expression_type(reference),
-            Expression::FunctionCall(_) | Expression::ToolCall(_) => None,
+            Expression::Reference(reference) => self.reference_expression_type(reference, dynamic_fields),
+            Expression::FunctionCall(_) => None,
+            Expression::ToolCall(tool_call) => {
+                let tool_name = tool_call.callee.first_access_field()?;
+                let tool_summary = self.tools.get(tool_name)?;
+
+                Some(TypeExpression::Object(
+                    tool_summary
+                        .output_fields
+                        .iter()
+                        .map(|(field_name, field_type)| TypedField {
+                            name: field_name.clone(),
+                            field_type: field_type.clone(),
+                            description: tool_summary
+                                .output_field_metadata
+                                .get(field_name)
+                                .and_then(|field_metadata| field_metadata.description.clone()),
+                            span: SourceSpan {
+                                start: SourcePosition { line: 1, column: 1 },
+                                end: SourcePosition { line: 1, column: 1 },
+                            },
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+            }
             Expression::ArrayLiteral(array_items) => {
                 let mut array_item_types = array_items
                     .iter()
-                    .filter_map(|array_item| self.expression_type(array_item))
+                    .filter_map(|array_item| self.expression_type_with_dynamic_scope(array_item, dynamic_fields))
                     .collect::<Vec<_>>();
 
                 if array_item_types.is_empty() {
@@ -1437,7 +1547,7 @@ impl SemanticIndex {
                 let typed_fields = object_fields
                     .iter()
                     .filter_map(|object_field| {
-                        let field_type = self.expression_type(&object_field.value)?;
+                        let field_type = self.expression_type_with_dynamic_scope(&object_field.value, dynamic_fields)?;
 
                         Some(TypedField {
                             name: object_field.name.clone(),
@@ -1705,7 +1815,11 @@ impl SemanticIndex {
             .map(|agent_location| agent_location.span)
     }
 
-    fn reference_expression_type(&self, reference: &superwire_core::dsl::Reference) -> Option<TypeExpression> {
+    fn reference_expression_type(
+        &self,
+        reference: &superwire_core::dsl::Reference,
+        dynamic_fields: &BTreeMap<String, TypeExpression>,
+    ) -> Option<TypeExpression> {
         let reference_keyword = reference.root_keyword()?;
         let reference_accesses = reference
             .accesses
@@ -1714,7 +1828,7 @@ impl SemanticIndex {
             .collect::<Vec<_>>();
 
         match reference_keyword {
-            ReferenceKeyword::Dynamic => None,
+            ReferenceKeyword::Dynamic => self.resolve_singleton_reference_type(dynamic_fields, &reference_accesses),
             ReferenceKeyword::Input => self.resolve_singleton_reference_type(&self.input_fields, &reference_accesses),
             ReferenceKeyword::Secrets => self.resolve_singleton_reference_type(&self.secrets_fields, &reference_accesses),
             ReferenceKeyword::Agent => {
