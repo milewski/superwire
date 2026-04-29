@@ -689,6 +689,7 @@ pub enum StringTemplatePart {
 pub struct ObjectField {
     pub name: String,
     pub value: Expression,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
