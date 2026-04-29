@@ -308,6 +308,82 @@ fn exports_workflow_and_agent_dynamic_blocks() {
     );
 }
 
+#[test]
+fn exports_workflow_output_fields_that_reference_dynamic_values() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        input {
+            topic: string
+        }
+
+        dynamic {
+            max_bullets: 3
+            audience: "engineering"
+        }
+
+        dynamic {
+            metadata: {
+                workflow: "dynamic_values"
+            }
+        }
+
+        agent writer {
+            model: openai("gpt-4.1-mini")
+            prompt: "Write about {{ input.topic }} for {{ dynamic.audience }}"
+            output: {
+                summary: string
+            }
+        }
+
+        output {
+            topic: input.topic
+            audience: dynamic.audience
+            max_bullets: dynamic.max_bullets
+            workflow_name: dynamic.metadata.workflow
+            summary: agent.writer.summary
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("dynamic-output-to-json.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(
+        exported_json.pointer("/output/fields/audience/$ref"),
+        Some(&json!("dynamic.audience"))
+    );
+    assert_eq!(
+        exported_json.pointer("/output/fields/max_bullets/$ref"),
+        Some(&json!("dynamic.max_bullets"))
+    );
+    assert_eq!(
+        exported_json.pointer("/output/fields/workflow_name/$ref"),
+        Some(&json!("dynamic.metadata.workflow"))
+    );
+    assert_eq!(
+        exported_json.pointer("/output/contract/workflow_type/fields/audience/kind"),
+        Some(&json!("string"))
+    );
+    assert_eq!(
+        exported_json.pointer("/output/contract/workflow_type/fields/max_bullets/kind"),
+        Some(&json!("integer"))
+    );
+    assert_eq!(
+        exported_json.pointer("/output/contract/workflow_type/fields/workflow_name/kind"),
+        Some(&json!("string"))
+    );
+}
+
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {
     let mut command = Command::new(cli_binary_path());
     command.arg("workflow").arg("to-json");
