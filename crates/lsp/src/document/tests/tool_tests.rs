@@ -187,3 +187,55 @@ fn suggests_bounded_arguments_inside_tool_call() {
     assert_completion_contains_labels!(&completion_suggestions, "password", "token");
     assert_completion_excludes_labels!(&completion_suggestions, "query");
 }
+
+#[test]
+fn suggests_declared_bindings_inside_deterministic_tool_call_binding_overrides() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool knowledge_base_search {
+            input {
+                query: string
+            }
+
+            bindings {
+                password: string
+                endpoint: "https://example.test"
+                token: string
+            }
+        }
+
+        dynamic {
+            search_result: call tool.knowledge_base_search {
+                bindings {
+                    <cursor>
+                }
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "password", "token");
+    assert_completion_excludes_labels!(&completion_suggestions, "query", "endpoint");
+}
+
+#[test]
+fn filters_existing_bindings_inside_deterministic_tool_call_binding_overrides() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool knowledge_base_search {
+            bindings {
+                password: string
+                token: string
+            }
+        }
+
+        dynamic {
+            search_result: call tool.knowledge_base_search {
+                bindings {
+                    password: input.password
+                    <cursor>
+                }
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "token");
+    assert_completion_excludes_labels!(&completion_suggestions, "password");
+}

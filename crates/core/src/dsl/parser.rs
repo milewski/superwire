@@ -563,6 +563,34 @@ mod tests {
     }
 
     #[test]
+    fn parses_blockless_deterministic_tool_calls() {
+        let workflow = parse_inline_workflow! {
+            tool list_participants {
+                output {
+                    count: number
+                }
+            }
+
+            dynamic {
+                data: call tool.list_participants
+            }
+        };
+
+        let Declaration::Dynamic(dynamic_block) = &workflow.declarations[1] else {
+            panic!("second declaration should be dynamic block");
+        };
+
+        let Expression::ToolCall(tool_call) = &dynamic_block.fields[0].value else {
+            panic!("dynamic value should be a tool call");
+        };
+
+        assert_eq!(tool_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Tool));
+        assert_eq!(tool_call.callee.accesses[0].field, "list_participants");
+        assert!(tool_call.input_fields.is_empty());
+        assert!(tool_call.binding_fields.is_empty());
+    }
+
+    #[test]
     fn parses_schema_union_types_and_optional_access() {
         let workflow = parse_inline_workflow! {
             schema AllTypes {
