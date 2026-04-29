@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
     AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration,
-    ReferenceKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
+    ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
 };
 use superwire_core::runtime::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingSymbolCategory};
@@ -1635,10 +1635,7 @@ impl SemanticIndex {
                             name: object_field.name.clone(),
                             field_type,
                             description: None,
-                            span: SourceSpan {
-                                start: SourcePosition { line: 1, column: 1 },
-                                end: SourcePosition { line: 1, column: 1 },
-                            },
+                            span: object_field.span,
                         })
                     })
                     .collect::<Vec<_>>();

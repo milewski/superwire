@@ -147,6 +147,36 @@ fn definition_resolves_dynamic_field_reference_and_nested_tool_output_field() {
 }
 
 #[test]
+fn definition_resolves_nested_dynamic_object_literal_field_reference() {
+    let source_template = inline_document_template! {
+        dynamic {
+            metadata: {
+                workflow: "dynamic_values"
+                version: 1
+            }
+        }
+
+        output {
+            workflow_name: dynamic.metadata.<cursor>workflow
+        }
+    };
+
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let expected_field_line = source
+        .lines()
+        .position(|source_line| source_line.contains("workflow: \"dynamic_values\""))
+        .and_then(|line_index| u32::try_from(line_index).ok())
+        .expect("source should include nested dynamic workflow field declaration");
+
+    let document_state = DocumentState::new(source);
+    let definition_range = document_state
+        .definition_range(cursor_position)
+        .expect("definition should resolve to nested dynamic object field declaration");
+
+    assert_eq!(definition_range.start.line, expected_field_line);
+}
+
+#[test]
 fn definition_resolves_tool_reference_inside_dynamic_tool_call() {
     let source_template = inline_document_template! {
         tool format_response {
