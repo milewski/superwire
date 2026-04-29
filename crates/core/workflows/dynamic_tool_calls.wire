@@ -1,0 +1,99 @@
+// This example demonstrates deterministic tool calls stored in `dynamic` blocks.
+// It shows workflow-level dynamic values used by `output`, plus an agent-local tool call.
+
+secrets {
+    api_key: string
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost"
+    api_key: "123"
+    models: ["gpt-4.1-mini"]
+}
+
+input {
+    query: string
+}
+
+tool searchable_web {
+    description: "Search the web and return a short result summary"
+
+    input {
+        query: string
+        limit: number
+    }
+
+    bindings {
+        api_key: string
+        timeout_seconds: number
+    }
+
+    output {
+        title: string
+        snippet: string
+    }
+}
+
+tool format_response {
+    description: "Format text into a final response payload"
+
+    input {
+        content: string
+    }
+
+    output {
+        markdown: string
+    }
+}
+
+dynamic {
+    max_results: 5
+    timeout_seconds: 30
+}
+
+dynamic {
+    search_result: call tool.searchable_web {
+        input {
+            query: input.query
+            limit: dynamic.max_results
+        }
+
+        bindings {
+            api_key: secrets.api_key
+            timeout_seconds: dynamic.timeout_seconds
+        }
+    }
+}
+
+dynamic {
+    formatted_result: call tool.format_response {
+        input {
+            content: "{{ dynamic.search_result.title }}: {{ dynamic.search_result.snippet }}"
+        }
+    }
+}
+
+agent research_agent {
+    model: openai("gpt-4.1-mini")
+
+    dynamic {
+        agent_ready_result: call tool.format_response {
+            input {
+                content: "Agent-local summary: {{ dynamic.formatted_result.markdown }}"
+            }
+        }
+    }
+
+    prompt: "Summarize this result: {{ dynamic.agent_ready_result.markdown }}"
+
+    output: {
+        answer: string
+    }
+}
+
+output {
+    search_title: dynamic.search_result.title
+    formatted_markdown: dynamic.formatted_result.markdown
+    answer: agent.research_agent.answer
+}

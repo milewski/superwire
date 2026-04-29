@@ -1142,6 +1142,72 @@ fn suggests_dynamic_agent_property_keyword() {
 }
 
 #[test]
+fn suggests_only_global_dynamic_fields_outside_agents() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            global_topic: "release"
+            global_limit: 5
+        }
+
+        agent alpha {
+            dynamic {
+                alpha_only: "alpha"
+            }
+
+            prompt: "hello"
+            output: string
+        }
+
+        agent beta {
+            dynamic {
+                beta_only: "beta"
+            }
+
+            prompt: "hello"
+            output: string
+        }
+
+        output {
+            value: dynamic.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "global_topic", "global_limit");
+    assert_completion_excludes_labels!(&completion_suggestions, "alpha_only", "beta_only");
+}
+
+#[test]
+fn suggests_global_and_local_dynamic_fields_inside_agent() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            global_topic: "release"
+            global_limit: 5
+        }
+
+        agent alpha {
+            dynamic {
+                alpha_only: "alpha"
+            }
+
+            prompt: dynamic.<cursor>
+            output: string
+        }
+
+        agent beta {
+            dynamic {
+                beta_only: "beta"
+            }
+
+            prompt: "hello"
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "global_topic", "global_limit", "alpha_only");
+    assert_completion_excludes_labels!(&completion_suggestions, "beta_only");
+}
+
+#[test]
 fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         provider openai {
