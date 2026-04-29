@@ -1,10 +1,10 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ObjectField, Reference,
-    ReferenceKeyword, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
+    ReferenceKeyword, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
-use crate::runtime::types::workflow_type_from_dsl;
+use crate::runtime::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
 use crate::runtime::InferenceSetting;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -217,6 +217,11 @@ pub enum ValidationIssue {
         tool_name: String,
         agent_name: String,
     },
+    InvalidToolBinding {
+        agent_name: String,
+        tool_name: String,
+        message: String,
+    },
     InvalidTypeExpressionReference {
         reference_path: String,
         context: ValidationContext,
@@ -259,6 +264,7 @@ impl ValidationIssue {
             Self::InvalidForLoopIterableType { .. } => "invalid_for_loop_iterable_type",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
             Self::UnknownToolReference { .. } => "unknown_tool_reference",
+            Self::InvalidToolBinding { .. } => "invalid_tool_binding",
             Self::InvalidTypeExpressionReference { .. } => "invalid_type_expression_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
             Self::DynamicDependencyCycle { .. } => "dynamic_dependency_cycle",
@@ -318,6 +324,13 @@ impl ValidationIssue {
             }
             Self::UnknownToolReference { tool_name, agent_name } => {
                 format!("Agent `{agent_name}` references undeclared tool `tool.{tool_name}`.")
+            }
+            Self::InvalidToolBinding {
+                agent_name,
+                tool_name,
+                message,
+            } => {
+                format!("Agent `{agent_name}` has invalid binding overrides for `tool.{tool_name}`: {message}.")
             }
             Self::InvalidKeywordReferenceRoot { keyword, context } => {
                 format!("`{}` reference requires a field path in {}.", keyword.as_str(), context.describe())
@@ -467,6 +480,11 @@ impl ValidationIssue {
                 tool_name: _,
                 agent_name: _,
             }
+            | Self::InvalidToolBinding {
+                agent_name: _,
+                tool_name: _,
+                message: _,
+            }
             | Self::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -608,6 +626,14 @@ impl ValidationIssue {
             Self::UnknownToolReference { tool_name, agent_name: _ } => {
                 format!("Declare `tool {tool_name} {{ ... }}` before using `tool.{tool_name}` in an agent `tools` list.")
             }
+            Self::InvalidToolBinding {
+                agent_name: _,
+                tool_name: _,
+                message: _,
+            } => {
+                "Pass required tool bindings with `tool.name { bindings { name: expression } }`, or make them fixed in the tool declaration."
+                    .to_string()
+            }
             Self::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -714,6 +740,11 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 tool_name: _,
                 agent_name: _,
             } => Self::UnknownToolReference,
+            ValidationIssue::InvalidToolBinding {
+                agent_name: _,
+                tool_name: _,
+                message: _,
+            } => Self::InvalidToolBinding,
             ValidationIssue::InvalidTypeExpressionReference {
                 reference_path: _,
                 context: _,
@@ -1774,6 +1805,53 @@ impl DirectToolName for Reference {
     }
 }
 
+trait AgentToolBindingFields {
+    fn agent_tool_binding_fields(&self) -> &[ObjectField];
+}
+
+trait LiteralTypeCompatibility {
+    fn is_literal_compatible_with_type(&self, expected_type: &WorkflowType) -> bool;
+}
+
+impl AgentToolBindingFields for Expression {
+    fn agent_tool_binding_fields(&self) -> &[ObjectField] {
+        match self {
+            Self::ToolCall(tool_call) => tool_call.agent_tool_binding_fields(),
+            Self::Reference(_)
+            | Self::FunctionCall(_)
+            | Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => &[],
+        }
+    }
+}
+
+impl AgentToolBindingFields for ToolCall {
+    fn agent_tool_binding_fields(&self) -> &[ObjectField] {
+        self.binding_fields.as_slice()
+    }
+}
+
+impl LiteralTypeCompatibility for Expression {
+    fn is_literal_compatible_with_type(&self, expected_type: &WorkflowType) -> bool {
+        match (self, expected_type) {
+            (Self::StringLiteral(string_literal), WorkflowType::StringEnum(enum_values)) => enum_values.contains(string_literal),
+            (Self::StringLiteral(_), WorkflowType::String) => true,
+            (Self::NumberLiteral(number_literal), WorkflowType::Float) => number_literal.replace('_', "").contains('.'),
+            (Self::NumberLiteral(number_literal), WorkflowType::Integer) => !number_literal.replace('_', "").contains('.'),
+            (Self::BooleanLiteral(_), WorkflowType::Boolean) | (Self::NullLiteral, WorkflowType::Null) => true,
+            (expression, WorkflowType::Union(union_members)) => union_members
+                .iter()
+                .any(|union_member| expression.is_literal_compatible_with_type(union_member)),
+            _ => false,
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut keyword_reference_validation_state = KeywordReferenceValidationState::new(workflow, validation_index, validation_report);
@@ -1865,14 +1943,25 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                 );
                             }
                         }
-                        AgentProperty::Model(model_expression)
-                        | AgentProperty::Inference(model_expression)
-                        | AgentProperty::Tools(model_expression) => {
+                        AgentProperty::Model(model_expression) | AgentProperty::Inference(model_expression) => {
                             keyword_reference_validation_state.validate_expression(
                                 model_expression,
                                 &agent_dynamic_field_types,
                                 agent_context.clone(),
                                 SecretReferencePolicy::Allow,
+                            );
+                        }
+                        AgentProperty::Tools(tools_expression) => {
+                            keyword_reference_validation_state.validate_expression(
+                                tools_expression,
+                                &agent_dynamic_field_types,
+                                agent_context.clone(),
+                                SecretReferencePolicy::Allow,
+                            );
+                            keyword_reference_validation_state.validate_agent_tool_bindings(
+                                agent_declaration,
+                                tools_expression,
+                                &agent_dynamic_field_types,
                             );
                         }
                         AgentProperty::Output {
@@ -2067,6 +2156,120 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 found_type: inferred_iterable_type.to_string(),
             },
             Some(agent_declaration.span),
+        );
+    }
+
+    fn validate_agent_tool_bindings(
+        &mut self,
+        agent_declaration: &AgentDeclaration,
+        tools_expression: &Expression,
+        local_binding_types: &HashMap<String, WorkflowType>,
+    ) {
+        let Expression::ArrayLiteral(tool_expressions) = tools_expression else {
+            return;
+        };
+
+        for tool_expression in tool_expressions {
+            let Some(tool_name) = tool_expression.direct_tool_name() else {
+                continue;
+            };
+
+            let Some(WorkflowType::Object(expected_binding_fields)) = self.validation_index.tool_binding_types.get(&tool_name) else {
+                continue;
+            };
+
+            let binding_fields = tool_expression.agent_tool_binding_fields();
+            self.validate_agent_tool_binding_fields(
+                agent_declaration,
+                &tool_name,
+                binding_fields,
+                expected_binding_fields,
+                local_binding_types,
+            );
+        }
+    }
+
+    fn validate_agent_tool_binding_fields(
+        &mut self,
+        agent_declaration: &AgentDeclaration,
+        tool_name: &str,
+        binding_fields: &[ObjectField],
+        expected_binding_fields: &std::collections::BTreeMap<String, WorkflowType>,
+        local_binding_types: &HashMap<String, WorkflowType>,
+    ) {
+        for expected_binding_name in expected_binding_fields.keys() {
+            if binding_fields
+                .iter()
+                .any(|binding_field| &binding_field.name == expected_binding_name)
+            {
+                continue;
+            }
+
+            self.push_invalid_tool_binding(
+                agent_declaration,
+                tool_name,
+                format!("missing required bound argument `{expected_binding_name}`"),
+                Some(agent_declaration.span),
+            );
+        }
+
+        let mut type_inference_context = self.for_loop_type_inference_context.clone();
+        type_inference_context.local_binding_types.clone_from(local_binding_types);
+
+        for binding_field in binding_fields {
+            let Some(expected_binding_type) = expected_binding_fields.get(&binding_field.name) else {
+                self.push_invalid_tool_binding(
+                    agent_declaration,
+                    tool_name,
+                    format!("unknown bound argument `{}`", binding_field.name),
+                    Some(agent_declaration.span),
+                );
+
+                continue;
+            };
+
+            if binding_field.value.is_literal_compatible_with_type(expected_binding_type) {
+                continue;
+            }
+
+            let Ok(actual_binding_type) = infer_expression_type(
+                &binding_field.value,
+                &type_inference_context,
+                &format!("tool `tool.{tool_name}` bound argument `{}`", binding_field.name),
+            ) else {
+                continue;
+            };
+
+            if ensure_type_matches(expected_binding_type, &actual_binding_type) {
+                continue;
+            }
+
+            self.push_invalid_tool_binding(
+                agent_declaration,
+                tool_name,
+                format!(
+                    "bound argument `{}` expects {}, found {}",
+                    binding_field.name, expected_binding_type, actual_binding_type
+                ),
+                Some(agent_declaration.span),
+            );
+        }
+    }
+
+    fn push_invalid_tool_binding(
+        &mut self,
+        agent_declaration: &AgentDeclaration,
+        tool_name: &str,
+        message: String,
+        span: Option<SourceSpan>,
+    ) {
+        self.validation_report.push_issue_with_span(
+            ValidationIssue::InvalidToolBinding {
+                agent_name: agent_declaration.name.clone(),
+                tool_name: tool_name.to_string(),
+                message,
+            },
+            span,
         );
     }
 
@@ -3020,6 +3223,114 @@ mod tests {
                 tool_name: _,
                 agent_name: _
             }
+        );
+    }
+
+    #[test]
+    fn reports_missing_agent_tool_binding_overrides() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: number
+                task_id: number
+            }
+
+            tool fetch_participant_answer {
+                input {
+                    participant_id: number
+                }
+
+                bindings {
+                    project_id: number
+                    task_id: number
+                }
+            }
+
+            agent participant_answer_analyzer {
+                tools: [tool.fetch_participant_answer]
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidToolBinding {
+                agent_name,
+                tool_name,
+                message: _
+            } if agent_name == "participant_answer_analyzer" && tool_name == "fetch_participant_answer"
+        );
+    }
+
+    #[test]
+    fn accepts_fixed_tool_bindings_without_agent_overrides() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: number
+            }
+
+            tool fetch_participant_answer {
+                input {
+                    participant_id: number
+                }
+
+                bindings {
+                    project_id: input.project_id
+                    task_id: 123
+                }
+            }
+
+            agent participant_answer_analyzer {
+                tools: [tool.fetch_participant_answer]
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(
+            workflow,
+            ValidationIssue::InvalidToolBinding {
+                agent_name: _,
+                tool_name: _,
+                message: _
+            }
+        );
+    }
+
+    #[test]
+    fn reports_agent_tool_binding_override_type_mismatch() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: string
+                task_id: number
+            }
+
+            tool fetch_participant_answer {
+                input {
+                    participant_id: number
+                }
+
+                bindings {
+                    project_id: number
+                    task_id: number
+                }
+            }
+
+            agent participant_answer_analyzer {
+                tools: [
+                    tool.fetch_participant_answer {
+                        bindings {
+                            project_id: input.project_id
+                            task_id: input.task_id
+                        }
+                    }
+                ]
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidToolBinding {
+                agent_name: _,
+                tool_name: _,
+                message
+            } if message.contains("expects number, found string")
         );
     }
 

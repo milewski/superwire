@@ -261,6 +261,9 @@
           "include": "#strings"
         },
         {
+          "include": "#agent-tool-bindings"
+        },
+        {
           "include": "#tool-calls"
         },
         {
@@ -402,6 +405,37 @@
               "name": "punctuation.separator.wire"
             }
           }
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "agent-tool-bindings": {
+      "begin": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "entity.name.function.wire"
+        },
+        "4": {
+          "name": "punctuation.section.block.begin.wire"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#property-assignment"
         },
         {
           "include": "#expressions"

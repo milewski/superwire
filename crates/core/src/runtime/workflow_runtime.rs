@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration,
-    Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, ToolCall, ToolDeclaration, TypeExpression, Workflow,
+    parse_workflow, AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, Declaration, Expression, ObjectField,
+    Reference, ReferenceKeyword, ToolCall, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::runtime::error::WorkflowRuntimeError;
 use crate::runtime::expression::{evaluate_expression, EvaluationContext};
@@ -1312,7 +1312,8 @@ impl Expression {
             return Err(WorkflowRuntimeError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
                 property: AgentExpressionPropertyName::Tools.as_str().to_string(),
-                message: "tools must be an array literal like [tool.weather, tool.weather(country: input.country)]".to_string(),
+                message: "tools must be an array literal like [tool.weather, tool.weather { bindings { country: input.country } }]"
+                    .to_string(),
             });
         };
 
@@ -1341,11 +1342,22 @@ impl Expression {
                     definition,
                 })
             }
-            Self::FunctionCall(function_call) => function_call.parse_agent_tool_call(agent_declaration, runtime_tool_catalog),
+            Self::ToolCall(tool_call) => tool_call.parse_agent_tool_binding(agent_declaration, runtime_tool_catalog),
+            Self::FunctionCall(function_call) => {
+                let tool_name = function_call.callee.parse_agent_tool_name(agent_declaration)?;
+
+                Err(WorkflowRuntimeError::InvalidAgentProperty {
+                    agent_name: agent_declaration.name.clone(),
+                    property: AgentExpressionPropertyName::Tools.as_str().to_string(),
+                    message: format!(
+                        "tool binding overrides must use `tool.{tool_name} {{ bindings {{ name: expression }} }}` instead of `tool.{tool_name}(...)`"
+                    ),
+                })
+            }
             _ => Err(WorkflowRuntimeError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
                 property: AgentExpressionPropertyName::Tools.as_str().to_string(),
-                message: "each tools entry must be either `tool.name` or `tool.name(arg: expression, ...)`".to_string(),
+                message: "each tools entry must be either `tool.name` or `tool.name { bindings { name: expression } }`".to_string(),
             }),
         }
     }
@@ -1373,8 +1385,8 @@ impl Reference {
     }
 }
 
-impl FunctionCall {
-    fn parse_agent_tool_call(
+impl ToolCall {
+    fn parse_agent_tool_binding(
         &self,
         agent_declaration: &AgentDeclaration,
         runtime_tool_catalog: &RuntimeToolCatalog,
@@ -1384,31 +1396,21 @@ impl FunctionCall {
         let mut argument_expressions = Vec::new();
         let mut seen_argument_names = std::collections::HashSet::<String>::new();
 
-        for call_argument in &self.arguments {
-            let CallArgument::Named(named_argument) = call_argument else {
+        for binding_field in &self.binding_fields {
+            if !seen_argument_names.insert(binding_field.name.clone()) {
                 return Err(WorkflowRuntimeError::InvalidAgentProperty {
                     agent_name: agent_declaration.name.clone(),
                     property: AgentExpressionPropertyName::Tools.as_str().to_string(),
                     message: format!(
-                        "tool call `tool.{tool_name}(...)` only supports named arguments (for example `tool.{tool_name}(country: input.country)` )"
-                    ),
-                });
-            };
-
-            if !seen_argument_names.insert(named_argument.name.clone()) {
-                return Err(WorkflowRuntimeError::InvalidAgentProperty {
-                    agent_name: agent_declaration.name.clone(),
-                    property: AgentExpressionPropertyName::Tools.as_str().to_string(),
-                    message: format!(
-                        "tool call `tool.{tool_name}(...)` has duplicate named argument `{}`",
-                        named_argument.name
+                        "tool binding `tool.{tool_name}` has duplicate binding override `{}`",
+                        binding_field.name
                     ),
                 });
             }
 
             argument_expressions.push(AgentToolArgumentExpression {
-                argument_name: named_argument.name.clone(),
-                expression: named_argument.value.clone(),
+                argument_name: binding_field.name.clone(),
+                expression: binding_field.value.clone(),
             });
         }
 

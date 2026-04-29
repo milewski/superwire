@@ -179,6 +179,8 @@ pub enum DiagnosticCode {
     UnknownSchemaReference,
     #[serde(rename = "unknown_tool_reference")]
     UnknownToolReference,
+    #[serde(rename = "invalid_tool_binding")]
+    InvalidToolBinding,
     #[serde(rename = "invalid_type_expression_reference")]
     InvalidTypeExpressionReference,
     #[serde(rename = "agent_dependency_cycle")]

@@ -410,7 +410,79 @@ impl AgentProperty {
             ),
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
-            Self::Tools(expression) => formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression),
+            Self::Tools(expression) => self.push_agent_tools_property(formatter, expression),
+        }
+    }
+
+    fn push_agent_tools_property(&self, formatter: &mut DslFormatter, expression: &Expression) {
+        let Expression::ArrayLiteral(tool_bindings) = expression else {
+            formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression);
+
+            return;
+        };
+
+        formatter.push_indent();
+        formatter.output.push_str(AgentPropertyName::Tools.as_str());
+        formatter.output.push_str(": ");
+
+        if tool_bindings.is_empty() {
+            formatter.output.push_str("[]");
+            formatter.push_newline();
+
+            return;
+        }
+
+        if let Some(inline_tool_bindings) = self.inline_agent_tool_bindings(formatter, tool_bindings) {
+            if formatter.can_fit_inline_text(&inline_tool_bindings) {
+                formatter.output.push_str(&inline_tool_bindings);
+                formatter.push_newline();
+
+                return;
+            }
+        }
+
+        formatter.output.push('[');
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for tool_binding in tool_bindings {
+            formatter.push_indent();
+            tool_binding.push_agent_tool_binding_to_formatter(formatter);
+            formatter.output.push(',');
+            formatter.push_newline();
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push(']');
+        formatter.push_newline();
+    }
+
+    fn inline_agent_tool_bindings(&self, formatter: &DslFormatter, tool_bindings: &[Expression]) -> Option<String> {
+        let mut inline_tool_bindings = Vec::new();
+
+        for tool_binding in tool_bindings {
+            match tool_binding {
+                Expression::Reference(reference) => {
+                    let mut reference_formatter = DslFormatter::new();
+                    reference.push_to_formatter(&mut reference_formatter);
+                    inline_tool_bindings.push(reference_formatter.output);
+                }
+                Expression::ToolCall(tool_call) if tool_call.binding_fields.is_empty() => {
+                    let mut tool_call_formatter = DslFormatter::new();
+                    tool_call.push_agent_binding_to_formatter(&mut tool_call_formatter);
+                    inline_tool_bindings.push(tool_call_formatter.output);
+                }
+                _ => return None,
+            }
+        }
+
+        let inline_expression = format!("[{}]", inline_tool_bindings.join(", "));
+
+        if formatter.can_fit_inline_text(&inline_expression) {
+            Some(inline_expression)
+        } else {
+            None
         }
     }
 
@@ -591,6 +663,14 @@ impl Expression {
             Self::ObjectLiteral(object_fields) => {
                 self.push_object_literal_to_formatter(formatter, object_fields, expression_format);
             }
+        }
+    }
+
+    fn push_agent_tool_binding_to_formatter(&self, formatter: &mut DslFormatter) {
+        match self {
+            Self::Reference(reference) => reference.push_to_formatter(formatter),
+            Self::ToolCall(tool_call) => tool_call.push_agent_binding_to_formatter(formatter),
+            _ => self.push_to_formatter(formatter, ExpressionFormat::Canonical),
         }
     }
 
@@ -975,6 +1055,28 @@ impl ToolCall {
             formatter.push_declaration_block_end();
         }
 
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
+    }
+
+    fn push_agent_binding_to_formatter(&self, formatter: &mut DslFormatter) {
+        self.callee.push_to_formatter(formatter);
+
+        if self.binding_fields.is_empty() {
+            return;
+        }
+
+        formatter.output.push_str(" {");
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+        formatter.push_declaration_block_start("bindings");
+
+        for object_field in &self.binding_fields {
+            object_field.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
         formatter.indentation_depth -= 1;
         formatter.push_indent();
         formatter.output.push('}');

@@ -272,8 +272,8 @@ mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
-        AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot,
-        StringTemplatePart, TypeExpression,
+        AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
+        TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -408,13 +408,23 @@ mod tests {
     }
 
     #[test]
-    fn parses_tools_calls_and_named_arguments() {
+    fn parses_tools_entries_and_binding_overrides() {
         let workflow = parse_inline_workflow! {
             agent assistant_with_tools {
                 tools: [
                     tool.web_search,
-                    tool.knowledge_base_search(password: secrets.knowledge_base_password),
-                    tool.issue_tracker_lookup(project: "engine-ai", status: "open", token: secrets.issue_tracker_token)
+                    tool.knowledge_base_search {
+                        bindings {
+                            password: secrets.knowledge_base_password
+                        }
+                    },
+                    tool.issue_tracker_lookup {
+                        bindings {
+                            project: "engine-ai"
+                            status: "open"
+                            token: secrets.issue_tracker_token
+                        }
+                    }
                 ]
             }
         };
@@ -440,20 +450,27 @@ mod tests {
         assert_eq!(tools_entries.len(), 3);
 
         match &tools_entries[1] {
-            Expression::FunctionCall(function_call) => {
-                assert_eq!(function_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Tool));
-                assert_eq!(function_call.callee.accesses[0].field, "knowledge_base_search");
-                assert_eq!(function_call.arguments.len(), 1);
-
-                match &function_call.arguments[0] {
-                    CallArgument::Named(named_argument) => {
-                        assert_eq!(named_argument.name, "password");
-                    }
-                    _ => panic!("knowledge_base_search argument should be named"),
-                }
+            Expression::ToolCall(tool_call) => {
+                assert_eq!(tool_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Tool));
+                assert_eq!(tool_call.callee.accesses[0].field, "knowledge_base_search");
+                assert_eq!(tool_call.binding_fields.len(), 1);
+                assert_eq!(tool_call.binding_fields[0].name, "password");
             }
-            _ => panic!("second tools entry should be function call"),
+            _ => panic!("second tools entry should be tool binding"),
         }
+    }
+
+    #[test]
+    fn rejects_call_style_tool_binding_overrides_inside_tools_property() {
+        let workflow_source = workflow_source! {
+            agent assistant_with_tools {
+                tools: [
+                    tool.knowledge_base_search(password: secrets.knowledge_base_password)
+                ]
+            }
+        };
+
+        assert!(parse_workflow(workflow_source).is_err());
     }
 
     #[test]

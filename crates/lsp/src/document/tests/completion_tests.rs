@@ -363,7 +363,11 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 }
 
                 agent tooling {
-                    tools: [tool.knowledge_base_search(<cursor>)]
+                    tools: [tool.knowledge_base_search {
+                        bindings {
+                            <cursor>
+                        }
+                    }]
                 }
             },
             expected_present_labels: vec!["password"],

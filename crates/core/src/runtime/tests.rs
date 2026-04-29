@@ -928,7 +928,12 @@ async fn evaluates_agent_tools_entries_and_binds_named_tool_arguments() {
             model: openai("model-a")
             tools: [
                 tool.weather,
-                tool.lookup_weather(country: input.country, static_mode: true)
+                tool.lookup_weather {
+                    bindings {
+                        country: input.country
+                        static_mode: true
+                    }
+                }
             ]
             prompt: "Use tools"
             output: string
@@ -1014,7 +1019,13 @@ async fn evaluates_tool_bound_arguments_from_secrets_context() {
 
         agent assistant {
             model: openai("model-a")
-            tools: [tool.weather(key: secrets.key)]
+            tools: [
+                tool.weather {
+                    bindings {
+                        key: secrets.key
+                    }
+                }
+            ]
             prompt: "Use tools"
             output: string
         }
@@ -1106,7 +1117,7 @@ fn fails_workflow_compilation_when_required_tool_bound_arguments_are_missing() {
         agent participants_fetcher {
             model: openai("model-a")
             tools: [
-                tool.get_answered_participants_for_task()
+                tool.get_answered_participants_for_task
             ]
             prompt: "Find participants"
             output: string
@@ -1179,7 +1190,13 @@ fn fails_workflow_compilation_when_tool_bound_argument_type_is_invalid() {
 
         agent assistant {
             model: openai("model-a")
-            tools: [tool.knowledge_base_search(password: 123)]
+            tools: [
+                tool.knowledge_base_search {
+                    bindings {
+                        password: 123
+                    }
+                }
+            ]
             prompt: input.question
             output: string
         }
@@ -1253,7 +1270,12 @@ fn compiles_workflow_when_required_tool_bound_arguments_are_provided() {
         agent participants_fetcher {
             model: openai("model-a")
             tools: [
-                tool.get_answered_participants_for_task(project_id: input.project_id, task_id: input.task_id)
+                tool.get_answered_participants_for_task {
+                    bindings {
+                        project_id: input.project_id
+                        task_id: input.task_id
+                    }
+                }
             ]
             prompt: "Find participants"
             output: string
