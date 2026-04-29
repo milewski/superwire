@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -384,6 +385,54 @@ fn exports_workflow_output_fields_that_reference_dynamic_values() {
     );
 }
 
+#[test]
+fn exports_workflow_dynamic_tool_calls_used_by_output_fields() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        input {
+            query: string
+        }
+
+        tool searchable_web {
+            input {
+                query: string
+            }
+
+            output {
+                title: string
+            }
+        }
+
+        dynamic {
+            search_result: call tool.searchable_web {
+                input {
+                    query: input.query
+                }
+            }
+        }
+
+        output {
+            title: dynamic.search_result.title
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("dynamic-tool-output-to-json.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(command_output.status.success(), "workflow to-json command should succeed");
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(
+        exported_json.pointer("/dynamic/search_result/$tool_call"),
+        Some(&json!("tool.searchable_web"))
+    );
+    assert_eq!(
+        exported_json.pointer("/output/contract/workflow_type/fields/title/kind"),
+        Some(&json!("string"))
+    );
+}
+
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {
     let mut command = Command::new(cli_binary_path());
     command.arg("workflow").arg("to-json");
@@ -461,12 +510,15 @@ impl Drop for TemporaryWorkspace {
 }
 
 fn unique_suffix() -> String {
+    static NEXT_UNIQUE_SUFFIX: AtomicU64 = AtomicU64::new(0);
+
     let timestamp_millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after unix epoch")
-        .as_millis();
+        .as_nanos();
 
     let process_identifier = std::process::id();
+    let sequence = NEXT_UNIQUE_SUFFIX.fetch_add(1, Ordering::Relaxed);
 
-    format!("{timestamp_millis}-{process_identifier}")
+    format!("{timestamp_millis}-{process_identifier}-{sequence}")
 }
