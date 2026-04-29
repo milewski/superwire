@@ -180,7 +180,14 @@ fn exports_tool_input_and_binding_schemas() {
 
         agent assistant {
             model: openai("gpt-4.1-mini")
-            tools: [tool.issue_tracker_lookup(project: "superwire", status: "open")]
+            tools: [
+                tool.issue_tracker_lookup {
+                    bindings {
+                        project: "superwire"
+                        status: "open"
+                    }
+                }
+            ]
             prompt: "lookup issue"
             output: string
         }
@@ -239,7 +246,13 @@ fn omits_empty_required_array_for_tool_without_agent_input() {
 
         agent assistant {
             model: openai("gpt-4.1-mini")
-            tools: [tool.list_all_participants(project_id: 1)]
+            tools: [
+                tool.list_all_participants {
+                    bindings {
+                        project_id: 1
+                    }
+                }
+            ]
             prompt: "list participants"
             output: string
         }
@@ -598,6 +611,40 @@ fn rejects_dynamic_tool_calls_with_wrong_typed_binding_type() {
 
     let stderr = String::from_utf8_lossy(&command_output.stderr);
     assert!(stderr.contains("expects number, found string"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn rejects_agent_without_prompt_without_panicking() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        agent assistant {
+            model: openai("gpt-4.1-mini")
+            output: string
+        }
+
+        output {
+            answer: agent.assistant
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("missing-prompt.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(!command_output.status.success(), "workflow to-json command should fail");
+
+    let stderr = String::from_utf8_lossy(&command_output.stderr);
+    assert!(
+        stderr.contains("Agent `assistant` has invalid `prompt` property"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "workflow to-json command should not panic: {stderr}");
 }
 
 fn run_workflow_to_json_command(arguments: &[&std::ffi::OsStr]) -> Output {

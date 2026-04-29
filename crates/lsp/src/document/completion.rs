@@ -405,9 +405,12 @@ impl DocumentState {
         let before_bindings_keyword = &source_prefix[..bindings_keyword_index];
         let tool_namespace = format!("{}.", ReferenceKeyword::Tool.as_str());
         let tool_namespace_index = before_bindings_keyword.rfind(tool_namespace.as_str())?;
+        let before_tool_namespace = before_bindings_keyword[..tool_namespace_index].trim_end();
         let call_keyword = ToolCallKeyword::Call.as_str();
+        let inside_deterministic_tool_call = before_tool_namespace.ends_with(call_keyword);
+        let inside_agent_tool_binding = before_tool_namespace.ends_with('[') || before_tool_namespace.ends_with(',');
 
-        if !before_bindings_keyword[..tool_namespace_index].trim_end().ends_with(call_keyword) {
+        if !inside_deterministic_tool_call && !inside_agent_tool_binding {
             return None;
         }
 
@@ -514,8 +517,8 @@ impl DocumentState {
             || !reference_completion_path.complete_accesses.is_empty()
     }
 
-    fn has_existing_tool_call_parentheses(line_suffix: &str) -> bool {
-        line_suffix.trim_start().starts_with('(')
+    fn has_existing_tool_binding_block(line_suffix: &str) -> bool {
+        matches!(line_suffix.trim_start().chars().next(), Some('{' | '('))
     }
 
     fn provider_non_reference_suggestions(
@@ -598,7 +601,7 @@ impl DocumentState {
             &reference_completion_path,
             reference_completion_constraint,
             inputs.position,
-            Self::has_existing_tool_call_parentheses(inputs.line_suffix),
+            Self::has_existing_tool_binding_block(inputs.line_suffix),
         );
 
         if let Some(inference_suggestions) = self.inference_reference_completion_suggestions(

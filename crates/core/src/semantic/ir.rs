@@ -34,6 +34,7 @@ pub struct TypedAgentIr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentPropertyName {
     Model,
+    Prompt,
 }
 
 impl AgentPropertyName {
@@ -41,6 +42,7 @@ impl AgentPropertyName {
     fn as_str(self) -> &'static str {
         match self {
             Self::Model => "model",
+            Self::Prompt => "prompt",
         }
     }
 }
@@ -186,6 +188,8 @@ fn collect_typed_agents(
         let final_output_type = workflow_type_from_dsl(&final_output_type_expression, named_schema_types)?;
 
         let (provider_name, model_expression) = parse_agent_model_binding(agent_declaration)?;
+        required_agent_property_expression(agent_declaration, AgentPropertyName::Prompt)?;
+
         let provider_declaration = workflow.find_provider(&provider_name);
         let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration);
 
@@ -452,6 +456,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
     for agent_property in &agent_declaration.properties {
         match agent_property {
             AgentProperty::Model(expression) if property_name == AgentPropertyName::Model => return Some(expression),
+            AgentProperty::Prompt(expression) if property_name == AgentPropertyName::Prompt => return Some(expression),
             AgentProperty::Model(_)
             | AgentProperty::Prompt(_)
             | AgentProperty::Output {
@@ -627,6 +632,38 @@ mod tests {
         assert!(matches!(
             typecheck_result,
             Err(WorkflowRuntimeError::InvalidAgentProperty { property, .. }) if property == "model"
+        ));
+    }
+
+    #[test]
+    fn fails_typecheck_when_agent_prompt_property_is_missing() {
+        #[derive(Debug, Deserialize, JsonSchema)]
+        #[allow(dead_code)]
+        struct Output {
+            value: String,
+        }
+
+        let workflow = parse_inline_workflow! {
+            provider openai {
+                driver: "openai"
+                models: ["model-a"]
+            }
+
+            agent missing_prompt {
+                model: openai("model-a")
+                output: string
+            }
+
+            output {
+                value: agent.missing_prompt
+            }
+        };
+
+        let typecheck_result = build_typed_workflow_ir::<(), Output>(&workflow);
+
+        assert!(matches!(
+            typecheck_result,
+            Err(WorkflowRuntimeError::InvalidAgentProperty { property, .. }) if property == "prompt"
         ));
     }
 }

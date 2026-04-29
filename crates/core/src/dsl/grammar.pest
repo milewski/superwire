@@ -49,7 +49,12 @@ prompt_property = { "prompt" ~ ":" ~ expression }
 output_property = { "output" ~ ":" ~ type_expression ~ plain_string_literal? }
 context_property = { "context" ~ ":" ~ expression }
 inference_property = { "inference" ~ ":" ~ expression }
-tools_property = { "tools" ~ ":" ~ expression }
+tools_property = { "tools" ~ ":" ~ tools_expression }
+
+tools_expression = { "[" ~ (agent_tool_binding ~ ("," ~ agent_tool_binding)* ~ ","?)? ~ "]" }
+agent_tool_binding = { reference ~ agent_tool_binding_block? }
+agent_tool_binding_block = { "{" ~ agent_tool_binding_property* ~ "}" }
+agent_tool_binding_property = _{ tool_call_bindings_property }
 
 output_declaration = { "output" ~ object_expression }
 

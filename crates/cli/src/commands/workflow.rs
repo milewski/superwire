@@ -1200,25 +1200,21 @@ impl SerializableToolBinding {
                         bind: BTreeMap::new(),
                     });
                 }
-                Expression::FunctionCall(function_call) => {
-                    if !function_call.callee.is_keyword_root(superwire_core::dsl::ReferenceKeyword::Tool) {
+                Expression::ToolCall(tool_call) => {
+                    if !tool_call.callee.is_keyword_root(superwire_core::dsl::ReferenceKeyword::Tool) {
                         continue;
                     }
 
-                    let Some(tool_name) = function_call.callee.first_access_field() else {
+                    let Some(tool_name) = tool_call.callee.first_access_field() else {
                         continue;
                     };
 
                     let mut binding_values = BTreeMap::<String, Value>::new();
 
-                    for call_argument in &function_call.arguments {
-                        let CallArgument::Named(named_argument) = call_argument else {
-                            continue;
-                        };
-
+                    for binding_field in &tool_call.binding_fields {
                         binding_values.insert(
-                            named_argument.name.clone(),
-                            SerializableExpression::to_compact_json(&named_argument.value),
+                            binding_field.name.clone(),
+                            SerializableExpression::to_compact_json(&binding_field.value),
                         );
                     }
 
@@ -1234,7 +1230,7 @@ impl SerializableToolBinding {
                 | Expression::NullLiteral
                 | Expression::ArrayLiteral(_)
                 | Expression::ObjectLiteral(_)
-                | Expression::ToolCall(_) => {}
+                | Expression::FunctionCall(_) => {}
             }
         }
 

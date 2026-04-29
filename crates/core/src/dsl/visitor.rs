@@ -439,11 +439,51 @@ impl AstVisitor {
                 Ok(AgentProperty::Inference(self.visit_expression(expression_pair)?))
             }
             Rule::tools_property => {
-                let expression_pair = self.first_inner_pair(property_pair, "tools property")?;
-                Ok(AgentProperty::Tools(self.visit_expression(expression_pair)?))
+                let tools_expression_pair = self.first_inner_pair(property_pair, "tools property")?;
+                Ok(AgentProperty::Tools(self.visit_tools_expression(tools_expression_pair)?))
             }
             _ => unreachable!("agent block should contain only valid agent property rules"),
         }
+    }
+
+    fn visit_tools_expression(&self, tools_expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
+        let mut tool_bindings = Vec::new();
+
+        for agent_tool_binding_pair in tools_expression_pair.into_inner() {
+            tool_bindings.push(self.visit_agent_tool_binding(agent_tool_binding_pair)?);
+        }
+
+        Ok(Expression::ArrayLiteral(tool_bindings))
+    }
+
+    fn visit_agent_tool_binding(&self, agent_tool_binding_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
+        let agent_tool_binding_span = source_span_from_pair(&agent_tool_binding_pair);
+        let mut inner_pairs = agent_tool_binding_pair.into_inner();
+        let callee_pair = self.next_pair(&mut inner_pairs, "agent tool binding callee", "agent tool binding")?;
+        let callee = self.visit_reference(callee_pair)?;
+
+        let Some(block_pair) = inner_pairs.next() else {
+            return Ok(Expression::Reference(callee));
+        };
+
+        let mut binding_fields = Vec::new();
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::tool_call_bindings_property => {
+                    let object_expression_pair = self.first_inner_pair(property_pair, "agent tool binding bindings property")?;
+                    binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                _ => unreachable!("agent tool binding block should contain only valid agent tool binding property rules"),
+            }
+        }
+
+        Ok(Expression::ToolCall(ToolCall {
+            callee,
+            input_fields: Vec::new(),
+            binding_fields,
+            span: agent_tool_binding_span,
+        }))
     }
 
     fn visit_output_declaration(&self, output_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {

@@ -105,6 +105,7 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::InvalidForLoopIterableType => Self::InvalidForLoopIterableType,
             CoreDiagnosticCode::UnknownSchemaReference => Self::UnknownSchemaReference,
             CoreDiagnosticCode::UnknownToolReference => Self::UnknownToolReference,
+            CoreDiagnosticCode::InvalidToolBinding => Self::InvalidToolBinding,
             CoreDiagnosticCode::InvalidTypeExpressionReference => Self::InvalidTypeExpressionReference,
             CoreDiagnosticCode::AgentDependencyCycle => Self::AgentDependencyCycle,
             CoreDiagnosticCode::DynamicDependencyCycle => Self::DynamicDependencyCycle,

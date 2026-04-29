@@ -3,7 +3,7 @@ agent formatter_checks {
     model: openai("gpt-4.1-mini")
     prompt: "This is a very long prompt sentence that should exceed the formatter line width limit and therefore be wrapped into a multiline string block automatically by the formatter."
     context: [1,2,3]
-    tools: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]
+    tools: [tool.one,tool.two,tool.three,tool.four,tool.five,tool.six,tool.seven,tool.eight,tool.nine,tool.ten,tool.eleven,tool.twelve,tool.thirteen,tool.fourteen,tool.fifteen]
     output: string
 }
 
@@ -22,36 +22,21 @@ agent formatter_checks {
     context: [1, 2, 3]
 
     tools: [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27,
-        28,
-        29,
-        30,
+        tool.one,
+        tool.two,
+        tool.three,
+        tool.four,
+        tool.five,
+        tool.six,
+        tool.seven,
+        tool.eight,
+        tool.nine,
+        tool.ten,
+        tool.eleven,
+        tool.twelve,
+        tool.thirteen,
+        tool.fourteen,
+        tool.fifteen,
     ]
 
     output: string

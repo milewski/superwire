@@ -83,7 +83,7 @@ fn inserts_plain_tool_name_for_tool_without_bounded_arguments() {
 }
 
 #[test]
-fn inserts_call_for_tool_with_bounded_arguments_when_parentheses_do_not_exist() {
+fn inserts_binding_block_for_tool_with_bounded_arguments_when_block_does_not_exist() {
     let completion_suggestions = inline_completion_suggestions! {
         tool issue_tracker_lookup {
             bindings {
@@ -98,11 +98,14 @@ fn inserts_call_for_tool_with_bounded_arguments_when_parentheses_do_not_exist() 
 
     let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "issue_tracker_lookup");
 
-    assert_eq!(completion_suggestion.insert_text, "issue_tracker_lookup($1)");
+    assert_eq!(
+        completion_suggestion.insert_text,
+        "issue_tracker_lookup {\n    bindings {\n        $1\n    }\n}"
+    );
 }
 
 #[test]
-fn inserts_plain_tool_name_when_call_parentheses_already_exist() {
+fn inserts_plain_tool_name_when_binding_block_already_exists() {
     let completion_suggestions = inline_completion_suggestions! {
         secrets {
             knowledge_base_password: string
@@ -115,7 +118,11 @@ fn inserts_plain_tool_name_when_call_parentheses_already_exist() {
         }
 
         agent tooling {
-            tools: [tool.<cursor>(password: secrets.knowledge_base_password)]
+            tools: [tool.<cursor> {
+                bindings {
+                    password: secrets.knowledge_base_password
+                }
+            }]
         }
     };
 
@@ -180,7 +187,11 @@ fn suggests_bounded_arguments_inside_tool_call() {
         }
 
         agent tooling {
-            tools: [tool.knowledge_base_search(<cursor>)]
+            tools: [tool.knowledge_base_search {
+                bindings {
+                    <cursor>
+                }
+            }]
         }
     };
 
