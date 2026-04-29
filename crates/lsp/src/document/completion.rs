@@ -1,5 +1,5 @@
 use superwire_core::dsl::{
-    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword,
+    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, ToolCallKeyword,
 };
 
 use crate::protocol::{Position, Range};
@@ -720,8 +720,36 @@ impl DocumentState {
             Some(ReferenceKeyword::Agent | ReferenceKeyword::Dynamic | ReferenceKeyword::Input | ReferenceKeyword::Secrets) => {
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Tool) | None => Some(Vec::new()),
+            Some(ReferenceKeyword::Tool) => {
+                if Self::is_tool_call_callee_context(line_prefix, reference_completion_path) {
+                    return Some(reference_suggestions.to_vec());
+                }
+
+                Some(Vec::new())
+            }
+            None => Some(Vec::new()),
         }
+    }
+
+    fn is_tool_call_callee_context(line_prefix: &str, reference_completion_path: &ReferenceCompletionPath) -> bool {
+        if reference_completion_path.root_keyword() != Some(ReferenceKeyword::Tool) {
+            return false;
+        }
+
+        let Some(reference_token) = trailing_reference_token(line_prefix) else {
+            return false;
+        };
+
+        let Some(reference_start_index) = line_prefix.rfind(reference_token) else {
+            return false;
+        };
+
+        let value_prefix = line_prefix[..reference_start_index].trim_end();
+        let Some((_, value_prefix_after_separator)) = value_prefix.rsplit_once(':') else {
+            return false;
+        };
+
+        value_prefix_after_separator.trim() == ToolCallKeyword::Call.as_str()
     }
 
     fn default_reference_completion_suggestions(

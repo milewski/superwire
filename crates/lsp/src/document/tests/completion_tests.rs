@@ -1284,6 +1284,27 @@ fn suggests_other_dynamic_fields_inside_dynamic_value() {
 }
 
 #[test]
+fn suggests_tools_inside_dynamic_tool_call_callee() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool searchable_web {
+            input {
+                query: string
+            }
+
+            output {
+                title: string
+            }
+        }
+
+        dynamic {
+            search_result: call tool.<cursor> {}
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "searchable_web");
+}
+
+#[test]
 fn suppresses_suggestions_before_dynamic_field_key() {
     let completion_suggestions = inline_completion_suggestions! {
         dynamic {
