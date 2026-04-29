@@ -98,6 +98,23 @@ fn reports_invalid_bare_tool_reference_diagnostic() {
 }
 
 #[test]
+fn allows_blockless_deterministic_tool_calls() {
+    let diagnostics = inline_diagnostics! {
+        tool list_participants {
+            output {
+                count: number
+            }
+        }
+
+        dynamic {
+            data: call tool.list_participants
+        }
+    };
+
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::ParseError));
+}
+
+#[test]
 fn reports_dynamic_dependency_cycle_diagnostic() {
     let diagnostics = inline_diagnostics! {
         dynamic {

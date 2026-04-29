@@ -24,6 +24,12 @@ use superwire_core::runtime::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 
+struct ToolCallBindingCompletionContext {
+    tool_name: String,
+    binding_prefix: String,
+    existing_binding_names: Vec<String>,
+}
+
 struct ReferenceCompletionInputs<'completion> {
     line_prefix: &'completion str,
     line_suffix: &'completion str,
@@ -52,6 +58,16 @@ impl DocumentState {
 
         if Self::is_typed_description_string_literal_context(&line_prefix, completion_scope, &semantic_index, position) {
             return Vec::new();
+        }
+
+        if !inside_interpolation_expression {
+            if let Some(tool_call_binding_completion_context) = self.tool_call_binding_completion_context(position, &line_prefix) {
+                return semantic_index.tool_bounded_argument_suggestions(
+                    &tool_call_binding_completion_context.tool_name,
+                    &tool_call_binding_completion_context.binding_prefix,
+                    &tool_call_binding_completion_context.existing_binding_names,
+                );
+            }
         }
 
         if !inside_interpolation_expression {
@@ -361,6 +377,86 @@ impl DocumentState {
         }
 
         self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
+    }
+
+    fn tool_call_binding_completion_context(&self, position: Position, line_prefix: &str) -> Option<ToolCallBindingCompletionContext> {
+        if line_prefix.contains(':') {
+            return None;
+        }
+
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let source_prefix = &self.text[..cursor_offset];
+        let bindings_keyword = "bindings";
+        let bindings_keyword_index = source_prefix.rfind(bindings_keyword)?;
+
+        if !Self::is_keyword_boundary(source_prefix, bindings_keyword_index, bindings_keyword.len()) {
+            return None;
+        }
+
+        let after_bindings_keyword = &source_prefix[bindings_keyword_index + bindings_keyword.len()..];
+        let bindings_open_brace_relative_index = after_bindings_keyword.find('{')?;
+        let bindings_open_brace_index = bindings_keyword_index + bindings_keyword.len() + bindings_open_brace_relative_index;
+        let bindings_block_prefix = &source_prefix[bindings_open_brace_index..];
+
+        if Self::block_balance(bindings_block_prefix) <= 0 {
+            return None;
+        }
+
+        let before_bindings_keyword = &source_prefix[..bindings_keyword_index];
+        let tool_namespace = format!("{}.", ReferenceKeyword::Tool.as_str());
+        let tool_namespace_index = before_bindings_keyword.rfind(tool_namespace.as_str())?;
+        let call_keyword = ToolCallKeyword::Call.as_str();
+
+        if !before_bindings_keyword[..tool_namespace_index].trim_end().ends_with(call_keyword) {
+            return None;
+        }
+
+        let tool_name_start_index = tool_namespace_index + tool_namespace.len();
+        let tool_name = before_bindings_keyword[tool_name_start_index..]
+            .chars()
+            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+            .collect::<String>();
+
+        if tool_name.is_empty() {
+            return None;
+        }
+
+        let binding_prefix = trailing_identifier(line_prefix).unwrap_or_default().to_string();
+        let existing_binding_names = Self::existing_object_field_names(&source_prefix[bindings_open_brace_index + 1..]);
+
+        Some(ToolCallBindingCompletionContext {
+            tool_name,
+            binding_prefix,
+            existing_binding_names,
+        })
+    }
+
+    fn is_keyword_boundary(source_text: &str, keyword_index: usize, keyword_length: usize) -> bool {
+        let before_keyword = source_text[..keyword_index].chars().next_back();
+        let after_keyword = source_text[keyword_index + keyword_length..].chars().next();
+
+        !before_keyword.is_some_and(|character| character.is_ascii_alphanumeric() || character == '_')
+            && !after_keyword.is_some_and(|character| character.is_ascii_alphanumeric() || character == '_')
+    }
+
+    fn block_balance(source_prefix: &str) -> i32 {
+        source_prefix.chars().fold(0, |balance, character| match character {
+            '{' => balance + 1,
+            '}' => balance - 1,
+            _ => balance,
+        })
+    }
+
+    fn existing_object_field_names(object_prefix: &str) -> Vec<String> {
+        object_prefix
+            .lines()
+            .filter_map(|source_line| {
+                let (field_name_segment, _) = source_line.split_once(':')?;
+                let field_name = trailing_identifier(field_name_segment.trim_end())?;
+
+                Some(field_name.to_string())
+            })
+            .collect()
     }
 
     fn dynamic_value_non_reference_suggestions(

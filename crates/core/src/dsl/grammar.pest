@@ -99,7 +99,7 @@ expression = _{
     | reference
 }
 
-tool_call_expression = { "call" ~ reference ~ tool_call_block }
+tool_call_expression = { "call" ~ reference ~ tool_call_block? }
 tool_call_block = { "{" ~ tool_call_property* ~ "}" }
 tool_call_property = _{ tool_call_input_property | tool_call_bindings_property }
 tool_call_input_property = { "input" ~ object_expression }
