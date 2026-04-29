@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use superwire_agent::AgentError;
 use superwire_core::dsl::{
-    parse_workflow, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration, Expression, StringTemplatePart, TypeExpression,
-    TypedField, Workflow,
+    parse_workflow, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration, Expression, ObjectField, StringTemplatePart,
+    TypeExpression, TypedField, Workflow,
 };
 use superwire_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
 use superwire_core::runtime::{
@@ -510,7 +510,7 @@ impl CliWorkflowTypeInference {
             return Err(CommandError::internal(String::from("workflow requires an `output` block")));
         };
 
-        let type_inference_context = TypeInferenceContext {
+        let mut type_inference_context = TypeInferenceContext {
             input_type,
             secrets_type,
             agent_output_types,
@@ -519,6 +519,18 @@ impl CliWorkflowTypeInference {
             tool_output_types: HashMap::new(),
             local_binding_types: HashMap::new(),
         };
+
+        let dynamic_fields = workflow
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration {
+                Declaration::Dynamic(dynamic_block) => Some(dynamic_block.fields.as_slice()),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        Self::infer_dynamic_field_types(dynamic_fields, &mut type_inference_context)?;
 
         let mut output_field_types = BTreeMap::new();
 
@@ -530,6 +542,51 @@ impl CliWorkflowTypeInference {
         }
 
         Ok(WorkflowType::Object(output_field_types).normalize())
+    }
+
+    fn infer_dynamic_field_types(
+        dynamic_fields: Vec<&ObjectField>,
+        type_inference_context: &mut TypeInferenceContext,
+    ) -> Result<(), CommandError> {
+        let mut pending_dynamic_fields = dynamic_fields;
+
+        while !pending_dynamic_fields.is_empty() {
+            let pending_count_before_pass = pending_dynamic_fields.len();
+            let mut last_error = None;
+
+            pending_dynamic_fields.retain(|dynamic_field| {
+                let inference_result = infer_expression_type(
+                    &dynamic_field.value,
+                    type_inference_context,
+                    &format!("dynamic field `{}` type inference", dynamic_field.name),
+                );
+
+                match inference_result {
+                    Ok(field_type) => {
+                        type_inference_context
+                            .local_binding_types
+                            .insert(dynamic_field.name.clone(), field_type);
+
+                        false
+                    }
+                    Err(runtime_error) => {
+                        last_error = Some(runtime_error);
+
+                        true
+                    }
+                }
+            });
+
+            if pending_dynamic_fields.len() == pending_count_before_pass {
+                if let Some(runtime_error) = last_error {
+                    return Err(CommandError::internal(runtime_error.to_string()));
+                }
+
+                break;
+            }
+        }
+
+        Ok(())
     }
 }
 
