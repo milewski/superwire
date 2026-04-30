@@ -790,6 +790,16 @@ impl ValidationIndex {
 
         Some(TypeExpression::Object(typed_fields))
     }
+
+    fn named_schema_types(&self, span: SourceSpan) -> HashMap<String, TypeExpression> {
+        self.schema_field_types
+            .keys()
+            .filter_map(|schema_name| {
+                self.schema_type_expression(schema_name, span)
+                    .map(|schema_type_expression| (schema_name.clone(), schema_type_expression))
+            })
+            .collect()
+    }
 }
 
 impl Reference {
@@ -833,7 +843,9 @@ impl Reference {
             return true;
         };
 
-        if field_type_expression.is_string_enum_expression() {
+        let named_schema_types = validation_index.named_schema_types(self.span);
+
+        if field_type_expression.is_resolved_string_enum_expression(&named_schema_types) {
             return true;
         }
 
@@ -4243,6 +4255,39 @@ mod tests {
             tool example {
                 input {
                     language: schema.main.language_enum
+                }
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::InvalidTypeExpressionReference { .. });
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::UnknownSchemaReference { .. });
+    }
+
+    #[test]
+    fn allows_schema_field_enum_references_inside_nested_array_objects() {
+        let workflow = parse_inline_workflow! {
+            schema main {
+                language: "en_US" | "zh_CN" | "fr"
+            }
+
+            input {
+                workspace_id: string
+                scope: string
+            }
+
+            tool create_project_for_workspace {
+                description: "Create a new project in the bound workspace and scope."
+                input {
+                    name: [{
+                        language: schema.main.language
+                        value: string "localized project name"
+                    }]
+                    primary_language: schema.main.language "primary locale language code"
+                    languages: [schema.main.language] "supported locale language code"
+                }
+                bindings {
+                    workspace_id: input.workspace_id
+                    scope: input.scope
                 }
             }
         };

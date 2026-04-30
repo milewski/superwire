@@ -279,6 +279,135 @@ fn exports_tool_schema_enum_fields_referenced_from_schema_fields() {
 }
 
 #[test]
+fn exports_nested_tool_schema_enum_fields_referenced_from_schema_fields() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        schema main {
+            language: "en_US" | "zh_CN" | "fr"
+        }
+
+        input {
+            workspace_id: string
+            scope: string
+        }
+
+        tool create_project_for_workspace {
+            description: "Create a new project in the bound workspace and scope."
+            input {
+                name: [{
+                    language: schema.main.language
+                    value: string "localized project name"
+                }]
+                primary_language: schema.main.language "primary locale language code"
+                languages: [schema.main.language] "supported locale language code"
+            }
+            bindings {
+                workspace_id: input.workspace_id
+                scope: input.scope
+            }
+        }
+
+        agent assistant {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.create_project_for_workspace]
+            prompt: "create project"
+            output: string
+        }
+
+        output {
+            result: agent.assistant
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("nested-tool-schema-enum-reference.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(
+        command_output.status.success(),
+        "workflow to-json command should succeed: {}",
+        String::from_utf8_lossy(&command_output.stderr)
+    );
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/input_schema/properties/name/items/properties/language/enum"),
+        Some(&json!(["en_US", "fr", "zh_CN"]))
+    );
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/input_schema/properties/primary_language/enum"),
+        Some(&json!(["en_US", "fr", "zh_CN"]))
+    );
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/input_schema/properties/languages/items/enum"),
+        Some(&json!(["en_US", "fr", "zh_CN"]))
+    );
+}
+
+#[test]
+fn exports_schema_enum_fields_through_schema_references() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        schema locale {
+            code: "en_US" | "zh_CN" | "fr"
+        }
+
+        schema main {
+            language: schema.locale.code
+        }
+
+        tool create_project_for_workspace {
+            input {
+                languages: [schema.main.language]
+            }
+        }
+
+        agent assistant {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.create_project_for_workspace]
+            prompt: "create project"
+            output: string
+        }
+
+        output {
+            result: agent.assistant
+        }
+    };
+
+    let workflow_file_path = temporary_workspace.write_file("schema-enum-reference-through-schema.wire", workflow_source);
+    let command_output = run_workflow_to_json_command(&[workflow_file_path.as_os_str()]);
+
+    assert!(
+        command_output.status.success(),
+        "workflow to-json command should succeed: {}",
+        String::from_utf8_lossy(&command_output.stderr)
+    );
+
+    let exported_json: Value = serde_json::from_slice(&command_output.stdout).expect("workflow to-json output should be valid json");
+
+    assert_eq!(
+        exported_json.pointer("/tools/0/input_schema/properties/languages/items/enum"),
+        Some(&json!(["en_US", "fr", "zh_CN"]))
+    );
+}
+
+#[test]
 fn omits_empty_required_array_for_tool_without_agent_input() {
     let temporary_workspace = TemporaryWorkspace::new();
     let workflow_source = workflow_template! {
