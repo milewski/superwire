@@ -87,7 +87,7 @@ type_term = _{
 }
 
 scalar_type = { "string" | "number" | "float" | "boolean" | "null" }
-schema_reference = { "schema" ~ "." ~ identifier }
+schema_reference = { "schema" ~ "." ~ identifier ~ !("." ~ identifier) }
 array_type = { "[" ~ type_expression ~ (";" ~ unsigned_integer_literal)? ~ "]" }
 tuple_type = { "(" ~ type_expression ~ ("," ~ type_expression)* ~ ")" }
 type_object = { "{" ~ typed_field* ~ "}" }

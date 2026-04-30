@@ -775,6 +775,94 @@ struct ValidationIndex {
     tool_output_types: HashMap<String, crate::runtime::types::WorkflowType>,
 }
 
+impl ValidationIndex {
+    fn schema_type_expression(&self, schema_name: &str, span: SourceSpan) -> Option<TypeExpression> {
+        let schema_field_types = self.schema_field_types.get(schema_name)?;
+        let typed_fields = schema_field_types
+            .iter()
+            .map(|(field_name, field_type)| TypedField {
+                name: field_name.clone(),
+                field_type: field_type.clone(),
+                description: None,
+                span,
+            })
+            .collect::<Vec<_>>();
+
+        Some(TypeExpression::Object(typed_fields))
+    }
+}
+
+impl Reference {
+    fn validate_schema_string_enum_type_reference(
+        &self,
+        context: &ValidationContext,
+        validation_index: &ValidationIndex,
+        validation_report: &mut ValidationReport,
+        unknown_schema_references: &mut HashSet<(ValidationContext, String)>,
+        invalid_type_expression_references: &mut HashSet<(ValidationContext, String)>,
+    ) -> bool {
+        let Some((schema_name, field_path)) = self.schema_name_and_field_path() else {
+            return false;
+        };
+
+        if field_path.is_empty() {
+            self.push_invalid_type_expression_reference(context, validation_report, invalid_type_expression_references);
+
+            return true;
+        }
+
+        let Some(schema_type_expression) = validation_index.schema_type_expression(schema_name, self.span) else {
+            let issue_key = (context.clone(), schema_name.to_string());
+
+            if unknown_schema_references.insert(issue_key) {
+                validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownSchemaReference {
+                        referenced_schema: schema_name.to_string(),
+                        context: context.clone(),
+                    },
+                    Some(self.span),
+                );
+            }
+
+            return true;
+        };
+
+        let Some(field_type_expression) = schema_type_expression.field_type_at_path(&field_path) else {
+            self.push_invalid_type_expression_reference(context, validation_report, invalid_type_expression_references);
+
+            return true;
+        };
+
+        if field_type_expression.is_string_enum_expression() {
+            return true;
+        }
+
+        self.push_invalid_type_expression_reference(context, validation_report, invalid_type_expression_references);
+
+        true
+    }
+
+    fn push_invalid_type_expression_reference(
+        &self,
+        context: &ValidationContext,
+        validation_report: &mut ValidationReport,
+        invalid_type_expression_references: &mut HashSet<(ValidationContext, String)>,
+    ) {
+        let reference_path = self.render_path();
+        let issue_key = (context.clone(), reference_path.clone());
+
+        if invalid_type_expression_references.insert(issue_key) {
+            validation_report.push_issue_with_span(
+                ValidationIssue::InvalidTypeExpressionReference {
+                    reference_path,
+                    context: context.clone(),
+                },
+                Some(self.span),
+            );
+        }
+    }
+}
+
 #[must_use]
 pub fn validate_workflow(workflow: &Workflow) -> ValidationReport {
     let mut validation_report = ValidationReport::default();
@@ -1549,6 +1637,16 @@ fn validate_type_expression_for_schemas(
             }
         }
         TypeExpression::StringEnumReference(reference) => {
+            if reference.validate_schema_string_enum_type_reference(
+                &context,
+                validation_index,
+                validation_report,
+                unknown_schema_references,
+                invalid_type_expression_references,
+            ) {
+                return;
+            }
+
             let Some(reference_root_keyword) = reference.root_keyword() else {
                 let reference_path = reference.render_path();
                 let issue_key = (context.clone(), reference_path.clone());
@@ -4132,6 +4230,47 @@ mod tests {
                 context
             } if referenced_schema == "MissingSchema"
                 && *context == ValidationContext::Schema("Wrapper".to_owned())
+        );
+    }
+
+    #[test]
+    fn allows_schema_field_enum_references_in_type_expressions() {
+        let workflow = parse_inline_workflow! {
+            schema main {
+                language_enum: "en_US" | "zh_CN" | "fr"
+            }
+
+            tool example {
+                input {
+                    language: schema.main.language_enum
+                }
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::InvalidTypeExpressionReference { .. });
+        assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::UnknownSchemaReference { .. });
+    }
+
+    #[test]
+    fn rejects_schema_field_type_references_that_are_not_enums() {
+        let workflow = parse_inline_workflow! {
+            schema main {
+                language: string
+            }
+
+            tool example {
+                input {
+                    language: schema.main.language
+                }
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidTypeExpressionReference {
+                reference_path,
+                context
+            } if reference_path == "schema.main.language" && *context == ValidationContext::Tool("example".to_owned())
         );
     }
 

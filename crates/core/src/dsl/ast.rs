@@ -876,6 +876,23 @@ impl Reference {
     }
 
     #[must_use]
+    pub fn schema_name_and_field_path(&self) -> Option<(&str, Vec<&str>)> {
+        if self.root.as_identifier() != Some(DeclarationKeyword::Schema.as_str()) {
+            return None;
+        }
+
+        let schema_name = self.first_access_field()?;
+        let field_path = self
+            .accesses
+            .iter()
+            .skip(1)
+            .map(|reference_access| reference_access.field.as_str())
+            .collect::<Vec<_>>();
+
+        Some((schema_name, field_path))
+    }
+
+    #[must_use]
     pub fn first_access(&self) -> Option<&ReferenceAccess> {
         self.accesses.first()
     }
@@ -953,6 +970,66 @@ impl ReferenceRoot {
         match self {
             Self::Keyword(keyword) => Some(*keyword),
             Self::Identifier(_) => None,
+        }
+    }
+}
+
+impl TypeExpression {
+    #[must_use]
+    pub fn field_type_at_path<'expression>(&'expression self, field_path: &[&str]) -> Option<&'expression TypeExpression> {
+        let Some((field_name, remaining_field_path)) = field_path.split_first() else {
+            return Some(self);
+        };
+
+        match self {
+            Self::Object(typed_fields) => {
+                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *field_name)?;
+
+                typed_field.field_type.field_type_at_path(remaining_field_path)
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    if let Some(field_type) = type_expression.field_type_at_path(field_path) {
+                        return Some(field_type);
+                    }
+                }
+
+                None
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::SchemaReference(_)
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_string_enum_expression(&self) -> bool {
+        match self {
+            Self::StringEnum(_) => true,
+            Self::Union(type_expressions) => type_expressions.iter().all(Self::is_string_enum_expression),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::SchemaReference(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => false,
         }
     }
 }

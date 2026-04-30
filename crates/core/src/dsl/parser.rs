@@ -765,6 +765,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_schema_field_string_enum_references() {
+        let workflow = parse_inline_workflow! {
+            schema main {
+                language_enum: "en_US" | "zh_CN" | "fr"
+            }
+
+            tool example {
+                input {
+                    language: schema.main.language_enum
+                }
+            }
+        };
+
+        let tool_declaration = workflow.find_tool("example").expect("missing tool declaration: example");
+        let language_field = tool_declaration
+            .input_fields
+            .iter()
+            .find(|typed_field| typed_field.name == "language")
+            .expect("language input field should exist");
+
+        assert!(matches!(
+            &language_field.field_type,
+            TypeExpression::StringEnumReference(reference)
+                if reference.root.as_identifier() == Some("schema")
+                    && reference.accesses[0].field == "main"
+                    && reference.accesses[1].field == "language_enum"
+        ));
+    }
+
+    #[test]
     fn parses_string_interpolation_as_structured_template_parts() {
         let workflow = parse_inline_workflow! {
             agent interpolation_test {

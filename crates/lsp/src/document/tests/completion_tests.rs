@@ -1565,6 +1565,25 @@ fn completes_schema_references_in_type_context() {
 }
 
 #[test]
+fn completes_schema_enum_fields_in_type_context() {
+    let completion_suggestions = inline_completion_suggestions! {
+        schema main {
+            language_enum: "en_US" | "zh_CN" | "fr"
+            plain_language: string
+        }
+
+        tool example {
+            input {
+                language: schema.main.<cursor>
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "language_enum");
+    assert_completion_excludes_labels!(&completion_suggestions, "plain_language");
+}
+
+#[test]
 fn uses_schema_field_description_in_reference_completion_documentation() {
     let completion_suggestions = inline_completion_suggestions! {
         schema Person {
