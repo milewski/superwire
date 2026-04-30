@@ -4,7 +4,7 @@ use superwire_core::dsl::{
     AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration,
     ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
 };
-use superwire_core::runtime::ProviderDriver;
+use superwire_core::semantic::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingReferencePath, ToolingSymbolCategory};
 
 use crate::protocol::Position;
@@ -1063,7 +1063,7 @@ impl SemanticIndex {
         let value_completion_context = ValueCompletionContext::from_value_prefix(property_value_prefix);
         let mut completion_suggestions = ProviderDriver::all()
             .into_iter()
-            .map(superwire_core::ProviderDriver::as_str)
+            .map(superwire_core::semantic::ProviderDriver::as_str)
             .filter(|driver_name| driver_name.starts_with(&value_completion_context.value_prefix))
             .map(|driver_name| {
                 let insert_text = if value_completion_context.inside_string_literal {

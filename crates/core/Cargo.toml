@@ -9,7 +9,6 @@ workspace = true
 [dependencies]
 ariadne = "0.6.0"
 async-trait = "0.1"
-superwire-agent = { path = "../agent" }
 futures = "0.3"
 jsonschema = { workspace = true }
 pest = { workspace = true }

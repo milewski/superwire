@@ -3,9 +3,9 @@ use super::ast::{
     ReferenceKeyword, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
-use crate::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
-use crate::runtime::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
-use crate::runtime::InferenceSetting;
+use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
+use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
+use crate::semantic::InferenceSetting;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet};
@@ -770,9 +770,9 @@ struct ValidationIndex {
     input_field_types: Option<HashMap<String, TypeExpression>>,
     secrets_field_types: Option<HashMap<String, TypeExpression>>,
     agent_output_types: HashMap<String, Option<TypeExpression>>,
-    tool_input_types: HashMap<String, crate::runtime::types::WorkflowType>,
-    tool_binding_types: HashMap<String, crate::runtime::types::WorkflowType>,
-    tool_output_types: HashMap<String, crate::runtime::types::WorkflowType>,
+    tool_input_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
+    tool_binding_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
+    tool_output_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
 }
 
 impl ValidationIndex {
@@ -2383,7 +2383,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         );
     }
 
-    fn infer_for_loop_item_type(&self, agent_for_loop: &AgentForLoop) -> Option<crate::runtime::types::WorkflowType> {
+    fn infer_for_loop_item_type(&self, agent_for_loop: &AgentForLoop) -> Option<crate::semantic::support::types::WorkflowType> {
         let inferred_iterable_type = infer_expression_type(
             &agent_for_loop.iterable,
             &self.for_loop_type_inference_context,
@@ -2392,42 +2392,42 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         .ok()?;
 
         match inferred_iterable_type {
-            crate::runtime::types::WorkflowType::Array {
+            crate::semantic::support::types::WorkflowType::Array {
                 item_type,
                 fixed_length: _,
             } => Some(*item_type),
-            crate::runtime::types::WorkflowType::Union(union_members) => {
+            crate::semantic::support::types::WorkflowType::Union(union_members) => {
                 union_members.into_iter().find_map(|union_member| match union_member {
-                    crate::runtime::types::WorkflowType::Array {
+                    crate::semantic::support::types::WorkflowType::Array {
                         item_type,
                         fixed_length: _,
                     } => Some(*item_type),
-                    crate::runtime::types::WorkflowType::String
-                    | crate::runtime::types::WorkflowType::Integer
-                    | crate::runtime::types::WorkflowType::Float
-                    | crate::runtime::types::WorkflowType::Boolean
-                    | crate::runtime::types::WorkflowType::Null
-                    | crate::runtime::types::WorkflowType::StringEnum(_)
-                    | crate::runtime::types::WorkflowType::Union(_)
-                    | crate::runtime::types::WorkflowType::Tuple(_)
-                    | crate::runtime::types::WorkflowType::Object(_) => None,
+                    crate::semantic::support::types::WorkflowType::String
+                    | crate::semantic::support::types::WorkflowType::Integer
+                    | crate::semantic::support::types::WorkflowType::Float
+                    | crate::semantic::support::types::WorkflowType::Boolean
+                    | crate::semantic::support::types::WorkflowType::Null
+                    | crate::semantic::support::types::WorkflowType::StringEnum(_)
+                    | crate::semantic::support::types::WorkflowType::Union(_)
+                    | crate::semantic::support::types::WorkflowType::Tuple(_)
+                    | crate::semantic::support::types::WorkflowType::Object(_) => None,
                 })
             }
-            crate::runtime::types::WorkflowType::String
-            | crate::runtime::types::WorkflowType::Integer
-            | crate::runtime::types::WorkflowType::Float
-            | crate::runtime::types::WorkflowType::Boolean
-            | crate::runtime::types::WorkflowType::Null
-            | crate::runtime::types::WorkflowType::StringEnum(_)
-            | crate::runtime::types::WorkflowType::Tuple(_)
-            | crate::runtime::types::WorkflowType::Object(_) => None,
+            crate::semantic::support::types::WorkflowType::String
+            | crate::semantic::support::types::WorkflowType::Integer
+            | crate::semantic::support::types::WorkflowType::Float
+            | crate::semantic::support::types::WorkflowType::Boolean
+            | crate::semantic::support::types::WorkflowType::Null
+            | crate::semantic::support::types::WorkflowType::StringEnum(_)
+            | crate::semantic::support::types::WorkflowType::Tuple(_)
+            | crate::semantic::support::types::WorkflowType::Object(_) => None,
         }
     }
 
     fn infer_dynamic_field_types(
         &self,
         dynamic_fields: &[&ObjectField],
-        dynamic_field_types: &mut HashMap<String, crate::runtime::types::WorkflowType>,
+        dynamic_field_types: &mut HashMap<String, crate::semantic::support::types::WorkflowType>,
     ) {
         let mut pending_dynamic_fields = dynamic_fields.to_vec();
 
@@ -2458,7 +2458,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_expression(
         &mut self,
         expression: &Expression,
-        dynamic_field_types: &HashMap<String, crate::runtime::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
         context: ValidationContext,
         secret_reference_policy: SecretReferencePolicy,
     ) {
@@ -2518,7 +2518,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_reference(
         &mut self,
         reference: &Reference,
-        dynamic_field_types: &HashMap<String, crate::runtime::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
         context: ValidationContext,
         secret_reference_policy: SecretReferencePolicy,
     ) {
@@ -2620,7 +2620,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_dynamic_reference(
         &mut self,
         reference: &Reference,
-        dynamic_field_types: &HashMap<String, crate::runtime::types::WorkflowType>,
+        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
         context: ValidationContext,
     ) {
         let referenced_field_name = reference
@@ -2794,7 +2794,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         &mut self,
         reference: &Reference,
         path_start_index: usize,
-        start_type: crate::runtime::types::WorkflowType,
+        start_type: crate::semantic::support::types::WorkflowType,
         context: ValidationContext,
     ) {
         let mut candidate_types = vec![start_type];
@@ -2813,7 +2813,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             if reference_access.optional {
-                next_candidate_types.push(crate::runtime::types::WorkflowType::Null);
+                next_candidate_types.push(crate::semantic::support::types::WorkflowType::Null);
             }
 
             if next_candidate_types.is_empty() {
@@ -2896,32 +2896,32 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn collect_next_workflow_types_for_field(
-        candidate_type: &crate::runtime::types::WorkflowType,
+        candidate_type: &crate::semantic::support::types::WorkflowType,
         field_name: &str,
-        next_candidate_types: &mut Vec<crate::runtime::types::WorkflowType>,
+        next_candidate_types: &mut Vec<crate::semantic::support::types::WorkflowType>,
     ) {
         match candidate_type {
-            crate::runtime::types::WorkflowType::Object(fields) => {
+            crate::semantic::support::types::WorkflowType::Object(fields) => {
                 if let Some(field_type) = fields.get(field_name) {
                     next_candidate_types.push(field_type.clone());
                 }
             }
-            crate::runtime::types::WorkflowType::Union(union_members) => {
+            crate::semantic::support::types::WorkflowType::Union(union_members) => {
                 for union_member in union_members {
                     Self::collect_next_workflow_types_for_field(union_member, field_name, next_candidate_types);
                 }
             }
-            crate::runtime::types::WorkflowType::String
-            | crate::runtime::types::WorkflowType::Integer
-            | crate::runtime::types::WorkflowType::Float
-            | crate::runtime::types::WorkflowType::Boolean
-            | crate::runtime::types::WorkflowType::Null
-            | crate::runtime::types::WorkflowType::StringEnum(_)
-            | crate::runtime::types::WorkflowType::Array {
+            crate::semantic::support::types::WorkflowType::String
+            | crate::semantic::support::types::WorkflowType::Integer
+            | crate::semantic::support::types::WorkflowType::Float
+            | crate::semantic::support::types::WorkflowType::Boolean
+            | crate::semantic::support::types::WorkflowType::Null
+            | crate::semantic::support::types::WorkflowType::StringEnum(_)
+            | crate::semantic::support::types::WorkflowType::Array {
                 item_type: _,
                 fixed_length: _,
             }
-            | crate::runtime::types::WorkflowType::Tuple(_) => {}
+            | crate::semantic::support::types::WorkflowType::Tuple(_) => {}
         }
     }
 
@@ -2962,21 +2962,21 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 }
 
-fn workflow_type_can_be_null(workflow_type: &crate::runtime::types::WorkflowType) -> bool {
+fn workflow_type_can_be_null(workflow_type: &crate::semantic::support::types::WorkflowType) -> bool {
     match workflow_type {
-        crate::runtime::types::WorkflowType::Null => true,
-        crate::runtime::types::WorkflowType::Union(union_members) => union_members.iter().any(workflow_type_can_be_null),
-        crate::runtime::types::WorkflowType::String
-        | crate::runtime::types::WorkflowType::Integer
-        | crate::runtime::types::WorkflowType::Float
-        | crate::runtime::types::WorkflowType::Boolean
-        | crate::runtime::types::WorkflowType::StringEnum(_)
-        | crate::runtime::types::WorkflowType::Array {
+        crate::semantic::support::types::WorkflowType::Null => true,
+        crate::semantic::support::types::WorkflowType::Union(union_members) => union_members.iter().any(workflow_type_can_be_null),
+        crate::semantic::support::types::WorkflowType::String
+        | crate::semantic::support::types::WorkflowType::Integer
+        | crate::semantic::support::types::WorkflowType::Float
+        | crate::semantic::support::types::WorkflowType::Boolean
+        | crate::semantic::support::types::WorkflowType::StringEnum(_)
+        | crate::semantic::support::types::WorkflowType::Array {
             item_type: _,
             fixed_length: _,
         }
-        | crate::runtime::types::WorkflowType::Tuple(_)
-        | crate::runtime::types::WorkflowType::Object(_) => false,
+        | crate::semantic::support::types::WorkflowType::Tuple(_)
+        | crate::semantic::support::types::WorkflowType::Object(_) => false,
     }
 }
 
@@ -3211,7 +3211,7 @@ mod tests {
     use super::{validate_workflow, ReferenceKeyword, SingletonDeclarationKind, ValidationContext, ValidationIssue};
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::parse_workflow;
-    use crate::runtime::InferenceSetting;
+    use crate::semantic::InferenceSetting;
     use crate::workflow_source;
 
     macro_rules! assert_issues_contain {

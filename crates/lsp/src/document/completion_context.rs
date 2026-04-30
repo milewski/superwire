@@ -3,7 +3,7 @@ use super::text_utils::{
 };
 use super::{CompletionKind, CompletionSuggestion};
 use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword};
-use superwire_core::runtime::InferenceSetting;
+use superwire_core::semantic::InferenceSetting;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclarationHeaderCompletionContext {

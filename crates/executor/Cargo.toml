@@ -1,22 +1,24 @@
 [package]
-name = "superwire-cli"
+name = "superwire-executor"
 version = "0.1.0"
 edition = "2021"
-
-[[bin]]
-name = "superwire-cli"
-path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
+async-openai = { workspace = true }
+axum = "0.8"
+base64 = "0.22"
 clap = { workspace = true }
-schemars = { workspace = true }
+futures = "0.3"
 serde = { workspace = true }
 serde_json = { workspace = true }
 superwire-core = { path = "../core" }
-superwire-executor = { path = "../executor" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-jsonschema = { workspace = true }
+tokio-stream = "0.1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

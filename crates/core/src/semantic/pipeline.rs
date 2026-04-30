@@ -1,7 +1,7 @@
 use crate::dsl::{parse_workflow, validate_workflow, ValidationReport, Workflow};
-use crate::runtime::error::WorkflowRuntimeError;
 use crate::semantic::ir::{build_typed_workflow_ir, TypedWorkflowIr};
 use crate::semantic::plan::{build_execution_plan, ExecutionPlan};
+use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -34,12 +34,12 @@ impl<PipelineState> WorkflowPipeline<PipelineState> {
 }
 
 impl WorkflowPipeline<ParseStageOutput> {
-    pub fn parse(input: WorkflowPipelineInput<'_>) -> Result<Self, WorkflowRuntimeError> {
+    pub fn parse(input: WorkflowPipelineInput<'_>) -> Result<Self, WorkflowSemanticError> {
         let workflow = match input {
             WorkflowPipelineInput::Source(source_text) => parse_workflow(source_text).map_err(|parse_error| {
                 let rendered_details = parse_error.render_with_source(source_text, "<workflow>");
 
-                WorkflowRuntimeError::ParseFailed {
+                WorkflowSemanticError::ParseFailed {
                     source: parse_error,
                     details: rendered_details,
                 }
@@ -57,13 +57,13 @@ impl WorkflowPipeline<ParseStageOutput> {
 }
 
 impl WorkflowPipeline<NormalizeStageOutput> {
-    pub fn validate(self) -> Result<WorkflowPipeline<ValidateStageOutput>, WorkflowRuntimeError> {
+    pub fn validate(self) -> Result<WorkflowPipeline<ValidateStageOutput>, WorkflowSemanticError> {
         Ok(WorkflowPipeline::new(self.state.validate()?))
     }
 }
 
 impl WorkflowPipeline<ValidateStageOutput> {
-    pub fn typecheck<Input, Output>(self) -> Result<WorkflowPipeline<TypecheckStageOutput>, WorkflowRuntimeError>
+    pub fn typecheck<Input, Output>(self) -> Result<WorkflowPipeline<TypecheckStageOutput>, WorkflowSemanticError>
     where
         Input: Serialize + JsonSchema,
         Output: DeserializeOwned + JsonSchema,
@@ -73,7 +73,7 @@ impl WorkflowPipeline<ValidateStageOutput> {
 }
 
 impl WorkflowPipeline<TypecheckStageOutput> {
-    pub fn plan(self) -> Result<WorkflowPipeline<PlanStageOutput>, WorkflowRuntimeError> {
+    pub fn plan(self) -> Result<WorkflowPipeline<PlanStageOutput>, WorkflowSemanticError> {
         Ok(WorkflowPipeline::new(self.state.plan()?))
     }
 }
@@ -123,7 +123,7 @@ impl NormalizeStageOutput {
         &self.workflow
     }
 
-    pub fn validate(self) -> Result<ValidateStageOutput, WorkflowRuntimeError> {
+    pub fn validate(self) -> Result<ValidateStageOutput, WorkflowSemanticError> {
         let validation_report = validate_workflow(&self.workflow);
 
         if validation_report.has_issues() {
@@ -133,7 +133,7 @@ impl NormalizeStageOutput {
                 validation_report.render()
             };
 
-            return Err(WorkflowRuntimeError::InvalidWorkflow {
+            return Err(WorkflowSemanticError::InvalidWorkflow {
                 issues: rendered_validation_issues,
             });
         }
@@ -162,7 +162,7 @@ impl ValidateStageOutput {
         &self.validation_report
     }
 
-    pub fn typecheck<Input, Output>(self) -> Result<TypecheckStageOutput, WorkflowRuntimeError>
+    pub fn typecheck<Input, Output>(self) -> Result<TypecheckStageOutput, WorkflowSemanticError>
     where
         Input: Serialize + JsonSchema,
         Output: DeserializeOwned + JsonSchema,
@@ -201,7 +201,7 @@ impl TypecheckStageOutput {
         &self.typed_workflow_ir
     }
 
-    pub fn plan(self) -> Result<PlanStageOutput, WorkflowRuntimeError> {
+    pub fn plan(self) -> Result<PlanStageOutput, WorkflowSemanticError> {
         let execution_plan = build_execution_plan(&self.workflow, &self.typed_workflow_ir)
             .map_err(|runtime_error| runtime_error.into_compilation_diagnostic(&self.workflow, "<workflow>"))?;
 
@@ -249,7 +249,7 @@ impl PlanStageOutput {
     }
 }
 
-pub fn compile_workflow_pipeline<Input, Output>(workflow_input: WorkflowPipelineInput<'_>) -> Result<PlanStageOutput, WorkflowRuntimeError>
+pub fn compile_workflow_pipeline<Input, Output>(workflow_input: WorkflowPipelineInput<'_>) -> Result<PlanStageOutput, WorkflowSemanticError>
 where
     Input: Serialize + JsonSchema,
     Output: DeserializeOwned + JsonSchema,
@@ -265,7 +265,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{compile_workflow_pipeline, WorkflowPipeline, WorkflowPipelineInput};
-    use crate::runtime::error::WorkflowRuntimeError;
+    use crate::semantic::WorkflowSemanticError;
     use crate::{parse_inline_workflow, workflow_source};
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
@@ -379,7 +379,7 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("unknown_input_field_reference")
                     && issues.contains("missing_field")
                     && issues.contains("<workflow>:")
@@ -405,7 +405,7 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("missing_agent_output_type_for_field_reference")
                     && issues.contains("Agent `greeting` must declare `output`")
                     && issues.contains("output declaration")
@@ -435,7 +435,7 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("invalid_for_loop_iterable_type")
                     && issues.contains("for-loop iterable must evaluate to an array")
                     && issues.contains("Agent `analyzer`")
@@ -460,7 +460,7 @@ mod tests {
 
         assert!(matches!(
             typecheck_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("workflow_compilation_error")
                     && issues.contains("workflow requires an `output` block")
                     && issues.contains("Add an `output { ... }` declaration")
@@ -489,7 +489,7 @@ mod tests {
 
         assert!(matches!(
             typecheck_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("workflow_compilation_error")
                     && issues.contains("invalid `model` property")
                     && issues.contains("Set `model` on `agent greeting`")
@@ -515,7 +515,7 @@ mod tests {
 
         assert!(matches!(
             validate_result,
-            Err(WorkflowRuntimeError::InvalidWorkflow { issues })
+            Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("duplicate_agent")
                     && issues.contains("agent greeting")
                     && issues.contains("<workflow>:")
@@ -535,7 +535,7 @@ mod tests {
 
         assert!(matches!(
             parse_result,
-            Err(WorkflowRuntimeError::ParseFailed { details, source: _ })
+            Err(WorkflowSemanticError::ParseFailed { details, source: _ })
                 if details.contains("parse_error")
                     && details.contains("<workflow>:")
                     && details.contains("here")
@@ -558,7 +558,7 @@ mod tests {
 
         assert!(matches!(
             parse_result,
-            Err(WorkflowRuntimeError::ParseFailed { details, source: _ })
+            Err(WorkflowSemanticError::ParseFailed { details, source: _ })
                 if details.contains("`model`")
                     && details.contains("`prompt`")
                     && details.contains("`output`")

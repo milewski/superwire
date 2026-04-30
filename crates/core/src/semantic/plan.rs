@@ -1,8 +1,8 @@
 use crate::dsl::{AgentDeclaration, Expression, OutputDeclaration, Workflow};
-use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::provider::{build_provider_index, ProviderConfigTemplate};
-use crate::runtime::types::WorkflowType;
 use crate::semantic::ir::TypedWorkflowIr;
+use crate::semantic::support::provider::{build_provider_index, ProviderConfigTemplate};
+use crate::semantic::support::types::WorkflowType;
+use crate::semantic::WorkflowSemanticError;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct ExecutionPlan {
     pub planned_agents: HashMap<String, PlannedAgent>,
 }
 
-pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkflowIr) -> Result<ExecutionPlan, WorkflowRuntimeError> {
+pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkflowIr) -> Result<ExecutionPlan, WorkflowSemanticError> {
     let provider_index = build_provider_index(workflow)?;
 
     validate_ir_planner_invariants(typed_workflow_ir, &provider_index)?;
@@ -64,7 +64,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
 fn validate_ir_planner_invariants(
     typed_workflow_ir: &TypedWorkflowIr,
     provider_index: &HashMap<String, ProviderConfigTemplate>,
-) -> Result<(), WorkflowRuntimeError> {
+) -> Result<(), WorkflowSemanticError> {
     let declared_agent_names = typed_workflow_ir
         .agents
         .iter()
@@ -73,7 +73,7 @@ fn validate_ir_planner_invariants(
 
     for typed_agent in &typed_workflow_ir.agents {
         if !provider_index.contains_key(&typed_agent.provider_name) {
-            return Err(WorkflowRuntimeError::ExecutionPlanInvariant {
+            return Err(WorkflowSemanticError::ExecutionPlanInvariant {
                 message: format!(
                     "agent `{}` references provider `{}` that is not declared",
                     typed_agent.name, typed_agent.provider_name
@@ -86,7 +86,7 @@ fn validate_ir_planner_invariants(
                 continue;
             }
 
-            return Err(WorkflowRuntimeError::ExecutionPlanInvariant {
+            return Err(WorkflowSemanticError::ExecutionPlanInvariant {
                 message: format!("agent `{}` depends on unknown agent `{}`", typed_agent.name, dependency_name),
             });
         }
@@ -95,7 +95,7 @@ fn validate_ir_planner_invariants(
     Ok(())
 }
 
-fn resolve_agent_execution_order(typed_workflow_ir: &TypedWorkflowIr) -> Result<Vec<String>, WorkflowRuntimeError> {
+fn resolve_agent_execution_order(typed_workflow_ir: &TypedWorkflowIr) -> Result<Vec<String>, WorkflowSemanticError> {
     let declaration_order = typed_workflow_ir
         .agents
         .iter()
@@ -145,7 +145,7 @@ fn resolve_agent_execution_order(typed_workflow_ir: &TypedWorkflowIr) -> Result<
         let mut blocked_agents = unresolved_agents.into_iter().collect::<Vec<_>>();
         blocked_agents.sort();
 
-        return Err(WorkflowRuntimeError::ExecutionPlanInvariant {
+        return Err(WorkflowSemanticError::ExecutionPlanInvariant {
             message: format!("failed to resolve execution order; blocked agents: {}", blocked_agents.join(", ")),
         });
     }
@@ -157,8 +157,8 @@ fn resolve_agent_execution_order(typed_workflow_ir: &TypedWorkflowIr) -> Result<
 mod tests {
     use super::build_execution_plan;
     use crate::parse_inline_workflow;
-    use crate::runtime::error::WorkflowRuntimeError;
     use crate::semantic::build_typed_workflow_ir;
+    use crate::semantic::WorkflowSemanticError;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
 
@@ -231,7 +231,7 @@ mod tests {
 
         assert!(matches!(
             planning_result,
-            Err(WorkflowRuntimeError::ExecutionPlanInvariant { message })
+            Err(WorkflowSemanticError::ExecutionPlanInvariant { message })
                 if message.contains("missing_provider")
         ));
     }
@@ -252,7 +252,7 @@ mod tests {
 
         assert!(matches!(
             planning_result,
-            Err(WorkflowRuntimeError::ExecutionPlanInvariant { message })
+            Err(WorkflowSemanticError::ExecutionPlanInvariant { message })
                 if message.contains("ghost")
         ));
     }

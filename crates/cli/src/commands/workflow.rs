@@ -8,17 +8,14 @@ use clap::{Args, Subcommand};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use superwire_agent::AgentError;
 use superwire_core::dsl::{
     parse_workflow, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration, Expression, ObjectField, StringTemplatePart,
     TypeExpression, TypedField, Workflow,
 };
-use superwire_core::runtime::type_inference::{infer_expression_type, TypeInferenceContext};
-use superwire_core::runtime::{
-    types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType},
-    WorkflowRuntimeError,
-};
+use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
+use superwire_core::semantic::support::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 use superwire_core::semantic::{compile_workflow_pipeline, ExecutionPlan, TypedWorkflowIr, WorkflowPipelineInput};
+use superwire_executor::{ExecutorError, OpenAiModelProvider, WorkflowExecutor};
 
 use crate::diagnostics::CommandError;
 
@@ -68,18 +65,16 @@ impl CheckWorkflowCommand {
             CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &self.workflow_path.display().to_string()))
         })?;
 
-        let runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
+        let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
             .map_err(|schema_context_error| CommandError::invalid_input(schema_context_error.message().to_string()))?;
-        runtime_schema_context
-            .with_scope(|| superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new(parsed_workflow))
-            .map_err(Self::map_workflow_runtime_error)?;
+        WorkflowExecutor::from_source(&workflow_source).map_err(Self::map_workflow_runtime_error)?;
 
         println!("workflow is valid");
 
         Ok(())
     }
 
-    fn map_workflow_runtime_error(runtime_error: WorkflowRuntimeError) -> CommandError {
+    fn map_workflow_runtime_error(runtime_error: ExecutorError) -> CommandError {
         CommandError::invalid_input(runtime_error.to_string())
     }
 }
@@ -127,22 +122,18 @@ impl RunWorkflowCommand {
             CommandError::internal(error.render_with_source(&workflow_source, &self.workflow_path.display().to_string()))
         })?;
 
-        let runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)?;
-        let workflow_runtime = runtime_schema_context
-            .with_scope(|| superwire_core::WorkflowRuntime::<DynamicWorkflowInput, DynamicWorkflowOutput>::new(parsed_workflow.clone()))
-            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)?;
+        let workflow_executor =
+            WorkflowExecutor::from_source(&workflow_source).map_err(|error| CommandError::internal(error.to_string()))?;
 
         let output_value = async_runtime
-            .block_on(workflow_runtime.run_with_secrets(
-                DynamicWorkflowInput { fields: input_value },
-                DynamicWorkflowSecrets { fields: secrets_value },
-            ))
+            .block_on(workflow_executor.execute(Value::Object(input_value), Value::Object(secrets_value), &OpenAiModelProvider, None))
             .map_err(Self::map_workflow_runtime_error)?;
 
         if self.pretty {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&output_value.fields)
+                serde_json::to_string_pretty(&output_value)
                     .map_err(|error| CommandError::internal(format!("failed to serialize pretty workflow output: {error}")))?
             );
 
@@ -151,7 +142,7 @@ impl RunWorkflowCommand {
 
         println!(
             "{}",
-            serde_json::to_string(&output_value.fields)
+            serde_json::to_string(&output_value)
                 .map_err(|error| CommandError::internal(format!("failed to serialize workflow output: {error}")))?
         );
 
@@ -258,41 +249,14 @@ impl RunWorkflowCommand {
 }
 
 impl RunWorkflowCommand {
-    fn map_workflow_runtime_error(error: WorkflowRuntimeError) -> CommandError {
-        match error {
-            WorkflowRuntimeError::AgentExecutionFailed { agent_name, source } => match *source {
-                AgentError::ExecutionFailed {
-                    error: executor_error,
-                    context,
-                } => CommandError::internal_with_details(
-                    format!("agent execution failed for `{agent_name}`: {executor_error}"),
-                    json!({
-                        "type": "workflow_runtime_error",
-                        "kind": "agent_execution_failed",
-                        "agent_name": agent_name,
-                        "executor_error": format!("{executor_error}"),
-                        "context": context,
-                    }),
-                ),
-                other_agent_error => CommandError::internal_with_details(
-                    format!("agent execution failed for `{agent_name}`: {other_agent_error}"),
-                    json!({
-                        "type": "workflow_runtime_error",
-                        "kind": "agent_execution_failed",
-                        "agent_name": agent_name,
-                        "agent_error": format!("{other_agent_error}"),
-                    }),
-                ),
-            },
-            other_runtime_error => CommandError::internal_with_details(
-                other_runtime_error.to_string(),
-                json!({
-                    "type": "workflow_runtime_error",
-                    "kind": "other",
-                    "error": other_runtime_error.to_string(),
-                }),
-            ),
-        }
+    fn map_workflow_runtime_error(error: ExecutorError) -> CommandError {
+        CommandError::internal_with_details(
+            error.to_string(),
+            json!({
+                "type": "workflow_runtime_error",
+                "error": error.to_string(),
+            }),
+        )
     }
 }
 
@@ -304,12 +268,6 @@ struct DynamicWorkflowInput {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct DynamicWorkflowOutput {
-    #[serde(flatten)]
-    fields: Map<String, Value>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-struct DynamicWorkflowSecrets {
     #[serde(flatten)]
     fields: Map<String, Value>,
 }

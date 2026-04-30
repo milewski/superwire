@@ -1,5 +1,5 @@
 use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
-use superwire_core::runtime::ProviderDriver;
+use superwire_core::semantic::ProviderDriver;
 
 use crate::protocol::Position;
 

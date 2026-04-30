@@ -1,14 +1,17 @@
 mod ir;
 mod pipeline;
 mod plan;
+pub mod support;
 mod tooling;
 
-pub use ir::{build_typed_workflow_ir, TypedAgentIr, TypedWorkflowIr};
+pub use ir::{build_dynamic_typed_workflow_ir, build_typed_workflow_ir, TypedAgentIr, TypedWorkflowIr};
 pub use pipeline::{
     compile_workflow_pipeline, NormalizeStageOutput, ParseStageOutput, PlanStageOutput, TypecheckStageOutput, ValidateStageOutput,
     WorkflowPipeline, WorkflowPipelineInput,
 };
 pub use plan::{build_execution_plan, ExecutionPlan, PlannedAgent};
+pub use support::provider::ProviderDriver;
+pub use support::{InferenceSetting, WorkflowSemanticError};
 pub use tooling::{
     NamedSymbolSpan, SemanticToolingSnapshot, ToolingDeclarationIndex, ToolingReferencePath, ToolingReferencePathRoot,
     ToolingSnapshotConstruction, ToolingSymbolCategory,
