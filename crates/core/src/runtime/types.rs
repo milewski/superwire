@@ -1,4 +1,4 @@
-use crate::dsl::{TypeExpression, TypedField};
+use crate::dsl::{Reference, TypeExpression, TypedField};
 use crate::runtime::error::WorkflowRuntimeError;
 use jsonschema::ValidationError;
 use schemars::{JsonSchema, Schema};
@@ -171,7 +171,9 @@ fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
         TypeExpression::Boolean => Ok(WorkflowType::Boolean),
         TypeExpression::Null => Ok(WorkflowType::Null),
         TypeExpression::StringEnum(enum_value) => Ok(WorkflowType::StringEnum(vec![enum_value.clone()])),
-        TypeExpression::StringEnumReference(_) => Ok(WorkflowType::String),
+        TypeExpression::StringEnumReference(reference) => {
+            reference.workflow_type_for_string_enum_reference(named_schemas, resolution_stack)
+        }
         TypeExpression::Array { item_type, fixed_length } => Ok(WorkflowType::Array {
             item_type: Box::new(workflow_type_from_dsl_with_stack(item_type, named_schemas, resolution_stack)?),
             fixed_length: *fixed_length,
@@ -236,6 +238,48 @@ fn resolve_object_fields<HashBuilder: BuildHasher>(
     }
 
     Ok(resolved_fields)
+}
+
+impl Reference {
+    fn workflow_type_for_string_enum_reference<HashBuilder: BuildHasher>(
+        &self,
+        named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
+        resolution_stack: &mut Vec<String>,
+    ) -> Result<WorkflowType, WorkflowRuntimeError> {
+        let Some((schema_name, field_path)) = self.schema_name_and_field_path() else {
+            return Ok(WorkflowType::String);
+        };
+
+        if field_path.is_empty() {
+            return Ok(WorkflowType::String);
+        }
+
+        if resolution_stack.contains(&schema_name.to_string()) {
+            return Err(WorkflowRuntimeError::Other {
+                message: format!("recursive schema reference is not supported: {}", resolution_stack.join(" -> ")),
+            });
+        }
+
+        let Some(schema_type_expression) = named_schemas.get(schema_name) else {
+            return Err(WorkflowRuntimeError::Other {
+                message: format!("unknown schema reference `{schema_name}`"),
+            });
+        };
+
+        let Some(field_type_expression) = schema_type_expression.field_type_at_path(&field_path) else {
+            return Err(WorkflowRuntimeError::Other {
+                message: format!("unknown schema enum reference `{}`", self.render_path()),
+            });
+        };
+
+        resolution_stack.push(schema_name.to_string());
+
+        let resolved_field_type = workflow_type_from_dsl_with_stack(field_type_expression, named_schemas, resolution_stack);
+
+        resolution_stack.pop();
+
+        resolved_field_type
+    }
 }
 
 pub fn workflow_type_from_rust_schema<TypeMarker>() -> Result<WorkflowType, WorkflowRuntimeError>
