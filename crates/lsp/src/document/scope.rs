@@ -1,5 +1,5 @@
 use superwire_core::dsl::{AgentPropertyName, DeclarationKeyword, ForClauseKeyword, SingletonDeclarationKind};
-use superwire_core::runtime::InferenceSetting;
+use superwire_core::semantic::InferenceSetting;
 
 use super::text_utils::{is_identifier, trailing_identifier};
 use super::{CompletionKind, CompletionSuggestion};

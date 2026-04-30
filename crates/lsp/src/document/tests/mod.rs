@@ -4,7 +4,7 @@ use superwire_core::dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, SingletonDeclarationKind,
     ToolCallKeyword,
 };
-use superwire_core::runtime::InferenceSetting;
+use superwire_core::semantic::InferenceSetting;
 
 macro_rules! inline_completion_suggestions {
     ($($workflow_tokens:tt)*) => {{

@@ -20,7 +20,7 @@ use super::text_utils::{
     is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
 };
 use super::{CompletionSuggestion, DocumentState};
-use superwire_core::runtime::InferenceSetting;
+use superwire_core::semantic::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
 

@@ -2,10 +2,10 @@ use crate::dsl::{
     AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ObjectField, OutputDeclaration, ProviderDeclaration,
     SchemaDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
-use crate::runtime::error::WorkflowRuntimeError;
-use crate::runtime::expression::collect_agent_dependencies;
-use crate::runtime::type_inference::TypeInferenceContext;
-use crate::runtime::types::{ensure_type_matches, workflow_type_from_dsl, workflow_type_from_rust_schema, WorkflowType};
+use crate::semantic::support::expression::collect_agent_dependencies;
+use crate::semantic::support::type_inference::TypeInferenceContext;
+use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, workflow_type_from_rust_schema, WorkflowType};
+use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -47,7 +47,7 @@ impl AgentPropertyName {
     }
 }
 
-pub fn build_typed_workflow_ir<Input, Output>(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowRuntimeError>
+pub fn build_typed_workflow_ir<Input, Output>(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowSemanticError>
 where
     Input: Serialize + JsonSchema,
     Output: DeserializeOwned + JsonSchema,
@@ -57,7 +57,7 @@ where
     let secrets_type = build_secrets_type(workflow.find_secrets(), &named_schema_types)?;
     let output_declaration = workflow
         .find_output()
-        .ok_or_else(|| WorkflowRuntimeError::MissingDeclaration {
+        .ok_or_else(|| WorkflowSemanticError::MissingDeclaration {
             message: "workflow requires an `output` block".to_string(),
         })?
         .clone();
@@ -85,6 +85,37 @@ where
     })
 }
 
+pub fn build_dynamic_typed_workflow_ir(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowSemanticError> {
+    let named_schema_types = collect_named_schema_types(workflow);
+    let input_type = build_input_type(workflow.find_input(), &named_schema_types)?;
+    let secrets_type = build_secrets_type(workflow.find_secrets(), &named_schema_types)?;
+    let output_declaration = workflow
+        .find_output()
+        .ok_or_else(|| WorkflowSemanticError::MissingDeclaration {
+            message: "workflow requires an `output` block".to_string(),
+        })?
+        .clone();
+
+    let tool_types = collect_tool_types(workflow, &named_schema_types)?;
+    let (agents, agent_output_types) = collect_typed_agents(workflow, &named_schema_types)?;
+    let workflow_output_type = infer_workflow_output_type(
+        workflow,
+        &output_declaration,
+        input_type.clone(),
+        secrets_type.clone(),
+        &agent_output_types,
+        &tool_types,
+    )?;
+
+    Ok(TypedWorkflowIr {
+        input_type,
+        secrets_type,
+        output_declaration,
+        workflow_output_type,
+        agents,
+    })
+}
+
 struct ToolTypes {
     input: HashMap<String, WorkflowType>,
     bindings: HashMap<String, WorkflowType>,
@@ -94,7 +125,7 @@ struct ToolTypes {
 fn collect_tool_types(
     workflow: &Workflow,
     named_schema_types: &HashMap<String, TypeExpression>,
-) -> Result<ToolTypes, WorkflowRuntimeError> {
+) -> Result<ToolTypes, WorkflowSemanticError> {
     let mut input = HashMap::new();
     let mut bindings = HashMap::new();
     let mut output = HashMap::new();
@@ -145,7 +176,7 @@ fn collect_named_schema_types(workflow: &Workflow) -> HashMap<String, TypeExpres
 fn build_input_type(
     input_declaration: Option<&InputDeclaration>,
     named_schema_types: &HashMap<String, TypeExpression>,
-) -> Result<Option<WorkflowType>, WorkflowRuntimeError> {
+) -> Result<Option<WorkflowType>, WorkflowSemanticError> {
     let Some(input_declaration) = input_declaration else {
         return Ok(None);
     };
@@ -159,7 +190,7 @@ fn build_input_type(
 fn build_secrets_type(
     secrets_declaration: Option<&SecretsDeclaration>,
     named_schema_types: &HashMap<String, TypeExpression>,
-) -> Result<Option<WorkflowType>, WorkflowRuntimeError> {
+) -> Result<Option<WorkflowType>, WorkflowSemanticError> {
     let Some(secrets_declaration) = secrets_declaration else {
         return Ok(None);
     };
@@ -173,7 +204,7 @@ fn build_secrets_type(
 fn collect_typed_agents(
     workflow: &Workflow,
     named_schema_types: &HashMap<String, TypeExpression>,
-) -> Result<(Vec<TypedAgentIr>, HashMap<String, WorkflowType>), WorkflowRuntimeError> {
+) -> Result<(Vec<TypedAgentIr>, HashMap<String, WorkflowType>), WorkflowSemanticError> {
     let mut agents = Vec::new();
     let mut agent_output_types = HashMap::new();
 
@@ -258,7 +289,7 @@ fn infer_workflow_output_type(
     secrets_type: Option<WorkflowType>,
     agent_output_types: &HashMap<String, WorkflowType>,
     tool_types: &ToolTypes,
-) -> Result<WorkflowType, WorkflowRuntimeError> {
+) -> Result<WorkflowType, WorkflowSemanticError> {
     let mut inference_context = TypeInferenceContext {
         input_type,
         secrets_type,
@@ -296,7 +327,7 @@ fn infer_workflow_output_type(
 fn infer_dynamic_field_types(
     dynamic_fields: Vec<&ObjectField>,
     inference_context: &mut TypeInferenceContext,
-) -> Result<(), WorkflowRuntimeError> {
+) -> Result<(), WorkflowSemanticError> {
     let mut pending_dynamic_fields = dynamic_fields;
 
     while !pending_dynamic_fields.is_empty() {
@@ -333,7 +364,7 @@ fn infer_dynamic_field_types(
     Ok(())
 }
 
-fn validate_input_type_compatibility<Input>(input_type: Option<&WorkflowType>) -> Result<(), WorkflowRuntimeError>
+fn validate_input_type_compatibility<Input>(input_type: Option<&WorkflowType>) -> Result<(), WorkflowSemanticError>
 where
     Input: Serialize + JsonSchema,
 {
@@ -344,7 +375,7 @@ where
             return Ok(());
         }
 
-        Err(WorkflowRuntimeError::InputTypeMismatch {
+        Err(WorkflowSemanticError::InputTypeMismatch {
             expected: expected_input_type.to_string(),
             found: rust_input_type.to_string(),
         })
@@ -353,14 +384,14 @@ where
             return Ok(());
         }
 
-        Err(WorkflowRuntimeError::InputTypeMismatch {
+        Err(WorkflowSemanticError::InputTypeMismatch {
             expected: "no input".to_string(),
             found: rust_input_type.to_string(),
         })
     }
 }
 
-fn validate_output_type_compatibility<Output>(workflow_output_type: &WorkflowType) -> Result<(), WorkflowRuntimeError>
+fn validate_output_type_compatibility<Output>(workflow_output_type: &WorkflowType) -> Result<(), WorkflowSemanticError>
 where
     Output: DeserializeOwned + JsonSchema,
 {
@@ -370,7 +401,7 @@ where
         return Ok(());
     }
 
-    Err(WorkflowRuntimeError::OutputTypeMismatch {
+    Err(WorkflowSemanticError::OutputTypeMismatch {
         expected: workflow_output_type.to_string(),
         found: rust_output_type.to_string(),
     })
@@ -394,10 +425,10 @@ fn is_no_input_type(workflow_type: &WorkflowType) -> bool {
     }
 }
 
-fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(String, Expression), WorkflowRuntimeError> {
+fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(String, Expression), WorkflowSemanticError> {
     let model_expression = required_agent_property_expression(agent_declaration, AgentPropertyName::Model)?;
     let Expression::FunctionCall(model_call) = model_expression else {
-        return Err(WorkflowRuntimeError::InvalidAgentProperty {
+        return Err(WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
             message: "model must be a provider call like provider_name(\"model\")".to_string(),
@@ -405,7 +436,7 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
     };
 
     if !model_call.callee.accesses.is_empty() {
-        return Err(WorkflowRuntimeError::InvalidAgentProperty {
+        return Err(WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
             message: "model function callee must be a direct provider name".to_string(),
@@ -414,7 +445,7 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
 
     let provider_name = model_call
         .identifier_name()
-        .ok_or_else(|| WorkflowRuntimeError::InvalidAgentProperty {
+        .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
             message: "model provider name must be an identifier".to_string(),
@@ -423,7 +454,7 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
     let model_argument_expressions = model_call.model_argument_expressions();
 
     if model_argument_expressions.is_empty() {
-        return Err(WorkflowRuntimeError::InvalidAgentProperty {
+        return Err(WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
             message: "missing model name argument".to_string(),
@@ -431,7 +462,7 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
     }
 
     if model_argument_expressions.len() > 1 {
-        return Err(WorkflowRuntimeError::InvalidAgentProperty {
+        return Err(WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
             message: "ambiguous model name arguments".to_string(),
@@ -444,8 +475,8 @@ fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(St
 fn required_agent_property_expression(
     agent_declaration: &AgentDeclaration,
     property_name: AgentPropertyName,
-) -> Result<&Expression, WorkflowRuntimeError> {
-    optional_agent_property_expression(agent_declaration, property_name).ok_or_else(|| WorkflowRuntimeError::InvalidAgentProperty {
+) -> Result<&Expression, WorkflowSemanticError> {
+    optional_agent_property_expression(agent_declaration, property_name).ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
         agent_name: agent_declaration.name.clone(),
         property: property_name.as_str().to_string(),
         message: "property is required".to_string(),
@@ -477,8 +508,8 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
 mod tests {
     use super::build_typed_workflow_ir;
     use crate::parse_inline_workflow;
-    use crate::runtime::error::WorkflowRuntimeError;
-    use crate::runtime::types::WorkflowType;
+    use crate::semantic::support::types::WorkflowType;
+    use crate::semantic::WorkflowSemanticError;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
@@ -631,7 +662,7 @@ mod tests {
 
         assert!(matches!(
             typecheck_result,
-            Err(WorkflowRuntimeError::InvalidAgentProperty { property, .. }) if property == "model"
+            Err(WorkflowSemanticError::InvalidAgentProperty { property, .. }) if property == "model"
         ));
     }
 
@@ -663,7 +694,7 @@ mod tests {
 
         assert!(matches!(
             typecheck_result,
-            Err(WorkflowRuntimeError::InvalidAgentProperty { property, .. }) if property == "prompt"
+            Err(WorkflowSemanticError::InvalidAgentProperty { property, .. }) if property == "prompt"
         ));
     }
 }

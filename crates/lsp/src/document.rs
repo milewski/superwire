@@ -23,7 +23,7 @@ pub use types::{
 };
 
 use superwire_core::dsl::TypeExpression;
-use superwire_core::runtime::ProviderDriver;
+use superwire_core::semantic::ProviderDriver;
 
 use crate::protocol::Position;
 
