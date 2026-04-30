@@ -13,3 +13,16 @@ intellij-build:
 build-cli-alpine:
     cargo build -p superwire-cli --release --target x86_64-unknown-linux-musl
     mv target/x86_64-unknown-linux-musl/release/superwire-cli ./superwire-cli
+
+# Commit and push all submodules, then commit and push the main repo
+# Usage: just submodule-push "commit message"
+submodule-push commit_message:
+    git submodule foreach "git add -A && git commit -m '{{commit_message}}' || true && git push -u origin HEAD"
+    git add -A
+    git commit -m "{{commit_message}}" || true
+    git push origin HEAD
+
+# Pull the main repo and all submodules
+submodule-pull:
+    git pull origin HEAD
+    git submodule foreach git pull origin HEAD
