@@ -266,7 +266,7 @@ impl Reference {
             });
         };
 
-        let Some(field_type_expression) = schema_type_expression.field_type_at_path(&field_path) else {
+        let Some(field_type_expression) = schema_type_expression.resolved_field_type_at_path(&field_path, named_schemas) else {
             return Err(WorkflowRuntimeError::Other {
                 message: format!("unknown schema enum reference `{}`", self.render_path()),
             });
@@ -274,7 +274,7 @@ impl Reference {
 
         resolution_stack.push(schema_name.to_string());
 
-        let resolved_field_type = workflow_type_from_dsl_with_stack(field_type_expression, named_schemas, resolution_stack);
+        let resolved_field_type = workflow_type_from_dsl_with_stack(&field_type_expression, named_schemas, resolution_stack);
 
         resolution_stack.pop();
 

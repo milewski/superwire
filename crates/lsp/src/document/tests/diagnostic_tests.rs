@@ -443,3 +443,40 @@ fn reports_invalid_type_expression_reference_diagnostic() {
 
     assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidTypeExpressionReference);
 }
+
+#[test]
+fn accepts_nested_schema_enum_field_reference_diagnostics() {
+    let diagnostics = inline_diagnostics! {
+        schema main {
+            language: "en_US" | "zh_CN" | "fr"
+        }
+
+        input {
+            workspace_id: string
+            scope: string
+        }
+
+        tool create_project_for_workspace {
+            description: "Create a new project in the bound workspace and scope."
+            input {
+                name: [{
+                    language: schema.main.language
+                    value: string "localized project name"
+                }]
+                primary_language: schema.main.language "primary locale language code"
+                languages: [schema.main.language] "supported locale language code"
+            }
+            bindings {
+                workspace_id: input.workspace_id
+                scope: input.scope
+            }
+        }
+    };
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::InvalidTypeExpressionReference),
+        "unexpected invalid type reference diagnostics: {diagnostics:?}"
+    );
+}

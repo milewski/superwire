@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::ops::Range;
 use strsim::levenshtein;
 
@@ -1013,6 +1015,51 @@ impl TypeExpression {
     }
 
     #[must_use]
+    pub fn resolved_field_type_at_path<HashBuilder: BuildHasher>(
+        &self,
+        field_path: &[&str],
+        named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Option<TypeExpression> {
+        let Some((field_name, remaining_field_path)) = field_path.split_first() else {
+            return Some(self.clone());
+        };
+
+        match self {
+            Self::Object(typed_fields) => {
+                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *field_name)?;
+
+                typed_field
+                    .field_type
+                    .resolved_field_type_at_path(remaining_field_path, named_schemas)
+            }
+            Self::SchemaReference(schema_name) => named_schemas
+                .get(schema_name)?
+                .resolved_field_type_at_path(field_path, named_schemas),
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    if let Some(field_type) = type_expression.resolved_field_type_at_path(field_path, named_schemas) {
+                        return Some(field_type);
+                    }
+                }
+
+                None
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn is_string_enum_expression(&self) -> bool {
         match self {
             Self::StringEnum(_) => true,
@@ -1024,6 +1071,48 @@ impl TypeExpression {
             | Self::Null
             | Self::SchemaReference(_)
             | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => false,
+        }
+    }
+
+    #[must_use]
+    pub fn is_resolved_string_enum_expression<HashBuilder: BuildHasher>(
+        &self,
+        named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> bool {
+        match self {
+            Self::StringEnum(_) => true,
+            Self::StringEnumReference(reference) => {
+                let Some((schema_name, field_path)) = reference.schema_name_and_field_path() else {
+                    return false;
+                };
+
+                if field_path.is_empty() {
+                    return false;
+                }
+
+                let Some(schema_type_expression) = named_schemas.get(schema_name) else {
+                    return false;
+                };
+
+                schema_type_expression
+                    .resolved_field_type_at_path(&field_path, named_schemas)
+                    .is_some_and(|field_type| field_type.is_resolved_string_enum_expression(named_schemas))
+            }
+            Self::Union(type_expressions) => type_expressions
+                .iter()
+                .all(|type_expression| type_expression.is_resolved_string_enum_expression(named_schemas)),
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::SchemaReference(_)
             | Self::Array {
                 item_type: _,
                 fixed_length: _,
