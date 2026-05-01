@@ -28,7 +28,7 @@ fn definition_resolves_agent_output_field_in_output_reference() {
         .and_then(|line_index| u32::try_from(line_index).ok())
         .expect("source should include summary output field declaration");
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let definition_range = document_state
         .definition_range(cursor_position)
         .expect("definition should resolve to output field declaration");
@@ -65,7 +65,7 @@ fn definition_resolves_for_loop_binding_field_to_iterable_item_field_declaration
         .and_then(|line_index| u32::try_from(line_index).ok())
         .expect("source should include participant id field declaration");
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let definition_range = document_state
         .definition_range(cursor_position)
         .expect("definition should resolve to iterable item field declaration");
@@ -103,7 +103,7 @@ fn definition_resolves_dynamic_field_reference_and_nested_tool_output_field() {
         .and_then(|line_index| u32::try_from(line_index).ok())
         .expect("source should include dynamic search_result field declaration");
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let definition_range = document_state
         .definition_range(cursor_position)
         .expect("definition should resolve to dynamic field declaration");
@@ -138,7 +138,7 @@ fn definition_resolves_dynamic_field_reference_and_nested_tool_output_field() {
         .and_then(|line_index| u32::try_from(line_index).ok())
         .expect("source should include tool output title field declaration");
 
-    let nested_document_state = DocumentState::new(nested_source);
+    let nested_document_state = DocumentState::new(nested_source, None);
     let nested_definition_range = nested_document_state
         .definition_range(nested_cursor_position)
         .expect("definition should resolve to tool output field declaration");
@@ -168,7 +168,7 @@ fn definition_resolves_nested_dynamic_object_literal_field_reference() {
         .and_then(|line_index| u32::try_from(line_index).ok())
         .expect("source should include nested dynamic workflow field declaration");
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let definition_range = document_state
         .definition_range(cursor_position)
         .expect("definition should resolve to nested dynamic object field declaration");
@@ -205,7 +205,7 @@ fn definition_resolves_tool_reference_inside_dynamic_tool_call() {
         .and_then(|line_index| u32::try_from(line_index).ok())
         .expect("source should include tool declaration");
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let definition_range = document_state
         .definition_range(cursor_position)
         .expect("definition should resolve to tool declaration");

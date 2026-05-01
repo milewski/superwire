@@ -1123,7 +1123,7 @@ fn completion_text_edit_range_replaces_model_provider_prefix() {
         character: u32::try_from(provider_prefix_character_index).expect("provider prefix character index should fit in u32"),
     };
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("model property completion should include a replacement range");
@@ -1354,7 +1354,7 @@ fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
         }
     });
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("model name completion should include a replacement range");
@@ -1374,7 +1374,7 @@ fn completion_text_edit_range_for_prompt_value_keeps_space_after_separator() {
         }
     });
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("prompt completion should include a replacement range");
@@ -1394,7 +1394,7 @@ fn completion_text_edit_range_for_prompt_reference_after_separator_keeps_root_an
         }
     });
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("prompt reference completion should include a replacement range");
@@ -1417,7 +1417,7 @@ fn completion_text_edit_range_for_output_reference_after_separator_keeps_root_an
         }
     });
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("output reference completion should include a replacement range");
@@ -1436,7 +1436,7 @@ fn completion_text_edit_range_for_array_item_type_does_not_replace_opening_brack
         }
     });
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("array item type completion should include a replacement range");
@@ -1456,7 +1456,7 @@ fn completion_text_edit_range_for_agent_property_inserts_at_current_line_cursor(
         }
     });
 
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
     let completion_text_edit_range = document_state
         .completion_text_edit_range(cursor_position)
         .expect("agent property completion should include a replacement range");

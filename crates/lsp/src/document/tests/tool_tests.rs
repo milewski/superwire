@@ -1,4 +1,6 @@
 use super::*;
+use std::collections::BTreeMap;
+use superwire_core::mcp::{McpLock, McpServerLock, McpToolLock};
 
 #[test]
 fn suggests_tool_keyword_inside_tools_expression_context() {
@@ -139,7 +141,7 @@ fn suggests_only_tool_properties_inside_tool_block() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "description", "input", "bindings");
+    assert_completion_contains_labels!(&completion_suggestions, "description", "using", "input", "bindings", "output");
     assert_completion_excludes_labels!(
         &completion_suggestions,
         DeclarationKeyword::Provider,
@@ -149,6 +151,132 @@ fn suggests_only_tool_properties_inside_tool_block() {
         "string",
         "number",
     );
+}
+
+#[test]
+fn suggests_mcp_source_inside_tool_using_property() {
+    let completion_suggestions = inline_completion_suggestions! {
+        tool issue_tracker_lookup {
+            using: <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "mcp.");
+    assert_completion_excludes_labels!(&completion_suggestions, "input", "bindings", "output");
+}
+
+#[test]
+fn uses_mcp_lock_for_tool_schema_and_source_completion() {
+    let source_template = inline_document_template! {
+        mcp local {
+            endpoint: "http://docker.localhost/mcp/project"
+        }
+
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        tool update_user_name {
+            using: mcp.local.<cursor>
+        }
+
+        agent tooling {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.update_user_name]
+            prompt: "Rename the user"
+            output: string
+        }
+    };
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        "list_all_participants_who_has_answered_given_task",
+        "update-user-name"
+    );
+
+    let source = inline_document_template! {
+        mcp local {
+            endpoint: "http://docker.localhost/mcp/project"
+        }
+
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        tool update_user_name {
+            using: mcp.local.update-user-name
+        }
+
+        agent tooling {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.update_user_name]
+            prompt: "Rename the user"
+            output: string
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+
+    assert!(document_state.diagnostics().is_empty());
+}
+
+fn test_mcp_lock() -> McpLock {
+    let mut tools = BTreeMap::new();
+    tools.insert(
+        "list_all_participants_who_has_answered_given_task".to_string(),
+        McpToolLock {
+            name: "list_all_participants_who_has_answered_given_task".to_string(),
+            description: Some("List all participants who answered a task".to_string()),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "number" },
+                    "task_id": { "type": "number" }
+                },
+                "required": ["project_id", "task_id"]
+            }),
+            output_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "participants": { "type": "array", "items": { "type": "object" } }
+                },
+                "required": ["participants"]
+            })),
+        },
+    );
+    tools.insert(
+        "update-user-name".to_string(),
+        McpToolLock {
+            name: "update-user-name".to_string(),
+            description: Some("Update a user name".to_string()),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "user_name": { "type": "string" }
+                },
+                "required": ["user_name"]
+            }),
+            output_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "success": { "type": "boolean" }
+                },
+                "required": ["success"]
+            })),
+        },
+    );
+    let mut servers = BTreeMap::new();
+    servers.insert("local".to_string(), McpServerLock { tools });
+
+    McpLock { servers }
 }
 
 #[test]
