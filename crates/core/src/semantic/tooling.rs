@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, TypeExpression, TypedField,
-    Workflow,
+    parse_workflow, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolSource, TypeExpression,
+    TypedField, Workflow,
 };
 use std::collections::BTreeMap;
 
@@ -183,6 +183,7 @@ pub struct SemanticToolingSnapshot {
 #[derive(Debug, Clone, Default)]
 pub struct ToolSchemaSummary {
     pub description: Option<String>,
+    pub source: Option<ToolSource>,
     pub input_fields: BTreeMap<String, TypeExpression>,
     pub bounded_fields: BTreeMap<String, TypeExpression>,
 }
@@ -206,6 +207,7 @@ impl SemanticToolingSnapshot {
                         provider_declaration.span,
                     );
                 }
+                Declaration::McpServer(_) => {}
                 Declaration::Schema(schema_declaration) => {
                     declaration_index.push_symbol(
                         ToolingSymbolCategory::Schema,
@@ -234,6 +236,7 @@ impl SemanticToolingSnapshot {
                         tool_declaration.name.clone(),
                         ToolSchemaSummary {
                             description: tool_declaration.description.clone(),
+                            source: tool_declaration.source.clone(),
                             input_fields: typed_fields_to_map(&tool_declaration.input_fields),
                             bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
                         },
