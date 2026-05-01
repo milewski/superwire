@@ -2,6 +2,7 @@ use superwire_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
 use superwire_core::dsl::{parse_workflow, validate_workflow, DslParseError};
+use superwire_core::mcp::McpLock;
 
 use crate::protocol::DiagnosticCode;
 
@@ -17,11 +18,15 @@ pub struct SemanticSnapshot {
 }
 
 impl SemanticSnapshot {
-    pub fn from_text(source_text: &str) -> Self {
+    pub fn from_text(source_text: &str, mcp_lock: Option<&McpLock>) -> Self {
         match parse_workflow(source_text) {
-            Ok(workflow) => {
+            Ok(mut workflow) => {
+                if let Some(mcp_lock) = mcp_lock {
+                    mcp_lock.apply_to_workflow(&mut workflow);
+                }
+
                 let validation_report = validate_workflow(&workflow);
-                let semantic_index = SemanticIndex::from_workflow(&workflow);
+                let semantic_index = SemanticIndex::from_workflow_with_mcp_lock(&workflow, mcp_lock.cloned());
                 let diagnostics = validation_report.diagnostics();
 
                 Self {
@@ -32,11 +37,13 @@ impl SemanticSnapshot {
             }
             Err(parse_error) => {
                 let diagnostics = vec![parse_error.diagnostic()];
+                let mut semantic_index = SemanticIndex::from_text_fallback(source_text);
+                semantic_index.mcp_lock = mcp_lock.cloned();
 
                 Self {
                     parse_error: Some(parse_error),
                     diagnostics,
-                    semantic_index: SemanticIndex::from_text_fallback(source_text),
+                    semantic_index,
                 }
             }
         }

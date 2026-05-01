@@ -4,6 +4,7 @@ use superwire_core::dsl::{
     AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration,
     ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
 };
+use superwire_core::mcp::McpLock;
 use superwire_core::semantic::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingReferencePath, ToolingSymbolCategory};
 
@@ -51,6 +52,7 @@ pub struct SemanticIndex {
     has_secrets_declaration: bool,
     has_output_declaration: bool,
     pub tooling_snapshot: SemanticToolingSnapshot,
+    pub mcp_lock: Option<McpLock>,
 }
 
 #[derive(Debug, Clone)]
@@ -418,6 +420,52 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn mcp_tool_source_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
+        let Some(mcp_lock) = &self.mcp_lock else {
+            return mcp_root_suggestion(value_prefix);
+        };
+        let normalized_prefix = value_prefix.split_whitespace().collect::<String>();
+        let trimmed_prefix = normalized_prefix.as_str();
+        let Some(after_mcp_prefix) = trimmed_prefix.strip_prefix("mcp.") else {
+            return mcp_root_suggestion(trimmed_prefix);
+        };
+
+        if let Some((server_name, tool_prefix)) = after_mcp_prefix.split_once('.') {
+            let Some(server_lock) = mcp_lock.servers.get(server_name) else {
+                return Vec::new();
+            };
+
+            return server_lock
+                .tools
+                .values()
+                .filter(|tool_lock| tool_lock.name.starts_with(tool_prefix))
+                .map(|tool_lock| CompletionSuggestion {
+                    label: tool_lock.name.clone(),
+                    kind: CompletionKind::Function,
+                    detail: "MCP tool".to_string(),
+                    documentation: tool_lock
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| "Tool discovered from MCP lock.".to_string()),
+                    insert_text: tool_lock.name.clone(),
+                })
+                .collect();
+        }
+
+        mcp_lock
+            .servers
+            .keys()
+            .filter(|server_name| server_name.starts_with(after_mcp_prefix))
+            .map(|server_name| CompletionSuggestion {
+                label: server_name.clone(),
+                kind: CompletionKind::Module,
+                detail: "MCP server".to_string(),
+                documentation: "MCP server discovered from the lock file.".to_string(),
+                insert_text: format!("{server_name}."),
+            })
+            .collect()
+    }
+
     pub fn tool_bounded_argument_suggestions(
         &self,
         tool_name: &str,
@@ -451,7 +499,7 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn from_workflow(workflow: &Workflow) -> Self {
+    pub fn from_workflow_with_mcp_lock(workflow: &Workflow, mcp_lock: Option<McpLock>) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
         let mut semantic_index = Self {
             providers: HashMap::new(),
@@ -487,6 +535,7 @@ impl SemanticIndex {
             has_secrets_declaration: false,
             has_output_declaration: false,
             tooling_snapshot,
+            mcp_lock,
         };
 
         for declaration in workflow.declarations() {
@@ -510,6 +559,7 @@ impl SemanticIndex {
             Declaration::Provider(provider_declaration) => {
                 self.insert_provider(provider_declaration);
             }
+            Declaration::McpServer(_) => {}
             Declaration::Schema(schema_declaration) => {
                 self.insert_schema_declaration(schema_declaration);
             }
@@ -808,6 +858,7 @@ impl SemanticIndex {
             has_secrets_declaration: !tooling_snapshot.secrets_fields().is_empty(),
             has_output_declaration: false,
             tooling_snapshot: tooling_snapshot.clone(),
+            mcp_lock: None,
         }
     }
 
@@ -2131,4 +2182,18 @@ fn field_metadata_from_type_map(type_map: &BTreeMap<String, TypeExpression>) -> 
             )
         })
         .collect()
+}
+
+fn mcp_root_suggestion(value_prefix: &str) -> Vec<CompletionSuggestion> {
+    if !"mcp.".starts_with(value_prefix) {
+        return Vec::new();
+    }
+
+    vec![CompletionSuggestion {
+        label: "mcp.".to_string(),
+        kind: CompletionKind::Module,
+        detail: "MCP tool source".to_string(),
+        documentation: "Use an MCP-discovered tool as this tool's implementation.".to_string(),
+        insert_text: "mcp.".to_string(),
+    }]
 }

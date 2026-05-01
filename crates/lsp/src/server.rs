@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use serde_json::{json, Value};
+use superwire_core::dsl::parse_workflow;
+use superwire_core::mcp::{McpLock, McpServerConfig};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
 
@@ -112,9 +115,11 @@ impl LanguageServer {
     fn handle_did_open(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
         let open_params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
 
+        let mcp_lock = refresh_or_read_mcp_lock(&open_params.text_document.uri, &open_params.text_document.text);
+
         self.documents.insert(
             open_params.text_document.uri.clone(),
-            DocumentState::new(open_params.text_document.text),
+            DocumentState::new(open_params.text_document.text, mcp_lock),
         );
 
         let diagnostics_notification = self.publish_document_diagnostics(open_params.text_document.uri.as_str());
@@ -126,12 +131,21 @@ impl LanguageServer {
         let change_params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
 
         if let Some(last_change) = change_params.content_changes.last() {
+            let existing_document = self.documents.get(&change_params.text_document.uri);
+            let should_refresh_mcp_lock =
+                existing_document.is_none_or(|document_state| should_refresh_mcp_lock(document_state.source_text(), &last_change.text));
+            let mcp_lock = if should_refresh_mcp_lock {
+                refresh_or_read_mcp_lock(&change_params.text_document.uri, &last_change.text)
+            } else {
+                existing_document.and_then(DocumentState::mcp_lock)
+            };
+
             if let Some(document_state) = self.documents.get_mut(&change_params.text_document.uri) {
-                document_state.replace_text(last_change.text.clone());
+                document_state.replace_text(last_change.text.clone(), mcp_lock);
             } else {
                 self.documents.insert(
                     change_params.text_document.uri.clone(),
-                    DocumentState::new(last_change.text.clone()),
+                    DocumentState::new(last_change.text.clone(), mcp_lock),
                 );
             }
         }
@@ -615,4 +629,106 @@ fn markdown_hover(markdown: &str) -> Value {
             "value": markdown,
         }
     })
+}
+
+fn refresh_or_read_mcp_lock(document_uri: &str, source_text: &str) -> Option<McpLock> {
+    let lock_path = lock_path_for_document_uri(document_uri)?;
+
+    if let Ok(workflow) = parse_workflow(source_text) {
+        if let Ok(mcp_lock) = McpLock::discover_from_workflow(&workflow) {
+            let _ = mcp_lock.write_to_path(&lock_path);
+
+            return Some(mcp_lock);
+        }
+    }
+
+    McpLock::read_from_path(&lock_path).ok()
+}
+
+fn should_refresh_mcp_lock(previous_source_text: &str, next_source_text: &str) -> bool {
+    match (mcp_config_signature(previous_source_text), mcp_config_signature(next_source_text)) {
+        (Some(previous_signature), Some(next_signature)) => previous_signature != next_signature,
+        (None, Some(_)) => true,
+        (Some(_) | None, None) => false,
+    }
+}
+
+fn mcp_config_signature(source_text: &str) -> Option<Vec<String>> {
+    let workflow = parse_workflow(source_text).ok()?;
+    let mut server_configs = McpServerConfig::from_workflow(&workflow).ok()?;
+
+    server_configs.sort_by(|left_config, right_config| left_config.name.cmp(&right_config.name));
+
+    Some(
+        server_configs
+            .into_iter()
+            .map(|server_config| {
+                let headers = serde_json::to_string(&server_config.headers).unwrap_or_default();
+
+                format!("{}\0{}\0{}", server_config.name, server_config.endpoint, headers)
+            })
+            .collect(),
+    )
+}
+
+fn lock_path_for_document_uri(document_uri: &str) -> Option<PathBuf> {
+    let file_path = document_uri.strip_prefix("file://")?;
+    let decoded_file_path = percent_decode_file_uri_path(file_path);
+    let mut lock_path = PathBuf::from(decoded_file_path);
+    let lock_extension = lock_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map_or_else(|| "lock".to_string(), |extension| format!("{extension}.lock"));
+    lock_path.set_extension(lock_extension);
+
+    Some(lock_path)
+}
+
+fn percent_decode_file_uri_path(path: &str) -> String {
+    let mut decoded = String::new();
+    let bytes = path.as_bytes();
+    let mut byte_index = 0;
+
+    while byte_index < bytes.len() {
+        if bytes[byte_index] == b'%' && byte_index + 2 < bytes.len() {
+            if let Ok(hex_value) = u8::from_str_radix(&path[byte_index + 1..byte_index + 3], 16) {
+                decoded.push(char::from(hex_value));
+                byte_index += 3;
+
+                continue;
+            }
+        }
+
+        decoded.push(char::from(bytes[byte_index]));
+        byte_index += 1;
+    }
+
+    decoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_refresh_mcp_lock;
+    use superwire_core::workflow_source;
+
+    #[test]
+    fn refreshes_mcp_lock_only_when_mcp_config_changes() {
+        let source = workflow_source! {
+            mcp local {
+                endpoint: "http://localhost:8000/mcp/project"
+                headers: {
+                    Accept: "application/json"
+                }
+            }
+
+            output {
+                value: "ok"
+            }
+        };
+        let prompt_only_change = source.replace("ok", "done");
+        let endpoint_change = source.replace("/project", "/other");
+
+        assert!(!should_refresh_mcp_lock(source, &prompt_only_change));
+        assert!(should_refresh_mcp_lock(source, &endpoint_change));
+    }
 }

@@ -163,6 +163,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
     fn completion_detail(self) -> &'static str {
         match self {
             DeclarationKeyword::Provider => "Provider declaration",
+            DeclarationKeyword::Mcp => "MCP server declaration",
             DeclarationKeyword::Secrets => "Secrets declaration",
             DeclarationKeyword::Input => "Input declaration",
             DeclarationKeyword::Schema => "Schema declaration",
@@ -176,6 +177,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
     fn completion_documentation(self) -> &'static str {
         match self {
             DeclarationKeyword::Provider => "Declares a provider configuration block.",
+            DeclarationKeyword::Mcp => "Declares an MCP server used for tool discovery and execution.",
             DeclarationKeyword::Secrets => "Declares workflow secret fields.",
             DeclarationKeyword::Input => "Declares workflow input fields.",
             DeclarationKeyword::Schema => "Declares a reusable named schema type.",
@@ -209,13 +211,19 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
     ))
 }
 
-fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 8] {
+fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 9] {
     [
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Provider.as_str(),
             kind: CompletionKind::Keyword,
             detail: DeclarationKeyword::Provider.completion_detail(),
             documentation: DeclarationKeyword::Provider.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Mcp.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Mcp.completion_detail(),
+            documentation: DeclarationKeyword::Mcp.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Agent.as_str(),

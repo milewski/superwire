@@ -1,4 +1,4 @@
-use superwire_core::dsl::{AgentPropertyName, DeclarationKeyword, ForClauseKeyword, SingletonDeclarationKind};
+use superwire_core::dsl::{AgentPropertyName, DeclarationKeyword, ForClauseKeyword, SingletonDeclarationKind, ToolPropertyName};
 use superwire_core::semantic::InferenceSetting;
 
 use super::text_utils::{is_identifier, trailing_identifier};
@@ -352,33 +352,4 @@ pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSugge
             insert_text: property_name.as_str().to_string(),
         })
         .collect()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ToolPropertyName {
-    Description,
-    Input,
-    Bindings,
-    Output,
-}
-
-impl ToolPropertyName {
-    fn all() -> [Self; 4] {
-        [Self::Description, Self::Input, Self::Bindings, Self::Output]
-    }
-
-    fn from_identifier(identifier: &str) -> Option<Self> {
-        Self::all()
-            .into_iter()
-            .find(|tool_property_name| tool_property_name.as_str() == identifier)
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Description => "description",
-            Self::Input => SingletonDeclarationKind::Input.as_str(),
-            Self::Bindings => "bindings",
-            Self::Output => SingletonDeclarationKind::Output.as_str(),
-        }
-    }
 }
