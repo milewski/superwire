@@ -1,0 +1,42 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+input {
+    product_name: string
+}
+
+agent changelog {
+    model: openai("model-a")
+    prompt: "Write release notes for {{ input.product_name }}."
+    output: {
+        markdown: string
+    }
+}
+
+agent social_thread {
+    model: openai("model-a")
+    prompt: "Create a launch thread for {{ input.product_name }}."
+    output: {
+        posts: [string]
+    }
+}
+
+agent customer_email {
+    model: openai("model-a")
+    prompt: "Write an announcement email for {{ input.product_name }}."
+    output: {
+        subject: string
+        body: string
+    }
+}
+
+output {
+    changelog: agent.changelog.markdown
+    posts: agent.social_thread.posts
+    email_subject: agent.customer_email.subject
+    email_body: agent.customer_email.body
+}

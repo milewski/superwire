@@ -1,0 +1,24 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+schema Person {
+    name: string "Full name"
+    age: number "Age in years"
+    role: string "Job role"
+}
+
+agent profile {
+    model: openai("model-a")
+    prompt: "Generate a person profile."
+    output: schema.Person
+}
+
+output {
+    profile: agent.profile
+    name: agent.profile.name
+    age: agent.profile.age
+}

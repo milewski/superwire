@@ -1,0 +1,28 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+agent summary {
+    model: openai("model-a")
+    prompt: "Write a project status summary with a confidence score."
+    output: {
+        text: string
+        confidence: float
+    }
+}
+
+output {
+    version: 2
+    generated_by: "status_workflow"
+    report: {
+        source: "workflow"
+        overview: { text: agent.summary.text }
+        metrics: {
+            confidence: agent.summary.confidence
+            status: "ok"
+        }
+    }
+}

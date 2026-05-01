@@ -1,0 +1,24 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+input {
+    items: [string]
+}
+
+agent processor {
+    model: openai("model-a")
+    prompt: "Process these items: {{ input.items }}"
+    output: {
+        processed: [string]
+        count: number
+    }
+}
+
+output {
+    processed: agent.processor.processed
+    count: agent.processor.count
+}

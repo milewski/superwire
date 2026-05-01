@@ -1,0 +1,24 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+agent data {
+    model: openai("model-a")
+    prompt: "Generate data with a nullable nested object."
+    output: {
+        label: string
+        details: {
+            score: number
+            tags: [string]
+        } | null
+    }
+}
+
+output {
+    label: agent.data.label
+    score: agent.data.details?.score
+    tags: agent.data.details?.tags
+}

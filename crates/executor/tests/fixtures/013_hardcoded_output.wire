@@ -1,0 +1,19 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+agent assistant {
+    model: openai("model-a")
+    prompt: "Say hello."
+    output: string
+}
+
+output {
+    hardcoded_string: "fixed-value"
+    hardcoded_number: 42
+    hardcoded_boolean: true
+    agent_value: agent.assistant
+}

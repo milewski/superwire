@@ -1,0 +1,25 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+input {
+    product_name: string
+    release_highlights: [string]
+}
+
+agent summarizer {
+    model: openai("model-a")
+    prompt: "Summarize {{ input.product_name }} highlights: {{ input.release_highlights }}"
+    output: {
+        summary: string
+        key_points: [string]
+    }
+}
+
+output {
+    summary: agent.summarizer.summary
+    key_points: agent.summarizer.key_points
+}
