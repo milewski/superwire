@@ -40,7 +40,11 @@ impl DeclarationHeaderCompletionContext {
         let trimmed_line_after_keyword = line_after_keyword.trim_start();
 
         match declaration_keyword {
-            DeclarationKeyword::Provider | DeclarationKeyword::Schema | DeclarationKeyword::Tool | DeclarationKeyword::Agent => {
+            DeclarationKeyword::Provider
+            | DeclarationKeyword::Mcp
+            | DeclarationKeyword::Schema
+            | DeclarationKeyword::Tool
+            | DeclarationKeyword::Agent => {
                 if declaration_keyword == DeclarationKeyword::Agent {
                     return Self::agent_header_completion_context(trimmed_line_after_keyword);
                 }

@@ -23,6 +23,7 @@ pub use types::{
 };
 
 use superwire_core::dsl::TypeExpression;
+use superwire_core::mcp::McpLock;
 use superwire_core::semantic::ProviderDriver;
 
 use crate::protocol::Position;
@@ -41,15 +42,25 @@ pub(super) struct SymbolTokenAtPosition {
 
 impl DocumentState {
     #[must_use]
-    pub fn new(text: String) -> Self {
-        let semantic_snapshot = SemanticSnapshot::from_text(&text);
+    pub fn new(text: String, mcp_lock: Option<McpLock>) -> Self {
+        let semantic_snapshot = SemanticSnapshot::from_text(&text, mcp_lock.as_ref());
 
         Self { text, semantic_snapshot }
     }
 
-    pub fn replace_text(&mut self, text: String) {
-        self.semantic_snapshot = SemanticSnapshot::from_text(&text);
+    pub fn replace_text(&mut self, text: String, mcp_lock: Option<McpLock>) {
+        self.semantic_snapshot = SemanticSnapshot::from_text(&text, mcp_lock.as_ref());
         self.text = text;
+    }
+
+    #[must_use]
+    pub(super) fn source_text(&self) -> &str {
+        &self.text
+    }
+
+    #[must_use]
+    pub(super) fn mcp_lock(&self) -> Option<McpLock> {
+        self.semantic_snapshot.semantic_index.mcp_lock.clone()
     }
 
     #[must_use]
