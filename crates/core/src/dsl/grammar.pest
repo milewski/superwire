@@ -2,6 +2,7 @@ workflow = { SOI ~ declaration* ~ EOI }
 
 declaration = _{
     provider_declaration
+    | mcp_declaration
     | secrets_declaration
     | input_declaration
     | schema_declaration
@@ -12,18 +13,23 @@ declaration = _{
 }
 
 provider_declaration = { "provider" ~ identifier ~ object_expression }
+mcp_declaration = { "mcp" ~ identifier ~ object_expression }
 secrets_declaration = { "secrets" ~ typed_block }
 input_declaration = { "input" ~ typed_block }
 schema_declaration = { "schema" ~ identifier ~ typed_block }
 tool_declaration = { "tool" ~ identifier ~ tool_block }
 
 tool_block = { "{" ~ tool_property* ~ "}" }
-tool_property = _{ tool_description_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
+tool_property = _{ tool_description_property | tool_using_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
 tool_description_property = { "description" ~ ":" ~ plain_string_literal }
+tool_using_property = { "using" ~ ":" ~ mcp_tool_reference }
 tool_input_property = { "input" ~ typed_block }
 tool_bindings_property = { "bindings" ~ tool_bindings_block }
 tool_output_property = { "output" ~ typed_block }
 tool_input_field = { typed_field }
+mcp_tool_reference = { "mcp" ~ "." ~ (identifier ~ ".")? ~ mcp_tool_name }
+mcp_tool_name = { mcp_tool_name_segment ~ ("-" ~ mcp_tool_name_segment)* }
+mcp_tool_name_segment = @{ (ASCII_ALPHA | ASCII_DIGIT | "_")+ }
 
 dynamic_declaration = { "dynamic" ~ object_expression }
 
@@ -111,7 +117,8 @@ tool_call_input_property = { "input" ~ object_expression }
 tool_call_bindings_property = { "bindings" ~ object_expression }
 
 object_expression = { "{" ~ object_field* ~ "}" }
-object_field = { identifier ~ ":" ~ expression }
+object_field = { object_field_name ~ ":" ~ expression }
+object_field_name = { identifier | plain_string_literal }
 
 array_expression = { "[" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ "]" }
 

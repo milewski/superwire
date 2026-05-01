@@ -238,6 +238,15 @@ impl Declaration {
 
                 formatter.push_declaration_block_end();
             }
+            Self::McpServer(mcp_server_declaration) => {
+                formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Mcp.as_str(), mcp_server_declaration.name));
+
+                for object_field in &mcp_server_declaration.properties {
+                    object_field.push_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
             Self::Secrets(secrets_declaration) => {
                 formatter.push_declaration_block_start(DeclarationKeyword::Secrets.as_str());
 
@@ -329,6 +338,29 @@ impl ToolDeclaration {
 
         if let Some(description) = &self.description {
             formatter.push_line(&format!("description: {}", render_plain_string_literal(description)));
+
+            if !self.input_fields.is_empty()
+                || self.source.is_some()
+                || !self.binding_fields.is_empty()
+                || !self.fixed_binding_fields.is_empty()
+                || !self.output_fields.is_empty()
+            {
+                formatter.push_newline();
+            }
+        }
+
+        if let Some(source) = &self.source {
+            if let Some(mcp_tool_name) = source.mcp_tool_name() {
+                match source {
+                    super::ast::ToolSource::Mcp(mcp_tool_source) => {
+                        if let Some(server_name) = &mcp_tool_source.server_name {
+                            formatter.push_line(&format!("using: mcp.{server_name}.{mcp_tool_name}"));
+                        } else {
+                            formatter.push_line(&format!("using: mcp.{mcp_tool_name}"));
+                        }
+                    }
+                }
+            }
 
             if !self.input_fields.is_empty()
                 || !self.binding_fields.is_empty()
@@ -625,7 +657,7 @@ impl TypeExpression {
 impl ObjectField {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
-        formatter.output.push_str(&self.name);
+        formatter.output.push_str(&render_object_field_name(&self.name));
         formatter.output.push_str(": ");
         self.value.push_to_formatter(formatter, ExpressionFormat::Canonical);
         formatter.push_newline();
@@ -772,7 +804,7 @@ impl Expression {
 
             let mut object_field_iterator = object_fields.iter().peekable();
             while let Some(object_field) = object_field_iterator.next() {
-                formatter.output.push_str(&object_field.name);
+                formatter.output.push_str(&render_object_field_name(&object_field.name));
                 formatter.output.push_str(": ");
                 object_field.value.push_to_formatter(formatter, ExpressionFormat::Inline);
 
@@ -1241,6 +1273,27 @@ fn render_plain_string_literal(raw_string: &str) -> String {
     }
 
     format!("\"{}\"", escape_plain_string_text(raw_string))
+}
+
+fn render_object_field_name(field_name: &str) -> String {
+    if is_identifier_name(field_name) {
+        return field_name.to_string();
+    }
+
+    render_plain_string_literal(field_name)
+}
+
+fn is_identifier_name(value: &str) -> bool {
+    let mut characters = value.chars();
+    let Some(first_character) = characters.next() else {
+        return false;
+    };
+
+    if !first_character.is_ascii_alphabetic() && first_character != '_' {
+        return false;
+    }
+
+    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
 fn escape_quoted_string_text(raw_string: &str) -> String {

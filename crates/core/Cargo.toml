@@ -21,4 +21,4 @@ serde_json = { workspace = true }
 strsim = "0.11"
 thiserror = { workspace = true }
 tokio = { workspace = true }
-ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
+ureq = { version = "3.3.0", default-features = false, features = ["json", "rustls"] }

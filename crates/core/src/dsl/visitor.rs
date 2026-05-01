@@ -1,8 +1,8 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DynamicBlock, Expression, FunctionCall,
-    InputDeclaration, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
-    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
-    TypeExpression, TypedField, Workflow,
+    InputDeclaration, McpServerDeclaration, McpToolSource, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference,
+    ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart,
+    ToolCall, ToolDeclaration, ToolSource, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -49,6 +49,7 @@ impl AstVisitor {
                 self.visit_declaration(inner_declaration_pair)
             }
             Rule::provider_declaration => self.visit_provider_declaration(declaration_pair),
+            Rule::mcp_declaration => self.visit_mcp_declaration(declaration_pair),
             Rule::secrets_declaration => self.visit_secrets_declaration(declaration_pair),
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
@@ -127,6 +128,7 @@ impl AstVisitor {
         let tool_name = self.next_identifier(&mut inner_pairs, "tool name", "tool declaration")?;
         let tool_block_pair = self.next_pair(&mut inner_pairs, "tool block", "tool declaration")?;
         let mut description = None;
+        let mut source = None;
         let mut input_fields = Vec::new();
         let mut binding_fields = Vec::new();
         let mut fixed_binding_fields = Vec::new();
@@ -137,6 +139,10 @@ impl AstVisitor {
                 Rule::tool_description_property => {
                     let description_pair = self.first_inner_pair(tool_property_pair, "tool description property")?;
                     description = Some(self.parse_string_literal(description_pair)?);
+                }
+                Rule::tool_using_property => {
+                    let mcp_tool_reference_pair = self.first_inner_pair(tool_property_pair, "tool using property")?;
+                    source = Some(self.visit_tool_source(mcp_tool_reference_pair)?);
                 }
                 Rule::tool_input_property => {
                     let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool input property")?;
@@ -163,12 +169,51 @@ impl AstVisitor {
         Ok(Declaration::Tool(ToolDeclaration {
             name: tool_name,
             description,
+            source,
             input_fields,
             binding_fields,
             fixed_binding_fields,
             output_fields,
             span: declaration_span,
         }))
+    }
+
+    fn visit_mcp_declaration(&self, mcp_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&mcp_pair);
+        let mut inner_pairs = mcp_pair.into_inner();
+
+        let server_name = self.next_identifier(&mut inner_pairs, "MCP server name", "MCP declaration")?;
+        let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP body", "MCP declaration")?;
+        let properties = self.visit_object_expression(object_expression_pair)?;
+
+        Ok(Declaration::McpServer(McpServerDeclaration {
+            name: server_name,
+            properties,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_tool_source(&self, tool_source_pair: Pair<'_, Rule>) -> Result<ToolSource, DslParseError> {
+        match tool_source_pair.as_rule() {
+            Rule::mcp_tool_reference => {
+                let mut inner_pairs = tool_source_pair.into_inner().collect::<Vec<_>>();
+                let mcp_tool_name_pair = inner_pairs
+                    .pop()
+                    .ok_or_else(|| DslParseError::missing("MCP tool name", "MCP tool reference"))?;
+                let server_name = inner_pairs.pop().map(|server_name_pair| server_name_pair.as_str().to_string());
+
+                Ok(ToolSource::Mcp(McpToolSource {
+                    server_name,
+                    tool_name: mcp_tool_name_pair.as_str().split_whitespace().collect::<String>(),
+                    span: source_span_from_pair(&mcp_tool_name_pair),
+                }))
+            }
+            _ => Err(DslParseError::unexpected_with_span(
+                tool_source_pair.as_rule(),
+                "tool source",
+                source_span_from_pair(&tool_source_pair),
+            )),
+        }
     }
 
     fn visit_tool_bindings_block(&self, bindings_block_pair: Pair<'_, Rule>) -> Result<(Vec<TypedField>, Vec<ObjectField>), DslParseError> {
@@ -649,7 +694,8 @@ impl AstVisitor {
         let object_field_span = source_span_from_pair(&object_field_pair);
         let mut inner_pairs = object_field_pair.into_inner();
 
-        let field_name = self.next_identifier(&mut inner_pairs, "object field name", "object field")?;
+        let field_name_pair = self.next_pair(&mut inner_pairs, "object field name", "object field")?;
+        let field_name = self.visit_object_field_name(field_name_pair)?;
         let expression_pair = self.next_pair(&mut inner_pairs, "object field value", "object field")?;
         let value = self.visit_expression(expression_pair)?;
 
@@ -658,6 +704,21 @@ impl AstVisitor {
             value,
             span: object_field_span,
         })
+    }
+
+    fn visit_object_field_name(&self, object_field_name_pair: Pair<'_, Rule>) -> Result<String, DslParseError> {
+        let mut inner_pairs = object_field_name_pair.into_inner();
+        let field_name_pair = self.next_pair(&mut inner_pairs, "object field name", "object field")?;
+
+        match field_name_pair.as_rule() {
+            Rule::identifier => Ok(field_name_pair.as_str().to_owned()),
+            Rule::plain_quoted_string | Rule::plain_multiline_string => self.parse_string_literal(field_name_pair),
+            _ => Err(DslParseError::unexpected_with_span(
+                field_name_pair.as_rule(),
+                "object field name",
+                source_span_from_pair(&field_name_pair),
+            )),
+        }
     }
 
     fn visit_array_expression(&self, array_expression_pair: Pair<'_, Rule>) -> Result<Vec<Expression>, DslParseError> {

@@ -101,6 +101,14 @@ impl Workflow {
     }
 
     #[must_use]
+    pub fn find_mcp_server(&self, server_name: &str) -> Option<&McpServerDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::McpServer(mcp_server_declaration) if mcp_server_declaration.name == server_name => Some(mcp_server_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
     pub fn find_secrets(&self) -> Option<&SecretsDeclaration> {
         self.declarations.iter().find_map(|declaration| match declaration {
             Declaration::Secrets(secrets_declaration) => Some(secrets_declaration),
@@ -152,6 +160,7 @@ impl Workflow {
         self.declarations.iter().filter_map(|declaration| match declaration {
             Declaration::Dynamic(dynamic_block) => Some(dynamic_block),
             Declaration::Provider(_)
+            | Declaration::McpServer(_)
             | Declaration::Secrets(_)
             | Declaration::Input(_)
             | Declaration::Schema(_)
@@ -165,6 +174,7 @@ impl Workflow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Declaration {
     Provider(ProviderDeclaration),
+    McpServer(McpServerDeclaration),
     Secrets(SecretsDeclaration),
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
@@ -177,6 +187,7 @@ pub enum Declaration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DeclarationKeyword {
     Provider,
+    Mcp,
     Secrets,
     Input,
     Schema,
@@ -216,6 +227,7 @@ impl DeclarationKeyword {
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "provider" => Some(Self::Provider),
+            "mcp" => Some(Self::Mcp),
             "secrets" => Some(Self::Secrets),
             "input" => Some(Self::Input),
             "schema" => Some(Self::Schema),
@@ -231,6 +243,7 @@ impl DeclarationKeyword {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Provider => "provider",
+            Self::Mcp => "mcp",
             Self::Secrets => "secrets",
             Self::Input => "input",
             Self::Schema => "schema",
@@ -247,6 +260,41 @@ pub struct ProviderDeclaration {
     pub name: String,
     pub properties: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerDeclaration {
+    pub name: String,
+    pub properties: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum McpServerPropertyName {
+    Endpoint,
+    Headers,
+}
+
+impl McpServerPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::Endpoint, Self::Headers]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all()
+            .into_iter()
+            .find(|mcp_server_property_name| mcp_server_property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Endpoint => "endpoint",
+            Self::Headers => "headers",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,11 +320,67 @@ pub struct SchemaDeclaration {
 pub struct ToolDeclaration {
     pub name: String,
     pub description: Option<String>,
+    pub source: Option<ToolSource>,
     pub input_fields: Vec<TypedField>,
     pub binding_fields: Vec<TypedField>,
     pub fixed_binding_fields: Vec<ObjectField>,
     pub output_fields: Vec<TypedField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolSource {
+    Mcp(McpToolSource),
+}
+
+impl ToolSource {
+    #[must_use]
+    pub fn mcp_tool_name(&self) -> Option<&str> {
+        match self {
+            Self::Mcp(mcp_tool_source) => Some(mcp_tool_source.tool_name.as_str()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolSource {
+    pub server_name: Option<String>,
+    pub tool_name: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolPropertyName {
+    Description,
+    Using,
+    Input,
+    Bindings,
+    Output,
+}
+
+impl ToolPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 5] {
+        [Self::Description, Self::Using, Self::Input, Self::Bindings, Self::Output]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all()
+            .into_iter()
+            .find(|tool_property_name| tool_property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Description => "description",
+            Self::Using => "using",
+            Self::Input => "input",
+            Self::Bindings => "bindings",
+            Self::Output => "output",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
