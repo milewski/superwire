@@ -73,6 +73,8 @@ pub struct ToolSummary {
     pub bounded_fields: BTreeMap<String, TypeExpression>,
     pub bounded_field_metadata: BTreeMap<String, FieldMetadata>,
     pub output_type_expression: Option<TypeExpression>,
+    pub mcp_server_name: Option<String>,
+    pub mcp_tool_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -499,6 +501,89 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn mcp_input_field_suggestions(
+        &self,
+        tool_name: &str,
+        field_prefix: &str,
+        existing_field_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
+        let Some(tool_summary) = self.tools.get(tool_name) else {
+            return Vec::new();
+        };
+
+        let mcp_tool_name = match &tool_summary.mcp_tool_name {
+            Some(name) => name.as_str(),
+            None => return Vec::new(),
+        };
+
+        let server_name = tool_summary.mcp_server_name.as_deref();
+
+        let Some(mcp_lock) = &self.mcp_lock else {
+            return Vec::new();
+        };
+
+        let mcp_tool_lock = if let Some(server_name) = server_name {
+            mcp_lock
+                .servers
+                .get(server_name)
+                .and_then(|server_lock| server_lock.tools.get(mcp_tool_name))
+        } else {
+            mcp_lock
+                .servers
+                .values()
+                .find_map(|server_lock| server_lock.tools.get(mcp_tool_name))
+        };
+
+        let Some(mcp_tool_lock) = mcp_tool_lock else {
+            return Vec::new();
+        };
+
+        let Some(properties) = mcp_tool_lock.input_schema.get("properties").and_then(serde_json::Value::as_object) else {
+            return Vec::new();
+        };
+
+        let required_fields = mcp_tool_lock
+            .input_schema
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .map(|required| required.iter().filter_map(serde_json::Value::as_str).collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        properties
+            .iter()
+            .filter(|(field_name, _)| field_name.starts_with(field_prefix))
+            .filter(|(field_name, _)| !existing_field_names.contains(field_name))
+            .map(|(field_name, field_schema)| {
+                let is_required = required_fields.contains(&field_name.as_str());
+                let field_type = field_schema.get("type").and_then(serde_json::Value::as_str).unwrap_or("string");
+                let description = field_schema
+                    .get("description")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+
+                CompletionSuggestion {
+                    label: field_name.clone(),
+                    kind: CompletionKind::Property,
+                    detail: description.clone().unwrap_or_else(|| {
+                        if is_required {
+                            format!("{field_type} (required)")
+                        } else {
+                            field_type.to_string()
+                        }
+                    }),
+                    documentation: description.unwrap_or_else(|| {
+                        if is_required {
+                            format!("Required MCP tool input field of type `{field_type}`.")
+                        } else {
+                            format!("Optional MCP tool input field of type `{field_type}`.")
+                        }
+                    }),
+                    insert_text: format!("{field_name}: $1"),
+                }
+            })
+            .collect()
+    }
+
     pub fn from_workflow_with_mcp_lock(workflow: &Workflow, mcp_lock: Option<McpLock>) -> Self {
         let tooling_snapshot = SemanticToolingSnapshot::from_workflow(workflow);
         let mut semantic_index = Self {
@@ -637,6 +722,11 @@ impl SemanticIndex {
     }
 
     fn insert_tool_declaration(&mut self, tool_declaration: &superwire_core::dsl::ToolDeclaration) {
+        let (mcp_server_name, mcp_tool_name) = match &tool_declaration.source {
+            Some(superwire_core::dsl::ToolSource::Mcp(mcp_source)) => (mcp_source.server_name.clone(), Some(mcp_source.tool_name.clone())),
+            None => (None, None),
+        };
+
         self.tools.insert(
             tool_declaration.name.clone(),
             ToolSummary {
@@ -644,6 +734,8 @@ impl SemanticIndex {
                 bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
                 bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.binding_fields),
                 output_type_expression: Some(TypeExpression::Object(tool_declaration.output_fields.clone())),
+                mcp_server_name,
+                mcp_tool_name,
             },
         );
 
@@ -874,6 +966,8 @@ impl SemanticIndex {
                         bounded_fields: tool_schema_summary.bounded_fields.clone(),
                         bounded_field_metadata: field_metadata_from_type_map(&tool_schema_summary.bounded_fields),
                         output_type_expression: None,
+                        mcp_server_name: None,
+                        mcp_tool_name: None,
                     },
                 )
             })
@@ -1591,6 +1685,13 @@ impl SemanticIndex {
             .iter()
             .find(|agent_location| source_span_contains_position(agent_location.span, position))
             .map(|agent_location| agent_location.name.as_str())
+    }
+
+    pub fn tool_name_at_position(&self, position: Position) -> Option<&str> {
+        self.tool_locations
+            .iter()
+            .find(|tool_location| source_span_contains_position(tool_location.span, position))
+            .map(|tool_location| tool_location.name.as_str())
     }
 
     pub(in crate::document) fn for_loop_binding_names_at_position(&self, position: Position) -> Option<Vec<&str>> {

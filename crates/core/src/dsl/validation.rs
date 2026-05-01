@@ -772,6 +772,7 @@ struct ValidationIndex {
     agent_output_types: HashMap<String, Option<TypeExpression>>,
     tool_input_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
     tool_binding_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
+    tool_fixed_binding_names: HashMap<String, HashSet<String>>,
     tool_output_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
 }
 
@@ -979,6 +980,18 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     validation_index
                         .tool_binding_types
                         .insert(tool_declaration.name.clone(), tool_binding_type);
+                }
+
+                let fixed_binding_names = tool_declaration
+                    .fixed_binding_fields
+                    .iter()
+                    .map(|fixed_binding| fixed_binding.name.clone())
+                    .collect::<HashSet<_>>();
+
+                if !fixed_binding_names.is_empty() {
+                    validation_index
+                        .tool_fixed_binding_names
+                        .insert(tool_declaration.name.clone(), fixed_binding_names);
                 }
 
                 if let Ok(tool_output_type) =
@@ -2317,6 +2330,22 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         expected_binding_fields: &std::collections::BTreeMap<String, WorkflowType>,
         local_binding_types: &HashMap<String, WorkflowType>,
     ) {
+        if let Some(fixed_names) = self.validation_index.tool_fixed_binding_names.get(tool_name) {
+            for binding_field in binding_fields {
+                if fixed_names.contains(&binding_field.name) {
+                    self.push_invalid_tool_binding(
+                        agent_declaration,
+                        tool_name,
+                        format!(
+                            "bound argument `{}` is already fixed in the tool declaration and cannot be overridden",
+                            binding_field.name
+                        ),
+                        Some(binding_field.span),
+                    );
+                }
+            }
+        }
+
         for expected_binding_name in expected_binding_fields.keys() {
             if binding_fields
                 .iter()
@@ -3451,6 +3480,44 @@ mod tests {
                 tool_name: _,
                 message
             } if message.contains("expects number, found string")
+        );
+    }
+
+    #[test]
+    fn reports_agent_binding_override_for_fixed_tool_binding() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: number
+                task_id: number
+            }
+
+            tool fetch_participant_answer {
+                bindings {
+                    project_id: input.project_id
+                    task_id: input.task_id
+                }
+            }
+
+            agent participant_answer_analyzer {
+                tools: [
+                    tool.fetch_participant_answer {
+                        bindings {
+                            project_id: input.project_id
+                        }
+                    }
+                ]
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidToolBinding {
+                agent_name,
+                tool_name,
+                message
+            } if agent_name == "participant_answer_analyzer"
+                && tool_name == "fetch_participant_answer"
+                && message.contains("already fixed in the tool declaration")
         );
     }
 

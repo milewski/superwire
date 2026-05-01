@@ -168,23 +168,44 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
             "jsonrpc": "2.0",
             "id": 2,
             "result": {
-                "tools": [{
-                    "name": "update_user_name",
-                    "description": "Update a user name",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "user_id": { "type": "number" },
-                            "user_name": { "type": "string" }
+                "tools": [
+                    {
+                        "name": "update_user_name",
+                        "description": "Update a user name",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "user_id": { "type": "number" },
+                                "user_name": { "type": "string" }
+                            },
+                            "required": ["user_id", "user_name"]
                         },
-                        "required": ["user_id", "user_name"]
+                        "outputSchema": {
+                            "type": "object",
+                            "properties": { "success": { "type": "boolean" } },
+                            "required": ["success"]
+                        }
                     },
-                    "outputSchema": {
-                        "type": "object",
-                        "properties": { "success": { "type": "boolean" } },
-                        "required": ["success"]
+                    {
+                        "name": "list_participants",
+                        "description": "List participants",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "project_id": { "type": "number" },
+                                "task_id": { "type": "number" }
+                            },
+                            "required": ["project_id", "task_id"]
+                        },
+                        "outputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "participants": { "type": "array", "items": { "type": "object" } }
+                            },
+                            "required": ["participants"]
+                        }
                     }
-                }]
+                ]
             }
         })),
         _ => Some(json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
@@ -196,4 +217,54 @@ fn request_with_input(fixture: &str, input: serde_json::Value) -> crate::api::Ex
     execution_request.input = input;
 
     execution_request
+}
+
+#[tokio::test]
+async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        tool list_participants {
+            using: mcp.local.list_participants
+
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.list_participants]
+            prompt: "List participants"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(vec![serde_json::json!("done")]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request(&workflow_source))
+        .await
+        .expect("execution should accept null input when all fields are consumed by bindings");
 }
