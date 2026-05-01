@@ -249,6 +249,18 @@ impl DocumentState {
         }
 
         if !line_prefix.contains(':') {
+            let trimmed_prefix = line_prefix.trim_start();
+
+            if let Some(tool_name) = semantic_index.tool_name_at_position(position) {
+                let existing_fields = self.existing_typed_field_names(position);
+                let field_prefix = super::text_utils::trailing_identifier(trimmed_prefix).unwrap_or_default();
+                let mcp_suggestions = semantic_index.mcp_input_field_suggestions(tool_name, field_prefix, &existing_fields);
+
+                if !mcp_suggestions.is_empty() {
+                    return Some(mcp_suggestions);
+                }
+            }
+
             return Some(Vec::new());
         }
 
@@ -467,6 +479,19 @@ impl DocumentState {
                 Some(field_name.to_string())
             })
             .collect()
+    }
+
+    fn existing_typed_field_names(&self, position: Position) -> Vec<String> {
+        let source_text = &self.text;
+        let Some(cursor_offset) = byte_offset_for_position(source_text, position) else {
+            return Vec::new();
+        };
+
+        let source_before_cursor = &source_text[..cursor_offset];
+        let last_open_brace = source_before_cursor.rfind('{').unwrap_or(0);
+        let block_content = &source_before_cursor[last_open_brace + 1..];
+
+        Self::existing_object_field_names(block_content)
     }
 
     fn dynamic_value_non_reference_suggestions(

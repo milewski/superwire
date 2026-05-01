@@ -378,3 +378,62 @@ fn filters_existing_bindings_inside_deterministic_tool_call_binding_overrides() 
     assert_completion_contains_labels!(&completion_suggestions, "token");
     assert_completion_excludes_labels!(&completion_suggestions, "password");
 }
+
+#[test]
+fn suggests_mcp_input_fields_inside_tool_input_block() {
+    let source_template = inline_document_template! {
+        mcp local {
+            endpoint: "http://docker.localhost/mcp/project"
+        }
+
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        tool update_user_name {
+            using: mcp.local.update-user-name
+
+            input {
+                <cursor>
+            }
+        }
+    };
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert_completion_contains_labels!(&completion_suggestions, "user_name");
+    assert_completion_excludes_labels!(&completion_suggestions, "description", "using", "bindings", "output");
+}
+
+#[test]
+fn suggests_mcp_input_fields_for_multiple_mcp_tools() {
+    let source_template = inline_document_template! {
+        mcp local {
+            endpoint: "http://docker.localhost/mcp/project"
+        }
+
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        tool list_all_participants_who_has_answered_given_task {
+            using: mcp.local.list_all_participants_who_has_answered_given_task
+
+            input {
+                <cursor>
+            }
+        }
+    };
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
+    let completion_suggestions = document_state.completion_suggestions(cursor_position);
+
+    assert_completion_contains_labels!(&completion_suggestions, "project_id", "task_id");
+}

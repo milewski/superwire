@@ -134,6 +134,33 @@ impl WorkflowExecutor {
     fn resolve_input_values(&self, input: &Value) -> Result<Map<String, Value>, ExecutorError> {
         if let Some(input_type) = &self.execution_plan.input_type {
             if input.is_null() {
+                if let WorkflowType::Object(field_types) = input_type {
+                    let tool_consumed_fields = self.input_fields_consumed_by_bindings();
+
+                    if field_types.keys().all(|field_name| tool_consumed_fields.contains(field_name)) {
+                        let input_map = field_types
+                            .keys()
+                            .map(|field_name| (field_name.clone(), Value::Null))
+                            .collect::<Map<String, Value>>();
+
+                        return Ok(input_map);
+                    }
+
+                    let uncovered_fields = field_types
+                        .keys()
+                        .filter(|field_name| !tool_consumed_fields.contains(field_name.as_str()))
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    return Err(ExecutorError::InputValueMismatch {
+                        message: format!(
+                            "workflow declares an `input` block, but no input object was provided; \
+                             the following fields are not covered by tool bindings and must be provided: {}",
+                            uncovered_fields.join(", ")
+                        ),
+                    });
+                }
+
                 return Err(ExecutorError::InputValueMismatch {
                     message: format!("workflow declares an `input` block, but no input object was provided; expected {input_type}"),
                 });
@@ -159,6 +186,24 @@ impl WorkflowExecutor {
             expected: "no input".to_string(),
             found: value_kind_name(input).to_string(),
         })
+    }
+
+    fn input_fields_consumed_by_bindings(&self) -> HashSet<String> {
+        let mut consumed_fields = HashSet::new();
+
+        for tool in self.execution_plan.tools.values() {
+            for fixed_binding in &tool.declaration.fixed_binding_fields {
+                if let Expression::Reference(reference) = &fixed_binding.value {
+                    if reference.root_keyword() == Some(ReferenceKeyword::Input) {
+                        if let Some(field_name) = reference.first_access_field() {
+                            consumed_fields.insert(field_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        consumed_fields
     }
 
     fn resolve_secret_values(&self, secrets: &Value) -> Result<Map<String, Value>, ExecutorError> {
