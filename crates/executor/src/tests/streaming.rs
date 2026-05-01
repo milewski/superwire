@@ -1,7 +1,13 @@
 use super::fixtures;
 use super::support;
 use crate::event::ExecutorEventKind;
-use serde_json::json;
+use crate::service::ExecutorService;
+use crate::tests::support::{request_with_input, TestModelProvider};
+use serde_json::{json, Value};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::thread;
+use superwire_core::workflow_source;
 
 #[tokio::test]
 async fn lifecycle_events_are_emitted_in_order() {
@@ -51,4 +57,205 @@ async fn failure_emits_workflow_failed_event() {
 
     assert_eq!(kinds.first(), Some(&ExecutorEventKind::WorkflowStarted));
     assert_eq!(kinds.last(), Some(&ExecutorEventKind::WorkflowFailed));
+}
+
+#[tokio::test]
+async fn deterministic_tool_call_emits_started_and_completed_events() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+            models: ["model-a"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+            headers: {
+                Authorization: "Bearer test-token"
+            }
+        }
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        tool fetch_task_data {
+            description: "Fetch task data"
+            using: mcp.local.fetch_task_data
+
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+        }
+
+        dynamic {
+            data: call tool.fetch_task_data
+        }
+
+        agent summarizer {
+            model: openai("model-a")
+            prompt: "Summarize {{ dynamic.data }}"
+            output: {
+                summary: string
+            }
+        }
+
+        output {
+            data: dynamic.data
+            summary: agent.summarizer.summary
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TestModelProvider::new(vec![json!({ "summary": "done" })]);
+    let service = ExecutorService::new(model_provider);
+    let mut request = request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 }));
+    request.options.include_events = true;
+    let mut receiver = service.execute_stream(request);
+    let mut tool_call_events = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        if matches!(
+            event.kind,
+            ExecutorEventKind::ToolCallStarted | ExecutorEventKind::ToolCallCompleted
+        ) {
+            tool_call_events.push(event);
+        }
+    }
+
+    assert!(
+        tool_call_events
+            .iter()
+            .any(|event| event.kind == ExecutorEventKind::ToolCallStarted),
+        "expected tool_call_started event"
+    );
+    assert!(
+        tool_call_events
+            .iter()
+            .any(|event| event.kind == ExecutorEventKind::ToolCallCompleted),
+        "expected tool_call_completed event"
+    );
+
+    let started = tool_call_events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::ToolCallStarted)
+        .unwrap();
+    assert_eq!(started.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+
+    let completed = tool_call_events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::ToolCallCompleted)
+        .unwrap();
+    assert_eq!(completed.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+    assert_eq!(
+        completed.data.as_ref().unwrap()["result"],
+        json!({ "task_title": "Survey", "participants": 10 })
+    );
+}
+
+struct TestMcpHttpServer {
+    endpoint: String,
+}
+
+impl TestMcpHttpServer {
+    fn spawn() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
+        let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
+
+        thread::spawn(move || {
+            for incoming_stream in listener.incoming().take(10) {
+                let stream = incoming_stream.expect("test MCP stream should open");
+                handle_mcp_request(stream);
+            }
+        });
+
+        Self { endpoint }
+    }
+
+    fn endpoint(&self) -> String {
+        self.endpoint.clone()
+    }
+}
+
+fn handle_mcp_request(mut stream: TcpStream) {
+    let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
+    let mut content_length = 0_usize;
+    let mut header_line = String::new();
+
+    loop {
+        header_line.clear();
+        reader.read_line(&mut header_line).expect("header line should read");
+
+        if header_line == "\r\n" || header_line.is_empty() {
+            break;
+        }
+
+        if let Some(value) = header_line.to_ascii_lowercase().strip_prefix("content-length:") {
+            content_length = value.trim().parse().expect("content length should parse");
+        }
+    }
+
+    let mut request_body = vec![0_u8; content_length];
+    reader.read_exact(&mut request_body).expect("request body should read");
+    let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
+
+    let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
+        let response_body = response_body.to_string();
+
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        )
+    } else {
+        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+    };
+
+    stream.write_all(response.as_bytes()).expect("response should write");
+}
+
+fn response_for_method(method: Option<&str>) -> Option<Value> {
+    match method {
+        Some("notifications/initialized") => None,
+        Some("tools/call") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [{ "type": "text", "text": "{\"task_title\":\"Survey\",\"participants\":10}" }],
+                "structuredContent": { "task_title": "Survey", "participants": 10 }
+            }
+        })),
+        Some("tools/list") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "tools": [
+                    {
+                        "name": "fetch_task_data",
+                        "description": "Fetch task data",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "project_id": { "type": "number" },
+                                "task_id": { "type": "number" }
+                            },
+                            "required": ["project_id", "task_id"]
+                        },
+                        "outputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "task_title": { "type": "string" },
+                                "participants": { "type": "number" }
+                            },
+                            "required": ["task_title", "participants"]
+                        }
+                    }
+                ]
+            }
+        })),
+        _ => Some(json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
+    }
 }

@@ -1,3 +1,4 @@
+use crate::event::ExecutorEvent;
 use crate::model::provider::ModelProvider;
 use crate::model::response::{normalize_mcp_tool_result, parse_model_json_output};
 use crate::model::types::{ModelRequest, ModelResponse, ModelToolSource};
@@ -260,14 +261,32 @@ impl OpenAiModelProvider {
                     endpoint: endpoint.clone(),
                     headers: headers.clone(),
                 };
+
+                if let Some(event_sender) = &request.event_sender {
+                    let _ = event_sender.try_send(ExecutorEvent::tool_call_started(
+                        request.agent_name.clone(),
+                        tool_definition.name.clone(),
+                        arguments.clone(),
+                    ));
+                }
+
                 let result = McpClient::new(server_config)
                     .call_tool(tool_name, arguments)
                     .map_err(|error| ExecutorError::Model {
                         agent_name: request.agent_name.clone(),
                         message: error.to_string(),
                     })?;
+                let normalized_result = normalize_mcp_tool_result(result);
 
-                Ok(normalize_mcp_tool_result(result))
+                if let Some(event_sender) = &request.event_sender {
+                    let _ = event_sender.try_send(ExecutorEvent::tool_call_completed(
+                        request.agent_name.clone(),
+                        tool_definition.name.clone(),
+                        normalized_result.clone(),
+                    ));
+                }
+
+                Ok(normalized_result)
             }
             ModelToolSource::Local => Err(ExecutorError::Model {
                 agent_name: request.agent_name.clone(),
@@ -417,6 +436,7 @@ mod tests {
                 output_schema: serde_json::json!({ "type": "object" }),
                 bindings: serde_json::json!({ "project_id": 14, "user_id": 123 }),
             }],
+            event_sender: None,
         };
         let tool_call = ChatCompletionMessageToolCall {
             id: "call_1".to_string(),
