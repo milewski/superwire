@@ -1,0 +1,45 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+mcp local {
+    endpoint: "__ENDPOINT__"
+    headers: {
+        Authorization: "Bearer test-token"
+    }
+}
+
+input {
+    project_id: number
+    task_id: number
+}
+
+tool fetch_task_data {
+    description: "Fetch task data"
+    using: mcp.local.fetch_task_data
+
+    bindings {
+        project_id: input.project_id
+        task_id: input.task_id
+    }
+}
+
+dynamic {
+    data: call tool.fetch_task_data
+}
+
+agent summarizer {
+    model: openai("model-a")
+    prompt: "Summarize: {{ dynamic.data }}"
+    output: {
+        summary: string
+    }
+}
+
+output {
+    data: dynamic.data
+    summary: agent.summarizer.summary
+}

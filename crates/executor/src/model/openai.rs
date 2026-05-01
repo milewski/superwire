@@ -1,5 +1,5 @@
 use crate::model::provider::ModelProvider;
-use crate::model::response::parse_model_json_output;
+use crate::model::response::{normalize_mcp_tool_result, parse_model_json_output};
 use crate::model::types::{ModelRequest, ModelResponse, ModelToolSource};
 use crate::runtime::ExecutorError;
 use async_openai::config::OpenAIConfig;
@@ -314,24 +314,6 @@ impl ChatCompletionResponseExt for CreateChatCompletionResponse {
             (!tool_calls.is_empty()).then_some(tool_calls)
         })
     }
-}
-
-fn normalize_mcp_tool_result(result: serde_json::Value) -> serde_json::Value {
-    if let Some(structured_content) = result.get("structuredContent") {
-        return structured_content.clone();
-    }
-
-    if let Some(text_content) = result
-        .get("content")
-        .and_then(serde_json::Value::as_array)
-        .and_then(|content| content.first())
-        .and_then(|content_item| content_item.get("text"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return serde_json::from_str(text_content).unwrap_or_else(|_| serde_json::Value::String(text_content.to_string()));
-    }
-
-    result
 }
 
 fn format_response_schema_name(agent_name: &str) -> String {

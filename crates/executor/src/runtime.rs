@@ -4,16 +4,16 @@ pub mod state;
 pub use error::ExecutorError;
 
 use crate::event::ExecutorEvent;
-use crate::model::{ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource};
+use crate::model::{normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource};
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use superwire_core::dsl::{
     parse_workflow, validate_workflow, AgentExpressionPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword,
-    ToolSource, Workflow,
+    ToolCall, ToolSource, Workflow,
 };
-use superwire_core::mcp::{McpLock, McpServerConfig};
+use superwire_core::mcp::{McpClient, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
@@ -291,16 +291,85 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
-                let field_value = evaluate_expression(
-                    &dynamic_field.value,
-                    &runtime_state.evaluation_context(HashMap::new()),
-                    &format!("dynamic field `{}`", dynamic_field.name),
-                )?;
+                let field_value = match &dynamic_field.value {
+                    Expression::ToolCall(tool_call) => {
+                        self.execute_deterministic_tool_call(tool_call, &runtime_state.evaluation_context(HashMap::new()))?
+                    }
+                    _ => evaluate_expression(
+                        &dynamic_field.value,
+                        &runtime_state.evaluation_context(HashMap::new()),
+                        &format!("dynamic field `{}`", dynamic_field.name),
+                    )?,
+                };
                 runtime_state.insert_local_binding(dynamic_field.name.clone(), field_value);
             }
         }
 
         Ok(())
+    }
+
+    fn execute_deterministic_tool_call(
+        &self,
+        tool_call: &ToolCall,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<Value, ExecutorError> {
+        let tool_name = tool_call.callee.tool_name().ok_or_else(|| ExecutorError::Other {
+            message: "deterministic tool call must use `tool.<name>` reference".to_string(),
+        })?;
+        let typed_tool = self.execution_plan.tools.get(tool_name).ok_or_else(|| ExecutorError::Other {
+            message: format!("deterministic tool call references unknown tool `{tool_name}`"),
+        })?;
+        let bindings = typed_tool.resolve_bindings(&tool_call.binding_fields, evaluation_context)?;
+        let source = self.model_tool_source(&typed_tool.declaration)?;
+        let mut input_arguments = Map::new();
+
+        for input_field in &tool_call.input_fields {
+            let input_value = evaluate_expression(
+                &input_field.value,
+                evaluation_context,
+                &format!("input field `{}` for tool `{}`", input_field.name, tool_name),
+            )?;
+            input_arguments.insert(input_field.name.clone(), input_value);
+        }
+
+        validate_value_against_type(&Value::Object(input_arguments.clone()), &typed_tool.input_type).map_err(|message| {
+            ExecutorError::Other {
+                message: format!("deterministic tool call `{tool_name}` input is invalid: {message}"),
+            }
+        })?;
+
+        let mut arguments = input_arguments;
+
+        if let Some(binding_object) = bindings.as_object() {
+            for (binding_name, binding_value) in binding_object {
+                arguments.insert(binding_name.clone(), binding_value.clone());
+            }
+        }
+
+        match source {
+            ModelToolSource::Mcp {
+                server_name,
+                tool_name: mcp_tool_name,
+                endpoint,
+                headers,
+            } => {
+                let server_config = McpServerConfig {
+                    name: server_name.unwrap_or_else(|| "default".to_string()),
+                    endpoint,
+                    headers,
+                };
+                let result = McpClient::new(server_config)
+                    .call_tool(&mcp_tool_name, Value::Object(arguments))
+                    .map_err(|error| ExecutorError::Other {
+                        message: format!("deterministic tool call `{tool_name}` failed: {error}"),
+                    })?;
+
+                Ok(normalize_mcp_tool_result(result))
+            }
+            ModelToolSource::Local => Err(ExecutorError::Other {
+                message: format!("deterministic tool call `{tool_name}` is not backed by MCP"),
+            }),
+        }
     }
 
     async fn execute_agent<ModelProviderType>(
