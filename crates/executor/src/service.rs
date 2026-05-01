@@ -34,7 +34,15 @@ where
             .map_err(|message| ExecutorError::Other { message })?;
 
         let executor = WorkflowExecutor::from_source(&workflow_source)?;
-        let output = executor.execute(request.input, request.secrets, &self.model_provider, None).await?;
+        let output = executor
+            .execute(
+                request.input,
+                request.secrets,
+                &self.model_provider,
+                None,
+                request.options.max_concurrency,
+            )
+            .await?;
 
         Ok(ExecutionResponse { output })
     }
@@ -42,9 +50,10 @@ where
     pub fn execute_stream(&self, request: ExecutionRequest) -> mpsc::Receiver<ExecutorEvent> {
         let (event_sender, event_receiver) = mpsc::channel(EVENT_BUFFER_SIZE);
         let model_provider = self.model_provider.clone();
+        let max_concurrency = request.options.max_concurrency;
 
         tokio::spawn(async move {
-            let execution_result = run_streamed_execution(request, model_provider, event_sender.clone()).await;
+            let execution_result = run_streamed_execution(request, model_provider, event_sender.clone(), max_concurrency).await;
 
             if let Err(error) = execution_result {
                 let _ = event_sender.send(ExecutorEvent::workflow_failed(error.to_string())).await;
@@ -59,6 +68,7 @@ async fn run_streamed_execution<ModelProviderType>(
     request: ExecutionRequest,
     model_provider: ModelProviderType,
     event_sender: mpsc::Sender<ExecutorEvent>,
+    max_concurrency: usize,
 ) -> Result<(), ExecutorError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
@@ -83,7 +93,13 @@ where
         })?;
 
     let output = executor
-        .execute(request.input, request.secrets, &model_provider, Some(event_sender.clone()))
+        .execute(
+            request.input,
+            request.secrets,
+            &model_provider,
+            Some(event_sender.clone()),
+            max_concurrency,
+        )
         .await?;
 
     event_sender

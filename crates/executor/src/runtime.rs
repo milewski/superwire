@@ -7,11 +7,13 @@ use crate::event::ExecutorEvent;
 use crate::model::{normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource};
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use superwire_core::dsl::{
-    parse_workflow, validate_workflow, AgentExpressionPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword,
-    ToolCall, ToolSource, Workflow,
+    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, Declaration, Expression, ObjectField, Reference,
+    ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
 use superwire_core::mcp::{McpClient, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -20,7 +22,7 @@ use superwire_core::semantic::support::types::{validate_value_against_type, valu
 use superwire_core::semantic::{
     build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, PlannedAgent, TypedToolIr, WorkflowSemanticError,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 
 #[derive(Debug, Clone)]
 struct CompletedAgentExecution {
@@ -82,6 +84,7 @@ impl WorkflowExecutor {
         secrets: Value,
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+        max_concurrency: usize,
     ) -> Result<Value, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -94,7 +97,8 @@ impl WorkflowExecutor {
 
         for execution_batch in self.resolve_agent_execution_batches()? {
             let runtime_state_snapshot = runtime_state.clone();
-            let mut pending_executions = Vec::new();
+            let mut for_loop_agents = Vec::new();
+            let mut regular_agents = Vec::new();
 
             for agent_name in execution_batch {
                 let planned_agent = self
@@ -103,6 +107,30 @@ impl WorkflowExecutor {
                     .get(&agent_name)
                     .expect("planned agent should exist")
                     .clone();
+
+                if planned_agent.declaration.for_loop.is_some() {
+                    for_loop_agents.push(planned_agent);
+                } else {
+                    regular_agents.push(planned_agent);
+                }
+            }
+
+            for planned_agent in for_loop_agents {
+                let completed = self
+                    .execute_for_loop_agent(
+                        planned_agent,
+                        &runtime_state_snapshot,
+                        model_provider,
+                        event_sender.clone(),
+                        max_concurrency,
+                    )
+                    .await?;
+                completed.apply_to_runtime_state(&mut runtime_state);
+            }
+
+            let mut pending_executions = Vec::new();
+
+            for planned_agent in regular_agents {
                 let runtime_state_snapshot = runtime_state_snapshot.clone();
                 let event_sender = event_sender.clone();
 
@@ -382,12 +410,6 @@ impl WorkflowExecutor {
     where
         ModelProviderType: ModelProvider,
     {
-        if planned_agent.declaration.for_loop.is_some() {
-            return Err(ExecutorError::Other {
-                message: "for-loop agent execution is not implemented in the executor crate yet".to_string(),
-            });
-        }
-
         let evaluation_context = runtime_state.evaluation_context(HashMap::new());
         let provider_template = self
             .execution_plan
@@ -460,6 +482,102 @@ impl WorkflowExecutor {
             output: model_response.output,
             context: model_response.context,
         })
+    }
+
+    async fn execute_for_loop_agent<ModelProviderType>(
+        &self,
+        planned_agent: PlannedAgent,
+        runtime_state: &RuntimeState,
+        model_provider: &ModelProviderType,
+        event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+        max_concurrency: usize,
+    ) -> Result<CompletedAgentExecution, ExecutorError>
+    where
+        ModelProviderType: ModelProvider,
+    {
+        let for_loop = planned_agent
+            .declaration
+            .for_loop
+            .as_ref()
+            .expect("for-loop agent must have for_loop");
+        let loop_pattern = for_loop.pattern.clone();
+        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+        let iterable_value = evaluate_expression(
+            &for_loop.iterable,
+            &evaluation_context,
+            &format!("for-loop iterable for agent `{}`", planned_agent.name),
+        )?;
+        let items = iterable_value.as_array().ok_or_else(|| ExecutorError::Other {
+            message: format!(
+                "for-loop iterable for agent `{}` must evaluate to an array, found {}",
+                planned_agent.name,
+                value_kind_name(&iterable_value)
+            ),
+        })?;
+
+        if items.is_empty() {
+            return Ok(CompletedAgentExecution {
+                agent_name: planned_agent.name.clone(),
+                output: Value::Array(Vec::new()),
+                context: Value::Null,
+            });
+        }
+
+        let concurrency_limit = max_concurrency.max(1);
+        let semaphore = Arc::new(Semaphore::new(concurrency_limit));
+        let mut pending_iterations = FuturesUnordered::new();
+        let agent_name = planned_agent.name.clone();
+
+        for item in items {
+            let mut iteration_state = runtime_state.clone();
+            Self::bind_loop_variables(&loop_pattern, item, &mut iteration_state)?;
+            let semaphore_clone = semaphore.clone();
+            let event_sender_clone = event_sender.clone();
+            let agent_clone = planned_agent.clone();
+
+            pending_iterations.push(async move {
+                let permit = semaphore_clone.acquire_owned().await.map_err(|error| ExecutorError::Other {
+                    message: format!("failed to acquire concurrency permit: {error}"),
+                })?;
+                let result = self
+                    .execute_agent(&agent_clone, &iteration_state, model_provider, event_sender_clone)
+                    .await;
+                drop(permit);
+                result
+            });
+        }
+
+        let mut iteration_outputs = Vec::with_capacity(pending_iterations.len());
+
+        while let Some(iteration_result) = pending_iterations.next().await {
+            iteration_outputs.push(iteration_result?.output);
+        }
+
+        Ok(CompletedAgentExecution {
+            agent_name,
+            output: Value::Array(iteration_outputs),
+            context: Value::Null,
+        })
+    }
+
+    fn bind_loop_variables(pattern: &AgentForLoopPattern, item: &Value, runtime_state: &mut RuntimeState) -> Result<(), ExecutorError> {
+        match pattern {
+            AgentForLoopPattern::Identifier(identifier) => {
+                runtime_state.insert_local_binding(identifier.clone(), item.clone());
+            }
+            AgentForLoopPattern::ObjectDestructuring(field_names) => {
+                let item_object = item.as_object().ok_or_else(|| ExecutorError::Other {
+                    message: format!("for-loop destructuring expects object, found {}", value_kind_name(item)),
+                })?;
+
+                for field_name in field_names {
+                    let field_value = item_object.get(field_name).cloned().unwrap_or(Value::Null);
+                    runtime_state.insert_local_binding(field_name.clone(), field_value);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn evaluate_workflow_output(&self, runtime_state: &RuntimeState) -> Result<Value, ExecutorError> {

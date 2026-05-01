@@ -57,9 +57,26 @@ impl ExecutionRequest {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ExecutionOptions {
+    #[serde(default)]
     pub include_events: bool,
+
+    #[serde(default = "default_max_concurrency")]
+    pub max_concurrency: usize,
+}
+
+impl Default for ExecutionOptions {
+    fn default() -> Self {
+        Self {
+            include_events: false,
+            max_concurrency: default_max_concurrency(),
+        }
+    }
+}
+
+fn default_max_concurrency() -> usize {
+    10
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

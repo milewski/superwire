@@ -127,7 +127,13 @@ impl RunWorkflowCommand {
             WorkflowExecutor::from_source(&workflow_source).map_err(|error| CommandError::internal(error.to_string()))?;
 
         let output_value = async_runtime
-            .block_on(workflow_executor.execute(Value::Object(input_value), Value::Object(secrets_value), &OpenAiModelProvider, None))
+            .block_on(workflow_executor.execute(
+                Value::Object(input_value),
+                Value::Object(secrets_value),
+                &OpenAiModelProvider,
+                None,
+                10,
+            ))
             .map_err(Self::map_workflow_runtime_error)?;
 
         if self.pretty {
