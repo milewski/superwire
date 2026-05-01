@@ -1,6 +1,8 @@
+use crate::event::ExecutorEvent;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use superwire_core::semantic::support::provider::OpenAIProviderConfig;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct ModelRequest {
@@ -10,6 +12,7 @@ pub struct ModelRequest {
     pub prompt: String,
     pub output_schema: Value,
     pub tools: Vec<ModelToolDefinition>,
+    pub event_sender: Option<mpsc::Sender<ExecutorEvent>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

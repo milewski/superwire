@@ -93,7 +93,7 @@ impl WorkflowExecutor {
         let secret_values = self.resolve_secret_values(&secrets)?;
         let mut runtime_state = RuntimeState::new(input_values, secret_values);
 
-        self.execute_workflow_dynamic_blocks(&mut runtime_state)?;
+        self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref())?;
 
         for execution_batch in self.resolve_agent_execution_batches()? {
             let runtime_state_snapshot = runtime_state.clone();
@@ -312,7 +312,11 @@ impl WorkflowExecutor {
         Ok(execution_batches)
     }
 
-    fn execute_workflow_dynamic_blocks(&self, runtime_state: &mut RuntimeState) -> Result<(), ExecutorError> {
+    fn execute_workflow_dynamic_blocks(
+        &self,
+        runtime_state: &mut RuntimeState,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<(), ExecutorError> {
         for declaration in self.workflow.declarations() {
             let Declaration::Dynamic(dynamic_block) = declaration else {
                 continue;
@@ -321,7 +325,7 @@ impl WorkflowExecutor {
             for dynamic_field in &dynamic_block.fields {
                 let field_value = match &dynamic_field.value {
                     Expression::ToolCall(tool_call) => {
-                        self.execute_deterministic_tool_call(tool_call, &runtime_state.evaluation_context(HashMap::new()))?
+                        self.execute_deterministic_tool_call(tool_call, &runtime_state.evaluation_context(HashMap::new()), event_sender)?
                     }
                     _ => evaluate_expression(
                         &dynamic_field.value,
@@ -340,6 +344,7 @@ impl WorkflowExecutor {
         &self,
         tool_call: &ToolCall,
         evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
     ) -> Result<Value, ExecutorError> {
         let tool_name = tool_call.callee.tool_name().ok_or_else(|| ExecutorError::Other {
             message: "deterministic tool call must use `tool.<name>` reference".to_string(),
@@ -386,13 +391,31 @@ impl WorkflowExecutor {
                     endpoint,
                     headers,
                 };
+
+                if let Some(sender) = event_sender {
+                    let _ = sender.try_send(ExecutorEvent::tool_call_started(
+                        String::new(),
+                        tool_name.to_string(),
+                        Value::Object(arguments.clone()),
+                    ));
+                }
+
                 let result = McpClient::new(server_config)
                     .call_tool(&mcp_tool_name, Value::Object(arguments))
                     .map_err(|error| ExecutorError::Other {
                         message: format!("deterministic tool call `{tool_name}` failed: {error}"),
                     })?;
+                let normalized_result = normalize_mcp_tool_result(result);
 
-                Ok(normalize_mcp_tool_result(result))
+                if let Some(sender) = event_sender {
+                    let _ = sender.try_send(ExecutorEvent::tool_call_completed(
+                        String::new(),
+                        tool_name.to_string(),
+                        normalized_result.clone(),
+                    ));
+                }
+
+                Ok(normalized_result)
             }
             ModelToolSource::Local => Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` is not backed by MCP"),
@@ -463,6 +486,7 @@ impl WorkflowExecutor {
                 prompt,
                 output_schema,
                 tools: tool_definitions,
+                event_sender: event_sender.clone(),
             })
             .await?;
 

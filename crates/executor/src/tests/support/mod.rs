@@ -135,6 +135,7 @@ impl ModelProvider for TrackingModelProvider {
                 prompt: request.prompt.clone(),
                 output_schema: request.output_schema.clone(),
                 tools: request.tools.clone(),
+                event_sender: request.event_sender.clone(),
             });
 
         self.inner.generate(request).await
