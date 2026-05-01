@@ -920,6 +920,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
 
                 validation_index.provider_infos.insert(provider_name, provider_info);
             }
+            Declaration::McpServer(_) => {}
             Declaration::Schema(schema_declaration) => {
                 let inserted_schema = validation_index.schema_names.insert(schema_declaration.name.clone());
 
@@ -1098,6 +1099,14 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                         validation_report,
                     );
                 }
+            }
+            Declaration::McpServer(mcp_server_declaration) => {
+                report_duplicate_object_field_names(
+                    mcp_server_declaration.properties.as_slice(),
+                    ValidationContext::Provider(mcp_server_declaration.name.clone()),
+                    Some(mcp_server_declaration.span),
+                    validation_report,
+                );
             }
             Declaration::Schema(schema_declaration) => {
                 let schema_context = ValidationContext::Schema(schema_declaration.name.clone());
@@ -1576,7 +1585,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     );
                 }
             }
-            Declaration::Provider(_) | Declaration::Dynamic(_) | Declaration::Output(_) => {}
+            Declaration::Provider(_) | Declaration::McpServer(_) | Declaration::Dynamic(_) | Declaration::Output(_) => {}
         }
     }
 }
@@ -2091,7 +2100,8 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                     );
                 }
             }
-            Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {}
+            Declaration::McpServer(_) | Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {
+            }
         }
     }
 }

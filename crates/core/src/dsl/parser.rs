@@ -273,7 +273,7 @@ mod tests {
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
         AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
-        TypeExpression,
+        ToolSource, TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -515,6 +515,34 @@ mod tests {
         assert_eq!(issue_tracker_tool.fixed_binding_fields.len(), 1);
         assert_eq!(issue_tracker_tool.fixed_binding_fields[0].name, "endpoint");
         assert_eq!(issue_tracker_tool.output_fields.len(), 1);
+    }
+
+    #[test]
+    fn parses_mcp_tool_source_with_hyphenated_name() {
+        let workflow = parse_inline_workflow! {
+            tool update_user_name {
+                using: mcp.update-user-name
+
+                input {
+                    user_name: string
+                }
+
+                output {
+                    success: boolean
+                }
+            }
+        };
+
+        let tool_declaration = workflow
+            .find_tool("update_user_name")
+            .expect("missing update_user_name tool declaration");
+
+        assert!(matches!(
+            &tool_declaration.source,
+            Some(ToolSource::Mcp(mcp_tool_source)) if mcp_tool_source.tool_name == "update-user-name"
+        ));
+        assert_eq!(tool_declaration.input_fields[0].name, "user_name");
+        assert_eq!(tool_declaration.output_fields[0].name, "success");
     }
 
     #[test]
