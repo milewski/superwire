@@ -299,7 +299,7 @@ fn completion_suggestions_from_template(source_template: &str) -> Vec<Completion
 }
 
 fn completion_suggestions_from_source(source: String, cursor_position: Position) -> Vec<CompletionSuggestion> {
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
 
     document_state.completion_suggestions(cursor_position)
 }
@@ -316,7 +316,7 @@ fn completion_suggestion_by_label<'completion>(
 
 fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
     let source = normalize_inline_cursor_layout(source_template);
-    let document_state = DocumentState::new(source);
+    let document_state = DocumentState::new(source, None);
 
     document_state.diagnostics()
 }

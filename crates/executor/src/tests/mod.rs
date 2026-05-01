@@ -9,3 +9,4 @@ mod output;
 mod parallel;
 mod secrets;
 mod streaming;
+mod tools;

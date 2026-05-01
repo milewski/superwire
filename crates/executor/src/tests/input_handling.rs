@@ -47,12 +47,22 @@ async fn array_input_is_passed() {
 async fn rejects_input_type_mismatch() {
     let error = execute_error!(fixtures::INPUT_STRING, input: { "topic": 123 }).await;
     assert!(error.is_client_error());
+    assert!(error.to_string().contains("declared `input` block"));
 }
 
 #[tokio::test]
 async fn rejects_missing_required_input() {
     let error = execute_error!(fixtures::INPUT_STRING, input: {}).await;
     assert!(error.is_client_error());
+    assert!(error.to_string().contains("declared `input` block"));
+}
+
+#[tokio::test]
+async fn reports_missing_input_object_with_declared_input_context() {
+    let error = execute_error!(fixtures::INPUT_STRING).await;
+
+    assert!(error.is_client_error());
+    assert!(error.to_string().contains("workflow declares an `input` block"));
 }
 
 #[tokio::test]
