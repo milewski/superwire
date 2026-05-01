@@ -13,6 +13,9 @@
       "include": "#provider"
     },
     {
+      "include": "#mcp"
+    },
+    {
       "include": "#secrets-block"
     },
     {
@@ -54,6 +57,26 @@
         },
         "2": {
           "name": "entity.name.type.provider.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp": {
+      "begin": "\\b(mcp)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.type.mcp.wire"
         }
       },
       "end": "\\}",
@@ -127,7 +150,7 @@
       ]
     },
     "tool-field-block": {
-      "begin": "\\b(input|bindings)\\s*\\{",
+      "begin": "\\b(input|bindings|output)\\s*\\{",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.wire"
@@ -229,11 +252,11 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|api_key|models|model|tools|context|output|prompt|inference|description)\\b(?=\\s*:)",
+          "match": "\\b(driver|endpoint|headers|api_key|models|model|tools|context|output|prompt|inference|description|using)\\b(?=\\s*:)",
           "name": "variable.parameter.wire"
         },
         {
-          "match": "\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call)\\b",
+          "match": "\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call|mcp)\\b",
           "name": "keyword.control.wire"
         },
         {

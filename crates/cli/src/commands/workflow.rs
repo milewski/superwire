@@ -704,7 +704,11 @@ impl WorkflowJsonRepresentation {
                         );
                     }
                 }
-                Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Agent(_) | Declaration::Output(_) => {}
+                Declaration::McpServer(_)
+                | Declaration::Secrets(_)
+                | Declaration::Input(_)
+                | Declaration::Agent(_)
+                | Declaration::Output(_) => {}
             }
         }
 
@@ -888,6 +892,7 @@ impl SerializableSchema {
 struct SerializableToolDeclaration {
     name: String,
     description: Option<String>,
+    source: Option<String>,
     input: Vec<SerializableTypedField>,
     input_schema: Value,
     bindings: Vec<SerializableTypedField>,
@@ -903,6 +908,11 @@ impl SerializableToolDeclaration {
         Self {
             name: tool_declaration.name.clone(),
             description: tool_declaration.description.clone(),
+            source: tool_declaration
+                .source
+                .as_ref()
+                .and_then(superwire_core::dsl::ToolSource::mcp_tool_name)
+                .map(|tool_name| format!("mcp.{tool_name}")),
             input: tool_declaration
                 .input_fields
                 .iter()

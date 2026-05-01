@@ -163,11 +163,11 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|api_key|models|model|tools|context|output|prompt|inference)\\b(?=\\s*:)",
+          "match": "\\b(driver|endpoint|headers|api_key|models|model|tools|context|output|prompt|inference|description|using)\\b(?=\\s*:)",
           "name": "variable.parameter.ai"
         },
         {
-          "match": "\\b(provider|schema|agent|input|output|secrets|for|in)\\b",
+          "match": "\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call|mcp)\\b",
           "name": "keyword.control.ai"
         },
         {
