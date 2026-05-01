@@ -4,16 +4,22 @@ pub mod state;
 pub use error::ExecutorError;
 
 use crate::event::ExecutorEvent;
-use crate::model::{ModelProvider, ModelRequest};
+use crate::model::{ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource};
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
-use superwire_core::dsl::{parse_workflow, validate_workflow, AgentExpressionPropertyName, Declaration, Expression, Workflow};
+use superwire_core::dsl::{
+    parse_workflow, validate_workflow, AgentExpressionPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword,
+    ToolSource, Workflow,
+};
+use superwire_core::mcp::{McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
-use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, PlannedAgent, WorkflowSemanticError};
+use superwire_core::semantic::{
+    build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, PlannedAgent, TypedToolIr, WorkflowSemanticError,
+};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -37,7 +43,7 @@ pub struct WorkflowExecutor {
 
 impl WorkflowExecutor {
     pub fn from_source(workflow_source: &str) -> Result<Self, ExecutorError> {
-        let workflow = parse_workflow(workflow_source).map_err(|parse_error| {
+        let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
             let details = parse_error.render_with_source(workflow_source, "<workflow>");
 
             WorkflowSemanticError::ParseFailed {
@@ -45,6 +51,10 @@ impl WorkflowExecutor {
                 details,
             }
         })?;
+        let mcp_lock = McpLock::discover_from_workflow(&workflow).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })?;
+        mcp_lock.apply_to_workflow(&mut workflow);
         let validation_report = validate_workflow(&workflow);
 
         if validation_report.has_issues() {
@@ -123,10 +133,21 @@ impl WorkflowExecutor {
 
     fn resolve_input_values(&self, input: &Value) -> Result<Map<String, Value>, ExecutorError> {
         if let Some(input_type) = &self.execution_plan.input_type {
-            validate_value_against_type(input, input_type).map_err(|message| ExecutorError::InputValueMismatch { message })?;
+            if input.is_null() {
+                return Err(ExecutorError::InputValueMismatch {
+                    message: format!("workflow declares an `input` block, but no input object was provided; expected {input_type}"),
+                });
+            }
+
+            validate_value_against_type(input, input_type).map_err(|message| ExecutorError::InputValueMismatch {
+                message: format!("declared `input` block expects {input_type}: {message}"),
+            })?;
 
             return input.as_object().cloned().ok_or_else(|| ExecutorError::InputValueMismatch {
-                message: format!("expected input object, found {}", value_kind_name(input)),
+                message: format!(
+                    "declared `input` block expects object matching {input_type}, found {}",
+                    value_kind_name(input)
+                ),
             });
         }
 
@@ -142,10 +163,21 @@ impl WorkflowExecutor {
 
     fn resolve_secret_values(&self, secrets: &Value) -> Result<Map<String, Value>, ExecutorError> {
         if let Some(secrets_type) = &self.execution_plan.secrets_type {
-            validate_value_against_type(secrets, secrets_type).map_err(|message| ExecutorError::InputValueMismatch { message })?;
+            if secrets.is_null() {
+                return Err(ExecutorError::SecretValueMismatch {
+                    message: format!("workflow declares a `secrets` block, but no secrets object was provided; expected {secrets_type}"),
+                });
+            }
 
-            return secrets.as_object().cloned().ok_or_else(|| ExecutorError::InputValueMismatch {
-                message: format!("expected secrets object, found {}", value_kind_name(secrets)),
+            validate_value_against_type(secrets, secrets_type).map_err(|message| ExecutorError::SecretValueMismatch {
+                message: format!("declared `secrets` block expects {secrets_type}: {message}"),
+            })?;
+
+            return secrets.as_object().cloned().ok_or_else(|| ExecutorError::SecretValueMismatch {
+                message: format!(
+                    "declared `secrets` block expects object matching {secrets_type}, found {}",
+                    value_kind_name(secrets)
+                ),
             });
         }
 
@@ -271,13 +303,18 @@ impl WorkflowExecutor {
             &format!("prompt for agent `{}`", planned_agent.name),
         )?);
         let output_schema = workflow_type_to_json_schema(&planned_agent.iteration_output_type);
+        let tool_definitions = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
+        let tool_names = tool_definitions
+            .iter()
+            .map(|tool_definition| tool_definition.name.clone())
+            .collect::<Vec<_>>();
 
         if let Some(event_sender) = &event_sender {
             let _ = event_sender
                 .send(ExecutorEvent::agent_started(
                     planned_agent.name.clone(),
                     model_name.clone(),
-                    Vec::new(),
+                    tool_names,
                 ))
                 .await;
         }
@@ -289,6 +326,7 @@ impl WorkflowExecutor {
                 model_name,
                 prompt,
                 output_schema,
+                tools: tool_definitions,
             })
             .await?;
 
@@ -320,6 +358,202 @@ impl WorkflowExecutor {
         }
 
         Ok(Value::Object(output_fields))
+    }
+
+    fn resolve_agent_tool_definitions(
+        &self,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<Vec<ModelToolDefinition>, ExecutorError> {
+        let Some(tools_expression) = planned_agent.declaration.expression_property(AgentExpressionPropertyName::Tools) else {
+            return Ok(Vec::new());
+        };
+        let Expression::ArrayLiteral(tool_expressions) = tools_expression else {
+            return Err(ExecutorError::Other {
+                message: format!("tools for agent `{}` must be an array", planned_agent.name),
+            });
+        };
+        let mut tool_definitions = Vec::new();
+
+        for tool_expression in tool_expressions {
+            tool_definitions.push(self.resolve_agent_tool_definition(tool_expression, planned_agent, evaluation_context)?);
+        }
+
+        Ok(tool_definitions)
+    }
+
+    fn resolve_agent_tool_definition(
+        &self,
+        tool_expression: &Expression,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<ModelToolDefinition, ExecutorError> {
+        let (tool_reference, override_binding_fields) = match tool_expression {
+            Expression::Reference(reference) => (reference, Vec::new()),
+            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.clone()),
+            _ => {
+                return Err(ExecutorError::Other {
+                    message: format!("tools for agent `{}` must contain tool references", planned_agent.name),
+                });
+            }
+        };
+        let tool_name = tool_reference.tool_name().ok_or_else(|| ExecutorError::Other {
+            message: format!("tools for agent `{}` must use `tool.<name>` references", planned_agent.name),
+        })?;
+        let typed_tool = self.execution_plan.tools.get(tool_name).ok_or_else(|| ExecutorError::Other {
+            message: format!("agent `{}` references unknown tool `{tool_name}`", planned_agent.name),
+        })?;
+        let bindings = typed_tool.resolve_bindings(&override_binding_fields, evaluation_context)?;
+
+        Ok(ModelToolDefinition {
+            name: typed_tool.name.clone(),
+            description: typed_tool.declaration.description.clone(),
+            source: self.model_tool_source(&typed_tool.declaration)?,
+            input_schema: typed_tool.model_input_schema(&bindings),
+            output_schema: workflow_type_to_json_schema(&typed_tool.output_type),
+            bindings,
+        })
+    }
+
+    fn model_tool_source(&self, tool_declaration: &superwire_core::dsl::ToolDeclaration) -> Result<ModelToolSource, ExecutorError> {
+        let Some(ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source else {
+            return Ok(ModelToolSource::Local);
+        };
+        let is_server_only_source =
+            mcp_tool_source.server_name.is_none() && self.workflow.find_mcp_server(&mcp_tool_source.tool_name).is_some();
+        let resolved_server_name = if is_server_only_source {
+            Some(mcp_tool_source.tool_name.as_str())
+        } else {
+            mcp_tool_source.server_name.as_deref()
+        };
+        let mcp_server_declaration = if let Some(server_name) = resolved_server_name {
+            self.workflow.find_mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
+                message: format!("tool `{}` references unknown MCP server `{server_name}`", tool_declaration.name),
+            })?
+        } else {
+            self.workflow
+                .declarations()
+                .iter()
+                .find_map(|declaration| match declaration {
+                    Declaration::McpServer(mcp_server_declaration) => Some(mcp_server_declaration),
+                    _ => None,
+                })
+                .ok_or_else(|| ExecutorError::Other {
+                    message: format!("tool `{}` uses MCP but no `mcp` server is declared", tool_declaration.name),
+                })?
+        };
+        let mcp_server_config = McpServerConfig::from_declaration(mcp_server_declaration).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })?;
+
+        Ok(ModelToolSource::Mcp {
+            server_name: resolved_server_name.map(str::to_string),
+            tool_name: if is_server_only_source {
+                tool_declaration.name.clone()
+            } else {
+                mcp_tool_source.tool_name.clone()
+            },
+            endpoint: mcp_server_config.endpoint,
+            headers: mcp_server_config.headers,
+        })
+    }
+}
+
+trait ToolReferenceExt {
+    fn tool_name(&self) -> Option<&str>;
+}
+
+impl ToolReferenceExt for Reference {
+    fn tool_name(&self) -> Option<&str> {
+        if self.root_keyword() != Some(ReferenceKeyword::Tool) {
+            return None;
+        }
+
+        self.first_access_field()
+    }
+}
+
+trait TypedToolModelSchemaExt {
+    fn model_input_schema(&self, bindings: &Value) -> Value;
+}
+
+impl TypedToolModelSchemaExt for TypedToolIr {
+    fn model_input_schema(&self, bindings: &Value) -> Value {
+        let mut input_schema = workflow_type_to_json_schema(&self.input_type);
+        let Some(binding_object) = bindings.as_object() else {
+            return input_schema;
+        };
+        let binding_names = binding_object.keys().cloned().collect::<HashSet<_>>();
+
+        if let Some(properties) = input_schema.get_mut("properties").and_then(Value::as_object_mut) {
+            for binding_name in &binding_names {
+                properties.remove(binding_name);
+            }
+        }
+
+        let mut remove_required = false;
+
+        if let Some(required_fields) = input_schema.get_mut("required").and_then(Value::as_array_mut) {
+            required_fields.retain(|required_field| {
+                required_field
+                    .as_str()
+                    .is_none_or(|required_field_name| !binding_names.contains(required_field_name))
+            });
+            remove_required = required_fields.is_empty();
+        }
+
+        if remove_required {
+            if let Some(schema_object) = input_schema.as_object_mut() {
+                schema_object.remove("required");
+            }
+        }
+
+        input_schema
+    }
+}
+
+trait TypedToolRuntimeExt {
+    fn resolve_bindings(
+        &self,
+        override_binding_fields: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+    ) -> Result<Value, ExecutorError>;
+}
+
+impl TypedToolRuntimeExt for TypedToolIr {
+    fn resolve_bindings(
+        &self,
+        override_binding_fields: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+    ) -> Result<Value, ExecutorError> {
+        let mut binding_values = Map::new();
+
+        for fixed_binding_field in &self.declaration.fixed_binding_fields {
+            let binding_value = evaluate_expression(
+                &fixed_binding_field.value,
+                evaluation_context,
+                &format!("fixed binding `{}` for tool `{}`", fixed_binding_field.name, self.name),
+            )?;
+            binding_values.insert(fixed_binding_field.name.clone(), binding_value);
+        }
+
+        let mut typed_binding_values = Map::new();
+
+        for override_binding_field in override_binding_fields {
+            let binding_value = evaluate_expression(
+                &override_binding_field.value,
+                evaluation_context,
+                &format!("binding `{}` for tool `{}`", override_binding_field.name, self.name),
+            )?;
+            binding_values.insert(override_binding_field.name.clone(), binding_value.clone());
+            typed_binding_values.insert(override_binding_field.name.clone(), binding_value);
+        }
+
+        validate_value_against_type(&Value::Object(typed_binding_values), &self.binding_type).map_err(|message| ExecutorError::Other {
+            message: format!("tool `{}` binding values are invalid: {message}", self.name),
+        })?;
+
+        Ok(Value::Object(binding_values))
     }
 }
 
