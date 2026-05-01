@@ -30,5 +30,6 @@ output {
     topic: input.topic
     audience: dynamic.audience
     max_bullets: dynamic.max_bullets
+    prompt_prefix: dynamic.prompt_prefix
     summary: agent.writer.summary
 }
