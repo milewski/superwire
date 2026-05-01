@@ -17,7 +17,17 @@ pub struct TypedWorkflowIr {
     pub secrets_type: Option<WorkflowType>,
     pub output_declaration: OutputDeclaration,
     pub workflow_output_type: WorkflowType,
+    pub tools: Vec<TypedToolIr>,
     pub agents: Vec<TypedAgentIr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedToolIr {
+    pub name: String,
+    pub declaration: ToolDeclaration,
+    pub input_type: WorkflowType,
+    pub binding_type: WorkflowType,
+    pub output_type: WorkflowType,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +91,7 @@ where
         secrets_type,
         output_declaration,
         workflow_output_type,
+        tools: tool_types.tools,
         agents,
     })
 }
@@ -112,11 +123,13 @@ pub fn build_dynamic_typed_workflow_ir(workflow: &Workflow) -> Result<TypedWorkf
         secrets_type,
         output_declaration,
         workflow_output_type,
+        tools: tool_types.tools,
         agents,
     })
 }
 
 struct ToolTypes {
+    tools: Vec<TypedToolIr>,
     input: HashMap<String, WorkflowType>,
     bindings: HashMap<String, WorkflowType>,
     output: HashMap<String, WorkflowType>,
@@ -126,6 +139,7 @@ fn collect_tool_types(
     workflow: &Workflow,
     named_schema_types: &HashMap<String, TypeExpression>,
 ) -> Result<ToolTypes, WorkflowSemanticError> {
+    let mut tools = Vec::new();
     let mut input = HashMap::new();
     let mut bindings = HashMap::new();
     let mut output = HashMap::new();
@@ -142,21 +156,31 @@ fn collect_tool_types(
             continue;
         };
 
-        input.insert(
-            name.clone(),
-            workflow_type_from_dsl(&TypeExpression::Object(input_fields.clone()), named_schema_types)?,
-        );
-        bindings.insert(
-            name.clone(),
-            workflow_type_from_dsl(&TypeExpression::Object(binding_fields.clone()), named_schema_types)?,
-        );
-        output.insert(
-            name.clone(),
-            workflow_type_from_dsl(&TypeExpression::Object(output_fields.clone()), named_schema_types)?,
-        );
+        let input_type = workflow_type_from_dsl(&TypeExpression::Object(input_fields.clone()), named_schema_types)?;
+        let binding_type = workflow_type_from_dsl(&TypeExpression::Object(binding_fields.clone()), named_schema_types)?;
+        let output_type = workflow_type_from_dsl(&TypeExpression::Object(output_fields.clone()), named_schema_types)?;
+
+        input.insert(name.clone(), input_type.clone());
+        bindings.insert(name.clone(), binding_type.clone());
+        output.insert(name.clone(), output_type.clone());
+        tools.push(TypedToolIr {
+            name: name.clone(),
+            declaration: match declaration {
+                Declaration::Tool(tool_declaration) => tool_declaration.clone(),
+                _ => unreachable!("tool branch should only contain tool declarations"),
+            },
+            input_type,
+            binding_type,
+            output_type,
+        });
     }
 
-    Ok(ToolTypes { input, bindings, output })
+    Ok(ToolTypes {
+        tools,
+        input,
+        bindings,
+        output,
+    })
 }
 
 fn collect_named_schema_types(workflow: &Workflow) -> HashMap<String, TypeExpression> {

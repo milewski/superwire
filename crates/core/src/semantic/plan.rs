@@ -1,5 +1,5 @@
 use crate::dsl::{AgentDeclaration, Expression, OutputDeclaration, Workflow};
-use crate::semantic::ir::TypedWorkflowIr;
+use crate::semantic::ir::{TypedToolIr, TypedWorkflowIr};
 use crate::semantic::support::provider::{build_provider_index, ProviderConfigTemplate};
 use crate::semantic::support::types::WorkflowType;
 use crate::semantic::WorkflowSemanticError;
@@ -23,6 +23,7 @@ pub struct ExecutionPlan {
     pub secrets_type: Option<WorkflowType>,
     pub output_declaration: OutputDeclaration,
     pub workflow_output_type: WorkflowType,
+    pub tools: HashMap<String, TypedToolIr>,
     pub agent_execution_order: Vec<String>,
     pub planned_agents: HashMap<String, PlannedAgent>,
 }
@@ -56,6 +57,11 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
         secrets_type: typed_workflow_ir.secrets_type.clone(),
         output_declaration: typed_workflow_ir.output_declaration.clone(),
         workflow_output_type: typed_workflow_ir.workflow_output_type.clone(),
+        tools: typed_workflow_ir
+            .tools
+            .iter()
+            .map(|typed_tool| (typed_tool.name.clone(), typed_tool.clone()))
+            .collect(),
         agent_execution_order,
         planned_agents,
     })
