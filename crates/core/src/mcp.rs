@@ -2,6 +2,7 @@ use crate::dsl::{
     Declaration, Expression, McpServerDeclaration, McpServerPropertyName, SourcePosition, SourceSpan, ToolSource, TypeExpression,
     TypedField, Workflow,
 };
+use crate::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -193,11 +194,11 @@ impl McpLock {
 
 impl McpServerConfig {
     pub fn from_workflow(workflow: &Workflow) -> Result<Vec<Self>, McpError> {
-        workflow
+        Ok(workflow
             .declarations()
             .iter()
             .filter_map(|declaration| match declaration {
-                Declaration::McpServer(mcp_server_declaration) => Some(Self::from_declaration(mcp_server_declaration)),
+                Declaration::McpServer(mcp_server_declaration) => Self::from_declaration(mcp_server_declaration),
                 Declaration::Provider(_)
                 | Declaration::Secrets(_)
                 | Declaration::Input(_)
@@ -207,10 +208,11 @@ impl McpServerConfig {
                 | Declaration::Agent(_)
                 | Declaration::Output(_) => None,
             })
-            .collect()
+            .collect())
     }
 
-    pub fn from_declaration(mcp_server_declaration: &McpServerDeclaration) -> Result<Self, McpError> {
+    #[must_use]
+    pub fn from_declaration(mcp_server_declaration: &McpServerDeclaration) -> Option<Self> {
         let server_name = mcp_server_declaration.name.clone();
         let mut endpoint = None;
         let mut headers = BTreeMap::new();
@@ -218,10 +220,57 @@ impl McpServerConfig {
         for property in &mcp_server_declaration.properties {
             match McpServerPropertyName::from_identifier(&property.name) {
                 Some(McpServerPropertyName::Endpoint) => {
-                    endpoint = Some(property.value.expect_mcp_config_string(&server_name, &property.name)?);
+                    let Expression::StringLiteral(value) = &property.value else {
+                        return None;
+                    };
+                    endpoint = Some(value.clone());
                 }
                 Some(McpServerPropertyName::Headers) => {
-                    headers = property.value.expect_mcp_headers(&server_name, &property.name)?;
+                    headers = Self::parse_literal_headers(&property.value)?;
+                }
+                None => {}
+            }
+        }
+
+        let endpoint = endpoint?;
+
+        Some(Self {
+            name: server_name,
+            endpoint,
+            headers,
+        })
+    }
+
+    pub fn resolve_from_declaration(
+        mcp_server_declaration: &McpServerDeclaration,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<Self, McpError> {
+        let server_name = mcp_server_declaration.name.clone();
+        let mut endpoint = None;
+        let mut headers = BTreeMap::new();
+
+        for property in &mcp_server_declaration.properties {
+            match McpServerPropertyName::from_identifier(&property.name) {
+                Some(McpServerPropertyName::Endpoint) => {
+                    let value = evaluate_expression(
+                        &property.value,
+                        evaluation_context,
+                        &format!("MCP server `{server_name}` property `endpoint`"),
+                    )
+                    .map_err(|_error| McpError::InvalidProperty {
+                        server_name: server_name.clone(),
+                        property_name: "endpoint".to_string(),
+                        expected: "a string or reference that resolves to a string",
+                    })?;
+                    let string_value = value.as_str().ok_or_else(|| McpError::InvalidProperty {
+                        server_name: server_name.clone(),
+                        property_name: "endpoint".to_string(),
+                        expected: "a string value",
+                    })?;
+                    endpoint = Some(string_value.to_string());
+                }
+                Some(McpServerPropertyName::Headers) => {
+                    headers = Self::resolve_headers(&property.value, &server_name, evaluation_context)?;
                 }
                 None => {}
             }
@@ -236,6 +285,60 @@ impl McpServerConfig {
             endpoint,
             headers,
         })
+    }
+
+    fn parse_literal_headers(expression: &Expression) -> Option<BTreeMap<String, String>> {
+        let Expression::ObjectLiteral(header_fields) = expression else {
+            return None;
+        };
+
+        let mut headers = BTreeMap::new();
+
+        for header_field in header_fields {
+            let Expression::StringLiteral(value) = &header_field.value else {
+                return None;
+            };
+            headers.insert(header_field.name.clone(), value.clone());
+        }
+
+        Some(headers)
+    }
+
+    fn resolve_headers(
+        expression: &Expression,
+        server_name: &str,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<BTreeMap<String, String>, McpError> {
+        let Expression::ObjectLiteral(header_fields) = expression else {
+            return Err(McpError::InvalidProperty {
+                server_name: server_name.to_string(),
+                property_name: "headers".to_string(),
+                expected: "an object with string values",
+            });
+        };
+
+        let mut headers = BTreeMap::new();
+
+        for header_field in header_fields {
+            let value = evaluate_expression(
+                &header_field.value,
+                evaluation_context,
+                &format!("MCP server `{server_name}` header `{}`", header_field.name),
+            )
+            .map_err(|_error| McpError::InvalidProperty {
+                server_name: server_name.to_string(),
+                property_name: format!("headers.{}", header_field.name),
+                expected: "a string or reference that resolves to a string",
+            })?;
+            let string_value = value.as_str().ok_or_else(|| McpError::InvalidProperty {
+                server_name: server_name.to_string(),
+                property_name: format!("headers.{}", header_field.name),
+                expected: "a string value",
+            })?;
+            headers.insert(header_field.name.clone(), string_value.to_string());
+        }
+
+        Ok(headers)
     }
 }
 
@@ -358,48 +461,6 @@ impl McpClient {
             method: method.to_string(),
             message: error.to_string(),
         })
-    }
-}
-
-trait McpConfigExpressionExt {
-    fn expect_mcp_config_string(&self, server_name: &str, property_name: &str) -> Result<String, McpError>;
-
-    fn expect_mcp_headers(&self, server_name: &str, property_name: &str) -> Result<BTreeMap<String, String>, McpError>;
-}
-
-impl McpConfigExpressionExt for Expression {
-    fn expect_mcp_config_string(&self, server_name: &str, property_name: &str) -> Result<String, McpError> {
-        match self {
-            Self::StringLiteral(value) => Ok(value.clone()),
-            _ => Err(McpError::InvalidProperty {
-                server_name: server_name.to_string(),
-                property_name: property_name.to_string(),
-                expected: "a string literal",
-            }),
-        }
-    }
-
-    fn expect_mcp_headers(&self, server_name: &str, property_name: &str) -> Result<BTreeMap<String, String>, McpError> {
-        let Self::ObjectLiteral(header_fields) = self else {
-            return Err(McpError::InvalidProperty {
-                server_name: server_name.to_string(),
-                property_name: property_name.to_string(),
-                expected: "an object literal with string literal values",
-            });
-        };
-
-        let mut headers = BTreeMap::new();
-
-        for header_field in header_fields {
-            headers.insert(
-                header_field.name.clone(),
-                header_field
-                    .value
-                    .expect_mcp_config_string(server_name, &format!("{property_name}.{}", header_field.name))?,
-            );
-        }
-
-        Ok(headers)
     }
 }
 
@@ -642,6 +703,70 @@ mod tests {
         let validation_report = validate_workflow(&workflow);
 
         assert!(validation_report.is_valid(), "unexpected validation issues: {validation_report:?}");
+    }
+
+    #[test]
+    fn resolves_mcp_endpoint_from_secret_reference() {
+        let _server = TestMcpHttpServer::spawn([]);
+        let workflow_source = workflow_source! {
+            secrets {
+                mcp_endpoint: string
+            }
+
+            mcp local {
+                endpoint: secrets.mcp_endpoint
+                headers: {
+                    Accept: "application/json"
+                }
+            }
+
+            tool update_user_name {
+                using: mcp.local.update-user-name
+            }
+        };
+        let mut workflow = parse_workflow(workflow_source).expect("workflow should parse");
+        let mcp_lock = McpLock::discover_from_workflow(&workflow).expect("MCP discovery should succeed");
+
+        mcp_lock.apply_to_workflow(&mut workflow);
+
+        let tool_declaration = workflow.find_tool("update_user_name").expect("tool declaration should exist");
+
+        assert!(matches!(
+            &tool_declaration.source,
+            Some(ToolSource::Mcp(mcp_tool_source))
+                if mcp_tool_source.server_name.as_deref() == Some("local")
+                    && mcp_tool_source.tool_name == "update-user-name"
+        ));
+    }
+
+    #[test]
+    fn resolves_mcp_endpoint_from_input_reference() {
+        let _server = TestMcpHttpServer::spawn([]);
+        let workflow_source = workflow_source! {
+            input {
+                mcp_url: string
+            }
+
+            mcp local {
+                endpoint: input.mcp_url
+            }
+
+            tool update_user_name {
+                using: mcp.local.update-user-name
+            }
+        };
+        let mut workflow = parse_workflow(workflow_source).expect("workflow should parse");
+        let mcp_lock = McpLock::discover_from_workflow(&workflow).expect("MCP discovery should succeed");
+
+        mcp_lock.apply_to_workflow(&mut workflow);
+
+        let tool_declaration = workflow.find_tool("update_user_name").expect("tool declaration should exist");
+
+        assert!(matches!(
+            &tool_declaration.source,
+            Some(ToolSource::Mcp(mcp_tool_source))
+                if mcp_tool_source.server_name.as_deref() == Some("local")
+        ));
     }
 
     struct TestMcpHttpServer {

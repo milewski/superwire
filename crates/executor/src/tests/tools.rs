@@ -268,3 +268,72 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
         .await
         .expect("execution should accept null input when all fields are consumed by bindings");
 }
+
+#[tokio::test]
+async fn mcp_endpoint_can_come_from_secrets() {
+    let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        secrets {
+            mcp_endpoint: string
+            mcp_token: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+            headers: {
+                Authorization: secrets.mcp_token
+            }
+        }
+
+        input {
+            user_id: number
+        }
+
+        tool local_update_user {
+            description: "Update a user name"
+            using: mcp.local.update_user_name
+
+            bindings {
+                user_id: input.user_id
+            }
+
+            input {
+                user_name: string
+            }
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.local_update_user]
+            prompt: "Rename the user"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    };
+
+    let secrets = json!({
+        "mcp_endpoint": server.endpoint(),
+        "mcp_token": "Bearer secret-token",
+    });
+
+    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let service = ExecutorService::new(model_provider.clone());
+    let mut request = request_with_input(workflow_source, json!({ "user_id": 123 }));
+
+    request.secrets = secrets;
+
+    service
+        .execute(request)
+        .await
+        .expect("execution should resolve MCP endpoint from secrets");
+}

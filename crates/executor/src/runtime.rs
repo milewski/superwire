@@ -353,7 +353,7 @@ impl WorkflowExecutor {
             message: format!("deterministic tool call references unknown tool `{tool_name}`"),
         })?;
         let bindings = typed_tool.resolve_bindings(&tool_call.binding_fields, evaluation_context)?;
-        let source = self.model_tool_source(&typed_tool.declaration)?;
+        let source = self.model_tool_source(&typed_tool.declaration, evaluation_context)?;
         let mut input_arguments = Map::new();
 
         for input_field in &tool_call.input_fields {
@@ -664,14 +664,18 @@ impl WorkflowExecutor {
         Ok(ModelToolDefinition {
             name: typed_tool.name.clone(),
             description: typed_tool.declaration.description.clone(),
-            source: self.model_tool_source(&typed_tool.declaration)?,
+            source: self.model_tool_source(&typed_tool.declaration, evaluation_context)?,
             input_schema: typed_tool.model_input_schema(&bindings),
             output_schema: workflow_type_to_json_schema(&typed_tool.output_type),
             bindings,
         })
     }
 
-    fn model_tool_source(&self, tool_declaration: &superwire_core::dsl::ToolDeclaration) -> Result<ModelToolSource, ExecutorError> {
+    fn model_tool_source(
+        &self,
+        tool_declaration: &superwire_core::dsl::ToolDeclaration,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<ModelToolSource, ExecutorError> {
         let Some(ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source else {
             return Ok(ModelToolSource::Local);
         };
@@ -698,8 +702,10 @@ impl WorkflowExecutor {
                     message: format!("tool `{}` uses MCP but no `mcp` server is declared", tool_declaration.name),
                 })?
         };
-        let mcp_server_config = McpServerConfig::from_declaration(mcp_server_declaration).map_err(|error| ExecutorError::Other {
-            message: error.to_string(),
+        let mcp_server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| {
+            ExecutorError::Other {
+                message: error.to_string(),
+            }
         })?;
 
         Ok(ModelToolSource::Mcp {
