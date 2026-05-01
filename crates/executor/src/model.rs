@@ -5,4 +5,4 @@ pub mod types;
 
 pub use openai::OpenAiModelProvider;
 pub use provider::ModelProvider;
-pub use types::{ModelRequest, ModelResponse};
+pub use types::{ModelRequest, ModelResponse, ModelToolDefinition, ModelToolSource};

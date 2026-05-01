@@ -9,8 +9,11 @@ pub enum ExecutorError {
     #[error("workflow input type mismatch: expected `{expected}`, found `{found}`")]
     InputTypeMismatch { expected: String, found: String },
 
-    #[error("workflow input value does not match declared input type: {message}")]
+    #[error("workflow input value does not match declared `input` block type: {message}")]
     InputValueMismatch { message: String },
+
+    #[error("workflow secrets value does not match declared `secrets` block type: {message}")]
+    SecretValueMismatch { message: String },
 
     #[error("workflow output type mismatch: expected `{expected}`, found `{found}`")]
     OutputTypeMismatch { expected: String, found: String },
@@ -31,7 +34,8 @@ impl ExecutorError {
         match self {
             Self::Semantic(WorkflowSemanticError::ParseFailed { .. } | WorkflowSemanticError::InvalidWorkflow { .. })
             | Self::InputTypeMismatch { .. }
-            | Self::InputValueMismatch { .. } => true,
+            | Self::InputValueMismatch { .. }
+            | Self::SecretValueMismatch { .. } => true,
             Self::Semantic(_)
             | Self::OutputTypeMismatch { .. }
             | Self::AgentOutputTypeMismatch { .. }
