@@ -19,6 +19,24 @@ pub fn parse_model_json_output(agent_name: &str, content: &str) -> Result<Value,
     })
 }
 
+pub fn normalize_mcp_tool_result(result: Value) -> Value {
+    if let Some(structured_content) = result.get("structuredContent") {
+        return structured_content.clone();
+    }
+
+    if let Some(text_content) = result
+        .get("content")
+        .and_then(Value::as_array)
+        .and_then(|content| content.first())
+        .and_then(|content_item| content_item.get("text"))
+        .and_then(Value::as_str)
+    {
+        return serde_json::from_str(text_content).unwrap_or_else(|_| Value::String(text_content.to_string()));
+    }
+
+    result
+}
+
 fn strip_markdown_json_fence(content: &str) -> &str {
     let Some(stripped_start) = content.strip_prefix("```") else {
         return content;
