@@ -1,0 +1,242 @@
+#![allow(dead_code)]
+
+use crate::api::{ExecutionOptions, ExecutionRequest};
+use crate::model::{ModelProvider, ModelRequest, ModelResponse};
+use crate::runtime::ExecutorError;
+use crate::service::ExecutorService;
+use async_trait::async_trait;
+use serde_json::Value;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+
+// ---------------------------------------------------------------------------
+// Mock providers
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct TestModelProvider {
+    outputs: Arc<Mutex<VecDeque<Value>>>,
+}
+
+impl TestModelProvider {
+    pub fn new(outputs: Vec<Value>) -> Self {
+        Self {
+            outputs: Arc::new(Mutex::new(VecDeque::from(outputs))),
+        }
+    }
+}
+
+#[async_trait]
+impl ModelProvider for TestModelProvider {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+        let output = self
+            .outputs
+            .lock()
+            .expect("test runner outputs lock should not be poisoned")
+            .pop_front()
+            .unwrap_or_else(|| serde_json::json!(request.agent_name));
+
+        Ok(ModelResponse {
+            output,
+            context: serde_json::json!({ "agent": request.agent_name }),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScriptedModelProvider {
+    responses: Arc<Mutex<HashMap<String, VecDeque<Value>>>>,
+    default_output: Option<Value>,
+}
+
+impl ScriptedModelProvider {
+    pub fn new(responses: HashMap<String, Vec<Value>>) -> Self {
+        let mapped = responses.into_iter().map(|(key, values)| (key, VecDeque::from(values))).collect();
+
+        Self {
+            responses: Arc::new(Mutex::new(mapped)),
+            default_output: None,
+        }
+    }
+
+    pub fn with_default(mut self, default: Value) -> Self {
+        self.default_output = Some(default);
+        self
+    }
+}
+
+#[async_trait]
+impl ModelProvider for ScriptedModelProvider {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+        let mut responses = self.responses.lock().expect("scripted provider lock should not be poisoned");
+
+        let output = if let Some(queue) = responses.get_mut(&request.agent_name) {
+            queue.pop_front().or_else(|| self.default_output.clone())
+        } else {
+            self.default_output.clone()
+        };
+
+        let output = output.unwrap_or_else(|| serde_json::json!(request.agent_name));
+
+        Ok(ModelResponse {
+            output,
+            context: serde_json::json!({ "agent": request.agent_name }),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackingModelProvider {
+    inner: TestModelProvider,
+    pub recorded_requests: Arc<Mutex<Vec<ModelRequest>>>,
+}
+
+impl TrackingModelProvider {
+    pub fn new(outputs: Vec<Value>) -> Self {
+        Self {
+            inner: TestModelProvider::new(outputs),
+            recorded_requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn recorded_agent_names(&self) -> Vec<String> {
+        self.recorded_requests
+            .lock()
+            .expect("tracking lock should not be poisoned")
+            .iter()
+            .map(|request| request.agent_name.clone())
+            .collect()
+    }
+
+    pub fn recorded_prompts(&self) -> Vec<String> {
+        self.recorded_requests
+            .lock()
+            .expect("tracking lock should not be poisoned")
+            .iter()
+            .map(|request| request.prompt.clone())
+            .collect()
+    }
+
+    pub fn recorded_count(&self) -> usize {
+        self.recorded_requests.lock().expect("tracking lock should not be poisoned").len()
+    }
+}
+
+#[async_trait]
+impl ModelProvider for TrackingModelProvider {
+    async fn generate(&self, request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+        self.recorded_requests
+            .lock()
+            .expect("tracking lock should not be poisoned")
+            .push(ModelRequest {
+                agent_name: request.agent_name.clone(),
+                provider_config: request.provider_config.clone(),
+                model_name: request.model_name.clone(),
+                prompt: request.prompt.clone(),
+                output_schema: request.output_schema.clone(),
+            });
+
+        self.inner.generate(request).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FailingModelProvider {
+    message: String,
+}
+
+impl FailingModelProvider {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self { message: message.into() }
+    }
+}
+
+#[async_trait]
+impl ModelProvider for FailingModelProvider {
+    async fn generate(&self, _request: ModelRequest) -> Result<ModelResponse, ExecutorError> {
+        Err(ExecutorError::Model {
+            agent_name: "failing-provider".to_string(),
+            message: self.message.clone(),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
+
+pub fn service(outputs: Vec<Value>) -> ExecutorService<TestModelProvider> {
+    ExecutorService::new(TestModelProvider::new(outputs))
+}
+
+pub fn request(fixture: &str) -> ExecutionRequest {
+    ExecutionRequest {
+        workflow_source: Some(fixture.to_string()),
+        workflow_source_base64: None,
+        input: Value::Null,
+        secrets: Value::Null,
+        options: ExecutionOptions::default(),
+    }
+}
+
+pub fn request_with_input(fixture: &str, input: Value) -> ExecutionRequest {
+    ExecutionRequest {
+        workflow_source: Some(fixture.to_string()),
+        workflow_source_base64: None,
+        input,
+        secrets: Value::Null,
+        options: ExecutionOptions::default(),
+    }
+}
+
+pub fn request_with_secrets(fixture: &str, input: Value, secrets: Value) -> ExecutionRequest {
+    ExecutionRequest {
+        workflow_source: Some(fixture.to_string()),
+        workflow_source_base64: None,
+        input,
+        secrets,
+        options: ExecutionOptions::default(),
+    }
+}
+
+pub async fn execute(fixture: &str, outputs: Vec<Value>) -> Value {
+    service(outputs)
+        .execute(request(fixture))
+        .await
+        .expect("execution should succeed")
+        .output
+}
+
+pub async fn execute_with_input(fixture: &str, outputs: Vec<Value>, input: Value) -> Value {
+    service(outputs)
+        .execute(request_with_input(fixture, input))
+        .await
+        .expect("execution should succeed")
+        .output
+}
+
+pub async fn execute_with_secrets(fixture: &str, outputs: Vec<Value>, input: Value, secrets: Value) -> Value {
+    service(outputs)
+        .execute(request_with_secrets(fixture, input, secrets))
+        .await
+        .expect("execution should succeed")
+        .output
+}
+
+pub async fn execute_expect_error(fixture: &str, outputs: Vec<Value>) -> ExecutorError {
+    service(outputs).execute(request(fixture)).await.expect_err("execution should fail")
+}
+
+pub async fn execute_with_input_expect_error(fixture: &str, outputs: Vec<Value>, input: Value) -> ExecutorError {
+    service(outputs)
+        .execute(request_with_input(fixture, input))
+        .await
+        .expect_err("execution should fail")
+}
+
+pub async fn execute_with_secrets_expect_error(fixture: &str, outputs: Vec<Value>, input: Value, secrets: Value) -> ExecutorError {
+    service(outputs)
+        .execute(request_with_secrets(fixture, input, secrets))
+        .await
+        .expect_err("execution should fail")
+}

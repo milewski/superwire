@@ -6,6 +6,10 @@ pub mod server;
 pub mod service;
 
 #[cfg(test)]
+#[macro_use]
+mod test_macros;
+
+#[cfg(test)]
 mod tests;
 
 pub use api::{ExecutionOptions, ExecutionRequest, ExecutionResponse};

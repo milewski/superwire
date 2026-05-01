@@ -1,0 +1,40 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+input {
+    product_name: string
+    audience: string
+}
+
+agent release_notes {
+    model: openai("model-a")
+    prompt: "Write release notes for {{ input.product_name }} targeting {{ input.audience }}."
+    output: {
+        title: string
+        body: string
+    }
+}
+
+agent launch_message {
+    model: openai("model-a")
+    prompt: """
+        Write a launch message for {{ input.audience }}.
+
+        Product: {{ input.product_name }}
+        Title: {{ agent.release_notes.title }}
+        Body: {{ agent.release_notes.body }}
+    """
+    output: {
+        message: string
+    }
+}
+
+output {
+    title: agent.release_notes.title
+    body: agent.release_notes.body
+    launch_message: agent.launch_message.message
+}

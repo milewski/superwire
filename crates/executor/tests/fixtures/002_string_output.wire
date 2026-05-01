@@ -1,0 +1,16 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+agent summarizer {
+    model: openai("model-a")
+    prompt: "Write a one-sentence project summary."
+    output: string
+}
+
+output {
+    summary: agent.summarizer
+}

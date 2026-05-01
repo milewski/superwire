@@ -12,7 +12,7 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
-    #[must_use] 
+    #[must_use]
     pub fn new(input_values: Map<String, Value>, secret_values: Map<String, Value>) -> Self {
         Self {
             input_values,
@@ -23,7 +23,7 @@ impl RuntimeState {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn evaluation_context(&self, local_bindings: HashMap<String, Value>) -> EvaluationContext {
         let mut merged_local_bindings = self.local_bindings.clone();
 

@@ -1,0 +1,30 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+input {
+    question: string
+}
+
+agent assistant {
+    model: openai("model-a")
+    prompt: "Answer: {{ input.question }}"
+    output: {
+        answer: string
+        confidence: float
+        sources: [string]
+    }
+}
+
+output {
+    answer: agent.assistant.answer
+    confidence: agent.assistant.confidence
+    sources: agent.assistant.sources
+    metadata: {
+        workflow: "qa_pipeline"
+        version: 1
+    }
+}

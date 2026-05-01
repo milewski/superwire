@@ -1,0 +1,32 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+input {
+    topic: string
+}
+
+agent branch_a {
+    model: openai("model-a")
+    prompt: "Analyze {{ input.topic }} from perspective A."
+    output: string
+}
+
+agent branch_b {
+    model: openai("model-a")
+    prompt: "Analyze {{ input.topic }} from perspective B."
+    output: string
+}
+
+agent merger {
+    model: openai("model-a")
+    prompt: "Merge these analyses: A={{ agent.branch_a }}, B={{ agent.branch_b }}"
+    output: string
+}
+
+output {
+    merged: agent.merger
+}
