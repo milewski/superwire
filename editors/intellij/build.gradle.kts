@@ -41,11 +41,11 @@ repositories {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 intellij {
-    version.set("2024.1")
+    version.set("2024.3")
     type.set("IC")
     plugins.set(listOf("com.redhat.devtools.lsp4ij:0.10.0", "org.jetbrains.plugins.textmate", "org.intellij.plugins.markdown"))
 }
@@ -114,7 +114,7 @@ val verifyPackagedLspBinary by tasks.registering {
 tasks {
     patchPluginXml {
         sinceBuild.set("241")
-        untilBuild.set("253.*")
+        untilBuild.set("264.*")
     }
 
     processResources {
