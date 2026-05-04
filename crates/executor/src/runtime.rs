@@ -57,6 +57,39 @@ impl WorkflowExecutor {
             message: error.to_string(),
         })?;
         mcp_lock.apply_to_workflow(&mut workflow);
+
+        Self::from_workflow(workflow_source, workflow)
+    }
+
+    pub fn from_source_with_runtime_values(workflow_source: &str, input: &Value, secrets: &Value) -> Result<Self, ExecutorError> {
+        let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
+            let details = parse_error.render_with_source(workflow_source, "<workflow>");
+
+            WorkflowSemanticError::ParseFailed {
+                source: parse_error,
+                details,
+            }
+        })?;
+        let evaluation_context = EvaluationContext {
+            input_values: value_object(input),
+            secret_values: value_object(secrets),
+            agent_outputs: HashMap::new(),
+            agent_contexts: HashMap::new(),
+            local_bindings: HashMap::new(),
+        };
+        let mcp_lock =
+            McpLock::discover_from_workflow_with_context(&workflow, &evaluation_context).map_err(|error| ExecutorError::Other {
+                message: error.to_string(),
+            })?;
+
+        log::debug!("discovered MCP schemas using runtime values: servers={}", mcp_lock.servers.len());
+        mcp_lock.apply_to_workflow(&mut workflow);
+
+        Self::from_workflow(workflow_source, workflow)
+    }
+
+    fn from_workflow(workflow_source: &str, workflow: Workflow) -> Result<Self, ExecutorError> {
+        log::debug!("validating workflow after schema discovery");
         let validation_report = validate_workflow(&workflow);
 
         if validation_report.has_issues() {
@@ -69,6 +102,13 @@ impl WorkflowExecutor {
             build_dynamic_typed_workflow_ir(&workflow).map_err(|error| error.into_compilation_diagnostic(&workflow, "<workflow>"))?;
         let execution_plan = build_execution_plan(&workflow, &typed_workflow_ir)
             .map_err(|error| error.into_compilation_diagnostic(&workflow, "<workflow>"))?;
+
+        log::info!(
+            "workflow planned: agents={}, tools={}, agent_order={}",
+            execution_plan.planned_agents.len(),
+            execution_plan.tools.len(),
+            execution_plan.agent_execution_order.len()
+        );
 
         Ok(Self { workflow, execution_plan })
     }
@@ -93,12 +133,16 @@ impl WorkflowExecutor {
         let secret_values = self.resolve_secret_values(&secrets)?;
         let mut runtime_state = RuntimeState::new(input_values, secret_values);
 
+        log::info!("executing workflow runtime");
+
         self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref())?;
 
         for execution_batch in self.resolve_agent_execution_batches()? {
             let runtime_state_snapshot = runtime_state.clone();
             let mut for_loop_agents = Vec::new();
             let mut regular_agents = Vec::new();
+
+            log::debug!("starting execution batch: agents={execution_batch:?}");
 
             for agent_name in execution_batch {
                 let planned_agent = self
@@ -155,6 +199,8 @@ impl WorkflowExecutor {
                 found: format!("invalid runtime output: {message}"),
             }
         })?;
+
+        log::info!("workflow runtime completed");
 
         Ok(output)
     }
@@ -349,6 +395,7 @@ impl WorkflowExecutor {
         let tool_name = tool_call.callee.tool_name().ok_or_else(|| ExecutorError::Other {
             message: "deterministic tool call must use `tool.<name>` reference".to_string(),
         })?;
+        log::debug!("executing deterministic tool call `{tool_name}`");
         let typed_tool = self.execution_plan.tools.get(tool_name).ok_or_else(|| ExecutorError::Other {
             message: format!("deterministic tool call references unknown tool `{tool_name}`"),
         })?;
@@ -400,12 +447,15 @@ impl WorkflowExecutor {
                     ));
                 }
 
+                log::info!("calling MCP tool `{mcp_tool_name}` for deterministic tool `{tool_name}`");
                 let result = McpClient::new(server_config)
                     .call_tool(&mcp_tool_name, Value::Object(arguments))
                     .map_err(|error| ExecutorError::Other {
                         message: format!("deterministic tool call `{tool_name}` failed: {error}"),
                     })?;
                 let normalized_result = normalize_mcp_tool_result(result);
+
+                log::debug!("completed deterministic MCP tool `{tool_name}`");
 
                 if let Some(sender) = event_sender {
                     let _ = sender.try_send(ExecutorEvent::tool_call_completed(
@@ -435,6 +485,7 @@ impl WorkflowExecutor {
     {
         let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, runtime_state, event_sender.as_ref())?;
         let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
+        log::info!("starting agent `{}`", planned_agent.name);
         let provider_template = self
             .execution_plan
             .provider_index
@@ -469,6 +520,14 @@ impl WorkflowExecutor {
             .map(|tool_definition| tool_definition.name.clone())
             .collect::<Vec<_>>();
 
+        log::debug!(
+            "agent `{}` request prepared: model={}, tools={}, response_schema={}",
+            planned_agent.name,
+            model_name,
+            tool_definitions.len(),
+            output_schema.get("type").and_then(Value::as_str).unwrap_or("unknown")
+        );
+
         if let Some(event_sender) = &event_sender {
             let _ = event_sender
                 .send(ExecutorEvent::agent_started(
@@ -490,6 +549,8 @@ impl WorkflowExecutor {
                 event_sender: event_sender.clone(),
             })
             .await?;
+
+        log::debug!("agent `{}` model response received", planned_agent.name);
 
         validate_agent_output_value(&model_response.output, &planned_agent.iteration_output_type, &planned_agent.name)?;
 
@@ -694,6 +755,12 @@ impl WorkflowExecutor {
             message: format!("agent `{}` references unknown tool `{tool_name}`", planned_agent.name),
         })?;
         let bindings = typed_tool.resolve_bindings(&override_binding_fields, evaluation_context)?;
+        log::debug!(
+            "resolved tool `{}` for agent `{}`: binding_keys={}",
+            typed_tool.name,
+            planned_agent.name,
+            bindings.as_object().map_or(0, serde_json::Map::len)
+        );
 
         Ok(ModelToolDefinition {
             name: typed_tool.name.clone(),
@@ -871,6 +938,10 @@ fn normalize_prompt(prompt_value: Value) -> String {
     }
 
     serde_json::to_string(&prompt_value).unwrap_or_else(|_| prompt_value.to_string())
+}
+
+fn value_object(value: &Value) -> Map<String, Value> {
+    value.as_object().cloned().unwrap_or_default()
 }
 
 fn validate_agent_output_value(output: &Value, expected_type: &WorkflowType, agent_name: &str) -> Result<(), ExecutorError> {

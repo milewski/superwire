@@ -176,7 +176,7 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
                             "type": "object",
                             "properties": {
                                 "user_id": { "type": "number" },
-                                "user_name": { "type": "string" }
+                                "user_name": { "type": "string", "enum": ["Ada", "Grace"] }
                             },
                             "required": ["user_id", "user_name"]
                         },
@@ -270,7 +270,7 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
 }
 
 #[tokio::test]
-async fn mcp_endpoint_can_come_from_secrets() {
+async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_request() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
     let workflow_source = workflow_source! {
         provider openai {
@@ -303,10 +303,6 @@ async fn mcp_endpoint_can_come_from_secrets() {
             bindings {
                 user_id: input.user_id
             }
-
-            input {
-                user_name: string
-            }
         }
 
         agent updater {
@@ -335,5 +331,25 @@ async fn mcp_endpoint_can_come_from_secrets() {
     service
         .execute(request)
         .await
-        .expect("execution should resolve MCP endpoint from secrets");
+        .expect("execution should resolve MCP endpoint from secrets and apply tool schemas");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("tracking lock should not be poisoned");
+    let request = recorded_requests.first().expect("model request should be recorded");
+    let tool_definition = request.tools.first().expect("tool definition should be present");
+
+    assert_eq!(tool_definition.bindings, json!({ "user_id": 123 }));
+    assert_eq!(tool_definition.input_schema["required"], json!(["user_name"]));
+    assert_eq!(tool_definition.input_schema.pointer("/properties/user_id"), None);
+    assert_eq!(
+        tool_definition.input_schema.pointer("/properties/user_name/type"),
+        Some(&json!("string"))
+    );
+    assert_eq!(
+        tool_definition.input_schema.pointer("/properties/user_name/enum"),
+        Some(&json!(["Ada", "Grace"]))
+    );
+    assert_eq!(tool_definition.output_schema["required"], json!(["success"]));
 }

@@ -86,7 +86,25 @@ impl McpLock {
         let mut lock = Self::empty();
 
         for server_config in McpServerConfig::from_workflow(workflow)? {
+            log::debug!("discovering MCP tools from literal server config: {}", server_config.name);
             let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+            lock.servers.insert(server_config.name, server_lock);
+        }
+
+        Ok(lock)
+    }
+
+    pub fn discover_from_workflow_with_context(workflow: &Workflow, evaluation_context: &EvaluationContext) -> Result<Self, McpError> {
+        let mut lock = Self::empty();
+
+        for declaration in workflow.declarations() {
+            let Declaration::McpServer(mcp_server_declaration) = declaration else {
+                continue;
+            };
+            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
+            log::debug!("discovering MCP tools from runtime server config: {}", server_config.name);
+            let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+
             lock.servers.insert(server_config.name, server_lock);
         }
 
@@ -354,6 +372,7 @@ impl McpClient {
     }
 
     pub fn list_tools(&self) -> Result<McpServerLock, McpError> {
+        log::debug!("initializing MCP tools/list: server={}", self.server_config.name);
         self.request(
             "initialize",
             json!({
@@ -368,11 +387,19 @@ impl McpClient {
         )?;
         self.notify("notifications/initialized", json!({}))?;
         let result = self.request("tools/list", json!({}), 2)?;
+        let server_lock = McpServerLock::from_tools_list_result(&result);
 
-        Ok(McpServerLock::from_tools_list_result(&result))
+        log::info!(
+            "MCP tools/list completed: server={}, tools={}",
+            self.server_config.name,
+            server_lock.tools.len()
+        );
+
+        Ok(server_lock)
     }
 
     pub fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError> {
+        log::debug!("initializing MCP tools/call: server={}, tool={tool_name}", self.server_config.name);
         self.request(
             "initialize",
             json!({
@@ -387,14 +414,18 @@ impl McpClient {
         )?;
         self.notify("notifications/initialized", json!({}))?;
 
-        self.request(
+        let result = self.request(
             "tools/call",
             json!({
                 "name": tool_name,
                 "arguments": arguments,
             }),
             2,
-        )
+        )?;
+
+        log::info!("MCP tools/call completed: server={}, tool={tool_name}", self.server_config.name);
+
+        Ok(result)
     }
 
     fn notify(&self, method: &str, params: Value) -> Result<(), McpError> {
@@ -535,6 +566,22 @@ fn typed_fields_from_json_schema_except(schema: &Value, excluded_field_names: &[
 }
 
 fn type_expression_from_json_schema(schema: &Value) -> TypeExpression {
+    if let Some(enum_values) = schema.get("enum").and_then(Value::as_array) {
+        let mut string_enum_values = enum_values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|enum_value| TypeExpression::StringEnum(enum_value.to_string()))
+            .collect::<Vec<_>>();
+
+        if string_enum_values.len() == 1 {
+            return string_enum_values.remove(0);
+        }
+
+        if !string_enum_values.is_empty() {
+            return TypeExpression::Union(string_enum_values);
+        }
+    }
+
     if let Some(one_of) = schema.get("oneOf").and_then(Value::as_array) {
         return TypeExpression::Union(one_of.iter().map(type_expression_from_json_schema).collect());
     }

@@ -33,7 +33,16 @@ where
             .resolved_workflow_source()
             .map_err(|message| ExecutorError::Other { message })?;
 
-        let executor = WorkflowExecutor::from_source(&workflow_source)?;
+        log::info!("starting workflow execution");
+        log::debug!(
+            "resolved workflow source for execution: bytes={}, input_provided={}, secrets_provided={}",
+            workflow_source.len(),
+            !request.input.is_null(),
+            !request.secrets.is_null()
+        );
+
+        let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.input, &request.secrets)?;
+        log::debug!("workflow planned with agent order: {:?}", executor.agent_execution_order());
         let output = executor
             .execute(
                 request.input,
@@ -43,6 +52,8 @@ where
                 request.options.max_concurrency,
             )
             .await?;
+
+        log::info!("workflow execution completed");
 
         Ok(ExecutionResponse { output })
     }
@@ -84,9 +95,21 @@ where
             message: format!("failed to send workflow start event: {error}"),
         })?;
 
-    let executor = WorkflowExecutor::from_source(&workflow_source)?;
+    log::info!("starting streamed workflow execution");
+    log::debug!(
+        "resolved workflow source for streamed execution: bytes={}, input_provided={}, secrets_provided={}, max_concurrency={}",
+        workflow_source.len(),
+        !request.input.is_null(),
+        !request.secrets.is_null(),
+        max_concurrency
+    );
+
+    let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.input, &request.secrets)?;
+    let agent_execution_order = executor.agent_execution_order();
+
+    log::debug!("streamed workflow planned with agent order: {agent_execution_order:?}");
     event_sender
-        .send(ExecutorEvent::workflow_planned(executor.agent_execution_order()))
+        .send(ExecutorEvent::workflow_planned(agent_execution_order))
         .await
         .map_err(|error| ExecutorError::Other {
             message: format!("failed to send workflow planned event: {error}"),
@@ -108,6 +131,8 @@ where
         .map_err(|error| ExecutorError::Other {
             message: format!("failed to send workflow completion event: {error}"),
         })?;
+
+    log::info!("streamed workflow execution completed");
 
     Ok(())
 }

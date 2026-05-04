@@ -1,6 +1,7 @@
 use super::fixtures;
+use crate::api::ExecutionOptions;
 use crate::service::ExecutorService;
-use crate::tests::support::{request_with_input, TestModelProvider};
+use crate::tests::support::{request_with_input, TestModelProvider, TrackingModelProvider};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -166,6 +167,74 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
     assert_eq!(server.received_tool_arguments(), Some(json!({ "project_id": 100, "task_id": 200 })));
 }
 
+#[tokio::test]
+async fn agent_dynamic_tool_call_result_is_available_in_for_loop_agent_prompt() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+            models: ["model-a"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool fetch_answer {
+            using: mcp.local.fetch_answer
+            input {
+                task_id: number
+            }
+            output {
+                answer: string
+            }
+        }
+
+        agent analyzer for task in [{ id: 1 }, { id: 2 }] {
+            model: openai("model-a")
+
+            dynamic {
+                answer: call tool.fetch_answer {
+                    input {
+                        task_id: task.id
+                    }
+                }
+            }
+
+            prompt: "Context: {{ dynamic.answer.answer }}"
+            output: string
+        }
+
+        output {
+            values: agent.analyzer
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+
+    let model_provider = TrackingModelProvider::new(vec![json!("first"), json!("second")]);
+    let service = ExecutorService::new(model_provider.clone());
+    let mut request = request_with_input(&workflow_source, Value::Null);
+
+    request.options = ExecutionOptions {
+        include_events: false,
+        max_concurrency: 1,
+    };
+
+    let output = service
+        .execute(request)
+        .await
+        .expect("agent dynamic value should be available in for-loop agent prompt")
+        .output;
+
+    assert_eq!(output["values"], json!(["first", "second"]));
+    assert_eq!(
+        model_provider.recorded_prompts(),
+        vec!["Context: answer for task 1".to_string(), "Context: answer for task 2".to_string()]
+    );
+}
+
 struct TestMcpHttpServer {
     endpoint: String,
     received_tool_arguments: Arc<Mutex<Option<Value>>>,
@@ -232,7 +301,7 @@ fn handle_mcp_request(mut stream: TcpStream, received_tool_arguments: &Arc<Mutex
             request.get("params").and_then(|params| params.get("arguments")).cloned();
     }
 
-    let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
+    let response = if let Some(response_body) = response_for_request(&request) {
         let response_body = response_body.to_string();
 
         format!(
@@ -247,17 +316,10 @@ fn handle_mcp_request(mut stream: TcpStream, received_tool_arguments: &Arc<Mutex
     stream.write_all(response.as_bytes()).expect("response should write");
 }
 
-fn response_for_method(method: Option<&str>) -> Option<Value> {
-    match method {
+fn response_for_request(request: &Value) -> Option<Value> {
+    match request.get("method").and_then(Value::as_str) {
         Some("notifications/initialized") => None,
-        Some("tools/call") => Some(json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "content": [{ "type": "text", "text": "{\"task_title\":\"Survey\",\"participants\":10}" }],
-                "structuredContent": { "task_title": "Survey", "participants": 10 }
-            }
-        })),
+        Some("tools/call") => Some(tool_call_response(request)),
         Some("tools/list") => Some(json!({
             "jsonrpc": "2.0",
             "id": 2,
@@ -288,4 +350,36 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
         })),
         _ => Some(json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
     }
+}
+
+fn tool_call_response(request: &Value) -> Value {
+    let tool_name = request.get("params").and_then(|params| params.get("name")).and_then(Value::as_str);
+
+    if tool_name == Some("fetch_answer") {
+        let task_id = request
+            .get("params")
+            .and_then(|params| params.get("arguments"))
+            .and_then(|arguments| arguments.get("task_id"))
+            .and_then(Value::as_i64)
+            .expect("fetch_answer task_id should be present");
+        let answer = format!("answer for task {task_id}");
+
+        return json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [{ "type": "text", "text": format!("{{\"answer\":\"{answer}\"}}") }],
+                "structuredContent": { "answer": answer }
+            }
+        });
+    }
+
+    json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+            "content": [{ "type": "text", "text": "{\"task_title\":\"Survey\",\"participants\":10}" }],
+            "structuredContent": { "task_title": "Survey", "participants": 10 }
+        }
+    })
 }

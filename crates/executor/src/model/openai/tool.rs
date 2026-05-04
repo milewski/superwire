@@ -8,6 +8,7 @@ use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestMessage, ChatCompletionRequestToolMessageArgs,
     ChatCompletionRequestToolMessageContent,
 };
+use jsonschema::ValidationError;
 use serde_json::Value;
 use superwire_core::mcp::{McpClient, McpServerConfig};
 
@@ -53,10 +54,46 @@ impl super::OpenAiModelProvider {
                 agent_name: request.agent_name.clone(),
                 message: format!("model requested unknown tool `{}`", tool_call.function.name),
             })?;
-        let mut arguments = serde_json::from_str::<Value>(&tool_call.function.arguments).map_err(|error| ExecutorError::Model {
-            agent_name: request.agent_name.clone(),
-            message: format!("model provided invalid arguments for tool `{}`: {error}", tool_call.function.name),
-        })?;
+        log::debug!(
+            "processing model tool call: agent={}, requested_tool={}, resolved_tool={}",
+            request.agent_name,
+            tool_call.function.name,
+            tool_definition.name
+        );
+        let mut arguments = match serde_json::from_str::<Value>(&tool_call.function.arguments) {
+            Ok(arguments) => arguments,
+            Err(error) => {
+                let tool_error = tool_argument_error(
+                    &tool_definition.name,
+                    format!("tool arguments must be valid JSON: {error}"),
+                    &tool_definition.input_schema,
+                );
+
+                request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+                log::warn!(
+                    "rejected tool call with invalid JSON arguments: agent={}, tool={}, error={}",
+                    request.agent_name,
+                    tool_definition.name,
+                    error
+                );
+
+                return Ok(tool_error);
+            }
+        };
+
+        if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
+            let tool_error = tool_argument_error(&tool_definition.name, message, &tool_definition.input_schema);
+
+            request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+            log::warn!(
+                "rejected tool call before MCP dispatch: agent={}, tool={}, error={}",
+                request.agent_name,
+                tool_definition.name,
+                tool_error.get("message").and_then(Value::as_str).unwrap_or("schema mismatch")
+            );
+
+            return Ok(tool_error);
+        }
 
         if let (Some(argument_object), Some(binding_object)) = (arguments.as_object_mut(), tool_definition.bindings.as_object()) {
             for (binding_name, binding_value) in binding_object {
@@ -78,6 +115,12 @@ impl super::OpenAiModelProvider {
                 };
 
                 request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
+                log::info!(
+                    "dispatching MCP tool call: agent={}, tool={}, mcp_tool={}",
+                    request.agent_name,
+                    tool_definition.name,
+                    tool_name
+                );
 
                 let result = McpClient::new(server_config)
                     .call_tool(tool_name, arguments)
@@ -88,6 +131,11 @@ impl super::OpenAiModelProvider {
                 let normalized_result = normalize_mcp_tool_result(result);
 
                 request.send_tool_call_completed(tool_definition.name.clone(), normalized_result.clone());
+                log::debug!(
+                    "completed MCP tool call: agent={}, tool={}",
+                    request.agent_name,
+                    tool_definition.name
+                );
 
                 Ok(normalized_result)
             }
@@ -99,8 +147,73 @@ impl super::OpenAiModelProvider {
     }
 }
 
+fn validate_tool_arguments(arguments: &Value, schema: &Value) -> Result<(), String> {
+    let validator = jsonschema::validator_for(schema).map_err(|error| format!("tool schema could not be compiled: {error}"))?;
+    let mut validation_issues = validator.iter_errors(arguments).map(format_validation_issue).collect::<Vec<_>>();
+
+    if validation_issues.is_empty() {
+        return Ok(());
+    }
+
+    validation_issues.sort();
+    validation_issues.dedup();
+
+    Err(format!(
+        "tool arguments do not match the declared schema: {}. Correct the arguments and call the tool again.",
+        validation_issues.join("; ")
+    ))
+}
+
+fn tool_argument_error(tool_name: &str, message: String, schema: &Value) -> Value {
+    serde_json::json!({
+        "error": "tool_argument_schema_mismatch",
+        "tool_name": tool_name,
+        "message": message,
+        "expected_schema": schema,
+    })
+}
+
+fn format_validation_issue(validation_error: ValidationError<'_>) -> String {
+    let instance_path = normalize_instance_path(&validation_error.instance_path().to_string());
+
+    if instance_path == "$" {
+        return validation_error.to_string();
+    }
+
+    format!("{instance_path}: {validation_error}")
+}
+
+fn normalize_instance_path(instance_path: &str) -> String {
+    if instance_path.is_empty() {
+        return "$".to_string();
+    }
+
+    let mut normalized_path = String::from("$");
+
+    for path_segment in instance_path.trim_start_matches('/').split('/') {
+        if path_segment.is_empty() {
+            continue;
+        }
+
+        if path_segment.chars().all(|character| character.is_ascii_digit()) {
+            normalized_path.push('[');
+            normalized_path.push_str(path_segment);
+            normalized_path.push(']');
+
+            continue;
+        }
+
+        normalized_path.push('.');
+        normalized_path.push_str(path_segment);
+    }
+
+    normalized_path
+}
+
 trait ToolCallEventSender {
     fn send_tool_call_started(&self, tool_name: String, arguments: Value);
+
+    fn send_tool_call_failed(&self, tool_name: String, error: Value);
 
     fn send_tool_call_completed(&self, tool_name: String, result: Value);
 }
@@ -109,6 +222,12 @@ impl ToolCallEventSender for ModelRequest {
     fn send_tool_call_started(&self, tool_name: String, arguments: Value) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::tool_call_started(self.agent_name.clone(), tool_name, arguments));
+        }
+    }
+
+    fn send_tool_call_failed(&self, tool_name: String, error: Value) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::tool_call_failed(self.agent_name.clone(), tool_name, error));
         }
     }
 

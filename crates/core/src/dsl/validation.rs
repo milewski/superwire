@@ -773,6 +773,7 @@ struct ValidationIndex {
     tool_input_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
     tool_binding_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
     tool_fixed_binding_names: HashMap<String, HashSet<String>>,
+    tool_fixed_binding_fields: HashMap<String, Vec<ObjectField>>,
     tool_output_types: HashMap<String, crate::semantic::support::types::WorkflowType>,
 }
 
@@ -992,6 +993,12 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     validation_index
                         .tool_fixed_binding_names
                         .insert(tool_declaration.name.clone(), fixed_binding_names);
+                }
+
+                if !tool_declaration.fixed_binding_fields.is_empty() {
+                    validation_index
+                        .tool_fixed_binding_fields
+                        .insert(tool_declaration.name.clone(), tool_declaration.fixed_binding_fields.clone());
                 }
 
                 if let Ok(tool_output_type) =
@@ -2346,6 +2353,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
         }
 
+        self.validate_agent_tool_binding_self_references(agent_declaration, tool_name, binding_fields);
+
         for expected_binding_name in expected_binding_fields.keys() {
             if binding_fields
                 .iter()
@@ -2403,6 +2412,69 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 Some(agent_declaration.span),
             );
         }
+    }
+
+    fn validate_agent_tool_binding_self_references(
+        &mut self,
+        agent_declaration: &AgentDeclaration,
+        tool_name: &str,
+        binding_fields: &[ObjectField],
+    ) {
+        for binding_field in binding_fields {
+            self.validate_agent_tool_binding_expression_self_reference(
+                agent_declaration,
+                tool_name,
+                &binding_field.name,
+                "agent tool binding override",
+                &binding_field.value,
+                binding_field.span,
+            );
+        }
+
+        let Some(fixed_binding_fields) = self.validation_index.tool_fixed_binding_fields.get(tool_name).cloned() else {
+            return;
+        };
+
+        for fixed_binding_field in &fixed_binding_fields {
+            self.validate_agent_tool_binding_expression_self_reference(
+                agent_declaration,
+                tool_name,
+                &fixed_binding_field.name,
+                "tool declaration binding",
+                &fixed_binding_field.value,
+                fixed_binding_field.span,
+            );
+        }
+    }
+
+    fn validate_agent_tool_binding_expression_self_reference(
+        &mut self,
+        agent_declaration: &AgentDeclaration,
+        tool_name: &str,
+        binding_name: &str,
+        binding_source: &str,
+        expression: &Expression,
+        span: SourceSpan,
+    ) {
+        let mut referenced_agents = HashSet::new();
+
+        collect_agent_dependencies_from_expression(expression, &mut referenced_agents);
+
+        if !referenced_agents.contains(&agent_declaration.name) {
+            return;
+        }
+
+        self.push_invalid_tool_binding(
+            agent_declaration,
+            tool_name,
+            format!(
+                "{binding_source} `{binding_name}` references `agent.{}` while `tool.{tool_name}` is attached to agent `{}`; \
+                 an agent cannot call a tool that requires its own output because that output is only available after the agent finishes. \
+                 Move `tool.{tool_name}` to a later agent that depends on `{}`, or bind `{binding_name}` from input, dynamic data, or a previous agent",
+                agent_declaration.name, agent_declaration.name, agent_declaration.name
+            ),
+            Some(span),
+        );
     }
 
     fn push_invalid_tool_binding(
@@ -3439,6 +3511,41 @@ mod tests {
                 tool_name: _,
                 message: _
             }
+        );
+    }
+
+    #[test]
+    fn reports_tool_binding_that_requires_current_agent_output() {
+        let workflow = parse_inline_workflow! {
+            input {
+                workspace_id: number
+            }
+
+            tool create_task_group_for_project {
+                bindings {
+                    workspace_id: input.workspace_id
+                    project_id: agent.project_creator.project_id
+                }
+            }
+
+            agent project_creator {
+                tools: [tool.create_task_group_for_project]
+                output: {
+                    project_id: number
+                }
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidToolBinding {
+                agent_name,
+                tool_name,
+                message
+            } if agent_name == "project_creator"
+                && tool_name == "create_task_group_for_project"
+                && message.contains("requires its own output")
+                && message.contains("Move `tool.create_task_group_for_project` to a later agent")
         );
     }
 
