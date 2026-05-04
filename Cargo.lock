@@ -2324,6 +2324,7 @@ dependencies = [
  "base64",
  "clap",
  "futures",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "superwire-core",
