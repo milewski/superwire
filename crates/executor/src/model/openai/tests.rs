@@ -1,0 +1,362 @@
+use super::format::{format_response_schema_name, format_tool_name};
+use super::request::OpenAiResponseMode;
+use super::response::{ChatCompletionResponseExt, OpenAiChatCompletionResponse};
+use super::OpenAiModelProvider;
+use crate::model::provider::ModelProvider;
+use crate::model::{ModelRequest, ModelToolDefinition, ModelToolSource};
+use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionToolType, FunctionCall};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use superwire_core::semantic::support::provider::OpenAIProviderConfig;
+
+#[test]
+fn formats_response_schema_name_for_openai_constraints() {
+    assert_eq!(format_response_schema_name("agent name!*"), "agent_name__");
+}
+
+#[test]
+fn formats_tool_name_for_openai_constraints() {
+    assert_eq!(format_tool_name("update user!*"), "update_user__");
+}
+
+#[test]
+fn orders_response_modes_from_strict_to_compatible() {
+    assert_eq!(
+        OpenAiResponseMode::fallback_order(),
+        [
+            OpenAiResponseMode::JsonSchema,
+            OpenAiResponseMode::JsonObject,
+            OpenAiResponseMode::InstructionOnly,
+        ]
+    );
+}
+
+#[test]
+fn preserves_reasoning_content_on_assistant_tool_call_replay() {
+    let response: OpenAiChatCompletionResponse = serde_json::from_value(json!({
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "reasoning_content": "I need to call the tool first.",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "update_user_name",
+                        "arguments": "{\"user_name\":\"Ada\"}"
+                    }
+                }]
+            }
+        }]
+    }))
+    .expect("response should deserialize");
+
+    let message = response
+        .extract_tool_call_message()
+        .expect("assistant tool call message should extract");
+
+    assert_eq!(message.get("role"), Some(&json!("assistant")));
+    assert_eq!(message.get("reasoning_content"), Some(&json!("I need to call the tool first.")));
+    assert_eq!(message.get("tool_calls").and_then(Value::as_array).map(Vec::len), Some(1));
+}
+
+#[tokio::test]
+async fn replays_reasoning_content_after_tool_call() {
+    let provider = OpenAiModelProvider;
+    let model_server = TestOpenAiHttpServer::spawn(vec![
+        json!({
+            "id": "chatcmpl_1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "deepseek-reasoner",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "reasoning_content": "I should update the user name before answering.",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "update_user_name",
+                            "arguments": "{\"user_name\":\"Ada\"}"
+                        }
+                    }]
+                }
+            }]
+        }),
+        json!({
+            "id": "chatcmpl_2",
+            "object": "chat.completion",
+            "created": 2,
+            "model": "deepseek-reasoner",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"success\":true}"
+                }
+            }]
+        }),
+    ]);
+    let mcp_server = TestMcpHttpServer::spawn();
+    let request = model_request(model_server.endpoint(), mcp_server.endpoint());
+
+    let response = provider.generate(request).await.expect("model should complete");
+
+    assert_eq!(response.output, json!({ "success": true }));
+    let requests = model_server.requests();
+    let second_request = requests.get(1).expect("second chat completion request should be sent");
+    let assistant_message = second_request
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| messages.iter().find(|message| message.get("role") == Some(&json!("assistant"))))
+        .expect("assistant tool call message should be replayed");
+
+    assert_eq!(
+        assistant_message.get("reasoning_content"),
+        Some(&json!("I should update the user name before answering."))
+    );
+}
+
+#[test]
+fn executes_mcp_tool_call_from_model_request() {
+    let provider = OpenAiModelProvider;
+    let server = TestMcpHttpServer::spawn();
+    let request = model_request("https://api.openai.com/v1".to_string(), server.endpoint());
+    let tool_call = ChatCompletionMessageToolCall {
+        id: "call_1".to_string(),
+        r#type: ChatCompletionToolType::Function,
+        function: FunctionCall {
+            name: "update_user_name".to_string(),
+            arguments: serde_json::json!({ "user_id": 999, "user_name": "Ada" }).to_string(),
+        },
+    };
+
+    let result = provider
+        .execute_tool_call(&request, &tool_call)
+        .expect("MCP tool call should execute");
+
+    assert_eq!(result, serde_json::json!({ "success": true }));
+    assert_eq!(
+        server.received_tool_arguments(),
+        Some(serde_json::json!({
+            "project_id": 14,
+            "user_id": 123,
+            "user_name": "Ada"
+        }))
+    );
+}
+
+fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
+    ModelRequest {
+        agent_name: "updater".to_string(),
+        provider_config: OpenAIProviderConfig {
+            endpoint: model_endpoint,
+            api_key: "test-api-key".to_string(),
+        },
+        model_name: "deepseek-reasoner".to_string(),
+        prompt: "Rename the user".to_string(),
+        output_schema: serde_json::json!({ "type": "object" }),
+        tools: vec![ModelToolDefinition {
+            name: "update_user_name".to_string(),
+            description: Some("Update a user name".to_string()),
+            source: ModelToolSource::Mcp {
+                server_name: Some("local".to_string()),
+                tool_name: "update-user-name".to_string(),
+                endpoint: mcp_endpoint,
+                headers: [("Authorization".to_string(), "Bearer test-token".to_string())].into(),
+            },
+            input_schema: serde_json::json!({ "type": "object" }),
+            output_schema: serde_json::json!({ "type": "object" }),
+            bindings: serde_json::json!({ "project_id": 14, "user_id": 123 }),
+        }],
+        event_sender: None,
+    }
+}
+
+struct TestMcpHttpServer {
+    endpoint: String,
+    received_tool_arguments: Arc<Mutex<Option<Value>>>,
+}
+
+struct TestOpenAiHttpServer {
+    endpoint: String,
+    requests: Arc<Mutex<Vec<Value>>>,
+}
+
+impl TestOpenAiHttpServer {
+    fn spawn(responses: Vec<Value>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test OpenAI listener should bind");
+        let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let thread_requests = Arc::clone(&requests);
+        let responses = Arc::new(Mutex::new(responses));
+        let thread_responses = Arc::clone(&responses);
+
+        thread::spawn(move || {
+            let response_count = thread_responses.lock().expect("responses lock should not be poisoned").len();
+
+            for incoming_stream in listener.incoming().take(response_count) {
+                let stream = incoming_stream.expect("test OpenAI stream should open");
+                handle_openai_request(stream, &thread_requests, &thread_responses);
+            }
+        });
+
+        Self { endpoint, requests }
+    }
+
+    fn endpoint(&self) -> String {
+        self.endpoint.clone()
+    }
+
+    fn requests(&self) -> Vec<Value> {
+        self.requests.lock().expect("requests lock should not be poisoned").clone()
+    }
+}
+
+impl TestMcpHttpServer {
+    fn spawn() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
+        let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
+        let received_tool_arguments = Arc::new(Mutex::new(None));
+        let thread_received_tool_arguments = Arc::clone(&received_tool_arguments);
+
+        thread::spawn(move || {
+            for incoming_stream in listener.incoming().take(3) {
+                let stream = incoming_stream.expect("test MCP stream should open");
+                handle_mcp_request(stream, &thread_received_tool_arguments);
+            }
+        });
+
+        Self {
+            endpoint,
+            received_tool_arguments,
+        }
+    }
+
+    fn endpoint(&self) -> String {
+        self.endpoint.clone()
+    }
+
+    fn received_tool_arguments(&self) -> Option<Value> {
+        self.received_tool_arguments
+            .lock()
+            .expect("received tool arguments lock should not be poisoned")
+            .clone()
+    }
+}
+
+fn handle_mcp_request(mut stream: TcpStream, received_tool_arguments: &Arc<Mutex<Option<Value>>>) {
+    let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
+    let mut request_headers = BTreeMap::new();
+    let mut content_length = 0_usize;
+    let mut header_line = String::new();
+
+    loop {
+        header_line.clear();
+        reader.read_line(&mut header_line).expect("header line should read");
+
+        if header_line == "\r\n" || header_line.is_empty() {
+            break;
+        }
+
+        if let Some(value) = header_line.to_ascii_lowercase().strip_prefix("content-length:") {
+            content_length = value.trim().parse().expect("content length should parse");
+        }
+
+        if let Some((header_name, header_value)) = header_line.trim_end().split_once(':') {
+            request_headers.insert(header_name.to_ascii_lowercase(), header_value.trim().to_string());
+        }
+    }
+
+    assert_eq!(
+        request_headers.get("authorization"),
+        Some(&"Bearer test-token".to_string()),
+        "expected MCP request authorization header"
+    );
+
+    let mut request_body = vec![0_u8; content_length];
+    reader.read_exact(&mut request_body).expect("request body should read");
+    let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
+
+    if request.get("method").and_then(Value::as_str) == Some("tools/call") {
+        *received_tool_arguments
+            .lock()
+            .expect("received tool arguments lock should not be poisoned") =
+            request.get("params").and_then(|params| params.get("arguments")).cloned();
+    }
+
+    let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
+        let response_body = response_body.to_string();
+
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        )
+    } else {
+        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+    };
+
+    stream.write_all(response.as_bytes()).expect("response should write");
+}
+
+fn handle_openai_request(mut stream: TcpStream, requests: &Arc<Mutex<Vec<Value>>>, responses: &Arc<Mutex<Vec<Value>>>) {
+    let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
+    let mut content_length = 0_usize;
+    let mut header_line = String::new();
+
+    loop {
+        header_line.clear();
+        reader.read_line(&mut header_line).expect("header line should read");
+
+        if header_line == "\r\n" || header_line.is_empty() {
+            break;
+        }
+
+        if let Some(value) = header_line.to_ascii_lowercase().strip_prefix("content-length:") {
+            content_length = value.trim().parse().expect("content length should parse");
+        }
+    }
+
+    let mut request_body = vec![0_u8; content_length];
+    reader.read_exact(&mut request_body).expect("request body should read");
+    let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
+
+    requests.lock().expect("requests lock should not be poisoned").push(request);
+
+    let response_body = responses
+        .lock()
+        .expect("responses lock should not be poisoned")
+        .remove(0)
+        .to_string();
+    let response = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+        response_body.len(),
+        response_body
+    );
+
+    stream.write_all(response.as_bytes()).expect("response should write");
+}
+
+fn response_for_method(method: Option<&str>) -> Option<Value> {
+    match method {
+        Some("notifications/initialized") => None,
+        Some("tools/call") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [{ "type": "text", "text": "{\"success\":true}" }],
+                "structuredContent": { "success": true }
+            }
+        })),
+        _ => Some(json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
+    }
+}
