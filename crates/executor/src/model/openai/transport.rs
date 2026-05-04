@@ -32,14 +32,25 @@ impl OpenAiChatCompletionClient {
         request: &ModelRequest,
         completion_request: OpenAiChatCompletionRequest,
     ) -> Result<super::response::OpenAiChatCompletionResponse, String> {
+        let endpoint = request.chat_completions_endpoint();
+        log::debug!(
+            "sending HTTP request to AI provider: agent={}, endpoint={}, model={}, messages={}, tools={}",
+            request.agent_name,
+            endpoint,
+            completion_request.model,
+            completion_request.messages.len(),
+            completion_request.tools.len()
+        );
         let response = self
             .client
-            .post(request.chat_completions_endpoint())
+            .post(endpoint)
             .bearer_auth(&request.provider_config.api_key)
             .json(&completion_request)
             .send()
             .await
             .map_err(|error| error.to_string())?;
+
+        log::debug!("AI provider responded: agent={}, status={}", request.agent_name, response.status());
 
         OpenAiChatCompletionResponseText::from_response(response).await?.deserialize()
     }

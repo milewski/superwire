@@ -10,14 +10,18 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
+    colog::init();
+
     if let Err(error) = run().await {
-        eprintln!("{error}");
+        log::error!("executor failed: {error}");
         std::process::exit(1);
     }
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    log::info!("starting executor server on {}", cli.address);
 
     serve_executor(cli.address).await?;
 

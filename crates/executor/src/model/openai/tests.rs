@@ -2,6 +2,7 @@ use super::format::{format_response_schema_name, format_tool_name};
 use super::request::OpenAiResponseMode;
 use super::response::{ChatCompletionResponseExt, OpenAiChatCompletionResponse};
 use super::OpenAiModelProvider;
+use crate::event::ExecutorEventKind;
 use crate::model::provider::ModelProvider;
 use crate::model::{ModelRequest, ModelToolDefinition, ModelToolSource};
 use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionToolType, FunctionCall};
@@ -151,6 +152,79 @@ fn executes_mcp_tool_call_from_model_request() {
             "user_id": 123,
             "user_name": "Ada"
         }))
+    );
+}
+
+#[test]
+fn rejects_invalid_tool_arguments_before_mcp_call() {
+    let provider = OpenAiModelProvider;
+    let server = TestMcpHttpServer::spawn();
+    let mut request = model_request("https://api.openai.com/v1".to_string(), server.endpoint());
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(4);
+
+    request.event_sender = Some(event_sender);
+    request.tools[0].input_schema = json!({
+        "type": "object",
+        "properties": {
+            "primary_language": {
+                "type": "string",
+                "enum": ["en_US", "es", "fr"]
+            },
+            "languages": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": ["en_US", "es", "fr"]
+                }
+            }
+        },
+        "required": ["primary_language", "languages"],
+        "additionalProperties": false
+    });
+    let tool_call = ChatCompletionMessageToolCall {
+        id: "call_1".to_string(),
+        r#type: ChatCompletionToolType::Function,
+        function: FunctionCall {
+            name: "update_user_name".to_string(),
+            arguments: json!({
+                "primary_language": "en",
+                "languages": ["en", "es", "fr"]
+            })
+            .to_string(),
+        },
+    };
+
+    let result = provider
+        .execute_tool_call(&request, &tool_call)
+        .expect("invalid tool arguments should be returned as a tool result");
+
+    assert_eq!(result["error"], "tool_argument_schema_mismatch");
+    assert_eq!(result["tool_name"], "update_user_name");
+    assert!(result["message"]
+        .as_str()
+        .expect("error message should be string")
+        .contains("primary_language"));
+    assert!(result["message"]
+        .as_str()
+        .expect("error message should be string")
+        .contains("en_US"));
+    assert_eq!(server.received_tool_arguments(), None);
+
+    let event = event_receiver.try_recv().expect("tool call failure event should be emitted");
+
+    assert_eq!(event.kind, ExecutorEventKind::ToolCallFailed);
+    assert_eq!(event.agent_name.as_deref(), Some("updater"));
+    assert_eq!(
+        event.data.as_ref().and_then(|data| data.get("tool_name")),
+        Some(&json!("update_user_name"))
+    );
+    assert_eq!(
+        event.data.as_ref().and_then(|data| data.pointer("/error/error")),
+        Some(&json!("tool_argument_schema_mismatch"))
+    );
+    assert!(
+        event_receiver.try_recv().is_err(),
+        "tool_call_started should not be emitted for invalid arguments"
     );
 }
 

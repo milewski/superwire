@@ -9,6 +9,7 @@ pub enum ExecutorEventKind {
     AgentStarted,
     AgentCompleted,
     ToolCallStarted,
+    ToolCallFailed,
     ToolCallCompleted,
     WorkflowCompleted,
     WorkflowFailed,
@@ -23,6 +24,7 @@ impl ExecutorEventKind {
             Self::AgentStarted => "agent_started",
             Self::AgentCompleted => "agent_completed",
             Self::ToolCallStarted => "tool_call_started",
+            Self::ToolCallFailed => "tool_call_failed",
             Self::ToolCallCompleted => "tool_call_completed",
             Self::WorkflowCompleted => "workflow_completed",
             Self::WorkflowFailed => "workflow_failed",
@@ -91,6 +93,16 @@ impl ExecutorEvent {
             .with_data(serde_json::json!({
                 "tool_name": tool_name,
                 "result": result,
+            }))
+    }
+
+    #[must_use]
+    pub fn tool_call_failed(agent_name: String, tool_name: String, error: Value) -> Self {
+        Self::new(ExecutorEventKind::ToolCallFailed)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "tool_name": tool_name,
+                "error": error,
             }))
     }
 
