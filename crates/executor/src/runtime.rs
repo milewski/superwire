@@ -12,8 +12,8 @@ use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use superwire_core::dsl::{
-    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, Declaration, Expression, ObjectField, Reference,
-    ReferenceKeyword, ToolCall, ToolSource, Workflow,
+    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
+    ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
 use superwire_core::mcp::{McpClient, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -433,7 +433,8 @@ impl WorkflowExecutor {
     where
         ModelProviderType: ModelProvider,
     {
-        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+        let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, runtime_state, event_sender.as_ref())?;
+        let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
         let provider_template = self
             .execution_plan
             .provider_index
@@ -614,6 +615,39 @@ impl WorkflowExecutor {
         }
 
         Ok(Value::Object(output_fields))
+    }
+
+    fn execute_agent_dynamic_blocks(
+        &self,
+        planned_agent: &PlannedAgent,
+        runtime_state: &RuntimeState,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<HashMap<String, Value>, ExecutorError> {
+        let mut dynamic_values = HashMap::new();
+
+        for agent_property in &planned_agent.declaration.properties {
+            let AgentProperty::Dynamic(dynamic_block) = agent_property else {
+                continue;
+            };
+
+            for dynamic_field in &dynamic_block.fields {
+                let field_value = match &dynamic_field.value {
+                    Expression::ToolCall(tool_call) => self.execute_deterministic_tool_call(
+                        tool_call,
+                        &runtime_state.evaluation_context(dynamic_values.clone()),
+                        event_sender,
+                    )?,
+                    _ => evaluate_expression(
+                        &dynamic_field.value,
+                        &runtime_state.evaluation_context(dynamic_values.clone()),
+                        &format!("dynamic field `{}` for agent `{}`", dynamic_field.name, planned_agent.name),
+                    )?,
+                };
+                dynamic_values.insert(dynamic_field.name.clone(), field_value);
+            }
+        }
+
+        Ok(dynamic_values)
     }
 
     fn resolve_agent_tool_definitions(
