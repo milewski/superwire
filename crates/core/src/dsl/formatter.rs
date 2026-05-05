@@ -348,29 +348,6 @@ impl ToolDeclaration {
             formatter.push_line(&format!("description: {}", render_plain_string_literal(description)));
 
             if !self.input_fields.is_empty()
-                || self.source.is_some()
-                || !self.binding_fields.is_empty()
-                || !self.fixed_binding_fields.is_empty()
-                || !self.output_fields.is_empty()
-            {
-                formatter.push_newline();
-            }
-        }
-
-        if let Some(source) = &self.source {
-            if let Some(mcp_tool_name) = source.mcp_tool_name() {
-                match source {
-                    super::ast::ToolSource::Mcp(mcp_tool_source) => {
-                        if let Some(server_name) = &mcp_tool_source.server_name {
-                            formatter.push_line(&format!("using: mcp.{server_name}.{mcp_tool_name}"));
-                        } else {
-                            formatter.push_line(&format!("using: mcp.{mcp_tool_name}"));
-                        }
-                    }
-                }
-            }
-
-            if !self.input_fields.is_empty()
                 || !self.binding_fields.is_empty()
                 || !self.fixed_binding_fields.is_empty()
                 || !self.output_fields.is_empty()

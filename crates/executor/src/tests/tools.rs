@@ -31,16 +31,9 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
             user_id: number
         }
 
-        tool local_update_user {
-            description: "Update a user name"
-            using: mcp.local.update_user_name
-
+        tool local_update_user from mcp.local.tool.update_user_name {
             bindings {
                 user_id: input.user_id
-            }
-
-            input {
-                user_name: string
             }
         }
 
@@ -438,9 +431,7 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
             task_id: number
         }
 
-        tool list_participants {
-            using: mcp.local.list_participants
-
+        tool list_participants from mcp.local.tool.list_participants {
             bindings {
                 project_id: input.project_id
                 task_id: input.task_id
@@ -495,10 +486,7 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
             user_id: number
         }
 
-        tool local_update_user {
-            description: "Update a user name"
-            using: mcp.local.update_user_name
-
+        tool local_update_user from mcp.local.tool.update_user_name {
             bindings {
                 user_id: input.user_id
             }

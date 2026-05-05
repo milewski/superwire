@@ -34,14 +34,12 @@ mcp_import_bindings_property = { "bindings" ~ object_expression }
 mcp_import_params_property = { "params" ~ object_expression }
 
 tool_block = { "{" ~ tool_property* ~ "}" }
-tool_property = _{ tool_description_property | tool_using_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
+tool_property = _{ tool_description_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
 tool_description_property = { "description" ~ ":" ~ plain_string_literal }
-tool_using_property = { "using" ~ ":" ~ mcp_tool_reference }
 tool_input_property = { "input" ~ typed_block }
 tool_bindings_property = { "bindings" ~ tool_bindings_block }
 tool_output_property = { "output" ~ typed_block }
 tool_input_field = { typed_field }
-mcp_tool_reference = { "mcp" ~ "." ~ (identifier ~ ".")? ~ mcp_tool_name }
 mcp_tool_name = { mcp_tool_name_segment ~ ("-" ~ mcp_tool_name_segment)* }
 mcp_tool_name_segment = @{ (ASCII_ALPHA | ASCII_DIGIT | "_")+ }
 

@@ -1,6 +1,5 @@
 use superwire_core::dsl::{
-    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword,
-    ToolCallKeyword, ToolPropertyName,
+    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, ToolCallKeyword,
 };
 
 use crate::protocol::{Position, Range};
@@ -68,12 +67,6 @@ impl DocumentState {
                     &tool_call_binding_completion_context.binding_prefix,
                     &tool_call_binding_completion_context.existing_binding_names,
                 );
-            }
-        }
-
-        if !inside_interpolation_expression {
-            if let Some(tool_property_suggestions) = Self::tool_property_value_suggestions(&semantic_index, &line_prefix) {
-                return tool_property_suggestions;
             }
         }
 
@@ -537,17 +530,6 @@ impl DocumentState {
             CompletionScope::ToolProperties => Some(tool_property_scope_suggestions(line_prefix)),
             CompletionScope::General | CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => None,
         }
-    }
-
-    fn tool_property_value_suggestions(semantic_index: &SemanticIndex, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
-        let trimmed_line_prefix = line_prefix.trim_start();
-        let (property_name, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
-
-        if trailing_identifier(property_name.trim_end()).and_then(ToolPropertyName::from_identifier) != Some(ToolPropertyName::Using) {
-            return None;
-        }
-
-        Some(semantic_index.mcp_tool_source_suggestions(value_prefix.trim_start()))
     }
 
     fn should_defer_to_reference_completion(line_prefix: &str) -> bool {
