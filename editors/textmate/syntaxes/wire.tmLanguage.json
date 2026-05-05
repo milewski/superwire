@@ -256,7 +256,7 @@
           "name": "variable.parameter.wire"
         },
         {
-          "match": "\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call|mcp)\\b",
+          "match": "(?<![.-])\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call|mcp)\\b(?![.-])",
           "name": "keyword.control.wire"
         },
         {
@@ -288,6 +288,9 @@
         },
         {
           "include": "#tool-calls"
+        },
+        {
+          "include": "#mcp-tool-sources"
         },
         {
           "include": "#namespaced-function-calls"
@@ -431,6 +434,30 @@
         },
         {
           "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-tool-sources": {
+      "patterns": [
+        {
+          "match": "\\b(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_-]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.wire"
+            },
+            "2": {
+              "name": "punctuation.accessor.wire"
+            },
+            "3": {
+              "name": "entity.name.namespace.wire"
+            },
+            "4": {
+              "name": "punctuation.accessor.wire"
+            },
+            "5": {
+              "name": "entity.name.function.wire"
+            }
+          }
         }
       ]
     },
