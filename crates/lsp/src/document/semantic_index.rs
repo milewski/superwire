@@ -534,23 +534,18 @@ impl SemanticIndex {
             return Vec::new();
         };
 
-        let Some(properties) = mcp_tool_lock.input_schema.get("properties").and_then(serde_json::Value::as_object) else {
+        let Some(properties) = &mcp_tool_lock.input_schema.properties else {
             return Vec::new();
         };
 
-        let required_fields = mcp_tool_lock
-            .input_schema
-            .get("required")
-            .and_then(serde_json::Value::as_array)
-            .map(|required| required.iter().filter_map(serde_json::Value::as_str).collect::<Vec<_>>())
-            .unwrap_or_default();
+        let required_fields = &mcp_tool_lock.input_schema.required;
 
         properties
             .iter()
             .filter(|(field_name, _)| field_name.starts_with(field_prefix))
             .filter(|(field_name, _)| !existing_field_names.contains(field_name))
             .map(|(field_name, field_schema)| {
-                let is_required = required_fields.contains(&field_name.as_str());
+                let is_required = required_fields.contains(field_name);
                 let field_type = field_schema.get("type").and_then(serde_json::Value::as_str).unwrap_or("string");
                 let description = field_schema
                     .get("description")
