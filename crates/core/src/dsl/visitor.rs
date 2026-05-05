@@ -134,6 +134,7 @@ impl AstVisitor {
         let mut description = None;
         let mut input_fields = Vec::new();
         let mut binding_fields = Vec::new();
+        let mut max_calls = None;
         let mut fixed_binding_fields = Vec::new();
         let mut output_fields = Vec::new();
 
@@ -142,6 +143,10 @@ impl AstVisitor {
                 Rule::tool_description_property => {
                     let description_pair = self.first_inner_pair(tool_property_pair, "tool description property")?;
                     description = Some(self.parse_string_literal(description_pair)?);
+                }
+                Rule::tool_max_calls_property => {
+                    let max_calls_pair = self.first_inner_pair(tool_property_pair, "tool max calls property")?;
+                    max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool max calls property")?);
                 }
                 Rule::tool_input_property => {
                     let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool input property")?;
@@ -168,6 +173,7 @@ impl AstVisitor {
         Ok(Declaration::Tool(ToolDeclaration {
             name: tool_name,
             description,
+            max_calls,
             source: None,
             imported: false,
             input_fields,
@@ -194,16 +200,17 @@ impl AstVisitor {
             (None, first_pair)
         };
         let source = self.visit_mcp_import_source(source_pair)?;
-        let fixed_binding_fields = inner_pairs
+        let (fixed_binding_fields, max_calls) = inner_pairs
             .next()
-            .map(|block_pair| self.visit_mcp_import_block(block_pair))
+            .map(|block_pair| self.visit_tool_import_block(block_pair))
             .transpose()?
-            .unwrap_or_default();
+            .unwrap_or_else(|| (Vec::new(), None));
         let name = alias.unwrap_or_else(|| source.inferred_local_name());
 
         Ok(Declaration::Tool(ToolDeclaration {
             name,
             description: None,
+            max_calls,
             source: Some(ToolSource::Mcp(source.as_tool_source())),
             imported: true,
             input_fields: Vec::new(),
@@ -300,6 +307,27 @@ impl AstVisitor {
         }
 
         Ok(parameters)
+    }
+
+    fn visit_tool_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<(Vec<ObjectField>, Option<u64>), DslParseError> {
+        let mut fixed_bindings = Vec::new();
+        let mut max_calls = None;
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::mcp_import_bindings_property => {
+                    let object_expression_pair = self.first_inner_pair(property_pair, "tool import bindings")?;
+                    fixed_bindings.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                Rule::tool_max_calls_property => {
+                    let max_calls_pair = self.first_inner_pair(property_pair, "tool import max calls")?;
+                    max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool import max calls")?);
+                }
+                _ => unreachable!("tool import block should contain only valid properties"),
+            }
+        }
+
+        Ok((fixed_bindings, max_calls))
     }
 
     fn visit_mcp_declaration(&self, mcp_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
@@ -614,12 +642,17 @@ impl AstVisitor {
         };
 
         let mut binding_fields = Vec::new();
+        let mut max_calls = None;
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
                 Rule::tool_call_bindings_property => {
                     let object_expression_pair = self.first_inner_pair(property_pair, "agent tool binding bindings property")?;
                     binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                Rule::tool_call_max_calls_property => {
+                    let max_calls_pair = self.first_inner_pair(property_pair, "agent tool binding max calls property")?;
+                    max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "agent tool binding max calls property")?);
                 }
                 _ => unreachable!("agent tool binding block should contain only valid agent tool binding property rules"),
             }
@@ -629,6 +662,7 @@ impl AstVisitor {
             callee,
             input_fields: Vec::new(),
             binding_fields,
+            max_calls,
             span: agent_tool_binding_span,
         }))
     }
@@ -856,6 +890,7 @@ impl AstVisitor {
         let callee = self.visit_reference(callee_pair)?;
         let mut input_fields = Vec::new();
         let mut binding_fields = Vec::new();
+        let mut max_calls = None;
 
         if let Some(block_pair) = inner_pairs.next() {
             for property_pair in block_pair.into_inner() {
@@ -868,6 +903,10 @@ impl AstVisitor {
                         let object_expression_pair = self.first_inner_pair(property_pair, "tool call bindings property")?;
                         binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
                     }
+                    Rule::tool_call_max_calls_property => {
+                        let max_calls_pair = self.first_inner_pair(property_pair, "tool call max calls property")?;
+                        max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool call max calls property")?);
+                    }
                     _ => unreachable!("tool call block should contain only valid tool call property rules"),
                 }
             }
@@ -877,6 +916,7 @@ impl AstVisitor {
             callee,
             input_fields,
             binding_fields,
+            max_calls,
             span: tool_call_span,
         })
     }

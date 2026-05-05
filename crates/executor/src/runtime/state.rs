@@ -1,3 +1,4 @@
+use crate::model::ToolCallTracker;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use superwire_core::semantic::support::expression::EvaluationContext;
@@ -9,6 +10,7 @@ pub struct RuntimeState {
     agent_outputs: HashMap<String, Value>,
     agent_contexts: HashMap<String, Value>,
     local_bindings: HashMap<String, Value>,
+    tool_call_tracker: ToolCallTracker,
 }
 
 impl RuntimeState {
@@ -20,6 +22,7 @@ impl RuntimeState {
             agent_outputs: HashMap::new(),
             agent_contexts: HashMap::new(),
             local_bindings: HashMap::new(),
+            tool_call_tracker: ToolCallTracker::default(),
         }
     }
 
@@ -47,5 +50,10 @@ impl RuntimeState {
     pub fn insert_agent_result(&mut self, agent_name: String, output: Value, context: Value) {
         self.agent_outputs.insert(agent_name.clone(), output);
         self.agent_contexts.insert(agent_name, context);
+    }
+
+    #[must_use]
+    pub fn tool_call_tracker(&self) -> ToolCallTracker {
+        self.tool_call_tracker.clone()
     }
 }

@@ -21,3 +21,4 @@ pub const MIXED_OUTPUT: &str = include_str!("../../tests/fixtures/020_mixed_outp
 pub const MCP_READ_RESOURCE: &str = include_str!("../../tests/fixtures/022_mcp_read_resource.wire");
 pub const MCP_RENDER_PROMPT: &str = include_str!("../../tests/fixtures/023_mcp_render_prompt.wire");
 pub const MCP_READ_RENDER_DEPENDENCIES: &str = include_str!("../../tests/fixtures/024_mcp_read_render_dependencies.wire");
+pub const TOOL_MAX_CALLS_SCOPES: &str = include_str!("../../tests/fixtures/025_tool_max_calls_scopes.wire");

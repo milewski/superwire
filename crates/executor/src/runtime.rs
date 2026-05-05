@@ -4,7 +4,9 @@ pub mod state;
 pub use error::ExecutorError;
 
 use crate::event::ExecutorEvent;
-use crate::model::{normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource};
+use crate::model::{
+    normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker,
+};
 use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -148,10 +150,11 @@ impl WorkflowExecutor {
         let input_values = self.resolve_input_values(&input)?;
         let secret_values = self.resolve_secret_values(&secrets)?;
         let mut runtime_state = RuntimeState::new(input_values, secret_values);
+        let tool_call_tracker = ToolCallTracker::default();
 
         log::info!("executing workflow runtime");
 
-        self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref())?;
+        self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref(), &tool_call_tracker)?;
 
         let import_context = self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
 
@@ -202,6 +205,7 @@ impl WorkflowExecutor {
                 let runtime_state_snapshot = runtime_state_snapshot.clone();
                 let event_sender = event_sender.clone();
                 let import_context = import_context.clone();
+                let tool_call_tracker = tool_call_tracker.clone();
 
                 pending_executions.push(async move {
                     self.execute_agent(
@@ -210,6 +214,7 @@ impl WorkflowExecutor {
                         model_provider,
                         event_sender,
                         &import_context,
+                        &tool_call_tracker,
                     )
                     .await
                 });
@@ -222,7 +227,7 @@ impl WorkflowExecutor {
             }
         }
 
-        let output = self.evaluate_workflow_output(&runtime_state)?;
+        let output = self.evaluate_workflow_output(&runtime_state, &tool_call_tracker)?;
 
         validate_value_against_type(&output, &self.execution_plan.workflow_output_type).map_err(|message| {
             ExecutorError::OutputTypeMismatch {
@@ -393,6 +398,7 @@ impl WorkflowExecutor {
         &self,
         runtime_state: &mut RuntimeState,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &ToolCallTracker,
     ) -> Result<(), ExecutorError> {
         for declaration in self.workflow.declarations() {
             let Declaration::Dynamic(dynamic_block) = declaration else {
@@ -405,6 +411,7 @@ impl WorkflowExecutor {
                     &runtime_state.evaluation_context(HashMap::new()),
                     &format!("dynamic field `{}`", dynamic_field.name),
                     event_sender,
+                    tool_call_tracker,
                 )?;
                 runtime_state.insert_local_binding(dynamic_field.name.clone(), field_value);
             }
@@ -418,6 +425,7 @@ impl WorkflowExecutor {
         tool_call: &ToolCall,
         evaluation_context: &EvaluationContext,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &ToolCallTracker,
     ) -> Result<Value, ExecutorError> {
         let tool_name = tool_call.callee.tool_name().ok_or_else(|| ExecutorError::Other {
             message: "deterministic tool call must use `tool.<name>` reference".to_string(),
@@ -426,6 +434,11 @@ impl WorkflowExecutor {
         let typed_tool = self.execution_plan.tools.get(tool_name).ok_or_else(|| ExecutorError::Other {
             message: format!("deterministic tool call references unknown tool `{tool_name}`"),
         })?;
+
+        tool_call_tracker
+            .register_call(tool_name, typed_tool.declaration.max_calls, &ToolCallLimitScope::Workflow)
+            .map_err(|message| ExecutorError::Other { message })?;
+
         let bindings = typed_tool.resolve_bindings(&tool_call.binding_fields, evaluation_context)?;
         let source = self.model_tool_source(&typed_tool.declaration, evaluation_context)?;
         let mut input_arguments = Map::new();
@@ -436,6 +449,7 @@ impl WorkflowExecutor {
                 evaluation_context,
                 &format!("input field `{}` for tool `{}`", input_field.name, tool_name),
                 event_sender,
+                tool_call_tracker,
             )?;
             input_arguments.insert(input_field.name.clone(), input_value);
         }
@@ -510,11 +524,13 @@ impl WorkflowExecutor {
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
         import_context: &str,
+        tool_call_tracker: &ToolCallTracker,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
         ModelProviderType: ModelProvider,
     {
-        let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, runtime_state, event_sender.as_ref())?;
+        let agent_dynamic_values =
+            self.execute_agent_dynamic_blocks(planned_agent, runtime_state, event_sender.as_ref(), tool_call_tracker)?;
         let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
         log::info!("starting agent `{}`", planned_agent.name);
         let provider_template = self
@@ -544,6 +560,7 @@ impl WorkflowExecutor {
             &evaluation_context,
             &format!("prompt for agent `{}`", planned_agent.name),
             None,
+            tool_call_tracker,
         )?);
         let prompt = if import_context.is_empty() {
             agent_prompt
@@ -585,6 +602,7 @@ impl WorkflowExecutor {
                 tools: tool_definitions,
                 event_sender: event_sender.clone(),
                 mcp_pool: self.mcp_pool.clone(),
+                tool_call_tracker: tool_call_tracker.clone(),
             })
             .await?;
 
@@ -652,6 +670,7 @@ impl WorkflowExecutor {
         let semaphore = Arc::new(Semaphore::new(concurrency_limit));
         let mut pending_iterations = FuturesUnordered::new();
         let agent_name = planned_agent.name.clone();
+        let tool_call_tracker = runtime_state.tool_call_tracker();
 
         for item in items {
             let mut iteration_state = runtime_state.clone();
@@ -660,6 +679,7 @@ impl WorkflowExecutor {
             let event_sender_clone = event_sender.clone();
             let agent_clone = planned_agent.clone();
             let iteration_import_context = import_context.to_string();
+            let tool_call_tracker = tool_call_tracker.clone();
 
             pending_iterations.push(async move {
                 let permit = semaphore_clone.acquire_owned().await.map_err(|error| ExecutorError::Other {
@@ -672,6 +692,7 @@ impl WorkflowExecutor {
                         model_provider,
                         event_sender_clone,
                         &iteration_import_context,
+                        &tool_call_tracker,
                     )
                     .await;
                 drop(permit);
@@ -712,12 +733,13 @@ impl WorkflowExecutor {
         Ok(())
     }
 
-    fn evaluate_workflow_output(&self, runtime_state: &RuntimeState) -> Result<Value, ExecutorError> {
+    fn evaluate_workflow_output(&self, runtime_state: &RuntimeState, tool_call_tracker: &ToolCallTracker) -> Result<Value, ExecutorError> {
         let mut output_fields = Map::new();
         let evaluation_context = runtime_state.evaluation_context(HashMap::new());
 
         for output_field in &self.execution_plan.output_declaration.fields {
-            let output_value = self.evaluate_runtime_expression(&output_field.value, &evaluation_context, "workflow output", None)?;
+            let output_value =
+                self.evaluate_runtime_expression(&output_field.value, &evaluation_context, "workflow output", None, tool_call_tracker)?;
             output_fields.insert(output_field.name.clone(), output_value);
         }
 
@@ -729,6 +751,7 @@ impl WorkflowExecutor {
         planned_agent: &PlannedAgent,
         runtime_state: &RuntimeState,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &ToolCallTracker,
     ) -> Result<HashMap<String, Value>, ExecutorError> {
         let mut dynamic_values = HashMap::new();
 
@@ -743,6 +766,7 @@ impl WorkflowExecutor {
                     &runtime_state.evaluation_context(dynamic_values.clone()),
                     &format!("dynamic field `{}` for agent `{}`", dynamic_field.name, planned_agent.name),
                     event_sender,
+                    tool_call_tracker,
                 )?;
                 dynamic_values.insert(dynamic_field.name.clone(), field_value);
             }
@@ -779,6 +803,7 @@ impl WorkflowExecutor {
         evaluation_context: &EvaluationContext,
         context: &str,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &ToolCallTracker,
     ) -> Result<Value, ExecutorError> {
         match expression {
             Expression::StringLiteral(string_literal) => Ok(Value::String(string_literal.clone())),
@@ -789,8 +814,13 @@ impl WorkflowExecutor {
                     match string_template_part {
                         superwire_core::dsl::StringTemplatePart::Text(template_text) => rendered_template.push_str(template_text),
                         superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
-                            let interpolation_value =
-                                self.evaluate_runtime_expression(interpolation_expression, evaluation_context, context, event_sender)?;
+                            let interpolation_value = self.evaluate_runtime_expression(
+                                interpolation_expression,
+                                evaluation_context,
+                                context,
+                                event_sender,
+                                tool_call_tracker,
+                            )?;
                             rendered_template.push_str(&normalize_prompt(interpolation_value));
                         }
                     }
@@ -803,13 +833,21 @@ impl WorkflowExecutor {
             | Expression::NullLiteral
             | Expression::Reference(_)
             | Expression::FunctionCall(_) => Ok(evaluate_expression(expression, evaluation_context, context)?),
-            Expression::ToolCall(tool_call) => self.execute_deterministic_tool_call(tool_call, evaluation_context, event_sender),
+            Expression::ToolCall(tool_call) => {
+                self.execute_deterministic_tool_call(tool_call, evaluation_context, event_sender, tool_call_tracker)
+            }
             Expression::McpCall(mcp_call) => self.execute_mcp_call(mcp_call, evaluation_context, event_sender),
             Expression::ArrayLiteral(array_items) => {
                 let mut evaluated_items = Vec::with_capacity(array_items.len());
 
                 for array_item in array_items {
-                    evaluated_items.push(self.evaluate_runtime_expression(array_item, evaluation_context, context, event_sender)?);
+                    evaluated_items.push(self.evaluate_runtime_expression(
+                        array_item,
+                        evaluation_context,
+                        context,
+                        event_sender,
+                        tool_call_tracker,
+                    )?);
                 }
 
                 Ok(Value::Array(evaluated_items))
@@ -818,7 +856,13 @@ impl WorkflowExecutor {
                 let mut evaluated_fields = Map::new();
 
                 for object_field in object_fields {
-                    let field_value = self.evaluate_runtime_expression(&object_field.value, evaluation_context, context, event_sender)?;
+                    let field_value = self.evaluate_runtime_expression(
+                        &object_field.value,
+                        evaluation_context,
+                        context,
+                        event_sender,
+                        tool_call_tracker,
+                    )?;
                     evaluated_fields.insert(object_field.name.clone(), field_value);
                 }
 
@@ -996,6 +1040,7 @@ impl WorkflowExecutor {
                 evaluation_context,
                 &format!("MCP call `{import_name}` parameter `{}`", parameter.name),
                 None,
+                &ToolCallTracker::default(),
             )?;
             resolved_parameters.insert(parameter.name.clone(), parameter_value);
         }
@@ -1073,6 +1118,7 @@ impl WorkflowExecutor {
                 evaluation_context,
                 &format!("MCP import `{import_name}` parameter `{}`", parameter.name),
                 None,
+                &ToolCallTracker::default(),
             )?;
             resolved_parameters.insert(parameter.name.clone(), parameter_value);
         }
@@ -1086,9 +1132,9 @@ impl WorkflowExecutor {
         planned_agent: &PlannedAgent,
         evaluation_context: &EvaluationContext,
     ) -> Result<ModelToolDefinition, ExecutorError> {
-        let (tool_reference, override_binding_fields) = match tool_expression {
-            Expression::Reference(reference) => (reference, Vec::new()),
-            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.clone()),
+        let (tool_reference, override_binding_fields, override_max_calls) = match tool_expression {
+            Expression::Reference(reference) => (reference, Vec::new(), None),
+            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.clone(), tool_call.max_calls),
             _ => {
                 return Err(ExecutorError::Other {
                     message: format!("tools for agent `{}` must contain tool references", planned_agent.name),
@@ -1116,6 +1162,14 @@ impl WorkflowExecutor {
             input_schema: typed_tool.model_input_schema(&bindings),
             output_schema: workflow_type_to_json_schema(&typed_tool.output_type),
             bindings,
+            max_calls: override_max_calls.or(typed_tool.declaration.max_calls),
+            max_calls_scope: if override_max_calls.is_some() {
+                ToolCallLimitScope::Agent {
+                    agent_name: planned_agent.name.clone(),
+                }
+            } else {
+                ToolCallLimitScope::Workflow
+            },
         })
     }
 

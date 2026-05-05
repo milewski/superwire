@@ -164,6 +164,44 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
 }
 
 #[tokio::test]
+async fn deterministic_tool_call_respects_max_calls_limit() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool fetch_data from mcp.local.tool.fetch_task_data {
+            max_calls: 1
+
+            bindings {
+                project_id: 1
+                task_id: 2
+            }
+        }
+
+        dynamic {
+            first: call tool.fetch_data
+            second: call tool.fetch_data
+        }
+
+        output {
+            value: dynamic.second
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TestModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+
+    let execution_error = service
+        .execute(request_with_input(&workflow_source, Value::Null))
+        .await
+        .expect_err("execution should fail when deterministic tool call exceeds max_calls");
+
+    assert!(execution_error.to_string().contains("cannot be called more than 1 times"));
+}
+
+#[tokio::test]
 async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
