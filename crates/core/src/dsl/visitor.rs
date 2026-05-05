@@ -1,8 +1,9 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DynamicBlock, Expression, FunctionCall,
-    InputDeclaration, McpServerDeclaration, McpToolSource, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference,
-    ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart,
-    ToolCall, ToolDeclaration, ToolSource, TypeExpression, TypedField, Workflow,
+    InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration,
+    McpServerDeclaration, McpToolSource, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
+    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
+    ToolDeclaration, ToolSource, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -53,7 +54,10 @@ impl AstVisitor {
             Rule::secrets_declaration => self.visit_secrets_declaration(declaration_pair),
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
-            Rule::tool_declaration => self.visit_tool_declaration(declaration_pair),
+            Rule::tool_block_declaration => self.visit_tool_block_declaration(declaration_pair),
+            Rule::tool_import_declaration => self.visit_tool_import_declaration(declaration_pair),
+            Rule::resource_import_declaration => self.visit_resource_import_declaration(declaration_pair),
+            Rule::prompt_import_declaration => self.visit_prompt_import_declaration(declaration_pair),
             Rule::dynamic_declaration => self.visit_dynamic_declaration(declaration_pair).map(Declaration::Dynamic),
             Rule::agent_declaration => self.visit_agent_declaration(declaration_pair),
             Rule::output_declaration => self.visit_output_declaration(declaration_pair),
@@ -121,7 +125,7 @@ impl AstVisitor {
         }))
     }
 
-    fn visit_tool_declaration(&self, tool_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+    fn visit_tool_block_declaration(&self, tool_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
         let declaration_span = source_span_from_pair(&tool_pair);
         let mut inner_pairs = tool_pair.into_inner();
 
@@ -170,12 +174,137 @@ impl AstVisitor {
             name: tool_name,
             description,
             source,
+            imported: false,
             input_fields,
             binding_fields,
             fixed_binding_fields,
             output_fields,
             span: declaration_span,
         }))
+    }
+
+    fn visit_tool_import_declaration(&self, tool_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&tool_pair);
+        let mut inner_pairs = tool_pair.into_inner().peekable();
+        let first_pair = inner_pairs
+            .next()
+            .ok_or_else(|| DslParseError::missing_with_span("MCP import source", "tool import declaration", declaration_span))?;
+        let (alias, source_pair) = if first_pair.as_rule() == Rule::identifier {
+            let source_pair = inner_pairs
+                .next()
+                .ok_or_else(|| DslParseError::missing_with_span("MCP import source", "tool import declaration", declaration_span))?;
+
+            (Some(first_pair.as_str().to_owned()), source_pair)
+        } else {
+            (None, first_pair)
+        };
+        let source = self.visit_mcp_import_source(source_pair)?;
+        let fixed_binding_fields = inner_pairs
+            .next()
+            .map(|block_pair| self.visit_mcp_import_block(block_pair))
+            .transpose()?
+            .unwrap_or_default();
+        let name = alias.unwrap_or_else(|| source.inferred_local_name());
+
+        Ok(Declaration::Tool(ToolDeclaration {
+            name,
+            description: None,
+            source: Some(ToolSource::Mcp(source.as_tool_source())),
+            imported: true,
+            input_fields: Vec::new(),
+            binding_fields: Vec::new(),
+            fixed_binding_fields,
+            output_fields: Vec::new(),
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_resource_import_declaration(&self, resource_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&resource_pair);
+        let (name, source, parameters) = self.visit_named_mcp_import(resource_pair, "resource import declaration")?;
+
+        Ok(Declaration::McpResource(McpResourceImportDeclaration {
+            name,
+            source,
+            parameters,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_prompt_import_declaration(&self, prompt_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&prompt_pair);
+        let (name, source, parameters) = self.visit_named_mcp_import(prompt_pair, "prompt import declaration")?;
+
+        Ok(Declaration::McpPrompt(McpPromptImportDeclaration {
+            name,
+            source,
+            parameters,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_named_mcp_import(
+        &self,
+        import_pair: Pair<'_, Rule>,
+        context: &'static str,
+    ) -> Result<(String, McpImportSource, Vec<ObjectField>), DslParseError> {
+        let declaration_span = source_span_from_pair(&import_pair);
+        let mut inner_pairs = import_pair.into_inner().peekable();
+        let first_pair = inner_pairs
+            .next()
+            .ok_or_else(|| DslParseError::missing_with_span("MCP import source", context, declaration_span))?;
+        let (alias, source_pair) = if first_pair.as_rule() == Rule::identifier {
+            let source_pair = inner_pairs
+                .next()
+                .ok_or_else(|| DslParseError::missing_with_span("MCP import source", context, declaration_span))?;
+
+            (Some(first_pair.as_str().to_owned()), source_pair)
+        } else {
+            (None, first_pair)
+        };
+        let source = self.visit_mcp_import_source(source_pair)?;
+        let parameters = inner_pairs
+            .next()
+            .map(|block_pair| self.visit_mcp_import_block(block_pair))
+            .transpose()?
+            .unwrap_or_default();
+        let name = alias.unwrap_or_else(|| source.inferred_local_name());
+
+        Ok((name, source, parameters))
+    }
+
+    fn visit_mcp_import_source(&self, source_pair: Pair<'_, Rule>) -> Result<McpImportSource, DslParseError> {
+        let source_span = source_span_from_pair(&source_pair);
+        let mut inner_pairs = source_pair.into_inner();
+        let server_name = self.next_identifier(&mut inner_pairs, "MCP server name", "MCP import reference")?;
+        let kind_pair = self.next_pair(&mut inner_pairs, "MCP import kind", "MCP import reference")?;
+        let kind = McpImportKind::from_identifier(kind_pair.as_str()).ok_or_else(|| {
+            DslParseError::unexpected_with_span(kind_pair.as_rule(), "MCP import kind", source_span_from_pair(&kind_pair))
+        })?;
+        let item_name_pair = self.next_pair(&mut inner_pairs, "MCP import name", "MCP import reference")?;
+
+        Ok(McpImportSource {
+            server_name,
+            kind,
+            item_name: item_name_pair.as_str().split_whitespace().collect::<String>(),
+            span: source_span,
+        })
+    }
+
+    fn visit_mcp_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {
+        let mut parameters = Vec::new();
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::mcp_import_bindings_property | Rule::mcp_import_params_property => {
+                    let object_expression_pair = self.first_inner_pair(property_pair, "MCP import parameters")?;
+                    parameters.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                _ => unreachable!("MCP import block should contain only valid properties"),
+            }
+        }
+
+        Ok(parameters)
     }
 
     fn visit_mcp_declaration(&self, mcp_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
@@ -254,6 +383,7 @@ impl AstVisitor {
                 }
                 Rule::expression
                 | Rule::tool_call_expression
+                | Rule::mcp_call_expression
                 | Rule::function_call
                 | Rule::object_expression
                 | Rule::array_expression
@@ -663,6 +793,7 @@ impl AstVisitor {
         match expression_pair.as_rule() {
             Rule::function_call => Ok(Expression::FunctionCall(self.visit_function_call(expression_pair)?)),
             Rule::tool_call_expression => Ok(Expression::ToolCall(self.visit_tool_call_expression(expression_pair)?)),
+            Rule::mcp_call_expression => Ok(Expression::McpCall(self.visit_mcp_call_expression(expression_pair)?)),
             Rule::object_expression => Ok(Expression::ObjectLiteral(self.visit_object_expression(expression_pair)?)),
             Rule::array_expression => Ok(Expression::ArrayLiteral(self.visit_array_expression(expression_pair)?)),
             Rule::boolean_literal => Ok(Expression::BooleanLiteral(expression_pair.as_str() == "true")),
@@ -778,6 +909,41 @@ impl AstVisitor {
         })
     }
 
+    fn visit_mcp_call_expression(&self, mcp_call_pair: Pair<'_, Rule>) -> Result<McpCall, DslParseError> {
+        let mcp_call_span = source_span_from_pair(&mcp_call_pair);
+        let mut inner_pairs = mcp_call_pair.into_inner();
+        let operation_pair = self.next_pair(&mut inner_pairs, "MCP call operation", "MCP call expression")?;
+        let operation = McpCallOperation::from_identifier(operation_pair.as_str()).ok_or_else(|| {
+            DslParseError::unexpected_with_span(
+                operation_pair.as_rule(),
+                "MCP call operation",
+                source_span_from_pair(&operation_pair),
+            )
+        })?;
+        let callee_pair = self.next_pair(&mut inner_pairs, "MCP call callee", "MCP call expression")?;
+        let callee = self.visit_reference(callee_pair)?;
+        let mut parameter_fields = Vec::new();
+
+        if let Some(block_pair) = inner_pairs.next() {
+            for property_pair in block_pair.into_inner() {
+                match property_pair.as_rule() {
+                    Rule::mcp_call_params_property | Rule::mcp_call_bindings_property => {
+                        let object_expression_pair = self.first_inner_pair(property_pair, "MCP call parameters property")?;
+                        parameter_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                    }
+                    _ => unreachable!("MCP call block should contain only valid MCP call property rules"),
+                }
+            }
+        }
+
+        Ok(McpCall {
+            operation,
+            callee,
+            parameter_fields,
+            span: mcp_call_span,
+        })
+    }
+
     fn visit_call_arguments(&self, call_arguments_pair: Pair<'_, Rule>) -> Result<Vec<CallArgument>, DslParseError> {
         let mut arguments = Vec::new();
 
@@ -813,6 +979,7 @@ impl AstVisitor {
                 }))
             }
             Rule::function_call
+            | Rule::mcp_call_expression
             | Rule::object_expression
             | Rule::array_expression
             | Rule::boolean_literal

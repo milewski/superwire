@@ -56,6 +56,9 @@ impl Expression {
             Self::ToolCall(_) => Err(WorkflowSemanticError::UnsupportedFeature {
                 feature: "deterministic tool calls must be executed by the workflow runtime".to_string(),
             }),
+            Self::McpCall(_) => Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "MCP resource and prompt calls must be executed by the workflow runtime".to_string(),
+            }),
             Self::ArrayLiteral(array_items) => {
                 let mut evaluated_items = Vec::with_capacity(array_items.len());
 
@@ -212,6 +215,12 @@ fn resolve_reference_root(
         ReferenceRoot::Keyword(ReferenceKeyword::Tool) => Err(WorkflowSemanticError::UnsupportedFeature {
             feature: "`tool.*` runtime references are not yet supported".to_string(),
         }),
+        ReferenceRoot::Keyword(ReferenceKeyword::Resource) => Err(WorkflowSemanticError::UnsupportedFeature {
+            feature: "`resource.*` runtime references are not supported outside `read resource.*`".to_string(),
+        }),
+        ReferenceRoot::Keyword(ReferenceKeyword::Prompt) => Err(WorkflowSemanticError::UnsupportedFeature {
+            feature: "`prompt.*` runtime references are not supported outside `render prompt.*`".to_string(),
+        }),
         ReferenceRoot::Identifier(identifier) => {
             let Some(local_binding_value) = evaluation_context.local_bindings.get(identifier) else {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {
@@ -261,6 +270,13 @@ impl Expression {
                 }
 
                 for object_field in &tool_call.binding_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                collect_reference_dependency(&mcp_call.callee, agent_dependencies);
+
+                for object_field in &mcp_call.parameter_fields {
                     object_field.value.collect_agent_dependencies(agent_dependencies);
                 }
             }

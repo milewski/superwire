@@ -25,6 +25,9 @@
       "include": "#tool"
     },
     {
+      "include": "#mcp-import"
+    },
+    {
       "include": "#dynamic-block"
     },
     {
@@ -150,7 +153,7 @@
       ]
     },
     "tool-field-block": {
-      "begin": "\\b(input|bindings|output)\\s*\\{",
+      "begin": "\\b(input|bindings|params|output)\\s*\\{",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.wire"
@@ -158,6 +161,35 @@
       },
       "end": "\\}",
       "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-import": {
+      "begin": "\\b(tool|resource|prompt)\\b(?:\\s+([A-Za-z_][A-Za-z0-9_]*))?\\s+\\b(from)\\b\\s+(mcp\\.[A-Za-z_][A-Za-z0-9_]*\\.(?:tool|resource|prompt)\\.[A-Za-z0-9_-]+)\\s*(?:\\{)?",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.function.mcp-import.wire"
+        },
+        "3": {
+          "name": "keyword.control.wire"
+        },
+        "4": {
+          "name": "variable.other.reference.mcp.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#tool-field-block"
+        },
         {
           "include": "#property-assignment"
         },
@@ -256,7 +288,7 @@
           "name": "variable.parameter.wire"
         },
         {
-          "match": "(?<![.-])\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call|mcp)\\b(?![.-])",
+          "match": "(?<![.-])\\b(provider|schema|tool|resource|prompt|agent|dynamic|input|bindings|params|output|secrets|for|in|from|call|read|render|mcp)\\b(?![.-])",
           "name": "keyword.control.wire"
         },
         {
@@ -288,6 +320,9 @@
         },
         {
           "include": "#tool-calls"
+        },
+        {
+          "include": "#mcp-calls"
         },
         {
           "include": "#mcp-tool-sources"
@@ -335,7 +370,7 @@
           "match": "\\b(string|number|float|boolean|null)\\b"
         },
         {
-          "match": "\\b(agent|input|schema|tool|secrets)\\b",
+          "match": "\\b(agent|input|schema|tool|resource|prompt|secrets)\\b",
           "name": "keyword.other.wire"
         },
         {
@@ -456,6 +491,27 @@
             },
             "5": {
               "name": "entity.name.function.wire"
+            }
+          }
+        }
+      ]
+    },
+    "mcp-calls": {
+      "patterns": [
+        {
+          "match": "\\b(read|render)\\s+(resource|prompt)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.control.wire"
+            },
+            "2": {
+              "name": "keyword.other.wire"
+            },
+            "3": {
+              "name": "punctuation.accessor.wire"
+            },
+            "4": {
+              "name": "entity.name.function.mcp-call.wire"
             }
           }
         }
@@ -585,7 +641,7 @@
     "references": {
       "patterns": [
         {
-          "match": "\\b(agent|dynamic|input|schema|tool|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
+          "match": "\\b(agent|dynamic|input|schema|tool|resource|prompt|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
           "captures": {
             "1": {
               "name": "keyword.other.wire"

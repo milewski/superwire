@@ -1,0 +1,70 @@
+// Demonstrates first-class MCP imports for resources, prompts, and tools.
+mcp local {
+    endpoint: "https://mcp.example.test/rpc"
+}
+
+input {
+    workspace_id: string
+    project_id: string
+}
+
+resource project_readme from mcp.local.resource.project-readme {
+    bindings {
+        workspace_id: input.workspace_id
+        project_id: input.project_id
+    }
+}
+
+prompt system_prompt from mcp.local.prompt.system-prompt {
+    bindings {
+        workspace_id: input.workspace_id
+    }
+}
+
+tool create_sorting_task_for_task_group from mcp.local.tool.create-sorting-task-for-task-group-tool {
+    bindings {
+        workspace_id: input.workspace_id
+        project_id: agent.project_creator.project_id
+    }
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
+}
+
+dynamic {
+    readme: read resource.project_readme {
+        params {
+            section: "setup"
+        }
+    }
+    instructions: render prompt.system_prompt {
+        params {
+            readme: dynamic.readme
+        }
+    }
+}
+
+agent project_creator {
+    model: openai("gpt-4.1-mini")
+    prompt: "Create a project from imported MCP context.\n\n{{ dynamic.instructions }}\n\n{{ dynamic.readme }}"
+    output: {
+        project_id: string
+    }
+}
+
+agent task_sorter {
+    model: openai("gpt-4.1-mini")
+    prompt: "Create sorting tasks for the generated project."
+    tools: [tool.create_sorting_task_for_task_group]
+    output: string
+}
+
+output {
+    readme: dynamic.readme
+    project: agent.project_creator
+    sorter: agent.task_sorter
+}

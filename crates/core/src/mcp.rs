@@ -222,6 +222,8 @@ impl McpServerConfig {
                 | Declaration::Input(_)
                 | Declaration::Schema(_)
                 | Declaration::Tool(_)
+                | Declaration::McpResource(_)
+                | Declaration::McpPrompt(_)
                 | Declaration::Dynamic(_)
                 | Declaration::Agent(_)
                 | Declaration::Output(_) => None,
@@ -424,6 +426,78 @@ impl McpClient {
         )?;
 
         log::info!("MCP tools/call completed: server={}, tool={tool_name}", self.server_config.name);
+
+        Ok(result)
+    }
+
+    pub fn read_resource(&self, resource_uri: &str, arguments: Value) -> Result<Value, McpError> {
+        log::debug!(
+            "initializing MCP resources/read: server={}, resource={resource_uri}",
+            self.server_config.name
+        );
+        self.request(
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "superwire",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+            }),
+            1,
+        )?;
+        self.notify("notifications/initialized", json!({}))?;
+
+        let result = self.request(
+            "resources/read",
+            json!({
+                "uri": resource_uri,
+                "arguments": arguments,
+            }),
+            2,
+        )?;
+
+        log::info!(
+            "MCP resources/read completed: server={}, resource={resource_uri}",
+            self.server_config.name
+        );
+
+        Ok(result)
+    }
+
+    pub fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError> {
+        log::debug!(
+            "initializing MCP prompts/get: server={}, prompt={prompt_name}",
+            self.server_config.name
+        );
+        self.request(
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "superwire",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+            }),
+            1,
+        )?;
+        self.notify("notifications/initialized", json!({}))?;
+
+        let result = self.request(
+            "prompts/get",
+            json!({
+                "name": prompt_name,
+                "arguments": arguments,
+            }),
+            2,
+        )?;
+
+        log::info!(
+            "MCP prompts/get completed: server={}, prompt={prompt_name}",
+            self.server_config.name
+        );
 
         Ok(result)
     }

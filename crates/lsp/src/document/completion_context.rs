@@ -44,6 +44,8 @@ impl DeclarationHeaderCompletionContext {
             | DeclarationKeyword::Mcp
             | DeclarationKeyword::Schema
             | DeclarationKeyword::Tool
+            | DeclarationKeyword::Resource
+            | DeclarationKeyword::Prompt
             | DeclarationKeyword::Agent => {
                 if declaration_keyword == DeclarationKeyword::Agent {
                     return Self::agent_header_completion_context(trimmed_line_after_keyword);

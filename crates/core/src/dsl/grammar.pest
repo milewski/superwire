@@ -6,7 +6,10 @@ declaration = _{
     | secrets_declaration
     | input_declaration
     | schema_declaration
-    | tool_declaration
+    | tool_import_declaration
+    | resource_import_declaration
+    | prompt_import_declaration
+    | tool_block_declaration
     | dynamic_declaration
     | agent_declaration
     | output_declaration
@@ -17,7 +20,18 @@ mcp_declaration = { "mcp" ~ identifier ~ object_expression }
 secrets_declaration = { "secrets" ~ typed_block }
 input_declaration = { "input" ~ typed_block }
 schema_declaration = { "schema" ~ identifier ~ typed_block }
-tool_declaration = { "tool" ~ identifier ~ tool_block }
+tool_block_declaration = { "tool" ~ identifier ~ tool_block }
+tool_import_declaration = { "tool" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ mcp_import_block? }
+resource_import_declaration = { "resource" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ mcp_import_block? }
+prompt_import_declaration = { "prompt" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ mcp_import_block? }
+
+mcp_import_reference = { "mcp" ~ "." ~ identifier ~ "." ~ mcp_import_kind ~ "." ~ mcp_import_name }
+mcp_import_kind = { "tool" | "resource" | "prompt" }
+mcp_import_name = { mcp_tool_name }
+mcp_import_block = { "{" ~ mcp_import_property* ~ "}" }
+mcp_import_property = _{ mcp_import_bindings_property | mcp_import_params_property }
+mcp_import_bindings_property = { "bindings" ~ object_expression }
+mcp_import_params_property = { "params" ~ object_expression }
 
 tool_block = { "{" ~ tool_property* ~ "}" }
 tool_property = _{ tool_description_property | tool_using_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
@@ -100,6 +114,7 @@ type_object = { "{" ~ typed_field* ~ "}" }
 
 expression = _{
     tool_call_expression
+    | mcp_call_expression
     | function_call
     | object_expression
     | array_expression
@@ -115,6 +130,13 @@ tool_call_block = { "{" ~ tool_call_property* ~ "}" }
 tool_call_property = _{ tool_call_input_property | tool_call_bindings_property }
 tool_call_input_property = { "input" ~ object_expression }
 tool_call_bindings_property = { "bindings" ~ object_expression }
+
+mcp_call_expression = { mcp_call_keyword ~ reference ~ mcp_call_block? }
+mcp_call_keyword = { "read" | "render" }
+mcp_call_block = { "{" ~ mcp_call_property* ~ "}" }
+mcp_call_property = _{ mcp_call_params_property | mcp_call_bindings_property }
+mcp_call_params_property = { "params" ~ object_expression }
+mcp_call_bindings_property = { "bindings" ~ object_expression }
 
 object_expression = { "{" ~ object_field* ~ "}" }
 object_field = { object_field_name ~ ":" ~ expression }

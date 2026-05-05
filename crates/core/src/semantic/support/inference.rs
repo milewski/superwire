@@ -90,6 +90,7 @@ impl InferenceSetting {
             | Expression::NullLiteral
             | Expression::ArrayLiteral(_)
             | Expression::ObjectLiteral(_)
+            | Expression::McpCall(_)
             | Expression::ToolCall(_) => false,
         }
     }

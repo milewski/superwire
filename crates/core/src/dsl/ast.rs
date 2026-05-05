@@ -141,6 +141,40 @@ impl Workflow {
     }
 
     #[must_use]
+    pub fn find_resource_import(&self, resource_name: &str) -> Option<&McpResourceImportDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::McpResource(resource_import_declaration) if resource_import_declaration.name == resource_name => {
+                Some(resource_import_declaration)
+            }
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn find_prompt_import(&self, prompt_name: &str) -> Option<&McpPromptImportDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::McpPrompt(prompt_import_declaration) if prompt_import_declaration.name == prompt_name => {
+                Some(prompt_import_declaration)
+            }
+            _ => None,
+        })
+    }
+
+    pub fn resource_imports(&self) -> impl Iterator<Item = &McpResourceImportDeclaration> {
+        self.declarations.iter().filter_map(|declaration| match declaration {
+            Declaration::McpResource(resource_import_declaration) => Some(resource_import_declaration),
+            _ => None,
+        })
+    }
+
+    pub fn prompt_imports(&self) -> impl Iterator<Item = &McpPromptImportDeclaration> {
+        self.declarations.iter().filter_map(|declaration| match declaration {
+            Declaration::McpPrompt(prompt_import_declaration) => Some(prompt_import_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
     pub fn find_agent(&self, agent_name: &str) -> Option<&AgentDeclaration> {
         self.declarations.iter().find_map(|declaration| match declaration {
             Declaration::Agent(agent_declaration) if agent_declaration.name == agent_name => Some(agent_declaration),
@@ -165,6 +199,8 @@ impl Workflow {
             | Declaration::Input(_)
             | Declaration::Schema(_)
             | Declaration::Tool(_)
+            | Declaration::McpResource(_)
+            | Declaration::McpPrompt(_)
             | Declaration::Agent(_)
             | Declaration::Output(_) => None,
         })
@@ -179,6 +215,8 @@ pub enum Declaration {
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
     Tool(ToolDeclaration),
+    McpResource(McpResourceImportDeclaration),
+    McpPrompt(McpPromptImportDeclaration),
     Dynamic(DynamicBlock),
     Agent(AgentDeclaration),
     Output(OutputDeclaration),
@@ -192,6 +230,8 @@ pub enum DeclarationKeyword {
     Input,
     Schema,
     Tool,
+    Resource,
+    Prompt,
     Dynamic,
     Agent,
     Output,
@@ -232,6 +272,8 @@ impl DeclarationKeyword {
             "input" => Some(Self::Input),
             "schema" => Some(Self::Schema),
             "tool" => Some(Self::Tool),
+            "resource" => Some(Self::Resource),
+            "prompt" => Some(Self::Prompt),
             "dynamic" => Some(Self::Dynamic),
             "agent" => Some(Self::Agent),
             "output" => Some(Self::Output),
@@ -248,6 +290,8 @@ impl DeclarationKeyword {
             Self::Input => "input",
             Self::Schema => "schema",
             Self::Tool => "tool",
+            Self::Resource => "resource",
+            Self::Prompt => "prompt",
             Self::Dynamic => "dynamic",
             Self::Agent => "agent",
             Self::Output => "output",
@@ -321,6 +365,7 @@ pub struct ToolDeclaration {
     pub name: String,
     pub description: Option<String>,
     pub source: Option<ToolSource>,
+    pub imported: bool,
     pub input_fields: Vec<TypedField>,
     pub binding_fields: Vec<TypedField>,
     pub fixed_binding_fields: Vec<ObjectField>,
@@ -347,6 +392,79 @@ pub struct McpToolSource {
     pub server_name: Option<String>,
     pub tool_name: String,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpResourceImportDeclaration {
+    pub name: String,
+    pub source: McpImportSource,
+    pub parameters: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpPromptImportDeclaration {
+    pub name: String,
+    pub source: McpImportSource,
+    pub parameters: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpImportSource {
+    pub server_name: String,
+    pub kind: McpImportKind,
+    pub item_name: String,
+    pub span: SourceSpan,
+}
+
+impl McpImportSource {
+    #[must_use]
+    pub fn inferred_local_name(&self) -> String {
+        self.item_name.replace('-', "_")
+    }
+
+    #[must_use]
+    pub fn render_path(&self) -> String {
+        format!("mcp.{}.{}.{}", self.server_name, self.kind.as_str(), self.item_name)
+    }
+
+    #[must_use]
+    pub fn as_tool_source(&self) -> McpToolSource {
+        McpToolSource {
+            server_name: Some(self.server_name.clone()),
+            tool_name: self.item_name.clone(),
+            span: self.span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum McpImportKind {
+    Tool,
+    Resource,
+    Prompt,
+}
+
+impl McpImportKind {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "tool" => Some(Self::Tool),
+            "resource" => Some(Self::Resource),
+            "prompt" => Some(Self::Prompt),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tool => "tool",
+            Self::Resource => "resource",
+            Self::Prompt => "prompt",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -769,6 +887,7 @@ pub enum Expression {
     Reference(Reference),
     FunctionCall(FunctionCall),
     ToolCall(ToolCall),
+    McpCall(McpCall),
     ArrayLiteral(Vec<Expression>),
     ObjectLiteral(Vec<ObjectField>),
 }
@@ -779,6 +898,54 @@ pub struct ToolCall {
     pub input_fields: Vec<ObjectField>,
     pub binding_fields: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpCall {
+    pub operation: McpCallOperation,
+    pub callee: Reference,
+    pub parameter_fields: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+impl McpCall {
+    #[must_use]
+    pub fn target_name(&self) -> Option<&str> {
+        self.callee.first_access_field()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum McpCallOperation {
+    Read,
+    Render,
+}
+
+impl McpCallOperation {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "read" => Some(Self::Read),
+            "render" => Some(Self::Render),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Render => "render",
+        }
+    }
+
+    #[must_use]
+    pub fn expected_root(self) -> ReferenceKeyword {
+        match self {
+            Self::Read => ReferenceKeyword::Resource,
+            Self::Render => ReferenceKeyword::Prompt,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -903,6 +1070,13 @@ impl Expression {
                 }
 
                 for object_field in &tool_call.binding_fields {
+                    object_field.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                mcp_call.callee.collect_dynamic_dependency(referenced_dynamic_fields);
+
+                for object_field in &mcp_call.parameter_fields {
                     object_field.value.collect_dynamic_dependencies(referenced_dynamic_fields);
                 }
             }
@@ -1234,6 +1408,8 @@ pub enum ReferenceKeyword {
     Input,
     Secrets,
     Tool,
+    Resource,
+    Prompt,
 }
 
 impl ReferenceKeyword {
@@ -1245,6 +1421,8 @@ impl ReferenceKeyword {
             "input" => Some(Self::Input),
             "secrets" => Some(Self::Secrets),
             "tool" => Some(Self::Tool),
+            "resource" => Some(Self::Resource),
+            "prompt" => Some(Self::Prompt),
             _ => None,
         }
     }
@@ -1257,6 +1435,8 @@ impl ReferenceKeyword {
             Self::Input => "input",
             Self::Secrets => "secrets",
             Self::Tool => "tool",
+            Self::Resource => "resource",
+            Self::Prompt => "prompt",
         }
     }
 }

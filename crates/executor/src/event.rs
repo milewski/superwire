@@ -11,6 +11,9 @@ pub enum ExecutorEventKind {
     ToolCallStarted,
     ToolCallFailed,
     ToolCallCompleted,
+    McpCallStarted,
+    McpCallFailed,
+    McpCallCompleted,
     WorkflowCompleted,
     WorkflowFailed,
 }
@@ -26,6 +29,9 @@ impl ExecutorEventKind {
             Self::ToolCallStarted => "tool_call_started",
             Self::ToolCallFailed => "tool_call_failed",
             Self::ToolCallCompleted => "tool_call_completed",
+            Self::McpCallStarted => "mcp_call_started",
+            Self::McpCallFailed => "mcp_call_failed",
+            Self::McpCallCompleted => "mcp_call_completed",
             Self::WorkflowCompleted => "workflow_completed",
             Self::WorkflowFailed => "workflow_failed",
         }
@@ -104,6 +110,33 @@ impl ExecutorEvent {
                 "tool_name": tool_name,
                 "error": error,
             }))
+    }
+
+    #[must_use]
+    pub fn mcp_call_started(operation: String, target_name: String, arguments: Value) -> Self {
+        Self::new(ExecutorEventKind::McpCallStarted).with_data(serde_json::json!({
+            "operation": operation,
+            "target_name": target_name,
+            "arguments": arguments,
+        }))
+    }
+
+    #[must_use]
+    pub fn mcp_call_completed(operation: String, target_name: String, result: Value) -> Self {
+        Self::new(ExecutorEventKind::McpCallCompleted).with_data(serde_json::json!({
+            "operation": operation,
+            "target_name": target_name,
+            "result": result,
+        }))
+    }
+
+    #[must_use]
+    pub fn mcp_call_failed(operation: String, target_name: String, error: Value) -> Self {
+        Self::new(ExecutorEventKind::McpCallFailed).with_data(serde_json::json!({
+            "operation": operation,
+            "target_name": target_name,
+            "error": error,
+        }))
     }
 
     #[must_use]
