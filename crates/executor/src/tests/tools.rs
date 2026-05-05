@@ -1,3 +1,4 @@
+use super::fixtures;
 use crate::model::ModelToolSource;
 use crate::service::ExecutorService;
 use crate::tests::support::{request, TrackingModelProvider};
@@ -356,6 +357,59 @@ async fn explicit_mcp_resource_and_prompt_calls_are_available_as_values() {
         .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
         .await
         .expect("explicit MCP calls should execute successfully")
+        .output;
+
+    assert!(output["readme"].as_str().is_some_and(|readme| readme.contains("# Project README")));
+    assert!(output["instructions"]
+        .as_str()
+        .is_some_and(|instructions| instructions.contains("Follow project conventions.")));
+}
+
+#[tokio::test]
+async fn mcp_read_resource_fixture_executes() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = fixtures::MCP_READ_RESOURCE.replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+
+    let output = service
+        .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
+        .await
+        .expect("MCP read resource fixture should execute successfully")
+        .output;
+
+    assert!(output["readme"].as_str().is_some_and(|readme| readme.contains("# Project README")));
+}
+
+#[tokio::test]
+async fn mcp_render_prompt_fixture_executes() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = fixtures::MCP_RENDER_PROMPT.replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+
+    let output = service
+        .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
+        .await
+        .expect("MCP render prompt fixture should execute successfully")
+        .output;
+
+    assert!(output["instructions"]
+        .as_str()
+        .is_some_and(|instructions| instructions.contains("Follow project conventions.")));
+}
+
+#[tokio::test]
+async fn mcp_read_render_dependency_fixture_executes() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = fixtures::MCP_READ_RENDER_DEPENDENCIES.replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+
+    let output = service
+        .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
+        .await
+        .expect("MCP read/render dependency fixture should execute successfully")
         .output;
 
     assert!(output["readme"].as_str().is_some_and(|readme| readme.contains("# Project README")));
