@@ -10,7 +10,7 @@ use async_openai::types::{
 };
 use jsonschema::ValidationError;
 use serde_json::Value;
-use superwire_core::mcp::{McpClient, McpServerConfig};
+use superwire_core::mcp::McpServerConfig;
 
 impl super::OpenAiModelProvider {
     pub(super) fn execute_tool_calls(
@@ -122,7 +122,9 @@ impl super::OpenAiModelProvider {
                     tool_name
                 );
 
-                let result = McpClient::new(server_config)
+                let result = request
+                    .mcp_pool
+                    .get(&server_config)?
                     .call_tool(tool_name, arguments)
                     .map_err(|error| ExecutorError::Model {
                         agent_name: request.agent_name.clone(),

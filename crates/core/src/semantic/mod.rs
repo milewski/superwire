@@ -9,7 +9,7 @@ pub use pipeline::{
     compile_workflow_pipeline, NormalizeStageOutput, ParseStageOutput, PlanStageOutput, TypecheckStageOutput, ValidateStageOutput,
     WorkflowPipeline, WorkflowPipelineInput,
 };
-pub use plan::{build_execution_plan, ExecutionPlan, PlannedAgent};
+pub use plan::{build_execution_plan, ExecutionPlan, PlannedAgent, PlannedMcpImport, PlannedMcpImportKind};
 pub use support::provider::ProviderDriver;
 pub use support::{InferenceSetting, WorkflowSemanticError};
 pub use tooling::{

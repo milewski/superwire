@@ -1,6 +1,7 @@
 use crate::event::ExecutorEvent;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use superwire_core::mcp::McpClientPool;
 use superwire_core::semantic::support::provider::OpenAIProviderConfig;
 use tokio::sync::mpsc;
 
@@ -13,6 +14,7 @@ pub struct ModelRequest {
     pub output_schema: Value,
     pub tools: Vec<ModelToolDefinition>,
     pub event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+    pub mcp_pool: McpClientPool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
