@@ -350,6 +350,19 @@ impl ToolDeclaration {
             if !self.input_fields.is_empty()
                 || !self.binding_fields.is_empty()
                 || !self.fixed_binding_fields.is_empty()
+                || self.max_calls.is_some()
+                || !self.output_fields.is_empty()
+            {
+                formatter.push_newline();
+            }
+        }
+
+        if let Some(max_calls) = self.max_calls {
+            formatter.push_line(&format!("max_calls: {max_calls}"));
+
+            if !self.input_fields.is_empty()
+                || !self.binding_fields.is_empty()
+                || !self.fixed_binding_fields.is_empty()
                 || !self.output_fields.is_empty()
             {
                 formatter.push_newline();
@@ -1120,7 +1133,7 @@ impl ToolCall {
 
             formatter.push_declaration_block_end();
 
-            if !self.binding_fields.is_empty() {
+            if !self.binding_fields.is_empty() || self.max_calls.is_some() {
                 formatter.push_newline();
             }
         }
@@ -1133,6 +1146,14 @@ impl ToolCall {
             }
 
             formatter.push_declaration_block_end();
+
+            if self.max_calls.is_some() {
+                formatter.push_newline();
+            }
+        }
+
+        if let Some(max_calls) = self.max_calls {
+            formatter.push_line(&format!("max_calls: {max_calls}"));
         }
 
         formatter.indentation_depth -= 1;
@@ -1143,20 +1164,31 @@ impl ToolCall {
     fn push_agent_binding_to_formatter(&self, formatter: &mut DslFormatter) {
         self.callee.push_to_formatter(formatter);
 
-        if self.binding_fields.is_empty() {
+        if self.binding_fields.is_empty() && self.max_calls.is_none() {
             return;
         }
 
         formatter.output.push_str(" {");
         formatter.push_newline();
         formatter.indentation_depth += 1;
-        formatter.push_declaration_block_start("bindings");
+        if !self.binding_fields.is_empty() {
+            formatter.push_declaration_block_start("bindings");
 
-        for object_field in &self.binding_fields {
-            object_field.push_to_formatter(formatter);
+            for object_field in &self.binding_fields {
+                object_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if self.max_calls.is_some() {
+                formatter.push_newline();
+            }
         }
 
-        formatter.push_declaration_block_end();
+        if let Some(max_calls) = self.max_calls {
+            formatter.push_line(&format!("max_calls: {max_calls}"));
+        }
+
         formatter.indentation_depth -= 1;
         formatter.push_indent();
         formatter.output.push('}');

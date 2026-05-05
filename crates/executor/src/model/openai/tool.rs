@@ -54,6 +54,15 @@ impl super::OpenAiModelProvider {
                 agent_name: request.agent_name.clone(),
                 message: format!("model requested unknown tool `{}`", tool_call.function.name),
             })?;
+
+        request
+            .tool_call_tracker
+            .register_call(&tool_definition.name, tool_definition.max_calls, &tool_definition.max_calls_scope)
+            .map_err(|message| ExecutorError::Model {
+                agent_name: request.agent_name.clone(),
+                message,
+            })?;
+
         log::debug!(
             "processing model tool call: agent={}, requested_tool={}, resolved_tool={}",
             request.agent_name,

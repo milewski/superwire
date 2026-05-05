@@ -1,0 +1,46 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+tool fetch_shared from mcp.local.tool.fetch_task_data {
+    max_calls: 2
+
+    bindings {
+        project_id: 1
+        task_id: 2
+    }
+}
+
+agent first_agent {
+    model: openai("model-a")
+    tools: [
+        tool.fetch_shared {
+            max_calls: 1
+        },
+    ]
+    prompt: "First"
+    output: string
+}
+
+agent second_agent {
+    model: openai("model-a")
+    tools: [
+        tool.fetch_shared {
+            max_calls: 1
+        },
+    ]
+    prompt: "Second"
+    output: string
+}
+
+output {
+    first: agent.first_agent
+    second: agent.second_agent
+}

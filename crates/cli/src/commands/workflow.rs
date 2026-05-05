@@ -900,6 +900,7 @@ impl SerializableSchema {
 struct SerializableToolDeclaration {
     name: String,
     description: Option<String>,
+    max_calls: Option<u64>,
     source: Option<String>,
     input: Vec<SerializableTypedField>,
     input_schema: Value,
@@ -916,6 +917,7 @@ impl SerializableToolDeclaration {
         Self {
             name: tool_declaration.name.clone(),
             description: tool_declaration.description.clone(),
+            max_calls: tool_declaration.max_calls,
             source: tool_declaration.source.as_ref().map(|tool_source| match tool_source {
                 superwire_core::dsl::ToolSource::Mcp(mcp_tool_source) => {
                     if let Some(server_name) = &mcp_tool_source.server_name {

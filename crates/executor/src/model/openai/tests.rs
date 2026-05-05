@@ -4,7 +4,7 @@ use super::response::{ChatCompletionResponseExt, OpenAiChatCompletionResponse};
 use super::OpenAiModelProvider;
 use crate::event::ExecutorEventKind;
 use crate::model::provider::ModelProvider;
-use crate::model::{ModelRequest, ModelToolDefinition, ModelToolSource};
+use crate::model::{ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker};
 use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionToolType, FunctionCall};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -229,6 +229,61 @@ fn rejects_invalid_tool_arguments_before_mcp_call() {
     );
 }
 
+#[test]
+fn rejects_tool_call_when_max_calls_limit_is_exceeded() {
+    let mcp_server = TestMcpHttpServer::spawn();
+    let provider = OpenAiModelProvider;
+    let mut request = model_request("http://localhost:1234/v1".to_string(), mcp_server.endpoint());
+
+    request.tools[0].max_calls = Some(1);
+
+    let tool_call = ChatCompletionMessageToolCall {
+        id: "call_1".to_string(),
+        r#type: ChatCompletionToolType::Function,
+        function: FunctionCall {
+            name: format_tool_name("update_user_name"),
+            arguments: "{}".to_string(),
+        },
+    };
+
+    let _ = provider
+        .execute_tool_call(&request, &tool_call)
+        .expect("first tool call should succeed");
+
+    let execution_error = provider
+        .execute_tool_call(&request, &tool_call)
+        .expect_err("second tool call should fail when max_calls is exceeded");
+
+    assert!(execution_error
+        .to_string()
+        .contains("tool `update_user_name` cannot be called more than 1 times"));
+}
+
+#[test]
+fn agent_scoped_max_calls_is_not_shared_across_agents() {
+    let shared_tool_call_tracker = ToolCallTracker::default();
+    let first_agent_scope = ToolCallLimitScope::Agent {
+        agent_name: "first_agent".to_string(),
+    };
+    let second_agent_scope = ToolCallLimitScope::Agent {
+        agent_name: "second_agent".to_string(),
+    };
+
+    shared_tool_call_tracker
+        .register_call("update_user_name", Some(1), &first_agent_scope)
+        .expect("first agent should be allowed to call the tool once");
+
+    shared_tool_call_tracker
+        .register_call("update_user_name", Some(1), &second_agent_scope)
+        .expect("second agent should be allowed to call the tool once with independent agent scope");
+
+    let first_agent_error = shared_tool_call_tracker
+        .register_call("update_user_name", Some(1), &first_agent_scope)
+        .expect_err("first agent second call should fail at max_calls limit");
+
+    assert!(first_agent_error.contains("tool `update_user_name` cannot be called more than 1 times"));
+}
+
 fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
     let mcp_pool = McpClientPool::from_server_configs([McpServerConfig {
         name: "local".to_string(),
@@ -258,9 +313,12 @@ fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
             input_schema: serde_json::json!({ "type": "object" }),
             output_schema: serde_json::json!({ "type": "object" }),
             bindings: serde_json::json!({ "project_id": 14, "user_id": 123 }),
+            max_calls: None,
+            max_calls_scope: ToolCallLimitScope::Workflow,
         }],
         event_sender: None,
         mcp_pool,
+        tool_call_tracker: ToolCallTracker::default(),
     }
 }
 

@@ -364,6 +364,7 @@ pub struct SchemaDeclaration {
 pub struct ToolDeclaration {
     pub name: String,
     pub description: Option<String>,
+    pub max_calls: Option<u64>,
     pub source: Option<ToolSource>,
     pub imported: bool,
     pub input_fields: Vec<TypedField>,
@@ -470,6 +471,7 @@ impl McpImportKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolPropertyName {
     Description,
+    MaxCalls,
     Input,
     Bindings,
     Output,
@@ -477,8 +479,8 @@ pub enum ToolPropertyName {
 
 impl ToolPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 4] {
-        [Self::Description, Self::Input, Self::Bindings, Self::Output]
+    pub fn all() -> [Self; 5] {
+        [Self::Description, Self::MaxCalls, Self::Input, Self::Bindings, Self::Output]
     }
 
     #[must_use]
@@ -492,6 +494,7 @@ impl ToolPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Description => "description",
+            Self::MaxCalls => "max_calls",
             Self::Input => "input",
             Self::Bindings => "bindings",
             Self::Output => "output",
@@ -895,6 +898,7 @@ pub struct ToolCall {
     pub callee: Reference,
     pub input_fields: Vec<ObjectField>,
     pub binding_fields: Vec<ObjectField>,
+    pub max_calls: Option<u64>,
     pub span: SourceSpan,
 }
 

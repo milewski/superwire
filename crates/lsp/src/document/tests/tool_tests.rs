@@ -141,7 +141,7 @@ fn suggests_only_tool_properties_inside_tool_block() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "description", "input", "bindings", "output");
+    assert_completion_contains_labels!(&completion_suggestions, "description", "max_calls", "input", "bindings", "output");
     assert_completion_excludes_labels!(
         &completion_suggestions,
         DeclarationKeyword::Provider,

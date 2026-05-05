@@ -1,5 +1,5 @@
 use super::fixtures;
-use crate::model::ModelToolSource;
+use crate::model::{ModelToolSource, ToolCallLimitScope};
 use crate::service::ExecutorService;
 use crate::tests::support::{request, TrackingModelProvider};
 use serde_json::{json, Value};
@@ -317,6 +317,39 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
     assert!(request.prompt.contains("MCP resource `project_readme`"));
     assert!(request.prompt.contains("# Project README"));
     assert!(request.prompt.contains("Rename the user"));
+}
+
+#[tokio::test]
+async fn fixture_exposes_root_and_agent_level_max_calls_configuration() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = fixtures::TOOL_MAX_CALLS_SCOPES.replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(vec![json!("first"), json!("second")]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request_with_input(&workflow_source, Value::Null))
+        .await
+        .expect("execution should prepare tool definitions for both agents");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("tracking lock should not be poisoned")
+        .clone();
+
+    assert_eq!(recorded_requests.len(), 2);
+
+    for model_request in recorded_requests {
+        let tool_definition = model_request.tools.first().expect("tool definition should exist for each agent");
+
+        assert_eq!(tool_definition.max_calls, Some(1));
+        assert_eq!(
+            tool_definition.max_calls_scope,
+            ToolCallLimitScope::Agent {
+                agent_name: model_request.agent_name.clone(),
+            }
+        );
+    }
 }
 
 #[tokio::test]
