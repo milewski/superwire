@@ -12,6 +12,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use superwire_core::mcp::{McpClientPool, McpServerConfig};
 use superwire_core::semantic::support::provider::OpenAIProviderConfig;
 
 #[test]
@@ -229,6 +230,13 @@ fn rejects_invalid_tool_arguments_before_mcp_call() {
 }
 
 fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
+    let mcp_pool = McpClientPool::from_server_configs([McpServerConfig {
+        name: "local".to_string(),
+        endpoint: mcp_endpoint,
+        headers: [("Authorization".to_string(), "Bearer test-token".to_string())].into(),
+    }])
+    .expect("test mcp pool should initialize");
+
     ModelRequest {
         agent_name: "updater".to_string(),
         provider_config: OpenAIProviderConfig {
@@ -244,14 +252,15 @@ fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
             source: ModelToolSource::Mcp {
                 server_name: Some("local".to_string()),
                 tool_name: "update-user-name".to_string(),
-                endpoint: mcp_endpoint,
-                headers: [("Authorization".to_string(), "Bearer test-token".to_string())].into(),
+                endpoint: String::new(),
+                headers: BTreeMap::new(),
             },
             input_schema: serde_json::json!({ "type": "object" }),
             output_schema: serde_json::json!({ "type": "object" }),
             bindings: serde_json::json!({ "project_id": 14, "user_id": 123 }),
         }],
         event_sender: None,
+        mcp_pool,
     }
 }
 

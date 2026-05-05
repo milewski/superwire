@@ -15,7 +15,7 @@ use superwire_core::dsl::{
     parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
     ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
-use superwire_core::mcp::{McpClient, McpLock, McpServerConfig};
+use superwire_core::mcp::{McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
@@ -37,10 +37,11 @@ impl CompletedAgentExecution {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WorkflowExecutor {
     workflow: Workflow,
     execution_plan: ExecutionPlan,
+    mcp_pool: McpClientPool,
 }
 
 impl WorkflowExecutor {
@@ -57,8 +58,11 @@ impl WorkflowExecutor {
             message: error.to_string(),
         })?;
         mcp_lock.apply_to_workflow(&mut workflow);
+        let mcp_pool = McpClientPool::from_workflow(&workflow).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })?;
 
-        Self::from_workflow(workflow_source, workflow)
+        Self::from_workflow(workflow_source, workflow, mcp_pool)
     }
 
     pub fn from_source_with_runtime_values(workflow_source: &str, input: &Value, secrets: &Value) -> Result<Self, ExecutorError> {
@@ -84,11 +88,14 @@ impl WorkflowExecutor {
 
         log::debug!("discovered MCP schemas using runtime values: servers={}", mcp_lock.servers.len());
         mcp_lock.apply_to_workflow(&mut workflow);
+        let mcp_pool = McpClientPool::from_workflow_with_context(&workflow, &evaluation_context).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })?;
 
-        Self::from_workflow(workflow_source, workflow)
+        Self::from_workflow(workflow_source, workflow, mcp_pool)
     }
 
-    fn from_workflow(workflow_source: &str, workflow: Workflow) -> Result<Self, ExecutorError> {
+    fn from_workflow(workflow_source: &str, workflow: Workflow, mcp_pool: McpClientPool) -> Result<Self, ExecutorError> {
         log::debug!("validating workflow after schema discovery");
         let validation_report = validate_workflow(&workflow);
 
@@ -110,12 +117,21 @@ impl WorkflowExecutor {
             execution_plan.agent_execution_order.len()
         );
 
-        Ok(Self { workflow, execution_plan })
+        Ok(Self {
+            workflow,
+            execution_plan,
+            mcp_pool,
+        })
     }
 
     #[must_use]
     pub fn agent_execution_order(&self) -> Vec<String> {
         self.execution_plan.agent_execution_order.clone()
+    }
+
+    #[must_use]
+    pub fn mcp_imports(&self) -> &[superwire_core::semantic::PlannedMcpImport] {
+        &self.execution_plan.mcp_imports
     }
 
     pub async fn execute<ModelProviderType>(
@@ -136,6 +152,13 @@ impl WorkflowExecutor {
         log::info!("executing workflow runtime");
 
         self.execute_workflow_dynamic_blocks(&mut runtime_state, event_sender.as_ref())?;
+
+        let import_context = self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
+
+        log::debug!(
+            "workflow-level import context resolved: {}",
+            if import_context.is_empty() { "empty" } else { "populated" }
+        );
 
         for execution_batch in self.resolve_agent_execution_batches()? {
             let runtime_state_snapshot = runtime_state.clone();
@@ -167,6 +190,7 @@ impl WorkflowExecutor {
                         model_provider,
                         event_sender.clone(),
                         max_concurrency,
+                        &import_context,
                     )
                     .await?;
                 completed.apply_to_runtime_state(&mut runtime_state);
@@ -177,10 +201,17 @@ impl WorkflowExecutor {
             for planned_agent in regular_agents {
                 let runtime_state_snapshot = runtime_state_snapshot.clone();
                 let event_sender = event_sender.clone();
+                let import_context = import_context.clone();
 
                 pending_executions.push(async move {
-                    self.execute_agent(&planned_agent, &runtime_state_snapshot, model_provider, event_sender)
-                        .await
+                    self.execute_agent(
+                        &planned_agent,
+                        &runtime_state_snapshot,
+                        model_provider,
+                        event_sender,
+                        &import_context,
+                    )
+                    .await
                 });
             }
 
@@ -445,7 +476,9 @@ impl WorkflowExecutor {
                 }
 
                 log::info!("calling MCP tool `{mcp_tool_name}` for deterministic tool `{tool_name}`");
-                let result = McpClient::new(server_config)
+                let result = self
+                    .mcp_pool
+                    .get(&server_config)?
                     .call_tool(&mcp_tool_name, Value::Object(arguments))
                     .map_err(|error| ExecutorError::Other {
                         message: format!("deterministic tool call `{tool_name}` failed: {error}"),
@@ -476,6 +509,7 @@ impl WorkflowExecutor {
         runtime_state: &RuntimeState,
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+        import_context: &str,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -511,7 +545,6 @@ impl WorkflowExecutor {
             &format!("prompt for agent `{}`", planned_agent.name),
             None,
         )?);
-        let import_context = self.resolve_mcp_import_context(&evaluation_context)?;
         let prompt = if import_context.is_empty() {
             agent_prompt
         } else {
@@ -551,6 +584,7 @@ impl WorkflowExecutor {
                 output_schema,
                 tools: tool_definitions,
                 event_sender: event_sender.clone(),
+                mcp_pool: self.mcp_pool.clone(),
             })
             .await?;
 
@@ -581,6 +615,7 @@ impl WorkflowExecutor {
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
         max_concurrency: usize,
+        import_context: &str,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -624,13 +659,20 @@ impl WorkflowExecutor {
             let semaphore_clone = semaphore.clone();
             let event_sender_clone = event_sender.clone();
             let agent_clone = planned_agent.clone();
+            let iteration_import_context = import_context.to_string();
 
             pending_iterations.push(async move {
                 let permit = semaphore_clone.acquire_owned().await.map_err(|error| ExecutorError::Other {
                     message: format!("failed to acquire concurrency permit: {error}"),
                 })?;
                 let result = self
-                    .execute_agent(&agent_clone, &iteration_state, model_provider, event_sender_clone)
+                    .execute_agent(
+                        &agent_clone,
+                        &iteration_state,
+                        model_provider,
+                        event_sender_clone,
+                        &iteration_import_context,
+                    )
                     .await;
                 drop(permit);
                 result
@@ -846,7 +888,11 @@ impl WorkflowExecutor {
             ));
         }
 
-        let result = match McpClient::new(server_config).read_resource(&resource_import.source.item_name, arguments) {
+        let result = match self
+            .mcp_pool
+            .get(&server_config)?
+            .read_resource(&resource_import.source.item_name, arguments)
+        {
             Ok(result) => result,
             Err(error) => {
                 if let Some(sender) = event_sender {
@@ -902,7 +948,11 @@ impl WorkflowExecutor {
             ));
         }
 
-        let result = match McpClient::new(server_config).get_prompt(&prompt_import.source.item_name, arguments) {
+        let result = match self
+            .mcp_pool
+            .get(&server_config)?
+            .get_prompt(&prompt_import.source.item_name, arguments)
+        {
             Ok(result) => result,
             Err(error) => {
                 if let Some(sender) = event_sender {
@@ -959,7 +1009,9 @@ impl WorkflowExecutor {
         for prompt_import in self.workflow.prompt_imports() {
             let server_config = self.resolve_mcp_import_server(&prompt_import.source.server_name, evaluation_context)?;
             let arguments = self.resolve_mcp_import_parameters(&prompt_import.parameters, evaluation_context, &prompt_import.name)?;
-            let result = McpClient::new(server_config)
+            let result = self
+                .mcp_pool
+                .get(&server_config)?
                 .get_prompt(&prompt_import.source.item_name, arguments)
                 .map_err(|error| ExecutorError::Other {
                     message: format!("MCP prompt `{}` failed: {error}", prompt_import.name),
@@ -975,7 +1027,9 @@ impl WorkflowExecutor {
         for resource_import in self.workflow.resource_imports() {
             let server_config = self.resolve_mcp_import_server(&resource_import.source.server_name, evaluation_context)?;
             let arguments = self.resolve_mcp_import_parameters(&resource_import.parameters, evaluation_context, &resource_import.name)?;
-            let result = McpClient::new(server_config)
+            let result = self
+                .mcp_pool
+                .get(&server_config)?
                 .read_resource(&resource_import.source.item_name, arguments)
                 .map_err(|error| ExecutorError::Other {
                     message: format!("MCP resource `{}` failed: {error}", resource_import.name),

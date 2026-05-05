@@ -5,10 +5,11 @@ use crate::dsl::{
 use crate::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpLock {
@@ -366,7 +367,8 @@ impl McpServerConfig {
 #[derive(Debug)]
 pub struct McpClient {
     server_config: McpServerConfig,
-    resource_uri_cache: RefCell<BTreeMap<String, String>>,
+    initialized: AtomicBool,
+    resource_uri_cache: Mutex<BTreeMap<String, String>>,
 }
 
 impl McpClient {
@@ -374,12 +376,23 @@ impl McpClient {
     pub fn new(server_config: McpServerConfig) -> Self {
         Self {
             server_config,
-            resource_uri_cache: RefCell::new(BTreeMap::new()),
+            initialized: AtomicBool::new(false),
+            resource_uri_cache: Mutex::new(BTreeMap::new()),
         }
     }
 
-    pub fn list_tools(&self) -> Result<McpServerLock, McpError> {
-        log::debug!("initializing MCP tools/list: server={}", self.server_config.name);
+    fn ensure_initialized(&self) -> Result<(), McpError> {
+        if self.initialized.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
+        self.send_initialize()?;
+        self.initialized.store(true, Ordering::Release);
+
+        Ok(())
+    }
+
+    fn send_initialize(&self) -> Result<(), McpError> {
         self.request(
             "initialize",
             json!({
@@ -393,6 +406,13 @@ impl McpClient {
             1,
         )?;
         self.notify("notifications/initialized", json!({}))?;
+
+        Ok(())
+    }
+
+    pub fn list_tools(&self) -> Result<McpServerLock, McpError> {
+        log::debug!("MCP tools/list: server={}", self.server_config.name);
+        self.ensure_initialized()?;
         let result = self.request("tools/list", json!({}), 2)?;
         let server_lock = McpServerLock::from_tools_list_result(&result);
 
@@ -406,20 +426,12 @@ impl McpClient {
     }
 
     pub fn list_resources(&self) -> Result<BTreeMap<String, String>, McpError> {
-        log::debug!("initializing MCP resources/list: server={}", self.server_config.name);
-        self.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "superwire",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-            }),
-            1,
-        )?;
-        self.notify("notifications/initialized", json!({}))?;
+        log::debug!("MCP resources/list: server={}", self.server_config.name);
+        self.ensure_initialized()?;
+        self.fetch_resources()
+    }
+
+    fn fetch_resources(&self) -> Result<BTreeMap<String, String>, McpError> {
         let result = self.request("resources/list", json!({}), 2)?;
         let mut name_to_uri = BTreeMap::new();
 
@@ -446,20 +458,8 @@ impl McpClient {
     }
 
     pub fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError> {
-        log::debug!("initializing MCP tools/call: server={}, tool={tool_name}", self.server_config.name);
-        self.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "superwire",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-            }),
-            1,
-        )?;
-        self.notify("notifications/initialized", json!({}))?;
+        log::debug!("MCP tools/call: server={}, tool={tool_name}", self.server_config.name);
+        self.ensure_initialized()?;
 
         let result = self.request(
             "tools/call",
@@ -479,22 +479,10 @@ impl McpClient {
         let resource_uri = self.resolve_resource_uri(resource_name)?;
 
         log::debug!(
-            "initializing MCP resources/read: server={}, resource={resource_name} -> uri={resource_uri}",
+            "MCP resources/read: server={}, resource={resource_name} -> uri={resource_uri}",
             self.server_config.name
         );
-        self.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "superwire",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-            }),
-            1,
-        )?;
-        self.notify("notifications/initialized", json!({}))?;
+        self.ensure_initialized()?;
 
         let result = self.request(
             "resources/read",
@@ -515,44 +503,30 @@ impl McpClient {
 
     fn resolve_resource_uri(&self, resource_name: &str) -> Result<String, McpError> {
         {
-            let cache = self.resource_uri_cache.borrow();
+            let cache = self.resource_uri_cache.lock().expect("resource uri cache lock poisoned");
 
             if let Some(uri) = cache.get(resource_name) {
                 return Ok(uri.clone());
             }
         }
 
-        let resources = self.list_resources()?;
+        self.ensure_initialized()?;
+        let resources = self.fetch_resources()?;
         let uri = resources.get(resource_name).cloned().ok_or_else(|| McpError::Rpc {
             server_name: self.server_config.name.clone(),
             method: "resources/list".to_string(),
             message: format!("resource `{resource_name}` not found in server's resource list"),
         })?;
 
-        let mut cache = self.resource_uri_cache.borrow_mut();
+        let mut cache = self.resource_uri_cache.lock().expect("resource uri cache lock poisoned");
         cache.extend(resources);
 
         Ok(uri)
     }
 
     pub fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError> {
-        log::debug!(
-            "initializing MCP prompts/get: server={}, prompt={prompt_name}",
-            self.server_config.name
-        );
-        self.request(
-            "initialize",
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "superwire",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-            }),
-            1,
-        )?;
-        self.notify("notifications/initialized", json!({}))?;
+        log::debug!("MCP prompts/get: server={}, prompt={prompt_name}", self.server_config.name);
+        self.ensure_initialized()?;
 
         let result = self.request(
             "prompts/get",
@@ -635,6 +609,80 @@ impl McpClient {
             method: method.to_string(),
             message: error.to_string(),
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct McpClientPool {
+    clients: Arc<Mutex<BTreeMap<String, Arc<McpClient>>>>,
+}
+
+impl McpClientPool {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            clients: Arc::new(Mutex::new(BTreeMap::new())),
+        }
+    }
+
+    pub fn from_server_configs(configs: impl IntoIterator<Item = McpServerConfig>) -> Result<Self, McpError> {
+        let mut clients = BTreeMap::new();
+
+        for server_config in configs {
+            log::debug!("initializing MCP client pool for server: {}", server_config.name);
+            let client = McpClient::new(server_config.clone());
+            client.ensure_initialized()?;
+            clients.insert(server_config.name, Arc::new(client));
+        }
+
+        Ok(Self {
+            clients: Arc::new(Mutex::new(clients)),
+        })
+    }
+
+    pub fn from_workflow(workflow: &Workflow) -> Result<Self, McpError> {
+        let mut clients = BTreeMap::new();
+
+        for server_config in McpServerConfig::from_workflow(workflow)? {
+            log::debug!("initializing MCP client pool for server: {}", server_config.name);
+            let client = McpClient::new(server_config.clone());
+            client.ensure_initialized()?;
+            clients.insert(server_config.name, Arc::new(client));
+        }
+
+        Ok(Self {
+            clients: Arc::new(Mutex::new(clients)),
+        })
+    }
+
+    pub fn from_workflow_with_context(workflow: &Workflow, evaluation_context: &EvaluationContext) -> Result<Self, McpError> {
+        let mut clients = BTreeMap::new();
+
+        for declaration in workflow.declarations() {
+            let Declaration::McpServer(mcp_server_declaration) = declaration else {
+                continue;
+            };
+            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
+            log::debug!("initializing MCP client pool for runtime server: {}", server_config.name);
+            let client = McpClient::new(server_config.clone());
+            client.ensure_initialized()?;
+            clients.insert(server_config.name, Arc::new(client));
+        }
+
+        Ok(Self {
+            clients: Arc::new(Mutex::new(clients)),
+        })
+    }
+
+    pub fn get(&self, server_config: &McpServerConfig) -> Result<Arc<McpClient>, McpError> {
+        let clients = self.clients.lock().expect("mcp client pool lock poisoned");
+        let client = clients.get(&server_config.name).ok_or_else(|| McpError::Http {
+            server_name: server_config.name.clone(),
+            method: "pool".to_string(),
+            message: format!("MCP server `{}` not found in client pool", server_config.name),
+        })?;
+
+        Ok(Arc::clone(client))
     }
 }
 

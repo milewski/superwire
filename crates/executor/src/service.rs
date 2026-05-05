@@ -106,10 +106,23 @@ where
 
     let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.input, &request.secrets)?;
     let agent_execution_order = executor.agent_execution_order();
+    let mcp_imports = executor
+        .mcp_imports()
+        .iter()
+        .map(|import| crate::event::PlannedMcpImportEvent {
+            name: import.name.clone(),
+            kind: match import.kind {
+                superwire_core::semantic::PlannedMcpImportKind::Prompt => "prompt".to_string(),
+                superwire_core::semantic::PlannedMcpImportKind::Resource => "resource".to_string(),
+            },
+            server_name: import.server_name.clone(),
+            item_name: import.item_name.clone(),
+        })
+        .collect::<Vec<_>>();
 
     log::debug!("streamed workflow planned with agent order: {agent_execution_order:?}");
     event_sender
-        .send(ExecutorEvent::workflow_planned(agent_execution_order))
+        .send(ExecutorEvent::workflow_planned(agent_execution_order, mcp_imports))
         .await
         .map_err(|error| ExecutorError::Other {
             message: format!("failed to send workflow planned event: {error}"),

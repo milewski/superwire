@@ -17,6 +17,20 @@ pub struct PlannedAgent {
 }
 
 #[derive(Debug, Clone)]
+pub struct PlannedMcpImport {
+    pub name: String,
+    pub kind: PlannedMcpImportKind,
+    pub server_name: String,
+    pub item_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum PlannedMcpImportKind {
+    Prompt,
+    Resource,
+}
+
+#[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     pub provider_index: HashMap<String, ProviderConfigTemplate>,
     pub input_type: Option<WorkflowType>,
@@ -26,6 +40,7 @@ pub struct ExecutionPlan {
     pub tools: HashMap<String, TypedToolIr>,
     pub agent_execution_order: Vec<String>,
     pub planned_agents: HashMap<String, PlannedAgent>,
+    pub mcp_imports: Vec<PlannedMcpImport>,
 }
 
 pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkflowIr) -> Result<ExecutionPlan, WorkflowSemanticError> {
@@ -64,7 +79,32 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
             .collect(),
         agent_execution_order,
         planned_agents,
+        mcp_imports: collect_mcp_imports(workflow),
     })
+}
+
+fn collect_mcp_imports(workflow: &Workflow) -> Vec<PlannedMcpImport> {
+    let mut imports = Vec::new();
+
+    for prompt_import in workflow.prompt_imports() {
+        imports.push(PlannedMcpImport {
+            name: prompt_import.name.clone(),
+            kind: PlannedMcpImportKind::Prompt,
+            server_name: prompt_import.source.server_name.clone(),
+            item_name: prompt_import.source.item_name.clone(),
+        });
+    }
+
+    for resource_import in workflow.resource_imports() {
+        imports.push(PlannedMcpImport {
+            name: resource_import.name.clone(),
+            kind: PlannedMcpImportKind::Resource,
+            server_name: resource_import.source.server_name.clone(),
+            item_name: resource_import.source.item_name.clone(),
+        });
+    }
+
+    imports
 }
 
 fn validate_ir_planner_invariants(

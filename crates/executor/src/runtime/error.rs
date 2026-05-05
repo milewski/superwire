@@ -1,3 +1,4 @@
+use superwire_core::mcp::McpError;
 use superwire_core::semantic::WorkflowSemanticError;
 use thiserror::Error;
 
@@ -5,6 +6,9 @@ use thiserror::Error;
 pub enum ExecutorError {
     #[error(transparent)]
     Semantic(#[from] WorkflowSemanticError),
+
+    #[error(transparent)]
+    Mcp(#[from] McpError),
 
     #[error("workflow input type mismatch: expected `{expected}`, found `{found}`")]
     InputTypeMismatch { expected: String, found: String },
@@ -37,6 +41,7 @@ impl ExecutorError {
             | Self::InputValueMismatch { .. }
             | Self::SecretValueMismatch { .. } => true,
             Self::Semantic(_)
+            | Self::Mcp(_)
             | Self::OutputTypeMismatch { .. }
             | Self::AgentOutputTypeMismatch { .. }
             | Self::Model { .. }

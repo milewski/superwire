@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlannedMcpImportEvent {
+    pub name: String,
+    pub kind: String,
+    pub server_name: String,
+    pub item_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutorEventKind {
@@ -59,9 +67,10 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn workflow_planned(agent_execution_order: Vec<String>) -> Self {
+    pub fn workflow_planned(agent_execution_order: Vec<String>, mcp_imports: Vec<PlannedMcpImportEvent>) -> Self {
         Self::new(ExecutorEventKind::WorkflowPlanned).with_data(serde_json::json!({
             "agent_execution_order": agent_execution_order,
+            "mcp_imports": mcp_imports,
         }))
     }
 
