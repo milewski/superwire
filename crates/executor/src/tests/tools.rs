@@ -85,16 +85,42 @@ struct TestMcpHttpServer {
     endpoint: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestMcpMethod {
+    Initialized,
+    ToolsList,
+    ResourcesList,
+    ResourcesRead,
+    PromptsGet,
+    Unknown,
+}
+
+#[derive(Clone, Copy)]
+enum JsonSchemaType {
+    String,
+    Number,
+    Boolean,
+    Object,
+}
+
+struct SchemaField {
+    name: &'static str,
+    schema: Value,
+}
+
+struct TestMcpCatalog;
+
 impl TestMcpHttpServer {
     fn spawn(expected_headers: impl IntoIterator<Item = (String, String)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
         let expected_headers = expected_headers.into_iter().collect::<BTreeMap<_, _>>();
+        let catalog = TestMcpCatalog;
 
         thread::spawn(move || {
             for incoming_stream in listener.incoming().take(12) {
                 let stream = incoming_stream.expect("test MCP stream should open");
-                handle_mcp_request(stream, &expected_headers);
+                handle_mcp_request(stream, &expected_headers, &catalog);
             }
         });
 
@@ -106,7 +132,112 @@ impl TestMcpHttpServer {
     }
 }
 
-fn handle_mcp_request(mut stream: TcpStream, expected_headers: &BTreeMap<String, String>) {
+impl TestMcpMethod {
+    fn from_request(request: &Value) -> Self {
+        match request.get("method").and_then(Value::as_str) {
+            Some("notifications/initialized") => Self::Initialized,
+            Some("tools/list") => Self::ToolsList,
+            Some("resources/list") => Self::ResourcesList,
+            Some("resources/read") => Self::ResourcesRead,
+            Some("prompts/get") => Self::PromptsGet,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl JsonSchemaType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Boolean => "boolean",
+            Self::Object => "object",
+        }
+    }
+}
+
+impl TestMcpCatalog {
+    fn response_for(&self, method: TestMcpMethod) -> Option<Value> {
+        match method {
+            TestMcpMethod::Initialized => None,
+            TestMcpMethod::ToolsList => Some(jsonrpc_result(2, json!({ "tools": self.tools() }))),
+            TestMcpMethod::ResourcesList => Some(jsonrpc_result(2, json!({ "resources": self.resources() }))),
+            TestMcpMethod::ResourcesRead => Some(jsonrpc_result(3, self.project_readme_content())),
+            TestMcpMethod::PromptsGet => Some(jsonrpc_result(2, self.system_prompt_result())),
+            TestMcpMethod::Unknown => Some(jsonrpc_result(1, json!({}))),
+        }
+    }
+
+    fn tools(&self) -> Vec<Value> {
+        vec![
+            mcp_tool(
+                "update_user_name",
+                "Update a user name",
+                object_schema(
+                    [
+                        schema_field("user_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("user_name", string_enum_schema(["Ada", "Grace"])),
+                    ],
+                    ["user_id", "user_name"],
+                ),
+                object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
+            ),
+            mcp_tool(
+                "list_participants",
+                "List participants",
+                object_schema(
+                    [
+                        schema_field("project_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("task_id", primitive_schema(JsonSchemaType::Number)),
+                    ],
+                    ["project_id", "task_id"],
+                ),
+                object_schema(
+                    [schema_field("participants", array_schema(primitive_schema(JsonSchemaType::Object)))],
+                    ["participants"],
+                ),
+            ),
+        ]
+    }
+
+    fn resources(&self) -> Vec<Value> {
+        vec![json!({
+            "name": "project-readme",
+            "title": "Project README",
+            "description": "The project readme file",
+            "mimeType": "text/markdown",
+            "uri": "file://resources/project-readme"
+        })]
+    }
+
+    fn project_readme_content(&self) -> Value {
+        json!({
+            "contents": [
+                {
+                    "uri": "file://resources/project-readme",
+                    "mimeType": "text/markdown",
+                    "text": "# Project README\nUse stable sorting."
+                }
+            ]
+        })
+    }
+
+    fn system_prompt_result(&self) -> Value {
+        json!({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": {
+                        "type": "text",
+                        "text": "Follow project conventions."
+                    }
+                }
+            ]
+        })
+    }
+}
+
+fn handle_mcp_request(mut stream: TcpStream, expected_headers: &BTreeMap<String, String>, catalog: &TestMcpCatalog) {
     let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
     let mut request_headers = BTreeMap::new();
     let mut content_length = 0_usize;
@@ -140,7 +271,7 @@ fn handle_mcp_request(mut stream: TcpStream, expected_headers: &BTreeMap<String,
     let mut request_body = vec![0_u8; content_length];
     reader.read_exact(&mut request_body).expect("request body should read");
     let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
-    let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
+    let response = if let Some(response_body) = catalog.response_for(TestMcpMethod::from_request(&request)) {
         let response_body = response_body.to_string();
 
         format!(
@@ -155,98 +286,57 @@ fn handle_mcp_request(mut stream: TcpStream, expected_headers: &BTreeMap<String,
     stream.write_all(response.as_bytes()).expect("response should write");
 }
 
-fn response_for_method(method: Option<&str>) -> Option<Value> {
-    match method {
-        Some("notifications/initialized") => None,
-        Some("tools/list") => Some(json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "tools": [
-                    {
-                        "name": "update_user_name",
-                        "description": "Update a user name",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "user_id": { "type": "number" },
-                                "user_name": { "type": "string", "enum": ["Ada", "Grace"] }
-                            },
-                            "required": ["user_id", "user_name"]
-                        },
-                        "outputSchema": {
-                            "type": "object",
-                            "properties": { "success": { "type": "boolean" } },
-                            "required": ["success"]
-                        }
-                    },
-                    {
-                        "name": "list_participants",
-                        "description": "List participants",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "project_id": { "type": "number" },
-                                "task_id": { "type": "number" }
-                            },
-                            "required": ["project_id", "task_id"]
-                        },
-                        "outputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "participants": { "type": "array", "items": { "type": "object" } }
-                            },
-                            "required": ["participants"]
-                        }
-                    }
-                ]
-            }
-        })),
-        Some("resources/list") => Some(json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "resources": [
-                    {
-                        "name": "project-readme",
-                        "title": "Project README",
-                        "description": "The project readme file",
-                        "mimeType": "text/markdown",
-                        "uri": "file://resources/project-readme"
-                    }
-                ]
-            }
-        })),
-        Some("resources/read") => Some(json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "result": {
-                "contents": [
-                    {
-                        "uri": "file://resources/project-readme",
-                        "mimeType": "text/markdown",
-                        "text": "# Project README\nUse stable sorting."
-                    }
-                ]
-            }
-        })),
-        Some("prompts/get") => Some(json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": {
-                            "type": "text",
-                            "text": "Follow project conventions."
-                        }
-                    }
-                ]
-            }
-        })),
-        _ => Some(json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
-    }
+fn jsonrpc_result(request_id: u64, result: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": result
+    })
+}
+
+fn mcp_tool(name: &str, description: &str, input_schema: Value, output_schema: Value) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "inputSchema": input_schema,
+        "outputSchema": output_schema
+    })
+}
+
+fn object_schema(fields: impl IntoIterator<Item = SchemaField>, required_fields: impl IntoIterator<Item = &'static str>) -> Value {
+    let properties = fields
+        .into_iter()
+        .map(|field| (field.name.to_string(), field.schema))
+        .collect::<serde_json::Map<_, _>>();
+    let required_fields = required_fields.into_iter().collect::<Vec<_>>();
+
+    json!({
+        "type": JsonSchemaType::Object.as_str(),
+        "properties": properties,
+        "required": required_fields
+    })
+}
+
+fn schema_field(name: &'static str, schema: Value) -> SchemaField {
+    SchemaField { name, schema }
+}
+
+fn primitive_schema(schema_type: JsonSchemaType) -> Value {
+    json!({ "type": schema_type.as_str() })
+}
+
+fn string_enum_schema(values: impl IntoIterator<Item = &'static str>) -> Value {
+    json!({
+        "type": JsonSchemaType::String.as_str(),
+        "enum": values.into_iter().collect::<Vec<_>>()
+    })
+}
+
+fn array_schema(item_schema: Value) -> Value {
+    json!({
+        "type": "array",
+        "items": item_schema
+    })
 }
 
 fn request_with_input(fixture: &str, input: serde_json::Value) -> crate::api::ExecutionRequest {
