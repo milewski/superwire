@@ -230,6 +230,111 @@ fn rejects_invalid_tool_arguments_before_mcp_call() {
 }
 
 #[test]
+fn rejects_schema_mismatched_tool_call_payload_and_never_dispatches_mcp_call() {
+    let provider = OpenAiModelProvider;
+    let server = TestMcpHttpServer::spawn();
+    let mut request = model_request("https://api.openai.com/v1".to_string(), server.endpoint());
+
+    request.tools[0].input_schema = json!({
+        "properties": {
+            "name": {
+                "items": {
+                    "properties": {
+                        "language": {
+                            "enum": ["en_US", "es", "fr"],
+                            "type": "string"
+                        },
+                        "value": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["language", "value"],
+                    "type": "object"
+                },
+                "minItems": 1,
+                "type": ["array", "null"],
+                "uniqueItems": true
+            },
+            "primary_language": {
+                "enum": ["en_US", "es", "fr"],
+                "type": ["string", "null"]
+            },
+            "languages": {
+                "items": {
+                    "enum": ["en_US", "es", "fr"],
+                    "type": "string"
+                },
+                "minItems": 1,
+                "type": ["array", "null"],
+                "uniqueItems": true
+            },
+            "description": {
+                "items": {
+                    "properties": {
+                        "language": {
+                            "enum": ["en_US", "es", "fr"],
+                            "type": "string"
+                        },
+                        "value": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["language", "value"],
+                    "type": "object"
+                },
+                "minItems": 1,
+                "type": ["array", "null"]
+            },
+            "project_id": {
+                "type": "integer"
+            }
+        },
+        "required": ["name", "primary_language", "languages", "description", "project_id"],
+        "type": "object",
+        "additionalProperties": false
+    });
+    let tool_call = ChatCompletionMessageToolCall {
+        id: "call_1".to_string(),
+        r#type: ChatCompletionToolType::Function,
+        function: FunctionCall {
+            name: "update_user_name".to_string(),
+            arguments: json!({
+                "description": "Soccer project",
+                "languages": "en_US",
+                "name": "Soccer Project",
+                "primary_language": "en_US",
+                "project_id": 31,
+                "workspace_id": 1
+            })
+            .to_string(),
+        },
+    };
+
+    let result = provider
+        .execute_tool_call(&request, &tool_call)
+        .expect("schema mismatches should return a tool validation error");
+
+    assert_eq!(result["error"], "tool_argument_schema_mismatch");
+    assert_eq!(result["tool_name"], "update_user_name");
+
+    let validation_message = result["message"].as_str().expect("validation error message should be a string");
+
+    assert!(validation_message.contains("name") || validation_message.contains("languages"));
+    assert!(validation_message.contains("workspace_id") || validation_message.contains("Additional properties"));
+    assert!(validation_message.contains("declared schema"));
+
+    assert_eq!(
+        result["expected_schema"].pointer("/properties/name/type"),
+        Some(&json!(["array", "null"]))
+    );
+    assert_eq!(
+        result["expected_schema"].pointer("/properties/languages/type"),
+        Some(&json!(["array", "null"]))
+    );
+    assert_eq!(server.received_tool_arguments(), None);
+}
+
+#[test]
 fn returns_tool_error_when_max_calls_limit_is_exceeded() {
     let mcp_server = TestMcpHttpServer::spawn();
     let provider = OpenAiModelProvider;
