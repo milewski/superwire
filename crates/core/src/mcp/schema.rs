@@ -87,6 +87,21 @@ impl TypedJsonSchema for Value {
     }
 
     fn type_expression(&self) -> TypeExpression {
+        let type_expression_for_keyword = |type_keyword: &str| -> Option<TypeExpression> {
+            match type_keyword {
+                "string" => Some(TypeExpression::String),
+                "integer" | "number" => Some(TypeExpression::Number),
+                "boolean" => Some(TypeExpression::Boolean),
+                "null" => Some(TypeExpression::Null),
+                "array" => Some(TypeExpression::Array {
+                    item_type: Box::new(self.get("items").map_or(TypeExpression::String, TypedJsonSchema::type_expression)),
+                    fixed_length: None,
+                }),
+                "object" => Some(TypeExpression::Object(self.typed_fields())),
+                _ => None,
+            }
+        };
+
         if let Some(enum_values) = self.get("enum").and_then(Value::as_array) {
             let mut string_enum_values = enum_values
                 .iter()
@@ -111,16 +126,24 @@ impl TypedJsonSchema for Value {
             return TypeExpression::Union(any_of.iter().map(TypedJsonSchema::type_expression).collect());
         }
 
+        if let Some(type_keywords) = self.get("type").and_then(Value::as_array) {
+            let mut type_expressions = type_keywords
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(type_expression_for_keyword)
+                .collect::<Vec<_>>();
+
+            if type_expressions.len() == 1 {
+                return type_expressions.remove(0);
+            }
+
+            if !type_expressions.is_empty() {
+                return TypeExpression::Union(type_expressions);
+            }
+        }
+
         match self.get("type").and_then(Value::as_str) {
-            Some("string") => TypeExpression::String,
-            Some("integer" | "number") => TypeExpression::Number,
-            Some("boolean") => TypeExpression::Boolean,
-            Some("null") => TypeExpression::Null,
-            Some("array") => TypeExpression::Array {
-                item_type: Box::new(self.get("items").map_or(TypeExpression::String, TypedJsonSchema::type_expression)),
-                fixed_length: None,
-            },
-            Some("object") => TypeExpression::Object(self.typed_fields()),
+            Some(type_keyword) => type_expression_for_keyword(type_keyword).unwrap_or(TypeExpression::String),
             _ => TypeExpression::String,
         }
     }
@@ -136,5 +159,35 @@ impl SourceSpan {
             start: SourcePosition { line: 1, column: 1 },
             end: SourcePosition { line: 1, column: 1 },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TypedJsonSchema;
+    use crate::dsl::TypeExpression;
+    use serde_json::json;
+
+    #[test]
+    fn type_expression_supports_nullable_array_type_keyword() {
+        let schema = json!({
+            "type": ["array", "null"],
+            "items": {
+                "type": "string"
+            }
+        });
+
+        let type_expression = schema.type_expression();
+
+        assert_eq!(
+            type_expression,
+            TypeExpression::Union(vec![
+                TypeExpression::Array {
+                    item_type: Box::new(TypeExpression::String),
+                    fixed_length: None,
+                },
+                TypeExpression::Null,
+            ])
+        );
     }
 }

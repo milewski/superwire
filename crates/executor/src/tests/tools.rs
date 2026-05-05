@@ -197,6 +197,80 @@ impl TestMcpCatalog {
                     ["participants"],
                 ),
             ),
+            mcp_tool(
+                "edit_project_for_workspace",
+                "Edit project for workspace",
+                object_schema(
+                    [
+                        schema_field(
+                            "name",
+                            json!({
+                                "type": ["array", "null"],
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "language": {
+                                            "type": "string",
+                                            "enum": ["en_US", "es", "fr"]
+                                        },
+                                        "value": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": ["language", "value"]
+                                },
+                                "minItems": 1,
+                                "uniqueItems": true
+                            }),
+                        ),
+                        schema_field(
+                            "primary_language",
+                            json!({
+                                "type": ["string", "null"],
+                                "enum": ["en_US", "es", "fr"]
+                            }),
+                        ),
+                        schema_field(
+                            "languages",
+                            json!({
+                                "type": ["array", "null"],
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["en_US", "es", "fr"]
+                                },
+                                "minItems": 1,
+                                "uniqueItems": true
+                            }),
+                        ),
+                        schema_field(
+                            "description",
+                            json!({
+                                "type": ["array", "null"],
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "language": {
+                                            "type": "string",
+                                            "enum": ["en_US", "es", "fr"]
+                                        },
+                                        "value": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": ["language", "value"]
+                                },
+                                "minItems": 1
+                            }),
+                        ),
+                        schema_field("project_id", json!({ "type": "integer" })),
+                    ],
+                    ["name", "primary_language", "languages", "description", "project_id"],
+                ),
+                object_schema(
+                    [schema_field("project_id", primitive_schema(JsonSchemaType::Number))],
+                    ["project_id"],
+                ),
+            ),
         ]
     }
 
@@ -677,4 +751,74 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
         Some(&json!(["Ada", "Grace"]))
     );
     assert_eq!(tool_definition.output_schema["required"], json!(["success"]));
+}
+
+#[tokio::test]
+async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+        }
+
+        tool edit_project from mcp.local.tool.edit_project_for_workspace {
+            bindings {
+                project_id: input.project_id
+            }
+        }
+
+        agent project_editor {
+            model: openai("gpt-4.1-mini")
+            tools: [tool.edit_project]
+            prompt: "Edit project"
+            output: string
+        }
+
+        output {
+            value: agent.project_editor
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request_with_input(&workflow_source, json!({ "project_id": 31 })))
+        .await
+        .expect("execution should preserve nullable array schema for model validation");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("tracking lock should not be poisoned");
+    let request = recorded_requests.first().expect("model request should be recorded");
+    let tool_definition = request.tools.first().expect("tool definition should be present");
+
+    assert_eq!(
+        tool_definition.input_schema.pointer("/properties/name/oneOf/0/type"),
+        Some(&json!("array"))
+    );
+    assert_eq!(
+        tool_definition.input_schema.pointer("/properties/name/oneOf/1/type"),
+        Some(&json!("null"))
+    );
+    assert_eq!(
+        tool_definition.input_schema.pointer("/properties/languages/oneOf/0/type"),
+        Some(&json!("array"))
+    );
+    assert_eq!(
+        tool_definition.input_schema.pointer("/properties/languages/oneOf/1/type"),
+        Some(&json!("null"))
+    );
 }
