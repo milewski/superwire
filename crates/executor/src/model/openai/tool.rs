@@ -2,7 +2,7 @@ use super::format::format_tool_name;
 use super::request::ChatCompletionRequestMessageExt;
 use crate::event::ExecutorEvent;
 use crate::model::response::normalize_mcp_tool_result;
-use crate::model::types::{ModelRequest, ModelToolSource};
+use crate::model::types::{ModelRequest, ModelToolDefinition, ModelToolSource};
 use crate::runtime::ExecutorError;
 use async_openai::types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestMessage, ChatCompletionRequestToolMessageArgs,
@@ -55,13 +55,9 @@ impl super::OpenAiModelProvider {
                 message: format!("model requested unknown tool `{}`", tool_call.function.name),
             })?;
 
-        request
-            .tool_call_tracker
-            .register_call(&tool_definition.name, tool_definition.max_calls, &tool_definition.max_calls_scope)
-            .map_err(|message| ExecutorError::Model {
-                agent_name: request.agent_name.clone(),
-                message,
-            })?;
+        if let Some(tool_error) = request.call_limit_error(tool_definition) {
+            return Ok(tool_error);
+        }
 
         log::debug!(
             "processing model tool call: agent={}, requested_tool={}, resolved_tool={}",
@@ -72,11 +68,7 @@ impl super::OpenAiModelProvider {
         let mut arguments = match serde_json::from_str::<Value>(&tool_call.function.arguments) {
             Ok(arguments) => arguments,
             Err(error) => {
-                let tool_error = tool_argument_error(
-                    &tool_definition.name,
-                    format!("tool arguments must be valid JSON: {error}"),
-                    &tool_definition.input_schema,
-                );
+                let tool_error = tool_definition.argument_error(format!("tool arguments must be valid JSON: {error}"));
 
                 request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
                 log::warn!(
@@ -91,7 +83,7 @@ impl super::OpenAiModelProvider {
         };
 
         if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
-            let tool_error = tool_argument_error(&tool_definition.name, message, &tool_definition.input_schema);
+            let tool_error = tool_definition.argument_error(message);
 
             request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
             log::warn!(
@@ -158,6 +150,46 @@ impl super::OpenAiModelProvider {
     }
 }
 
+impl ModelToolDefinition {
+    fn argument_error(&self, message: String) -> Value {
+        serde_json::json!({
+            "error": "tool_argument_schema_mismatch",
+            "tool_name": self.name,
+            "message": message,
+            "expected_schema": self.input_schema,
+        })
+    }
+
+    fn call_limit_error(&self, message: String) -> Value {
+        serde_json::json!({
+            "error": "tool_call_limit_exceeded",
+            "tool_name": self.name,
+            "message": format!("{message}. Do not call this tool again; continue with the available information or choose another allowed action."),
+            "max_calls": self.max_calls,
+        })
+    }
+}
+
+impl ModelRequest {
+    fn call_limit_error(&self, tool_definition: &ModelToolDefinition) -> Option<Value> {
+        let message = self
+            .tool_call_tracker
+            .register_call(&tool_definition.name, tool_definition.max_calls, &tool_definition.max_calls_scope)
+            .err()?;
+        let tool_error = tool_definition.call_limit_error(message);
+
+        self.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+        log::warn!(
+            "rejected tool call at max_calls limit: agent={}, tool={}, error={}",
+            self.agent_name,
+            tool_definition.name,
+            tool_error.get("message").and_then(Value::as_str).unwrap_or("max_calls exceeded")
+        );
+
+        Some(tool_error)
+    }
+}
+
 fn validate_tool_arguments(arguments: &Value, schema: &Value) -> Result<(), String> {
     let validator = jsonschema::validator_for(schema).map_err(|error| format!("tool schema could not be compiled: {error}"))?;
     let mut validation_issues = validator.iter_errors(arguments).map(format_validation_issue).collect::<Vec<_>>();
@@ -173,15 +205,6 @@ fn validate_tool_arguments(arguments: &Value, schema: &Value) -> Result<(), Stri
         "tool arguments do not match the declared schema: {}. Correct the arguments and call the tool again.",
         validation_issues.join("; ")
     ))
-}
-
-fn tool_argument_error(tool_name: &str, message: String, schema: &Value) -> Value {
-    serde_json::json!({
-        "error": "tool_argument_schema_mismatch",
-        "tool_name": tool_name,
-        "message": message,
-        "expected_schema": schema,
-    })
 }
 
 fn format_validation_issue(validation_error: ValidationError<'_>) -> String {

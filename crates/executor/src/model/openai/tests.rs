@@ -230,12 +230,14 @@ fn rejects_invalid_tool_arguments_before_mcp_call() {
 }
 
 #[test]
-fn rejects_tool_call_when_max_calls_limit_is_exceeded() {
+fn returns_tool_error_when_max_calls_limit_is_exceeded() {
     let mcp_server = TestMcpHttpServer::spawn();
     let provider = OpenAiModelProvider;
     let mut request = model_request("http://localhost:1234/v1".to_string(), mcp_server.endpoint());
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(4);
 
     request.tools[0].max_calls = Some(1);
+    request.event_sender = Some(event_sender);
 
     let tool_call = ChatCompletionMessageToolCall {
         id: "call_1".to_string(),
@@ -250,13 +252,124 @@ fn rejects_tool_call_when_max_calls_limit_is_exceeded() {
         .execute_tool_call(&request, &tool_call)
         .expect("first tool call should succeed");
 
-    let execution_error = provider
+    let result = provider
         .execute_tool_call(&request, &tool_call)
-        .expect_err("second tool call should fail when max_calls is exceeded");
+        .expect("max_calls error should be returned as a tool result");
 
-    assert!(execution_error
-        .to_string()
+    assert_eq!(result["error"], "tool_call_limit_exceeded");
+    assert_eq!(result["tool_name"], "update_user_name");
+    assert_eq!(result["max_calls"], 1);
+    assert!(result["message"]
+        .as_str()
+        .expect("error message should be string")
         .contains("tool `update_user_name` cannot be called more than 1 times"));
+
+    let started_event = event_receiver.try_recv().expect("first tool call should emit started event");
+
+    assert_eq!(started_event.kind, ExecutorEventKind::ToolCallStarted);
+
+    let completed_event = event_receiver.try_recv().expect("first tool call should emit completed event");
+
+    assert_eq!(completed_event.kind, ExecutorEventKind::ToolCallCompleted);
+
+    let failed_event = event_receiver.try_recv().expect("max_calls rejection should emit failure event");
+
+    assert_eq!(failed_event.kind, ExecutorEventKind::ToolCallFailed);
+    assert_eq!(failed_event.agent_name.as_deref(), Some("updater"));
+    assert_eq!(
+        failed_event.data.as_ref().and_then(|data| data.pointer("/error/error")),
+        Some(&json!("tool_call_limit_exceeded"))
+    );
+}
+
+#[tokio::test]
+async fn retries_after_max_calls_tool_error() {
+    let provider = OpenAiModelProvider;
+    let model_server = TestOpenAiHttpServer::spawn(vec![
+        json!({
+            "id": "chatcmpl_1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "deepseek-reasoner",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "update_user_name",
+                            "arguments": "{}"
+                        }
+                    }]
+                }
+            }]
+        }),
+        json!({
+            "id": "chatcmpl_2",
+            "object": "chat.completion",
+            "created": 2,
+            "model": "deepseek-reasoner",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {
+                            "name": "update_user_name",
+                            "arguments": "{}"
+                        }
+                    }]
+                }
+            }]
+        }),
+        json!({
+            "id": "chatcmpl_3",
+            "object": "chat.completion",
+            "created": 3,
+            "model": "deepseek-reasoner",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"success\":true}"
+                }
+            }]
+        }),
+    ]);
+    let mcp_server = TestMcpHttpServer::spawn();
+    let mut request = model_request(model_server.endpoint(), mcp_server.endpoint());
+
+    request.tools[0].max_calls = Some(1);
+
+    let response = provider
+        .generate(request)
+        .await
+        .expect("model should recover after max_calls tool error");
+
+    assert_eq!(response.output, json!({ "success": true }));
+
+    let requests = model_server.requests();
+
+    assert_eq!(requests.len(), 3);
+
+    let third_request = requests.get(2).expect("third request should be sent after max_calls error");
+    let limit_error_message = third_request
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| messages.iter().rev().find(|message| message.get("role") == Some(&json!("tool"))))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .expect("max_calls tool error should be replayed as tool content");
+
+    assert!(limit_error_message.contains("tool_call_limit_exceeded"));
+    assert!(limit_error_message.contains("cannot be called more than 1 times"));
 }
 
 #[test]
