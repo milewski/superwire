@@ -1958,6 +1958,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-mcp-schema"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d88ea8dd4dd01c37f062b14ab808b7087333cc017c491e0f4861340db6ec40e"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2306,6 +2316,7 @@ dependencies = [
  "pest_derive",
  "petgraph",
  "reqwest 0.12.28",
+ "rust-mcp-schema",
  "schemars",
  "serde",
  "serde_json",

@@ -185,10 +185,10 @@ fn test_mcp_lock() -> McpLock {
     let mut tools = BTreeMap::new();
     tools.insert(
         "list_all_participants_who_has_answered_given_task".to_string(),
-        McpToolLock {
-            name: "list_all_participants_who_has_answered_given_task".to_string(),
-            description: Some("List all participants who answered a task".to_string()),
-            input_schema: serde_json::json!({
+        McpToolLock::from_json_schema_values(
+            "list_all_participants_who_has_answered_given_task".to_string(),
+            Some("List all participants who answered a task".to_string()),
+            serde_json::json!({
                 "type": "object",
                 "properties": {
                     "project_id": { "type": "number" },
@@ -196,35 +196,37 @@ fn test_mcp_lock() -> McpLock {
                 },
                 "required": ["project_id", "task_id"]
             }),
-            output_schema: Some(serde_json::json!({
+            Some(serde_json::json!({
                 "type": "object",
                 "properties": {
                     "participants": { "type": "array", "items": { "type": "object" } }
                 },
                 "required": ["participants"]
             })),
-        },
+        )
+        .expect("test MCP input schema should parse"),
     );
     tools.insert(
         "update-user-name".to_string(),
-        McpToolLock {
-            name: "update-user-name".to_string(),
-            description: Some("Update a user name".to_string()),
-            input_schema: serde_json::json!({
+        McpToolLock::from_json_schema_values(
+            "update-user-name".to_string(),
+            Some("Update a user name".to_string()),
+            serde_json::json!({
                 "type": "object",
                 "properties": {
                     "user_name": { "type": "string" }
                 },
                 "required": ["user_name"]
             }),
-            output_schema: Some(serde_json::json!({
+            Some(serde_json::json!({
                 "type": "object",
                 "properties": {
                     "success": { "type": "boolean" }
                 },
                 "required": ["success"]
             })),
-        },
+        )
+        .expect("test MCP input schema should parse"),
     );
     let mut servers = BTreeMap::new();
     servers.insert(
