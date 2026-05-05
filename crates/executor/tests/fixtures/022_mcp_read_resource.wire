@@ -1,0 +1,25 @@
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+input {
+    workspace_id: string
+}
+
+resource project_readme from mcp.local.resource.project-readme {
+    bindings {
+        workspace_id: input.workspace_id
+    }
+}
+
+dynamic {
+    readme: read resource.project_readme {
+        params {
+            section: "setup"
+        }
+    }
+}
+
+output {
+    readme: dynamic.readme
+}

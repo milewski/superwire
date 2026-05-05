@@ -1,0 +1,25 @@
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+input {
+    workspace_id: string
+}
+
+prompt system_prompt from mcp.local.prompt.system-prompt {
+    bindings {
+        workspace_id: input.workspace_id
+    }
+}
+
+dynamic {
+    instructions: render prompt.system_prompt {
+        params {
+            audience: "maintainers"
+        }
+    }
+}
+
+output {
+    instructions: dynamic.instructions
+}

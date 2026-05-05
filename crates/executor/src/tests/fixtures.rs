@@ -18,3 +18,6 @@ pub const COMPLEX_TYPES: &str = include_str!("../../tests/fixtures/017_complex_t
 pub const OPTIONAL_CHAINING: &str = include_str!("../../tests/fixtures/018_optional_chaining.wire");
 pub const DIAMOND_DEPENDENCY: &str = include_str!("../../tests/fixtures/019_diamond_dependency.wire");
 pub const MIXED_OUTPUT: &str = include_str!("../../tests/fixtures/020_mixed_output.wire");
+pub const MCP_READ_RESOURCE: &str = include_str!("../../tests/fixtures/022_mcp_read_resource.wire");
+pub const MCP_RENDER_PROMPT: &str = include_str!("../../tests/fixtures/023_mcp_render_prompt.wire");
+pub const MCP_READ_RENDER_DEPENDENCIES: &str = include_str!("../../tests/fixtures/024_mcp_read_render_dependencies.wire");
