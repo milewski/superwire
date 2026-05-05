@@ -197,81 +197,85 @@ impl TestMcpCatalog {
                     ["participants"],
                 ),
             ),
-            mcp_tool(
-                "edit_project_for_workspace",
-                "Edit project for workspace",
-                object_schema(
-                    [
-                        schema_field(
-                            "name",
-                            json!({
-                                "type": ["array", "null"],
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "language": {
-                                            "type": "string",
-                                            "enum": ["en_US", "es", "fr"]
-                                        },
-                                        "value": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "required": ["language", "value"]
-                                },
-                                "minItems": 1,
-                                "uniqueItems": true
-                            }),
-                        ),
-                        schema_field(
-                            "primary_language",
-                            json!({
-                                "type": ["string", "null"],
-                                "enum": ["en_US", "es", "fr"]
-                            }),
-                        ),
-                        schema_field(
-                            "languages",
-                            json!({
-                                "type": ["array", "null"],
-                                "items": {
-                                    "type": "string",
-                                    "enum": ["en_US", "es", "fr"]
-                                },
-                                "minItems": 1,
-                                "uniqueItems": true
-                            }),
-                        ),
-                        schema_field(
-                            "description",
-                            json!({
-                                "type": ["array", "null"],
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "language": {
-                                            "type": "string",
-                                            "enum": ["en_US", "es", "fr"]
-                                        },
-                                        "value": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "required": ["language", "value"]
-                                },
-                                "minItems": 1
-                            }),
-                        ),
-                        schema_field("project_id", json!({ "type": "integer" })),
-                    ],
-                    ["name", "primary_language", "languages", "description", "project_id"],
-                ),
-                object_schema(
-                    [schema_field("project_id", primitive_schema(JsonSchemaType::Number))],
-                    ["project_id"],
-                ),
-            ),
+            self.edit_project_for_workspace_tool(),
         ]
+    }
+
+    fn edit_project_for_workspace_tool(&self) -> Value {
+        mcp_tool(
+            "edit_project_for_workspace",
+            "Edit project for workspace",
+            object_schema(
+                [
+                    schema_field(
+                        "name",
+                        json!({
+                            "type": ["array", "null"],
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "language": {
+                                        "type": "string",
+                                        "enum": ["en_US", "es", "fr"]
+                                    },
+                                    "value": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": ["language", "value"]
+                            },
+                            "minItems": 1,
+                            "uniqueItems": true
+                        }),
+                    ),
+                    schema_field(
+                        "primary_language",
+                        json!({
+                            "type": ["string", "null"],
+                            "enum": ["en_US", "es", "fr"]
+                        }),
+                    ),
+                    schema_field(
+                        "languages",
+                        json!({
+                            "type": ["array", "null"],
+                            "items": {
+                                "type": "string",
+                                "enum": ["en_US", "es", "fr"]
+                            },
+                            "minItems": 1,
+                            "uniqueItems": true
+                        }),
+                    ),
+                    schema_field(
+                        "description",
+                        json!({
+                            "type": ["array", "null"],
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "language": {
+                                        "type": "string",
+                                        "enum": ["en_US", "es", "fr"]
+                                    },
+                                    "value": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": ["language", "value"]
+                            },
+                            "minItems": 1
+                        }),
+                    ),
+                    schema_field("project_id", json!({ "type": "integer" })),
+                ],
+                ["name", "primary_language", "languages", "description", "project_id"],
+            ),
+            object_schema(
+                [schema_field("project_id", primitive_schema(JsonSchemaType::Number))],
+                ["project_id"],
+            ),
+        )
     }
 
     fn resources(&self) -> Vec<Value> {
