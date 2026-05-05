@@ -202,13 +202,28 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
                 ]
             }
         })),
-        Some("resources/read") => Some(json!({
+        Some("resources/list") => Some(json!({
             "jsonrpc": "2.0",
             "id": 2,
             "result": {
+                "resources": [
+                    {
+                        "name": "project-readme",
+                        "title": "Project README",
+                        "description": "The project readme file",
+                        "mimeType": "text/markdown",
+                        "uri": "file://resources/project-readme"
+                    }
+                ]
+            }
+        })),
+        Some("resources/read") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "result": {
                 "contents": [
                     {
-                        "uri": "project-readme",
+                        "uri": "file://resources/project-readme",
                         "mimeType": "text/markdown",
                         "text": "# Project README\nUse stable sorting."
                     }
