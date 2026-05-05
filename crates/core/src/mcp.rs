@@ -14,11 +14,31 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpLock {
     pub servers: BTreeMap<String, McpServerLock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_context: Option<McpLockResolutionContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct McpLockResolutionContext {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub secrets: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dynamic: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_outputs: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_contexts: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpServerLock {
     pub tools: BTreeMap<String, McpToolLock>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resources: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prompts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,6 +116,21 @@ impl McpLock {
         Ok(lock)
     }
 
+    pub fn discover_from_workflow_with_lock_context(
+        workflow: &Workflow,
+        lock_context: Option<&McpLockResolutionContext>,
+    ) -> Result<Self, McpError> {
+        let Some(lock_context) = lock_context else {
+            return Self::discover_from_workflow(workflow);
+        };
+
+        let evaluation_context = lock_context.to_evaluation_context();
+        let mut lock = Self::discover_from_workflow_with_context(workflow, &evaluation_context)?;
+        lock.resolution_context = Some(lock_context.clone());
+
+        Ok(lock)
+    }
+
     pub fn discover_from_workflow_with_context(workflow: &Workflow, evaluation_context: &EvaluationContext) -> Result<Self, McpError> {
         let mut lock = Self::empty();
 
@@ -163,6 +198,19 @@ impl McpLock {
             };
 
             tool_declaration.apply_mcp_schema(mcp_tool);
+        }
+    }
+}
+
+impl McpLockResolutionContext {
+    #[must_use]
+    pub fn to_evaluation_context(&self) -> EvaluationContext {
+        EvaluationContext {
+            input_values: self.input.clone().into_iter().collect(),
+            secret_values: self.secrets.clone().into_iter().collect(),
+            agent_outputs: self.agent_outputs.clone().into_iter().collect(),
+            agent_contexts: self.agent_contexts.clone().into_iter().collect(),
+            local_bindings: self.dynamic.clone().into_iter().collect(),
         }
     }
 }
@@ -414,7 +462,10 @@ impl McpClient {
         log::debug!("MCP tools/list: server={}", self.server_config.name);
         self.ensure_initialized()?;
         let result = self.request("tools/list", json!({}), 2)?;
-        let server_lock = McpServerLock::from_tools_list_result(&result);
+        let mut server_lock = McpServerLock::from_tools_list_result(&result);
+
+        server_lock.resources = self.list_resource_names().unwrap_or_default();
+        server_lock.prompts = self.list_prompt_names().unwrap_or_default();
 
         log::info!(
             "MCP tools/list completed: server={}, tools={}",
@@ -423,6 +474,46 @@ impl McpClient {
         );
 
         Ok(server_lock)
+    }
+
+    fn list_resource_names(&self) -> Result<Vec<String>, McpError> {
+        self.ensure_initialized()?;
+        let result = self.request("resources/list", json!({}), 2)?;
+        let mut resource_names = result
+            .get("resources")
+            .and_then(Value::as_array)
+            .map(|resources| {
+                resources
+                    .iter()
+                    .filter_map(|resource| resource.get("name").and_then(Value::as_str).map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        resource_names.sort();
+        resource_names.dedup();
+
+        Ok(resource_names)
+    }
+
+    fn list_prompt_names(&self) -> Result<Vec<String>, McpError> {
+        self.ensure_initialized()?;
+        let result = self.request("prompts/list", json!({}), 2)?;
+        let mut prompt_names = result
+            .get("prompts")
+            .and_then(Value::as_array)
+            .map(|prompts| {
+                prompts
+                    .iter()
+                    .filter_map(|prompt| prompt.get("name").and_then(Value::as_str).map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        prompt_names.sort();
+        prompt_names.dedup();
+
+        Ok(prompt_names)
     }
 
     pub fn list_resources(&self) -> Result<BTreeMap<String, String>, McpError> {
@@ -810,7 +901,7 @@ impl Display for McpServerConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{McpClient, McpLock, McpServerConfig};
+    use super::{McpClient, McpLock, McpLockResolutionContext, McpServerConfig};
     use crate::dsl::{parse_workflow, validate_workflow, ToolSource};
     use crate::workflow_source;
     use serde_json::{json, Value};
@@ -1041,6 +1132,40 @@ mod tests {
 
         assert!(first_result.is_ok(), "first read_resource should succeed");
         assert!(second_result.is_ok(), "second read_resource should use cached URI and succeed");
+    }
+
+    #[test]
+    fn discovers_mcp_with_resolution_context_from_lock() {
+        let server = TestMcpHttpServer::spawn([]);
+        let workflow_source = workflow_source! {
+            secrets {
+                mcp_endpoint: string
+            }
+
+            mcp local {
+                endpoint: secrets.mcp_endpoint
+                headers: {
+                    Accept: "application/json"
+                }
+            }
+
+            tool update_user_name from mcp.local.tool.update-user-name
+        };
+        let workflow = parse_workflow(workflow_source).expect("workflow should parse");
+        let lock_context = McpLockResolutionContext {
+            input: BTreeMap::new(),
+            secrets: [("mcp_endpoint".to_string(), Value::String(server.endpoint()))]
+                .into_iter()
+                .collect(),
+            dynamic: BTreeMap::new(),
+            agent_outputs: BTreeMap::new(),
+            agent_contexts: BTreeMap::new(),
+        };
+        let mcp_lock = McpLock::discover_from_workflow_with_lock_context(&workflow, Some(&lock_context))
+            .expect("MCP discovery with lock resolution context should succeed");
+
+        assert!(mcp_lock.servers.contains_key("local"));
+        assert_eq!(mcp_lock.resolution_context, Some(lock_context));
     }
 
     struct TestMcpHttpServer {

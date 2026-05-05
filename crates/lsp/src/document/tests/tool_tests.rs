@@ -227,9 +227,57 @@ fn test_mcp_lock() -> McpLock {
         },
     );
     let mut servers = BTreeMap::new();
-    servers.insert("local".to_string(), McpServerLock { tools });
+    servers.insert(
+        "local".to_string(),
+        McpServerLock {
+            tools,
+            resources: vec!["project-readme".to_string(), "release-notes".to_string()],
+            prompts: vec!["system-prompt".to_string(), "review-prompt".to_string()],
+        },
+    );
 
-    McpLock { servers }
+    McpLock {
+        servers,
+        resolution_context: None,
+    }
+}
+
+fn completion_suggestions_with_mcp_lock(source_template: &str) -> Vec<CompletionSuggestion> {
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
+
+    document_state.completion_suggestions(cursor_position)
+}
+
+#[test]
+fn suggests_mcp_tool_names_inside_tool_import_path() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        tool imported_tool from mcp.local.tool.<cursor>
+    });
+
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        "list_all_participants_who_has_answered_given_task",
+        "update-user-name"
+    );
+}
+
+#[test]
+fn suggests_mcp_resource_names_inside_resource_import_path() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        resource imported_resource from mcp.local.resource.<cursor>
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "project-readme", "release-notes");
+}
+
+#[test]
+fn suggests_mcp_prompt_names_inside_prompt_import_path() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        prompt imported_prompt from mcp.local.prompt.<cursor>
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "system-prompt", "review-prompt");
 }
 
 #[test]
