@@ -5,6 +5,7 @@ use crate::dsl::{
 use crate::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
@@ -365,12 +366,16 @@ impl McpServerConfig {
 #[derive(Debug)]
 pub struct McpClient {
     server_config: McpServerConfig,
+    resource_uri_cache: RefCell<BTreeMap<String, String>>,
 }
 
 impl McpClient {
     #[must_use]
     pub fn new(server_config: McpServerConfig) -> Self {
-        Self { server_config }
+        Self {
+            server_config,
+            resource_uri_cache: RefCell::new(BTreeMap::new()),
+        }
     }
 
     pub fn list_tools(&self) -> Result<McpServerLock, McpError> {
@@ -398,6 +403,46 @@ impl McpClient {
         );
 
         Ok(server_lock)
+    }
+
+    pub fn list_resources(&self) -> Result<BTreeMap<String, String>, McpError> {
+        log::debug!("initializing MCP resources/list: server={}", self.server_config.name);
+        self.request(
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "superwire",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+            }),
+            1,
+        )?;
+        self.notify("notifications/initialized", json!({}))?;
+        let result = self.request("resources/list", json!({}), 2)?;
+        let mut name_to_uri = BTreeMap::new();
+
+        if let Some(resources) = result.get("resources").and_then(Value::as_array) {
+            for resource in resources {
+                let Some(name) = resource.get("name").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(uri) = resource.get("uri").and_then(Value::as_str) else {
+                    continue;
+                };
+
+                name_to_uri.insert(name.to_string(), uri.to_string());
+            }
+        }
+
+        log::info!(
+            "MCP resources/list completed: server={}, resources={}",
+            self.server_config.name,
+            name_to_uri.len()
+        );
+
+        Ok(name_to_uri)
     }
 
     pub fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError> {
@@ -430,9 +475,11 @@ impl McpClient {
         Ok(result)
     }
 
-    pub fn read_resource(&self, resource_uri: &str, arguments: Value) -> Result<Value, McpError> {
+    pub fn read_resource(&self, resource_name: &str, arguments: Value) -> Result<Value, McpError> {
+        let resource_uri = self.resolve_resource_uri(resource_name)?;
+
         log::debug!(
-            "initializing MCP resources/read: server={}, resource={resource_uri}",
+            "initializing MCP resources/read: server={}, resource={resource_name} -> uri={resource_uri}",
             self.server_config.name
         );
         self.request(
@@ -459,11 +506,33 @@ impl McpClient {
         )?;
 
         log::info!(
-            "MCP resources/read completed: server={}, resource={resource_uri}",
+            "MCP resources/read completed: server={}, resource={resource_name}",
             self.server_config.name
         );
 
         Ok(result)
+    }
+
+    fn resolve_resource_uri(&self, resource_name: &str) -> Result<String, McpError> {
+        {
+            let cache = self.resource_uri_cache.borrow();
+
+            if let Some(uri) = cache.get(resource_name) {
+                return Ok(uri.clone());
+            }
+        }
+
+        let resources = self.list_resources()?;
+        let uri = resources.get(resource_name).cloned().ok_or_else(|| McpError::Rpc {
+            server_name: self.server_config.name.clone(),
+            method: "resources/list".to_string(),
+            message: format!("resource `{resource_name}` not found in server's resource list"),
+        })?;
+
+        let mut cache = self.resource_uri_cache.borrow_mut();
+        cache.extend(resources);
+
+        Ok(uri)
     }
 
     pub fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError> {
@@ -693,7 +762,7 @@ impl Display for McpServerConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::McpLock;
+    use super::{McpClient, McpLock, McpServerConfig};
     use crate::dsl::{parse_workflow, validate_workflow, ToolSource};
     use crate::workflow_source;
     use serde_json::{json, Value};
@@ -880,6 +949,52 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn read_resource_resolves_name_to_uri_via_resources_list() {
+        let server = TestMcpHttpServer::spawn([]);
+        let server_config = McpServerConfig {
+            name: "local".to_string(),
+            endpoint: server.endpoint(),
+            headers: BTreeMap::new(),
+        };
+        let client = McpClient::new(server_config);
+
+        let result = client
+            .read_resource("project-readme", json!({}))
+            .expect("read_resource should succeed by resolving name to URI");
+
+        let contents = result
+            .get("contents")
+            .and_then(Value::as_array)
+            .expect("contents should be an array");
+        let first_content = contents.first().expect("contents should have at least one entry");
+        assert_eq!(
+            first_content.get("uri").and_then(Value::as_str),
+            Some("file://resources/project-readme")
+        );
+        assert!(first_content
+            .get("text")
+            .and_then(Value::as_str)
+            .is_some_and(|text: &str| text.contains("Project README")));
+    }
+
+    #[test]
+    fn read_resource_caches_uri_across_calls() {
+        let server = TestMcpHttpServer::spawn([]);
+        let server_config = McpServerConfig {
+            name: "local".to_string(),
+            endpoint: server.endpoint(),
+            headers: BTreeMap::new(),
+        };
+        let client = McpClient::new(server_config);
+
+        let first_result = client.read_resource("project-readme", json!({}));
+        let second_result = client.read_resource("project-readme", json!({}));
+
+        assert!(first_result.is_ok(), "first read_resource should succeed");
+        assert!(second_result.is_ok(), "second read_resource should use cached URI and succeed");
+    }
+
     struct TestMcpHttpServer {
         endpoint: String,
     }
@@ -891,7 +1006,7 @@ mod tests {
             let expected_headers = expected_headers.into_iter().collect::<BTreeMap<_, _>>();
 
             thread::spawn(move || {
-                for incoming_stream in listener.incoming().take(3) {
+                for incoming_stream in listener.incoming().take(12) {
                     let stream = incoming_stream.expect("test MCP stream should open");
                     handle_mcp_request(stream, &expected_headers);
                 }
@@ -1001,6 +1116,34 @@ mod tests {
                                 },
                                 "required": ["participants"]
                             }
+                        }
+                    ]
+                }
+            })),
+            Some("resources/list") => Some(json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "resources": [
+                        {
+                            "name": "project-readme",
+                            "title": "Project README",
+                            "description": "The project readme file",
+                            "mimeType": "text/markdown",
+                            "uri": "file://resources/project-readme"
+                        }
+                    ]
+                }
+            })),
+            Some("resources/read") => Some(json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "contents": [
+                        {
+                            "uri": "file://resources/project-readme",
+                            "mimeType": "text/markdown",
+                            "text": "# Project README\nUse stable sorting."
                         }
                     ]
                 }
