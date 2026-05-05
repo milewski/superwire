@@ -141,7 +141,7 @@ fn suggests_only_tool_properties_inside_tool_block() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "description", "using", "input", "bindings", "output");
+    assert_completion_contains_labels!(&completion_suggestions, "description", "input", "bindings", "output");
     assert_completion_excludes_labels!(
         &completion_suggestions,
         DeclarationKeyword::Provider,
@@ -154,52 +154,7 @@ fn suggests_only_tool_properties_inside_tool_block() {
 }
 
 #[test]
-fn suggests_mcp_source_inside_tool_using_property() {
-    let completion_suggestions = inline_completion_suggestions! {
-        tool issue_tracker_lookup {
-            using: <cursor>
-        }
-    };
-
-    assert_completion_contains_labels!(&completion_suggestions, "mcp.");
-    assert_completion_excludes_labels!(&completion_suggestions, "input", "bindings", "output");
-}
-
-#[test]
-fn uses_mcp_lock_for_tool_schema_and_source_completion() {
-    let source_template = inline_document_template! {
-        mcp local {
-            endpoint: "http://docker.localhost/mcp/project"
-        }
-
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
-            api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
-
-        tool update_user_name {
-            using: mcp.local.<cursor>
-        }
-
-        agent tooling {
-            model: openai("gpt-4.1-mini")
-            tools: [tool.update_user_name]
-            prompt: "Rename the user"
-            output: string
-        }
-    };
-    let (source, cursor_position) = source_with_cursor(source_template);
-    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
-    assert_completion_contains_labels!(
-        &completion_suggestions,
-        "list_all_participants_who_has_answered_given_task",
-        "update-user-name"
-    );
-
+fn uses_mcp_lock_for_imported_tool_schema() {
     let source = inline_document_template! {
         mcp local {
             endpoint: "http://docker.localhost/mcp/project"
@@ -212,9 +167,7 @@ fn uses_mcp_lock_for_tool_schema_and_source_completion() {
             models: ["gpt-4.1-mini"]
         }
 
-        tool update_user_name {
-            using: mcp.local.update-user-name
-        }
+        tool update_user_name from mcp.local.tool.update-user-name
 
         agent tooling {
             model: openai("gpt-4.1-mini")
@@ -377,63 +330,4 @@ fn filters_existing_bindings_inside_deterministic_tool_call_binding_overrides() 
 
     assert_completion_contains_labels!(&completion_suggestions, "token");
     assert_completion_excludes_labels!(&completion_suggestions, "password");
-}
-
-#[test]
-fn suggests_mcp_input_fields_inside_tool_input_block() {
-    let source_template = inline_document_template! {
-        mcp local {
-            endpoint: "http://docker.localhost/mcp/project"
-        }
-
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
-            api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
-
-        tool update_user_name {
-            using: mcp.local.update-user-name
-
-            input {
-                <cursor>
-            }
-        }
-    };
-    let (source, cursor_position) = source_with_cursor(source_template);
-    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
-    assert_completion_contains_labels!(&completion_suggestions, "user_name");
-    assert_completion_excludes_labels!(&completion_suggestions, "description", "using", "bindings", "output");
-}
-
-#[test]
-fn suggests_mcp_input_fields_for_multiple_mcp_tools() {
-    let source_template = inline_document_template! {
-        mcp local {
-            endpoint: "http://docker.localhost/mcp/project"
-        }
-
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
-            api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
-
-        tool list_all_participants_who_has_answered_given_task {
-            using: mcp.local.list_all_participants_who_has_answered_given_task
-
-            input {
-                <cursor>
-            }
-        }
-    };
-    let (source, cursor_position) = source_with_cursor(source_template);
-    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
-    let completion_suggestions = document_state.completion_suggestions(cursor_position);
-
-    assert_completion_contains_labels!(&completion_suggestions, "project_id", "task_id");
 }

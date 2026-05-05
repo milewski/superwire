@@ -82,10 +82,7 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
             task_id: number
         }
 
-        tool fetch_task_data {
-            description: "Fetch task data"
-            using: mcp.local.fetch_task_data
-
+        tool fetch_task_data from mcp.local.tool.fetch_task_data {
             bindings {
                 project_id: input.project_id
                 task_id: input.task_id

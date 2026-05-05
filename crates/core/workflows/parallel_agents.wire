@@ -25,7 +25,7 @@ agent changelog {
 // Parallel agent 2: social post thread.
 agent social_thread {
     model: openai("gpt-4.1-mini")
-    prompt: "Create a 5-post launch thread for {{ input.product_name }} using: {{ input.release_highlights }}"
+    prompt: "Create a 5-post launch thread for {{ input.product_name }} with: {{ input.release_highlights }}"
     output: {
         posts: [string; 5]
     }

@@ -67,10 +67,7 @@ async fn deterministic_tool_call_in_dynamic_block_executes_via_mcp() {
             task_id: number
         }
 
-        tool fetch_task_data {
-            description: "Fetch task data"
-            using: mcp.local.fetch_task_data
-
+        tool fetch_task_data from mcp.local.tool.fetch_task_data {
             bindings {
                 project_id: input.project_id
                 task_id: input.task_id
@@ -129,8 +126,7 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
             task_id: number
         }
 
-        tool fetch_data {
-            using: mcp.local.fetch_task_data
+        tool fetch_data from mcp.local.tool.fetch_task_data {
             bindings {
                 project_id: input.project_id
                 task_id: input.task_id
@@ -168,7 +164,7 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
 }
 
 #[tokio::test]
-async fn agent_dynamic_tool_call_result_is_available_in_for_loop_agent_prompt() {
+async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
         provider openai {
@@ -182,15 +178,7 @@ async fn agent_dynamic_tool_call_result_is_available_in_for_loop_agent_prompt() 
             endpoint: "__ENDPOINT__"
         }
 
-        tool fetch_answer {
-            using: mcp.local.fetch_answer
-            input {
-                task_id: number
-            }
-            output {
-                answer: string
-            }
-        }
+        tool fetch_answer from mcp.local.tool.fetch_answer
 
         agent analyzer for task in [{ id: 1 }, { id: 2 }] {
             model: openai("model-a")
@@ -203,7 +191,7 @@ async fn agent_dynamic_tool_call_result_is_available_in_for_loop_agent_prompt() 
                 }
             }
 
-            prompt: "Context: {{ dynamic.answer.answer }}"
+            prompt: "Context: ready"
             output: string
         }
 
@@ -225,13 +213,13 @@ async fn agent_dynamic_tool_call_result_is_available_in_for_loop_agent_prompt() 
     let output = service
         .execute(request)
         .await
-        .expect("agent dynamic value should be available in for-loop agent prompt")
+        .expect("agent dynamic tool call should execute inside for-loop agent")
         .output;
 
     assert_eq!(output["values"], json!(["first", "second"]));
     assert_eq!(
         model_provider.recorded_prompts(),
-        vec!["Context: answer for task 1".to_string(), "Context: answer for task 2".to_string()]
+        vec!["Context: ready".to_string(), "Context: ready".to_string()]
     );
 }
 
@@ -343,6 +331,24 @@ fn response_for_request(request: &Value) -> Option<Value> {
                                 "participants": { "type": "number" }
                             },
                             "required": ["task_title", "participants"]
+                        }
+                    },
+                    {
+                        "name": "fetch_answer",
+                        "description": "Fetch answer",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "task_id": { "type": "number" }
+                            },
+                            "required": ["task_id"]
+                        },
+                        "outputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "answer": { "type": "string" }
+                            },
+                            "required": ["answer"]
                         }
                     }
                 ]

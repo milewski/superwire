@@ -518,34 +518,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_mcp_tool_source_with_hyphenated_name() {
-        let workflow = parse_inline_workflow! {
-            tool update_user_name {
-                using: mcp.update-user-name
-
-                input {
-                    user_name: string
-                }
-
-                output {
-                    success: boolean
-                }
-            }
-        };
-
-        let tool_declaration = workflow
-            .find_tool("update_user_name")
-            .expect("missing update_user_name tool declaration");
-
-        assert!(matches!(
-            &tool_declaration.source,
-            Some(ToolSource::Mcp(mcp_tool_source)) if mcp_tool_source.tool_name == "update-user-name"
-        ));
-        assert_eq!(tool_declaration.input_fields[0].name, "user_name");
-        assert_eq!(tool_declaration.output_fields[0].name, "success");
-    }
-
-    #[test]
     fn parses_mcp_first_class_imports_with_aliases_and_bindings() {
         let workflow = parse_inline_workflow! {
             input {

@@ -470,7 +470,6 @@ impl McpImportKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolPropertyName {
     Description,
-    Using,
     Input,
     Bindings,
     Output,
@@ -478,8 +477,8 @@ pub enum ToolPropertyName {
 
 impl ToolPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 5] {
-        [Self::Description, Self::Using, Self::Input, Self::Bindings, Self::Output]
+    pub fn all() -> [Self; 4] {
+        [Self::Description, Self::Input, Self::Bindings, Self::Output]
     }
 
     #[must_use]
@@ -493,7 +492,6 @@ impl ToolPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Description => "description",
-            Self::Using => "using",
             Self::Input => "input",
             Self::Bindings => "bindings",
             Self::Output => "output",

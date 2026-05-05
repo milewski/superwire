@@ -717,9 +717,7 @@ mod tests {
                 }
             }
 
-            tool update_user_name {
-                using: mcp.local.update-user-name
-            }
+            tool update_user_name from mcp.local.tool.update-user-name
         }
         .replace("__ENDPOINT__", &server.endpoint());
         let mut workflow = parse_workflow(&workflow_source).expect("workflow should parse");
@@ -740,16 +738,14 @@ mod tests {
     }
 
     #[test]
-    fn applies_mcp_tool_schema_from_server_only_source() {
+    fn applies_mcp_tool_schema_from_imported_tool_source() {
         let server = TestMcpHttpServer::spawn([]);
         let workflow_source = workflow_source! {
             mcp local {
                 endpoint: "__ENDPOINT__"
             }
 
-            tool list_all_participants_who_has_answered_given_task {
-                using: mcp.local
-            }
+            tool list_all_participants_who_has_answered_given_task from mcp.local.tool.list_all_participants_who_has_answered_given_task
         }
         .replace("__ENDPOINT__", &server.endpoint());
         let mut workflow = parse_workflow(&workflow_source).expect("workflow should parse");
@@ -779,9 +775,7 @@ mod tests {
                 task_id: number
             }
 
-            tool list_all_participants_who_has_answered_given_task {
-                using: mcp.local.list_all_participants_who_has_answered_given_task
-
+            tool list_all_participants_who_has_answered_given_task from mcp.local.tool.list_all_participants_who_has_answered_given_task {
                 bindings {
                     project_id: input.project_id
                     task_id: input.task_id
@@ -841,9 +835,7 @@ mod tests {
                 }
             }
 
-            tool update_user_name {
-                using: mcp.local.update-user-name
-            }
+            tool update_user_name from mcp.local.tool.update-user-name
         };
         let mut workflow = parse_workflow(workflow_source).expect("workflow should parse");
         let mcp_lock = McpLock::discover_from_workflow(&workflow).expect("MCP discovery should succeed");
@@ -872,9 +864,7 @@ mod tests {
                 endpoint: input.mcp_url
             }
 
-            tool update_user_name {
-                using: mcp.local.update-user-name
-            }
+            tool update_user_name from mcp.local.tool.update-user-name
         };
         let mut workflow = parse_workflow(workflow_source).expect("workflow should parse");
         let mcp_lock = McpLock::discover_from_workflow(&workflow).expect("MCP discovery should succeed");

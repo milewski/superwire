@@ -284,7 +284,7 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|headers|api_key|models|model|tools|context|output|prompt|inference|description|using)\\b(?=\\s*:)",
+          "match": "\\b(driver|endpoint|headers|api_key|models|model|tools|context|output|prompt|inference|description)\\b(?=\\s*:)",
           "name": "variable.parameter.wire"
         },
         {

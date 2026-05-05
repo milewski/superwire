@@ -464,52 +464,6 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn mcp_tool_source_suggestions(&self, value_prefix: &str) -> Vec<CompletionSuggestion> {
-        let Some(mcp_lock) = &self.mcp_lock else {
-            return mcp_root_suggestion(value_prefix);
-        };
-        let normalized_prefix = value_prefix.split_whitespace().collect::<String>();
-        let trimmed_prefix = normalized_prefix.as_str();
-        let Some(after_mcp_prefix) = trimmed_prefix.strip_prefix("mcp.") else {
-            return mcp_root_suggestion(trimmed_prefix);
-        };
-
-        if let Some((server_name, tool_prefix)) = after_mcp_prefix.split_once('.') {
-            let Some(server_lock) = mcp_lock.servers.get(server_name) else {
-                return Vec::new();
-            };
-
-            return server_lock
-                .tools
-                .values()
-                .filter(|tool_lock| tool_lock.name.starts_with(tool_prefix))
-                .map(|tool_lock| CompletionSuggestion {
-                    label: tool_lock.name.clone(),
-                    kind: CompletionKind::Function,
-                    detail: "MCP tool".to_string(),
-                    documentation: tool_lock
-                        .description
-                        .clone()
-                        .unwrap_or_else(|| "Tool discovered from MCP lock.".to_string()),
-                    insert_text: tool_lock.name.clone(),
-                })
-                .collect();
-        }
-
-        mcp_lock
-            .servers
-            .keys()
-            .filter(|server_name| server_name.starts_with(after_mcp_prefix))
-            .map(|server_name| CompletionSuggestion {
-                label: server_name.clone(),
-                kind: CompletionKind::Module,
-                detail: "MCP server".to_string(),
-                documentation: "MCP server discovered from the lock file.".to_string(),
-                insert_text: format!("{server_name}."),
-            })
-            .collect()
-    }
-
     pub fn tool_bounded_argument_suggestions(
         &self,
         tool_name: &str,
@@ -2352,18 +2306,4 @@ fn field_metadata_from_type_map(type_map: &BTreeMap<String, TypeExpression>) -> 
             )
         })
         .collect()
-}
-
-fn mcp_root_suggestion(value_prefix: &str) -> Vec<CompletionSuggestion> {
-    if !"mcp.".starts_with(value_prefix) {
-        return Vec::new();
-    }
-
-    vec![CompletionSuggestion {
-        label: "mcp.".to_string(),
-        kind: CompletionKind::Module,
-        detail: "MCP tool source".to_string(),
-        documentation: "Use an MCP-discovered tool as this tool's implementation.".to_string(),
-        insert_text: "mcp.".to_string(),
-    }]
 }
