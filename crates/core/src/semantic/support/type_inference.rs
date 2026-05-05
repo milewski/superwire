@@ -53,6 +53,13 @@ impl Expression {
                 })
             }
             Self::ToolCall(tool_call) => tool_call.infer_type(type_inference_context, context),
+            Self::McpCall(mcp_call) => {
+                for parameter_field in &mcp_call.parameter_fields {
+                    let _ = parameter_field.value.infer_type(type_inference_context, context)?;
+                }
+
+                Ok(WorkflowType::String)
+            }
             Self::ArrayLiteral(array_items) => {
                 if array_items.is_empty() {
                     return Err(WorkflowSemanticError::ExpressionEvaluation {
@@ -249,6 +256,16 @@ fn infer_reference_type(
         ReferenceRoot::Keyword(ReferenceKeyword::Tool) => {
             return Err(WorkflowSemanticError::UnsupportedFeature {
                 feature: "`tool.*` references are not supported in typed output expressions".to_string(),
+            });
+        }
+        ReferenceRoot::Keyword(ReferenceKeyword::Resource) => {
+            return Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`resource.*` references are not supported outside `read resource.*`".to_string(),
+            });
+        }
+        ReferenceRoot::Keyword(ReferenceKeyword::Prompt) => {
+            return Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`prompt.*` references are not supported outside `render prompt.*`".to_string(),
             });
         }
         ReferenceRoot::Identifier(identifier) => {

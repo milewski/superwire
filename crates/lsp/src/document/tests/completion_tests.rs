@@ -89,7 +89,12 @@ fn declaration_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                     value: null
                 }
             },
-            expected_present_labels: vec![DeclarationKeyword::Provider.as_str(), DeclarationKeyword::Agent.as_str()],
+            expected_present_labels: vec![
+                DeclarationKeyword::Provider.as_str(),
+                DeclarationKeyword::Agent.as_str(),
+                DeclarationKeyword::Resource.as_str(),
+                DeclarationKeyword::Prompt.as_str(),
+            ],
             expected_absent_labels: vec![BuiltinFunctionName::Context.as_str()],
             expects_empty_suggestions: false,
         },
@@ -1239,6 +1244,8 @@ fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
         ReferenceKeyword::Input,
         ReferenceKeyword::Secrets,
         ToolCallKeyword::Call,
+        McpCallOperation::Read,
+        McpCallOperation::Render,
         BuiltinFunctionName::Compact,
         BuiltinFunctionName::Template
     );
@@ -1306,6 +1313,45 @@ fn suggests_tools_inside_dynamic_tool_call_callee() {
     };
 
     assert_completion_contains!(&completion_suggestions, "searchable_web");
+}
+
+#[test]
+fn suggests_resources_inside_dynamic_read_callee() {
+    let completion_suggestions = inline_completion_suggestions! {
+        resource project_readme from mcp.local.resource.project-readme
+
+        dynamic {
+            readme: read resource.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "project_readme");
+}
+
+#[test]
+fn suggests_prompts_inside_dynamic_render_callee() {
+    let completion_suggestions = inline_completion_suggestions! {
+        prompt system_prompt from mcp.local.prompt.system-prompt
+
+        dynamic {
+            instructions: render prompt.<cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "system_prompt");
+}
+
+#[test]
+fn suggests_mcp_calls_for_agent_prompt_values() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            prompt: <cursor>
+            output: string
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, McpCallOperation::Read);
+    assert_completion_contains!(&completion_suggestions, McpCallOperation::Render);
 }
 
 #[test]

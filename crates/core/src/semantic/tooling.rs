@@ -9,6 +9,8 @@ pub enum ToolingSymbolCategory {
     Provider,
     Schema,
     Tool,
+    Resource,
+    Prompt,
     Agent,
 }
 
@@ -19,6 +21,8 @@ impl ToolingSymbolCategory {
             Self::Provider => DeclarationKeyword::Provider,
             Self::Schema => DeclarationKeyword::Schema,
             Self::Tool => DeclarationKeyword::Tool,
+            Self::Resource => DeclarationKeyword::Resource,
+            Self::Prompt => DeclarationKeyword::Prompt,
             Self::Agent => DeclarationKeyword::Agent,
         }
     }
@@ -240,6 +244,20 @@ impl SemanticToolingSnapshot {
                             input_fields: typed_fields_to_map(&tool_declaration.input_fields),
                             bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
                         },
+                    );
+                }
+                Declaration::McpResource(resource_import_declaration) => {
+                    declaration_index.push_symbol(
+                        ToolingSymbolCategory::Resource,
+                        resource_import_declaration.name.clone(),
+                        resource_import_declaration.span,
+                    );
+                }
+                Declaration::McpPrompt(prompt_import_declaration) => {
+                    declaration_index.push_symbol(
+                        ToolingSymbolCategory::Prompt,
+                        prompt_import_declaration.name.clone(),
+                        prompt_import_declaration.span,
                     );
                 }
                 Declaration::Dynamic(_) | Declaration::Output(_) => {}

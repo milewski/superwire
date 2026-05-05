@@ -272,8 +272,8 @@ mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
-        AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, ReferenceKeyword, ReferenceRoot, StringTemplatePart,
-        ToolSource, TypeExpression,
+        AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, McpCallOperation, McpImportKind, ReferenceKeyword,
+        ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -543,6 +543,105 @@ mod tests {
         ));
         assert_eq!(tool_declaration.input_fields[0].name, "user_name");
         assert_eq!(tool_declaration.output_fields[0].name, "success");
+    }
+
+    #[test]
+    fn parses_mcp_first_class_imports_with_aliases_and_bindings() {
+        let workflow = parse_inline_workflow! {
+            input {
+                workspace_id: string
+            }
+
+            resource project_readme from mcp.local.resource.project-readme {
+                params {
+                    workspace_id: input.workspace_id
+                }
+            }
+
+            prompt from mcp.local.prompt.system-prompt
+
+            tool from mcp.local.tool.create-sorting-task-for-task-group-tool {
+                bindings {
+                    workspace_id: input.workspace_id
+                }
+            }
+
+            tool create_sorting_task_for_task_group from mcp.local.tool.create-sorting-task-for-task-group-tool {
+                bindings {
+                    workspace_id: input.workspace_id
+                }
+            }
+        };
+
+        let resource_import = workflow.resource_imports().next().expect("resource import should parse");
+        assert_eq!(resource_import.name, "project_readme");
+        assert_eq!(resource_import.source.server_name, "local");
+        assert_eq!(resource_import.source.kind, McpImportKind::Resource);
+        assert_eq!(resource_import.source.item_name, "project-readme");
+        assert_eq!(resource_import.parameters.len(), 1);
+
+        let prompt_import = workflow.prompt_imports().next().expect("prompt import should parse");
+        assert_eq!(prompt_import.name, "system_prompt");
+        assert_eq!(prompt_import.source.kind, McpImportKind::Prompt);
+        assert_eq!(prompt_import.source.item_name, "system-prompt");
+
+        let inferred_tool = workflow
+            .find_tool("create_sorting_task_for_task_group_tool")
+            .expect("inferred tool import should parse");
+        assert!(inferred_tool.imported);
+        assert_eq!(inferred_tool.fixed_binding_fields.len(), 1);
+
+        let aliased_tool = workflow
+            .find_tool("create_sorting_task_for_task_group")
+            .expect("aliased tool import should parse");
+        assert!(aliased_tool.imported);
+        assert!(matches!(
+            &aliased_tool.source,
+            Some(ToolSource::Mcp(mcp_tool_source))
+                if mcp_tool_source.server_name.as_deref() == Some("local")
+                    && mcp_tool_source.tool_name == "create-sorting-task-for-task-group-tool"
+        ));
+    }
+
+    #[test]
+    fn parses_resource_read_and_prompt_render_expressions() {
+        let workflow = parse_inline_workflow! {
+            resource project_readme from mcp.local.resource.project-readme
+            prompt system_prompt from mcp.local.prompt.system-prompt
+
+            dynamic {
+                readme: read resource.project_readme {
+                    params {
+                        section: "setup"
+                    }
+                }
+                instructions: render prompt.system_prompt {
+                    bindings {
+                        topic: dynamic.readme
+                    }
+                }
+            }
+        };
+
+        let dynamic_block = workflow.dynamic_blocks().next().expect("dynamic block should parse");
+
+        let Expression::McpCall(resource_call) = &dynamic_block.fields[0].value else {
+            panic!("readme should be an MCP resource call");
+        };
+
+        assert_eq!(resource_call.operation, McpCallOperation::Read);
+        assert_eq!(resource_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Resource));
+        assert_eq!(resource_call.callee.accesses[0].field, "project_readme");
+        assert_eq!(resource_call.parameter_fields[0].name, "section");
+
+        let Expression::McpCall(prompt_call) = &dynamic_block.fields[1].value else {
+            panic!("instructions should be an MCP prompt call");
+        };
+
+        assert_eq!(prompt_call.operation, McpCallOperation::Render);
+        assert_eq!(prompt_call.callee.root, ReferenceRoot::Keyword(ReferenceKeyword::Prompt));
+        assert_eq!(prompt_call.callee.accesses[0].field, "system_prompt");
+        assert_eq!(prompt_call.parameter_fields[0].name, "topic");
     }
 
     #[test]

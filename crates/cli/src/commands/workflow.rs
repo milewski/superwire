@@ -711,6 +711,8 @@ impl WorkflowJsonRepresentation {
                     }
                 }
                 Declaration::McpServer(_)
+                | Declaration::McpResource(_)
+                | Declaration::McpPrompt(_)
                 | Declaration::Secrets(_)
                 | Declaration::Input(_)
                 | Declaration::Agent(_)
@@ -914,11 +916,15 @@ impl SerializableToolDeclaration {
         Self {
             name: tool_declaration.name.clone(),
             description: tool_declaration.description.clone(),
-            source: tool_declaration
-                .source
-                .as_ref()
-                .and_then(superwire_core::dsl::ToolSource::mcp_tool_name)
-                .map(|tool_name| format!("mcp.{tool_name}")),
+            source: tool_declaration.source.as_ref().map(|tool_source| match tool_source {
+                superwire_core::dsl::ToolSource::Mcp(mcp_tool_source) => {
+                    if let Some(server_name) = &mcp_tool_source.server_name {
+                        format!("mcp.{server_name}.{}", mcp_tool_source.tool_name)
+                    } else {
+                        format!("mcp.{}", mcp_tool_source.tool_name)
+                    }
+                }
+            }),
             input: tool_declaration
                 .input_fields
                 .iter()
@@ -1204,7 +1210,8 @@ impl SerializableToolBinding {
                 | Expression::NullLiteral
                 | Expression::ArrayLiteral(_)
                 | Expression::ObjectLiteral(_)
-                | Expression::FunctionCall(_) => {}
+                | Expression::FunctionCall(_)
+                | Expression::McpCall(_) => {}
             }
         }
 
@@ -1367,6 +1374,19 @@ impl SerializableExpression {
                     "$tool_call": tool_call.callee.render_path(),
                     "input": input_values,
                     "bindings": binding_values,
+                })
+            }
+            Expression::McpCall(mcp_call) => {
+                let mut parameter_values = Map::<String, Value>::new();
+
+                for parameter_field in &mcp_call.parameter_fields {
+                    parameter_values.insert(parameter_field.name.clone(), Self::to_compact_json(&parameter_field.value));
+                }
+
+                json!({
+                    "$mcp_call": mcp_call.callee.render_path(),
+                    "operation": mcp_call.operation.as_str(),
+                    "params": parameter_values,
                 })
             }
             Expression::ArrayLiteral(array_values) => Value::Array(array_values.iter().map(Self::to_compact_json).collect::<Vec<_>>()),

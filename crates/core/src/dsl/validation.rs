@@ -94,6 +94,8 @@ pub enum ValidationContext {
     Provider(String),
     Schema(String),
     Tool(String),
+    Resource(String),
+    Prompt(String),
     Agent(String),
     Dynamic,
     Input,
@@ -108,6 +110,8 @@ impl ValidationContext {
             Self::Provider(provider_name) => format!("provider `{provider_name}`"),
             Self::Schema(schema_name) => format!("schema `{schema_name}`"),
             Self::Tool(tool_name) => format!("tool `{tool_name}`"),
+            Self::Resource(resource_name) => format!("resource `{resource_name}`"),
+            Self::Prompt(prompt_name) => format!("prompt `{prompt_name}`"),
             Self::Agent(agent_name) => format!("agent `{agent_name}`"),
             Self::Dynamic => "dynamic declaration".to_string(),
             Self::Input => "input declaration".to_string(),
@@ -127,6 +131,12 @@ pub enum ValidationIssue {
     },
     DuplicateTool {
         tool_name: String,
+    },
+    DuplicateResource {
+        resource_name: String,
+    },
+    DuplicatePrompt {
+        prompt_name: String,
     },
     DuplicateAgent {
         agent_name: String,
@@ -217,6 +227,14 @@ pub enum ValidationIssue {
         tool_name: String,
         agent_name: String,
     },
+    UnknownResourceReference {
+        resource_name: String,
+        context: ValidationContext,
+    },
+    UnknownPromptReference {
+        prompt_name: String,
+        context: ValidationContext,
+    },
     InvalidToolBinding {
         agent_name: String,
         tool_name: String,
@@ -241,6 +259,8 @@ impl ValidationIssue {
             Self::DuplicateProvider { .. } => "duplicate_provider",
             Self::DuplicateSchema { .. } => "duplicate_schema",
             Self::DuplicateTool { .. } => "duplicate_tool",
+            Self::DuplicateResource { .. } => "duplicate_resource",
+            Self::DuplicatePrompt { .. } => "duplicate_prompt",
             Self::DuplicateAgent { .. } => "duplicate_agent",
             Self::DuplicateSingletonDeclaration { .. } => "duplicate_singleton_declaration",
             Self::DuplicateProperty { .. } => "duplicate_property",
@@ -264,6 +284,8 @@ impl ValidationIssue {
             Self::InvalidForLoopIterableType { .. } => "invalid_for_loop_iterable_type",
             Self::UnknownSchemaReference { .. } => "unknown_schema_reference",
             Self::UnknownToolReference { .. } => "unknown_tool_reference",
+            Self::UnknownResourceReference { .. } => "unknown_resource_reference",
+            Self::UnknownPromptReference { .. } => "unknown_prompt_reference",
             Self::InvalidToolBinding { .. } => "invalid_tool_binding",
             Self::InvalidTypeExpressionReference { .. } => "invalid_type_expression_reference",
             Self::AgentDependencyCycle { .. } => "agent_dependency_cycle",
@@ -283,6 +305,12 @@ impl ValidationIssue {
             }
             Self::DuplicateTool { tool_name } => {
                 format!("Tool `{tool_name}` is declared more than once.")
+            }
+            Self::DuplicateResource { resource_name } => {
+                format!("Resource `{resource_name}` is imported more than once.")
+            }
+            Self::DuplicatePrompt { prompt_name } => {
+                format!("Prompt `{prompt_name}` is imported more than once.")
             }
             Self::DuplicateAgent { agent_name } => {
                 format!("Agent `{agent_name}` is declared more than once.")
@@ -324,6 +352,12 @@ impl ValidationIssue {
             }
             Self::UnknownToolReference { tool_name, agent_name } => {
                 format!("Agent `{agent_name}` references undeclared tool `tool.{tool_name}`.")
+            }
+            Self::UnknownResourceReference { resource_name, context } => {
+                format!("Unknown resource `resource.{resource_name}` referenced in {}.", context.describe())
+            }
+            Self::UnknownPromptReference { prompt_name, context } => {
+                format!("Unknown prompt `prompt.{prompt_name}` referenced in {}.", context.describe())
             }
             Self::InvalidToolBinding {
                 agent_name,
@@ -423,6 +457,8 @@ impl ValidationIssue {
             Self::DuplicateProvider { .. }
             | Self::DuplicateSchema { .. }
             | Self::DuplicateTool { .. }
+            | Self::DuplicateResource { .. }
+            | Self::DuplicatePrompt { .. }
             | Self::DuplicateAgent { .. }
             | Self::DuplicateSingletonDeclaration { .. }
             | Self::DuplicateProperty { .. } => Some(self.duplicate_declaration_help_message()),
@@ -480,6 +516,14 @@ impl ValidationIssue {
                 tool_name: _,
                 agent_name: _,
             }
+            | Self::UnknownResourceReference {
+                resource_name: _,
+                context: _,
+            }
+            | Self::UnknownPromptReference {
+                prompt_name: _,
+                context: _,
+            }
             | Self::InvalidToolBinding {
                 agent_name: _,
                 tool_name: _,
@@ -506,6 +550,12 @@ impl ValidationIssue {
             }
             Self::DuplicateTool { tool_name } => {
                 format!("Keep a single `tool {tool_name}` declaration, or rename one tool.")
+            }
+            Self::DuplicateResource { resource_name } => {
+                format!("Keep a single `resource {resource_name} from ...` import, or rename one resource.")
+            }
+            Self::DuplicatePrompt { prompt_name } => {
+                format!("Keep a single `prompt {prompt_name} from ...` import, or rename one prompt.")
             }
             Self::DuplicateAgent { agent_name } => {
                 format!("Keep a single `agent {agent_name}` declaration, or rename one agent.")
@@ -560,33 +610,13 @@ impl ValidationIssue {
     }
 
     fn reference_resolution_help_message(&self) -> String {
+        if let Some(help_message) = self.declaration_reference_help_message() {
+            return help_message;
+        }
+
         match self {
-            Self::UnknownAgentReference {
-                referenced_agent,
-                context: _,
-            } => {
-                format!("Declare `agent {referenced_agent} {{ ... }}` before this reference, or fix the agent name.")
-            }
             Self::InvalidKeywordReferenceRoot { keyword, context: _ } => {
                 format!("Add a field path after `{}`.", keyword.as_str())
-            }
-            Self::MissingDynamicDeclaration { context: _ } => {
-                "Add a `dynamic { ... }` block with the fields used by `dynamic.<field>` references.".to_string()
-            }
-            Self::MissingInputDeclaration { context: _ } => {
-                "Add an `input { ... }` declaration with the fields used by `input.<field>` references.".to_string()
-            }
-            Self::MissingSecretsDeclaration { context: _ } => {
-                "Add a `secrets { ... }` declaration with the fields used by `secrets.<field>` references.".to_string()
-            }
-            Self::UnknownInputFieldReference { field_name, context: _ } => {
-                format!("Add `{field_name}: <type>` to `input`, or reference an existing input field.")
-            }
-            Self::UnknownDynamicFieldReference { field_name, context: _ } => {
-                format!("Add `{field_name}: <value>` to a `dynamic` block, or reference an existing dynamic field.")
-            }
-            Self::UnknownSecretsFieldReference { field_name, context: _ } => {
-                format!("Add `{field_name}: <type>` to `secrets`, or reference an existing secrets field.")
             }
             Self::SecretReferenceInLlmContext {
                 reference_path,
@@ -617,15 +647,6 @@ impl ValidationIssue {
                 agent_name: _,
                 found_type: _,
             } => "Use an array expression in the `in` clause, such as `agent.other_agent.items` or an array literal.".to_string(),
-            Self::UnknownSchemaReference {
-                referenced_schema,
-                context: _,
-            } => {
-                format!("Declare `schema {referenced_schema} {{ ... }}` before using `schema.{referenced_schema}`.")
-            }
-            Self::UnknownToolReference { tool_name, agent_name: _ } => {
-                format!("Declare `tool {tool_name} {{ ... }}` before using `tool.{tool_name}` in an agent `tools` list.")
-            }
             Self::InvalidToolBinding {
                 agent_name: _,
                 tool_name: _,
@@ -657,6 +678,51 @@ impl ValidationIssue {
         }
     }
 
+    fn declaration_reference_help_message(&self) -> Option<String> {
+        match self {
+            Self::UnknownAgentReference {
+                referenced_agent,
+                context: _,
+            } => Some(format!(
+                "Declare `agent {referenced_agent} {{ ... }}` before this reference, or fix the agent name."
+            )),
+            Self::MissingDynamicDeclaration { context: _ } => {
+                Some("Add a `dynamic { ... }` block with the fields used by `dynamic.<field>` references.".to_string())
+            }
+            Self::MissingInputDeclaration { context: _ } => {
+                Some("Add an `input { ... }` declaration with the fields used by `input.<field>` references.".to_string())
+            }
+            Self::MissingSecretsDeclaration { context: _ } => {
+                Some("Add a `secrets { ... }` declaration with the fields used by `secrets.<field>` references.".to_string())
+            }
+            Self::UnknownInputFieldReference { field_name, context: _ } => Some(format!(
+                "Add `{field_name}: <type>` to `input`, or reference an existing input field."
+            )),
+            Self::UnknownDynamicFieldReference { field_name, context: _ } => Some(format!(
+                "Add `{field_name}: <value>` to a `dynamic` block, or reference an existing dynamic field."
+            )),
+            Self::UnknownSecretsFieldReference { field_name, context: _ } => Some(format!(
+                "Add `{field_name}: <type>` to `secrets`, or reference an existing secrets field."
+            )),
+            Self::UnknownSchemaReference {
+                referenced_schema,
+                context: _,
+            } => Some(format!(
+                "Declare `schema {referenced_schema} {{ ... }}` before using `schema.{referenced_schema}`."
+            )),
+            Self::UnknownToolReference { tool_name, agent_name: _ } => Some(format!(
+                "Declare `tool {tool_name} {{ ... }}` before using `tool.{tool_name}` in an agent `tools` list."
+            )),
+            Self::UnknownResourceReference { resource_name, context: _ } => Some(format!(
+                "Import `resource {resource_name} from mcp.<server>.resource.<name>` before using `read resource.{resource_name}`."
+            )),
+            Self::UnknownPromptReference { prompt_name, context: _ } => Some(format!(
+                "Import `prompt {prompt_name} from mcp.<server>.prompt.<name>` before using `render prompt.{prompt_name}`."
+            )),
+            _ => None,
+        }
+    }
+
     fn unknown_agent_property_help(property_name: &str) -> String {
         if let Some(suggested_property_name) = AgentPropertyName::suggested_from_identifier(property_name) {
             return format!(
@@ -676,6 +742,8 @@ impl From<&ValidationIssue> for DiagnosticCode {
             ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
             ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
             ValidationIssue::DuplicateTool { tool_name: _ } => Self::DuplicateTool,
+            ValidationIssue::DuplicateResource { resource_name: _ } => Self::DuplicateResource,
+            ValidationIssue::DuplicatePrompt { prompt_name: _ } => Self::DuplicatePrompt,
             ValidationIssue::DuplicateAgent { agent_name: _ } => Self::DuplicateAgent,
             ValidationIssue::DuplicateSingletonDeclaration { declaration_kind: _ } => Self::DuplicateSingletonDeclaration,
             ValidationIssue::DuplicateProperty {
@@ -740,6 +808,14 @@ impl From<&ValidationIssue> for DiagnosticCode {
                 tool_name: _,
                 agent_name: _,
             } => Self::UnknownToolReference,
+            ValidationIssue::UnknownResourceReference {
+                resource_name: _,
+                context: _,
+            } => Self::UnknownResourceReference,
+            ValidationIssue::UnknownPromptReference {
+                prompt_name: _,
+                context: _,
+            } => Self::UnknownPromptReference,
             ValidationIssue::InvalidToolBinding {
                 agent_name: _,
                 tool_name: _,
@@ -765,6 +841,8 @@ struct ValidationIndex {
     provider_infos: HashMap<String, ProviderInfo>,
     agent_names: HashSet<String>,
     tool_names: HashSet<String>,
+    resource_names: HashSet<String>,
+    prompt_names: HashSet<String>,
     schema_names: HashSet<String>,
     schema_field_types: HashMap<String, HashMap<String, TypeExpression>>,
     input_field_types: Option<HashMap<String, TypeExpression>>,
@@ -1018,6 +1096,30 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
             }
+            Declaration::McpResource(resource_import_declaration) => {
+                let inserted_resource = validation_index.resource_names.insert(resource_import_declaration.name.clone());
+
+                if !inserted_resource {
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicateResource {
+                            resource_name: resource_import_declaration.name.clone(),
+                        },
+                        Some(resource_import_declaration.span),
+                    );
+                }
+            }
+            Declaration::McpPrompt(prompt_import_declaration) => {
+                let inserted_prompt = validation_index.prompt_names.insert(prompt_import_declaration.name.clone());
+
+                if !inserted_prompt {
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::DuplicatePrompt {
+                            prompt_name: prompt_import_declaration.name.clone(),
+                        },
+                        Some(prompt_import_declaration.span),
+                    );
+                }
+            }
             Declaration::Dynamic(_) => {}
             Declaration::Agent(agent_declaration) => {
                 let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
@@ -1154,6 +1256,44 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
 
                 for output_field in &tool_declaration.output_fields {
                     report_duplicate_type_expression_fields(&output_field.field_type, tool_context.clone(), validation_report);
+                }
+            }
+            Declaration::McpResource(resource_import_declaration) => {
+                let resource_context = ValidationContext::Resource(resource_import_declaration.name.clone());
+
+                report_duplicate_object_field_names(
+                    resource_import_declaration.parameters.as_slice(),
+                    resource_context.clone(),
+                    Some(resource_import_declaration.span),
+                    validation_report,
+                );
+
+                for parameter in &resource_import_declaration.parameters {
+                    report_duplicate_expression_object_fields(
+                        &parameter.value,
+                        resource_context.clone(),
+                        Some(resource_import_declaration.span),
+                        validation_report,
+                    );
+                }
+            }
+            Declaration::McpPrompt(prompt_import_declaration) => {
+                let prompt_context = ValidationContext::Prompt(prompt_import_declaration.name.clone());
+
+                report_duplicate_object_field_names(
+                    prompt_import_declaration.parameters.as_slice(),
+                    prompt_context.clone(),
+                    Some(prompt_import_declaration.span),
+                    validation_report,
+                );
+
+                for parameter in &prompt_import_declaration.parameters {
+                    report_duplicate_expression_object_fields(
+                        &parameter.value,
+                        prompt_context.clone(),
+                        Some(prompt_import_declaration.span),
+                        validation_report,
+                    );
                 }
             }
             Declaration::Agent(agent_declaration) => {
@@ -1402,6 +1542,18 @@ fn report_duplicate_expression_object_fields(
                 report_duplicate_expression_object_fields(&object_field.value, context.clone(), duplicate_span, validation_report);
             }
         }
+        Expression::McpCall(mcp_call) => {
+            report_duplicate_object_field_names(
+                mcp_call.parameter_fields.as_slice(),
+                context.clone(),
+                duplicate_span,
+                validation_report,
+            );
+
+            for object_field in &mcp_call.parameter_fields {
+                report_duplicate_expression_object_fields(&object_field.value, context.clone(), duplicate_span, validation_report);
+            }
+        }
         Expression::ArrayLiteral(array_values) => {
             for array_value in array_values {
                 report_duplicate_expression_object_fields(array_value, context.clone(), duplicate_span, validation_report);
@@ -1605,7 +1757,12 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     );
                 }
             }
-            Declaration::Provider(_) | Declaration::McpServer(_) | Declaration::Dynamic(_) | Declaration::Output(_) => {}
+            Declaration::Provider(_)
+            | Declaration::McpServer(_)
+            | Declaration::McpResource(_)
+            | Declaration::McpPrompt(_)
+            | Declaration::Dynamic(_)
+            | Declaration::Output(_) => {}
         }
     }
 }
@@ -1917,6 +2074,7 @@ impl DirectToolName for Expression {
             Self::Reference(reference) => reference.direct_tool_name(),
             Self::FunctionCall(function_call) => function_call.direct_tool_name(),
             Self::ToolCall(tool_call) => tool_call.callee.direct_tool_name(),
+            Self::McpCall(_) => None,
             Self::StringLiteral(_)
             | Self::StringTemplate(_)
             | Self::NumberLiteral(_)
@@ -1958,6 +2116,7 @@ impl AgentToolBindingFields for Expression {
             Self::ToolCall(tool_call) => tool_call.agent_tool_binding_fields(),
             Self::Reference(_)
             | Self::FunctionCall(_)
+            | Self::McpCall(_)
             | Self::StringLiteral(_)
             | Self::StringTemplate(_)
             | Self::NumberLiteral(_)
@@ -2120,6 +2279,30 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                     );
                 }
             }
+            Declaration::McpResource(resource_import_declaration) => {
+                let resource_context = ValidationContext::Resource(resource_import_declaration.name.clone());
+
+                for parameter in &resource_import_declaration.parameters {
+                    keyword_reference_validation_state.validate_expression(
+                        &parameter.value,
+                        &workflow_dynamic_field_types,
+                        resource_context.clone(),
+                        SecretReferencePolicy::Allow,
+                    );
+                }
+            }
+            Declaration::McpPrompt(prompt_import_declaration) => {
+                let prompt_context = ValidationContext::Prompt(prompt_import_declaration.name.clone());
+
+                for parameter in &prompt_import_declaration.parameters {
+                    keyword_reference_validation_state.validate_expression(
+                        &parameter.value,
+                        &workflow_dynamic_field_types,
+                        prompt_context.clone(),
+                        SecretReferencePolicy::Allow,
+                    );
+                }
+            }
             Declaration::McpServer(_) | Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {
             }
         }
@@ -2148,6 +2331,8 @@ struct KeywordReferenceValidationState<'validation> {
     unknown_dynamic_field_references: HashSet<(ValidationContext, String)>,
     unknown_input_field_references: HashSet<(ValidationContext, String)>,
     unknown_secrets_field_references: HashSet<(ValidationContext, String)>,
+    unknown_resource_references: HashSet<(ValidationContext, String)>,
+    unknown_prompt_references: HashSet<(ValidationContext, String)>,
 }
 
 impl<'validation> KeywordReferenceValidationState<'validation> {
@@ -2174,6 +2359,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             unknown_dynamic_field_references: HashSet::new(),
             unknown_input_field_references: HashSet::new(),
             unknown_secrets_field_references: HashSet::new(),
+            unknown_resource_references: HashSet::new(),
+            unknown_prompt_references: HashSet::new(),
         }
     }
 
@@ -2600,6 +2787,9 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     self.validate_expression(&object_field.value, dynamic_field_types, context.clone(), secret_reference_policy);
                 }
             }
+            Expression::McpCall(mcp_call) => {
+                self.validate_mcp_call(mcp_call, dynamic_field_types, context, secret_reference_policy);
+            }
             Expression::ArrayLiteral(array_values) => {
                 for array_value in array_values {
                     self.validate_expression(array_value, dynamic_field_types, context.clone(), secret_reference_policy);
@@ -2623,6 +2813,78 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 }
             }
             Expression::StringLiteral(_) | Expression::NumberLiteral(_) | Expression::BooleanLiteral(_) | Expression::NullLiteral => {}
+        }
+    }
+
+    fn validate_mcp_call(
+        &mut self,
+        mcp_call: &crate::dsl::McpCall,
+        dynamic_field_types: &HashMap<String, crate::semantic::support::types::WorkflowType>,
+        context: ValidationContext,
+        secret_reference_policy: SecretReferencePolicy,
+    ) {
+        if mcp_call.callee.root_keyword() != Some(mcp_call.operation.expected_root()) || mcp_call.callee.accesses.len() != 1 {
+            let issue_key = (context.clone(), mcp_call.operation.expected_root());
+
+            if self.invalid_keyword_reference_roots.insert(issue_key) {
+                self.validation_report.push_issue_with_span(
+                    ValidationIssue::InvalidKeywordReferenceRoot {
+                        keyword: mcp_call.operation.expected_root(),
+                        context: context.clone(),
+                    },
+                    Some(mcp_call.callee.span),
+                );
+            }
+        } else if let Some(target_name) = mcp_call.target_name() {
+            match mcp_call.operation {
+                crate::dsl::McpCallOperation::Read => self.validate_resource_call_name(target_name, context.clone(), mcp_call.callee.span),
+                crate::dsl::McpCallOperation::Render => self.validate_prompt_call_name(target_name, context.clone(), mcp_call.callee.span),
+            }
+        }
+
+        for parameter_field in &mcp_call.parameter_fields {
+            self.validate_expression(
+                &parameter_field.value,
+                dynamic_field_types,
+                context.clone(),
+                secret_reference_policy,
+            );
+        }
+    }
+
+    fn validate_resource_call_name(&mut self, resource_name: &str, context: ValidationContext, span: SourceSpan) {
+        if self.validation_index.resource_names.contains(resource_name) {
+            return;
+        }
+
+        let issue_key = (context.clone(), resource_name.to_string());
+
+        if self.unknown_resource_references.insert(issue_key) {
+            self.validation_report.push_issue_with_span(
+                ValidationIssue::UnknownResourceReference {
+                    resource_name: resource_name.to_string(),
+                    context,
+                },
+                Some(span),
+            );
+        }
+    }
+
+    fn validate_prompt_call_name(&mut self, prompt_name: &str, context: ValidationContext, span: SourceSpan) {
+        if self.validation_index.prompt_names.contains(prompt_name) {
+            return;
+        }
+
+        let issue_key = (context.clone(), prompt_name.to_string());
+
+        if self.unknown_prompt_references.insert(issue_key) {
+            self.validation_report.push_issue_with_span(
+                ValidationIssue::UnknownPromptReference {
+                    prompt_name: prompt_name.to_string(),
+                    context,
+                },
+                Some(span),
+            );
         }
     }
 
@@ -2670,7 +2932,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             ReferenceKeyword::Secrets => {
                 self.validate_secrets_reference(reference, context);
             }
-            ReferenceKeyword::Tool => {}
+            ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt => {}
         }
     }
 
@@ -3284,6 +3546,13 @@ fn collect_agent_dependencies_from_expression(expression: &Expression, reference
                 collect_agent_dependencies_from_expression(&object_field.value, referenced_agents);
             }
         }
+        Expression::McpCall(mcp_call) => {
+            collect_agent_dependency_from_reference(&mcp_call.callee, referenced_agents);
+
+            for object_field in &mcp_call.parameter_fields {
+                collect_agent_dependencies_from_expression(&object_field.value, referenced_agents);
+            }
+        }
         Expression::ArrayLiteral(array_values) => {
             for array_value in array_values {
                 collect_agent_dependencies_from_expression(array_value, referenced_agents);
@@ -3398,6 +3667,12 @@ mod tests {
             tool search { query: string }
             tool search { query: string }
 
+            resource readme from mcp.local.resource.project-readme
+            resource readme from mcp.local.resource.project-readme
+
+            prompt system_prompt from mcp.local.prompt.system-prompt
+            prompt system_prompt from mcp.local.prompt.system-prompt
+
             agent researcher {}
             agent researcher {}
         };
@@ -3407,6 +3682,8 @@ mod tests {
             ValidationIssue::DuplicateProvider { provider_name } if provider_name == "openai",
             ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User",
             ValidationIssue::DuplicateTool { tool_name } if tool_name == "search",
+            ValidationIssue::DuplicateResource { resource_name } if resource_name == "readme",
+            ValidationIssue::DuplicatePrompt { prompt_name } if prompt_name == "system_prompt",
             ValidationIssue::DuplicateAgent { agent_name } if agent_name == "researcher"
         );
     }
@@ -3444,6 +3721,73 @@ mod tests {
                 tool_name: _,
                 agent_name: _
             }
+        );
+    }
+
+    #[test]
+    fn reports_unknown_mcp_call_references() {
+        let workflow = parse_inline_workflow! {
+            dynamic {
+                readme: read resource.project_readme
+                instructions: render prompt.system_prompt
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::UnknownResourceReference { resource_name, context }
+                if resource_name == "project_readme" && *context == ValidationContext::Dynamic,
+            ValidationIssue::UnknownPromptReference { prompt_name, context }
+                if prompt_name == "system_prompt" && *context == ValidationContext::Dynamic
+        );
+    }
+
+    #[test]
+    fn accepts_imported_mcp_call_references() {
+        let workflow = parse_inline_workflow! {
+            resource project_readme from mcp.local.resource.project-readme
+            prompt system_prompt from mcp.local.prompt.system-prompt
+
+            dynamic {
+                readme: read resource.project_readme
+                instructions: render prompt.system_prompt
+            }
+        };
+
+        assert_workflow_issues_do_not_contain!(
+            workflow,
+            ValidationIssue::UnknownResourceReference {
+                resource_name: _,
+                context: _
+            }
+        );
+        assert_workflow_issues_do_not_contain!(
+            workflow,
+            ValidationIssue::UnknownPromptReference {
+                prompt_name: _,
+                context: _
+            }
+        );
+    }
+
+    #[test]
+    fn reports_wrong_mcp_call_reference_roots() {
+        let workflow = parse_inline_workflow! {
+            resource project_readme from mcp.local.resource.project-readme
+            prompt system_prompt from mcp.local.prompt.system-prompt
+
+            dynamic {
+                readme: read prompt.system_prompt
+                instructions: render resource.project_readme
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
+                if *keyword == ReferenceKeyword::Resource && *context == ValidationContext::Dynamic,
+            ValidationIssue::InvalidKeywordReferenceRoot { keyword, context }
+                if *keyword == ReferenceKeyword::Prompt && *context == ValidationContext::Dynamic
         );
     }
 
@@ -3828,6 +4172,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn all_validation_issue_diagnostics_include_recovery_help() {
         let validation_issues = vec![
             ValidationIssue::DuplicateProvider {
@@ -3835,6 +4180,15 @@ mod tests {
             },
             ValidationIssue::DuplicateSchema {
                 schema_name: "Result".to_string(),
+            },
+            ValidationIssue::DuplicateTool {
+                tool_name: "search".to_string(),
+            },
+            ValidationIssue::DuplicateResource {
+                resource_name: "readme".to_string(),
+            },
+            ValidationIssue::DuplicatePrompt {
+                prompt_name: "system_prompt".to_string(),
             },
             ValidationIssue::DuplicateAgent {
                 agent_name: "writer".to_string(),
@@ -3868,6 +4222,14 @@ mod tests {
             },
             ValidationIssue::UnknownAgentReference {
                 referenced_agent: "missing_agent".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::UnknownResourceReference {
+                resource_name: "readme".to_string(),
+                context: ValidationContext::Output,
+            },
+            ValidationIssue::UnknownPromptReference {
+                prompt_name: "system_prompt".to_string(),
                 context: ValidationContext::Output,
             },
             ValidationIssue::InvalidKeywordReferenceRoot {

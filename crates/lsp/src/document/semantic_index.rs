@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
-    AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ProviderDeclaration,
-    ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
+    AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, McpCallOperation,
+    ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
 };
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::ProviderDriver;
@@ -28,6 +28,8 @@ pub struct SemanticIndex {
     pub tools: HashMap<String, ToolSummary>,
     pub tool_names: Vec<String>,
     pub tool_locations: Vec<NamedSpan>,
+    pub resource_names: Vec<String>,
+    pub prompt_names: Vec<String>,
     pub input_fields: BTreeMap<String, TypeExpression>,
     pub input_field_metadata: BTreeMap<String, FieldMetadata>,
     input_field_locations: HashMap<String, SourceSpan>,
@@ -266,6 +268,18 @@ impl SemanticIndex {
                 "call tool.",
             ),
             (
+                McpCallOperation::Read.as_str(),
+                "MCP resource read expression",
+                "Reads an imported MCP resource and stores its rendered content.",
+                "read resource.",
+            ),
+            (
+                McpCallOperation::Render.as_str(),
+                "MCP prompt render expression",
+                "Renders an imported MCP prompt and stores its content.",
+                "render prompt.",
+            ),
+            (
                 BuiltinFunctionName::Compact.as_str(),
                 "Builtin function",
                 "Compacts nullable values in object-like data.",
@@ -338,6 +352,34 @@ impl SemanticIndex {
                 insert_text: multiline_literal_insert_text,
             });
         }
+
+        let mcp_call_suggestion_specs = [
+            (
+                McpCallOperation::Read.as_str(),
+                "MCP resource read expression",
+                "Reads an imported MCP resource as prompt text.",
+                "read resource.",
+            ),
+            (
+                McpCallOperation::Render.as_str(),
+                "MCP prompt render expression",
+                "Renders an imported MCP prompt as prompt text.",
+                "render prompt.",
+            ),
+        ];
+
+        completion_suggestions.extend(
+            mcp_call_suggestion_specs
+                .into_iter()
+                .filter(|(label, _, _, _)| label.starts_with(value_prefix))
+                .map(|(label, detail, documentation, insert_text)| CompletionSuggestion {
+                    label: label.to_string(),
+                    kind: CompletionKind::Function,
+                    detail: detail.to_string(),
+                    documentation: documentation.to_string(),
+                    insert_text: insert_text.to_string(),
+                }),
+        );
 
         completion_suggestions
     }
@@ -596,6 +638,8 @@ impl SemanticIndex {
             tools: HashMap::new(),
             tool_names: Vec::new(),
             tool_locations: Vec::new(),
+            resource_names: Vec::new(),
+            prompt_names: Vec::new(),
             input_fields: BTreeMap::new(),
             input_field_metadata: BTreeMap::new(),
             input_field_locations: HashMap::new(),
@@ -636,6 +680,12 @@ impl SemanticIndex {
         semantic_index.tool_names.sort();
         semantic_index.tool_names.dedup();
 
+        semantic_index.resource_names.sort();
+        semantic_index.resource_names.dedup();
+
+        semantic_index.prompt_names.sort();
+        semantic_index.prompt_names.dedup();
+
         semantic_index
     }
 
@@ -659,6 +709,12 @@ impl SemanticIndex {
             }
             Declaration::Tool(tool_declaration) => {
                 self.insert_tool_declaration(tool_declaration);
+            }
+            Declaration::McpResource(resource_import_declaration) => {
+                self.resource_names.push(resource_import_declaration.name.clone());
+            }
+            Declaration::McpPrompt(prompt_import_declaration) => {
+                self.prompt_names.push(prompt_import_declaration.name.clone());
             }
             Declaration::Dynamic(dynamic_block) => {
                 self.insert_workflow_dynamic_block(dynamic_block);
@@ -926,6 +982,8 @@ impl SemanticIndex {
             tools,
             tool_names,
             tool_locations,
+            resource_names: Vec::new(),
+            prompt_names: Vec::new(),
             input_fields: tooling_snapshot.input_fields().clone(),
             input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
             input_field_locations: HashMap::new(),
@@ -1137,6 +1195,7 @@ impl SemanticIndex {
                 | Expression::Reference(_)
                 | Expression::FunctionCall(_)
                 | Expression::ToolCall(_)
+                | Expression::McpCall(_)
                 | Expression::ArrayLiteral(_)
                 | Expression::ObjectLiteral(_) => None,
             });
@@ -1569,6 +1628,14 @@ impl SemanticIndex {
             return true;
         }
 
+        if declaration_label == DeclarationKeyword::Resource.as_str() {
+            return true;
+        }
+
+        if declaration_label == DeclarationKeyword::Prompt.as_str() {
+            return true;
+        }
+
         if declaration_label == DeclarationKeyword::Dynamic.as_str() {
             return true;
         }
@@ -1843,6 +1910,7 @@ impl SemanticIndex {
             Expression::NullLiteral => Some(TypeExpression::Null),
             Expression::Reference(reference) => self.reference_expression_type(reference, dynamic_fields),
             Expression::FunctionCall(_) => None,
+            Expression::McpCall(_) => Some(TypeExpression::String),
             Expression::ToolCall(tool_call) => {
                 let tool_name = tool_call.callee.first_access_field()?;
                 let tool_summary = self.tools.get(tool_name)?;
@@ -1977,6 +2045,7 @@ impl SemanticIndex {
             ),
             ReferenceKeyword::Agent => self.agent_reference_definition_span(reference_completion_path, selected_segment_index),
             ReferenceKeyword::Tool => self.tool_reference_definition_span(reference_completion_path, selected_segment_index),
+            ReferenceKeyword::Resource | ReferenceKeyword::Prompt => None,
         }
     }
 
@@ -2225,7 +2294,7 @@ impl SemanticIndex {
 
                 candidate_types.first().cloned()
             }
-            ReferenceKeyword::Tool => None,
+            ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt => None,
         }
     }
 }

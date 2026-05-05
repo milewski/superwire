@@ -369,16 +369,12 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
-                let field_value = match &dynamic_field.value {
-                    Expression::ToolCall(tool_call) => {
-                        self.execute_deterministic_tool_call(tool_call, &runtime_state.evaluation_context(HashMap::new()), event_sender)?
-                    }
-                    _ => evaluate_expression(
-                        &dynamic_field.value,
-                        &runtime_state.evaluation_context(HashMap::new()),
-                        &format!("dynamic field `{}`", dynamic_field.name),
-                    )?,
-                };
+                let field_value = self.evaluate_runtime_expression(
+                    &dynamic_field.value,
+                    &runtime_state.evaluation_context(HashMap::new()),
+                    &format!("dynamic field `{}`", dynamic_field.name),
+                    event_sender,
+                )?;
                 runtime_state.insert_local_binding(dynamic_field.name.clone(), field_value);
             }
         }
@@ -404,10 +400,11 @@ impl WorkflowExecutor {
         let mut input_arguments = Map::new();
 
         for input_field in &tool_call.input_fields {
-            let input_value = evaluate_expression(
+            let input_value = self.evaluate_runtime_expression(
                 &input_field.value,
                 evaluation_context,
                 &format!("input field `{}` for tool `{}`", input_field.name, tool_name),
+                event_sender,
             )?;
             input_arguments.insert(input_field.name.clone(), input_value);
         }
@@ -508,11 +505,18 @@ impl WorkflowExecutor {
                 property: missing_property.as_str().to_string(),
                 message: "property is required".to_string(),
             })?;
-        let prompt = normalize_prompt(evaluate_expression(
+        let agent_prompt = normalize_prompt(self.evaluate_runtime_expression(
             prompt_expression,
             &evaluation_context,
             &format!("prompt for agent `{}`", planned_agent.name),
+            None,
         )?);
+        let import_context = self.resolve_mcp_import_context(&evaluation_context)?;
+        let prompt = if import_context.is_empty() {
+            agent_prompt
+        } else {
+            format!("{import_context}\n\n{agent_prompt}")
+        };
         let output_schema = workflow_type_to_json_schema(&planned_agent.iteration_output_type);
         let tool_definitions = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
         let tool_names = tool_definitions
@@ -671,7 +675,7 @@ impl WorkflowExecutor {
         let evaluation_context = runtime_state.evaluation_context(HashMap::new());
 
         for output_field in &self.execution_plan.output_declaration.fields {
-            let output_value = evaluate_expression(&output_field.value, &evaluation_context, "workflow output")?;
+            let output_value = self.evaluate_runtime_expression(&output_field.value, &evaluation_context, "workflow output", None)?;
             output_fields.insert(output_field.name.clone(), output_value);
         }
 
@@ -692,18 +696,12 @@ impl WorkflowExecutor {
             };
 
             for dynamic_field in &dynamic_block.fields {
-                let field_value = match &dynamic_field.value {
-                    Expression::ToolCall(tool_call) => self.execute_deterministic_tool_call(
-                        tool_call,
-                        &runtime_state.evaluation_context(dynamic_values.clone()),
-                        event_sender,
-                    )?,
-                    _ => evaluate_expression(
-                        &dynamic_field.value,
-                        &runtime_state.evaluation_context(dynamic_values.clone()),
-                        &format!("dynamic field `{}` for agent `{}`", dynamic_field.name, planned_agent.name),
-                    )?,
-                };
+                let field_value = self.evaluate_runtime_expression(
+                    &dynamic_field.value,
+                    &runtime_state.evaluation_context(dynamic_values.clone()),
+                    &format!("dynamic field `{}` for agent `{}`", dynamic_field.name, planned_agent.name),
+                    event_sender,
+                )?;
                 dynamic_values.insert(dynamic_field.name.clone(), field_value);
             }
         }
@@ -731,6 +729,301 @@ impl WorkflowExecutor {
         }
 
         Ok(tool_definitions)
+    }
+
+    fn evaluate_runtime_expression(
+        &self,
+        expression: &Expression,
+        evaluation_context: &EvaluationContext,
+        context: &str,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<Value, ExecutorError> {
+        match expression {
+            Expression::StringLiteral(string_literal) => Ok(Value::String(string_literal.clone())),
+            Expression::StringTemplate(string_template) => {
+                let mut rendered_template = String::new();
+
+                for string_template_part in &string_template.parts {
+                    match string_template_part {
+                        superwire_core::dsl::StringTemplatePart::Text(template_text) => rendered_template.push_str(template_text),
+                        superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) => {
+                            let interpolation_value =
+                                self.evaluate_runtime_expression(interpolation_expression, evaluation_context, context, event_sender)?;
+                            rendered_template.push_str(&normalize_prompt(interpolation_value));
+                        }
+                    }
+                }
+
+                Ok(Value::String(rendered_template))
+            }
+            Expression::NumberLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral
+            | Expression::Reference(_)
+            | Expression::FunctionCall(_) => Ok(evaluate_expression(expression, evaluation_context, context)?),
+            Expression::ToolCall(tool_call) => self.execute_deterministic_tool_call(tool_call, evaluation_context, event_sender),
+            Expression::McpCall(mcp_call) => self.execute_mcp_call(mcp_call, evaluation_context, event_sender),
+            Expression::ArrayLiteral(array_items) => {
+                let mut evaluated_items = Vec::with_capacity(array_items.len());
+
+                for array_item in array_items {
+                    evaluated_items.push(self.evaluate_runtime_expression(array_item, evaluation_context, context, event_sender)?);
+                }
+
+                Ok(Value::Array(evaluated_items))
+            }
+            Expression::ObjectLiteral(object_fields) => {
+                let mut evaluated_fields = Map::new();
+
+                for object_field in object_fields {
+                    let field_value = self.evaluate_runtime_expression(&object_field.value, evaluation_context, context, event_sender)?;
+                    evaluated_fields.insert(object_field.name.clone(), field_value);
+                }
+
+                Ok(Value::Object(evaluated_fields))
+            }
+        }
+    }
+
+    fn execute_mcp_call(
+        &self,
+        mcp_call: &superwire_core::dsl::McpCall,
+        evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<Value, ExecutorError> {
+        let target_name = mcp_call.target_name().ok_or_else(|| ExecutorError::Other {
+            message: format!("{} call requires a target name", mcp_call.operation.as_str()),
+        })?;
+        let expected_root = mcp_call.operation.expected_root();
+
+        if mcp_call.callee.root_keyword() != Some(expected_root) {
+            return Err(ExecutorError::Other {
+                message: format!(
+                    "{} call must target `{}.<name>`",
+                    mcp_call.operation.as_str(),
+                    expected_root.as_str()
+                ),
+            });
+        }
+
+        match mcp_call.operation {
+            superwire_core::dsl::McpCallOperation::Read => {
+                self.execute_resource_read(target_name, mcp_call, evaluation_context, event_sender)
+            }
+            superwire_core::dsl::McpCallOperation::Render => {
+                self.execute_prompt_render(target_name, mcp_call, evaluation_context, event_sender)
+            }
+        }
+    }
+
+    fn execute_resource_read(
+        &self,
+        resource_name: &str,
+        mcp_call: &superwire_core::dsl::McpCall,
+        evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<Value, ExecutorError> {
+        let resource_import = self
+            .workflow
+            .find_resource_import(resource_name)
+            .ok_or_else(|| ExecutorError::Other {
+                message: format!("resource `{resource_name}` is not imported"),
+            })?;
+        let server_config = self.resolve_mcp_import_server(&resource_import.source.server_name, evaluation_context)?;
+        let arguments = self.resolve_mcp_call_parameters(
+            &resource_import.parameters,
+            &mcp_call.parameter_fields,
+            evaluation_context,
+            resource_name,
+        )?;
+        let operation = mcp_call.operation.as_str().to_string();
+
+        if let Some(sender) = event_sender {
+            let _ = sender.try_send(ExecutorEvent::mcp_call_started(
+                operation.clone(),
+                resource_name.to_string(),
+                arguments.clone(),
+            ));
+        }
+
+        let result = match McpClient::new(server_config).read_resource(&resource_import.source.item_name, arguments) {
+            Ok(result) => result,
+            Err(error) => {
+                if let Some(sender) = event_sender {
+                    let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
+                        operation,
+                        resource_name.to_string(),
+                        Value::String(error.to_string()),
+                    ));
+                }
+
+                return Err(ExecutorError::Other {
+                    message: format!("MCP resource `{resource_name}` failed: {error}"),
+                });
+            }
+        };
+        let rendered_result = Value::String(render_mcp_resource_result(&result));
+
+        if let Some(sender) = event_sender {
+            let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
+                mcp_call.operation.as_str().to_string(),
+                resource_name.to_string(),
+                rendered_result.clone(),
+            ));
+        }
+
+        Ok(rendered_result)
+    }
+
+    fn execute_prompt_render(
+        &self,
+        prompt_name: &str,
+        mcp_call: &superwire_core::dsl::McpCall,
+        evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<Value, ExecutorError> {
+        let prompt_import = self.workflow.find_prompt_import(prompt_name).ok_or_else(|| ExecutorError::Other {
+            message: format!("prompt `{prompt_name}` is not imported"),
+        })?;
+        let server_config = self.resolve_mcp_import_server(&prompt_import.source.server_name, evaluation_context)?;
+        let arguments = self.resolve_mcp_call_parameters(
+            &prompt_import.parameters,
+            &mcp_call.parameter_fields,
+            evaluation_context,
+            prompt_name,
+        )?;
+        let operation = mcp_call.operation.as_str().to_string();
+
+        if let Some(sender) = event_sender {
+            let _ = sender.try_send(ExecutorEvent::mcp_call_started(
+                operation.clone(),
+                prompt_name.to_string(),
+                arguments.clone(),
+            ));
+        }
+
+        let result = match McpClient::new(server_config).get_prompt(&prompt_import.source.item_name, arguments) {
+            Ok(result) => result,
+            Err(error) => {
+                if let Some(sender) = event_sender {
+                    let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
+                        operation,
+                        prompt_name.to_string(),
+                        Value::String(error.to_string()),
+                    ));
+                }
+
+                return Err(ExecutorError::Other {
+                    message: format!("MCP prompt `{prompt_name}` failed: {error}"),
+                });
+            }
+        };
+        let rendered_result = Value::String(render_mcp_prompt_result(&result));
+
+        if let Some(sender) = event_sender {
+            let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
+                mcp_call.operation.as_str().to_string(),
+                prompt_name.to_string(),
+                rendered_result.clone(),
+            ));
+        }
+
+        Ok(rendered_result)
+    }
+
+    fn resolve_mcp_call_parameters(
+        &self,
+        import_parameters: &[ObjectField],
+        call_parameters: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+        import_name: &str,
+    ) -> Result<Value, ExecutorError> {
+        let mut resolved_parameters = Map::new();
+
+        for parameter in import_parameters.iter().chain(call_parameters.iter()) {
+            let parameter_value = self.evaluate_runtime_expression(
+                &parameter.value,
+                evaluation_context,
+                &format!("MCP call `{import_name}` parameter `{}`", parameter.name),
+                None,
+            )?;
+            resolved_parameters.insert(parameter.name.clone(), parameter_value);
+        }
+
+        Ok(Value::Object(resolved_parameters))
+    }
+
+    fn resolve_mcp_import_context(&self, evaluation_context: &EvaluationContext) -> Result<String, ExecutorError> {
+        let mut context_sections = Vec::new();
+
+        for prompt_import in self.workflow.prompt_imports() {
+            let server_config = self.resolve_mcp_import_server(&prompt_import.source.server_name, evaluation_context)?;
+            let arguments = self.resolve_mcp_import_parameters(&prompt_import.parameters, evaluation_context, &prompt_import.name)?;
+            let result = McpClient::new(server_config)
+                .get_prompt(&prompt_import.source.item_name, arguments)
+                .map_err(|error| ExecutorError::Other {
+                    message: format!("MCP prompt `{}` failed: {error}", prompt_import.name),
+                })?;
+
+            context_sections.push(format!(
+                "MCP prompt `{}`:\n{}",
+                prompt_import.name,
+                render_mcp_prompt_result(&result)
+            ));
+        }
+
+        for resource_import in self.workflow.resource_imports() {
+            let server_config = self.resolve_mcp_import_server(&resource_import.source.server_name, evaluation_context)?;
+            let arguments = self.resolve_mcp_import_parameters(&resource_import.parameters, evaluation_context, &resource_import.name)?;
+            let result = McpClient::new(server_config)
+                .read_resource(&resource_import.source.item_name, arguments)
+                .map_err(|error| ExecutorError::Other {
+                    message: format!("MCP resource `{}` failed: {error}", resource_import.name),
+                })?;
+
+            context_sections.push(format!(
+                "MCP resource `{}`:\n{}",
+                resource_import.name,
+                render_mcp_resource_result(&result)
+            ));
+        }
+
+        Ok(context_sections.join("\n\n"))
+    }
+
+    fn resolve_mcp_import_server(
+        &self,
+        server_name: &str,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<McpServerConfig, ExecutorError> {
+        let mcp_server_declaration = self.workflow.find_mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
+            message: format!("MCP import references unknown MCP server `{server_name}`"),
+        })?;
+
+        McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })
+    }
+
+    fn resolve_mcp_import_parameters(
+        &self,
+        parameters: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+        import_name: &str,
+    ) -> Result<Value, ExecutorError> {
+        let mut resolved_parameters = Map::new();
+
+        for parameter in parameters {
+            let parameter_value = self.evaluate_runtime_expression(
+                &parameter.value,
+                evaluation_context,
+                &format!("MCP import `{import_name}` parameter `{}`", parameter.name),
+                None,
+            )?;
+            resolved_parameters.insert(parameter.name.clone(), parameter_value);
+        }
+
+        Ok(Value::Object(resolved_parameters))
     }
 
     fn resolve_agent_tool_definition(
@@ -938,6 +1231,50 @@ fn normalize_prompt(prompt_value: Value) -> String {
     }
 
     serde_json::to_string(&prompt_value).unwrap_or_else(|_| prompt_value.to_string())
+}
+
+fn render_mcp_prompt_result(result: &Value) -> String {
+    let Some(messages) = result.get("messages").and_then(Value::as_array) else {
+        return normalize_prompt(result.clone());
+    };
+    let mut rendered_messages = Vec::new();
+
+    for message in messages {
+        let role = message.get("role").and_then(Value::as_str).unwrap_or("message");
+        let content = message.get("content").map_or_else(String::new, render_mcp_content_value);
+        rendered_messages.push(format!("{role}: {content}"));
+    }
+
+    rendered_messages.join("\n")
+}
+
+fn render_mcp_resource_result(result: &Value) -> String {
+    let Some(contents) = result.get("contents").and_then(Value::as_array) else {
+        return normalize_prompt(result.clone());
+    };
+    let mut rendered_contents = Vec::new();
+
+    for content in contents {
+        rendered_contents.push(render_mcp_content_value(content));
+    }
+
+    rendered_contents.join("\n")
+}
+
+fn render_mcp_content_value(content: &Value) -> String {
+    if let Some(text) = content.as_str() {
+        return text.to_string();
+    }
+
+    if let Some(text) = content.get("text").and_then(Value::as_str) {
+        return text.to_string();
+    }
+
+    if let Some(blob) = content.get("blob").and_then(Value::as_str) {
+        return blob.to_string();
+    }
+
+    normalize_prompt(content.clone())
 }
 
 fn value_object(value: &Value) -> Map<String, Value> {

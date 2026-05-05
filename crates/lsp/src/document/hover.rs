@@ -89,6 +89,8 @@ impl SemanticIndex {
 
                 Some(format!("**{}**\n\nType: `{}`", hovered_symbol, final_type.render_type()))
             }
+            Some(ReferenceKeyword::Resource) => Some(format!("**{hovered_symbol}**\n\nMCP resource reference.")),
+            Some(ReferenceKeyword::Prompt) => Some(format!("**{hovered_symbol}**\n\nMCP prompt reference.")),
             Some(ReferenceKeyword::Tool) | None => None,
         }
     }
@@ -102,12 +104,24 @@ struct BuiltinSymbolDoc {
     documentation: &'static str,
 }
 
-const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 8] = [
+const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 10] = [
     BuiltinSymbolDoc {
         label: "tool",
         kind: CompletionKind::Module,
         detail: "Tool namespace",
         documentation: "Use `tool.<name>` to reference declared tools.",
+    },
+    BuiltinSymbolDoc {
+        label: "resource",
+        kind: CompletionKind::Module,
+        detail: "Resource namespace",
+        documentation: "Use `read resource.<name>` to read imported MCP resources.",
+    },
+    BuiltinSymbolDoc {
+        label: "prompt",
+        kind: CompletionKind::Module,
+        detail: "Prompt namespace",
+        documentation: "Use `render prompt.<name>` to render imported MCP prompts.",
     },
     BuiltinSymbolDoc {
         label: "context",
@@ -168,6 +182,8 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Input => "Input declaration",
             DeclarationKeyword::Schema => "Schema declaration",
             DeclarationKeyword::Tool => "Tool declaration",
+            DeclarationKeyword::Resource => "MCP resource import",
+            DeclarationKeyword::Prompt => "MCP prompt import",
             DeclarationKeyword::Dynamic => "Dynamic declaration",
             DeclarationKeyword::Agent => "Agent declaration",
             DeclarationKeyword::Output => "Output declaration",
@@ -182,6 +198,8 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
             DeclarationKeyword::Input => "Declares workflow input fields.",
             DeclarationKeyword::Schema => "Declares a reusable named schema type.",
             DeclarationKeyword::Tool => "Declares a tool schema that agents can reference.",
+            DeclarationKeyword::Resource => "Imports an MCP resource into agent prompt context.",
+            DeclarationKeyword::Prompt => "Imports an MCP prompt into agent prompt context.",
             DeclarationKeyword::Dynamic => "Declares dynamic values available through `dynamic.<field>` references.",
             DeclarationKeyword::Agent => "Declares an executable workflow agent.",
             DeclarationKeyword::Output => "Declares final workflow output fields.",
@@ -211,7 +229,7 @@ fn builtin_symbol_markdown(symbol_name: &str) -> Option<String> {
     ))
 }
 
-fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 9] {
+fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 11] {
     [
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Provider.as_str(),
@@ -242,6 +260,18 @@ fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 9] {
             kind: CompletionKind::Keyword,
             detail: DeclarationKeyword::Tool.completion_detail(),
             documentation: DeclarationKeyword::Tool.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Resource.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Resource.completion_detail(),
+            documentation: DeclarationKeyword::Resource.completion_documentation(),
+        },
+        BuiltinSymbolDoc {
+            label: DeclarationKeyword::Prompt.as_str(),
+            kind: CompletionKind::Keyword,
+            detail: DeclarationKeyword::Prompt.completion_detail(),
+            documentation: DeclarationKeyword::Prompt.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Dynamic.as_str(),

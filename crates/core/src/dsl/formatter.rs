@@ -4,8 +4,8 @@ use thiserror::Error;
 
 use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
-    Expression, ForClauseKeyword, FunctionCall, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
-    TypeExpression, TypedField, Workflow,
+    Expression, ForClauseKeyword, FunctionCall, McpCall, McpPromptImportDeclaration, McpResourceImportDeclaration, ObjectField, Reference,
+    StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -275,6 +275,8 @@ impl Declaration {
                 formatter.push_declaration_block_end();
             }
             Self::Tool(tool_declaration) => tool_declaration.push_to_formatter(formatter),
+            Self::McpResource(resource_import_declaration) => resource_import_declaration.push_to_formatter(formatter),
+            Self::McpPrompt(prompt_import_declaration) => prompt_import_declaration.push_to_formatter(formatter),
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Agent(agent_declaration) => {
                 agent_declaration.push_to_formatter(formatter);
@@ -334,6 +336,12 @@ impl AgentDeclaration {
 
 impl ToolDeclaration {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        if self.imported {
+            self.push_import_to_formatter(formatter);
+
+            return;
+        }
+
         formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Tool.as_str(), self.name));
 
         if let Some(description) = &self.description {
@@ -415,6 +423,67 @@ impl ToolDeclaration {
 
         formatter.push_declaration_block_end();
     }
+
+    fn push_import_to_formatter(&self, formatter: &mut DslFormatter) {
+        let Some(super::ast::ToolSource::Mcp(mcp_tool_source)) = &self.source else {
+            formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Tool.as_str(), self.name));
+            formatter.push_declaration_block_end();
+
+            return;
+        };
+        let source_path = if let Some(server_name) = &mcp_tool_source.server_name {
+            format!("mcp.{server_name}.tool.{}", mcp_tool_source.tool_name)
+        } else {
+            format!("mcp.tool.{}", mcp_tool_source.tool_name)
+        };
+        let header = format!("{} {} from {source_path}", DeclarationKeyword::Tool.as_str(), self.name);
+
+        push_mcp_import_with_parameters(formatter, &header, &self.fixed_binding_fields);
+    }
+}
+
+impl McpResourceImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let header = format!(
+            "{} {} from {}",
+            DeclarationKeyword::Resource.as_str(),
+            self.name,
+            self.source.render_path()
+        );
+
+        push_mcp_import_with_parameters(formatter, &header, &self.parameters);
+    }
+}
+
+impl McpPromptImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let header = format!(
+            "{} {} from {}",
+            DeclarationKeyword::Prompt.as_str(),
+            self.name,
+            self.source.render_path()
+        );
+
+        push_mcp_import_with_parameters(formatter, &header, &self.parameters);
+    }
+}
+
+fn push_mcp_import_with_parameters(formatter: &mut DslFormatter, header: &str, parameters: &[ObjectField]) {
+    if parameters.is_empty() {
+        formatter.push_line(header);
+
+        return;
+    }
+
+    formatter.push_declaration_block_start(header);
+    formatter.push_declaration_block_start("bindings");
+
+    for parameter in parameters {
+        parameter.push_to_formatter(formatter);
+    }
+
+    formatter.push_declaration_block_end();
+    formatter.push_declaration_block_end();
 }
 
 impl AgentForLoopPattern {
@@ -689,6 +758,7 @@ impl Expression {
             Self::Reference(reference) => reference.push_to_formatter(formatter),
             Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
             Self::ToolCall(tool_call) => tool_call.push_to_formatter(formatter),
+            Self::McpCall(mcp_call) => mcp_call.push_to_formatter(formatter),
             Self::ArrayLiteral(array_items) => {
                 self.push_array_literal_to_formatter(formatter, array_items, expression_format);
             }
@@ -862,7 +932,8 @@ impl Expression {
             | Self::NullLiteral
             | Self::Reference(_)
             | Self::FunctionCall(_)
-            | Self::ToolCall(_) => true,
+            | Self::ToolCall(_)
+            | Self::McpCall(_) => true,
         }
     }
 
@@ -1115,6 +1186,32 @@ impl ToolCall {
     }
 }
 
+impl McpCall {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.output.push_str(self.operation.as_str());
+        formatter.output.push(' ');
+        self.callee.push_to_formatter(formatter);
+
+        if self.parameter_fields.is_empty() {
+            return;
+        }
+
+        formatter.output.push_str(" {");
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+        formatter.push_declaration_block_start("params");
+
+        for parameter_field in &self.parameter_fields {
+            parameter_field.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
+    }
+}
+
 impl CallArgument {
     fn push_to_formatter(&self, formatter: &mut DslFormatter, expression_format: ExpressionFormat) {
         match self {
@@ -1163,6 +1260,7 @@ impl Expression {
             | Self::Reference(_)
             | Self::FunctionCall(_)
             | Self::ToolCall(_)
+            | Self::McpCall(_)
             | Self::ArrayLiteral(_) => false,
         }
     }

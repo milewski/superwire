@@ -156,6 +156,88 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
     );
 }
 
+#[tokio::test]
+async fn explicit_mcp_calls_emit_started_and_completed_events() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            workspace_id: string
+        }
+
+        resource project_readme from mcp.local.resource.project-readme {
+            bindings {
+                workspace_id: input.workspace_id
+            }
+        }
+
+        prompt system_prompt from mcp.local.prompt.system-prompt
+
+        dynamic {
+            readme: read resource.project_readme {
+                params {
+                    section: "setup"
+                }
+            }
+            instructions: render prompt.system_prompt {
+                params {
+                    readme: dynamic.readme
+                }
+            }
+        }
+
+        output {
+            readme: dynamic.readme
+            instructions: dynamic.instructions
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TestModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+    let mut receiver = service.execute_stream(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })));
+    let mut mcp_call_events = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        if matches!(event.kind, ExecutorEventKind::McpCallStarted | ExecutorEventKind::McpCallCompleted) {
+            mcp_call_events.push(event);
+        }
+    }
+
+    let started_targets = mcp_call_events
+        .iter()
+        .filter(|event| event.kind == ExecutorEventKind::McpCallStarted)
+        .map(|event| event.data.as_ref().unwrap()["target_name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    let completed_targets = mcp_call_events
+        .iter()
+        .filter(|event| event.kind == ExecutorEventKind::McpCallCompleted)
+        .map(|event| event.data.as_ref().unwrap()["target_name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(started_targets, vec!["project_readme", "system_prompt"]);
+    assert_eq!(completed_targets, vec!["project_readme", "system_prompt"]);
+
+    let resource_started = mcp_call_events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpCallStarted && event.data.as_ref().unwrap()["target_name"] == "project_readme")
+        .expect("resource read start event should exist");
+    assert_eq!(resource_started.data.as_ref().unwrap()["operation"], "read");
+    assert_eq!(resource_started.data.as_ref().unwrap()["arguments"]["workspace_id"], "workspace-1");
+    assert_eq!(resource_started.data.as_ref().unwrap()["arguments"]["section"], "setup");
+
+    let prompt_completed = mcp_call_events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpCallCompleted && event.data.as_ref().unwrap()["target_name"] == "system_prompt")
+        .expect("prompt render completion event should exist");
+    assert_eq!(prompt_completed.data.as_ref().unwrap()["operation"], "render");
+    assert!(prompt_completed.data.as_ref().unwrap()["result"]
+        .as_str()
+        .is_some_and(|result| result.contains("Follow project conventions.")));
+}
+
 struct TestMcpHttpServer {
     endpoint: String,
 }
@@ -251,6 +333,34 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
                                 "participants": { "type": "number" }
                             },
                             "required": ["task_title", "participants"]
+                        }
+                    }
+                ]
+            }
+        })),
+        Some("resources/read") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "contents": [
+                    {
+                        "uri": "project-readme",
+                        "mimeType": "text/markdown",
+                        "text": "# Project README\nUse stable sorting."
+                    }
+                ]
+            }
+        })),
+        Some("prompts/get") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": {
+                            "type": "text",
+                            "text": "Follow project conventions."
                         }
                     }
                 ]

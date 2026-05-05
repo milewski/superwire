@@ -647,6 +647,10 @@ impl DocumentState {
             Self::has_existing_tool_binding_block(inputs.line_suffix),
         );
 
+        if Self::is_mcp_call_callee_context(inputs.line_prefix, &reference_completion_path) {
+            return Some(reference_suggestions);
+        }
+
         if let Some(inference_suggestions) = self.inference_reference_completion_suggestions(
             semantic_index,
             inputs.line_prefix,
@@ -723,7 +727,7 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
                 if can_suggest_inference_roots {
                     return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -758,7 +762,7 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
                 if for_loop_iterator_reference_root {
                     return Some(reference_suggestions.to_vec());
                 }
@@ -795,7 +799,7 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Tool) | None => {
+            Some(ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
                 if can_suggest_output_roots {
                     return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -833,7 +837,7 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool) | None => {
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
                 if can_suggest_prompt_roots {
                     return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -869,6 +873,13 @@ impl DocumentState {
 
                 Some(Vec::new())
             }
+            Some(ReferenceKeyword::Resource | ReferenceKeyword::Prompt) => {
+                if Self::is_mcp_call_callee_context(line_prefix, reference_completion_path) {
+                    return Some(reference_suggestions.to_vec());
+                }
+
+                Some(Vec::new())
+            }
             None => Some(Vec::new()),
         }
     }
@@ -894,6 +905,27 @@ impl DocumentState {
         value_prefix_after_separator.trim() == ToolCallKeyword::Call.as_str()
     }
 
+    fn is_mcp_call_callee_context(line_prefix: &str, reference_completion_path: &ReferenceCompletionPath) -> bool {
+        let expected_keyword = match reference_completion_path.root_keyword() {
+            Some(ReferenceKeyword::Resource) => "read",
+            Some(ReferenceKeyword::Prompt) => "render",
+            _ => return false,
+        };
+        let Some(reference_token) = trailing_reference_token(line_prefix) else {
+            return false;
+        };
+        let Some(reference_start_index) = line_prefix.rfind(reference_token) else {
+            return false;
+        };
+        let value_prefix = line_prefix[..reference_start_index].trim_end();
+
+        if let Some((_, value_prefix_after_separator)) = value_prefix.rsplit_once(':') {
+            return value_prefix_after_separator.trim().ends_with(expected_keyword);
+        }
+
+        value_prefix.ends_with(expected_keyword)
+    }
+
     fn default_reference_completion_suggestions(
         &self,
         reference_completion_path: &ReferenceCompletionPath,
@@ -907,7 +939,10 @@ impl DocumentState {
             return Some(reference_suggestions.to_vec());
         }
 
-        if reference_root_keyword == Some(ReferenceKeyword::Tool) {
+        if matches!(
+            reference_root_keyword,
+            Some(ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt)
+        ) {
             return Some(reference_suggestions.to_vec());
         }
 

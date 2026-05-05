@@ -98,7 +98,7 @@ impl TestMcpHttpServer {
         let expected_headers = expected_headers.into_iter().collect::<BTreeMap<_, _>>();
 
         thread::spawn(move || {
-            for incoming_stream in listener.incoming().take(3) {
+            for incoming_stream in listener.incoming().take(12) {
                 let stream = incoming_stream.expect("test MCP stream should open");
                 handle_mcp_request(stream, &expected_headers);
             }
@@ -208,6 +208,34 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
                 ]
             }
         })),
+        Some("resources/read") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "contents": [
+                    {
+                        "uri": "project-readme",
+                        "mimeType": "text/markdown",
+                        "text": "# Project README\nUse stable sorting."
+                    }
+                ]
+            }
+        })),
+        Some("prompts/get") => Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": {
+                            "type": "text",
+                            "text": "Follow project conventions."
+                        }
+                    }
+                ]
+            }
+        })),
         _ => Some(json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
     }
 }
@@ -217,6 +245,123 @@ fn request_with_input(fixture: &str, input: serde_json::Value) -> crate::api::Ex
     execution_request.input = input;
 
     execution_request
+}
+
+#[tokio::test]
+async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            workspace_id: string
+        }
+
+        resource project_readme from mcp.local.resource.project-readme {
+            bindings {
+                workspace_id: input.workspace_id
+            }
+        }
+
+        prompt system_prompt from mcp.local.prompt.system-prompt {
+            bindings {
+                workspace_id: input.workspace_id
+            }
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            prompt: "Rename the user"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
+        .await
+        .expect("execution should include MCP imports in prompt");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("tracking lock should not be poisoned");
+    let request = recorded_requests.first().expect("model request should be recorded");
+
+    assert!(request.prompt.contains("MCP prompt `system_prompt`"));
+    assert!(request.prompt.contains("Follow project conventions."));
+    assert!(request.prompt.contains("MCP resource `project_readme`"));
+    assert!(request.prompt.contains("# Project README"));
+    assert!(request.prompt.contains("Rename the user"));
+}
+
+#[tokio::test]
+async fn explicit_mcp_resource_and_prompt_calls_are_available_as_values() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            workspace_id: string
+        }
+
+        resource project_readme from mcp.local.resource.project-readme {
+            bindings {
+                workspace_id: input.workspace_id
+            }
+        }
+
+        prompt system_prompt from mcp.local.prompt.system-prompt
+
+        dynamic {
+            readme: read resource.project_readme {
+                params {
+                    section: "setup"
+                }
+            }
+            instructions: render prompt.system_prompt {
+                params {
+                    readme: dynamic.readme
+                }
+            }
+        }
+
+        output {
+            readme: dynamic.readme
+            instructions: dynamic.instructions
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+
+    let output = service
+        .execute(request_with_input(&workflow_source, json!({ "workspace_id": "workspace-1" })))
+        .await
+        .expect("explicit MCP calls should execute successfully")
+        .output;
+
+    assert!(output["readme"].as_str().is_some_and(|readme| readme.contains("# Project README")));
+    assert!(output["instructions"]
+        .as_str()
+        .is_some_and(|instructions| instructions.contains("Follow project conventions.")));
 }
 
 #[tokio::test]

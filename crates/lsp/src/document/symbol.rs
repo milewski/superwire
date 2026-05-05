@@ -115,6 +115,30 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: child_symbols,
                 }
             }
+            Self::McpResource(resource_import_declaration) => {
+                let declaration_range = source_span_to_range(source_text, resource_import_declaration.span);
+
+                DocumentSymbolNode {
+                    name: resource_import_declaration.name.clone(),
+                    detail: Some("MCP resource import".to_string()),
+                    kind: SymbolKind::Object,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: Vec::new(),
+                }
+            }
+            Self::McpPrompt(prompt_import_declaration) => {
+                let declaration_range = source_span_to_range(source_text, prompt_import_declaration.span);
+
+                DocumentSymbolNode {
+                    name: prompt_import_declaration.name.clone(),
+                    detail: Some("MCP prompt import".to_string()),
+                    kind: SymbolKind::Field,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: Vec::new(),
+                }
+            }
             Self::Input(input_declaration) => {
                 let declaration_range = source_span_to_range(source_text, input_declaration.span);
                 let child_symbols = input_declaration

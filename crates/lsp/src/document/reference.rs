@@ -269,8 +269,37 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Tool) => {
                 self.tool_namespace_reference_suggestions(reference_completion_path, existing_tool_binding_block)
             }
+            Some(ReferenceKeyword::Resource) => {
+                self.mcp_import_reference_suggestions(reference_completion_path, &self.resource_names, "Imported MCP resource")
+            }
+            Some(ReferenceKeyword::Prompt) => {
+                self.mcp_import_reference_suggestions(reference_completion_path, &self.prompt_names, "Imported MCP prompt")
+            }
             None => Vec::new(),
         }
+    }
+
+    fn mcp_import_reference_suggestions(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        import_names: &[String],
+        detail: &str,
+    ) -> Vec<CompletionSuggestion> {
+        if !reference_completion_path.complete_accesses.is_empty() {
+            return Vec::new();
+        }
+
+        import_names
+            .iter()
+            .filter(|import_name| import_name.starts_with(&reference_completion_path.pending_prefix))
+            .map(|import_name| CompletionSuggestion {
+                label: import_name.clone(),
+                kind: CompletionKind::Value,
+                detail: detail.to_string(),
+                documentation: format!("Reference imported MCP item `{import_name}`."),
+                insert_text: import_name.clone(),
+            })
+            .collect()
     }
 
     fn tool_namespace_reference_suggestions(
