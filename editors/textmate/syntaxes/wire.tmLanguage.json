@@ -170,7 +170,7 @@
       ]
     },
     "mcp-import": {
-      "begin": "\\b(tool|resource|prompt)\\b(?:\\s+([A-Za-z_][A-Za-z0-9_]*))?\\s+\\b(from)\\b\\s+(mcp\\.[A-Za-z_][A-Za-z0-9_]*\\.(?:tool|resource|prompt)\\.[A-Za-z0-9_-]+)\\s*(?:\\{)?",
+      "begin": "\\b(tool|resource|prompt)\\b(?:\\s+([A-Za-z_][A-Za-z0-9_]*))?\\s+\\b(from)\\b\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool|resource|prompt)(\\.)([A-Za-z0-9_-]+)\\s*(?:\\{)?",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.wire"
@@ -182,6 +182,24 @@
           "name": "keyword.control.wire"
         },
         "4": {
+          "name": "keyword.other.wire"
+        },
+        "5": {
+          "name": "punctuation.accessor.wire"
+        },
+        "6": {
+          "name": "entity.name.namespace.wire"
+        },
+        "7": {
+          "name": "punctuation.accessor.wire"
+        },
+        "8": {
+          "name": "keyword.other.wire"
+        },
+        "9": {
+          "name": "punctuation.accessor.wire"
+        },
+        "10": {
           "name": "variable.other.reference.mcp.wire"
         }
       },
@@ -475,7 +493,7 @@
     "mcp-tool-sources": {
       "patterns": [
         {
-          "match": "\\b(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_-]*)\\b",
+          "match": "\\b(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool|resource|prompt)(\\.)([A-Za-z0-9_-]+)\\b",
           "captures": {
             "1": {
               "name": "keyword.other.wire"
@@ -490,6 +508,12 @@
               "name": "punctuation.accessor.wire"
             },
             "5": {
+              "name": "keyword.other.wire"
+            },
+            "6": {
+              "name": "punctuation.accessor.wire"
+            },
+            "7": {
               "name": "entity.name.function.wire"
             }
           }

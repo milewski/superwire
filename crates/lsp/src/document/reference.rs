@@ -245,6 +245,10 @@ impl SemanticIndex {
             return self.schema_reference_suggestions(reference_completion_path, current_schema_name);
         }
 
+        if reference_completion_path.root_declaration_keyword() == Some(DeclarationKeyword::Mcp) {
+            return self.mcp_namespace_reference_suggestions(reference_completion_path);
+        }
+
         match reference_completion_path.root_keyword() {
             Some(ReferenceKeyword::Dynamic) => {
                 self.dynamic_reference_suggestions(reference_completion_path, reference_completion_constraint, position)
@@ -300,6 +304,92 @@ impl SemanticIndex {
                 insert_text: import_name.clone(),
             })
             .collect()
+    }
+
+    fn mcp_namespace_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+        let Some(mcp_lock) = &self.mcp_lock else {
+            return Vec::new();
+        };
+
+        if reference_completion_path.complete_accesses.is_empty() {
+            return mcp_lock
+                .servers
+                .keys()
+                .filter(|server_name| server_name.starts_with(&reference_completion_path.pending_prefix))
+                .map(|server_name| CompletionSuggestion {
+                    label: server_name.clone(),
+                    kind: CompletionKind::Module,
+                    detail: "Declared MCP server".to_string(),
+                    documentation: format!("MCP server `{server_name}` from lock file."),
+                    insert_text: server_name.clone(),
+                })
+                .collect();
+        }
+
+        let server_name = &reference_completion_path.complete_accesses[0];
+        let Some(server_lock) = mcp_lock.servers.get(server_name) else {
+            return Vec::new();
+        };
+
+        if reference_completion_path.complete_accesses.len() == 1 {
+            return ["tool", "resource", "prompt"]
+                .into_iter()
+                .filter(|kind_name| kind_name.starts_with(&reference_completion_path.pending_prefix))
+                .map(|kind_name| CompletionSuggestion {
+                    label: kind_name.to_string(),
+                    kind: CompletionKind::Module,
+                    detail: "MCP import namespace".to_string(),
+                    documentation: format!("Use `mcp.{server_name}.{kind_name}.<name>` for MCP imports."),
+                    insert_text: kind_name.to_string(),
+                })
+                .collect();
+        }
+
+        if reference_completion_path.complete_accesses.len() > 2 {
+            return Vec::new();
+        }
+
+        let import_kind = &reference_completion_path.complete_accesses[1];
+
+        match import_kind.as_str() {
+            "tool" => server_lock
+                .tools
+                .keys()
+                .filter(|tool_name| tool_name.starts_with(&reference_completion_path.pending_prefix))
+                .map(|tool_name| CompletionSuggestion {
+                    label: tool_name.clone(),
+                    kind: CompletionKind::Value,
+                    detail: "MCP tool".to_string(),
+                    documentation: format!("MCP tool `{tool_name}` from server `{server_name}`."),
+                    insert_text: tool_name.clone(),
+                })
+                .collect(),
+            "resource" => server_lock
+                .resources
+                .iter()
+                .filter(|resource_name| resource_name.starts_with(&reference_completion_path.pending_prefix))
+                .map(|resource_name| CompletionSuggestion {
+                    label: resource_name.clone(),
+                    kind: CompletionKind::Value,
+                    detail: "MCP resource".to_string(),
+                    documentation: format!("MCP resource `{resource_name}` from server `{server_name}`."),
+                    insert_text: resource_name.clone(),
+                })
+                .collect(),
+            "prompt" => server_lock
+                .prompts
+                .iter()
+                .filter(|prompt_name| prompt_name.starts_with(&reference_completion_path.pending_prefix))
+                .map(|prompt_name| CompletionSuggestion {
+                    label: prompt_name.clone(),
+                    kind: CompletionKind::Value,
+                    detail: "MCP prompt".to_string(),
+                    documentation: format!("MCP prompt `{prompt_name}` from server `{server_name}`."),
+                    insert_text: prompt_name.clone(),
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 
     fn tool_namespace_reference_suggestions(

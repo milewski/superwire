@@ -633,16 +633,24 @@ fn markdown_hover(markdown: &str) -> Value {
 
 fn refresh_or_read_mcp_lock(document_uri: &str, source_text: &str) -> Option<McpLock> {
     let lock_path = lock_path_for_document_uri(document_uri)?;
+    let existing_lock = McpLock::read_from_path(&lock_path).ok();
 
     if let Ok(workflow) = parse_workflow(source_text) {
-        if let Ok(mcp_lock) = McpLock::discover_from_workflow(&workflow) {
+        if let Ok(mut mcp_lock) = McpLock::discover_from_workflow_with_lock_context(
+            &workflow,
+            existing_lock.as_ref().and_then(|lock| lock.resolution_context.as_ref()),
+        ) {
+            if mcp_lock.resolution_context.is_none() {
+                mcp_lock.resolution_context = existing_lock.as_ref().and_then(|lock| lock.resolution_context.clone());
+            }
+
             let _ = mcp_lock.write_to_path(&lock_path);
 
             return Some(mcp_lock);
         }
     }
 
-    McpLock::read_from_path(&lock_path).ok()
+    existing_lock
 }
 
 fn should_refresh_mcp_lock(previous_source_text: &str, next_source_text: &str) -> bool {
@@ -708,7 +716,13 @@ fn percent_decode_file_uri_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::should_refresh_mcp_lock;
+    use super::{refresh_or_read_mcp_lock, should_refresh_mcp_lock};
+    use serde_json::Value;
+    use std::collections::BTreeMap;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use superwire_core::mcp::{McpLock, McpLockResolutionContext};
     use superwire_core::workflow_source;
 
     #[test]
@@ -730,5 +744,143 @@ mod tests {
 
         assert!(!should_refresh_mcp_lock(source, &prompt_only_change));
         assert!(should_refresh_mcp_lock(source, &endpoint_change));
+    }
+
+    #[test]
+    fn refresh_uses_lock_resolution_context_for_dynamic_mcp_config() {
+        let server = TestMcpHttpServer::spawn();
+        let workflow_source = workflow_source! {
+            secrets {
+                mcp_endpoint: string
+            }
+
+            mcp local {
+                endpoint: secrets.mcp_endpoint
+                headers: {
+                    Accept: "application/json"
+                }
+            }
+
+            tool update_user_name from mcp.local.tool.update-user-name
+        };
+        let temp_file_path = std::env::temp_dir().join(format!(
+            "superwire_lsp_lock_test_{}.wire",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("current time should be after unix epoch")
+                .as_nanos()
+        ));
+        let document_uri = format!("file://{}", temp_file_path.display());
+        let lock_path = temp_file_path.with_extension("wire.lock");
+        let lock_context = McpLockResolutionContext {
+            input: BTreeMap::new(),
+            secrets: [("mcp_endpoint".to_string(), Value::String(server.endpoint()))]
+                .into_iter()
+                .collect(),
+            dynamic: BTreeMap::new(),
+            agent_outputs: BTreeMap::new(),
+            agent_contexts: BTreeMap::new(),
+        };
+        let initial_lock = McpLock {
+            servers: BTreeMap::new(),
+            resolution_context: Some(lock_context.clone()),
+        };
+
+        initial_lock
+            .write_to_path(&lock_path)
+            .expect("initial lock with resolution context should write");
+
+        let refreshed_lock = refresh_or_read_mcp_lock(&document_uri, workflow_source)
+            .expect("refresh should discover MCP metadata using lock resolution context");
+
+        assert!(refreshed_lock.servers.contains_key("local"));
+        assert_eq!(refreshed_lock.resolution_context, Some(lock_context));
+
+        let _ = std::fs::remove_file(&temp_file_path);
+        let _ = std::fs::remove_file(&lock_path);
+    }
+
+    struct TestMcpHttpServer {
+        endpoint: String,
+    }
+
+    impl TestMcpHttpServer {
+        fn spawn() -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
+            let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
+
+            thread::spawn(move || {
+                for incoming_stream in listener.incoming().take(12) {
+                    let stream = incoming_stream.expect("test MCP stream should open");
+                    handle_mcp_request(stream);
+                }
+            });
+
+            Self { endpoint }
+        }
+
+        fn endpoint(&self) -> String {
+            self.endpoint.clone()
+        }
+    }
+
+    fn handle_mcp_request(mut stream: TcpStream) {
+        let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
+        let mut content_length = 0_usize;
+        let mut header_line = String::new();
+
+        loop {
+            header_line.clear();
+            reader.read_line(&mut header_line).expect("header line should read");
+
+            if header_line == "\r\n" || header_line.is_empty() {
+                break;
+            }
+
+            if let Some(value) = header_line.to_ascii_lowercase().strip_prefix("content-length:") {
+                content_length = value.trim().parse().expect("content length should parse");
+            }
+        }
+
+        let mut request_body = vec![0_u8; content_length];
+        reader.read_exact(&mut request_body).expect("request body should read");
+        let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
+        let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
+            let response_body = response_body.to_string();
+
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            )
+        } else {
+            "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+        };
+
+        stream.write_all(response.as_bytes()).expect("response should write");
+    }
+
+    fn response_for_method(method: Option<&str>) -> Option<Value> {
+        match method {
+            Some("notifications/initialized") => None,
+            Some("tools/list") => Some(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "tools": [{
+                        "name": "update-user-name",
+                        "description": "Update user name",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "user_name": { "type": "string" }
+                            },
+                            "required": ["user_name"]
+                        }
+                    }]
+                }
+            })),
+            _ => Some(serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
+        }
     }
 }
