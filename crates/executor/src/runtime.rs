@@ -3,6 +3,7 @@ pub mod state;
 
 pub use error::ExecutorError;
 
+use crate::api::ModelResponseFormat;
 use crate::event::ExecutorEvent;
 use crate::model::{
     normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker,
@@ -44,6 +45,14 @@ pub struct WorkflowExecutor {
     workflow: Workflow,
     execution_plan: ExecutionPlan,
     mcp_pool: McpClientPool,
+}
+
+#[derive(Debug, Clone)]
+struct AgentExecutionContext {
+    event_sender: Option<mpsc::Sender<ExecutorEvent>>,
+    import_context: String,
+    tool_call_tracker: ToolCallTracker,
+    response_format: ModelResponseFormat,
 }
 
 impl WorkflowExecutor {
@@ -143,6 +152,7 @@ impl WorkflowExecutor {
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
         max_concurrency: usize,
+        response_format: ModelResponseFormat,
     ) -> Result<Value, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -185,15 +195,21 @@ impl WorkflowExecutor {
                 }
             }
 
+            let agent_execution_context = AgentExecutionContext {
+                event_sender: event_sender.clone(),
+                import_context: import_context.clone(),
+                tool_call_tracker: tool_call_tracker.clone(),
+                response_format,
+            };
+
             for planned_agent in for_loop_agents {
                 let completed = self
                     .execute_for_loop_agent(
                         planned_agent,
                         &runtime_state_snapshot,
                         model_provider,
-                        event_sender.clone(),
                         max_concurrency,
-                        &import_context,
+                        &agent_execution_context,
                     )
                     .await?;
                 completed.apply_to_runtime_state(&mut runtime_state);
@@ -203,20 +219,11 @@ impl WorkflowExecutor {
 
             for planned_agent in regular_agents {
                 let runtime_state_snapshot = runtime_state_snapshot.clone();
-                let event_sender = event_sender.clone();
-                let import_context = import_context.clone();
-                let tool_call_tracker = tool_call_tracker.clone();
+                let agent_execution_context = agent_execution_context.clone();
 
                 pending_executions.push(async move {
-                    self.execute_agent(
-                        &planned_agent,
-                        &runtime_state_snapshot,
-                        model_provider,
-                        event_sender,
-                        &import_context,
-                        &tool_call_tracker,
-                    )
-                    .await
+                    self.execute_agent(&planned_agent, &runtime_state_snapshot, model_provider, &agent_execution_context)
+                        .await
                 });
             }
 
@@ -522,15 +529,17 @@ impl WorkflowExecutor {
         planned_agent: &PlannedAgent,
         runtime_state: &RuntimeState,
         model_provider: &ModelProviderType,
-        event_sender: Option<mpsc::Sender<ExecutorEvent>>,
-        import_context: &str,
-        tool_call_tracker: &ToolCallTracker,
+        agent_execution_context: &AgentExecutionContext,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
         ModelProviderType: ModelProvider,
     {
-        let agent_dynamic_values =
-            self.execute_agent_dynamic_blocks(planned_agent, runtime_state, event_sender.as_ref(), tool_call_tracker)?;
+        let agent_dynamic_values = self.execute_agent_dynamic_blocks(
+            planned_agent,
+            runtime_state,
+            agent_execution_context.event_sender.as_ref(),
+            &agent_execution_context.tool_call_tracker,
+        )?;
         let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
         log::info!("starting agent `{}`", planned_agent.name);
         let provider_template = self
@@ -560,12 +569,12 @@ impl WorkflowExecutor {
             &evaluation_context,
             &format!("prompt for agent `{}`", planned_agent.name),
             None,
-            tool_call_tracker,
+            &agent_execution_context.tool_call_tracker,
         )?);
-        let prompt = if import_context.is_empty() {
+        let prompt = if agent_execution_context.import_context.is_empty() {
             agent_prompt
         } else {
-            format!("{import_context}\n\n{agent_prompt}")
+            format!("{}\n\n{agent_prompt}", agent_execution_context.import_context)
         };
         let output_schema = workflow_type_to_json_schema(&planned_agent.iteration_output_type);
         let tool_definitions = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
@@ -582,7 +591,7 @@ impl WorkflowExecutor {
             output_schema.get("type").and_then(Value::as_str).unwrap_or("unknown")
         );
 
-        if let Some(event_sender) = &event_sender {
+        if let Some(event_sender) = &agent_execution_context.event_sender {
             let _ = event_sender
                 .send(ExecutorEvent::agent_started(
                     planned_agent.name.clone(),
@@ -599,10 +608,11 @@ impl WorkflowExecutor {
                 model_name,
                 prompt,
                 output_schema,
+                response_format: agent_execution_context.response_format,
                 tools: tool_definitions,
-                event_sender: event_sender.clone(),
+                event_sender: agent_execution_context.event_sender.clone(),
                 mcp_pool: self.mcp_pool.clone(),
-                tool_call_tracker: tool_call_tracker.clone(),
+                tool_call_tracker: agent_execution_context.tool_call_tracker.clone(),
             })
             .await?;
 
@@ -610,7 +620,7 @@ impl WorkflowExecutor {
 
         validate_agent_output_value(&model_response.output, &planned_agent.iteration_output_type, &planned_agent.name)?;
 
-        if let Some(event_sender) = &event_sender {
+        if let Some(event_sender) = &agent_execution_context.event_sender {
             let _ = event_sender
                 .send(ExecutorEvent::agent_completed(
                     planned_agent.name.clone(),
@@ -631,9 +641,8 @@ impl WorkflowExecutor {
         planned_agent: PlannedAgent,
         runtime_state: &RuntimeState,
         model_provider: &ModelProviderType,
-        event_sender: Option<mpsc::Sender<ExecutorEvent>>,
         max_concurrency: usize,
-        import_context: &str,
+        agent_execution_context: &AgentExecutionContext,
     ) -> Result<CompletedAgentExecution, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -676,24 +685,20 @@ impl WorkflowExecutor {
             let mut iteration_state = runtime_state.clone();
             Self::bind_loop_variables(&loop_pattern, item, &mut iteration_state)?;
             let semaphore_clone = semaphore.clone();
-            let event_sender_clone = event_sender.clone();
             let agent_clone = planned_agent.clone();
-            let iteration_import_context = import_context.to_string();
-            let tool_call_tracker = tool_call_tracker.clone();
+            let iteration_execution_context = AgentExecutionContext {
+                event_sender: agent_execution_context.event_sender.clone(),
+                import_context: agent_execution_context.import_context.clone(),
+                tool_call_tracker: tool_call_tracker.clone(),
+                response_format: agent_execution_context.response_format,
+            };
 
             pending_iterations.push(async move {
                 let permit = semaphore_clone.acquire_owned().await.map_err(|error| ExecutorError::Other {
                     message: format!("failed to acquire concurrency permit: {error}"),
                 })?;
                 let result = self
-                    .execute_agent(
-                        &agent_clone,
-                        &iteration_state,
-                        model_provider,
-                        event_sender_clone,
-                        &iteration_import_context,
-                        &tool_call_tracker,
-                    )
+                    .execute_agent(&agent_clone, &iteration_state, model_provider, &iteration_execution_context)
                     .await;
                 drop(permit);
                 result

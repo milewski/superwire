@@ -34,7 +34,7 @@ impl ModelProvider for OpenAiModelProvider {
             request.tools.len()
         );
 
-        for response_mode in OpenAiResponseMode::fallback_order() {
+        for response_mode in OpenAiResponseMode::response_modes(request.response_format) {
             let mut messages = self.build_initial_messages(&request)?;
 
             log::debug!("agent `{}` entering response mode `{}`", request.agent_name, response_mode.as_str());

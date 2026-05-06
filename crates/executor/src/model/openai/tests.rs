@@ -2,6 +2,7 @@ use super::format::{format_response_schema_name, format_tool_name};
 use super::request::OpenAiResponseMode;
 use super::response::{ChatCompletionResponseExt, OpenAiChatCompletionResponse};
 use super::OpenAiModelProvider;
+use crate::api::ModelResponseFormat;
 use crate::event::ExecutorEventKind;
 use crate::model::provider::ModelProvider;
 use crate::model::{ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker};
@@ -28,13 +29,58 @@ fn formats_tool_name_for_openai_constraints() {
 #[test]
 fn orders_response_modes_from_strict_to_compatible() {
     assert_eq!(
-        OpenAiResponseMode::fallback_order(),
-        [
+        OpenAiResponseMode::response_modes(ModelResponseFormat::Auto),
+        vec![
             OpenAiResponseMode::JsonSchema,
             OpenAiResponseMode::JsonObject,
             OpenAiResponseMode::InstructionOnly,
         ]
     );
+}
+
+#[test]
+fn configured_response_mode_disables_fallback_modes() {
+    assert_eq!(
+        OpenAiResponseMode::response_modes(ModelResponseFormat::JsonObject),
+        vec![OpenAiResponseMode::JsonObject]
+    );
+    assert_eq!(
+        OpenAiResponseMode::response_modes(ModelResponseFormat::InstructionOnly),
+        vec![OpenAiResponseMode::InstructionOnly]
+    );
+}
+
+#[tokio::test]
+async fn configured_json_object_response_format_skips_json_schema_request() {
+    let provider = OpenAiModelProvider;
+    let model_server = TestOpenAiHttpServer::spawn(vec![json!({
+        "id": "chatcmpl_1",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "deepseek-reasoner",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+                "role": "assistant",
+                "content": "{\"success\":true}"
+            }
+        }]
+    })]);
+    let mcp_server = TestMcpHttpServer::spawn();
+    let mut request = model_request(model_server.endpoint(), mcp_server.endpoint());
+
+    request.response_format = ModelResponseFormat::JsonObject;
+
+    let response = provider.generate(request).await.expect("model should complete");
+
+    assert_eq!(response.output, json!({ "success": true }));
+
+    let requests = model_server.requests();
+    let first_request = requests.first().expect("chat completion request should be sent");
+
+    assert_eq!(requests.len(), 1);
+    assert_eq!(first_request.pointer("/response_format/type"), Some(&json!("json_object")));
 }
 
 #[test]
@@ -519,6 +565,7 @@ fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
         model_name: "deepseek-reasoner".to_string(),
         prompt: "Rename the user".to_string(),
         output_schema: serde_json::json!({ "type": "object" }),
+        response_format: ModelResponseFormat::Auto,
         tools: vec![ModelToolDefinition {
             name: "update_user_name".to_string(),
             description: Some("Update a user name".to_string()),
