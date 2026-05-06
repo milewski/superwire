@@ -546,10 +546,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_stage_formats_expected_agent_properties() {
+    fn parse_stage_formats_expected_agent_property_syntax() {
         let broken_workflow_source = workflow_source! {
             agent greeting {
-                a prompt: "hello"
+                prompt "hello"
                 output: string
             }
         };
@@ -559,9 +559,8 @@ mod tests {
         assert!(matches!(
             parse_result,
             Err(WorkflowSemanticError::ParseFailed { details, source: _ })
-                if details.contains("`model`")
-                    && details.contains("`prompt`")
-                    && details.contains("`output`")
+                if details.contains("parse_error")
+                    && details.contains("expected")
                     && !details.contains("SourceSpan {")
         ));
     }

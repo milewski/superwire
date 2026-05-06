@@ -703,12 +703,12 @@ fn handle_mcp_request(mut stream: TcpStream, received_tool_arguments: &Arc<Mutex
         let response_body = response_body.to_string();
 
         format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
             response_body.len(),
             response_body
         )
     } else {
-        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
+        "HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n".to_string()
     };
 
     stream.write_all(response.as_bytes()).expect("response should write");
@@ -744,7 +744,7 @@ fn handle_openai_request(mut stream: TcpStream, requests: &Arc<Mutex<Vec<Value>>
         .remove(0)
         .to_string();
     let response = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
         response_body.len(),
         response_body
     );

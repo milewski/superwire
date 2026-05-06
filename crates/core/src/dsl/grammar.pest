@@ -29,27 +29,21 @@ prompt_import_declaration = { "prompt" ~ ("from" | identifier ~ "from") ~ mcp_im
 mcp_tool_batch_import_declaration = { "from" ~ mcp_tool_batch_import_source ~ mcp_tool_batch_import_block }
 mcp_tool_batch_import_source = { "mcp" ~ "." ~ identifier ~ "." ~ "tool" }
 mcp_tool_batch_import_block = { "{" ~ mcp_tool_batch_import_property* ~ "}" }
-mcp_tool_batch_import_property = _{ mcp_import_bindings_property | tool_max_calls_property | mcp_tool_batch_import_item }
+mcp_tool_batch_import_property = _{ named_object_property | named_unsigned_integer_property | mcp_tool_batch_import_item }
 mcp_tool_batch_import_item = { "tool" ~ mcp_import_name ~ ("as" ~ identifier)? ~ object_expression? }
 
 tool_import_block = { "{" ~ tool_import_property* ~ "}" }
-tool_import_property = _{ mcp_import_bindings_property | tool_max_calls_property }
+tool_import_property = _{ named_object_property | named_unsigned_integer_property }
 
 mcp_import_reference = { "mcp" ~ "." ~ identifier ~ "." ~ mcp_import_kind ~ "." ~ mcp_import_name }
 mcp_import_kind = { "tool" | "resource" | "prompt" }
 mcp_import_name = { mcp_tool_name }
 mcp_import_block = { "{" ~ mcp_import_property* ~ "}" }
-mcp_import_property = _{ mcp_import_bindings_property | mcp_import_params_property }
-mcp_import_bindings_property = { "bindings" ~ object_expression }
-mcp_import_params_property = { "params" ~ object_expression }
+mcp_import_property = _{ named_object_property }
 
 tool_block = { "{" ~ tool_property* ~ "}" }
-tool_property = _{ tool_description_property | tool_max_calls_property | tool_input_property | tool_bindings_property | tool_output_property | tool_input_field }
-tool_description_property = { "description" ~ ":" ~ plain_string_literal }
-tool_max_calls_property = { "max_calls" ~ ":" ~ unsigned_integer_literal }
-tool_input_property = { "input" ~ typed_block }
-tool_bindings_property = { "bindings" ~ tool_bindings_block }
-tool_output_property = { "output" ~ typed_block }
+tool_property = _{ named_plain_string_property | named_unsigned_integer_property | named_tool_block_property | tool_input_field }
+named_tool_block_property = { identifier ~ tool_bindings_block }
 tool_input_field = { typed_field }
 mcp_tool_name = { mcp_tool_name_segment ~ ("-" ~ mcp_tool_name_segment)* }
 mcp_tool_name_segment = @{ (ASCII_ALPHA | ASCII_DIGIT | "_")+ }
@@ -61,32 +55,15 @@ for_clause = { "for" ~ for_loop_pattern ~ "in" ~ expression }
 for_loop_pattern = { identifier | object_destructuring_pattern }
 object_destructuring_pattern = { "{" ~ identifier ~ ("," ~ identifier)* ~ ","? ~ "}" }
 agent_block = { "{" ~ agent_property* ~ "}" }
-
-agent_property = _{
-    dynamic_property
-    | model_property
-    | response_format_property
-    | prompt_property
-    | output_property
-    | context_property
-    | inference_property
-    | tools_property
-}
-
-dynamic_property = { "dynamic" ~ object_expression }
-model_property = { "model" ~ ":" ~ expression }
-response_format_property = { "response_format" ~ ":" ~ response_format_value }
+agent_property = _{ named_object_property | named_agent_value_property }
+named_agent_value_property = { identifier ~ ":" ~ agent_property_value }
+agent_property_value = _{ tools_expression | response_format_value | expression ~ plain_string_literal? | type_expression ~ plain_string_literal? }
 response_format_value = { "auto" | "json_schema" | "json_object" | "instruction_only" }
-prompt_property = { "prompt" ~ ":" ~ expression }
-output_property = { "output" ~ ":" ~ type_expression ~ plain_string_literal? }
-context_property = { "context" ~ ":" ~ expression }
-inference_property = { "inference" ~ ":" ~ expression }
-tools_property = { "tools" ~ ":" ~ tools_expression }
 
 tools_expression = { "[" ~ (agent_tool_binding ~ ("," ~ agent_tool_binding)* ~ ","?)? ~ "]" }
 agent_tool_binding = { reference ~ agent_tool_binding_block? }
 agent_tool_binding_block = { "{" ~ agent_tool_binding_property* ~ "}" }
-agent_tool_binding_property = _{ tool_call_bindings_property | tool_call_max_calls_property }
+agent_tool_binding_property = _{ named_object_property | named_unsigned_integer_property }
 
 output_declaration = { "output" ~ object_expression }
 
@@ -100,6 +77,7 @@ tool_binding_type_object = { "{" ~ typed_field* ~ "}" }
 tool_binding_type_term = _{
     scalar_type
     | schema_reference
+    | reference
     | plain_string_literal
     | array_type
     | tuple_type
@@ -139,17 +117,16 @@ expression = _{
 
 tool_call_expression = { "call" ~ reference ~ tool_call_block? }
 tool_call_block = { "{" ~ tool_call_property* ~ "}" }
-tool_call_property = _{ tool_call_input_property | tool_call_bindings_property | tool_call_max_calls_property }
-tool_call_input_property = { "input" ~ object_expression }
-tool_call_bindings_property = { "bindings" ~ object_expression }
-tool_call_max_calls_property = { "max_calls" ~ ":" ~ unsigned_integer_literal }
+tool_call_property = _{ named_object_property | named_unsigned_integer_property }
 
 mcp_call_expression = { mcp_call_keyword ~ reference ~ mcp_call_block? }
 mcp_call_keyword = { "read" | "render" }
 mcp_call_block = { "{" ~ mcp_call_property* ~ "}" }
-mcp_call_property = _{ mcp_call_params_property | mcp_call_bindings_property }
-mcp_call_params_property = { "params" ~ object_expression }
-mcp_call_bindings_property = { "bindings" ~ object_expression }
+mcp_call_property = _{ named_object_property }
+
+named_object_property = { identifier ~ object_expression }
+named_plain_string_property = { identifier ~ ":" ~ plain_string_literal }
+named_unsigned_integer_property = { identifier ~ ":" ~ unsigned_integer_literal }
 
 object_expression = { "{" ~ object_field* ~ "}" }
 object_field = { object_field_name ~ ":" ~ expression }

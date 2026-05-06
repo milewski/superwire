@@ -798,7 +798,8 @@ impl SemanticIndex {
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Tools(_)
-            | AgentProperty::Dynamic(_) => None,
+            | AgentProperty::Dynamic(_)
+            | AgentProperty::Unknown { name: _, span: _ } => None,
         });
 
         if let Some(output_type_expression) = output_type_expression {
