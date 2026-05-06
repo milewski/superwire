@@ -295,9 +295,27 @@ impl AstVisitor {
         let mut inner_pairs = item_pair.into_inner();
         let source_name_pair = self.next_pair(&mut inner_pairs, "MCP tool import name", "MCP tool batch import item")?;
         let source_name = source_name_pair.as_str().split_whitespace().collect::<String>();
-        let local_name = inner_pairs.next().map(|alias_pair| alias_pair.as_str().to_string());
+        let mut local_name = None;
+        let mut fixed_binding_fields = Vec::new();
 
-        Ok(McpToolBatchImportItem::new(source_name, local_name, item_span))
+        for item_property_pair in inner_pairs {
+            match item_property_pair.as_rule() {
+                Rule::identifier => {
+                    local_name = Some(item_property_pair.as_str().to_string());
+                }
+                Rule::object_expression => {
+                    fixed_binding_fields.extend(self.visit_object_expression(item_property_pair)?);
+                }
+                _ => unreachable!("MCP tool batch import item should contain only valid properties"),
+            }
+        }
+
+        Ok(McpToolBatchImportItem::new(
+            source_name,
+            local_name,
+            fixed_binding_fields,
+            item_span,
+        ))
     }
 
     fn visit_resource_import_declaration(&self, resource_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {

@@ -587,7 +587,9 @@ mod tests {
                 max_calls: 3
 
                 tool create-sorting-task as create_sorting_task
-                tool update-task-status as update_task_status
+                tool update-task-status as update_task_status {
+                    status: "done"
+                }
                 tool assign-task
             }
         };
@@ -614,6 +616,14 @@ mod tests {
                 if mcp_tool_source.server_name.as_deref() == Some("local")
                     && mcp_tool_source.tool_name == "create-sorting-task"
         ));
+
+        let update_tool = workflow
+            .find_tool("update_task_status")
+            .expect("aliased batch tool with extra bindings should be findable as a tool declaration");
+        assert_eq!(update_tool.fixed_binding_fields.len(), 3);
+        assert_eq!(update_tool.fixed_binding_fields[0].name, "project_id");
+        assert_eq!(update_tool.fixed_binding_fields[1].name, "task_id");
+        assert_eq!(update_tool.fixed_binding_fields[2].name, "status");
 
         let assigned_tool = workflow
             .find_tool("assign_task")

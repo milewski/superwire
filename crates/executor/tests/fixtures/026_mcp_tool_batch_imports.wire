@@ -17,12 +17,19 @@ input {
 from mcp.local.tool {
     bindings {
         project_id: input.project_id
+    }
+
+    tool create-sorting-task as create_sorting_task {
         task_id: input.task_id
     }
 
-    tool create-sorting-task as create_sorting_task
-    tool update-task-status as update_task_status
-    tool assign-task
+    tool update-task-status as update_task_status {
+        task_id: input.task_id
+    }
+
+    tool assign-task {
+        task_id: input.task_id
+    }
 }
 
 agent task_manager {

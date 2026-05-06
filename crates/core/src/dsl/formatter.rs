@@ -379,19 +379,31 @@ impl McpToolBatchImportDeclaration {
 
 impl super::ast::McpToolBatchImportItem {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
-        if let Some(alias) = &self.alias {
-            formatter.push_line(&format!(
+        let header = if let Some(alias) = &self.alias {
+            format!(
                 "{} {} {} {}",
                 DeclarationKeyword::Tool.as_str(),
                 self.source_name,
                 ImportKeyword::As.as_str(),
                 alias
-            ));
+            )
+        } else {
+            format!("{} {}", DeclarationKeyword::Tool.as_str(), self.source_name)
+        };
+
+        if self.fixed_binding_fields.is_empty() {
+            formatter.push_line(&header);
 
             return;
         }
 
-        formatter.push_line(&format!("{} {}", DeclarationKeyword::Tool.as_str(), self.source_name));
+        formatter.push_declaration_block_start(&header);
+
+        for object_field in &self.fixed_binding_fields {
+            object_field.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
     }
 }
 
@@ -2155,8 +2167,8 @@ mod tests {
     #[test]
     fn formatter_renders_mcp_tool_batch_imports() {
         let source_text =
-            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task tool assign-task}\n";
-        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task\n    tool assign-task\n}\n";
+            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task{title:\"Sort\"}tool assign-task}\n";
+        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task {\n        title: \"Sort\"\n    }\n    tool assign-task\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("batch import workflow should format successfully");
 

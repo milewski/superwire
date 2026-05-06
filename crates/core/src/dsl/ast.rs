@@ -446,12 +446,13 @@ pub struct McpToolBatchImportItem {
     pub source_name: String,
     pub local_name: String,
     pub alias: Option<String>,
+    pub fixed_binding_fields: Vec<ObjectField>,
     pub span: SourceSpan,
 }
 
 impl McpToolBatchImportItem {
     #[must_use]
-    pub fn new(source_name: String, local_name: Option<String>, span: SourceSpan) -> Self {
+    pub fn new(source_name: String, local_name: Option<String>, fixed_binding_fields: Vec<ObjectField>, span: SourceSpan) -> Self {
         let alias = local_name;
         let local_name = alias.clone().unwrap_or_else(|| source_name.replace('-', "_"));
 
@@ -459,12 +460,16 @@ impl McpToolBatchImportItem {
             source_name,
             local_name,
             alias,
+            fixed_binding_fields,
             span,
         }
     }
 
     #[must_use]
     pub fn to_tool_declaration(&self, server_name: &str, fixed_binding_fields: &[ObjectField], max_calls: Option<u64>) -> ToolDeclaration {
+        let mut fixed_binding_fields = fixed_binding_fields.to_vec();
+        fixed_binding_fields.extend(self.fixed_binding_fields.clone());
+
         ToolDeclaration {
             name: self.local_name.clone(),
             description: None,
@@ -477,7 +482,7 @@ impl McpToolBatchImportItem {
             imported: true,
             input_fields: Vec::new(),
             binding_fields: Vec::new(),
-            fixed_binding_fields: fixed_binding_fields.to_vec(),
+            fixed_binding_fields,
             output_fields: Vec::new(),
             span: self.span,
         }
