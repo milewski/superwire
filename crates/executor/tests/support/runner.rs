@@ -1,7 +1,3 @@
-use crate::api::{ExecutionOptions, ExecutionRequest};
-use crate::model::OpenAiModelProvider;
-use crate::runtime::ExecutorError;
-use crate::service::ExecutorService;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
@@ -11,6 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_core::dsl::format_workflow_source;
+use superwire_executor::api::{ExecutionOptions, ExecutionRequest};
+use superwire_executor::model::OpenAiModelProvider;
+use superwire_executor::runtime::ExecutorError;
+use superwire_executor::service::ExecutorService;
 
 type MessageAssertion = Arc<dyn Fn(&[Value]) + Send + Sync>;
 
