@@ -617,6 +617,86 @@ impl ToolPropertyName {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum McpImportPropertyName {
+    Bindings,
+    Params,
+}
+
+impl McpImportPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::Bindings, Self::Params]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bindings => "bindings",
+            Self::Params => "params",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolCallPropertyName {
+    Input,
+    Bindings,
+    MaxCalls,
+}
+
+impl ToolCallPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 3] {
+        [Self::Input, Self::Bindings, Self::MaxCalls]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Input => "input",
+            Self::Bindings => "bindings",
+            Self::MaxCalls => "max_calls",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum McpToolBatchImportPropertyName {
+    Bindings,
+    MaxCalls,
+}
+
+impl McpToolBatchImportPropertyName {
+    #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::Bindings, Self::MaxCalls]
+    }
+
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bindings => ToolPropertyName::Bindings.as_str(),
+            Self::MaxCalls => ToolPropertyName::MaxCalls.as_str(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicBlock {
     pub fields: Vec<ObjectField>,
@@ -651,7 +731,8 @@ impl AgentDeclaration {
             }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_) => None,
+            | AgentProperty::Tools(_)
+            | AgentProperty::Unknown { name: _, span: _ } => None,
         })
     }
 
@@ -674,7 +755,8 @@ impl AgentDeclaration {
                 }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
-                | AgentProperty::Tools(_) => {}
+                | AgentProperty::Tools(_)
+                | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }
 
@@ -791,6 +873,10 @@ pub enum AgentProperty {
     Context(Expression),
     Inference(Expression),
     Tools(Expression),
+    Unknown {
+        name: String,
+        span: SourceSpan,
+    },
 }
 
 impl AgentProperty {
@@ -808,6 +894,7 @@ impl AgentProperty {
             Self::Context(_) => AgentPropertyName::Context,
             Self::Inference(_) => AgentPropertyName::Inference,
             Self::Tools(_) => AgentPropertyName::Tools,
+            Self::Unknown { name: _, span: _ } => AgentPropertyName::Unknown,
         }
     }
 }
@@ -822,6 +909,7 @@ pub enum AgentPropertyName {
     Context,
     Inference,
     Tools,
+    Unknown,
 }
 
 impl AgentPropertyName {
@@ -841,17 +929,7 @@ impl AgentPropertyName {
 
     #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
-        match identifier {
-            "model" => Some(Self::Model),
-            "response_format" => Some(Self::ResponseFormat),
-            "dynamic" => Some(Self::Dynamic),
-            "prompt" => Some(Self::Prompt),
-            "output" => Some(Self::Output),
-            "context" => Some(Self::Context),
-            "inference" => Some(Self::Inference),
-            "tools" => Some(Self::Tools),
-            _ => None,
-        }
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
     }
 
     #[must_use]
@@ -865,6 +943,7 @@ impl AgentPropertyName {
             Self::Context => "context",
             Self::Inference => "inference",
             Self::Tools => "tools",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -1061,6 +1140,47 @@ pub enum Expression {
     McpCall(McpCall),
     ArrayLiteral(Vec<Expression>),
     ObjectLiteral(Vec<ObjectField>),
+}
+
+impl Expression {
+    #[must_use]
+    pub fn to_type_expression(&self) -> Option<TypeExpression> {
+        match self {
+            Self::Reference(reference) => reference.to_type_expression(),
+            Self::StringLiteral(string_value) => Some(TypeExpression::StringEnum(string_value.clone())),
+            Self::ArrayLiteral(item_expressions) => {
+                let [item_expression] = item_expressions.as_slice() else {
+                    return None;
+                };
+
+                Some(TypeExpression::Array {
+                    item_type: Box::new(item_expression.to_type_expression()?),
+                    fixed_length: None,
+                })
+            }
+            Self::ObjectLiteral(object_fields) => {
+                let mut typed_fields = Vec::new();
+
+                for object_field in object_fields {
+                    typed_fields.push(TypedField {
+                        name: object_field.name.clone(),
+                        field_type: object_field.value.to_type_expression()?,
+                        description: None,
+                        span: object_field.span,
+                    });
+                }
+
+                Some(TypeExpression::Object(typed_fields))
+            }
+            Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::FunctionCall(_)
+            | Self::ToolCall(_)
+            | Self::McpCall(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1312,6 +1432,30 @@ pub struct Reference {
 }
 
 impl Reference {
+    #[must_use]
+    pub fn to_type_expression(&self) -> Option<TypeExpression> {
+        if self.accesses.is_empty() {
+            let identifier = self.root.as_identifier()?;
+
+            return match identifier {
+                "string" => Some(TypeExpression::String),
+                "number" => Some(TypeExpression::Number),
+                "float" => Some(TypeExpression::Float),
+                "boolean" => Some(TypeExpression::Boolean),
+                "null" => Some(TypeExpression::Null),
+                _ => Some(TypeExpression::StringEnumReference(self.clone())),
+            };
+        }
+
+        if let Some((schema_name, field_path)) = self.schema_name_and_field_path() {
+            if field_path.is_empty() {
+                return Some(TypeExpression::SchemaReference(schema_name.to_string()));
+            }
+        }
+
+        Some(TypeExpression::StringEnumReference(self.clone()))
+    }
+
     #[must_use]
     pub fn root_keyword(&self) -> Option<ReferenceKeyword> {
         self.root.keyword()

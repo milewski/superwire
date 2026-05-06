@@ -1,10 +1,10 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentResponseFormat, CallArgument, Declaration, DynamicBlock,
-    Expression, FunctionCall, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource, McpPromptImportDeclaration,
-    McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, NamedArgument, ObjectField,
-    OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration,
-    SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolSource, TypeExpression, TypedField,
-    Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName, AgentResponseFormat, CallArgument, Declaration,
+    DynamicBlock, Expression, FunctionCall, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportPropertyName,
+    McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration,
+    McpToolBatchImportItem, McpToolBatchImportPropertyName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference,
+    ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart,
+    ToolCall, ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -148,27 +148,53 @@ impl AstVisitor {
 
         for tool_property_pair in tool_block_pair.into_inner() {
             match tool_property_pair.as_rule() {
-                Rule::tool_description_property => {
-                    let description_pair = self.first_inner_pair(tool_property_pair, "tool description property")?;
+                Rule::named_plain_string_property => {
+                    let mut inner_pairs = tool_property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "tool property name", "tool string property")?;
+                    let Some(ToolPropertyName::Description) = ToolPropertyName::from_identifier(property_name.as_str()) else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_plain_string_property,
+                            "tool string property",
+                            declaration_span,
+                        ));
+                    };
+                    let description_pair = self.next_pair(&mut inner_pairs, "tool description", "tool string property")?;
                     description = Some(self.parse_string_literal(description_pair)?);
                 }
-                Rule::tool_max_calls_property => {
-                    let max_calls_pair = self.first_inner_pair(tool_property_pair, "tool max calls property")?;
+                Rule::named_unsigned_integer_property => {
+                    let mut inner_pairs = tool_property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "tool property name", "tool integer property")?;
+                    let Some(ToolPropertyName::MaxCalls) = ToolPropertyName::from_identifier(property_name.as_str()) else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_unsigned_integer_property,
+                            "tool integer property",
+                            declaration_span,
+                        ));
+                    };
+                    let max_calls_pair = self.next_pair(&mut inner_pairs, "tool max calls", "tool integer property")?;
                     max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool max calls property")?);
                 }
-                Rule::tool_input_property => {
-                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool input property")?;
-                    input_fields.extend(self.visit_typed_block(typed_block_pair)?);
-                }
-                Rule::tool_bindings_property => {
-                    let bindings_block_pair = self.first_inner_pair(tool_property_pair, "tool bindings property")?;
-                    let (typed_fields, fixed_fields) = self.visit_tool_bindings_block(bindings_block_pair)?;
-                    binding_fields.extend(typed_fields);
-                    fixed_binding_fields.extend(fixed_fields);
-                }
-                Rule::tool_output_property => {
-                    let typed_block_pair = self.first_inner_pair(tool_property_pair, "tool output property")?;
-                    output_fields.extend(self.visit_typed_block(typed_block_pair)?);
+                Rule::named_tool_block_property => {
+                    let mut inner_pairs = tool_property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "tool property name", "tool block property")?;
+                    let block_pair = self.next_pair(&mut inner_pairs, "tool block property value", "tool block property")?;
+
+                    match ToolPropertyName::from_identifier(property_name.as_str()) {
+                        Some(ToolPropertyName::Input) => input_fields.extend(self.visit_tool_typed_fields_block(block_pair)?),
+                        Some(ToolPropertyName::Output) => output_fields.extend(self.visit_tool_typed_fields_block(block_pair)?),
+                        Some(ToolPropertyName::Bindings) => {
+                            let (typed_fields, fixed_fields) = self.visit_tool_bindings_block(block_pair)?;
+                            binding_fields.extend(typed_fields);
+                            fixed_binding_fields.extend(fixed_fields);
+                        }
+                        _ => {
+                            return Err(DslParseError::unexpected_with_span(
+                                Rule::named_tool_block_property,
+                                "tool block property",
+                                declaration_span,
+                            ));
+                        }
+                    }
                 }
                 Rule::tool_input_field => {
                     let typed_field_pair = self.first_inner_pair(tool_property_pair, "tool input field")?;
@@ -263,18 +289,41 @@ impl AstVisitor {
     }
 
     fn visit_mcp_tool_batch_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<McpToolBatchImportBlock, DslParseError> {
+        let block_span = source_span_from_pair(&block_pair);
         let mut fixed_binding_fields = Vec::new();
         let mut import_items = Vec::new();
         let mut max_calls = None;
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
-                Rule::mcp_import_bindings_property => {
-                    let object_expression_pair = self.first_inner_pair(property_pair, "MCP tool batch import bindings")?;
+                Rule::named_object_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "MCP tool batch property name", "MCP tool batch import")?;
+                    let Some(McpToolBatchImportPropertyName::Bindings) =
+                        McpToolBatchImportPropertyName::from_identifier(property_name.as_str())
+                    else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_object_property,
+                            "MCP tool batch import property",
+                            block_span,
+                        ));
+                    };
+                    let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP tool batch bindings", "MCP tool batch import")?;
                     fixed_binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
                 }
-                Rule::tool_max_calls_property => {
-                    let max_calls_pair = self.first_inner_pair(property_pair, "MCP tool batch import max calls")?;
+                Rule::named_unsigned_integer_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "MCP tool batch property name", "MCP tool batch import")?;
+                    let Some(McpToolBatchImportPropertyName::MaxCalls) =
+                        McpToolBatchImportPropertyName::from_identifier(property_name.as_str())
+                    else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_unsigned_integer_property,
+                            "MCP tool batch import property",
+                            block_span,
+                        ));
+                    };
+                    let max_calls_pair = self.next_pair(&mut inner_pairs, "MCP tool batch max calls", "MCP tool batch import")?;
                     max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "MCP tool batch import max calls")?);
                 }
                 Rule::mcp_tool_batch_import_item => {
@@ -392,12 +441,24 @@ impl AstVisitor {
     }
 
     fn visit_mcp_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {
+        let block_span = source_span_from_pair(&block_pair);
         let mut parameters = Vec::new();
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
-                Rule::mcp_import_bindings_property | Rule::mcp_import_params_property => {
-                    let object_expression_pair = self.first_inner_pair(property_pair, "MCP import parameters")?;
+                Rule::named_object_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "MCP import property name", "MCP import block")?;
+
+                    if McpImportPropertyName::from_identifier(property_name.as_str()).is_none() {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_object_property,
+                            "MCP import property",
+                            block_span,
+                        ));
+                    }
+
+                    let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP import parameters", "MCP import block")?;
                     parameters.extend(self.visit_object_expression(object_expression_pair)?);
                 }
                 _ => unreachable!("MCP import block should contain only valid properties"),
@@ -408,17 +469,40 @@ impl AstVisitor {
     }
 
     fn visit_tool_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<(Vec<ObjectField>, Option<u64>), DslParseError> {
+        let block_span = source_span_from_pair(&block_pair);
         let mut fixed_bindings = Vec::new();
         let mut max_calls = None;
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
-                Rule::mcp_import_bindings_property => {
-                    let object_expression_pair = self.first_inner_pair(property_pair, "tool import bindings")?;
+                Rule::named_object_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "tool import property name", "tool import block")?;
+                    let Some(McpToolBatchImportPropertyName::Bindings) =
+                        McpToolBatchImportPropertyName::from_identifier(property_name.as_str())
+                    else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_object_property,
+                            "tool import property",
+                            block_span,
+                        ));
+                    };
+                    let object_expression_pair = self.next_pair(&mut inner_pairs, "tool import bindings", "tool import block")?;
                     fixed_bindings.extend(self.visit_object_expression(object_expression_pair)?);
                 }
-                Rule::tool_max_calls_property => {
-                    let max_calls_pair = self.first_inner_pair(property_pair, "tool import max calls")?;
+                Rule::named_unsigned_integer_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "tool import property name", "tool import block")?;
+                    let Some(McpToolBatchImportPropertyName::MaxCalls) =
+                        McpToolBatchImportPropertyName::from_identifier(property_name.as_str())
+                    else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_unsigned_integer_property,
+                            "tool import property",
+                            block_span,
+                        ));
+                    };
+                    let max_calls_pair = self.next_pair(&mut inner_pairs, "tool import max calls", "tool import block")?;
                     max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool import max calls")?);
                 }
                 _ => unreachable!("tool import block should contain only valid properties"),
@@ -461,6 +545,16 @@ impl AstVisitor {
                         fixed_fields.push(ObjectField {
                             name: field_name,
                             value: Expression::StringLiteral(string_value),
+                            span: binding_field_span,
+                        });
+
+                        continue;
+                    }
+
+                    if let TypeExpression::StringEnumReference(reference) = field_type {
+                        fixed_fields.push(ObjectField {
+                            name: field_name,
+                            value: Expression::Reference(reference),
                             span: binding_field_span,
                         });
 
@@ -511,6 +605,39 @@ impl AstVisitor {
         Ok((typed_fields, fixed_fields))
     }
 
+    fn visit_tool_typed_fields_block(&self, typed_fields_block_pair: Pair<'_, Rule>) -> Result<Vec<TypedField>, DslParseError> {
+        let mut typed_fields = Vec::new();
+
+        for field_pair in typed_fields_block_pair.into_inner() {
+            let field_span = source_span_from_pair(&field_pair);
+            let mut inner_pairs = field_pair.into_inner();
+            let field_name = self.next_identifier(&mut inner_pairs, "field name", "tool typed field")?;
+            let field_value_pair = self.next_pair(&mut inner_pairs, "field type", "tool typed field")?;
+
+            if field_value_pair.as_rule() != Rule::tool_binding_type_expression {
+                return Err(DslParseError::unexpected_with_span(
+                    field_value_pair.as_rule(),
+                    "tool typed field type",
+                    source_span_from_pair(&field_value_pair),
+                ));
+            }
+
+            let description = inner_pairs
+                .next()
+                .map(|description_pair| self.parse_string_literal(description_pair))
+                .transpose()?;
+
+            typed_fields.push(TypedField {
+                name: field_name,
+                field_type: self.visit_tool_binding_type_expression(field_value_pair)?,
+                description,
+                span: field_span,
+            });
+        }
+
+        Ok(typed_fields)
+    }
+
     fn visit_tool_binding_type_expression(&self, type_expression_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
         let mut type_terms = Vec::new();
 
@@ -543,6 +670,11 @@ impl AstVisitor {
                 let mut inner_pairs = type_term_pair.into_inner();
                 let schema_name = self.next_identifier(&mut inner_pairs, "schema name", "schema reference")?;
                 Ok(TypeExpression::SchemaReference(schema_name))
+            }
+            Rule::reference => {
+                let enum_reference = self.visit_reference(type_term_pair)?;
+
+                Ok(TypeExpression::StringEnumReference(enum_reference))
             }
             Rule::plain_quoted_string | Rule::plain_multiline_string => {
                 let enum_value = self.parse_string_literal(type_term_pair)?;
@@ -679,56 +811,135 @@ impl AstVisitor {
     }
 
     fn visit_agent_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
-        match property_pair.as_rule() {
-            Rule::dynamic_property => self.visit_dynamic_declaration(property_pair).map(AgentProperty::Dynamic),
-            Rule::model_property => {
-                let expression_pair = self.first_inner_pair(property_pair, "model property")?;
-                Ok(AgentProperty::Model(self.visit_expression(expression_pair)?))
-            }
-            Rule::response_format_property => {
-                let response_format_pair = self.first_inner_pair(property_pair, "response format property")?;
-                let response_format = AgentResponseFormat::from_identifier(response_format_pair.as_str()).ok_or_else(|| {
-                    DslParseError::unexpected_with_span(
-                        response_format_pair.as_rule(),
-                        "response format property",
-                        source_span_from_pair(&response_format_pair),
-                    )
-                })?;
+        let property_span = source_span_from_pair(&property_pair);
 
-                Ok(AgentProperty::ResponseFormat(response_format))
-            }
-            Rule::prompt_property => {
-                let expression_pair = self.first_inner_pair(property_pair, "prompt property")?;
-                Ok(AgentProperty::Prompt(self.visit_expression(expression_pair)?))
-            }
-            Rule::output_property => {
-                let mut inner_pairs = property_pair.into_inner();
-                let type_pair = self.next_pair(&mut inner_pairs, "agent output type", "agent output property")?;
-                let output_type_expression = self.visit_type_expression(type_pair)?;
-                let description = inner_pairs
-                    .next()
-                    .map(|description_pair| self.parse_string_literal(description_pair))
-                    .transpose()?;
+        match property_pair.as_rule() {
+            Rule::named_object_property => self.visit_agent_object_property(property_pair, property_span),
+            Rule::named_agent_value_property => self.visit_agent_value_property(property_pair, property_span),
+            _ => unreachable!("agent block should contain only valid agent property rules"),
+        }
+    }
+
+    fn visit_agent_object_property(
+        &self,
+        property_pair: Pair<'_, Rule>,
+        property_span: SourceSpan,
+    ) -> Result<AgentProperty, DslParseError> {
+        let mut inner_pairs = property_pair.into_inner();
+        let property_name = self.next_identifier(&mut inner_pairs, "agent property name", "agent object property")?;
+        let object_expression_pair = self.next_pair(&mut inner_pairs, "agent object property value", "agent object property")?;
+
+        match AgentPropertyName::from_identifier(property_name.as_str()) {
+            Some(AgentPropertyName::Dynamic) => Ok(AgentProperty::Dynamic(DynamicBlock {
+                fields: self.visit_object_expression(object_expression_pair)?,
+                span: property_span,
+            })),
+            Some(AgentPropertyName::Output) => {
+                let expression = self
+                    .visit_object_expression(object_expression_pair)
+                    .map(Expression::ObjectLiteral)?;
+                let Some(output_type_expression) = expression.to_type_expression() else {
+                    return Err(DslParseError::unexpected_with_span(
+                        Rule::named_object_property,
+                        "agent output property",
+                        property_span,
+                    ));
+                };
 
                 Ok(AgentProperty::Output {
                     output_type_expression,
-                    description,
+                    description: None,
                 })
             }
-            Rule::context_property => {
-                let expression_pair = self.first_inner_pair(property_pair, "context property")?;
-                Ok(AgentProperty::Context(self.visit_expression(expression_pair)?))
-            }
-            Rule::inference_property => {
-                let expression_pair = self.first_inner_pair(property_pair, "inference property")?;
-                Ok(AgentProperty::Inference(self.visit_expression(expression_pair)?))
-            }
-            Rule::tools_property => {
-                let tools_expression_pair = self.first_inner_pair(property_pair, "tools property")?;
-                Ok(AgentProperty::Tools(self.visit_tools_expression(tools_expression_pair)?))
-            }
-            _ => unreachable!("agent block should contain only valid agent property rules"),
+            Some(_) => Err(DslParseError::unexpected_with_span(
+                Rule::named_object_property,
+                "agent object property",
+                property_span,
+            )),
+            None => Ok(AgentProperty::Unknown {
+                name: property_name,
+                span: property_span,
+            }),
         }
+    }
+
+    fn visit_agent_value_property(&self, property_pair: Pair<'_, Rule>, property_span: SourceSpan) -> Result<AgentProperty, DslParseError> {
+        let mut inner_pairs = property_pair.into_inner();
+        let property_name = self.next_identifier(&mut inner_pairs, "agent property name", "agent value property")?;
+        let Some(agent_property_name) = AgentPropertyName::from_identifier(property_name.as_str()) else {
+            return Ok(AgentProperty::Unknown {
+                name: property_name,
+                span: property_span,
+            });
+        };
+        let value_pair = self.next_pair(&mut inner_pairs, "agent property value", "agent value property")?;
+
+        match agent_property_name {
+            AgentPropertyName::Model => Ok(AgentProperty::Model(self.visit_expression(value_pair)?)),
+            AgentPropertyName::ResponseFormat => self.visit_agent_response_format_property(value_pair),
+            AgentPropertyName::Prompt => Ok(AgentProperty::Prompt(self.visit_expression(value_pair)?)),
+            AgentPropertyName::Output => self.visit_agent_output_property(value_pair, inner_pairs, property_span),
+            AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
+            AgentPropertyName::Inference => Ok(AgentProperty::Inference(self.visit_expression(value_pair)?)),
+            AgentPropertyName::Tools => Ok(AgentProperty::Tools(self.visit_tools_expression(value_pair)?)),
+            AgentPropertyName::Dynamic | AgentPropertyName::Unknown => Err(DslParseError::unexpected_with_span(
+                Rule::named_agent_value_property,
+                "agent value property",
+                property_span,
+            )),
+        }
+    }
+
+    fn visit_agent_response_format_property(&self, value_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
+        let response_format = AgentResponseFormat::from_identifier(value_pair.as_str()).ok_or_else(|| {
+            DslParseError::unexpected_with_span(value_pair.as_rule(), "response format property", source_span_from_pair(&value_pair))
+        })?;
+
+        Ok(AgentProperty::ResponseFormat(response_format))
+    }
+
+    fn visit_agent_output_property(
+        &self,
+        value_pair: Pair<'_, Rule>,
+        mut remaining_pairs: Pairs<'_, Rule>,
+        property_span: SourceSpan,
+    ) -> Result<AgentProperty, DslParseError> {
+        let output_type_expression = self.visit_agent_output_property_type(value_pair, property_span)?;
+        let description = remaining_pairs
+            .next()
+            .map(|description_pair| self.parse_string_literal(description_pair))
+            .transpose()?;
+
+        Ok(AgentProperty::Output {
+            output_type_expression,
+            description,
+        })
+    }
+
+    fn visit_agent_output_property_type(
+        &self,
+        value_pair: Pair<'_, Rule>,
+        property_span: SourceSpan,
+    ) -> Result<TypeExpression, DslParseError> {
+        if value_pair.as_rule() == Rule::type_expression {
+            return self.visit_type_expression(value_pair);
+        }
+
+        let output_expression = if value_pair.as_rule() == Rule::tools_expression {
+            self.visit_tools_expression(value_pair)?
+        } else {
+            self.visit_expression(value_pair)?
+        };
+
+        let Some(output_type_expression) = output_expression.to_type_expression() else {
+            return Err(DslParseError::unexpected_with_span(
+                Rule::named_agent_value_property,
+                "agent output property",
+                property_span,
+            ));
+        };
+
+        Ok(output_type_expression)
     }
 
     fn visit_tools_expression(&self, tools_expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
@@ -751,20 +962,45 @@ impl AstVisitor {
             return Ok(Expression::Reference(callee));
         };
 
+        let block_span = source_span_from_pair(&block_pair);
         let mut binding_fields = Vec::new();
         let mut max_calls = None;
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
-                Rule::tool_call_bindings_property => {
-                    let object_expression_pair = self.first_inner_pair(property_pair, "agent tool binding bindings property")?;
+                Rule::named_object_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "agent tool binding property name", "agent tool binding")?;
+                    let Some(ToolCallPropertyName::Bindings) = ToolCallPropertyName::from_identifier(property_name.as_str()) else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_object_property,
+                            "agent tool binding property",
+                            block_span,
+                        ));
+                    };
+                    let object_expression_pair = self.next_pair(&mut inner_pairs, "agent tool binding bindings", "agent tool binding")?;
                     binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
                 }
-                Rule::tool_call_max_calls_property => {
-                    let max_calls_pair = self.first_inner_pair(property_pair, "agent tool binding max calls property")?;
+                Rule::named_unsigned_integer_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "agent tool binding property name", "agent tool binding")?;
+                    let Some(ToolCallPropertyName::MaxCalls) = ToolCallPropertyName::from_identifier(property_name.as_str()) else {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_unsigned_integer_property,
+                            "agent tool binding property",
+                            block_span,
+                        ));
+                    };
+                    let max_calls_pair = self.next_pair(&mut inner_pairs, "agent tool binding max calls", "agent tool binding")?;
                     max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "agent tool binding max calls property")?);
                 }
-                _ => unreachable!("agent tool binding block should contain only valid agent tool binding property rules"),
+                _ => {
+                    return Err(DslParseError::unexpected_with_span(
+                        property_pair.as_rule(),
+                        "agent tool binding property",
+                        source_span_from_pair(&property_pair),
+                    ));
+                }
             }
         }
 
@@ -1003,18 +1239,40 @@ impl AstVisitor {
         let mut max_calls = None;
 
         if let Some(block_pair) = inner_pairs.next() {
+            let block_span = source_span_from_pair(&block_pair);
+
             for property_pair in block_pair.into_inner() {
                 match property_pair.as_rule() {
-                    Rule::tool_call_input_property => {
-                        let object_expression_pair = self.first_inner_pair(property_pair, "tool call input property")?;
-                        input_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                    Rule::named_object_property => {
+                        let mut inner_pairs = property_pair.into_inner();
+                        let property_name = self.next_identifier(&mut inner_pairs, "tool call property name", "tool call block")?;
+                        let object_expression_pair = self.next_pair(&mut inner_pairs, "tool call object property", "tool call block")?;
+
+                        match ToolCallPropertyName::from_identifier(property_name.as_str()) {
+                            Some(ToolCallPropertyName::Input) => input_fields.extend(self.visit_object_expression(object_expression_pair)?),
+                            Some(ToolCallPropertyName::Bindings) => {
+                                binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                            }
+                            _ => {
+                                return Err(DslParseError::unexpected_with_span(
+                                    Rule::named_object_property,
+                                    "tool call property",
+                                    block_span,
+                                ));
+                            }
+                        }
                     }
-                    Rule::tool_call_bindings_property => {
-                        let object_expression_pair = self.first_inner_pair(property_pair, "tool call bindings property")?;
-                        binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
-                    }
-                    Rule::tool_call_max_calls_property => {
-                        let max_calls_pair = self.first_inner_pair(property_pair, "tool call max calls property")?;
+                    Rule::named_unsigned_integer_property => {
+                        let mut inner_pairs = property_pair.into_inner();
+                        let property_name = self.next_identifier(&mut inner_pairs, "tool call property name", "tool call block")?;
+                        let Some(ToolCallPropertyName::MaxCalls) = ToolCallPropertyName::from_identifier(property_name.as_str()) else {
+                            return Err(DslParseError::unexpected_with_span(
+                                Rule::named_unsigned_integer_property,
+                                "tool call property",
+                                block_span,
+                            ));
+                        };
+                        let max_calls_pair = self.next_pair(&mut inner_pairs, "tool call max calls", "tool call block")?;
                         max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool call max calls property")?);
                     }
                     _ => unreachable!("tool call block should contain only valid tool call property rules"),
@@ -1047,10 +1305,23 @@ impl AstVisitor {
         let mut parameter_fields = Vec::new();
 
         if let Some(block_pair) = inner_pairs.next() {
+            let block_span = source_span_from_pair(&block_pair);
+
             for property_pair in block_pair.into_inner() {
                 match property_pair.as_rule() {
-                    Rule::mcp_call_params_property | Rule::mcp_call_bindings_property => {
-                        let object_expression_pair = self.first_inner_pair(property_pair, "MCP call parameters property")?;
+                    Rule::named_object_property => {
+                        let mut inner_pairs = property_pair.into_inner();
+                        let property_name = self.next_identifier(&mut inner_pairs, "MCP call property name", "MCP call block")?;
+
+                        if McpImportPropertyName::from_identifier(property_name.as_str()).is_none() {
+                            return Err(DslParseError::unexpected_with_span(
+                                Rule::named_object_property,
+                                "MCP call property",
+                                block_span,
+                            ));
+                        }
+
+                        let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP call parameters", "MCP call block")?;
                         parameter_fields.extend(self.visit_object_expression(object_expression_pair)?);
                     }
                     _ => unreachable!("MCP call block should contain only valid MCP call property rules"),

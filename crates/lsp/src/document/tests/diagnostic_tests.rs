@@ -54,7 +54,7 @@ fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
 }
 
 #[test]
-fn reports_parse_error_for_unknown_agent_property() {
+fn reports_unknown_agent_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         provider openai {
             driver: "openai"
@@ -69,7 +69,7 @@ fn reports_parse_error_for_unknown_agent_property() {
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::ParseError);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownAgentProperty);
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn reports_parse_error_for_call_style_tool_binding_overrides() {
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::ParseError);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnexpectedRule);
 }
 
 #[test]

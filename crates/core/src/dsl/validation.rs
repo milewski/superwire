@@ -1309,7 +1309,9 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                 for agent_property in &agent_declaration.properties {
                     let agent_property_name = agent_property.name();
 
-                    if agent_property_name != AgentPropertyName::Dynamic && !seen_agent_properties.insert(agent_property_name) {
+                    if !matches!(agent_property_name, AgentPropertyName::Dynamic | AgentPropertyName::Unknown)
+                        && !seen_agent_properties.insert(agent_property_name)
+                    {
                         validation_report.push_issue_with_span(
                             ValidationIssue::DuplicateProperty {
                                 property_name: agent_property_name.as_str().to_string(),
@@ -1360,6 +1362,15 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                             );
                         }
                         AgentProperty::ResponseFormat(_) => {}
+                        AgentProperty::Unknown { name, span } => {
+                            validation_report.push_issue_with_span(
+                                ValidationIssue::UnknownAgentProperty {
+                                    agent_name: agent_declaration.name.clone(),
+                                    property_name: name.clone(),
+                                },
+                                Some(*span),
+                            );
+                        }
                         AgentProperty::Output {
                             output_type_expression,
                             description: _,
@@ -2272,8 +2283,9 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         AgentProperty::Output {
                             output_type_expression: _,
                             description: _,
-                        } => {}
-                        AgentProperty::ResponseFormat(_) => {}
+                        }
+                        | AgentProperty::ResponseFormat(_)
+                        | AgentProperty::Unknown { name: _, span: _ } => {}
                     }
                 }
             }
@@ -3502,8 +3514,9 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                 AgentProperty::Output {
                     output_type_expression: _,
                     description: _,
-                } => {}
-                AgentProperty::ResponseFormat(_) => {}
+                }
+                | AgentProperty::ResponseFormat(_)
+                | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }
 
@@ -3612,7 +3625,6 @@ mod tests {
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::parse_workflow;
     use crate::semantic::InferenceSetting;
-    use crate::workflow_source;
 
     macro_rules! assert_issues_contain {
         ($validation_issues:expr, $issue_pattern:pat $(if $guard:expr)? ) => {{
@@ -4133,8 +4145,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_agent_properties_at_parse_time() {
-        let workflow_source = workflow_source! {
+    fn reports_unknown_agent_properties() {
+        let workflow = parse_inline_workflow! {
             provider openai {
                 driver: "openai"
                 models: ["gpt-4.1-mini"]
@@ -4147,9 +4159,13 @@ mod tests {
             }
         };
 
-        let parse_result = parse_workflow(workflow_source);
-
-        assert!(parse_result.is_err(), "unknown agent properties should fail parsing");
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::UnknownAgentProperty {
+                agent_name,
+                property_name
+            } if agent_name == "researcher" && property_name == "retries"
+        );
     }
 
     #[test]

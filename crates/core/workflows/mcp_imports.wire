@@ -50,7 +50,13 @@ dynamic {
 
 agent project_creator {
     model: openai("gpt-4.1-mini")
-    prompt: "Create a project from imported MCP context.\n\n{{ dynamic.instructions }}\n\n{{ dynamic.readme }}"
+
+    prompt: """
+        Create a project from imported MCP context.
+        {{ dynamic.instructions }}
+        {{ dynamic.readme }}
+    """
+
     output: {
         project_id: string
     }

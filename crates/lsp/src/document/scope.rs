@@ -270,6 +270,7 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
             Self::Context => "Context expression",
             Self::Inference => "Inference settings object",
             Self::Tools => "Tools expression",
+            Self::Unknown => "Unknown property",
         }
     }
 
@@ -283,6 +284,7 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
             Self::Context => "Prepends evaluated context to the rendered prompt.",
             Self::Inference => "Configures sampling and provider retry behavior.",
             Self::Tools => "Declares tool references available to this agent.",
+            Self::Unknown => "Unsupported agent property.",
         }
     }
 }

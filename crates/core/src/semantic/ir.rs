@@ -281,7 +281,8 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
             AgentProperty::Output {
                 output_type_expression: _,
                 description: _,
-            } => {}
+            }
+            | AgentProperty::Unknown { name: _, span: _ } => {}
         }
     }
 
@@ -509,7 +510,8 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Tools(_)
-            | AgentProperty::Dynamic(_) => {}
+            | AgentProperty::Dynamic(_)
+            | AgentProperty::Unknown { name: _, span: _ } => {}
         }
     }
 
