@@ -22,6 +22,23 @@ macro_rules! call {
 }
 
 macro_rules! schema {
+    ($($field_name:ident : $field_type:ty),+ $(,)?) => {{
+        #[derive(schemars::JsonSchema)]
+        #[allow(dead_code)]
+        struct TestSchema {
+            $($field_name: $field_type,)*
+        }
+
+        let mut schema = serde_json::to_value(schemars::schema_for!(TestSchema)).expect("test schema should serialize");
+
+        if let Some(schema_object) = schema.as_object_mut() {
+            schema_object.remove("$schema");
+            schema_object.remove("title");
+        }
+
+        schema
+    }};
+
     ({ $($field_name:ident : $field_type:ident),* $(,)? }) => {
         serde_json::to_value(schemars::json_schema!({
             "type": "object",
