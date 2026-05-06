@@ -16,9 +16,11 @@ async fn supports_complex_output_types() {
         "fixed_array": ["x", "y", "z"],
         "enum_value": "ready",
     });
-    let run_output = TestRunner::workflow(fixtures::COMPLEX_TYPES)
+
+    let output = TestRunner::workflow(fixtures::COMPLEX_TYPES)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Generate a typed object.")
@@ -30,7 +32,7 @@ async fn supports_complex_output_types() {
         .expect("fixture runner should execute complex types workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({
             "result": typed_output,
             "string_value": "hello",

@@ -7,9 +7,10 @@ use support::runner::{Format, TestRunner};
 
 #[tokio::test]
 async fn asserts_json_object_response_format() {
-    let run_output = TestRunner::workflow(fixtures::AGENT_RESPONSE_FORMAT_JSON_OBJECT)
+    let output = TestRunner::workflow(fixtures::AGENT_RESPONSE_FORMAT_JSON_OBJECT)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .with_response_format(Format::JsonObject)
@@ -20,5 +21,5 @@ async fn asserts_json_object_response_format() {
         .await
         .expect("fixture runner should assert json_object response format");
 
-    assert_eq!(run_output.output, json!({ "profile": { "name": "Ada" } }));
+    assert_eq!(output.output, json!({ "profile": { "name": "Ada" } }));
 }

@@ -7,10 +7,11 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn executes_parallel_agents_fixture() {
-    let run_output = TestRunner::workflow(fixtures::PARALLEL_AGENTS)
+    let output = TestRunner::workflow(fixtures::PARALLEL_AGENTS)
         .input(input!({ "product_name": "SuperWidget" }))
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Write release notes for SuperWidget.")
@@ -32,7 +33,7 @@ async fn executes_parallel_agents_fixture() {
         .expect("fixture runner should execute parallel agents workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({
             "changelog": "# Release Notes",
             "posts": ["post1", "post2"],

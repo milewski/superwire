@@ -7,9 +7,9 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
-    let task_schema = schema!({ title: string });
-    let tool_output_schema = schema!({ task_id: number });
-    let run_output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
+    let task_schema = schema! { title: String };
+    let tool_output_schema = schema! { task_id: i64 };
+    let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
         .input(input!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("gpt-4.1-mini", |model| {
@@ -43,22 +43,21 @@ async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
             });
 
             mcp.tool("update-task-status", |tool| {
-                tool.input_schema(schema!({ status: string }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { status: String })
+                    .output_schema(schema! { success: bool });
             });
 
             mcp.tool("assign-task", |tool| {
-                tool.input_schema(schema!({ user_id: number }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { user_id: i64 }).output_schema(schema! { success: bool });
             });
         })
         .run()
         .await
         .expect("fixture runner should execute workflow with tools");
 
-    assert_eq!(run_output.output, json!({ "value": "created" }));
+    assert_eq!(output.output, json!({ "value": "created" }));
     assert_mcp_tool_was_called_with(
-        &run_output.mcp_requests["local"],
+        &output.mcp_requests["local"],
         "create-sorting-task",
         json!({
             "project_id": 14,
@@ -79,8 +78,8 @@ fn assert_mcp_tool_was_called_with(requests: &[Value], tool_name: &str, expected
 
 #[tokio::test]
 async fn sends_model_tool_call_argument_errors_back_to_model() {
-    let task_schema = schema!({ title: string });
-    let run_output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
+    let task_schema = schema! { title: String };
+    let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
         .input(input!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("gpt-4.1-mini", |model| {
@@ -107,30 +106,29 @@ async fn sends_model_tool_call_argument_errors_back_to_model() {
         })
         .mcp("local", |mcp| {
             mcp.tool("create-sorting-task", |tool| {
-                tool.input_schema(task_schema).output_schema(schema!({ task_id: number }));
+                tool.input_schema(task_schema).output_schema(schema! { task_id: i64 });
             });
 
             mcp.tool("update-task-status", |tool| {
-                tool.input_schema(schema!({ status: string }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { status: String })
+                    .output_schema(schema! { success: bool });
             });
 
             mcp.tool("assign-task", |tool| {
-                tool.input_schema(schema!({ user_id: number }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { user_id: i64 }).output_schema(schema! { success: bool });
             });
         })
         .run()
         .await
         .expect("execution should let model recover from invalid tool arguments");
 
-    assert_eq!(run_output.output, json!({ "value": "recovered" }));
+    assert_eq!(output.output, json!({ "value": "recovered" }));
 }
 
 #[tokio::test]
 async fn fails_after_model_repeats_same_tool_call_too_many_times() {
-    let task_schema = schema!({ title: string });
-    let tool_output_schema = schema!({ task_id: number });
+    let task_schema = schema! { title: String };
+    let tool_output_schema = schema! { task_id: i64 };
     let execution_error = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
         .input(input!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
@@ -154,13 +152,12 @@ async fn fails_after_model_repeats_same_tool_call_too_many_times() {
             });
 
             mcp.tool("update-task-status", |tool| {
-                tool.input_schema(schema!({ status: string }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { status: String })
+                    .output_schema(schema! { success: bool });
             });
 
             mcp.tool("assign-task", |tool| {
-                tool.input_schema(schema!({ user_id: number }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { user_id: i64 }).output_schema(schema! { success: bool });
             });
         })
         .run()
@@ -177,14 +174,15 @@ async fn fails_after_model_repeats_same_tool_call_too_many_times() {
 
 #[tokio::test]
 async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
-    let run_output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
+    let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
         .input(input!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("gpt-4.1-mini", |model| {
+            provider.api_key("test-api-key");
+            provider.model("gpt-4.1-mini", |model| {
                 model
                     .turn()
                     .expect_prompt("Manage project tasks")
-                    .expect_tool_with_schema("create_sorting_task", schema!({ title: number }))
+                    .expect_tool_with_schema("create_sorting_task", schema! { title: i64 })
                     .respond_tool_calls([call!("create_sorting_task", { "title": "not a number" })]);
 
                 model
@@ -194,6 +192,7 @@ async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
                             .iter()
                             .find(|message| message.get("role") == Some(&json!("tool")))
                             .expect("tool schema error should be replayed to model");
+
                         let tool_content = tool_message.get("content").and_then(Value::as_str).unwrap_or_default();
 
                         assert!(tool_content.contains("tool_argument_schema_mismatch"), "{tool_content}");
@@ -203,34 +202,33 @@ async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
         })
         .mcp("local", |mcp| {
             mcp.tool("create-sorting-task", |tool| {
-                tool.input_schema(schema!({ title: number }))
-                    .output_schema(schema!({ task_id: number }));
+                tool.input_schema(schema! { title: i64 }).output_schema(schema! { task_id: i64 });
             });
 
             mcp.tool("update-task-status", |tool| {
-                tool.input_schema(schema!({ status: string }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { status: String })
+                    .output_schema(schema! { success: bool });
             });
 
             mcp.tool("assign-task", |tool| {
-                tool.input_schema(schema!({ user_id: number }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { user_id: i64 }).output_schema(schema! { success: bool });
             });
         })
         .run()
         .await
         .expect("execution should let model recover from incorrect tool schema");
 
-    assert_eq!(run_output.output, json!({ "value": "recovered from bad schema" }));
+    assert_eq!(output.output, json!({ "value": "recovered from bad schema" }));
 }
 
 #[tokio::test]
 async fn sends_incorrect_mcp_tool_output_back_to_model() {
-    let task_schema = schema!({ title: string });
-    let run_output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
+    let task_schema = schema! { title: String };
+    let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
         .input(input!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("gpt-4.1-mini", |model| {
+            provider.api_key("test-api-key");
+            provider.model("gpt-4.1-mini", |model| {
                 model
                     .turn()
                     .expect_prompt("Manage project tasks")
@@ -244,6 +242,7 @@ async fn sends_incorrect_mcp_tool_output_back_to_model() {
                             .iter()
                             .find(|message| message.get("role") == Some(&json!("tool")))
                             .expect("incorrect MCP output should be replayed to model");
+
                         let tool_content = tool_message.get("content").and_then(Value::as_str).unwrap_or_default();
 
                         assert!(tool_content.contains("wrong"), "{tool_content}");
@@ -254,23 +253,22 @@ async fn sends_incorrect_mcp_tool_output_back_to_model() {
         .mcp("local", |mcp| {
             mcp.tool("create-sorting-task", |tool| {
                 tool.input_schema(task_schema)
-                    .output_schema(schema!({ task_id: number }))
+                    .output_schema(schema! { task_id: i64 })
                     .respond_json(json!({ "task_id": "wrong" }));
             });
 
             mcp.tool("update-task-status", |tool| {
-                tool.input_schema(schema!({ status: string }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { status: String })
+                    .output_schema(schema! { success: bool });
             });
 
             mcp.tool("assign-task", |tool| {
-                tool.input_schema(schema!({ user_id: number }))
-                    .output_schema(schema!({ success: boolean }));
+                tool.input_schema(schema! { user_id: i64 }).output_schema(schema! { success: bool });
             });
         })
         .run()
         .await
         .expect("execution should let model recover from incorrect MCP output");
 
-    assert_eq!(run_output.output, json!({ "value": "recovered from bad tool output" }));
+    assert_eq!(output.output, json!({ "value": "recovered from bad tool output" }));
 }

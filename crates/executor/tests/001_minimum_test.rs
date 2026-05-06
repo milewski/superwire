@@ -7,7 +7,7 @@ use support::runner::{Format, TestRunner};
 
 #[tokio::test]
 async fn executes_fixture_through_scripted_provider_server() {
-    let run_output = TestRunner::workflow(fixtures::MINIMUM)
+    let output = TestRunner::workflow(fixtures::MINIMUM)
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("model-a", |model| {
                 model
@@ -24,15 +24,16 @@ async fn executes_fixture_through_scripted_provider_server() {
         .await
         .expect("fixture runner should execute workflow");
 
-    assert_eq!(run_output.output, json!({ "greeting": "hello from fixture runner" }));
-    assert_eq!(run_output.provider_requests["openai"].len(), 1);
+    assert_eq!(output.output, json!({ "greeting": "hello from fixture runner" }));
+    assert_eq!(output.provider_requests["openai"].len(), 1);
 }
 
 #[tokio::test]
 async fn falls_back_when_model_does_not_support_json_schema() {
-    let run_output = TestRunner::workflow(fixtures::MINIMUM)
+    let output = TestRunner::workflow(fixtures::MINIMUM)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .with_response_format(Format::Auto)
@@ -48,6 +49,6 @@ async fn falls_back_when_model_does_not_support_json_schema() {
         .await
         .expect("fixture runner should fall back after json_schema provider error");
 
-    assert_eq!(run_output.output, json!({ "greeting": "hello after fallback" }));
-    assert_eq!(run_output.provider_requests["openai"].len(), 2);
+    assert_eq!(output.output, json!({ "greeting": "hello after fallback" }));
+    assert_eq!(output.provider_requests["openai"].len(), 2);
 }

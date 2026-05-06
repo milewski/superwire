@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn executes_dynamic_tool_call_before_agent() {
     let tool_response = json!({ "task_title": "Survey", "participants": 10 });
-    let run_output = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
+    let output = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
         .input(input!({ "project_id": 42, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("model-a", |model| {
@@ -21,8 +21,8 @@ async fn executes_dynamic_tool_call_before_agent() {
         })
         .mcp("local", |mcp| {
             mcp.tool("fetch_task_data", |tool| {
-                tool.input_schema(schema!({ project_id: number, task_id: number }))
-                    .output_schema(schema!({ task_title: string, participants: number }))
+                tool.input_schema(schema! { project_id: i64, task_id: i64 })
+                    .output_schema(schema! { task_title: String, participants: i64 })
                     .respond_json(tool_response.clone());
             });
         })
@@ -30,7 +30,7 @@ async fn executes_dynamic_tool_call_before_agent() {
         .await
         .expect("fixture runner should execute dynamic tool call workflow");
 
-    assert_eq!(run_output.output, json!({ "data": tool_response, "summary": "done" }));
+    assert_eq!(output.output, json!({ "data": tool_response, "summary": "done" }));
 }
 
 #[tokio::test]
@@ -44,8 +44,8 @@ async fn fails_when_mcp_tool_output_does_not_match_schema() {
         })
         .mcp("local", |mcp| {
             mcp.tool("fetch_task_data", |tool| {
-                tool.input_schema(schema!({ project_id: number, task_id: number }))
-                    .output_schema(schema!({ task_title: string, participants: number }))
+                tool.input_schema(schema! { project_id: i64, task_id: i64 })
+                    .output_schema(schema! { task_title: String, participants: i64 })
                     .respond_json(json!({ "task_title": "Survey", "participants": "ten" }));
             });
         })
@@ -67,8 +67,8 @@ async fn fails_when_mcp_server_returns_tool_error() {
         })
         .mcp("local", |mcp| {
             mcp.tool("fetch_task_data", |tool| {
-                tool.input_schema(schema!({ project_id: number, task_id: number }))
-                    .output_schema(schema!({ task_title: string, participants: number }));
+                tool.input_schema(schema! { project_id: i64, task_id: i64 })
+                    .output_schema(schema! { task_title: String, participants: i64 });
             });
         })
         .run()

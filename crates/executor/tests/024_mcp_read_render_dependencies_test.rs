@@ -6,7 +6,7 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn resolves_mcp_read_render_dependencies() {
-    let run_output = TestRunner::workflow(fixtures::MCP_READ_RENDER_DEPENDENCIES)
+    let output = TestRunner::workflow(fixtures::MCP_READ_RENDER_DEPENDENCIES)
         .input(input!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
             mcp.resource("project-readme", |resource| {
@@ -24,10 +24,11 @@ async fn resolves_mcp_read_render_dependencies() {
         .await
         .expect("fixture runner should execute MCP read/render dependency workflow");
 
-    assert!(run_output.output["readme"]
+    assert!(output.output["readme"]
         .as_str()
         .is_some_and(|readme| readme.contains("# Project README")));
-    assert!(run_output.output["instructions"]
+
+    assert!(output.output["instructions"]
         .as_str()
         .is_some_and(|instructions| instructions.contains("Follow project conventions.")));
 }

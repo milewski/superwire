@@ -7,9 +7,10 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn executes_fixture_with_inference_settings() {
-    let run_output = TestRunner::workflow(fixtures::INFERENCE_SETTINGS)
+    let output = TestRunner::workflow(fixtures::INFERENCE_SETTINGS)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Analyze the current release readiness.")
@@ -20,5 +21,5 @@ async fn executes_fixture_with_inference_settings() {
         .await
         .expect("fixture runner should execute inference settings workflow");
 
-    assert_eq!(run_output.output, json!({ "analysis": "All systems go." }));
+    assert_eq!(output.output, json!({ "analysis": "All systems go." }));
 }
