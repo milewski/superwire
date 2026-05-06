@@ -28,6 +28,9 @@
       "include": "#mcp-import"
     },
     {
+      "include": "#mcp-tool-batch-import"
+    },
+    {
       "include": "#dynamic-block"
     },
     {
@@ -205,6 +208,58 @@
       },
       "end": "\\}",
       "patterns": [
+        {
+          "include": "#tool-field-block"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-tool-batch-import": {
+      "begin": "\\b(from)\\b\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "keyword.other.wire"
+        },
+        "3": {
+          "name": "punctuation.accessor.wire"
+        },
+        "4": {
+          "name": "entity.name.namespace.wire"
+        },
+        "5": {
+          "name": "punctuation.accessor.wire"
+        },
+        "6": {
+          "name": "keyword.other.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "match": "\\b(tool)\\s+([A-Za-z0-9_-]+)(?:\\s+(as)\\s+([A-Za-z_][A-Za-z0-9_]*))?",
+          "captures": {
+            "1": {
+              "name": "keyword.control.wire"
+            },
+            "2": {
+              "name": "variable.other.reference.mcp.wire"
+            },
+            "3": {
+              "name": "keyword.control.wire"
+            },
+            "4": {
+              "name": "entity.name.function.tool.wire"
+            }
+          }
+        },
         {
           "include": "#tool-field-block"
         },

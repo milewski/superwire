@@ -477,11 +477,7 @@ impl CliWorkflowTypeInference {
         let mut bindings = HashMap::new();
         let mut output = HashMap::new();
 
-        for declaration in workflow.declarations() {
-            let Declaration::Tool(tool_declaration) = declaration else {
-                continue;
-            };
-
+        for tool_declaration in workflow.tool_declarations() {
             input.insert(
                 tool_declaration.name.clone(),
                 workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), named_schema_types)
@@ -699,8 +695,10 @@ impl WorkflowJsonRepresentation {
                 Declaration::Schema(schema_declaration) => {
                     schemas.push(SerializableSchema::from_declaration(schema_declaration));
                 }
-                Declaration::Tool(tool_declaration) => {
-                    tools.push(SerializableToolDeclaration::from_declaration(tool_declaration, &named_schema_types));
+                Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                    for tool_declaration in declaration.tool_declarations() {
+                        tools.push(SerializableToolDeclaration::from_declaration(tool_declaration, &named_schema_types));
+                    }
                 }
                 Declaration::Dynamic(dynamic_block) => {
                     for dynamic_field in &dynamic_block.fields {

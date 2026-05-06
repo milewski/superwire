@@ -23,6 +23,7 @@ impl McpServerConfig {
                 | Declaration::Input(_)
                 | Declaration::Schema(_)
                 | Declaration::Tool(_)
+                | Declaration::McpToolBatch(_)
                 | Declaration::McpResource(_)
                 | Declaration::McpPrompt(_)
                 | Declaration::Dynamic(_)

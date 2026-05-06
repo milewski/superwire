@@ -6,6 +6,7 @@ declaration = _{
     | secrets_declaration
     | input_declaration
     | schema_declaration
+    | mcp_tool_batch_import_declaration
     | tool_import_declaration
     | resource_import_declaration
     | prompt_import_declaration
@@ -24,6 +25,12 @@ tool_block_declaration = { "tool" ~ identifier ~ tool_block }
 tool_import_declaration = { "tool" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ tool_import_block? }
 resource_import_declaration = { "resource" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ mcp_import_block? }
 prompt_import_declaration = { "prompt" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ mcp_import_block? }
+
+mcp_tool_batch_import_declaration = { "from" ~ mcp_tool_batch_import_source ~ mcp_tool_batch_import_block }
+mcp_tool_batch_import_source = { "mcp" ~ "." ~ identifier ~ "." ~ "tool" }
+mcp_tool_batch_import_block = { "{" ~ mcp_tool_batch_import_property* ~ "}" }
+mcp_tool_batch_import_property = _{ mcp_import_bindings_property | tool_max_calls_property | mcp_tool_batch_import_item }
+mcp_tool_batch_import_item = { "tool" ~ mcp_import_name ~ ("as" ~ identifier)? }
 
 tool_import_block = { "{" ~ tool_import_property* ~ "}" }
 tool_import_property = _{ mcp_import_bindings_property | tool_max_calls_property }

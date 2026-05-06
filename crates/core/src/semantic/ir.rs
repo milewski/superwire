@@ -144,31 +144,17 @@ fn collect_tool_types(
     let mut bindings = HashMap::new();
     let mut output = HashMap::new();
 
-    for declaration in workflow.declarations() {
-        let Declaration::Tool(ToolDeclaration {
-            name,
-            input_fields,
-            binding_fields,
-            output_fields,
-            ..
-        }) = declaration
-        else {
-            continue;
-        };
+    for tool_declaration in workflow.tool_declarations() {
+        let input_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), named_schema_types)?;
+        let binding_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.binding_fields.clone()), named_schema_types)?;
+        let output_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), named_schema_types)?;
 
-        let input_type = workflow_type_from_dsl(&TypeExpression::Object(input_fields.clone()), named_schema_types)?;
-        let binding_type = workflow_type_from_dsl(&TypeExpression::Object(binding_fields.clone()), named_schema_types)?;
-        let output_type = workflow_type_from_dsl(&TypeExpression::Object(output_fields.clone()), named_schema_types)?;
-
-        input.insert(name.clone(), input_type.clone());
-        bindings.insert(name.clone(), binding_type.clone());
-        output.insert(name.clone(), output_type.clone());
+        input.insert(tool_declaration.name.clone(), input_type.clone());
+        bindings.insert(tool_declaration.name.clone(), binding_type.clone());
+        output.insert(tool_declaration.name.clone(), output_type.clone());
         tools.push(TypedToolIr {
-            name: name.clone(),
-            declaration: match declaration {
-                Declaration::Tool(tool_declaration) => tool_declaration.clone(),
-                _ => unreachable!("tool branch should only contain tool declarations"),
-            },
+            name: tool_declaration.name.clone(),
+            declaration: tool_declaration.clone(),
             input_type,
             binding_type,
             output_type,

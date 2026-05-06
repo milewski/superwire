@@ -167,15 +167,35 @@ impl McpLock {
 
     pub fn apply_to_workflow(&self, workflow: &mut Workflow) {
         for declaration in &mut workflow.declarations {
-            let Declaration::Tool(tool_declaration) = declaration else {
-                continue;
-            };
-            let Some(mcp_tool) = self.find_tool_for_tool_declaration(tool_declaration) else {
-                continue;
-            };
-
-            tool_declaration.apply_mcp_schema(mcp_tool);
+            match declaration {
+                Declaration::Tool(tool_declaration) => {
+                    self.apply_to_tool_declaration(tool_declaration);
+                }
+                Declaration::McpToolBatch(tool_batch_import_declaration) => {
+                    for tool_declaration in &mut tool_batch_import_declaration.tools {
+                        self.apply_to_tool_declaration(tool_declaration);
+                    }
+                }
+                Declaration::Provider(_)
+                | Declaration::McpServer(_)
+                | Declaration::Secrets(_)
+                | Declaration::Input(_)
+                | Declaration::Schema(_)
+                | Declaration::McpResource(_)
+                | Declaration::McpPrompt(_)
+                | Declaration::Dynamic(_)
+                | Declaration::Agent(_)
+                | Declaration::Output(_) => {}
+            }
         }
+    }
+
+    fn apply_to_tool_declaration(&self, tool_declaration: &mut ToolDeclaration) {
+        let Some(mcp_tool) = self.find_tool_for_tool_declaration(tool_declaration) else {
+            return;
+        };
+
+        tool_declaration.apply_mcp_schema(mcp_tool);
     }
 
     #[must_use]

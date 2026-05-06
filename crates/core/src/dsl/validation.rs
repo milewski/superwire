@@ -1020,80 +1020,82 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     .schema_field_types
                     .insert(schema_declaration.name.clone(), schema_field_types);
             }
-            Declaration::Tool(tool_declaration) => {
-                let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
+            Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                for tool_declaration in declaration.tool_declarations() {
+                    let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
 
-                let named_schema_types = validation_index
-                    .schema_field_types
-                    .iter()
-                    .map(|(schema_name, field_types)| {
-                        (
-                            schema_name.clone(),
-                            TypeExpression::Object(
-                                field_types
-                                    .iter()
-                                    .map(|(field_name, field_type)| TypedField {
-                                        name: field_name.clone(),
-                                        field_type: field_type.clone(),
-                                        description: None,
-                                        span: tool_declaration.span,
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ),
-                        )
-                    })
-                    .collect::<HashMap<_, _>>();
+                    let named_schema_types = validation_index
+                        .schema_field_types
+                        .iter()
+                        .map(|(schema_name, field_types)| {
+                            (
+                                schema_name.clone(),
+                                TypeExpression::Object(
+                                    field_types
+                                        .iter()
+                                        .map(|(field_name, field_type)| TypedField {
+                                            name: field_name.clone(),
+                                            field_type: field_type.clone(),
+                                            description: None,
+                                            span: tool_declaration.span,
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                            )
+                        })
+                        .collect::<HashMap<_, _>>();
 
-                if let Ok(tool_input_type) =
-                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
-                {
-                    validation_index
-                        .tool_input_types
-                        .insert(tool_declaration.name.clone(), tool_input_type);
-                }
+                    if let Ok(tool_input_type) =
+                        workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
+                    {
+                        validation_index
+                            .tool_input_types
+                            .insert(tool_declaration.name.clone(), tool_input_type);
+                    }
 
-                if let Ok(tool_binding_type) = workflow_type_from_dsl(
-                    &TypeExpression::Object(tool_declaration.binding_fields.clone()),
-                    &named_schema_types,
-                ) {
-                    validation_index
-                        .tool_binding_types
-                        .insert(tool_declaration.name.clone(), tool_binding_type);
-                }
+                    if let Ok(tool_binding_type) = workflow_type_from_dsl(
+                        &TypeExpression::Object(tool_declaration.binding_fields.clone()),
+                        &named_schema_types,
+                    ) {
+                        validation_index
+                            .tool_binding_types
+                            .insert(tool_declaration.name.clone(), tool_binding_type);
+                    }
 
-                let fixed_binding_names = tool_declaration
-                    .fixed_binding_fields
-                    .iter()
-                    .map(|fixed_binding| fixed_binding.name.clone())
-                    .collect::<HashSet<_>>();
+                    let fixed_binding_names = tool_declaration
+                        .fixed_binding_fields
+                        .iter()
+                        .map(|fixed_binding| fixed_binding.name.clone())
+                        .collect::<HashSet<_>>();
 
-                if !fixed_binding_names.is_empty() {
-                    validation_index
-                        .tool_fixed_binding_names
-                        .insert(tool_declaration.name.clone(), fixed_binding_names);
-                }
+                    if !fixed_binding_names.is_empty() {
+                        validation_index
+                            .tool_fixed_binding_names
+                            .insert(tool_declaration.name.clone(), fixed_binding_names);
+                    }
 
-                if !tool_declaration.fixed_binding_fields.is_empty() {
-                    validation_index
-                        .tool_fixed_binding_fields
-                        .insert(tool_declaration.name.clone(), tool_declaration.fixed_binding_fields.clone());
-                }
+                    if !tool_declaration.fixed_binding_fields.is_empty() {
+                        validation_index
+                            .tool_fixed_binding_fields
+                            .insert(tool_declaration.name.clone(), tool_declaration.fixed_binding_fields.clone());
+                    }
 
-                if let Ok(tool_output_type) =
-                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
-                {
-                    validation_index
-                        .tool_output_types
-                        .insert(tool_declaration.name.clone(), tool_output_type);
-                }
+                    if let Ok(tool_output_type) =
+                        workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
+                    {
+                        validation_index
+                            .tool_output_types
+                            .insert(tool_declaration.name.clone(), tool_output_type);
+                    }
 
-                if !inserted_tool {
-                    validation_report.push_issue_with_span(
-                        ValidationIssue::DuplicateTool {
-                            tool_name: tool_declaration.name.clone(),
-                        },
-                        Some(tool_declaration.span),
-                    );
+                    if !inserted_tool {
+                        validation_report.push_issue_with_span(
+                            ValidationIssue::DuplicateTool {
+                                tool_name: tool_declaration.name.clone(),
+                            },
+                            Some(tool_declaration.span),
+                        );
+                    }
                 }
             }
             Declaration::McpResource(resource_import_declaration) => {
@@ -1239,23 +1241,25 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                     report_duplicate_type_expression_fields(&schema_field.field_type, schema_context.clone(), validation_report);
                 }
             }
-            Declaration::Tool(tool_declaration) => {
-                let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
+            Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                for tool_declaration in declaration.tool_declarations() {
+                    let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
 
-                report_duplicate_typed_field_names(tool_declaration.input_fields.as_slice(), tool_context.clone(), validation_report);
-                report_duplicate_typed_field_names(tool_declaration.binding_fields.as_slice(), tool_context.clone(), validation_report);
-                report_duplicate_typed_field_names(tool_declaration.output_fields.as_slice(), tool_context.clone(), validation_report);
+                    report_duplicate_typed_field_names(tool_declaration.input_fields.as_slice(), tool_context.clone(), validation_report);
+                    report_duplicate_typed_field_names(tool_declaration.binding_fields.as_slice(), tool_context.clone(), validation_report);
+                    report_duplicate_typed_field_names(tool_declaration.output_fields.as_slice(), tool_context.clone(), validation_report);
 
-                for input_field in &tool_declaration.input_fields {
-                    report_duplicate_type_expression_fields(&input_field.field_type, tool_context.clone(), validation_report);
-                }
+                    for input_field in &tool_declaration.input_fields {
+                        report_duplicate_type_expression_fields(&input_field.field_type, tool_context.clone(), validation_report);
+                    }
 
-                for binding_field in &tool_declaration.binding_fields {
-                    report_duplicate_type_expression_fields(&binding_field.field_type, tool_context.clone(), validation_report);
-                }
+                    for binding_field in &tool_declaration.binding_fields {
+                        report_duplicate_type_expression_fields(&binding_field.field_type, tool_context.clone(), validation_report);
+                    }
 
-                for output_field in &tool_declaration.output_fields {
-                    report_duplicate_type_expression_fields(&output_field.field_type, tool_context.clone(), validation_report);
+                    for output_field in &tool_declaration.output_fields {
+                        report_duplicate_type_expression_fields(&output_field.field_type, tool_context.clone(), validation_report);
+                    }
                 }
             }
             Declaration::McpResource(resource_import_declaration) => {
@@ -1718,43 +1722,45 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                     }
                 }
             }
-            Declaration::Tool(tool_declaration) => {
-                let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
+            Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                for tool_declaration in declaration.tool_declarations() {
+                    let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
 
-                for input_field in &tool_declaration.input_fields {
-                    validate_type_expression_for_schemas(
-                        &input_field.field_type,
-                        tool_context.clone(),
-                        Some(input_field.span),
-                        validation_index,
-                        validation_report,
-                        &mut unknown_schema_references,
-                        &mut invalid_type_expression_references,
-                    );
-                }
+                    for input_field in &tool_declaration.input_fields {
+                        validate_type_expression_for_schemas(
+                            &input_field.field_type,
+                            tool_context.clone(),
+                            Some(input_field.span),
+                            validation_index,
+                            validation_report,
+                            &mut unknown_schema_references,
+                            &mut invalid_type_expression_references,
+                        );
+                    }
 
-                for bounded_field in &tool_declaration.binding_fields {
-                    validate_type_expression_for_schemas(
-                        &bounded_field.field_type,
-                        tool_context.clone(),
-                        Some(bounded_field.span),
-                        validation_index,
-                        validation_report,
-                        &mut unknown_schema_references,
-                        &mut invalid_type_expression_references,
-                    );
-                }
+                    for bounded_field in &tool_declaration.binding_fields {
+                        validate_type_expression_for_schemas(
+                            &bounded_field.field_type,
+                            tool_context.clone(),
+                            Some(bounded_field.span),
+                            validation_index,
+                            validation_report,
+                            &mut unknown_schema_references,
+                            &mut invalid_type_expression_references,
+                        );
+                    }
 
-                for output_field in &tool_declaration.output_fields {
-                    validate_type_expression_for_schemas(
-                        &output_field.field_type,
-                        tool_context.clone(),
-                        Some(output_field.span),
-                        validation_index,
-                        validation_report,
-                        &mut unknown_schema_references,
-                        &mut invalid_type_expression_references,
-                    );
+                    for output_field in &tool_declaration.output_fields {
+                        validate_type_expression_for_schemas(
+                            &output_field.field_type,
+                            tool_context.clone(),
+                            Some(output_field.span),
+                            validation_index,
+                            validation_report,
+                            &mut unknown_schema_references,
+                            &mut invalid_type_expression_references,
+                        );
+                    }
                 }
             }
             Declaration::Provider(_)
@@ -2303,8 +2309,21 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                     );
                 }
             }
-            Declaration::McpServer(_) | Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) | Declaration::Tool(_) => {
+            Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                for tool_declaration in declaration.tool_declarations() {
+                    let tool_context = ValidationContext::Tool(tool_declaration.name.clone());
+
+                    for binding_field in &tool_declaration.fixed_binding_fields {
+                        keyword_reference_validation_state.validate_expression(
+                            &binding_field.value,
+                            &workflow_dynamic_field_types,
+                            tool_context.clone(),
+                            SecretReferencePolicy::Allow,
+                        );
+                    }
+                }
             }
+            Declaration::McpServer(_) | Declaration::Secrets(_) | Declaration::Input(_) | Declaration::Schema(_) => {}
         }
     }
 }
@@ -2391,30 +2410,28 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let mut tool_binding_types = HashMap::new();
         let mut tool_output_types = HashMap::new();
 
-        for declaration in workflow.declarations() {
-            if let Declaration::Tool(tool_declaration) = declaration {
-                if let Ok(tool_input_type) =
-                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
-                {
-                    tool_input_types.insert(tool_declaration.name.clone(), tool_input_type);
-                }
-
-                if let Ok(tool_binding_type) = workflow_type_from_dsl(
-                    &TypeExpression::Object(tool_declaration.binding_fields.clone()),
-                    &named_schema_types,
-                ) {
-                    tool_binding_types.insert(tool_declaration.name.clone(), tool_binding_type);
-                }
-
-                if let Ok(tool_output_type) =
-                    workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
-                {
-                    tool_output_types.insert(tool_declaration.name.clone(), tool_output_type);
-                }
-
-                continue;
+        for tool_declaration in workflow.tool_declarations() {
+            if let Ok(tool_input_type) =
+                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
+            {
+                tool_input_types.insert(tool_declaration.name.clone(), tool_input_type);
             }
 
+            if let Ok(tool_binding_type) = workflow_type_from_dsl(
+                &TypeExpression::Object(tool_declaration.binding_fields.clone()),
+                &named_schema_types,
+            ) {
+                tool_binding_types.insert(tool_declaration.name.clone(), tool_binding_type);
+            }
+
+            if let Ok(tool_output_type) =
+                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
+            {
+                tool_output_types.insert(tool_declaration.name.clone(), tool_output_type);
+            }
+        }
+
+        for declaration in workflow.declarations() {
             let Declaration::Agent(agent_declaration) = declaration else {
                 continue;
             };

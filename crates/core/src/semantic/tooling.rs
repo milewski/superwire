@@ -1,6 +1,6 @@
 use crate::dsl::{
-    parse_workflow, Declaration, DeclarationKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolSource, TypeExpression,
-    TypedField, Workflow,
+    parse_workflow, Declaration, DeclarationKeyword, ImportKeyword, SingletonDeclarationKind, SourcePosition, SourceSpan, ToolSource,
+    TypeExpression, TypedField, Workflow,
 };
 use std::collections::BTreeMap;
 
@@ -234,17 +234,19 @@ impl SemanticToolingSnapshot {
                     declaration_index.push_symbol(ToolingSymbolCategory::Agent, agent_declaration.name.clone(), agent_declaration.span);
                     agents.insert(agent_declaration.name.clone(), agent_declaration.output_type().cloned());
                 }
-                Declaration::Tool(tool_declaration) => {
-                    declaration_index.push_symbol(ToolingSymbolCategory::Tool, tool_declaration.name.clone(), tool_declaration.span);
-                    tools.insert(
-                        tool_declaration.name.clone(),
-                        ToolSchemaSummary {
-                            description: tool_declaration.description.clone(),
-                            source: tool_declaration.source.clone(),
-                            input_fields: typed_fields_to_map(&tool_declaration.input_fields),
-                            bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
-                        },
-                    );
+                Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                    for tool_declaration in declaration.tool_declarations() {
+                        declaration_index.push_symbol(ToolingSymbolCategory::Tool, tool_declaration.name.clone(), tool_declaration.span);
+                        tools.insert(
+                            tool_declaration.name.clone(),
+                            ToolSchemaSummary {
+                                description: tool_declaration.description.clone(),
+                                source: tool_declaration.source.clone(),
+                                input_fields: typed_fields_to_map(&tool_declaration.input_fields),
+                                bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
+                            },
+                        );
+                    }
                 }
                 Declaration::McpResource(resource_import_declaration) => {
                     declaration_index.push_symbol(
@@ -658,7 +660,157 @@ impl<'source> TolerantSourceExtractor<'source> {
             });
         }
 
+        if category == ToolingSymbolCategory::Tool {
+            named_symbols.extend(self.collect_mcp_tool_batch_symbols());
+        }
+
         named_symbols
+    }
+
+    fn collect_mcp_tool_batch_symbols(&self) -> Vec<NamedSymbolSpan> {
+        let mut named_symbols = Vec::new();
+        let mut inside_batch_import = false;
+        let mut batch_block_depth = 0_i32;
+
+        for (line_index, source_line) in self.source_text.lines().enumerate() {
+            let normalized_line = source_line
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>();
+            let starts_batch_import =
+                normalized_line.contains(&format!("{}{}.", ImportKeyword::From.as_str(), DeclarationKeyword::Mcp.as_str()))
+                    && normalized_line.contains(&format!(".{}", DeclarationKeyword::Tool.as_str()));
+
+            if starts_batch_import {
+                inside_batch_import = true;
+            }
+
+            if inside_batch_import {
+                let search_start = if starts_batch_import {
+                    source_line
+                        .find('{')
+                        .map_or(0, |open_brace_index| open_brace_index.saturating_add(1))
+                } else {
+                    0
+                };
+
+                named_symbols.extend(Self::collect_mcp_tool_batch_symbols_from_line(
+                    source_line,
+                    line_index,
+                    search_start,
+                ));
+            }
+
+            if inside_batch_import {
+                for character in source_line.chars() {
+                    match character {
+                        '{' => batch_block_depth += 1,
+                        '}' => batch_block_depth -= 1,
+                        _ => {}
+                    }
+                }
+
+                if batch_block_depth <= 0 {
+                    inside_batch_import = false;
+                    batch_block_depth = 0;
+                }
+            }
+        }
+
+        named_symbols
+    }
+
+    fn collect_mcp_tool_batch_symbols_from_line(source_line: &str, line_index: usize, search_start: usize) -> Vec<NamedSymbolSpan> {
+        let mut named_symbols = Vec::new();
+        let tool_keyword = DeclarationKeyword::Tool.as_str();
+        let Some(search_segment) = source_line.get(search_start..) else {
+            return named_symbols;
+        };
+
+        for (relative_keyword_index, _) in search_segment.match_indices(tool_keyword) {
+            let keyword_index = search_start + relative_keyword_index;
+
+            if !Self::is_batch_item_keyword(source_line, keyword_index, tool_keyword.len()) {
+                continue;
+            }
+
+            let name_start = keyword_index + tool_keyword.len();
+            let Some(after_keyword) = source_line.get(name_start..) else {
+                continue;
+            };
+            let whitespace_count = after_keyword.chars().take_while(|character| character.is_whitespace()).count();
+            let source_name_start = name_start + whitespace_count;
+            let Some(after_name_start) = source_line.get(source_name_start..) else {
+                continue;
+            };
+            let source_name = after_name_start
+                .chars()
+                .take_while(|character| character.is_ascii_alphanumeric() || *character == '_' || *character == '-')
+                .collect::<String>();
+
+            if source_name.is_empty() {
+                continue;
+            }
+
+            let source_name_end = source_name_start + source_name.len();
+            let alias = Self::batch_item_alias(source_line.get(source_name_end..).unwrap_or_default())
+                .map(|(alias_name, alias_relative_start_column)| (alias_name, source_name_end + alias_relative_start_column));
+            let (symbol_name, symbol_start_column) = alias.unwrap_or_else(|| (source_name.replace('-', "_"), source_name_start + 1));
+            let symbol_end_column = symbol_start_column + symbol_name.chars().count().saturating_sub(1);
+
+            named_symbols.push(NamedSymbolSpan {
+                category: ToolingSymbolCategory::Tool,
+                name: symbol_name,
+                span: SourceSpan {
+                    start: SourcePosition {
+                        line: line_index + 1,
+                        column: symbol_start_column,
+                    },
+                    end: SourcePosition {
+                        line: line_index + 1,
+                        column: symbol_end_column,
+                    },
+                },
+            });
+        }
+
+        named_symbols
+    }
+
+    fn is_batch_item_keyword(source_line: &str, keyword_index: usize, keyword_length: usize) -> bool {
+        let before_keyword = source_line[..keyword_index].chars().next_back();
+        let after_keyword = source_line[keyword_index + keyword_length..].chars().next();
+
+        before_keyword.is_none_or(|character| character.is_whitespace() || character == '{')
+            && after_keyword.is_some_and(char::is_whitespace)
+    }
+
+    fn batch_item_alias(source_after_name: &str) -> Option<(String, usize)> {
+        let alias_keyword = ImportKeyword::As.as_str();
+        let alias_keyword_index = source_after_name.find(alias_keyword)?;
+        let before_alias = source_after_name[..alias_keyword_index].chars().next_back();
+        let after_alias = source_after_name[alias_keyword_index + alias_keyword.len()..].chars().next();
+
+        if !before_alias.is_none_or(char::is_whitespace) || !after_alias.is_some_and(char::is_whitespace) {
+            return None;
+        }
+
+        let after_alias_keyword = &source_after_name[alias_keyword_index + alias_keyword.len()..];
+        let whitespace_count = after_alias_keyword
+            .chars()
+            .take_while(|character| character.is_whitespace())
+            .count();
+        let alias_start = alias_keyword_index + alias_keyword.len() + whitespace_count;
+        let alias = after_alias_keyword[whitespace_count..]
+            .chars()
+            .take_while(|character| Self::is_identifier_character(*character))
+            .collect::<String>();
+
+        if alias.is_empty() {
+            return None;
+        }
+
+        Some((alias, alias_start + 1))
     }
 
     fn declaration_symbol_span(

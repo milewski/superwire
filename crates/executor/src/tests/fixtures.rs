@@ -22,3 +22,4 @@ pub const MCP_READ_RESOURCE: &str = include_str!("../../tests/fixtures/022_mcp_r
 pub const MCP_RENDER_PROMPT: &str = include_str!("../../tests/fixtures/023_mcp_render_prompt.wire");
 pub const MCP_READ_RENDER_DEPENDENCIES: &str = include_str!("../../tests/fixtures/024_mcp_read_render_dependencies.wire");
 pub const TOOL_MAX_CALLS_SCOPES: &str = include_str!("../../tests/fixtures/025_tool_max_calls_scopes.wire");
+pub const MCP_TOOL_BATCH_IMPORTS: &str = include_str!("../../tests/fixtures/026_mcp_tool_batch_imports.wire");

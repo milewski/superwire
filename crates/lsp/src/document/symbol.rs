@@ -1,4 +1,4 @@
-use superwire_core::dsl::{parse_workflow, Declaration, DeclarationKeyword, TypedField, Workflow};
+use superwire_core::dsl::{parse_workflow, Declaration, DeclarationKeyword, ToolDeclaration, TypedField, Workflow};
 
 use super::position::source_span_to_range;
 use super::semantic_index::SemanticIndex;
@@ -96,20 +96,19 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: child_symbols,
                 }
             }
-            Self::Tool(tool_declaration) => {
-                let declaration_range = source_span_to_range(source_text, tool_declaration.span);
-                let child_symbols = tool_declaration
-                    .input_fields
+            Self::Tool(tool_declaration) => tool_declaration.document_symbol_node(source_text),
+            Self::McpToolBatch(tool_batch_import_declaration) => {
+                let declaration_range = source_span_to_range(source_text, tool_batch_import_declaration.span);
+                let child_symbols = tool_batch_import_declaration
+                    .tools
                     .iter()
-                    .chain(tool_declaration.binding_fields.iter())
-                    .chain(tool_declaration.output_fields.iter())
-                    .map(|typed_field| typed_field.document_symbol_node(source_text))
+                    .map(|tool_declaration| tool_declaration.document_symbol_node(source_text))
                     .collect();
 
                 DocumentSymbolNode {
-                    name: tool_declaration.name.clone(),
-                    detail: Some("tool declaration".to_string()),
-                    kind: SymbolKind::Function,
+                    name: format!("mcp.{}.tool", tool_batch_import_declaration.server_name),
+                    detail: Some("MCP tool batch import".to_string()),
+                    kind: SymbolKind::Module,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -209,6 +208,32 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: Vec::new(),
                 }
             }
+        }
+    }
+}
+
+trait ToolDeclarationDocumentSymbolExt {
+    fn document_symbol_node(&self, source_text: &str) -> DocumentSymbolNode;
+}
+
+impl ToolDeclarationDocumentSymbolExt for ToolDeclaration {
+    fn document_symbol_node(&self, source_text: &str) -> DocumentSymbolNode {
+        let declaration_range = source_span_to_range(source_text, self.span);
+        let child_symbols = self
+            .input_fields
+            .iter()
+            .chain(self.binding_fields.iter())
+            .chain(self.output_fields.iter())
+            .map(|typed_field| typed_field.document_symbol_node(source_text))
+            .collect();
+
+        DocumentSymbolNode {
+            name: self.name.clone(),
+            detail: Some("tool declaration".to_string()),
+            kind: SymbolKind::Function,
+            range: declaration_range,
+            selection_range: declaration_range,
+            children: child_symbols,
         }
     }
 }

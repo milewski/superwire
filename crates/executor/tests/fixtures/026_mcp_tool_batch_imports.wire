@@ -1,0 +1,37 @@
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
+}
+
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+input {
+    project_id: number
+    task_id: number
+}
+
+from mcp.local.tool {
+    bindings {
+        project_id: input.project_id
+        task_id: input.task_id
+    }
+
+    tool create-sorting-task as create_sorting_task
+    tool update-task-status as update_task_status
+    tool assign-task
+}
+
+agent task_manager {
+    model: openai("gpt-4.1-mini")
+    tools: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
+    prompt: "Manage project tasks"
+    output: string
+}
+
+output {
+    value: agent.task_manager
+}

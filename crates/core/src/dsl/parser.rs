@@ -576,6 +576,56 @@ mod tests {
     }
 
     #[test]
+    fn parses_mcp_tool_batch_imports_with_shared_bindings_and_aliases() {
+        let workflow = parse_inline_workflow! {
+            from mcp.local.tool {
+                bindings {
+                    project_id: 1
+                    task_id: 2
+                }
+
+                max_calls: 3
+
+                tool create-sorting-task as create_sorting_task
+                tool update-task-status as update_task_status
+                tool assign-task
+            }
+        };
+
+        assert_eq!(workflow.declarations.len(), 1);
+        assert_eq!(workflow.tool_declarations().count(), 3);
+
+        let Declaration::McpToolBatch(tool_batch_import_declaration) = &workflow.declarations[0] else {
+            panic!("declaration should be an MCP tool batch import");
+        };
+
+        assert_eq!(tool_batch_import_declaration.server_name, "local");
+        assert_eq!(tool_batch_import_declaration.fixed_binding_fields.len(), 2);
+        assert_eq!(tool_batch_import_declaration.max_calls, Some(3));
+
+        let create_tool = workflow
+            .find_tool("create_sorting_task")
+            .expect("aliased batch tool should be findable as a tool declaration");
+        assert_eq!(create_tool.fixed_binding_fields.len(), 2);
+        assert_eq!(create_tool.max_calls, Some(3));
+        assert!(matches!(
+            &create_tool.source,
+            Some(ToolSource::Mcp(mcp_tool_source))
+                if mcp_tool_source.server_name.as_deref() == Some("local")
+                    && mcp_tool_source.tool_name == "create-sorting-task"
+        ));
+
+        let assigned_tool = workflow
+            .find_tool("assign_task")
+            .expect("non-aliased batch tool should infer a local name");
+        assert!(matches!(
+            &assigned_tool.source,
+            Some(ToolSource::Mcp(mcp_tool_source))
+                if mcp_tool_source.server_name.as_deref() == Some("local") && mcp_tool_source.tool_name == "assign-task"
+        ));
+    }
+
+    #[test]
     fn parses_resource_read_and_prompt_render_expressions() {
         let workflow = parse_inline_workflow! {
             resource project_readme from mcp.local.resource.project-readme
