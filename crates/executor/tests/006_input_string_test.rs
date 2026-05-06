@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn passes_string_input_into_prompt() {
     let output = TestRunner::workflow(fixtures::INPUT_STRING)
-        .input(input!({ "topic": "quantum computing" }))
+        .input(json!({ "topic": "quantum computing" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

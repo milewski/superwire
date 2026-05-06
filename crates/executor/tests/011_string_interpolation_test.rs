@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn interpolates_input_and_agent_output_in_prompts() {
     let output = TestRunner::workflow(fixtures::STRING_INTERPOLATION)
-        .input(input!({ "product_name": "SuperWidget", "audience": "developers" }))
+        .input(json!({ "product_name": "SuperWidget", "audience": "developers" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

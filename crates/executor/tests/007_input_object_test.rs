@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn passes_object_input_into_prompt() {
     let output = TestRunner::workflow(fixtures::INPUT_OBJECT)
-        .input(input!({
+        .input(json!({
             "product_name": "SuperWidget",
             "release_highlights": ["speed", "reliability"],
         }))

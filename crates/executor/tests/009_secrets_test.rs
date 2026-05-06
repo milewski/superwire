@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn passes_secret_api_key_to_provider() {
     let output = TestRunner::workflow(fixtures::SECRETS)
-        .secrets(secret!({ "api_key": "sk-test-123" }))
+        .secrets(json!({ "api_key": "sk-test-123" }))
         .provider("openai", |provider| {
             provider.api_key("sk-test-123");
             provider.model("model-a", |model| {

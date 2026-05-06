@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn injects_dynamic_values_into_prompt_and_output() {
     let output = TestRunner::workflow(fixtures::DYNAMIC_VALUES)
-        .input(input!({ "topic": "rust async" }))
+        .input(json!({ "topic": "rust async" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
