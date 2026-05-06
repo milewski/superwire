@@ -7,10 +7,11 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn resolves_diamond_dependency_order() {
-    let run_output = TestRunner::workflow(fixtures::DIAMOND_DEPENDENCY)
+    let output = TestRunner::workflow(fixtures::DIAMOND_DEPENDENCY)
         .input(input!({ "topic": "performance" }))
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Analyze performance from perspective A.")
@@ -31,5 +32,5 @@ async fn resolves_diamond_dependency_order() {
         .await
         .expect("fixture runner should execute diamond dependency workflow");
 
-    assert_eq!(run_output.output, json!({ "merged": "merged result" }));
+    assert_eq!(output.output, json!({ "merged": "merged result" }));
 }

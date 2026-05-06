@@ -7,9 +7,10 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn supports_optional_chaining_for_present_nested_value() {
-    let run_output = TestRunner::workflow(fixtures::OPTIONAL_CHAINING)
+    let output = TestRunner::workflow(fixtures::OPTIONAL_CHAINING)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Generate data with a nullable nested object.")
@@ -24,7 +25,7 @@ async fn supports_optional_chaining_for_present_nested_value() {
         .expect("fixture runner should execute optional chaining workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({ "label": "test", "score": 95, "tags": ["fast", "reliable"] })
     );
 }

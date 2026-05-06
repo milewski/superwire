@@ -7,10 +7,11 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn interpolates_input_and_agent_output_in_prompts() {
-    let run_output = TestRunner::workflow(fixtures::STRING_INTERPOLATION)
+    let output = TestRunner::workflow(fixtures::STRING_INTERPOLATION)
         .input(input!({ "product_name": "SuperWidget", "audience": "developers" }))
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Write release notes for SuperWidget targeting developers.")
@@ -29,7 +30,7 @@ async fn interpolates_input_and_agent_output_in_prompts() {
         .expect("fixture runner should execute string interpolation workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({ "title": "v1.0", "body": "New release!", "launch_message": "Launch message" })
     );
 }

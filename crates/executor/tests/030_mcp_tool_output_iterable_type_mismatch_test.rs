@@ -10,7 +10,7 @@ async fn rejects_for_loop_over_non_iterable_mcp_tool_output_schema() {
     let run_error = TestRunner::workflow(fixtures::MCP_TOOL_OUTPUT_ITERABLE_TYPE_MISMATCH)
         .mcp("local", |mcp| {
             mcp.tool("fetch-numbers", |tool| {
-                tool.input_schema(schema!({})).output_schema(schema! { values: u64 });
+                tool.input_schema(schema! {}).output_schema(schema! { values: u64 });
             });
         })
         .run_expect_error()
@@ -35,16 +35,17 @@ async fn rejects_for_loop_over_non_iterable_mcp_tool_output_schema() {
 
 #[tokio::test]
 async fn executes_for_loop_over_iterable_mcp_tool_output_schema() {
-    let run_output = TestRunner::workflow(fixtures::MCP_TOOL_OUTPUT_ITERABLE_TYPE_MISMATCH)
+    let output = TestRunner::workflow(fixtures::MCP_TOOL_OUTPUT_ITERABLE_TYPE_MISMATCH)
         .mcp("local", |mcp| {
             mcp.tool("fetch-numbers", |tool| {
-                tool.input_schema(schema!({}))
+                tool.input_schema(schema! {})
                     .output_schema(schema! { values: Vec<u64> })
                     .respond_json(json!({ "values": [1, 2, 3] }));
             });
         })
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model.turn().expect_prompt("Write a note for 1.").respond_string("one");
                 model.turn().expect_prompt("Write a note for 2.").respond_string("two");
                 model.turn().expect_prompt("Write a note for 3.").respond_string("three");
@@ -54,14 +55,16 @@ async fn executes_for_loop_over_iterable_mcp_tool_output_schema() {
         .await
         .expect("fixture runner should execute for-loop over MCP array output");
 
-    let mcp_requests = &run_output.mcp_requests["local"];
+    let mcp_requests = &output.mcp_requests["local"];
 
-    assert_eq!(run_output.output, json!({ "notes": ["one", "two", "three"] }));
+    assert_eq!(output.output, json!({ "notes": ["one", "two", "three"] }));
     assert!(mcp_requests
         .iter()
         .any(|request| request.get("method") == Some(&json!("tools/list"))));
+
     assert!(mcp_requests
         .iter()
         .any(|request| request.get("method") == Some(&json!("tools/call"))));
-    assert_eq!(run_output.provider_requests["openai"].len(), 3);
+
+    assert_eq!(output.provider_requests["openai"].len(), 3);
 }

@@ -7,9 +7,10 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn supports_schema_output_and_field_access() {
-    let run_output = TestRunner::workflow(fixtures::SCHEMA_OUTPUT)
+    let output = TestRunner::workflow(fixtures::SCHEMA_OUTPUT)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model.turn().expect_prompt("Generate a person profile.").respond_json(json!({
                     "name": "Alice",
                     "age": 30,
@@ -22,7 +23,7 @@ async fn supports_schema_output_and_field_access() {
         .expect("fixture runner should execute schema output workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({
             "profile": { "name": "Alice", "age": 30, "role": "engineer" },
             "name": "Alice",

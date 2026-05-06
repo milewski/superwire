@@ -7,9 +7,10 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn combines_hardcoded_and_agent_output_values() {
-    let run_output = TestRunner::workflow(fixtures::HARDCODED_OUTPUT)
+    let output = TestRunner::workflow(fixtures::HARDCODED_OUTPUT)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model.turn().expect_prompt("Say hello.").respond_string("agent value");
             });
         })
@@ -18,7 +19,7 @@ async fn combines_hardcoded_and_agent_output_values() {
         .expect("fixture runner should execute hardcoded output workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({
             "hardcoded_string": "fixed-value",
             "hardcoded_number": 42,

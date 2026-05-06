@@ -7,9 +7,10 @@ use support::runner::TestRunner;
 
 #[tokio::test]
 async fn constructs_nested_output_values() {
-    let run_output = TestRunner::workflow(fixtures::NESTED_OUTPUT)
+    let output = TestRunner::workflow(fixtures::NESTED_OUTPUT)
         .provider("openai", |provider| {
-            provider.api_key("test-api-key").model("model-a", |model| {
+            provider.api_key("test-api-key");
+            provider.model("model-a", |model| {
                 model
                     .turn()
                     .expect_prompt("Write a project status summary with a confidence score.")
@@ -21,7 +22,7 @@ async fn constructs_nested_output_values() {
         .expect("fixture runner should execute nested output workflow");
 
     assert_eq!(
-        run_output.output,
+        output.output,
         json!({
             "version": 2,
             "generated_by": "status_workflow",

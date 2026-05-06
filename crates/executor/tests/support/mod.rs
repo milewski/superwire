@@ -22,6 +22,16 @@ macro_rules! call {
 }
 
 macro_rules! schema {
+    () => {
+        serde_json::to_value(schemars::json_schema!({
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false,
+        }))
+        .expect("test schema should serialize")
+    };
+
     ($($field_name:ident : $field_type:ty),+ $(,)?) => {{
         #[derive(schemars::JsonSchema)]
         #[allow(dead_code)]
@@ -38,36 +48,4 @@ macro_rules! schema {
 
         schema
     }};
-
-    ({ $($field_name:ident : $field_type:ident),* $(,)? }) => {
-        serde_json::to_value(schemars::json_schema!({
-            "type": "object",
-            "properties": {
-                $(stringify!($field_name): schema!(@type $field_type)),*
-            },
-            "required": [$(stringify!($field_name)),*],
-            "additionalProperties": false,
-        }))
-        .expect("test schema should serialize")
-    };
-
-    (@type string) => {
-        schemars::json_schema!({ "type": "string" })
-    };
-
-    (@type number) => {
-        schemars::json_schema!({ "type": "integer" })
-    };
-
-    (@type float) => {
-        schemars::json_schema!({ "type": "number" })
-    };
-
-    (@type boolean) => {
-        schemars::json_schema!({ "type": "boolean" })
-    };
-
-    ($schema:tt $(,)?) => {
-        serde_json::to_value(schemars::json_schema!($schema)).expect("test schema should serialize")
-    };
 }
