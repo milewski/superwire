@@ -24,8 +24,5 @@ async fn supports_optional_chaining_for_present_nested_value() {
         .await
         .expect("fixture runner should execute optional chaining workflow");
 
-    assert_eq!(
-        output.output,
-        json!({ "label": "test", "score": 95, "tags": ["fast", "reliable"] })
-    );
+    assert_eq!(output.output, json!({ "label": "test", "score": 95, "tags": ["fast", "reliable"] }));
 }
