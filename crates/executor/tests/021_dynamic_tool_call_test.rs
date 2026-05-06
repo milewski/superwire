@@ -32,3 +32,48 @@ async fn executes_dynamic_tool_call_before_agent() {
 
     assert_eq!(run_output.output, json!({ "data": tool_response, "summary": "done" }));
 }
+
+#[tokio::test]
+async fn fails_when_mcp_tool_output_does_not_match_schema() {
+    let execution_error = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
+        .input(input!({ "project_id": 42, "task_id": 7 }))
+        .provider("openai", |provider| {
+            provider.api_key("test-api-key").model("model-a", |model| {
+                model.turn().expect_prompt("Summarize:").respond_json(json!({ "summary": "done" }));
+            });
+        })
+        .mcp("local", |mcp| {
+            mcp.tool("fetch_task_data", |tool| {
+                tool.input_schema(schema!({ project_id: number, task_id: number }))
+                    .output_schema(schema!({ task_title: string, participants: number }))
+                    .respond_json(json!({ "task_title": "Survey", "participants": "ten" }));
+            });
+        })
+        .run()
+        .await
+        .expect_err("execution should fail when MCP tool output violates its schema");
+
+    assert!(execution_error.to_string().contains("participants"));
+}
+
+#[tokio::test]
+async fn fails_when_mcp_server_returns_tool_error() {
+    let execution_error = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
+        .input(input!({ "project_id": 42, "task_id": 7 }))
+        .provider("openai", |provider| {
+            provider.api_key("test-api-key").model("model-a", |model| {
+                model.turn().expect_prompt("Summarize:").respond_json(json!({ "summary": "done" }));
+            });
+        })
+        .mcp("local", |mcp| {
+            mcp.tool("fetch_task_data", |tool| {
+                tool.input_schema(schema!({ project_id: number, task_id: number }))
+                    .output_schema(schema!({ task_title: string, participants: number }));
+            });
+        })
+        .run()
+        .await
+        .expect_err("execution should fail when MCP server returns an error");
+
+    assert!(execution_error.to_string().contains("fetch_task_data"));
+}
