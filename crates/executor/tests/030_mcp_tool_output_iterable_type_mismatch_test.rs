@@ -10,7 +10,7 @@ async fn rejects_for_loop_over_non_iterable_mcp_tool_output_schema() {
     let run_error = TestRunner::workflow(fixtures::MCP_TOOL_OUTPUT_ITERABLE_TYPE_MISMATCH)
         .mcp("local", |mcp| {
             mcp.tool("fetch-numbers", |tool| {
-                tool.input_schema(schema!({})).output_schema(schema!({ value: number }));
+                tool.input_schema(schema!({})).output_schema(schema! { values: u64 });
             });
         })
         .run_expect_error()
@@ -39,11 +39,8 @@ async fn executes_for_loop_over_iterable_mcp_tool_output_schema() {
         .mcp("local", |mcp| {
             mcp.tool("fetch-numbers", |tool| {
                 tool.input_schema(schema!({}))
-                    .output_schema(schema!({
-                        "type": "array",
-                        "items": { "type": "integer" },
-                    }))
-                    .respond_json(json!([1, 2, 3]));
+                    .output_schema(schema! { values: Vec<u64> })
+                    .respond_json(json!({ "values": [1, 2, 3] }));
             });
         })
         .provider("openai", |provider| {
