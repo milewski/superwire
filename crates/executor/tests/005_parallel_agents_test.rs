@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn executes_parallel_agents_fixture() {
     let output = TestRunner::workflow(fixtures::PARALLEL_AGENTS)
-        .input(input!({ "product_name": "SuperWidget" }))
+        .input(json!({ "product_name": "SuperWidget" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

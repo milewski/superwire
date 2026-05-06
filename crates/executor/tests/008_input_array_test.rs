@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn passes_array_input_into_prompt() {
     let output = TestRunner::workflow(fixtures::INPUT_ARRAY)
-        .input(input!({ "items": ["alpha", "beta"] }))
+        .input(json!({ "items": ["alpha", "beta"] }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

@@ -3,18 +3,6 @@
 pub mod fixtures;
 pub mod runner;
 
-macro_rules! input {
-    ($input:tt $(,)?) => {
-        serde_json::json!($input)
-    };
-}
-
-macro_rules! secret {
-    ($secrets:tt $(,)?) => {
-        serde_json::json!($secrets)
-    };
-}
-
 macro_rules! call {
     ($name:expr, $arguments:tt $(,)?) => {
         crate::support::runner::ToolCall::new($name, serde_json::json!($arguments))

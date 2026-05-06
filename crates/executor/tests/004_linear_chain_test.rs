@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn executes_linear_chain_fixture_in_order() {
     let output = TestRunner::workflow(fixtures::LINEAR_CHAIN)
-        .input(input!({ "topic": "testing" }))
+        .input(json!({ "topic": "testing" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

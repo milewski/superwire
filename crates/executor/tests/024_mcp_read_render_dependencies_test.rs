@@ -1,13 +1,14 @@
 #[macro_use]
 mod support;
 
+use serde_json::json;
 use support::fixtures;
 use support::runner::TestRunner;
 
 #[tokio::test]
 async fn resolves_mcp_read_render_dependencies() {
     let output = TestRunner::workflow(fixtures::MCP_READ_RENDER_DEPENDENCIES)
-        .input(input!({ "workspace_id": "workspace-1" }))
+        .input(json!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
             mcp.resource("project-readme", |resource| {
                 resource

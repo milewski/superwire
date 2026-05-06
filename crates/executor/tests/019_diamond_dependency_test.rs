@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn resolves_diamond_dependency_order() {
     let output = TestRunner::workflow(fixtures::DIAMOND_DEPENDENCY)
-        .input(input!({ "topic": "performance" }))
+        .input(json!({ "topic": "performance" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

@@ -1,13 +1,14 @@
 #[macro_use]
 mod support;
 
+use serde_json::json;
 use support::fixtures;
 use support::runner::TestRunner;
 
 #[tokio::test]
 async fn renders_mcp_prompt_as_dynamic_value() {
     let output = TestRunner::workflow(fixtures::MCP_RENDER_PROMPT)
-        .input(input!({ "workspace_id": "workspace-1" }))
+        .input(json!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
             mcp.prompt("system-prompt", |prompt| {
                 prompt.description("System prompt").text("Follow project conventions.");

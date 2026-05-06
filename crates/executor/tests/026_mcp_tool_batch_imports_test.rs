@@ -10,7 +10,7 @@ async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
     let task_schema = schema! { title: String };
     let tool_output_schema = schema! { task_id: i64 };
     let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
-        .input(input!({ "project_id": 14, "task_id": 7 }))
+        .input(json!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("gpt-4.1-mini", |model| {
@@ -106,7 +106,7 @@ async fn sends_model_tool_call_argument_errors_back_to_model() {
     let task_schema = schema! { title: String };
 
     let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
-        .input(input!({ "project_id": 14, "task_id": 7 }))
+        .input(json!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("gpt-4.1-mini", |model| {
@@ -146,7 +146,7 @@ async fn fails_after_model_repeats_same_tool_call_too_many_times() {
     let task_schema = schema! { title: String };
     let tool_output_schema = schema! { task_id: i64 };
     let execution_error = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
-        .input(input!({ "project_id": 14, "task_id": 7 }))
+        .input(json!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("gpt-4.1-mini", |model| {
                 for _turn_index in 0..24 {
@@ -191,7 +191,7 @@ async fn fails_after_model_repeats_same_tool_call_too_many_times() {
 #[tokio::test]
 async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
     let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
-        .input(input!({ "project_id": 14, "task_id": 7 }))
+        .input(json!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("gpt-4.1-mini", |model| {
@@ -229,7 +229,7 @@ async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
 async fn sends_incorrect_mcp_tool_output_back_to_model() {
     let task_schema = schema! { title: String };
     let output = TestRunner::workflow(fixtures::MCP_TOOL_BATCH_IMPORTS)
-        .input(input!({ "project_id": 14, "task_id": 7 }))
+        .input(json!({ "project_id": 14, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("gpt-4.1-mini", |model| {

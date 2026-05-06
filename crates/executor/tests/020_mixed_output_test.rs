@@ -8,7 +8,7 @@ use support::runner::TestRunner;
 #[tokio::test]
 async fn combines_agent_output_with_literal_metadata() {
     let output = TestRunner::workflow(fixtures::MIXED_OUTPUT)
-        .input(input!({ "question": "What is the meaning of life?" }))
+        .input(json!({ "question": "What is the meaning of life?" }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {

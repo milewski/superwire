@@ -9,7 +9,7 @@ use support::runner::TestRunner;
 async fn executes_dynamic_tool_call_before_agent() {
     let tool_response = json!({ "task_title": "Survey", "participants": 10 });
     let output = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
-        .input(input!({ "project_id": 42, "task_id": 7 }))
+        .input(json!({ "project_id": 42, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("model-a", |model| {
                 model
@@ -36,7 +36,7 @@ async fn executes_dynamic_tool_call_before_agent() {
 #[tokio::test]
 async fn fails_when_mcp_tool_output_does_not_match_schema() {
     let execution_error = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
-        .input(input!({ "project_id": 42, "task_id": 7 }))
+        .input(json!({ "project_id": 42, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("model-a", |model| {
                 model.turn().expect_prompt("Summarize:").respond_json(json!({ "summary": "done" }));
@@ -59,7 +59,7 @@ async fn fails_when_mcp_tool_output_does_not_match_schema() {
 #[tokio::test]
 async fn fails_when_mcp_server_returns_tool_error() {
     let execution_error = TestRunner::workflow(fixtures::DYNAMIC_TOOL_CALL)
-        .input(input!({ "project_id": 42, "task_id": 7 }))
+        .input(json!({ "project_id": 42, "task_id": 7 }))
         .provider("openai", |provider| {
             provider.api_key("test-api-key").model("model-a", |model| {
                 model.turn().expect_prompt("Summarize:").respond_json(json!({ "summary": "done" }));

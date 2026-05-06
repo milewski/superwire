@@ -1,13 +1,14 @@
 #[macro_use]
 mod support;
 
+use serde_json::json;
 use support::fixtures;
 use support::runner::TestRunner;
 
 #[tokio::test]
 async fn reads_mcp_resource_as_dynamic_value() {
     let output = TestRunner::workflow(fixtures::MCP_READ_RESOURCE)
-        .input(input!({ "workspace_id": "workspace-1" }))
+        .input(json!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
             mcp.resource("project-readme", |resource| {
                 resource
