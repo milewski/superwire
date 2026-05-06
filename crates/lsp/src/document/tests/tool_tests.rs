@@ -251,6 +251,36 @@ fn completion_suggestions_with_mcp_lock(source_template: &str) -> Vec<Completion
     document_state.completion_suggestions(cursor_position)
 }
 
+fn completion_suggestions_with_mcp_lock_without_cursor_normalization(source_template: &str) -> Vec<CompletionSuggestion> {
+    let compact_cursor_marker = "<cursor>";
+    let spaced_cursor_marker = "< cursor >";
+    let (cursor_marker, cursor_byte_offset) = if let Some(cursor_byte_offset) = source_template.find(compact_cursor_marker) {
+        (compact_cursor_marker, cursor_byte_offset)
+    } else if let Some(cursor_byte_offset) = source_template.find(spaced_cursor_marker) {
+        (spaced_cursor_marker, cursor_byte_offset)
+    } else {
+        panic!("cursor marker should exist in test source");
+    };
+    let mut line = 0_u32;
+    let mut character = 0_u32;
+
+    for character_in_source in source_template[..cursor_byte_offset].chars() {
+        if character_in_source == '\n' {
+            line += 1;
+            character = 0;
+
+            continue;
+        }
+
+        character += 1;
+    }
+
+    let source_without_cursor = source_template.replacen(cursor_marker, "", 1);
+    let document_state = DocumentState::new(source_without_cursor, Some(test_mcp_lock()));
+
+    document_state.completion_suggestions(Position { line, character })
+}
+
 #[test]
 fn suggests_mcp_tool_names_inside_tool_import_path() {
     let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
@@ -262,6 +292,52 @@ fn suggests_mcp_tool_names_inside_tool_import_path() {
         "list_all_participants_who_has_answered_given_task",
         "update-user-name"
     );
+}
+
+#[test]
+fn suggests_mcp_tool_names_inside_batch_tool_import_item() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        from mcp.local.tool {
+            bindings {
+                project_id: 1
+            }
+
+            tool <cursor>
+        }
+    });
+
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        "list_all_participants_who_has_answered_given_task",
+        "update-user-name"
+    );
+}
+
+#[test]
+fn suggests_batch_tool_import_properties() {
+    let completion_suggestions = inline_completion_suggestions! {
+        from mcp.local.tool {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "bindings", "max_calls", "tool");
+    assert_completion_excludes_labels!(&completion_suggestions, "input", "output", DeclarationKeyword::Agent);
+}
+
+#[test]
+fn indexes_batch_imported_tools_for_agent_references() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            tool update-user-name as update_user_name
+        }
+
+        agent tooling {
+            tools: [tool.<cursor>]
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "update_user_name");
 }
 
 #[test]

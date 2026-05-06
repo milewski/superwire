@@ -1,5 +1,6 @@
 use superwire_core::dsl::{
-    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword, ToolCallKeyword,
+    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword,
+    ToolCallKeyword,
 };
 
 use crate::protocol::{Position, Range};
@@ -12,8 +13,8 @@ use super::completion_context::{
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{
-    agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, tool_property_scope_suggestions,
-    CompletionScope,
+    agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions,
+    mcp_tool_batch_import_scope_suggestions, tool_property_scope_suggestions, CompletionScope,
 };
 use super::semantic_index::SemanticIndex;
 use super::text_utils::{
@@ -28,6 +29,11 @@ struct ToolCallBindingCompletionContext {
     tool_name: String,
     binding_prefix: String,
     existing_binding_names: Vec<String>,
+}
+
+struct McpToolBatchItemCompletionContext {
+    server_name: String,
+    tool_prefix: String,
 }
 
 struct ReferenceCompletionInputs<'completion> {
@@ -285,6 +291,10 @@ impl DocumentState {
                     &for_loop_destructuring_binding_completion_context.existing_field_names,
                 ));
             }
+
+            if let Some(batch_item_suggestions) = self.mcp_tool_batch_item_suggestions(semantic_index, position, line_prefix) {
+                return Some(batch_item_suggestions);
+            }
         }
 
         if completion_scope == CompletionScope::General
@@ -391,6 +401,70 @@ impl DocumentState {
         self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
     }
 
+    fn mcp_tool_batch_item_completion_context(&self, position: Position, line_prefix: &str) -> Option<McpToolBatchItemCompletionContext> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let tool_keyword = DeclarationKeyword::Tool.as_str();
+        let tool_keyword_start_index = trimmed_line_prefix.rfind(tool_keyword)?;
+
+        if !Self::is_keyword_boundary(trimmed_line_prefix, tool_keyword_start_index, tool_keyword.len()) {
+            return None;
+        }
+
+        let after_tool_keyword = trimmed_line_prefix[tool_keyword_start_index + tool_keyword.len()..].trim_start();
+        let after_tool_keyword = if after_tool_keyword.is_empty() { "" } else { after_tool_keyword };
+
+        if after_tool_keyword.split_whitespace().nth(1).is_some() {
+            return None;
+        }
+
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let source_prefix = &self.text[..cursor_offset];
+        let header_start = source_prefix.rfind(ImportKeyword::From.as_str())?;
+        let batch_prefix = &source_prefix[header_start..];
+        let open_brace_index = batch_prefix.find('{')?;
+
+        if !Self::block_is_still_open(&batch_prefix[open_brace_index..]) {
+            return None;
+        }
+
+        let header = batch_prefix[..open_brace_index].trim();
+        let import_path = header.strip_prefix(ImportKeyword::From.as_str())?.trim();
+        let import_path = import_path
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        let mut import_segments = import_path.split('.');
+
+        if import_segments.next()? != DeclarationKeyword::Mcp.as_str() {
+            return None;
+        }
+
+        let server_name = import_segments.next()?.to_string();
+
+        if import_segments.next()? != DeclarationKeyword::Tool.as_str() || import_segments.next().is_some() {
+            return None;
+        }
+
+        Some(McpToolBatchItemCompletionContext {
+            server_name,
+            tool_prefix: after_tool_keyword.trim().to_string(),
+        })
+    }
+
+    fn mcp_tool_batch_item_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        position: Position,
+        line_prefix: &str,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        let batch_item_completion_context = self.mcp_tool_batch_item_completion_context(position, line_prefix)?;
+
+        Some(semantic_index.mcp_tool_batch_item_suggestions(
+            &batch_item_completion_context.server_name,
+            &batch_item_completion_context.tool_prefix,
+        ))
+    }
+
     fn tool_call_binding_completion_context(&self, position: Position, line_prefix: &str) -> Option<ToolCallBindingCompletionContext> {
         if line_prefix.contains(':') {
             return None;
@@ -462,6 +536,24 @@ impl DocumentState {
         })
     }
 
+    fn block_is_still_open(source_prefix: &str) -> bool {
+        let mut balance = 0_i32;
+
+        for character in source_prefix.chars() {
+            match character {
+                '{' => balance += 1,
+                '}' => balance -= 1,
+                _ => {}
+            }
+
+            if balance <= 0 {
+                return false;
+            }
+        }
+
+        balance > 0
+    }
+
     fn existing_object_field_names(object_prefix: &str) -> Vec<String> {
         object_prefix
             .lines()
@@ -528,6 +620,7 @@ impl DocumentState {
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
             CompletionScope::ToolProperties => Some(tool_property_scope_suggestions(line_prefix)),
+            CompletionScope::McpToolBatchImport => Some(mcp_tool_batch_import_scope_suggestions(line_prefix)),
             CompletionScope::General | CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => None,
         }
     }

@@ -4,8 +4,9 @@ use thiserror::Error;
 
 use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
-    Expression, ForClauseKeyword, FunctionCall, McpCall, McpPromptImportDeclaration, McpResourceImportDeclaration, ObjectField, Reference,
-    StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, TypeExpression, TypedField, Workflow,
+    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, McpCall, McpImportKind, McpPromptImportDeclaration,
+    McpResourceImportDeclaration, McpToolBatchImportDeclaration, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall,
+    ToolDeclaration, ToolPropertyName, TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -275,6 +276,7 @@ impl Declaration {
                 formatter.push_declaration_block_end();
             }
             Self::Tool(tool_declaration) => tool_declaration.push_to_formatter(formatter),
+            Self::McpToolBatch(tool_batch_import_declaration) => tool_batch_import_declaration.push_to_formatter(formatter),
             Self::McpResource(resource_import_declaration) => resource_import_declaration.push_to_formatter(formatter),
             Self::McpPrompt(prompt_import_declaration) => prompt_import_declaration.push_to_formatter(formatter),
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
@@ -331,6 +333,65 @@ impl AgentDeclaration {
         }
 
         formatter.push_declaration_block_end();
+    }
+}
+
+impl McpToolBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let header = format!(
+            "{} mcp.{}.{}",
+            ImportKeyword::From.as_str(),
+            self.server_name,
+            McpImportKind::Tool.as_str()
+        );
+
+        formatter.push_declaration_block_start(&header);
+
+        if !self.fixed_binding_fields.is_empty() {
+            formatter.push_declaration_block_start(ToolPropertyName::Bindings.as_str());
+
+            for object_field in &self.fixed_binding_fields {
+                object_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if self.max_calls.is_some() || !self.tools.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if let Some(max_calls) = self.max_calls {
+            formatter.push_line(&format!("{}: {max_calls}", ToolPropertyName::MaxCalls.as_str()));
+
+            if !self.items.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        for item in &self.items {
+            item.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
+    }
+}
+
+impl super::ast::McpToolBatchImportItem {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        if let Some(alias) = &self.alias {
+            formatter.push_line(&format!(
+                "{} {} {} {}",
+                DeclarationKeyword::Tool.as_str(),
+                self.source_name,
+                ImportKeyword::As.as_str(),
+                alias
+            ));
+
+            return;
+        }
+
+        formatter.push_line(&format!("{} {}", DeclarationKeyword::Tool.as_str(), self.source_name));
     }
 }
 
@@ -426,7 +487,12 @@ impl ToolDeclaration {
         } else {
             format!("mcp.tool.{}", mcp_tool_source.tool_name)
         };
-        let header = format!("{} {} from {source_path}", DeclarationKeyword::Tool.as_str(), self.name);
+        let header = format!(
+            "{} {} {} {source_path}",
+            DeclarationKeyword::Tool.as_str(),
+            self.name,
+            ImportKeyword::From.as_str()
+        );
 
         push_mcp_import_with_parameters(formatter, &header, &self.fixed_binding_fields);
     }
@@ -435,9 +501,10 @@ impl ToolDeclaration {
 impl McpResourceImportDeclaration {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
-            "{} {} from {}",
+            "{} {} {} {}",
             DeclarationKeyword::Resource.as_str(),
             self.name,
+            ImportKeyword::From.as_str(),
             self.source.render_path()
         );
 
@@ -448,9 +515,10 @@ impl McpResourceImportDeclaration {
 impl McpPromptImportDeclaration {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         let header = format!(
-            "{} {} from {}",
+            "{} {} {} {}",
             DeclarationKeyword::Prompt.as_str(),
             self.name,
+            ImportKeyword::From.as_str(),
             self.source.render_path()
         );
 
@@ -2080,6 +2148,17 @@ mod tests {
             "agent analyzer for { id, name } in agent.alpha.participants {\n    prompt: \"hello\"\n    output: string\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("workflow should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
+    }
+
+    #[test]
+    fn formatter_renders_mcp_tool_batch_imports() {
+        let source_text =
+            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task tool assign-task}\n";
+        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task\n    tool assign-task\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("batch import workflow should format successfully");
 
         assert_eq!(formatted_source, expected_output);
     }

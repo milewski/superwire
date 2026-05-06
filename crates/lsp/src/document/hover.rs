@@ -104,7 +104,19 @@ struct BuiltinSymbolDoc {
     documentation: &'static str,
 }
 
-const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 10] = [
+const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 12] = [
+    BuiltinSymbolDoc {
+        label: "from",
+        kind: CompletionKind::Keyword,
+        detail: "MCP batch import",
+        documentation: "Use `from mcp.<server>.tool { ... }` to import multiple MCP tools with shared bindings.",
+    },
+    BuiltinSymbolDoc {
+        label: "as",
+        kind: CompletionKind::Keyword,
+        detail: "Import alias",
+        documentation: "Use `as <local_name>` inside MCP tool batch imports to alias a tool.",
+    },
     BuiltinSymbolDoc {
         label: "tool",
         kind: CompletionKind::Module,

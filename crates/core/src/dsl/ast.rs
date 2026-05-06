@@ -134,10 +134,11 @@ impl Workflow {
 
     #[must_use]
     pub fn find_tool(&self, tool_name: &str) -> Option<&ToolDeclaration> {
-        self.declarations.iter().find_map(|declaration| match declaration {
-            Declaration::Tool(tool_declaration) if tool_declaration.name == tool_name => Some(tool_declaration),
-            _ => None,
-        })
+        self.tool_declarations().find(|tool_declaration| tool_declaration.name == tool_name)
+    }
+
+    pub fn tool_declarations(&self) -> impl Iterator<Item = &ToolDeclaration> {
+        self.declarations.iter().flat_map(Declaration::tool_declarations)
     }
 
     #[must_use]
@@ -199,6 +200,7 @@ impl Workflow {
             | Declaration::Input(_)
             | Declaration::Schema(_)
             | Declaration::Tool(_)
+            | Declaration::McpToolBatch(_)
             | Declaration::McpResource(_)
             | Declaration::McpPrompt(_)
             | Declaration::Agent(_)
@@ -215,11 +217,50 @@ pub enum Declaration {
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
     Tool(ToolDeclaration),
+    McpToolBatch(McpToolBatchImportDeclaration),
     McpResource(McpResourceImportDeclaration),
     McpPrompt(McpPromptImportDeclaration),
     Dynamic(DynamicBlock),
     Agent(AgentDeclaration),
     Output(OutputDeclaration),
+}
+
+impl Declaration {
+    #[must_use]
+    pub fn tool_declarations(&self) -> ToolDeclarationIter<'_> {
+        match self {
+            Self::Tool(tool_declaration) => ToolDeclarationIter::Single(Some(tool_declaration)),
+            Self::McpToolBatch(tool_batch_import_declaration) => ToolDeclarationIter::Batch(tool_batch_import_declaration.tools.iter()),
+            Self::Provider(_)
+            | Self::McpServer(_)
+            | Self::Secrets(_)
+            | Self::Input(_)
+            | Self::Schema(_)
+            | Self::McpResource(_)
+            | Self::McpPrompt(_)
+            | Self::Dynamic(_)
+            | Self::Agent(_)
+            | Self::Output(_) => ToolDeclarationIter::Empty,
+        }
+    }
+}
+
+pub enum ToolDeclarationIter<'declaration> {
+    Empty,
+    Single(Option<&'declaration ToolDeclaration>),
+    Batch(std::slice::Iter<'declaration, ToolDeclaration>),
+}
+
+impl<'declaration> Iterator for ToolDeclarationIter<'declaration> {
+    type Item = &'declaration ToolDeclaration;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(tool_declaration) => tool_declaration.take(),
+            Self::Batch(tool_declarations) => tool_declarations.next(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -243,6 +284,12 @@ pub enum ForClauseKeyword {
     In,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImportKeyword {
+    From,
+    As,
+}
+
 impl ForClauseKeyword {
     #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
@@ -258,6 +305,16 @@ impl ForClauseKeyword {
         match self {
             Self::For => "for",
             Self::In => "in",
+        }
+    }
+}
+
+impl ImportKeyword {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::From => "from",
+            Self::As => "as",
         }
     }
 }
@@ -372,6 +429,59 @@ pub struct ToolDeclaration {
     pub fixed_binding_fields: Vec<ObjectField>,
     pub output_fields: Vec<TypedField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolBatchImportDeclaration {
+    pub server_name: String,
+    pub fixed_binding_fields: Vec<ObjectField>,
+    pub max_calls: Option<u64>,
+    pub items: Vec<McpToolBatchImportItem>,
+    pub tools: Vec<ToolDeclaration>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolBatchImportItem {
+    pub source_name: String,
+    pub local_name: String,
+    pub alias: Option<String>,
+    pub span: SourceSpan,
+}
+
+impl McpToolBatchImportItem {
+    #[must_use]
+    pub fn new(source_name: String, local_name: Option<String>, span: SourceSpan) -> Self {
+        let alias = local_name;
+        let local_name = alias.clone().unwrap_or_else(|| source_name.replace('-', "_"));
+
+        Self {
+            source_name,
+            local_name,
+            alias,
+            span,
+        }
+    }
+
+    #[must_use]
+    pub fn to_tool_declaration(&self, server_name: &str, fixed_binding_fields: &[ObjectField], max_calls: Option<u64>) -> ToolDeclaration {
+        ToolDeclaration {
+            name: self.local_name.clone(),
+            description: None,
+            max_calls,
+            source: Some(ToolSource::Mcp(McpToolSource {
+                server_name: Some(server_name.to_string()),
+                tool_name: self.source_name.clone(),
+                span: self.span,
+            })),
+            imported: true,
+            input_fields: Vec::new(),
+            binding_fields: Vec::new(),
+            fixed_binding_fields: fixed_binding_fields.to_vec(),
+            output_fields: Vec::new(),
+            span: self.span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,4 +1,6 @@
-use superwire_core::dsl::{AgentPropertyName, DeclarationKeyword, ForClauseKeyword, SingletonDeclarationKind, ToolPropertyName};
+use superwire_core::dsl::{
+    AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, SingletonDeclarationKind, ToolPropertyName,
+};
 use superwire_core::semantic::InferenceSetting;
 
 use super::text_utils::{is_identifier, trailing_identifier};
@@ -9,6 +11,7 @@ pub enum CompletionScope {
     General,
     AgentProperties,
     ToolProperties,
+    McpToolBatchImport,
     InferenceSettings,
     TypedDeclarations,
     DynamicValues,
@@ -19,6 +22,7 @@ enum ScopeBlock {
     Other,
     Agent,
     Tool,
+    McpToolBatchImport,
     Inference,
     TypedDeclaration,
     Dynamic,
@@ -68,6 +72,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
         Some(ScopeBlock::Inference) => CompletionScope::InferenceSettings,
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
         Some(ScopeBlock::Tool) => CompletionScope::ToolProperties,
+        Some(ScopeBlock::McpToolBatchImport) => CompletionScope::McpToolBatchImport,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
         Some(ScopeBlock::Dynamic) => CompletionScope::DynamicValues,
         Some(ScopeBlock::Other) | None => CompletionScope::General,
@@ -119,6 +124,12 @@ impl ScopeScannerTokenState {
             return ScopeBlock::TypedDeclaration;
         }
 
+        if parent_block == Some(ScopeBlock::McpToolBatchImport)
+            && ToolPropertyName::from_identifier(last_identifier) == Some(ToolPropertyName::Bindings)
+        {
+            return ScopeBlock::Other;
+        }
+
         if let Some(pending_property) = &self.pending_property {
             if parent_block == Some(ScopeBlock::Agent) {
                 if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
@@ -139,6 +150,14 @@ impl ScopeScannerTokenState {
 
         if DeclarationKeyword::from_identifier(last_identifier) == Some(DeclarationKeyword::Dynamic) {
             return ScopeBlock::Dynamic;
+        }
+
+        if self.recent_identifiers.len() >= 4
+            && self.recent_identifiers[self.recent_identifiers.len() - 4] == ImportKeyword::From.as_str()
+            && self.recent_identifiers[self.recent_identifiers.len() - 3] == DeclarationKeyword::Mcp.as_str()
+            && self.recent_identifiers[self.recent_identifiers.len() - 1] == DeclarationKeyword::Tool.as_str()
+        {
+            return ScopeBlock::McpToolBatchImport;
         }
 
         if let Some(agent_keyword_index) = self
@@ -352,4 +371,24 @@ pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSugge
             insert_text: property_name.as_str().to_string(),
         })
         .collect()
+}
+
+pub fn mcp_tool_batch_import_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    [
+        ToolPropertyName::Bindings.as_str(),
+        ToolPropertyName::MaxCalls.as_str(),
+        DeclarationKeyword::Tool.as_str(),
+    ]
+    .into_iter()
+    .filter(|property_name| property_name.starts_with(property_prefix))
+    .map(|property_name| CompletionSuggestion {
+        label: property_name.to_string(),
+        kind: CompletionKind::Property,
+        detail: "MCP tool batch import item".to_string(),
+        documentation: "Shared binding, call limit, or tool item inside an MCP tool batch import.".to_string(),
+        insert_text: property_name.to_string(),
+    })
+    .collect()
 }

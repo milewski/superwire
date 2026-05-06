@@ -198,6 +198,45 @@ impl TestMcpCatalog {
                 ),
             ),
             self.edit_project_for_workspace_tool(),
+            mcp_tool(
+                "create-sorting-task",
+                "Create sorting task",
+                object_schema(
+                    [
+                        schema_field("project_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("task_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("title", primitive_schema(JsonSchemaType::String)),
+                    ],
+                    ["project_id", "task_id", "title"],
+                ),
+                object_schema([schema_field("task_id", primitive_schema(JsonSchemaType::Number))], ["task_id"]),
+            ),
+            mcp_tool(
+                "update-task-status",
+                "Update task status",
+                object_schema(
+                    [
+                        schema_field("project_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("task_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("status", string_enum_schema(["todo", "done"])),
+                    ],
+                    ["project_id", "task_id", "status"],
+                ),
+                object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
+            ),
+            mcp_tool(
+                "assign-task",
+                "Assign task",
+                object_schema(
+                    [
+                        schema_field("project_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("task_id", primitive_schema(JsonSchemaType::Number)),
+                        schema_field("user_id", primitive_schema(JsonSchemaType::Number)),
+                    ],
+                    ["project_id", "task_id", "user_id"],
+                ),
+                object_schema([schema_field("success", primitive_schema(JsonSchemaType::Boolean))], ["success"]),
+            ),
         ]
     }
 
@@ -824,5 +863,71 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
     assert_eq!(
         tool_definition.input_schema.pointer("/properties/languages/oneOf/1/type"),
         Some(&json!("null"))
+    );
+}
+
+#[tokio::test]
+async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = fixtures::MCP_TOOL_BATCH_IMPORTS.replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    service
+        .execute(request_with_input(&workflow_source, json!({ "project_id": 31, "task_id": 42 })))
+        .await
+        .expect("execution should expand MCP tool batch imports before agent execution");
+
+    let recorded_requests = model_provider
+        .recorded_requests
+        .lock()
+        .expect("tracking lock should not be poisoned");
+    let request = recorded_requests.first().expect("model request should be recorded");
+
+    assert_eq!(request.tools.len(), 3);
+
+    let create_sorting_task = request
+        .tools
+        .iter()
+        .find(|tool_definition| tool_definition.name == "create_sorting_task")
+        .expect("aliased create tool should be imported");
+    let update_task_status = request
+        .tools
+        .iter()
+        .find(|tool_definition| tool_definition.name == "update_task_status")
+        .expect("aliased update tool should be imported");
+    let assign_task = request
+        .tools
+        .iter()
+        .find(|tool_definition| tool_definition.name == "assign_task")
+        .expect("non-aliased tool should infer local name");
+
+    assert_eq!(create_sorting_task.bindings, json!({ "project_id": 31, "task_id": 42 }));
+    assert_eq!(update_task_status.bindings, json!({ "project_id": 31, "task_id": 42 }));
+    assert_eq!(assign_task.bindings, json!({ "project_id": 31, "task_id": 42 }));
+
+    assert_eq!(create_sorting_task.input_schema["required"], json!(["title"]));
+    assert_eq!(update_task_status.input_schema["required"], json!(["status"]));
+    assert_eq!(assign_task.input_schema["required"], json!(["user_id"]));
+    assert_eq!(create_sorting_task.input_schema.pointer("/properties/project_id"), None);
+    assert_eq!(update_task_status.input_schema.pointer("/properties/task_id"), None);
+
+    assert_eq!(
+        create_sorting_task.source,
+        ModelToolSource::Mcp {
+            server_name: Some("local".to_string()),
+            tool_name: "create-sorting-task".to_string(),
+            endpoint: server.endpoint(),
+            headers: BTreeMap::new(),
+        }
+    );
+    assert_eq!(
+        assign_task.source,
+        ModelToolSource::Mcp {
+            server_name: Some("local".to_string()),
+            tool_name: "assign-task".to_string(),
+            endpoint: server.endpoint(),
+            headers: BTreeMap::new(),
+        }
     );
 }

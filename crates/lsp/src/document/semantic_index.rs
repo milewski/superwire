@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
-    AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, McpCallOperation,
+    AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ImportKeyword, McpCallOperation,
     ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
 };
 use superwire_core::mcp::McpLock;
@@ -497,6 +497,25 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn mcp_tool_batch_item_suggestions(&self, server_name: &str, tool_prefix: &str) -> Vec<CompletionSuggestion> {
+        let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
+            return Vec::new();
+        };
+
+        server_lock
+            .tools
+            .keys()
+            .filter(|tool_name| tool_name.starts_with(tool_prefix))
+            .map(|tool_name| CompletionSuggestion {
+                label: tool_name.clone(),
+                kind: CompletionKind::Value,
+                detail: "MCP tool".to_string(),
+                documentation: format!("Import MCP tool `{tool_name}` from server `{server_name}`."),
+                insert_text: tool_name.clone(),
+            })
+            .collect()
+    }
+
     pub fn mcp_input_field_suggestions(
         &self,
         tool_name: &str,
@@ -656,8 +675,10 @@ impl SemanticIndex {
             Declaration::Agent(agent_declaration) => {
                 self.insert_agent_declaration(agent_declaration);
             }
-            Declaration::Tool(tool_declaration) => {
-                self.insert_tool_declaration(tool_declaration);
+            Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
+                for tool_declaration in declaration.tool_declarations() {
+                    self.insert_tool_declaration(tool_declaration);
+                }
             }
             Declaration::McpResource(resource_import_declaration) => {
                 self.resource_names.push(resource_import_declaration.name.clone());
@@ -966,6 +987,13 @@ impl SemanticIndex {
             .tools()
             .iter()
             .map(|(tool_name, tool_schema_summary)| {
+                let (mcp_server_name, mcp_tool_name) = match &tool_schema_summary.source {
+                    Some(superwire_core::dsl::ToolSource::Mcp(mcp_source)) => {
+                        (mcp_source.server_name.clone(), Some(mcp_source.tool_name.clone()))
+                    }
+                    None => (None, None),
+                };
+
                 (
                     tool_name.clone(),
                     ToolSummary {
@@ -973,8 +1001,8 @@ impl SemanticIndex {
                         bounded_fields: tool_schema_summary.bounded_fields.clone(),
                         bounded_field_metadata: field_metadata_from_type_map(&tool_schema_summary.bounded_fields),
                         output_type_expression: None,
-                        mcp_server_name: None,
-                        mcp_tool_name: None,
+                        mcp_server_name,
+                        mcp_tool_name,
                     },
                 )
             })
@@ -1545,12 +1573,25 @@ impl SemanticIndex {
     pub fn root_declaration_suggestions(&self, line_prefix: &str) -> Vec<CompletionSuggestion> {
         let declaration_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-        builtin_symbol_suggestions(false)
+        let mut completion_suggestions = builtin_symbol_suggestions(false)
             .into_iter()
             .filter(|completion_suggestion| matches!(completion_suggestion.kind, CompletionKind::Keyword))
             .filter(|completion_suggestion| completion_suggestion.label.starts_with(declaration_prefix))
             .filter(|completion_suggestion| self.should_suggest_root_declaration_label(&completion_suggestion.label))
-            .collect()
+            .collect::<Vec<_>>();
+
+        if ImportKeyword::From.as_str().starts_with(declaration_prefix) {
+            completion_suggestions.push(CompletionSuggestion {
+                label: ImportKeyword::From.as_str().to_string(),
+                kind: CompletionKind::Keyword,
+                detail: "MCP tool batch import".to_string(),
+                documentation: "Batch imports MCP tools from a server and applies shared bindings.".to_string(),
+                insert_text: "from mcp.$1.tool {\n    bindings {\n        $2\n    }\n\n    tool $3\n}".to_string(),
+            });
+        }
+
+        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
+        completion_suggestions
     }
 
     pub fn is_output_position(&self, position: Position) -> bool {

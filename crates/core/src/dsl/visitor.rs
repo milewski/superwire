@@ -1,15 +1,21 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DynamicBlock, Expression, FunctionCall,
     InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration,
-    McpServerDeclaration, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
-    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
-    ToolSource, TypeExpression, TypedField, Workflow,
+    McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, NamedArgument, ObjectField, OutputDeclaration,
+    ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,
+    StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolSource, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
 
 #[derive(Debug, Default)]
 pub struct AstVisitor;
+
+struct McpToolBatchImportBlock {
+    fixed_binding_fields: Vec<ObjectField>,
+    max_calls: Option<u64>,
+    import_items: Vec<McpToolBatchImportItem>,
+}
 
 impl AstVisitor {
     pub fn new() -> Self {
@@ -54,6 +60,7 @@ impl AstVisitor {
             Rule::secrets_declaration => self.visit_secrets_declaration(declaration_pair),
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
+            Rule::mcp_tool_batch_import_declaration => self.visit_mcp_tool_batch_import_declaration(declaration_pair),
             Rule::tool_block_declaration => self.visit_tool_block_declaration(declaration_pair),
             Rule::tool_import_declaration => self.visit_tool_import_declaration(declaration_pair),
             Rule::resource_import_declaration => self.visit_resource_import_declaration(declaration_pair),
@@ -219,6 +226,78 @@ impl AstVisitor {
             output_fields: Vec::new(),
             span: declaration_span,
         }))
+    }
+
+    fn visit_mcp_tool_batch_import_declaration(&self, import_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&import_pair);
+        let mut inner_pairs = import_pair.into_inner();
+        let source_pair = self.next_pair(
+            &mut inner_pairs,
+            "MCP tool batch import source",
+            "MCP tool batch import declaration",
+        )?;
+        let block_pair = self.next_pair(&mut inner_pairs, "MCP tool batch import block", "MCP tool batch import declaration")?;
+        let server_name = self.visit_mcp_tool_batch_import_source(source_pair)?;
+        let import_block = self.visit_mcp_tool_batch_import_block(block_pair)?;
+        let tools = import_block
+            .import_items
+            .iter()
+            .map(|import_item| import_item.to_tool_declaration(&server_name, &import_block.fixed_binding_fields, import_block.max_calls))
+            .collect::<Vec<_>>();
+
+        Ok(Declaration::McpToolBatch(McpToolBatchImportDeclaration {
+            server_name,
+            fixed_binding_fields: import_block.fixed_binding_fields,
+            max_calls: import_block.max_calls,
+            items: import_block.import_items,
+            tools,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_mcp_tool_batch_import_source(&self, source_pair: Pair<'_, Rule>) -> Result<String, DslParseError> {
+        let mut inner_pairs = source_pair.into_inner();
+
+        self.next_identifier(&mut inner_pairs, "MCP server name", "MCP tool batch import source")
+    }
+
+    fn visit_mcp_tool_batch_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<McpToolBatchImportBlock, DslParseError> {
+        let mut fixed_binding_fields = Vec::new();
+        let mut import_items = Vec::new();
+        let mut max_calls = None;
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::mcp_import_bindings_property => {
+                    let object_expression_pair = self.first_inner_pair(property_pair, "MCP tool batch import bindings")?;
+                    fixed_binding_fields.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                Rule::tool_max_calls_property => {
+                    let max_calls_pair = self.first_inner_pair(property_pair, "MCP tool batch import max calls")?;
+                    max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "MCP tool batch import max calls")?);
+                }
+                Rule::mcp_tool_batch_import_item => {
+                    import_items.push(self.visit_mcp_tool_batch_import_item(property_pair)?);
+                }
+                _ => unreachable!("MCP tool batch import block should contain only valid properties"),
+            }
+        }
+
+        Ok(McpToolBatchImportBlock {
+            fixed_binding_fields,
+            max_calls,
+            import_items,
+        })
+    }
+
+    fn visit_mcp_tool_batch_import_item(&self, item_pair: Pair<'_, Rule>) -> Result<McpToolBatchImportItem, DslParseError> {
+        let item_span = source_span_from_pair(&item_pair);
+        let mut inner_pairs = item_pair.into_inner();
+        let source_name_pair = self.next_pair(&mut inner_pairs, "MCP tool import name", "MCP tool batch import item")?;
+        let source_name = source_name_pair.as_str().split_whitespace().collect::<String>();
+        let local_name = inner_pairs.next().map(|alias_pair| alias_pair.as_str().to_string());
+
+        Ok(McpToolBatchImportItem::new(source_name, local_name, item_span))
     }
 
     fn visit_resource_import_declaration(&self, resource_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
