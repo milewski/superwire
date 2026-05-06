@@ -25,4 +25,5 @@ tokio = { workspace = true }
 tokio-stream = "0.1"
 
 [dev-dependencies]
+schemars = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
