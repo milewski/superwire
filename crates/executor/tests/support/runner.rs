@@ -21,6 +21,13 @@ pub struct TestRunOutput {
     pub mcp_requests: BTreeMap<String, Vec<Value>>,
 }
 
+#[derive(Debug)]
+pub struct TestRunErrorOutput {
+    pub error: ExecutorError,
+    pub provider_requests: BTreeMap<String, Vec<Value>>,
+    pub mcp_requests: BTreeMap<String, Vec<Value>>,
+}
+
 pub struct TestRunner {
     workflow_source: WorkflowSource,
     input: Value,
@@ -121,6 +128,7 @@ enum ModelTurnResponse {
     Json(Value),
     Text(String),
     ToolCalls(Vec<ToolCall>),
+    Error(String),
 }
 
 #[derive(Debug)]
@@ -250,6 +258,37 @@ impl TestRunner {
         })
     }
 
+    pub async fn run_expect_error(self) -> TestRunErrorOutput {
+        let provider_servers = self.spawn_provider_servers();
+        let mcp_servers = self.spawn_mcp_servers();
+        let workflow_source = self
+            .workflow_source_with_mock_endpoints(&provider_servers, &mcp_servers)
+            .expect("workflow source should be prepared");
+        let service = ExecutorService::new(OpenAiModelProvider);
+        let execution_error = service
+            .execute(ExecutionRequest {
+                workflow_source: Some(workflow_source),
+                workflow_source_base64: None,
+                input: self.input,
+                secrets: self.secrets,
+                options: ExecutionOptions {
+                    include_events: false,
+                    max_concurrency: self.max_concurrency,
+                },
+            })
+            .await
+            .expect_err("fixture runner should fail execution");
+
+        let provider_requests = verify_provider_servers(&provider_servers);
+        let mcp_requests = verify_mcp_servers(&mcp_servers);
+
+        TestRunErrorOutput {
+            error: execution_error,
+            provider_requests,
+            mcp_requests,
+        }
+    }
+
     fn spawn_provider_servers(&self) -> BTreeMap<String, ProviderServer> {
         self.providers
             .iter()
@@ -376,6 +415,11 @@ impl<'model> ModelTurnBuilder<'model> {
 
     pub fn respond_tool_calls<const CALL_COUNT: usize>(mut self, calls: [ToolCall; CALL_COUNT]) -> &'model mut ModelBuilder {
         self.turn.response = Some(ModelTurnResponse::ToolCalls(calls.into_iter().collect()));
+        self.finish()
+    }
+
+    pub fn respond_error(mut self, message: impl Into<String>) -> &'model mut ModelBuilder {
+        self.turn.response = Some(ModelTurnResponse::Error(message.into()));
         self.finish()
     }
 
@@ -673,7 +717,7 @@ fn build_provider_response(
 
     turn.assert_request(&request.body, messages)?;
 
-    Ok(http_json_response(200, turn.response.to_openai_response()))
+    Ok(turn.response.to_http_response())
 }
 
 impl ModelTurn {
@@ -757,6 +801,13 @@ impl Format {
 }
 
 impl ModelTurnResponse {
+    fn to_http_response(&self) -> String {
+        match self {
+            Self::Error(message) => http_json_response(400, json!({ "error": { "message": message } })),
+            _ => http_json_response(200, self.to_openai_response()),
+        }
+    }
+
     fn to_openai_response(&self) -> Value {
         match self {
             Self::Json(output) => openai_content_response(serde_json::to_string(output).expect("scripted output should serialize")),
@@ -784,6 +835,7 @@ impl ModelTurnResponse {
                     }
                 }]
             }),
+            Self::Error(message) => json!({ "error": { "message": message } }),
         }
     }
 }
@@ -987,6 +1039,7 @@ fn read_http_json_request(stream: &TcpStream) -> Option<HttpJsonRequest> {
 fn http_json_response(status: u16, body: Value) -> String {
     let status_text = match status {
         200 => "OK",
+        400 => "Bad Request",
         500 => "Internal Server Error",
         _ => "OK",
     };
