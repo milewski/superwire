@@ -1,5 +1,6 @@
 use super::format::{format_response_schema_name, format_tool_name};
 use super::transport::OpenAiChatCompletionRequest;
+use crate::api::ModelResponseFormat;
 use crate::model::types::ModelRequest;
 use crate::runtime::ExecutorError;
 use async_openai::types::{
@@ -93,8 +94,13 @@ impl super::OpenAiModelProvider {
 }
 
 impl OpenAiResponseMode {
-    pub(super) fn fallback_order() -> [Self; 3] {
-        [Self::JsonSchema, Self::JsonObject, Self::InstructionOnly]
+    pub(super) fn response_modes(response_format: ModelResponseFormat) -> Vec<Self> {
+        match response_format {
+            ModelResponseFormat::Auto => vec![Self::JsonSchema, Self::JsonObject, Self::InstructionOnly],
+            ModelResponseFormat::JsonSchema => vec![Self::JsonSchema],
+            ModelResponseFormat::JsonObject => vec![Self::JsonObject],
+            ModelResponseFormat::InstructionOnly => vec![Self::InstructionOnly],
+        }
     }
 
     pub(super) fn as_str(self) -> &'static str {

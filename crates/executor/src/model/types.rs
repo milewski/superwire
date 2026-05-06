@@ -1,3 +1,4 @@
+use crate::api::ModelResponseFormat;
 use crate::event::ExecutorEvent;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -14,6 +15,7 @@ pub struct ModelRequest {
     pub model_name: String,
     pub prompt: String,
     pub output_schema: Value,
+    pub response_format: ModelResponseFormat,
     pub tools: Vec<ModelToolDefinition>,
     pub event_sender: Option<mpsc::Sender<ExecutorEvent>>,
     pub mcp_pool: McpClientPool,

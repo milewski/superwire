@@ -15,7 +15,7 @@ use superwire_core::dsl::{
 use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use superwire_core::semantic::support::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 use superwire_core::semantic::{compile_workflow_pipeline, ExecutionPlan, TypedWorkflowIr, WorkflowPipelineInput};
-use superwire_executor::{ExecutorError, OpenAiModelProvider, WorkflowExecutor};
+use superwire_executor::{ExecutorError, ModelResponseFormat, OpenAiModelProvider, WorkflowExecutor};
 
 use crate::diagnostics::CommandError;
 
@@ -133,6 +133,7 @@ impl RunWorkflowCommand {
                 &OpenAiModelProvider,
                 None,
                 10,
+                ModelResponseFormat::Auto,
             ))
             .map_err(Self::map_workflow_runtime_error)?;
 

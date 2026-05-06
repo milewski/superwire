@@ -64,6 +64,9 @@ pub struct ExecutionOptions {
 
     #[serde(default = "default_max_concurrency")]
     pub max_concurrency: usize,
+
+    #[serde(default)]
+    pub response_format: ModelResponseFormat,
 }
 
 impl Default for ExecutionOptions {
@@ -71,8 +74,19 @@ impl Default for ExecutionOptions {
         Self {
             include_events: false,
             max_concurrency: default_max_concurrency(),
+            response_format: ModelResponseFormat::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelResponseFormat {
+    #[default]
+    Auto,
+    JsonSchema,
+    JsonObject,
+    InstructionOnly,
 }
 
 fn default_max_concurrency() -> usize {

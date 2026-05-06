@@ -3,6 +3,7 @@ use super::support;
 use super::support::TrackingModelProvider;
 use crate::server::executor_router_with_service;
 use crate::service::ExecutorService;
+use crate::ModelResponseFormat;
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::json;
 use tower::util::ServiceExt;
@@ -71,6 +72,25 @@ async fn tracking_provider_records_all_calls() {
     let agent_names = provider.recorded_agent_names();
     assert!(agent_names.contains(&"first".to_string()));
     assert!(agent_names.contains(&"second".to_string()));
+}
+
+#[tokio::test]
+async fn configured_response_format_reaches_model_request() {
+    let provider = TrackingModelProvider::new(vec![json!("ok")]);
+    let service = ExecutorService::new(provider.clone());
+    let mut request = support::request(fixtures::MINIMUM);
+
+    request.options.response_format = ModelResponseFormat::JsonObject;
+
+    service.execute(request).await.expect("execution should succeed");
+
+    let recorded_requests = provider
+        .recorded_requests
+        .lock()
+        .expect("recorded requests lock should not be poisoned");
+    let model_request = recorded_requests.first().expect("model request should be recorded");
+
+    assert_eq!(model_request.response_format, ModelResponseFormat::JsonObject);
 }
 
 #[tokio::test]
