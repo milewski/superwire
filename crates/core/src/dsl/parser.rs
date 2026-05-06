@@ -461,6 +461,42 @@ mod tests {
     }
 
     #[test]
+    fn parses_agent_response_format_property() {
+        let cases = [
+            ("auto", crate::dsl::AgentResponseFormat::Auto),
+            ("json_schema", crate::dsl::AgentResponseFormat::JsonSchema),
+            ("json_object", crate::dsl::AgentResponseFormat::JsonObject),
+            ("instruction_only", crate::dsl::AgentResponseFormat::InstructionOnly),
+        ];
+
+        for (response_format_value, expected_response_format) in cases {
+            let workflow_source = workflow_source! {
+                agent writer {
+                    model: openai("gpt-4.1-mini")
+                    response_format: __FORMAT__
+                    prompt: "Write a short welcome message."
+                    output: string
+                }
+            }
+            .replace("__FORMAT__", response_format_value);
+            let workflow = parse_workflow(&workflow_source).expect("workflow with response_format should parse");
+
+            let writer_agent = workflow.find_agent("writer").expect("missing agent declaration: writer");
+            let response_format_property = writer_agent
+                .properties
+                .iter()
+                .find(|agent_property| matches!(agent_property, AgentProperty::ResponseFormat(_)))
+                .expect("response_format property should exist");
+
+            let AgentProperty::ResponseFormat(response_format) = response_format_property else {
+                unreachable!("response_format matcher should guarantee variant");
+            };
+
+            assert_eq!(*response_format, expected_response_format);
+        }
+    }
+
+    #[test]
     fn rejects_call_style_tool_binding_overrides_inside_tools_property() {
         let workflow_source = workflow_source! {
             agent assistant_with_tools {

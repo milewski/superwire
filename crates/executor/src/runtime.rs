@@ -15,8 +15,8 @@ use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use superwire_core::dsl::{
-    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
-    ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
+    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AgentResponseFormat, Declaration,
+    Expression, ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
 use superwire_core::mcp::{McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -52,10 +52,19 @@ struct AgentExecutionContext {
     event_sender: Option<mpsc::Sender<ExecutorEvent>>,
     import_context: String,
     tool_call_tracker: ToolCallTracker,
-    response_format: ModelResponseFormat,
 }
 
 impl WorkflowExecutor {
+    fn agent_response_format(planned_agent: &PlannedAgent) -> ModelResponseFormat {
+        match planned_agent.declaration.response_format() {
+            Some(AgentResponseFormat::Auto) => ModelResponseFormat::Auto,
+            Some(AgentResponseFormat::JsonSchema) => ModelResponseFormat::JsonSchema,
+            Some(AgentResponseFormat::JsonObject) => ModelResponseFormat::JsonObject,
+            Some(AgentResponseFormat::InstructionOnly) => ModelResponseFormat::InstructionOnly,
+            None => ModelResponseFormat::Auto,
+        }
+    }
+
     pub fn from_source(workflow_source: &str) -> Result<Self, ExecutorError> {
         let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
             let details = parse_error.render_with_source(workflow_source, "<workflow>");
@@ -152,7 +161,6 @@ impl WorkflowExecutor {
         model_provider: &ModelProviderType,
         event_sender: Option<mpsc::Sender<ExecutorEvent>>,
         max_concurrency: usize,
-        response_format: ModelResponseFormat,
     ) -> Result<Value, ExecutorError>
     where
         ModelProviderType: ModelProvider,
@@ -199,7 +207,6 @@ impl WorkflowExecutor {
                 event_sender: event_sender.clone(),
                 import_context: import_context.clone(),
                 tool_call_tracker: tool_call_tracker.clone(),
-                response_format,
             };
 
             for planned_agent in for_loop_agents {
@@ -608,7 +615,7 @@ impl WorkflowExecutor {
                 model_name,
                 prompt,
                 output_schema,
-                response_format: agent_execution_context.response_format,
+                response_format: Self::agent_response_format(planned_agent),
                 tools: tool_definitions,
                 event_sender: agent_execution_context.event_sender.clone(),
                 mcp_pool: self.mcp_pool.clone(),
@@ -690,7 +697,6 @@ impl WorkflowExecutor {
                 event_sender: agent_execution_context.event_sender.clone(),
                 import_context: agent_execution_context.import_context.clone(),
                 tool_call_tracker: tool_call_tracker.clone(),
-                response_format: agent_execution_context.response_format,
             };
 
             pending_iterations.push(async move {

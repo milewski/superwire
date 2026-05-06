@@ -264,6 +264,7 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
         match self {
             Self::Dynamic => "Dynamic block",
             Self::Model => "Model binding (required)",
+            Self::ResponseFormat => "Model response format",
             Self::Prompt => "Prompt expression (required)",
             Self::Output => "Output type",
             Self::Context => "Context expression",
@@ -276,6 +277,7 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
         match self {
             Self::Dynamic => "Declares one or more dynamic values available as `dynamic.<field>`.",
             Self::Model => "Selects provider and model call used by this agent.",
+            Self::ResponseFormat => "Configures model output transport format for this agent.",
             Self::Prompt => "Defines the prompt sent to the provider.",
             Self::Output => "Declares the expected structured output type.",
             Self::Context => "Prepends evaluated context to the rendered prompt.",

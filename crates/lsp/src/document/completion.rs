@@ -1,6 +1,6 @@
 use superwire_core::dsl::{
-    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword,
-    ToolCallKeyword,
+    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, AgentResponseFormat, DeclarationKeyword, ForClauseKeyword,
+    ImportKeyword, ReferenceKeyword, ToolCallKeyword,
 };
 
 use crate::protocol::{Position, Range};
@@ -306,14 +306,10 @@ impl DocumentState {
         }
 
         if line_has_property_separator {
-            if let Some(dynamic_value_suggestions) =
-                Self::dynamic_value_non_reference_suggestions(semantic_index, line_prefix, completion_scope)
+            if let Some(property_value_suggestions) =
+                Self::property_value_non_reference_suggestions(semantic_index, line_prefix, completion_scope)
             {
-                return Some(dynamic_value_suggestions);
-            }
-
-            if let Some(inference_value_suggestions) = Self::inference_value_non_reference_suggestions(semantic_index, line_prefix) {
-                return Some(inference_value_suggestions);
+                return Some(property_value_suggestions);
             }
 
             if !inside_interpolation_expression && Self::should_suppress_prompt_string_literal_suggestions(line_prefix) {
@@ -695,6 +691,54 @@ impl DocumentState {
             }
             AgentExpressionPropertyName::Tools => None,
         }
+    }
+
+    fn response_format_value_suggestions(line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+        let trimmed_line_prefix = line_prefix.trim_start();
+        let (line_before_value, value_prefix) = trimmed_line_prefix.rsplit_once(':')?;
+        let property_name_identifier = trailing_identifier(line_before_value)?;
+
+        if AgentPropertyName::from_identifier(property_name_identifier) != Some(AgentPropertyName::ResponseFormat) {
+            return None;
+        }
+
+        let value_completion_context = ValueCompletionContext::from_value_prefix(value_prefix);
+
+        if value_completion_context.inside_string_literal {
+            return Some(Vec::new());
+        }
+
+        let response_format_suggestions = AgentResponseFormat::all()
+            .into_iter()
+            .filter(|response_format| response_format.as_str().starts_with(&value_completion_context.value_prefix))
+            .map(|response_format| CompletionSuggestion {
+                label: response_format.as_str().to_string(),
+                kind: super::CompletionKind::Value,
+                detail: "Agent response format".to_string(),
+                documentation: "Configures provider response mode for this agent.".to_string(),
+                insert_text: response_format.as_str().to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        Some(response_format_suggestions)
+    }
+
+    fn property_value_non_reference_suggestions(
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        completion_scope: CompletionScope,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if let Some(response_format_suggestions) = Self::response_format_value_suggestions(line_prefix) {
+            return Some(response_format_suggestions);
+        }
+
+        if let Some(dynamic_value_suggestions) =
+            Self::dynamic_value_non_reference_suggestions(semantic_index, line_prefix, completion_scope)
+        {
+            return Some(dynamic_value_suggestions);
+        }
+
+        Self::inference_value_non_reference_suggestions(semantic_index, line_prefix)
     }
 
     fn reference_completion_suggestions(

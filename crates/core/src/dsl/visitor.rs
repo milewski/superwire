@@ -1,9 +1,10 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DynamicBlock, Expression, FunctionCall,
-    InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration,
-    McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, NamedArgument, ObjectField, OutputDeclaration,
-    ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,
-    StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolSource, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentResponseFormat, CallArgument, Declaration, DynamicBlock,
+    Expression, FunctionCall, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource, McpPromptImportDeclaration,
+    McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, NamedArgument, ObjectField,
+    OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration,
+    SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolSource, TypeExpression, TypedField,
+    Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -683,6 +684,18 @@ impl AstVisitor {
             Rule::model_property => {
                 let expression_pair = self.first_inner_pair(property_pair, "model property")?;
                 Ok(AgentProperty::Model(self.visit_expression(expression_pair)?))
+            }
+            Rule::response_format_property => {
+                let response_format_pair = self.first_inner_pair(property_pair, "response format property")?;
+                let response_format = AgentResponseFormat::from_identifier(response_format_pair.as_str()).ok_or_else(|| {
+                    DslParseError::unexpected_with_span(
+                        response_format_pair.as_rule(),
+                        "response format property",
+                        source_span_from_pair(&response_format_pair),
+                    )
+                })?;
+
+                Ok(AgentProperty::ResponseFormat(response_format))
             }
             Rule::prompt_property => {
                 let expression_pair = self.first_inner_pair(property_pair, "prompt property")?;

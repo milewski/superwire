@@ -272,6 +272,7 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
             | AgentProperty::Tools(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
             }
+            AgentProperty::ResponseFormat(_) => {}
             AgentProperty::Dynamic(dynamic_block) => {
                 for field in &dynamic_block.fields {
                     collect_agent_dependencies(&field.value, &mut dependencies);
@@ -499,6 +500,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             AgentProperty::Model(expression) if property_name == AgentPropertyName::Model => return Some(expression),
             AgentProperty::Prompt(expression) if property_name == AgentPropertyName::Prompt => return Some(expression),
             AgentProperty::Model(_)
+            | AgentProperty::ResponseFormat(_)
             | AgentProperty::Prompt(_)
             | AgentProperty::Output {
                 output_type_expression: _,

@@ -7,8 +7,8 @@ mod visitor;
 
 pub use ast::{
     AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName,
-    BuiltinFunctionArgumentName, BuiltinFunctionName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock, Expression,
-    ForClauseKeyword, FunctionCall, ImportKeyword, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource,
+    AgentResponseFormat, BuiltinFunctionArgumentName, BuiltinFunctionName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
+    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportSource,
     McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpServerPropertyName, McpToolBatchImportDeclaration,
     McpToolBatchImportItem, McpToolSource, ModelCallArgumentName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration,
     Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,

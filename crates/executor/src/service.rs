@@ -50,7 +50,6 @@ where
                 &self.model_provider,
                 None,
                 request.options.max_concurrency,
-                request.options.response_format,
             )
             .await?;
 
@@ -136,7 +135,6 @@ where
             &model_provider,
             Some(event_sender.clone()),
             max_concurrency,
-            request.options.response_format,
         )
         .await?;
 

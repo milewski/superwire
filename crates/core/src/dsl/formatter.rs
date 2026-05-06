@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use thiserror::Error;
 
@@ -570,6 +571,16 @@ impl AgentProperty {
         match self {
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
+            Self::ResponseFormat(response_format) => {
+                formatter.push_indent();
+                let _ = write!(
+                    formatter.output,
+                    "{}: {}",
+                    AgentPropertyName::ResponseFormat.as_str(),
+                    response_format.as_str()
+                );
+                formatter.push_newline();
+            }
             Self::Prompt(expression) => formatter.push_agent_property_expression(AgentPropertyName::Prompt.as_str(), expression),
             Self::Output {
                 output_type_expression,

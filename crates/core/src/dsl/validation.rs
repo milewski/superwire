@@ -1359,6 +1359,7 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                                 validation_report,
                             );
                         }
+                        AgentProperty::ResponseFormat(_) => {}
                         AgentProperty::Output {
                             output_type_expression,
                             description: _,
@@ -2272,6 +2273,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                             output_type_expression: _,
                             description: _,
                         } => {}
+                        AgentProperty::ResponseFormat(_) => {}
                     }
                 }
             }
@@ -3501,6 +3503,7 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                     output_type_expression: _,
                     description: _,
                 } => {}
+                AgentProperty::ResponseFormat(_) => {}
             }
         }
 
