@@ -65,6 +65,7 @@ agent_block = { "{" ~ agent_property* ~ "}" }
 agent_property = _{
     dynamic_property
     | model_property
+    | response_format_property
     | prompt_property
     | output_property
     | context_property
@@ -74,6 +75,8 @@ agent_property = _{
 
 dynamic_property = { "dynamic" ~ object_expression }
 model_property = { "model" ~ ":" ~ expression }
+response_format_property = { "response_format" ~ ":" ~ response_format_value }
+response_format_value = { "auto" | "json_schema" | "json_object" | "instruction_only" }
 prompt_property = { "prompt" ~ ":" ~ expression }
 output_property = { "output" ~ ":" ~ type_expression ~ plain_string_literal? }
 context_property = { "context" ~ ":" ~ expression }

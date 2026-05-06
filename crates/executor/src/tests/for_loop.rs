@@ -209,7 +209,6 @@ async fn for_loop_respects_max_concurrency() {
     request.options = ExecutionOptions {
         include_events: false,
         max_concurrency: 1,
-        ..ExecutionOptions::default()
     };
 
     let output = service

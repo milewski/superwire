@@ -859,6 +859,17 @@ fn suggests_only_object_literal_for_inference_property_value() {
 }
 
 #[test]
+fn suggests_all_agent_response_format_values() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            response_format: <cursor>
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "auto", "json_schema", "json_object", "instruction_only");
+}
+
+#[test]
 fn suppresses_inference_suggestions_inside_string_literal_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
