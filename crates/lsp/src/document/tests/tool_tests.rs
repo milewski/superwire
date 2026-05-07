@@ -309,7 +309,7 @@ fn suggests_mcp_tool_names_inside_tool_import_path() {
     assert_completion_contains_labels!(
         &completion_suggestions,
         "list_all_participants_who_has_answered_given_task",
-        "update-user-name"
+        "update_user_name"
     );
 }
 
@@ -328,7 +328,7 @@ fn suggests_mcp_tool_names_inside_batch_tool_import_item() {
     assert_completion_contains_labels!(
         &completion_suggestions,
         "list_all_participants_who_has_answered_given_task",
-        "update-user-name"
+        "update_user_name"
     );
 }
 
@@ -561,7 +561,7 @@ fn suggests_mcp_resource_names_inside_resource_import_path() {
         resource imported_resource from mcp.local.resource.<cursor>
     });
 
-    assert_completion_contains_labels!(&completion_suggestions, "project-readme", "release-notes");
+    assert_completion_contains_labels!(&completion_suggestions, "project_readme", "release_notes");
 }
 
 #[test]
@@ -570,7 +570,7 @@ fn suggests_mcp_prompt_names_inside_prompt_import_path() {
         prompt imported_prompt from mcp.local.prompt.<cursor>
     });
 
-    assert_completion_contains_labels!(&completion_suggestions, "system-prompt", "review-prompt");
+    assert_completion_contains_labels!(&completion_suggestions, "system_prompt", "review_prompt");
 }
 
 #[test]

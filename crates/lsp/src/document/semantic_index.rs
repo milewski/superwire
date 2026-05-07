@@ -6,6 +6,7 @@ use superwire_core::dsl::{
     TypedField, Workflow,
 };
 use superwire_core::mcp::McpLock;
+use superwire_core::mcp::McpServerLock;
 use superwire_core::semantic::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingReferencePath, ToolingSymbolCategory};
 
@@ -503,16 +504,24 @@ impl SemanticIndex {
             return Vec::new();
         };
 
-        server_lock
+        let mut normalized_tool_names = server_lock
             .tools
             .keys()
-            .filter(|tool_name| tool_name.starts_with(tool_prefix))
-            .map(|tool_name| CompletionSuggestion {
-                label: tool_name.clone(),
+            .map(|tool_name| McpServerLock::normalize_tool_name(tool_name))
+            .filter(|normalized_tool_name| normalized_tool_name.starts_with(tool_prefix))
+            .collect::<Vec<_>>();
+
+        normalized_tool_names.sort();
+        normalized_tool_names.dedup();
+
+        normalized_tool_names
+            .into_iter()
+            .map(|normalized_tool_name| CompletionSuggestion {
+                label: normalized_tool_name.clone(),
                 kind: CompletionKind::Value,
                 detail: "MCP tool".to_string(),
-                documentation: format!("Import MCP tool `{tool_name}` from server `{server_name}`."),
-                insert_text: tool_name.clone(),
+                documentation: format!("Import MCP tool `{normalized_tool_name}` from server `{server_name}`."),
+                insert_text: normalized_tool_name,
             })
             .collect()
     }
