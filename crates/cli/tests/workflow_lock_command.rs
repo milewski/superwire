@@ -92,6 +92,14 @@ fn writes_single_project_lock_for_multiple_workflows() {
         lock_json.pointer("/workflows/workflows~1first.wire/resolution_context/secrets/mcp_endpoint"),
         Some(&json!(test_mcp_server.endpoint()))
     );
+
+    assert!(
+        lock_json
+            .pointer("/workflows/workflows~1first.wire/hash")
+            .and_then(Value::as_str)
+            .is_some_and(|hash| !hash.is_empty()),
+        "workflow lock entry should include integrity hash"
+    );
 }
 
 #[test]
@@ -141,11 +149,85 @@ fn help_includes_project_lock_example() {
     assert!(standard_output.contains("superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock"));
 }
 
+#[test]
+fn writes_relative_workflow_keys_when_using_default_output_path() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        output {
+            value: "ok"
+        }
+    };
+
+    let workflow_path = temporary_workspace.write_file("workflows/absolute-input.wire", workflow_source);
+    let command_output =
+        run_workflow_lock_command_with_current_directory(&[workflow_path.as_os_str()], &temporary_workspace.root_directory);
+    let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
+
+    assert!(command_output.status.success(), "workflow lock command should succeed");
+    assert!(output_lock_path.exists(), "project lock should be written");
+
+    let lock_json: Value =
+        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+
+    assert!(lock_json.pointer("/workflows/workflows~1absolute-input.wire").is_some());
+}
+
+#[test]
+fn appends_new_workflows_when_lock_file_already_exists() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let first_workflow_source = workflow_template! {
+        output {
+            value: "first"
+        }
+    };
+    let second_workflow_source = workflow_template! {
+        output {
+            value: "second"
+        }
+    };
+
+    let first_workflow_path = temporary_workspace.write_file("workflows/first.wire", first_workflow_source);
+    let second_workflow_path = temporary_workspace.write_file("workflows/second.wire", second_workflow_source);
+    let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
+
+    let first_command_output =
+        run_workflow_lock_command_with_current_directory(&[first_workflow_path.as_os_str()], &temporary_workspace.root_directory);
+
+    assert!(
+        first_command_output.status.success(),
+        "initial workflow lock command should succeed"
+    );
+
+    let second_command_output =
+        run_workflow_lock_command_with_current_directory(&[second_workflow_path.as_os_str()], &temporary_workspace.root_directory);
+
+    assert!(
+        second_command_output.status.success(),
+        "second workflow lock command should succeed"
+    );
+
+    let lock_json: Value =
+        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+
+    assert!(lock_json.pointer("/workflows/workflows~1first.wire").is_some());
+    assert!(lock_json.pointer("/workflows/workflows~1second.wire").is_some());
+}
+
 fn run_workflow_lock_command(arguments: &[&std::ffi::OsStr]) -> Output {
     Command::new(cli_binary_path())
         .arg("workflow")
         .arg("lock")
         .args(arguments)
+        .output()
+        .expect("workflow lock command should run")
+}
+
+fn run_workflow_lock_command_with_current_directory(arguments: &[&std::ffi::OsStr], current_directory: &Path) -> Output {
+    Command::new(cli_binary_path())
+        .arg("workflow")
+        .arg("lock")
+        .args(arguments)
+        .current_dir(current_directory)
         .output()
         .expect("workflow lock command should run")
 }

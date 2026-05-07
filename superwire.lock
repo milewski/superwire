@@ -1,7 +1,8 @@
 {
   "version": 1,
   "workflows": {
-    "/home/milewski/code/superwire/crates/executor/tests/fixtures/022_mcp_read_resource.wire": {
+    "crates/executor/tests/fixtures/001_minimum.wire": {
+      "hash": "ef2b6b5ada36e595f036b52ae0f4eb4e8174d63e79fbc165f77e8e8724ec2c30",
       "servers": {}
     }
   }
