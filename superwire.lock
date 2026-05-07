@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "workflows": {
+    "/home/milewski/code/superwire/crates/executor/tests/fixtures/022_mcp_read_resource.wire": {
+      "servers": {}
+    }
+  }
+}

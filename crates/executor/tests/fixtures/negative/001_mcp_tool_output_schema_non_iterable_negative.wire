@@ -5,8 +5,12 @@ provider openai {
     models: ["model-a"]
 }
 
+secrets {
+    mcp_endpoint: string
+}
+
 mcp local {
-    endpoint: "__ENDPOINT__"
+    endpoint: secrets.mcp_endpoint
 }
 
 tool fetch_numbers from mcp.local.tool.fetch_numbers {

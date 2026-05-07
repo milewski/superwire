@@ -46,7 +46,9 @@ enum WorkflowSubcommand {
     ToJson(ToJsonWorkflowCommand),
     Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
-    #[command(after_help = "Example:\n  superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock")]
+    #[command(
+        after_help = "Examples:\n  superwire-cli workflow lock .\n  superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock"
+    )]
     Lock(LockWorkflowCommand),
 }
 
@@ -272,8 +274,8 @@ impl RunWorkflowCommand {
 
 #[derive(Debug, Args)]
 struct LockWorkflowCommand {
-    #[arg(value_name = "WORKFLOW_PATH", required = true)]
-    workflow_paths: Vec<PathBuf>,
+    #[arg(value_name = "WORKFLOW_PATH_OR_DIRECTORY", required = true)]
+    workflow_targets: Vec<PathBuf>,
 
     #[arg(short = 'o', long = "output", value_name = "LOCK_PATH", default_value = PROJECT_MCP_LOCK_FILE_NAME)]
     output_path: PathBuf,
@@ -305,9 +307,10 @@ impl LockWorkflowCommand {
         let variables_context = self.vars_context()?;
         let command_context = self.command_context()?;
         let lock_context = Self::merge_contexts(variables_context, command_context);
+        let workflow_paths = self.collect_workflow_paths()?;
         let mut project_lock = ProjectMcpLock::empty();
 
-        for workflow_path in &self.workflow_paths {
+        for workflow_path in &workflow_paths {
             let workflow_source = fs::read_to_string(workflow_path).map_err(|read_error| {
                 CommandError::invalid_input(format!("failed to read workflow file {}: {read_error}", workflow_path.display()))
             })?;
@@ -330,6 +333,76 @@ impl LockWorkflowCommand {
         println!("wrote {}", self.output_path.display());
 
         Ok(())
+    }
+
+    fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {
+        let mut workflow_paths = Vec::new();
+
+        for workflow_target in &self.workflow_targets {
+            if workflow_target.is_file() {
+                if !Self::is_workflow_file_path(workflow_target) {
+                    return Err(CommandError::invalid_input(format!(
+                        "expected a .wire workflow file, got {}",
+                        workflow_target.display()
+                    )));
+                }
+
+                workflow_paths.push(workflow_target.clone());
+
+                continue;
+            }
+
+            if workflow_target.is_dir() {
+                Self::collect_wire_files_recursively(workflow_target, &mut workflow_paths)?;
+
+                continue;
+            }
+
+            return Err(CommandError::invalid_input(format!(
+                "path does not exist or is not accessible: {}",
+                workflow_target.display()
+            )));
+        }
+
+        workflow_paths.sort();
+        workflow_paths.dedup();
+
+        if workflow_paths.is_empty() {
+            return Err(CommandError::invalid_input("no workflow files (.wire) found"));
+        }
+
+        Ok(workflow_paths)
+    }
+
+    fn collect_wire_files_recursively(directory_path: &Path, workflow_paths: &mut Vec<PathBuf>) -> Result<(), CommandError> {
+        let directory_entries = fs::read_dir(directory_path)
+            .map_err(|read_error| CommandError::internal(format!("failed to read directory {}: {read_error}", directory_path.display())))?;
+
+        for directory_entry_result in directory_entries {
+            let directory_entry = directory_entry_result.map_err(|read_error| {
+                CommandError::internal(format!(
+                    "failed to read entry in directory {}: {read_error}",
+                    directory_path.display()
+                ))
+            })?;
+            let entry_path = directory_entry.path();
+
+            if entry_path.is_dir() {
+                Self::collect_wire_files_recursively(&entry_path, workflow_paths)?;
+
+                continue;
+            }
+
+            if Self::is_workflow_file_path(&entry_path) {
+                workflow_paths.push(entry_path);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn is_workflow_file_path(file_path: &Path) -> bool {
+        file_path.extension().and_then(|extension| extension.to_str()) == Some("wire")
     }
 
     fn validate_payload_arguments(&self) -> Result<(), CommandError> {

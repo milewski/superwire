@@ -319,6 +319,10 @@ impl TestRunner {
             workflow_source = replace_block_property(&workflow_source, "mcp", server_name, "endpoint", &json!(server.endpoint));
         }
 
+        if !mcp_servers.is_empty() {
+            workflow_source = workflow_source.replace("secrets {\n    mcp_endpoint: string\n}\n\n", "");
+        }
+
         Ok(workflow_source)
     }
 }

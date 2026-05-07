@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -64,8 +65,14 @@ fn writes_single_project_lock_for_multiple_workflows() {
 
     assert!(command_output.status.success(), "workflow lock command should succeed");
     assert!(output_lock_path.exists(), "project lock should be written");
-    assert!(!first_workflow_path.with_extension("wire.lock").exists(), "per-workflow lock should not be written");
-    assert!(!second_workflow_path.with_extension("wire.lock").exists(), "per-workflow lock should not be written");
+    assert!(
+        !first_workflow_path.with_extension("wire.lock").exists(),
+        "per-workflow lock should not be written"
+    );
+    assert!(
+        !second_workflow_path.with_extension("wire.lock").exists(),
+        "per-workflow lock should not be written"
+    );
 
     let lock_json: Value =
         serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
@@ -88,11 +95,49 @@ fn writes_single_project_lock_for_multiple_workflows() {
 }
 
 #[test]
+fn recursively_locks_workflows_from_directory_target() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let first_workflow_source = workflow_template! {
+        output {
+            value: "first"
+        }
+    };
+
+    let second_workflow_source = workflow_template! {
+        output {
+            value: "second"
+        }
+    };
+
+    let workflow_directory_path = temporary_workspace.create_directory("workflows");
+    temporary_workspace.write_file("workflows/first.wire", first_workflow_source);
+    temporary_workspace.write_file("workflows/nested/second.wire", second_workflow_source);
+    temporary_workspace.write_file("workflows/nested/notes.txt", "not a workflow");
+    let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
+
+    let command_output = run_workflow_lock_command(&[
+        workflow_directory_path.as_os_str(),
+        std::ffi::OsStr::new("--output"),
+        output_lock_path.as_os_str(),
+    ]);
+
+    assert!(command_output.status.success(), "workflow lock command should succeed");
+
+    let lock_json: Value =
+        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+
+    assert!(lock_json.pointer("/workflows/workflows~1first.wire").is_some());
+    assert!(lock_json.pointer("/workflows/workflows~1nested~1second.wire").is_some());
+    assert!(lock_json.pointer("/workflows/workflows~1nested~1notes.txt").is_none());
+}
+
+#[test]
 fn help_includes_project_lock_example() {
     let command_output = run_workflow_lock_command(&[std::ffi::OsStr::new("--help")]);
     let standard_output = String::from_utf8_lossy(&command_output.stdout);
 
     assert!(command_output.status.success(), "workflow lock help should succeed");
+    assert!(standard_output.contains("superwire-cli workflow lock ."));
     assert!(standard_output.contains("superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock"));
 }
 
@@ -157,6 +202,14 @@ impl TemporaryWorkspace {
         }
 
         fs::write(&absolute_path, contents).expect("temporary file should be written");
+
+        absolute_path
+    }
+
+    fn create_directory(&self, relative_path: &str) -> PathBuf {
+        let absolute_path = self.root_directory.join(relative_path);
+
+        fs::create_dir_all(&absolute_path).expect("temporary directory should be created");
 
         absolute_path
     }
@@ -273,11 +326,14 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
 }
 
 fn unique_suffix() -> String {
+    static UNIQUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let timestamp_millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after unix epoch")
         .as_millis();
     let process_identifier = std::process::id();
+    let counter = UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    format!("{timestamp_millis}-{process_identifier}")
+    format!("{timestamp_millis}-{process_identifier}-{counter}")
 }
