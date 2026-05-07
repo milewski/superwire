@@ -32,3 +32,8 @@ pub const MULTIPLE_PROVIDERS_MODELS: &str = include_str!("../fixtures/031_multip
 pub const AGENT_LOCAL_DYNAMIC_TOOL_SCOPE: &str = include_str!("../fixtures/032_agent_local_dynamic_tool_scope.wire");
 pub const AGENT_LOCAL_DYNAMIC_BINDINGS_OVERRIDE_APPEND: &str =
     include_str!("../fixtures/033_agent_local_dynamic_bindings_override_append.wire");
+pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE: &str = include_str!("../fixtures/034_mcp_tool_output_schema_override.wire");
+
+// Negative Tests
+pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =
+    include_str!("../fixtures/negative/001_mcp_tool_output_schema_non_iterable_negative.wire");

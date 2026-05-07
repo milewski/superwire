@@ -9,21 +9,16 @@ mcp local {
     endpoint: "__ENDPOINT__"
 }
 
-tool fetch_numbers from mcp.local.tool.fetch_numbers {
-    bindings {
-        override: 10
-        base: "keep"
-        append: ""
-    }
-}
+tool fetch_numbers from mcp.local.tool.fetch_numbers
 
 agent analyzer {
     model: openai("model-a")
 
     dynamic {
         example: call tool.fetch_numbers {
-            bindings {
+            input {
                 override: 123
+                base: "keep"
                 append: "xyz"
             }
         }

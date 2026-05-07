@@ -21,4 +21,20 @@ async fn renders_mcp_prompt_as_dynamic_value() {
     assert!(output.output["instructions"]
         .as_str()
         .is_some_and(|instructions| instructions.contains("Follow project conventions.")));
+
+    let render_prompt_request = output.mcp_requests["local"]
+        .iter()
+        .find(|request| request.get("method") == Some(&json!("prompts/get")))
+        .expect("prompts/get request should be present");
+
+    assert_eq!(
+        render_prompt_request.pointer("/params"),
+        Some(&json!({
+            "name": "system-prompt",
+            "arguments": {
+                "workspace_id": "workspace-1",
+                "audience": "maintainers"
+            }
+        }))
+    );
 }

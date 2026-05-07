@@ -18,6 +18,13 @@ struct McpToolBatchImportBlock {
     import_items: Vec<McpToolBatchImportItem>,
 }
 
+#[derive(Default)]
+struct ToolImportBlock {
+    fixed_binding_fields: Vec<ObjectField>,
+    max_calls: Option<u64>,
+    output_fields: Vec<TypedField>,
+}
+
 impl AstVisitor {
     pub fn new() -> Self {
         Self
@@ -234,23 +241,23 @@ impl AstVisitor {
             (None, first_pair)
         };
         let source = self.visit_mcp_import_source(source_pair)?;
-        let (fixed_binding_fields, max_calls) = inner_pairs
+        let import_block = inner_pairs
             .next()
             .map(|block_pair| self.visit_tool_import_block(block_pair))
             .transpose()?
-            .unwrap_or_else(|| (Vec::new(), None));
+            .unwrap_or_default();
         let name = alias.unwrap_or_else(|| source.inferred_local_name());
 
         Ok(Declaration::Tool(ToolDeclaration {
             name,
             description: None,
-            max_calls,
+            max_calls: import_block.max_calls,
             source: Some(ToolSource::Mcp(source.as_tool_source())),
             imported: true,
             input_fields: Vec::new(),
             binding_fields: Vec::new(),
-            fixed_binding_fields,
-            output_fields: Vec::new(),
+            fixed_binding_fields: import_block.fixed_binding_fields,
+            output_fields: import_block.output_fields,
             span: declaration_span,
         }))
     }
@@ -468,10 +475,9 @@ impl AstVisitor {
         Ok(parameters)
     }
 
-    fn visit_tool_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<(Vec<ObjectField>, Option<u64>), DslParseError> {
+    fn visit_tool_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<ToolImportBlock, DslParseError> {
         let block_span = source_span_from_pair(&block_pair);
-        let mut fixed_bindings = Vec::new();
-        let mut max_calls = None;
+        let mut import_block = ToolImportBlock::default();
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
@@ -488,7 +494,9 @@ impl AstVisitor {
                         ));
                     };
                     let object_expression_pair = self.next_pair(&mut inner_pairs, "tool import bindings", "tool import block")?;
-                    fixed_bindings.extend(self.visit_object_expression(object_expression_pair)?);
+                    import_block
+                        .fixed_binding_fields
+                        .extend(self.visit_object_expression(object_expression_pair)?);
                 }
                 Rule::named_unsigned_integer_property => {
                     let mut inner_pairs = property_pair.into_inner();
@@ -503,13 +511,35 @@ impl AstVisitor {
                         ));
                     };
                     let max_calls_pair = self.next_pair(&mut inner_pairs, "tool import max calls", "tool import block")?;
-                    max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool import max calls")?);
+                    import_block.max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "tool import max calls")?);
+                }
+                Rule::named_tool_block_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "tool import property name", "tool import block")?;
+                    let block_pair = self.next_pair(&mut inner_pairs, "tool import block property value", "tool import block")?;
+
+                    match ToolPropertyName::from_identifier(property_name.as_str()) {
+                        Some(ToolPropertyName::Bindings) => {
+                            let (_, fixed_fields) = self.visit_tool_bindings_block(block_pair)?;
+                            import_block.fixed_binding_fields.extend(fixed_fields);
+                        }
+                        Some(ToolPropertyName::Output) => {
+                            import_block.output_fields.extend(self.visit_tool_typed_fields_block(block_pair)?);
+                        }
+                        _ => {
+                            return Err(DslParseError::unexpected_with_span(
+                                Rule::named_tool_block_property,
+                                "tool import property",
+                                block_span,
+                            ));
+                        }
+                    }
                 }
                 _ => unreachable!("tool import block should contain only valid properties"),
             }
         }
 
-        Ok((fixed_bindings, max_calls))
+        Ok(import_block)
     }
 
     fn visit_mcp_declaration(&self, mcp_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {

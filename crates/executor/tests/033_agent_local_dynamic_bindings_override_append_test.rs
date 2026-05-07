@@ -34,9 +34,7 @@ async fn agent_local_dynamic_tool_call_overrides_and_appends_bindings() {
 fn find_mcp_tool_call_arguments(requests: &[Value], tool_name: &str) -> Value {
     let tool_call_request = requests
         .iter()
-        .find(|request| {
-            request.get("method") == Some(&json!("tools/call")) && request.pointer("/params/name") == Some(&json!(tool_name))
-        })
+        .find(|request| request.get("method") == Some(&json!("tools/call")) && request.pointer("/params/name") == Some(&json!(tool_name)))
         .expect("expected MCP tools/call request");
 
     tool_call_request

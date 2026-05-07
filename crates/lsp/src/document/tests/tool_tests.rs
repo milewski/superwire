@@ -181,6 +181,24 @@ fn uses_mcp_lock_for_imported_tool_schema() {
     assert!(document_state.diagnostics().is_empty());
 }
 
+#[test]
+fn accepts_local_output_schema_on_imported_mcp_tool() {
+    let source = inline_document_template! {
+        mcp local {
+            endpoint: "http://docker.localhost/mcp/project"
+        }
+
+        tool fetch_numbers from mcp.local.tool.fetch_numbers {
+            output {
+                values: string
+            }
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+
+    assert!(document_state.diagnostics().is_empty());
+}
+
 fn test_mcp_lock() -> McpLock {
     let mut tools = BTreeMap::new();
     tools.insert(

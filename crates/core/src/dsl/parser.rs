@@ -612,6 +612,25 @@ mod tests {
     }
 
     #[test]
+    fn parses_mcp_tool_import_with_output_fields() {
+        let workflow = parse_inline_workflow! {
+            tool fetch_numbers from mcp.local.tool.fetch-numbers {
+                output {
+                    values: [number]
+                }
+            }
+        };
+
+        let tool_declaration = workflow
+            .find_tool("fetch_numbers")
+            .expect("tool import with output fields should parse");
+
+        assert!(tool_declaration.imported);
+        assert_eq!(tool_declaration.output_fields.len(), 1);
+        assert_eq!(tool_declaration.output_fields[0].name, "values");
+    }
+
+    #[test]
     fn parses_mcp_tool_batch_imports_with_shared_bindings_and_aliases() {
         let workflow = parse_inline_workflow! {
             from mcp.local.tool {
