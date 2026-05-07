@@ -453,13 +453,14 @@ impl LockWorkflowCommand {
     }
 
     fn vars_context(&self) -> Result<Option<McpLockResolutionContext>, CommandError> {
-        if !self.vars_file.exists() {
+        let vars_file = self.effective_vars_file();
+
+        if !vars_file.exists() {
             return Ok(None);
         }
 
-        let vars_text = fs::read_to_string(&self.vars_file).map_err(|read_error| {
-            CommandError::invalid_input(format!("failed to read vars file {}: {read_error}", self.vars_file.display()))
-        })?;
+        let vars_text = fs::read_to_string(&vars_file)
+            .map_err(|read_error| CommandError::invalid_input(format!("failed to read vars file {}: {read_error}", vars_file.display())))?;
         let vars_context = serde_json::from_str::<McpLockResolutionContext>(&vars_text)
             .map_err(|parse_error| CommandError::invalid_input(format!("vars file must be valid json: {parse_error}")))?;
 
@@ -511,13 +512,13 @@ impl LockWorkflowCommand {
         let mut prompted_value_was_captured = false;
 
         if let Some(input_declaration) = parsed_workflow.find_input() {
-            if self.prompt_for_missing_fields("input", &input_declaration.fields, &mut lock_context.input)? {
+            if self.prompt_for_missing_fields(parsed_workflow, "input", &input_declaration.fields, &mut lock_context.input)? {
                 prompted_value_was_captured = true;
             }
         }
 
         if let Some(secrets_declaration) = parsed_workflow.find_secrets() {
-            if self.prompt_for_missing_fields("secrets", &secrets_declaration.fields, &mut lock_context.secrets)? {
+            if self.prompt_for_missing_fields(parsed_workflow, "secrets", &secrets_declaration.fields, &mut lock_context.secrets)? {
                 prompted_value_was_captured = true;
             }
         }
@@ -530,6 +531,7 @@ impl LockWorkflowCommand {
 
     fn prompt_for_missing_fields(
         &self,
+        parsed_workflow: &Workflow,
         section_name: &str,
         typed_fields: &[TypedField],
         existing_values: &mut BTreeMap<String, Value>,
@@ -537,17 +539,109 @@ impl LockWorkflowCommand {
         let mut prompted_value_was_captured = false;
 
         for typed_field in typed_fields {
-            if existing_values.contains_key(&typed_field.name) {
-                continue;
-            }
-
-            let field_value = self.prompt_for_field_value(section_name, typed_field)?;
+            let field_path = typed_field.name.clone();
+            let existing_value = existing_values.remove(&typed_field.name);
+            let (field_value, field_value_was_prompted) =
+                self.prompt_for_missing_value(parsed_workflow, section_name, &field_path, &typed_field.field_type, existing_value)?;
 
             existing_values.insert(typed_field.name.clone(), field_value);
-            prompted_value_was_captured = true;
+
+            if field_value_was_prompted {
+                prompted_value_was_captured = true;
+            }
         }
 
         Ok(prompted_value_was_captured)
+    }
+
+    fn prompt_for_missing_value(
+        &self,
+        parsed_workflow: &Workflow,
+        section_name: &str,
+        field_path: &str,
+        type_expression: &TypeExpression,
+        existing_value: Option<Value>,
+    ) -> Result<(Value, bool), CommandError> {
+        if let Some(object_fields) = Self::object_fields_for_prompt(parsed_workflow, type_expression) {
+            let mut object_value = match existing_value {
+                Some(Value::Object(object_value)) => object_value,
+                Some(existing_value) => {
+                    return Err(CommandError::invalid_input(format!(
+                        "invalid value for {section_name}.{field_path}: expected object, got {}",
+                        Self::json_value_type_label(&existing_value)
+                    )));
+                }
+                None => Map::new(),
+            };
+            let mut prompted_value_was_captured = false;
+
+            for object_field in object_fields {
+                let child_field_path = format!("{field_path}.{}", object_field.name);
+                let existing_child_value = object_value.remove(&object_field.name);
+                let (child_value, child_value_was_prompted) = self.prompt_for_missing_value(
+                    parsed_workflow,
+                    section_name,
+                    &child_field_path,
+                    &object_field.field_type,
+                    existing_child_value,
+                )?;
+
+                object_value.insert(object_field.name.clone(), child_value);
+
+                if child_value_was_prompted {
+                    prompted_value_was_captured = true;
+                }
+            }
+
+            return Ok((Value::Object(object_value), prompted_value_was_captured));
+        }
+
+        if let Some(existing_value) = existing_value {
+            return Ok((existing_value, false));
+        }
+
+        let field_value = self.prompt_for_field_value(section_name, field_path, type_expression)?;
+
+        Ok((field_value, true))
+    }
+
+    fn object_fields_for_prompt<'workflow>(
+        parsed_workflow: &'workflow Workflow,
+        type_expression: &'workflow TypeExpression,
+    ) -> Option<&'workflow [TypedField]> {
+        match type_expression {
+            TypeExpression::Object(object_fields) => Some(object_fields),
+            TypeExpression::SchemaReference(schema_name) => Some(parsed_workflow.find_schema(schema_name)?.fields.as_slice()),
+            TypeExpression::Union(type_expressions) => {
+                let mut object_fields = None;
+
+                for type_expression in type_expressions {
+                    if matches!(type_expression, TypeExpression::Null) {
+                        continue;
+                    }
+
+                    if object_fields.is_some() {
+                        return None;
+                    }
+
+                    object_fields = Self::object_fields_for_prompt(parsed_workflow, type_expression);
+                }
+
+                object_fields
+            }
+            TypeExpression::String
+            | TypeExpression::Number
+            | TypeExpression::Float
+            | TypeExpression::Boolean
+            | TypeExpression::Null
+            | TypeExpression::StringEnum(_)
+            | TypeExpression::StringEnumReference(_)
+            | TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_) => None,
+        }
     }
 
     fn persist_prompted_lock_context_if_needed(
@@ -562,32 +656,43 @@ impl LockWorkflowCommand {
         let vars_context_json = serde_json::to_string_pretty(lock_context)
             .map_err(|serialize_error| CommandError::internal(format!("failed to serialize vars context: {serialize_error}")))?;
         let vars_file_contents = format!("{vars_context_json}\n");
+        let vars_file = self.effective_vars_file();
 
-        fs::write(&self.vars_file, vars_file_contents).map_err(|write_error| {
+        if let Some(vars_file_parent) = vars_file.parent().filter(|parent_path| !parent_path.as_os_str().is_empty()) {
+            fs::create_dir_all(vars_file_parent).map_err(|create_error| {
+                CommandError::internal(format!(
+                    "failed to create vars file directory {}: {create_error}",
+                    vars_file_parent.display()
+                ))
+            })?;
+        }
+
+        fs::write(&vars_file, vars_file_contents).map_err(|write_error| {
             CommandError::internal(format!(
                 "failed to persist prompted values to vars file {}: {write_error}",
-                self.vars_file.display()
+                vars_file.display()
             ))
         })?;
 
-        println!("updated {}", self.vars_file.display());
+        println!("updated {}", vars_file.display());
 
         Ok(())
     }
 
-    fn prompt_for_field_value(&self, section_name: &str, typed_field: &TypedField) -> Result<Value, CommandError> {
+    fn prompt_for_field_value(
+        &self,
+        section_name: &str,
+        field_path: &str,
+        type_expression: &TypeExpression,
+    ) -> Result<Value, CommandError> {
         if !io::stdin().is_terminal() {
             return Err(CommandError::invalid_input(format!(
-                "missing {section_name}.{} and terminal is non-interactive; provide it via .wire.vars, --vars-file, --input-json, --secrets-json, or --set",
-                typed_field.name
+                "missing {section_name}.{field_path} and terminal is non-interactive; provide it via .wire.vars, --vars-file, --input-json, --secrets-json, or --set"
             )));
         }
 
-        let prompt_message = format!(
-            "missing {section_name}.{} ({}) - enter value: ",
-            typed_field.name,
-            Self::type_expression_label(&typed_field.field_type)
-        );
+        let type_expression_label = Self::type_expression_label(type_expression);
+        let prompt_message = format!("missing {section_name}.{field_path} ({type_expression_label}) - enter value: ");
 
         print!("{prompt_message}");
 
@@ -605,12 +710,33 @@ impl LockWorkflowCommand {
 
         if trimmed_input.is_empty() {
             return Err(CommandError::invalid_input(format!(
-                "missing {section_name}.{}; empty value is not allowed",
-                typed_field.name
+                "missing {section_name}.{field_path}; empty value is not allowed"
             )));
         }
 
-        Self::parse_prompt_value(trimmed_input, &typed_field.field_type, section_name, &typed_field.name)
+        Self::parse_prompt_value(trimmed_input, type_expression, section_name, field_path)
+    }
+
+    fn effective_vars_file(&self) -> PathBuf {
+        if self.vars_file != Path::new(".wire.vars") {
+            return self.vars_file.clone();
+        }
+
+        self.output_path
+            .parent()
+            .filter(|parent_path| !parent_path.as_os_str().is_empty())
+            .map_or_else(|| self.vars_file.clone(), |parent_path| parent_path.join(".wire.vars"))
+    }
+
+    fn json_value_type_label(value: &Value) -> &'static str {
+        match value {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        }
     }
 
     fn type_expression_label(type_expression: &TypeExpression) -> &'static str {

@@ -731,7 +731,6 @@ mod tests {
         let read_lock = read_project_mcp_lock(&document_uri).expect("project lock should read");
 
         assert!(read_lock.servers.contains_key("local"));
-        assert_eq!(read_lock.resolution_context, Some(lock_context));
         assert!(!temp_file_path.with_extension("wire.lock").exists());
 
         let _ = std::fs::remove_dir_all(&temp_directory_path);

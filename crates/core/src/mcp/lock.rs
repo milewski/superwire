@@ -14,8 +14,6 @@ pub const PROJECT_MCP_LOCK_FILE_NAME: &str = "superwire.lock";
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpLock {
     pub servers: BTreeMap<String, McpServerLock>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolution_context: Option<McpLockResolutionContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -119,10 +117,8 @@ impl McpLock {
         };
 
         let evaluation_context = lock_context.to_evaluation_context();
-        let mut lock = Self::discover_from_workflow_with_context(workflow, &evaluation_context)?;
-        lock.resolution_context = Some(lock_context.clone());
 
-        Ok(lock)
+        Self::discover_from_workflow_with_context(workflow, &evaluation_context)
     }
 
     pub fn discover_from_workflow_with_context(workflow: &Workflow, evaluation_context: &EvaluationContext) -> Result<Self, McpError> {

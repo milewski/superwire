@@ -256,10 +256,7 @@ fn test_mcp_lock() -> McpLock {
         },
     );
 
-    McpLock {
-        servers,
-        resolution_context: None,
-    }
+    McpLock { servers }
 }
 
 fn completion_suggestions_with_mcp_lock(source_template: &str) -> Vec<CompletionSuggestion> {

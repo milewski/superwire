@@ -88,10 +88,7 @@ fn writes_single_project_lock_for_multiple_workflows() {
         Some(&json!("update-user-name"))
     );
 
-    assert_eq!(
-        lock_json.pointer("/workflows/workflows~1first.wire/resolution_context/secrets/mcp_endpoint"),
-        Some(&json!(test_mcp_server.endpoint()))
-    );
+    assert!(lock_json.pointer("/workflows/workflows~1first.wire/resolution_context").is_none());
 
     assert!(
         lock_json
@@ -173,6 +170,50 @@ fn writes_relative_workflow_keys_when_using_default_output_path() {
 }
 
 #[test]
+fn reads_default_vars_file_next_to_custom_output_path() {
+    let test_mcp_server = TestMcpHttpServer::spawn();
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        tool update_user_name from mcp.local.tool.update-user-name
+    };
+    let workflow_path = temporary_workspace.write_file("workflows/custom-output.wire", workflow_source);
+    let output_lock_path = temporary_workspace.root_directory.join("locks/superwire.lock");
+
+    temporary_workspace.write_json_file(
+        "locks/.wire.vars",
+        &json!({
+            "secrets": {
+                "mcp_endpoint": test_mcp_server.endpoint()
+            }
+        }),
+    );
+
+    let command_output = run_workflow_lock_command_with_current_directory(
+        &[
+            workflow_path.as_os_str(),
+            std::ffi::OsStr::new("--output"),
+            output_lock_path.as_os_str(),
+        ],
+        &temporary_workspace.root_directory,
+    );
+
+    assert!(command_output.status.success(), "workflow lock command should succeed");
+    assert!(output_lock_path.exists(), "custom output lock should be written");
+    assert!(
+        !temporary_workspace.root_directory.join(".wire.vars").exists(),
+        "default vars file should be resolved beside the lock output"
+    );
+}
+
+#[test]
 fn appends_new_workflows_when_lock_file_already_exists() {
     let temporary_workspace = TemporaryWorkspace::new();
     let first_workflow_source = workflow_template! {
@@ -236,7 +277,8 @@ fn fails_when_mcp_server_requires_runtime_values_without_vars_context() {
         !command_output.status.success(),
         "workflow lock command should fail without runtime context"
     );
-    assert!(standard_error.contains("failed to discover MCP typings"));
+    assert!(standard_error.contains("terminal is non-interactive"));
+    assert!(standard_error.contains("secrets.mcp_endpoint"));
     assert!(standard_error.contains(".wire.vars"));
 }
 
@@ -263,6 +305,36 @@ fn fails_with_actionable_error_for_missing_prompted_values_in_non_interactive_mo
     );
     assert!(standard_error.contains("terminal is non-interactive"));
     assert!(standard_error.contains("input.project_id"));
+}
+
+#[test]
+fn reports_missing_nested_object_leaf_values_in_non_interactive_mode() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        secrets {
+            models: {
+                flash: string
+                pro: string
+                max: string
+            }
+        }
+
+        output {
+            value: "ok"
+        }
+    };
+    let workflow_path = temporary_workspace.write_file("workflows/missing-nested-secret.wire", workflow_source);
+    let command_output =
+        run_workflow_lock_command_with_current_directory(&[workflow_path.as_os_str()], &temporary_workspace.root_directory);
+    let standard_error = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(
+        !command_output.status.success(),
+        "workflow lock command should fail in non-interactive mode"
+    );
+    assert!(standard_error.contains("terminal is non-interactive"));
+    assert!(standard_error.contains("secrets.models.flash"));
+    assert!(!standard_error.contains("secrets.models (json)"));
 }
 
 fn run_workflow_lock_command(arguments: &[&std::ffi::OsStr]) -> Output {

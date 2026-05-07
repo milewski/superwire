@@ -8,7 +8,7 @@ cli *arguments:
 
 # Build IntelliJ plugin (bundles LSP binaries)
 intellij-build:
-    cd editors/intellij && ./gradlew clean buildPlugin
+    cd editors/intellij && JAVA_HOME=/home/milewski/.local/share/mise/installs/java/21 ./gradlew clean buildPlugin
 
 build-cli-alpine:
     cargo build -p superwire-cli --release --target x86_64-unknown-linux-musl
@@ -24,5 +24,6 @@ submodule-push commit_message:
 
 # Pull the main repo and all submodules
 submodule-pull:
+    git submodule update --init
     git pull origin HEAD
     git submodule foreach git pull origin HEAD
