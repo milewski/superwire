@@ -568,13 +568,13 @@ mod tests {
 
             prompt from mcp.local.prompt.system-prompt
 
-            tool from mcp.local.tool.create-sorting-task-for-task-group-tool {
+            tool from mcp.local.tool.create_sorting_task_for_task_group_tool {
                 bindings {
                     workspace_id: input.workspace_id
                 }
             }
 
-            tool create_sorting_task_for_task_group from mcp.local.tool.create-sorting-task-for-task-group-tool {
+            tool create_sorting_task_for_task_group from mcp.local.tool.create_sorting_task_for_task_group_tool {
                 bindings {
                     workspace_id: input.workspace_id
                 }
@@ -607,14 +607,14 @@ mod tests {
             &aliased_tool.source,
             Some(ToolSource::Mcp(mcp_tool_source))
                 if mcp_tool_source.server_name.as_deref() == Some("local")
-                    && mcp_tool_source.tool_name == "create-sorting-task-for-task-group-tool"
+                    && mcp_tool_source.tool_name == "create_sorting_task_for_task_group_tool"
         ));
     }
 
     #[test]
     fn parses_mcp_tool_import_with_output_fields() {
         let workflow = parse_inline_workflow! {
-            tool fetch_numbers from mcp.local.tool.fetch-numbers {
+            tool fetch_numbers from mcp.local.tool.fetch_numbers {
                 output {
                     values: [number]
                 }
@@ -641,13 +641,13 @@ mod tests {
 
                 max_calls: 3
 
-                tool create-sorting-task as create_sorting_task
-                tool update-task-status as update_task_status {
+                tool create_sorting_task
+                tool update_task_status {
                     bindings {
                         status: "done"
                     }
                 }
-                tool assign-task
+                tool assign_task
             }
         };
 
@@ -671,7 +671,7 @@ mod tests {
             &create_tool.source,
             Some(ToolSource::Mcp(mcp_tool_source))
                 if mcp_tool_source.server_name.as_deref() == Some("local")
-                    && mcp_tool_source.tool_name == "create-sorting-task"
+                    && mcp_tool_source.tool_name == "create_sorting_task"
         ));
 
         let update_tool = workflow
@@ -688,7 +688,7 @@ mod tests {
         assert!(matches!(
             &assigned_tool.source,
             Some(ToolSource::Mcp(mcp_tool_source))
-                if mcp_tool_source.server_name.as_deref() == Some("local") && mcp_tool_source.tool_name == "assign-task"
+                if mcp_tool_source.server_name.as_deref() == Some("local") && mcp_tool_source.tool_name == "assign_task"
         ));
     }
 

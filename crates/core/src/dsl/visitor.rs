@@ -389,7 +389,7 @@ impl AstVisitor {
         let item_span = source_span_from_pair(&item_pair);
         let mut inner_pairs = item_pair.into_inner();
         let source_name_pair = self.next_pair(&mut inner_pairs, "MCP tool import name", "MCP tool batch import item")?;
-        let source_name = source_name_pair.as_str().split_whitespace().collect::<String>();
+        let source_name = self.parse_wire_tool_name(source_name_pair, "MCP tool batch import item")?;
         let mut local_name = None;
         let mut import_block = ToolImportBlock::default();
 
@@ -479,13 +479,44 @@ impl AstVisitor {
             DslParseError::unexpected_with_span(kind_pair.as_rule(), "MCP import kind", source_span_from_pair(&kind_pair))
         })?;
         let item_name_pair = self.next_pair(&mut inner_pairs, "MCP import name", "MCP import reference")?;
+        let item_name = item_name_pair.as_str().split_whitespace().collect::<String>();
+
+        if kind == McpImportKind::Tool && !McpImportKind::wire_tool_name_is_snake_case(&item_name) {
+            return Err(DslParseError::Pest {
+                message: "MCP tool names in .wire files must be snake_case".to_string(),
+                expected_rules: Vec::new(),
+                span: source_span_from_pair(&item_name_pair),
+            });
+        }
 
         Ok(McpImportSource {
             server_name,
             kind,
-            item_name: item_name_pair.as_str().split_whitespace().collect::<String>(),
+            item_name: kind.normalize_tool_name_from_wire(&item_name),
             span: source_span,
         })
+    }
+
+    fn parse_wire_tool_name(&self, tool_name_pair: Pair<'_, Rule>, context: &'static str) -> Result<String, DslParseError> {
+        let wire_tool_name = tool_name_pair.as_str().split_whitespace().collect::<String>();
+
+        if !McpImportKind::wire_tool_name_is_snake_case(&wire_tool_name) {
+            return Err(DslParseError::Pest {
+                message: "MCP tool names in .wire files must be snake_case".to_string(),
+                expected_rules: Vec::new(),
+                span: source_span_from_pair(&tool_name_pair),
+            });
+        }
+
+        if wire_tool_name.is_empty() {
+            return Err(DslParseError::missing_with_span(
+                "MCP tool import name",
+                context,
+                source_span_from_pair(&tool_name_pair),
+            ));
+        }
+
+        Ok(wire_tool_name)
     }
 
     fn visit_mcp_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {

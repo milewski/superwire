@@ -741,7 +741,7 @@ mod tests {
                 }
             }
 
-            tool update_user_name from mcp.local.tool.update-user-name
+            tool update_user_name from mcp.local.tool.update_user_name
         };
         let temp_directory_path = std::env::temp_dir().join(format!(
             "superwire_lsp_lock_test_{}",

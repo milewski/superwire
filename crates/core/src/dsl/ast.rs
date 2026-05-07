@@ -574,8 +574,16 @@ impl McpImportSource {
     }
 
     #[must_use]
+    pub fn wire_item_name(&self) -> String {
+        match self.kind {
+            McpImportKind::Tool => self.item_name.replace('-', "_"),
+            McpImportKind::Resource | McpImportKind::Prompt => self.item_name.clone(),
+        }
+    }
+
+    #[must_use]
     pub fn render_path(&self) -> String {
-        format!("mcp.{}.{}.{}", self.server_name, self.kind.as_str(), self.item_name)
+        format!("mcp.{}.{}.{}", self.server_name, self.kind.as_str(), self.wire_item_name())
     }
 
     #[must_use]
@@ -613,6 +621,26 @@ impl McpImportKind {
             Self::Resource => "resource",
             Self::Prompt => "prompt",
         }
+    }
+
+    #[must_use]
+    pub fn wire_tool_name_is_snake_case(tool_name: &str) -> bool {
+        let mut characters = tool_name.chars();
+
+        let Some(first_character) = characters.next() else {
+            return false;
+        };
+
+        if !(first_character.is_ascii_lowercase() || first_character == '_') {
+            return false;
+        }
+
+        characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+    }
+
+    #[must_use]
+    pub fn normalize_tool_name_from_wire(self, wire_name: &str) -> String {
+        wire_name.to_string()
     }
 }
 

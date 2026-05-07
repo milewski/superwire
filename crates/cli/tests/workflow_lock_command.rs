@@ -26,7 +26,7 @@ fn writes_single_project_lock_for_multiple_workflows() {
             endpoint: secrets.mcp_endpoint
         }
 
-        tool update_user_name from mcp.local.tool.update-user-name
+        tool update_user_name from mcp.local.tool.update_user_name
     };
 
     let second_workflow_source = workflow_template! {
@@ -38,7 +38,7 @@ fn writes_single_project_lock_for_multiple_workflows() {
             endpoint: secrets.mcp_endpoint
         }
 
-        tool update_user_name from mcp.local.tool.update-user-name
+        tool update_user_name from mcp.local.tool.update_user_name
     };
 
     let vars_path = temporary_workspace.write_json_file(
@@ -182,7 +182,7 @@ fn reads_default_vars_file_next_to_custom_output_path() {
             endpoint: secrets.mcp_endpoint
         }
 
-        tool update_user_name from mcp.local.tool.update-user-name
+        tool update_user_name from mcp.local.tool.update_user_name
     };
     let workflow_path = temporary_workspace.write_file("workflows/custom-output.wire", workflow_source);
     let output_lock_path = temporary_workspace.root_directory.join("locks/superwire.lock");
@@ -236,7 +236,7 @@ fn applies_vars_file_overrides_per_workflow_path() {
             endpoint: secrets.mcp_endpoint
         }
 
-        tool update_user_name from mcp.local.tool.update-user-name
+        tool update_user_name from mcp.local.tool.update_user_name
     };
     let first_workflow_path = temporary_workspace.write_file("workflows/first.wire", workflow_source);
     let second_workflow_path = temporary_workspace.write_file("workflows/second.wire", workflow_source);

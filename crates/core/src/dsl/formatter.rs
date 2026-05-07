@@ -409,16 +409,17 @@ impl McpToolBatchImportDeclaration {
 
 impl super::ast::McpToolBatchImportItem {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let wire_tool_name = self.source_name.replace('-', "_");
         let header = if let Some(alias) = &self.alias {
             format!(
                 "{} {} {} {}",
                 DeclarationKeyword::Tool.as_str(),
-                self.source_name,
+                wire_tool_name,
                 ImportKeyword::As.as_str(),
                 alias
             )
         } else {
-            format!("{} {}", DeclarationKeyword::Tool.as_str(), self.source_name)
+            format!("{} {}", DeclarationKeyword::Tool.as_str(), wire_tool_name)
         };
 
         if self.input_fields.is_empty() && self.fixed_binding_fields.is_empty() && self.max_calls.is_none() && self.output_fields.is_empty()
@@ -567,10 +568,11 @@ impl ToolDeclaration {
 
             return;
         };
+        let wire_tool_name = mcp_tool_source.tool_name.replace('-', "_");
         let source_path = if let Some(server_name) = &mcp_tool_source.server_name {
-            format!("mcp.{server_name}.tool.{}", mcp_tool_source.tool_name)
+            format!("mcp.{server_name}.tool.{wire_tool_name}")
         } else {
-            format!("mcp.tool.{}", mcp_tool_source.tool_name)
+            format!("mcp.tool.{wire_tool_name}")
         };
         let header = format!(
             "{} {} {} {source_path}",
@@ -2306,8 +2308,8 @@ mod tests {
     #[test]
     fn formatter_renders_mcp_tool_batch_imports() {
         let source_text =
-            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task{bindings{title:\"Sort\"}}tool assign-task}\n";
-        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task {\n        bindings {\n            title: \"Sort\"\n        }\n    }\n    tool assign-task\n}\n";
+            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create_sorting_task{bindings{title:\"Sort\"}}tool assign_task}\n";
+        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create_sorting_task {\n        bindings {\n            title: \"Sort\"\n        }\n    }\n    tool assign_task\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("batch import workflow should format successfully");
 

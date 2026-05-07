@@ -13,7 +13,7 @@ mcp local {
     endpoint: secrets.mcp_endpoint
 }
 
-tool fetch_numbers from mcp.local.tool.fetch-numbers
+tool fetch_numbers from mcp.local.tool.fetch_numbers
 
 dynamic {
     result: call tool.fetch_numbers

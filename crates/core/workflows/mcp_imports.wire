@@ -21,7 +21,7 @@ prompt system_prompt from mcp.local.prompt.system-prompt {
     }
 }
 
-tool create_sorting_task_for_task_group from mcp.local.tool.create-sorting-task-for-task-group-tool {
+tool create_sorting_task_for_task_group from mcp.local.tool.create_sorting_task_for_task_group_tool {
     bindings {
         workspace_id: input.workspace_id
         project_id: agent.project_creator.project_id

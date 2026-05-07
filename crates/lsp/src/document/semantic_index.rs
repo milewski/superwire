@@ -585,7 +585,11 @@ impl SemanticIndex {
         } else {
             tool_names
                 .iter()
-                .filter_map(|tool_name| server_lock.tools.get(tool_name))
+                .filter_map(|tool_name| {
+                    server_lock
+                        .find_tool_with_name(tool_name)
+                        .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock)
+                })
                 .collect::<Vec<_>>()
         };
         let mut tool_locks = tool_locks.into_iter();
@@ -629,16 +633,18 @@ impl SemanticIndex {
         let mcp_lock = self.mcp_lock.as_ref()?;
 
         if let Some(server_name) = server_name {
-            return mcp_lock
-                .servers
-                .get(server_name)
-                .and_then(|server_lock| server_lock.tools.get(mcp_tool_name));
+            let server_lock = mcp_lock.servers.get(server_name)?;
+
+            return server_lock
+                .find_tool_with_name(mcp_tool_name)
+                .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock);
         }
 
-        mcp_lock
-            .servers
-            .values()
-            .find_map(|server_lock| server_lock.tools.get(mcp_tool_name))
+        mcp_lock.servers.values().find_map(|server_lock| {
+            server_lock
+                .find_tool_with_name(mcp_tool_name)
+                .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock)
+        })
     }
 
     pub fn from_workflow_with_mcp_lock(workflow: &Workflow, mcp_lock: Option<McpLock>) -> Self {

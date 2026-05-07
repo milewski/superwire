@@ -164,18 +164,26 @@ impl McpLock {
 
     #[must_use]
     pub fn find_tool(&self, source: &ToolSource) -> Option<&McpToolLock> {
+        self.find_tool_with_name(source).map(|(_tool_name, mcp_tool_lock)| mcp_tool_lock)
+    }
+
+    #[must_use]
+    pub fn find_tool_with_name(&self, source: &ToolSource) -> Option<(String, &McpToolLock)> {
         let ToolSource::Mcp(mcp_tool_source) = source;
 
         if let Some(server_name) = &mcp_tool_source.server_name {
-            return self
-                .servers
-                .get(server_name)
-                .and_then(|server_lock| server_lock.tools.get(&mcp_tool_source.tool_name));
+            let server_lock = self.servers.get(server_name)?;
+
+            return server_lock.find_tool_with_name(&mcp_tool_source.tool_name);
         }
 
-        self.servers
-            .values()
-            .find_map(|server_lock| server_lock.tools.get(&mcp_tool_source.tool_name))
+        for server_lock in self.servers.values() {
+            if let Some((tool_name, mcp_tool_lock)) = server_lock.find_tool_with_name(&mcp_tool_source.tool_name) {
+                return Some((tool_name, mcp_tool_lock));
+            }
+        }
+
+        None
     }
 
     pub fn apply_to_workflow(&self, workflow: &mut Workflow) {
@@ -204,15 +212,19 @@ impl McpLock {
     }
 
     fn apply_to_tool_declaration(&self, tool_declaration: &mut ToolDeclaration) {
-        let Some(mcp_tool) = self.find_tool_for_tool_declaration(tool_declaration) else {
+        let Some((resolved_tool_name, mcp_tool)) = self.find_tool_for_tool_declaration(tool_declaration) else {
             return;
         };
+
+        if let Some(ToolSource::Mcp(mcp_tool_source)) = &mut tool_declaration.source {
+            mcp_tool_source.tool_name = resolved_tool_name;
+        }
 
         tool_declaration.apply_mcp_schema(mcp_tool);
     }
 
     #[must_use]
-    fn find_tool_for_tool_declaration(&self, tool_declaration: &ToolDeclaration) -> Option<&McpToolLock> {
+    fn find_tool_for_tool_declaration(&self, tool_declaration: &ToolDeclaration) -> Option<(String, &McpToolLock)> {
         let Some(tool_source) = &tool_declaration.source else {
             return None;
         };
@@ -221,13 +233,65 @@ impl McpLock {
 
         if mcp_tool_source.server_name.is_none() {
             if let Some(server_lock) = self.servers.get(&mcp_tool_source.tool_name) {
-                if let Some(mcp_tool) = server_lock.tools.get(&tool_declaration.name) {
-                    return Some(mcp_tool);
+                if let Some((resolved_tool_name, mcp_tool)) = server_lock.find_tool_with_name(&tool_declaration.name) {
+                    return Some((resolved_tool_name, mcp_tool));
                 }
             }
         }
 
-        self.find_tool(tool_source)
+        self.find_tool_with_name(tool_source)
+    }
+}
+
+impl McpServerLock {
+    #[must_use]
+    pub fn find_tool_with_name(&self, requested_tool_name: &str) -> Option<(String, &McpToolLock)> {
+        if let Some(mcp_tool_lock) = self.tools.get(requested_tool_name) {
+            return Some((requested_tool_name.to_string(), mcp_tool_lock));
+        }
+
+        let normalized_requested_name = Self::normalize_tool_name(requested_tool_name);
+
+        for (tool_name, mcp_tool_lock) in &self.tools {
+            if Self::normalize_tool_name(tool_name) == normalized_requested_name {
+                return Some((tool_name.clone(), mcp_tool_lock));
+            }
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn normalize_tool_name(tool_name: &str) -> String {
+        let mut normalized_name = String::new();
+        let mut previous_was_underscore = false;
+
+        for (index, character) in tool_name.chars().enumerate() {
+            if character.is_ascii_uppercase() {
+                if index > 0 && !previous_was_underscore {
+                    normalized_name.push('_');
+                }
+
+                normalized_name.push(character.to_ascii_lowercase());
+                previous_was_underscore = false;
+
+                continue;
+            }
+
+            if character.is_ascii_lowercase() || character.is_ascii_digit() {
+                normalized_name.push(character);
+                previous_was_underscore = false;
+
+                continue;
+            }
+
+            if !previous_was_underscore {
+                normalized_name.push('_');
+                previous_was_underscore = true;
+            }
+        }
+
+        normalized_name.trim_matches('_').to_string()
     }
 }
 

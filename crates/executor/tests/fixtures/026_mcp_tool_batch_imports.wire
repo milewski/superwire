@@ -23,19 +23,19 @@ from mcp.local.tool {
         project_id: input.project_id
     }
 
-    tool create-sorting-task as create_sorting_task {
+    tool create_sorting_task {
         bindings {
             task_id: input.task_id
         }
     }
 
-    tool update-task-status as update_task_status {
+    tool update_task_status {
         bindings {
             task_id: input.task_id
         }
     }
 
-    tool assign-task {
+    tool assign_task {
         bindings {
             task_id: input.task_id
         }

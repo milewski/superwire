@@ -118,7 +118,7 @@ fn reports_parse_error_for_batch_tool_root_level_binding_fields() {
                 project_id: input.project_id
             }
 
-            tool get-task-group-tasks-tool {
+            tool get_task_group_tasks_tool {
                 task_group_id: input.task_group_id
             }
         }

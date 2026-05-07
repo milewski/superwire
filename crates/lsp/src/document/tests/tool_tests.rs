@@ -167,7 +167,7 @@ fn uses_mcp_lock_for_imported_tool_schema() {
             models: ["gpt-4.1-mini"]
         }
 
-        tool update_user_name from mcp.local.tool.update-user-name
+        tool update_user_name from mcp.local.tool.update_user_name
 
         agent tooling {
             model: openai("gpt-4.1-mini")
@@ -375,7 +375,7 @@ fn suggests_common_mcp_input_fields_inside_batch_input_block() {
             }
 
             tool list_all_participants_who_has_answered_given_task
-            tool update-user-name
+            tool update_user_name
         }
     });
 
@@ -392,7 +392,7 @@ fn suggests_common_mcp_output_fields_inside_batch_output_block() {
             }
 
             tool list_all_participants_who_has_answered_given_task
-            tool update-user-name
+            tool update_user_name
         }
     });
 
@@ -452,7 +452,7 @@ fn reports_invalid_mcp_batch_common_schema_field() {
             }
 
             tool list_all_participants_who_has_answered_given_task
-            tool update-user-name
+            tool update_user_name
         }
     };
     let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
@@ -544,7 +544,7 @@ fn offers_code_action_to_fill_mcp_output_schema_block() {
 fn indexes_batch_imported_tools_for_agent_references() {
     let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
         from mcp.local.tool {
-            tool update-user-name as update_user_name
+            tool update_user_name
         }
 
         agent tooling {

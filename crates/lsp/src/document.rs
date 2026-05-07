@@ -112,9 +112,8 @@ impl DocumentState {
                         .iter()
                         .filter_map(|item| {
                             server_lock
-                                .tools
-                                .get(&item.source_name)
-                                .map(|tool_lock| (item.local_name.as_str(), tool_lock))
+                                .find_tool_with_name(&item.source_name)
+                                .map(|(_resolved_tool_name, tool_lock)| (item.local_name.as_str(), tool_lock))
                         })
                         .collect::<Vec<_>>();
 
@@ -131,7 +130,7 @@ impl DocumentState {
                     diagnostics.extend(self.batch_binding_override_diagnostics(&tool_locks, &mcp_tool_batch.fixed_binding_fields));
 
                     for item in &mcp_tool_batch.items {
-                        let Some(mcp_tool_lock) = server_lock.tools.get(&item.source_name) else {
+                        let Some((_, mcp_tool_lock)) = server_lock.find_tool_with_name(&item.source_name) else {
                             continue;
                         };
 
@@ -159,13 +158,18 @@ impl DocumentState {
 
     fn mcp_tool_lock<'lock>(mcp_lock: &'lock McpLock, server_name: Option<&str>, tool_name: &str) -> Option<&'lock McpToolLock> {
         if let Some(server_name) = server_name {
-            return mcp_lock
-                .servers
-                .get(server_name)
-                .and_then(|server_lock| server_lock.tools.get(tool_name));
+            let server_lock = mcp_lock.servers.get(server_name)?;
+
+            return server_lock
+                .find_tool_with_name(tool_name)
+                .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock);
         }
 
-        mcp_lock.servers.values().find_map(|server_lock| server_lock.tools.get(tool_name))
+        mcp_lock.servers.values().find_map(|server_lock| {
+            server_lock
+                .find_tool_with_name(tool_name)
+                .map(|(_resolved_tool_name, mcp_tool_lock)| mcp_tool_lock)
+        })
     }
 
     fn tool_schema_override_diagnostics(
