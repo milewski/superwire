@@ -38,6 +38,7 @@ impl WorkflowCommand {
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
             WorkflowSubcommand::Lock(lock_workflow_command) => lock_workflow_command.execute(),
+            WorkflowSubcommand::Vars(vars_workflow_command) => vars_workflow_command.execute(),
         }
     }
 }
@@ -51,6 +52,156 @@ enum WorkflowSubcommand {
         after_help = "Examples:\n  superwire-cli workflow lock .\n  superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock"
     )]
     Lock(LockWorkflowCommand),
+    #[command(
+        after_help = "Examples:\n  superwire-cli workflow vars .\n  superwire-cli workflow vars app/Services/Agent --output .wire.vars"
+    )]
+    Vars(VarsWorkflowCommand),
+}
+
+#[derive(Debug, Args)]
+struct VarsWorkflowCommand {
+    #[arg(value_name = "WORKFLOW_PATH_OR_DIRECTORY", required = true)]
+    workflow_targets: Vec<PathBuf>,
+
+    #[arg(short = 'o', long = "output", value_name = "VARS_PATH", default_value = ".wire.vars")]
+    output_path: PathBuf,
+}
+
+impl VarsWorkflowCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        let workflow_paths = self.collect_workflow_paths()?;
+        let mut generated_vars_file = WorkflowVarsFile::default();
+        let mut generation_errors = Vec::new();
+
+        for workflow_path in &workflow_paths {
+            let workflow_source = match fs::read_to_string(workflow_path) {
+                Ok(workflow_source) => workflow_source,
+                Err(read_error) => {
+                    generation_errors.push(format!("failed to read workflow file {}: {read_error}", workflow_path.display()));
+                    continue;
+                }
+            };
+
+            let parsed_workflow = match parse_workflow(&workflow_source) {
+                Ok(parsed_workflow) => parsed_workflow,
+                Err(parse_error) => {
+                    generation_errors.push(parse_error.render_with_source(&workflow_source, &workflow_path.display().to_string()));
+                    continue;
+                }
+            };
+
+            Self::merge_generated_fields_from_workflow(&mut generated_vars_file, &parsed_workflow);
+        }
+
+        self.write_vars_file(&generated_vars_file)?;
+
+        if generation_errors.is_empty() {
+            println!("wrote {}", self.output_path.display());
+
+            return Ok(());
+        }
+
+        Err(CommandError::invalid_input(format!(
+            "generated {} with partial values, but found workflow errors:\n{}",
+            self.output_path.display(),
+            generation_errors.join("\n")
+        )))
+    }
+
+    fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {
+        LockWorkflowCommand::collect_workflow_paths_for_targets(&self.workflow_targets)
+    }
+
+    fn merge_generated_fields_from_workflow(generated_vars_file: &mut WorkflowVarsFile, parsed_workflow: &Workflow) {
+        if let Some(input_declaration) = parsed_workflow.find_input() {
+            Self::merge_typed_fields_into_values(&input_declaration.fields, parsed_workflow, &mut generated_vars_file.input);
+        }
+
+        if let Some(secrets_declaration) = parsed_workflow.find_secrets() {
+            Self::merge_typed_fields_into_values(&secrets_declaration.fields, parsed_workflow, &mut generated_vars_file.secrets);
+        }
+    }
+
+    fn merge_typed_fields_into_values(typed_fields: &[TypedField], parsed_workflow: &Workflow, values: &mut BTreeMap<String, Value>) {
+        for typed_field in typed_fields {
+            if values.contains_key(&typed_field.name) {
+                continue;
+            }
+
+            let generated_value = Self::generate_value_from_type_expression(parsed_workflow, &typed_field.field_type);
+            values.insert(typed_field.name.clone(), generated_value);
+        }
+    }
+
+    fn generate_value_from_type_expression(parsed_workflow: &Workflow, type_expression: &TypeExpression) -> Value {
+        match type_expression {
+            TypeExpression::String | TypeExpression::StringEnum(_) | TypeExpression::StringEnumReference(_) => Value::String(String::new()),
+            TypeExpression::Number => Value::Number(0.into()),
+            TypeExpression::Float => Value::Number(serde_json::Number::from(0)),
+            TypeExpression::Boolean => Value::Bool(false),
+            TypeExpression::Null => Value::Null,
+            TypeExpression::Object(object_fields) => {
+                let mut object_values = Map::new();
+
+                for object_field in object_fields {
+                    object_values.insert(
+                        object_field.name.clone(),
+                        Self::generate_value_from_type_expression(parsed_workflow, &object_field.field_type),
+                    );
+                }
+
+                Value::Object(object_values)
+            }
+            TypeExpression::SchemaReference(schema_name) => {
+                let mut object_values = Map::new();
+
+                if let Some(schema_declaration) = parsed_workflow.find_schema(schema_name) {
+                    for object_field in &schema_declaration.fields {
+                        object_values.insert(
+                            object_field.name.clone(),
+                            Self::generate_value_from_type_expression(parsed_workflow, &object_field.field_type),
+                        );
+                    }
+                }
+
+                Value::Object(object_values)
+            }
+            TypeExpression::Union(type_expressions) => {
+                if let Some(non_null_type_expression) = type_expressions
+                    .iter()
+                    .find(|candidate_type_expression| !matches!(candidate_type_expression, TypeExpression::Null))
+                {
+                    return Self::generate_value_from_type_expression(parsed_workflow, non_null_type_expression);
+                }
+
+                Value::Null
+            }
+            TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_) => Value::Array(Vec::new()),
+        }
+    }
+
+    fn write_vars_file(&self, vars_file: &WorkflowVarsFile) -> Result<(), CommandError> {
+        let vars_json = serde_json::to_string_pretty(vars_file)
+            .map_err(|serialize_error| CommandError::internal(format!("failed to serialize vars file: {serialize_error}")))?;
+        let vars_file_contents = format!("{vars_json}\n");
+
+        if let Some(parent_directory) = self.output_path.parent().filter(|parent_path| !parent_path.as_os_str().is_empty()) {
+            fs::create_dir_all(parent_directory).map_err(|create_error| {
+                CommandError::internal(format!(
+                    "failed to create vars file directory {}: {create_error}",
+                    parent_directory.display()
+                ))
+            })?;
+        }
+
+        fs::write(&self.output_path, vars_file_contents).map_err(|write_error| {
+            CommandError::internal(format!("failed to write vars file {}: {write_error}", self.output_path.display()))
+        })
+    }
 }
 
 #[derive(Debug, Args)]
@@ -397,7 +548,16 @@ impl LockWorkflowCommand {
                 prompted_lock_context = Some(workflow_lock_context.lock_context.clone());
             }
 
-            let workflow_lock = Self::discover_workflow_lock(&parsed_workflow, workflow_lock_context.as_ref())?;
+            let workflow_lock = match Self::discover_workflow_lock(&parsed_workflow, workflow_lock_context.as_ref()) {
+                Ok(workflow_lock) => workflow_lock,
+                Err(discover_error) => {
+                    if let Some(lock_context_to_persist) = prompted_lock_context.as_ref() {
+                        self.persist_prompted_lock_context_if_needed(lock_context_to_persist, prompted_value_was_captured)?;
+                    }
+
+                    return Err(discover_error);
+                }
+            };
 
             project_lock.insert_workflow_lock_with_source(lock_root, workflow_path, workflow_lock, &workflow_source);
         }
@@ -430,9 +590,13 @@ impl LockWorkflowCommand {
     }
 
     fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {
+        Self::collect_workflow_paths_for_targets(&self.workflow_targets)
+    }
+
+    fn collect_workflow_paths_for_targets(workflow_targets: &[PathBuf]) -> Result<Vec<PathBuf>, CommandError> {
         let mut workflow_paths = Vec::new();
 
-        for workflow_target in &self.workflow_targets {
+        for workflow_target in workflow_targets {
             if workflow_target.is_file() {
                 if !Self::is_workflow_file_path(workflow_target) {
                     return Err(CommandError::invalid_input(format!(

@@ -435,6 +435,91 @@ fn reports_missing_nested_object_leaf_values_in_non_interactive_mode() {
     assert!(!standard_error.contains("secrets.models (json)"));
 }
 
+#[test]
+fn generates_vars_file_from_workflow_directory() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        input {
+            project_id: number
+            task_group_id: number
+        }
+
+        secrets {
+            endpoint: string
+            models: {
+                flash: string
+                pro: string
+                max: string
+            }
+        }
+
+        output {
+            value: "ok"
+        }
+    };
+    let workflow_path = temporary_workspace.write_file("workflows/sample.wire", workflow_source);
+    let vars_path = temporary_workspace.root_directory.join(".wire.vars");
+    let command_output = run_workflow_vars_command_with_current_directory(
+        &[workflow_path.as_os_str(), std::ffi::OsStr::new("--output"), vars_path.as_os_str()],
+        &temporary_workspace.root_directory,
+    );
+
+    assert!(command_output.status.success(), "workflow vars command should succeed");
+    assert!(vars_path.exists(), "workflow vars file should be written");
+
+    let vars_json: Value =
+        serde_json::from_str(&fs::read_to_string(vars_path).expect("vars file should read")).expect("vars file should be valid json");
+
+    assert_eq!(vars_json.pointer("/input/project_id"), Some(&json!(0)));
+    assert_eq!(vars_json.pointer("/input/task_group_id"), Some(&json!(0)));
+    assert_eq!(vars_json.pointer("/secrets/endpoint"), Some(&json!("")));
+    assert_eq!(vars_json.pointer("/secrets/models/flash"), Some(&json!("")));
+    assert_eq!(vars_json.pointer("/secrets/models/pro"), Some(&json!("")));
+    assert_eq!(vars_json.pointer("/secrets/models/max"), Some(&json!("")));
+}
+
+#[test]
+fn writes_partial_vars_file_even_when_some_workflows_fail_to_parse() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let valid_workflow_source = workflow_template! {
+        input {
+            project_id: number
+        }
+
+        output {
+            value: "ok"
+        }
+    };
+    let invalid_workflow_source = "input {";
+
+    let valid_workflow_path = temporary_workspace.write_file("workflows/valid.wire", valid_workflow_source);
+    let invalid_workflow_path = temporary_workspace.write_file("workflows/invalid.wire", invalid_workflow_source);
+    let vars_path = temporary_workspace.root_directory.join(".wire.vars");
+    let command_output = run_workflow_vars_command_with_current_directory(
+        &[
+            valid_workflow_path.as_os_str(),
+            invalid_workflow_path.as_os_str(),
+            std::ffi::OsStr::new("--output"),
+            vars_path.as_os_str(),
+        ],
+        &temporary_workspace.root_directory,
+    );
+    let standard_error = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(
+        !command_output.status.success(),
+        "workflow vars command should fail when one workflow cannot parse"
+    );
+    assert!(vars_path.exists(), "workflow vars file should still be written");
+    assert!(standard_error.contains("generated"));
+    assert!(standard_error.contains("partial values"));
+
+    let vars_json: Value =
+        serde_json::from_str(&fs::read_to_string(vars_path).expect("vars file should read")).expect("vars file should be valid json");
+
+    assert_eq!(vars_json.pointer("/input/project_id"), Some(&json!(0)));
+}
+
 fn run_workflow_lock_command(arguments: &[&std::ffi::OsStr]) -> Output {
     Command::new(cli_binary_path())
         .arg("workflow")
@@ -452,6 +537,16 @@ fn run_workflow_lock_command_with_current_directory(arguments: &[&std::ffi::OsSt
         .current_dir(current_directory)
         .output()
         .expect("workflow lock command should run")
+}
+
+fn run_workflow_vars_command_with_current_directory(arguments: &[&std::ffi::OsStr], current_directory: &Path) -> Output {
+    Command::new(cli_binary_path())
+        .arg("workflow")
+        .arg("vars")
+        .args(arguments)
+        .current_dir(current_directory)
+        .output()
+        .expect("workflow vars command should run")
 }
 
 fn cli_binary_path() -> PathBuf {
