@@ -83,9 +83,34 @@ jobs:
         working-directory: editors/intellij
         run: ./gradlew buildPlugin
 
+      - name: Extract plugin distribution
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob
+          import os
+          import shutil
+          import zipfile
+
+          distribution_matches = glob.glob("editors/intellij/build/distributions/*.zip")
+          if not distribution_matches:
+              raise SystemExit("no plugin zip found in editors/intellij/build/distributions")
+
+          distribution_zip_path = distribution_matches[0]
+          extracted_output_directory = "editors/intellij/build/upload-artifact"
+
+          if os.path.exists(extracted_output_directory):
+              shutil.rmtree(extracted_output_directory)
+
+          os.makedirs(extracted_output_directory, exist_ok=True)
+
+          with zipfile.ZipFile(distribution_zip_path, "r") as distribution_zip:
+              distribution_zip.extractall(extracted_output_directory)
+          PY
+
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
           name: superwire-intellij-${{ runner.os }}
-          path: editors/intellij/build/distributions/*.zip
+          path: editors/intellij/build/upload-artifact/**
           if-no-files-found: error
