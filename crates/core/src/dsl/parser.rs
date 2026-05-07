@@ -643,7 +643,9 @@ mod tests {
 
                 tool create-sorting-task as create_sorting_task
                 tool update-task-status as update_task_status {
-                    status: "done"
+                    bindings {
+                        status: "done"
+                    }
                 }
                 tool assign-task
             }

@@ -2306,7 +2306,7 @@ mod tests {
     #[test]
     fn formatter_renders_mcp_tool_batch_imports() {
         let source_text =
-            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task{title:\"Sort\"}tool assign-task}\n";
+            "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task{bindings{title:\"Sort\"}}tool assign-task}\n";
         let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task {\n        bindings {\n            title: \"Sort\"\n        }\n    }\n    tool assign-task\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("batch import workflow should format successfully");

@@ -111,6 +111,23 @@ fn reports_parse_error_for_call_style_tool_binding_overrides() {
 }
 
 #[test]
+fn reports_parse_error_for_batch_tool_root_level_binding_fields() {
+    let diagnostics = inline_diagnostics! {
+        from mcp.local.tool {
+            bindings {
+                project_id: input.project_id
+            }
+
+            tool get-task-group-tasks-tool {
+                task_group_id: input.task_group_id
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::ParseError);
+}
+
+#[test]
 fn allows_block_style_tool_binding_overrides() {
     let diagnostics = inline_diagnostics! {
         input {

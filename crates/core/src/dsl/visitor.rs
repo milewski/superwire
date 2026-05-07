@@ -401,11 +401,6 @@ impl AstVisitor {
                 Rule::tool_import_block => {
                     import_block = self.visit_tool_import_block(item_property_pair)?;
                 }
-                Rule::object_expression => {
-                    import_block
-                        .fixed_binding_fields
-                        .extend(self.visit_object_expression(item_property_pair)?);
-                }
                 _ => unreachable!("MCP tool batch import item should contain only valid properties"),
             }
         }
