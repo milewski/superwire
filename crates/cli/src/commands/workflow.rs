@@ -303,12 +303,16 @@ impl LockWorkflowCommand {
     fn execute(self) -> Result<(), CommandError> {
         self.validate_payload_arguments()?;
 
-        let lock_root = self.output_path.parent().unwrap_or_else(|| Path::new("."));
+        let lock_root = self
+            .output_path
+            .parent()
+            .filter(|parent_path| !parent_path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
         let variables_context = self.vars_context()?;
         let command_context = self.command_context()?;
         let lock_context = Self::merge_contexts(variables_context, command_context);
         let workflow_paths = self.collect_workflow_paths()?;
-        let mut project_lock = ProjectMcpLock::empty();
+        let mut project_lock = self.read_existing_project_lock()?;
 
         for workflow_path in &workflow_paths {
             let workflow_source = fs::read_to_string(workflow_path).map_err(|read_error| {
@@ -320,7 +324,7 @@ impl LockWorkflowCommand {
             })?;
             let workflow_lock = Self::discover_workflow_lock(&parsed_workflow, lock_context.as_ref())?;
 
-            project_lock.insert_workflow_lock(lock_root, workflow_path, workflow_lock);
+            project_lock.insert_workflow_lock_with_source(lock_root, workflow_path, workflow_lock, &workflow_source);
         }
 
         project_lock.write_to_path(&self.output_path).map_err(|mcp_error| {
@@ -333,6 +337,19 @@ impl LockWorkflowCommand {
         println!("wrote {}", self.output_path.display());
 
         Ok(())
+    }
+
+    fn read_existing_project_lock(&self) -> Result<ProjectMcpLock, CommandError> {
+        if !self.output_path.exists() {
+            return Ok(ProjectMcpLock::empty());
+        }
+
+        ProjectMcpLock::read_from_path(&self.output_path).map_err(|read_error| {
+            CommandError::invalid_input(format!(
+                "failed to read existing lock file {}: {read_error}",
+                self.output_path.display()
+            ))
+        })
     }
 
     fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {

@@ -5,6 +5,7 @@ use crate::semantic::support::expression::EvaluationContext;
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -34,7 +35,15 @@ pub struct McpLockResolutionContext {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ProjectMcpLock {
     pub version: u32,
-    pub workflows: BTreeMap<String, McpLock>,
+    pub workflows: BTreeMap<String, ProjectWorkflowMcpLockEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ProjectWorkflowMcpLockEntry {
+    #[serde(default)]
+    pub hash: String,
+    #[serde(flatten)]
+    pub lock: McpLock,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -260,16 +269,33 @@ impl ProjectMcpLock {
     }
 
     pub fn insert_workflow_lock(&mut self, lock_root: &Path, workflow_path: &Path, workflow_lock: McpLock) {
-        let workflow_key = Self::workflow_key(lock_root, workflow_path);
+        self.insert_workflow_lock_with_source(lock_root, workflow_path, workflow_lock, "");
+    }
 
-        self.workflows.insert(workflow_key, workflow_lock);
+    pub fn insert_workflow_lock_with_source(
+        &mut self,
+        lock_root: &Path,
+        workflow_path: &Path,
+        workflow_lock: McpLock,
+        workflow_source: &str,
+    ) {
+        let workflow_key = Self::workflow_key(lock_root, workflow_path);
+        let workflow_hash = Self::workflow_hash(workflow_source);
+
+        self.workflows.insert(
+            workflow_key,
+            ProjectWorkflowMcpLockEntry {
+                hash: workflow_hash,
+                lock: workflow_lock,
+            },
+        );
     }
 
     #[must_use]
     pub fn workflow_lock(&self, lock_root: &Path, workflow_path: &Path) -> Option<&McpLock> {
         let workflow_key = Self::workflow_key(lock_root, workflow_path);
 
-        self.workflows.get(&workflow_key)
+        self.workflows.get(&workflow_key).map(ProjectWorkflowMcpLockEntry::lock)
     }
 
     #[must_use]
@@ -295,12 +321,28 @@ impl ProjectMcpLock {
 
     fn workflow_key(lock_root: &Path, workflow_path: &Path) -> String {
         let normalized_workflow_path = workflow_path.canonicalize().unwrap_or_else(|_error| workflow_path.to_path_buf());
-        let normalized_lock_root = lock_root.canonicalize().unwrap_or_else(|_error| lock_root.to_path_buf());
+        let lock_root_path = if lock_root.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            lock_root
+        };
+        let normalized_lock_root = lock_root_path.canonicalize().unwrap_or_else(|_error| lock_root_path.to_path_buf());
         let relative_workflow_path = normalized_workflow_path
             .strip_prefix(&normalized_lock_root)
             .unwrap_or(normalized_workflow_path.as_path());
 
         relative_workflow_path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn workflow_hash(workflow_source: &str) -> String {
+        format!("{:x}", Sha256::digest(workflow_source.as_bytes()))
+    }
+}
+
+impl ProjectWorkflowMcpLockEntry {
+    #[must_use]
+    pub fn lock(&self) -> &McpLock {
+        &self.lock
     }
 }
 
