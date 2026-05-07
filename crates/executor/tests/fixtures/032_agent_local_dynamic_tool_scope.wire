@@ -1,0 +1,43 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+tool fetch_task_data from mcp.local.tool.fetch_task_data {
+    bindings {
+        project_id: 7
+        depends_on: "pending"
+    }
+}
+
+agent agent_a {
+    model: openai("model-a")
+    prompt: "Prepare dependency value"
+    output: string
+}
+
+agent agent_b {
+    model: openai("model-a")
+
+    dynamic {
+        fetched: call tool.fetch_task_data {
+            bindings {
+                depends_on: agent.agent_a
+            }
+        }
+    }
+
+    prompt: "Use dependency from agent_a"
+    output: string
+}
+
+output {
+    first: agent.agent_a
+    second: agent.agent_b
+}
