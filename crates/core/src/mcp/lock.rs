@@ -6,7 +6,9 @@ use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+pub const PROJECT_MCP_LOCK_FILE_NAME: &str = "superwire.lock";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct McpLock {
@@ -27,6 +29,12 @@ pub struct McpLockResolutionContext {
     pub agent_outputs: BTreeMap<String, Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_contexts: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ProjectMcpLock {
+    pub version: u32,
+    pub workflows: BTreeMap<String, McpLock>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -215,6 +223,84 @@ impl McpLock {
         }
 
         self.find_tool(tool_source)
+    }
+}
+
+impl ProjectMcpLock {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            version: 1,
+            workflows: BTreeMap::new(),
+        }
+    }
+
+    pub fn read_from_path(lock_path: &Path) -> Result<Self, McpError> {
+        let lock_text = std::fs::read_to_string(lock_path).map_err(|source| McpError::ReadLock {
+            path: lock_path.display().to_string(),
+            source,
+        })?;
+
+        serde_json::from_str(&lock_text).map_err(|source| McpError::ParseLock {
+            path: lock_path.display().to_string(),
+            source,
+        })
+    }
+
+    pub fn write_to_path(&self, lock_path: &Path) -> Result<(), McpError> {
+        let lock_text = serde_json::to_string_pretty(self).map_err(|source| McpError::SerializeLock {
+            path: lock_path.display().to_string(),
+            source,
+        })?;
+
+        std::fs::write(lock_path, format!("{lock_text}\n")).map_err(|source| McpError::WriteLock {
+            path: lock_path.display().to_string(),
+            source,
+        })
+    }
+
+    pub fn insert_workflow_lock(&mut self, lock_root: &Path, workflow_path: &Path, workflow_lock: McpLock) {
+        let workflow_key = Self::workflow_key(lock_root, workflow_path);
+
+        self.workflows.insert(workflow_key, workflow_lock);
+    }
+
+    #[must_use]
+    pub fn workflow_lock(&self, lock_root: &Path, workflow_path: &Path) -> Option<&McpLock> {
+        let workflow_key = Self::workflow_key(lock_root, workflow_path);
+
+        self.workflows.get(&workflow_key)
+    }
+
+    #[must_use]
+    pub fn discover_lock_path_for_workflow(workflow_path: &Path) -> Option<PathBuf> {
+        let mut current_directory = if workflow_path.is_dir() {
+            workflow_path.to_path_buf()
+        } else {
+            workflow_path.parent()?.to_path_buf()
+        };
+
+        loop {
+            let candidate_path = current_directory.join(PROJECT_MCP_LOCK_FILE_NAME);
+
+            if candidate_path.exists() {
+                return Some(candidate_path);
+            }
+
+            if !current_directory.pop() {
+                return None;
+            }
+        }
+    }
+
+    fn workflow_key(lock_root: &Path, workflow_path: &Path) -> String {
+        let normalized_workflow_path = workflow_path.canonicalize().unwrap_or_else(|_error| workflow_path.to_path_buf());
+        let normalized_lock_root = lock_root.canonicalize().unwrap_or_else(|_error| lock_root.to_path_buf());
+        let relative_workflow_path = normalized_workflow_path
+            .strip_prefix(&normalized_lock_root)
+            .unwrap_or(normalized_workflow_path.as_path());
+
+        relative_workflow_path.to_string_lossy().replace('\\', "/")
     }
 }
 
