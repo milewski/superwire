@@ -9,12 +9,7 @@ mcp local {
     endpoint: "__ENDPOINT__"
 }
 
-tool fetch_task_data from mcp.local.tool.fetch_task_data {
-    bindings {
-        project_id: 7
-        depends_on: "pending"
-    }
-}
+tool fetch_task_data from mcp.local.tool.fetch_task_data
 
 agent agent_a {
     model: openai("model-a")
@@ -27,7 +22,8 @@ agent agent_b {
 
     dynamic {
         fetched: call tool.fetch_task_data {
-            bindings {
+            input {
+                project_id: 7
                 depends_on: agent.agent_a
             }
         }

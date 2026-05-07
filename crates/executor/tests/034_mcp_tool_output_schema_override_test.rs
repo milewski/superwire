@@ -1,0 +1,56 @@
+#[macro_use]
+mod support;
+
+use serde_json::json;
+use support::fixtures;
+use support::runner::TestRunner;
+
+mod valid {
+    use super::*;
+
+    #[tokio::test]
+    async fn uses_wire_output_schema_when_mcp_tool_output_schema_is_not_defined() {
+        let output = TestRunner::workflow(fixtures::MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE)
+            .mcp("local", |mcp| {
+                mcp.tool("fetch_numbers", |tool| {
+                    tool.input_schema(schema! {}).respond_json(json!({ "values": [1, 2, 3] }));
+                });
+            })
+            .provider("openai", |provider| {
+                provider.api_key("test-api-key");
+                provider.model("model-a", |model| {
+                    model.turn().expect_prompt("Write a note for 1.").respond_string("one");
+                    model.turn().expect_prompt("Write a note for 2.").respond_string("two");
+                    model.turn().expect_prompt("Write a note for 3.").respond_string("three");
+                });
+            })
+            .run()
+            .await
+            .expect("wire-defined output schema should be used when MCP output schema is omitted");
+
+        assert_eq!(output.output, json!({ "notes": ["one", "two", "three"] }));
+    }
+}
+
+mod negative {
+    use super::*;
+
+    #[tokio::test]
+    async fn fails_when_wire_output_schema_declares_non_iterable_values_field() {
+        let run_error = TestRunner::workflow(fixtures::MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE)
+            .mcp("local", |mcp| {
+                mcp.tool("fetch_numbers", |tool| {
+                    tool.input_schema(schema! {});
+                });
+            })
+            .run_expect_error()
+            .await;
+
+        let error_message = run_error.error.to_string();
+
+        assert!(
+            error_message.contains("iterable") || error_message.contains("array"),
+            "{error_message}"
+        );
+    }
+}

@@ -13,10 +13,7 @@ async fn agent_local_dynamic_tool_call_waits_for_agent_dependency() {
             provider.model("model-a", |model| {
                 model.turn().expect_prompt("Prepare dependency value").respond_string("ready");
 
-                model
-                    .turn()
-                    .expect_prompt("Use dependency from agent_a")
-                    .respond_string("done");
+                model.turn().expect_prompt("Use dependency from agent_a").respond_string("done");
             });
         })
         .mcp("local", |mcp| {
@@ -39,9 +36,7 @@ async fn agent_local_dynamic_tool_call_waits_for_agent_dependency() {
 fn find_mcp_tool_call_arguments(requests: &[Value], tool_name: &str) -> Value {
     let tool_call_request = requests
         .iter()
-        .find(|request| {
-            request.get("method") == Some(&json!("tools/call")) && request.pointer("/params/name") == Some(&json!(tool_name))
-        })
+        .find(|request| request.get("method") == Some(&json!("tools/call")) && request.pointer("/params/name") == Some(&json!(tool_name)))
         .expect("expected MCP tools/call request");
 
     tool_call_request

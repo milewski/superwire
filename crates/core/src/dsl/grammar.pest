@@ -33,7 +33,7 @@ mcp_tool_batch_import_property = _{ named_object_property | named_unsigned_integ
 mcp_tool_batch_import_item = { "tool" ~ mcp_import_name ~ ("as" ~ identifier)? ~ object_expression? }
 
 tool_import_block = { "{" ~ tool_import_property* ~ "}" }
-tool_import_property = _{ named_object_property | named_unsigned_integer_property }
+tool_import_property = _{ named_tool_block_property | named_object_property | named_unsigned_integer_property }
 
 mcp_import_reference = { "mcp" ~ "." ~ identifier ~ "." ~ mcp_import_kind ~ "." ~ mcp_import_name }
 mcp_import_kind = { "tool" | "resource" | "prompt" }

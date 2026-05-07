@@ -24,4 +24,16 @@ async fn reads_mcp_resource_as_dynamic_value() {
     assert!(output.output["readme"]
         .as_str()
         .is_some_and(|readme| readme.contains("# Project README")));
+
+    let read_resource_request = output.mcp_requests["local"]
+        .iter()
+        .find(|request| request.get("method") == Some(&json!("resources/read")))
+        .expect("resources/read request should be present");
+
+    assert_eq!(
+        read_resource_request.pointer("/params"),
+        Some(&json!({
+            "uri": "file://resources/project-readme"
+        }))
+    );
 }

@@ -507,7 +507,47 @@ impl ToolDeclaration {
             ImportKeyword::From.as_str()
         );
 
-        push_mcp_import_with_parameters(formatter, &header, &self.fixed_binding_fields);
+        if self.fixed_binding_fields.is_empty() && self.output_fields.is_empty() && self.max_calls.is_none() {
+            formatter.push_line(&header);
+
+            return;
+        }
+
+        formatter.push_declaration_block_start(&header);
+
+        if let Some(max_calls) = self.max_calls {
+            formatter.push_line(&format!("max_calls: {max_calls}"));
+
+            if !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.fixed_binding_fields.is_empty() {
+            formatter.push_declaration_block_start("bindings");
+
+            for fixed_binding_field in &self.fixed_binding_fields {
+                fixed_binding_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.output_fields.is_empty() {
+            formatter.push_declaration_block_start("output");
+
+            for output_field in &self.output_fields {
+                output_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+        }
+
+        formatter.push_declaration_block_end();
     }
 }
 

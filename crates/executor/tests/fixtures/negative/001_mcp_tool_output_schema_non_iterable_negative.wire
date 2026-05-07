@@ -1,0 +1,30 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+tool fetch_numbers from mcp.local.tool.fetch_numbers {
+    output {
+        values: string
+    }
+}
+
+dynamic {
+    result: call tool.fetch_numbers
+}
+
+agent number_note for number in dynamic.result.values {
+    model: openai("model-a")
+    prompt: "Write a note for {{ number }}."
+    output: string
+}
+
+output {
+    notes: agent.number_note
+}
