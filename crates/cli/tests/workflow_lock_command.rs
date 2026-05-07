@@ -213,6 +213,58 @@ fn appends_new_workflows_when_lock_file_already_exists() {
     assert!(lock_json.pointer("/workflows/workflows~1second.wire").is_some());
 }
 
+#[test]
+fn fails_when_mcp_server_requires_runtime_values_without_vars_context() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        tool fetch_task_data from mcp.local.tool.fetch_task_data
+    };
+    let workflow_path = temporary_workspace.write_file("workflows/dynamic-endpoint.wire", workflow_source);
+    let command_output =
+        run_workflow_lock_command_with_current_directory(&[workflow_path.as_os_str()], &temporary_workspace.root_directory);
+    let standard_error = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(
+        !command_output.status.success(),
+        "workflow lock command should fail without runtime context"
+    );
+    assert!(standard_error.contains("failed to discover MCP typings"));
+    assert!(standard_error.contains(".wire.vars"));
+}
+
+#[test]
+fn fails_with_actionable_error_for_missing_prompted_values_in_non_interactive_mode() {
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        input {
+            project_id: number
+        }
+
+        output {
+            value: "ok"
+        }
+    };
+    let workflow_path = temporary_workspace.write_file("workflows/missing-input.wire", workflow_source);
+    let command_output =
+        run_workflow_lock_command_with_current_directory(&[workflow_path.as_os_str()], &temporary_workspace.root_directory);
+    let standard_error = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(
+        !command_output.status.success(),
+        "workflow lock command should fail in non-interactive mode"
+    );
+    assert!(standard_error.contains("terminal is non-interactive"));
+    assert!(standard_error.contains("input.project_id"));
+}
+
 fn run_workflow_lock_command(arguments: &[&std::ffi::OsStr]) -> Output {
     Command::new(cli_binary_path())
         .arg("workflow")

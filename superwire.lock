@@ -4,6 +4,142 @@
     "crates/executor/tests/fixtures/001_minimum.wire": {
       "hash": "ef2b6b5ada36e595f036b52ae0f4eb4e8174d63e79fbc165f77e8e8724ec2c30",
       "servers": {}
+    },
+    "crates/executor/tests/fixtures/002_string_output.wire": {
+      "hash": "e43a5b2b269c8e689d4f0380b72644dbdd38d415cdbc38aa6e3a35d7b9bf00d2",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/003_object_output.wire": {
+      "hash": "41d0bad0f2642b30304aca34e5efafe071dd06be840ae7214b54b1591f5bf36c",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/004_linear_chain.wire": {
+      "hash": "cf3a64ea3ec44dcc7fbdd15c33bf4e8ff031908441777beb9d36f919b3b0f5f5",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/005_parallel_agents.wire": {
+      "hash": "f78000b485b6bdd2ea13c0804e484044208f9bcdf996bf0fd365b1f0aa7cd97d",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/006_input_string.wire": {
+      "hash": "8e42475435f3601586eb10c6b74f45fb07cb6c8272b43f84215a1196dfcb425d",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/007_input_object.wire": {
+      "hash": "f43ac9e8ba60b99b2f619ebf2e69a61bc150392e83787059a2faaa36191ab69b",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/008_input_array.wire": {
+      "hash": "1fe26e64cf61f64384a856dc8281858e4b09c7ee43d2052e5bd499f679bec1a3",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/009_secrets.wire": {
+      "hash": "ded5352361dc8a472073a98c990891b62a0bcde00defdf27293b462db55a878d",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/010_dynamic_values.wire": {
+      "hash": "7eb02f4ada4870b557ab6b78a1fd606c1e71709ea33a80159ea033f9d1ba29bb",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/011_string_interpolation.wire": {
+      "hash": "a54379a810aafd5dae5af366b26761b640749883e930d0950a99f39974f4a0f9",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/012_nested_output.wire": {
+      "hash": "8f185bf2a9a74ffcc745d44ba076ed739711021d1bd65771a285f9e8a2c0faa2",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/013_hardcoded_output.wire": {
+      "hash": "4cb64605a1961d8a98308e2f004e6a9d3a53dbb2909c0e436565dcdbe0e1c8d1",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/014_multiline_prompt.wire": {
+      "hash": "f2223e4d7101ddca4c21c2a9fb6f4dedab84861844f83c134085b00fc5f87779",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/015_inference_settings.wire": {
+      "hash": "6a99cbf469f30ff8b06a10b4d578124617062946e0cd7039207a0b0c8dbe086a",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/016_schema_output.wire": {
+      "hash": "521bb0a29dd1502ee0679fa12820c531053a471bf7690f2fd08d28c13a29dbb6",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/017_complex_types.wire": {
+      "hash": "067d8c1ab782129691d15cfd6738a107b7de2bd28ff2b6f86a336b64ea13936c",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/018_optional_chaining.wire": {
+      "hash": "e2118cfdba7599ca4aa4236d6ada7799e9ddb8fa4619ff0aba63c893b68d8983",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/019_diamond_dependency.wire": {
+      "hash": "14e8c6b7e6790bd809b55880789401820c6ad3642192211f1b65b499d576b777",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/020_mixed_output.wire": {
+      "hash": "fd40f7c46a3a92a4a61f1ca64a9f6a53d181caf7843a93ca21c7c0779fde6950",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/021_dynamic_tool_call.wire": {
+      "hash": "4c6ddb83a44b8a3c96195b905186b153baad651d2d1d56b6acb246563378277d",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/022_mcp_read_resource.wire": {
+      "hash": "2a2170c3d1ef630b3475d5f9862225efdb84f70b3daa4e0bc90c209355e2ea3a",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/023_mcp_render_prompt.wire": {
+      "hash": "0d316ef691e230ed61c07b2c1a9b46be0d04152522f5ec3f18662fbb035f3a6b",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/024_mcp_read_render_dependencies.wire": {
+      "hash": "0570c20a5af00eeab844739067737b24da1216c99fc31ba7d4f1170a06a647b9",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/025_tool_max_calls_scopes.wire": {
+      "hash": "8eaca92f047541a3433ba55afeffab84a06ef3f8112feec101342f6b9342e439",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/026_mcp_tool_batch_imports.wire": {
+      "hash": "cfaf02a4b9ba716f220ac6d0fc6fd431a3ff35f7deca6215fdf70b29723a22a7",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/027_agent_response_format_json_schema.wire": {
+      "hash": "b4aea43f49a81aea0352568ff3b8c1c951e9fff7b87eba6687caffca654c53c5",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/028_agent_response_format_json_object.wire": {
+      "hash": "8caeb44a1073b174c596fee54c228c4ac5c886b9c563f0c149445b1842b52cd0",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/029_agent_response_format_instruction_only.wire": {
+      "hash": "97a2f66fe4f3329bc1be8fee1403b2ae56857e234fbea1504bf68146a00f7cd2",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/030_mcp_tool_output_iterable_type_mismatch.wire": {
+      "hash": "96ba058a687d322657ce7728769a82c6870a449a205f83c4f1f4a81de242d07a",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/031_multiple_providers_models.wire": {
+      "hash": "9f6f7f794bcd23da907756695acbacfca48c884aecfd49b2a276d81977828d8a",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/032_agent_local_dynamic_tool_scope.wire": {
+      "hash": "238b2810afa7e0c4e1f080208fa1708c84a26d25f2aad5187000c4ac6eba093f",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/033_agent_local_dynamic_bindings_override_append.wire": {
+      "hash": "79d98c575e918e5903de8055ec404f9337563e74e4e8a630b13047a4df27843f",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/034_mcp_tool_output_schema_override.wire": {
+      "hash": "304da4bf42306794568bb92ac8e395fa8f88d5c620445afa808ff8d027500366",
+      "servers": {}
+    },
+    "crates/executor/tests/fixtures/negative/001_mcp_tool_output_schema_non_iterable_negative.wire": {
+      "hash": "6bcbf7d9aaac06580c94c88f32d0e6f0a05098e75bbf7deb17e68fac70cf09aa",
+      "servers": {}
     }
   }
 }

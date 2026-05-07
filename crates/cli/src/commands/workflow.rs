@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
@@ -12,7 +13,7 @@ use superwire_core::dsl::{
     parse_workflow, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration, Expression, ObjectField, StringTemplatePart,
     TypeExpression, TypedField, Workflow,
 };
-use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME};
+use superwire_core::mcp::{McpLock, McpLockResolutionContext, McpServerConfig, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME};
 use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use superwire_core::semantic::support::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 use superwire_core::semantic::{compile_workflow_pipeline, ExecutionPlan, TypedWorkflowIr, WorkflowPipelineInput};
@@ -310,7 +311,8 @@ impl LockWorkflowCommand {
             .unwrap_or_else(|| Path::new("."));
         let variables_context = self.vars_context()?;
         let command_context = self.command_context()?;
-        let lock_context = Self::merge_contexts(variables_context, command_context);
+        let mut lock_context = Self::merge_contexts(variables_context, command_context).unwrap_or_default();
+        let mut prompted_value_was_captured = false;
         let workflow_paths = self.collect_workflow_paths()?;
         let mut project_lock = self.read_existing_project_lock()?;
 
@@ -322,10 +324,18 @@ impl LockWorkflowCommand {
             let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
                 CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &workflow_path.display().to_string()))
             })?;
-            let workflow_lock = Self::discover_workflow_lock(&parsed_workflow, lock_context.as_ref())?;
+            let workflow_lock_context = self.resolve_lock_context_with_prompts(&parsed_workflow, &mut lock_context)?;
+
+            if workflow_lock_context.prompted_value_was_captured {
+                prompted_value_was_captured = true;
+            }
+
+            let workflow_lock = Self::discover_workflow_lock(&parsed_workflow, workflow_lock_context.as_ref())?;
 
             project_lock.insert_workflow_lock_with_source(lock_root, workflow_path, workflow_lock, &workflow_source);
         }
+
+        self.persist_prompted_lock_context_if_needed(&lock_context, prompted_value_was_captured)?;
 
         project_lock.write_to_path(&self.output_path).map_err(|mcp_error| {
             CommandError::internal(format!(
@@ -493,6 +503,191 @@ impl LockWorkflowCommand {
         Some(merged_context)
     }
 
+    fn resolve_lock_context_with_prompts(
+        &self,
+        parsed_workflow: &Workflow,
+        lock_context: &mut McpLockResolutionContext,
+    ) -> Result<PromptedLockContext, CommandError> {
+        let mut prompted_value_was_captured = false;
+
+        if let Some(input_declaration) = parsed_workflow.find_input() {
+            if self.prompt_for_missing_fields("input", &input_declaration.fields, &mut lock_context.input)? {
+                prompted_value_was_captured = true;
+            }
+        }
+
+        if let Some(secrets_declaration) = parsed_workflow.find_secrets() {
+            if self.prompt_for_missing_fields("secrets", &secrets_declaration.fields, &mut lock_context.secrets)? {
+                prompted_value_was_captured = true;
+            }
+        }
+
+        Ok(PromptedLockContext {
+            lock_context: lock_context.clone(),
+            prompted_value_was_captured,
+        })
+    }
+
+    fn prompt_for_missing_fields(
+        &self,
+        section_name: &str,
+        typed_fields: &[TypedField],
+        existing_values: &mut BTreeMap<String, Value>,
+    ) -> Result<bool, CommandError> {
+        let mut prompted_value_was_captured = false;
+
+        for typed_field in typed_fields {
+            if existing_values.contains_key(&typed_field.name) {
+                continue;
+            }
+
+            let field_value = self.prompt_for_field_value(section_name, typed_field)?;
+
+            existing_values.insert(typed_field.name.clone(), field_value);
+            prompted_value_was_captured = true;
+        }
+
+        Ok(prompted_value_was_captured)
+    }
+
+    fn persist_prompted_lock_context_if_needed(
+        &self,
+        lock_context: &McpLockResolutionContext,
+        prompted_value_was_captured: bool,
+    ) -> Result<(), CommandError> {
+        if !prompted_value_was_captured {
+            return Ok(());
+        }
+
+        let vars_context_json = serde_json::to_string_pretty(lock_context)
+            .map_err(|serialize_error| CommandError::internal(format!("failed to serialize vars context: {serialize_error}")))?;
+        let vars_file_contents = format!("{vars_context_json}\n");
+
+        fs::write(&self.vars_file, vars_file_contents).map_err(|write_error| {
+            CommandError::internal(format!(
+                "failed to persist prompted values to vars file {}: {write_error}",
+                self.vars_file.display()
+            ))
+        })?;
+
+        println!("updated {}", self.vars_file.display());
+
+        Ok(())
+    }
+
+    fn prompt_for_field_value(&self, section_name: &str, typed_field: &TypedField) -> Result<Value, CommandError> {
+        if !io::stdin().is_terminal() {
+            return Err(CommandError::invalid_input(format!(
+                "missing {section_name}.{} and terminal is non-interactive; provide it via .wire.vars, --vars-file, --input-json, --secrets-json, or --set",
+                typed_field.name
+            )));
+        }
+
+        let prompt_message = format!(
+            "missing {section_name}.{} ({}) - enter value: ",
+            typed_field.name,
+            Self::type_expression_label(&typed_field.field_type)
+        );
+
+        print!("{prompt_message}");
+
+        io::stdout()
+            .flush()
+            .map_err(|flush_error| CommandError::internal(format!("failed to flush prompt output: {flush_error}")))?;
+
+        let mut input_buffer = String::new();
+
+        io::stdin()
+            .read_line(&mut input_buffer)
+            .map_err(|read_error| CommandError::internal(format!("failed to read prompt input: {read_error}")))?;
+
+        let trimmed_input = input_buffer.trim();
+
+        if trimmed_input.is_empty() {
+            return Err(CommandError::invalid_input(format!(
+                "missing {section_name}.{}; empty value is not allowed",
+                typed_field.name
+            )));
+        }
+
+        Self::parse_prompt_value(trimmed_input, &typed_field.field_type, section_name, &typed_field.name)
+    }
+
+    fn type_expression_label(type_expression: &TypeExpression) -> &'static str {
+        match type_expression {
+            TypeExpression::String | TypeExpression::StringEnum(_) | TypeExpression::StringEnumReference(_) => "string",
+            TypeExpression::Number => "integer",
+            TypeExpression::Float => "float",
+            TypeExpression::Boolean => "boolean",
+            TypeExpression::Null => "null",
+            TypeExpression::SchemaReference(_)
+            | TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_)
+            | TypeExpression::Object(_)
+            | TypeExpression::Union(_) => "json",
+        }
+    }
+
+    fn parse_prompt_value(
+        input_text: &str,
+        type_expression: &TypeExpression,
+        section_name: &str,
+        field_name: &str,
+    ) -> Result<Value, CommandError> {
+        match type_expression {
+            TypeExpression::String | TypeExpression::StringEnum(_) | TypeExpression::StringEnumReference(_) => {
+                Ok(Value::String(input_text.to_string()))
+            }
+            TypeExpression::Number => {
+                let parsed_integer = input_text.parse::<i64>().map_err(|parse_error| {
+                    CommandError::invalid_input(format!("invalid integer for {section_name}.{field_name}: {parse_error}"))
+                })?;
+
+                Ok(Value::Number(parsed_integer.into()))
+            }
+            TypeExpression::Float => {
+                let parsed_float = input_text.parse::<f64>().map_err(|parse_error| {
+                    CommandError::invalid_input(format!("invalid float for {section_name}.{field_name}: {parse_error}"))
+                })?;
+                let Some(parsed_number) = serde_json::Number::from_f64(parsed_float) else {
+                    return Err(CommandError::invalid_input(format!(
+                        "invalid float for {section_name}.{field_name}: value must be finite"
+                    )));
+                };
+
+                Ok(Value::Number(parsed_number))
+            }
+            TypeExpression::Boolean => {
+                let parsed_boolean = input_text.parse::<bool>().map_err(|parse_error| {
+                    CommandError::invalid_input(format!("invalid boolean for {section_name}.{field_name}: {parse_error}"))
+                })?;
+
+                Ok(Value::Bool(parsed_boolean))
+            }
+            TypeExpression::Null => {
+                if input_text != "null" {
+                    return Err(CommandError::invalid_input(format!(
+                        "invalid null for {section_name}.{field_name}: expected literal `null`"
+                    )));
+                }
+
+                Ok(Value::Null)
+            }
+            TypeExpression::SchemaReference(_)
+            | TypeExpression::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | TypeExpression::Tuple(_)
+            | TypeExpression::Object(_)
+            | TypeExpression::Union(_) => serde_json::from_str::<Value>(input_text)
+                .map_err(|parse_error| CommandError::invalid_input(format!("invalid json for {section_name}.{field_name}: {parse_error}"))),
+        }
+    }
+
     fn input_value(&self) -> Result<Map<String, Value>, CommandError> {
         let base_payload = self.payload_as_object(self.input_json.as_deref(), self.input_file.as_deref(), "input payload")?;
         self.apply_dot_params(base_payload)
@@ -576,11 +771,58 @@ impl LockWorkflowCommand {
         parsed_workflow: &Workflow,
         lock_context: Option<&McpLockResolutionContext>,
     ) -> Result<McpLock, CommandError> {
+        if lock_context.is_none() {
+            let unresolved_server_names = Self::unresolved_mcp_server_names(parsed_workflow);
+
+            if !unresolved_server_names.is_empty() {
+                return Err(CommandError::invalid_input(format!(
+                    "failed to discover MCP typings: MCP servers require runtime values for endpoint/headers: {}. Provide values in .wire.vars or pass --vars-file, --secrets-json, --input-json, or --set",
+                    unresolved_server_names.join(", ")
+                )));
+            }
+        }
+
         McpLock::discover_from_workflow_with_lock_context(parsed_workflow, lock_context).map_err(|mcp_error| {
             CommandError::invalid_input(format!(
                 "failed to discover MCP typings; provide dynamic values with --vars-file .wire.vars, --input-json, --secrets-json, or --set: {mcp_error}"
             ))
         })
+    }
+
+    fn unresolved_mcp_server_names(parsed_workflow: &Workflow) -> Vec<String> {
+        let mut unresolved_server_names = Vec::new();
+
+        for declaration in parsed_workflow.declarations() {
+            let Declaration::McpServer(mcp_server_declaration) = declaration else {
+                continue;
+            };
+
+            if McpServerConfig::from_declaration(mcp_server_declaration).is_none() {
+                unresolved_server_names.push(mcp_server_declaration.name.clone());
+            }
+        }
+
+        unresolved_server_names
+    }
+}
+
+struct PromptedLockContext {
+    lock_context: McpLockResolutionContext,
+    prompted_value_was_captured: bool,
+}
+
+impl PromptedLockContext {
+    fn as_ref(&self) -> Option<&McpLockResolutionContext> {
+        if self.lock_context.input.is_empty()
+            && self.lock_context.secrets.is_empty()
+            && self.lock_context.dynamic.is_empty()
+            && self.lock_context.agent_outputs.is_empty()
+            && self.lock_context.agent_contexts.is_empty()
+        {
+            return None;
+        }
+
+        Some(&self.lock_context)
     }
 }
 
