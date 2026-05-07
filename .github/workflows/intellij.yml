@@ -1,0 +1,86 @@
+name: IntelliJ Plugin
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'editors/intellij/**'
+      - 'crates/lsp/**'
+  push:
+    branches: [main]
+    paths:
+      - 'editors/intellij/**'
+      - 'crates/lsp/**'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build Plugin (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rust_targets: x86_64-unknown-linux-gnu x86_64-pc-windows-gnu
+          - os: macos-latest
+            rust_targets: aarch64-apple-darwin x86_64-apple-darwin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.94'
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '.'
+          cache-on-failure: true
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install mingw-w64 (Linux cross-compile for Windows)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+
+      - name: Build LSP binaries
+        run: |
+          for target in ${{ matrix.rust_targets }}; do
+            echo "Building superwire-lsp for $target"
+            cargo build -p superwire-lsp --release --target "$target"
+          done
+
+      - name: Build IntelliJ plugin
+        working-directory: editors/intellij
+        run: ./gradlew buildPlugin
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: superwire-intellij-${{ runner.os }}
+          path: editors/intellij/build/distributions/*.zip
+          if-no-files-found: error

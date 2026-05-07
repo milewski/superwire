@@ -418,6 +418,32 @@ fn suggests_mcp_input_fields_inside_tool_binding_override_block() {
 }
 
 #[test]
+fn does_not_suggest_mcp_input_fields_at_root_of_batch_tool_body() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+
+            tool list_all_participants_who_has_answered_given_task {
+                <cursor>
+            }
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "input", "output");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "common_shared_among_all_feature",
+        "project_id",
+        "task_id",
+        "participants",
+        "shared",
+    );
+}
+
+#[test]
 fn reports_invalid_mcp_batch_common_schema_field() {
     let source = inline_document_template! {
         from mcp.local.tool {

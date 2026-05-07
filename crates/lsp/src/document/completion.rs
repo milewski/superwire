@@ -493,10 +493,16 @@ impl DocumentState {
                 }
 
                 let after_property_name = &source_prefix[property_name_index + property_name.len()..];
-                let open_brace_relative_index = after_property_name.find('{')?;
-                let open_brace_index = property_name_index + property_name.len() + open_brace_relative_index;
+                let leading_whitespace_length = after_property_name.len() - after_property_name.trim_start().len();
+                let trimmed_after_property_name = &after_property_name[leading_whitespace_length..];
 
-                if Self::block_balance(&source_prefix[open_brace_index..]) <= 0 {
+                if !trimmed_after_property_name.starts_with('{') {
+                    return None;
+                }
+
+                let open_brace_index = property_name_index + property_name.len() + leading_whitespace_length;
+
+                if !Self::block_is_still_open(&source_prefix[open_brace_index..]) {
                     return None;
                 }
 
