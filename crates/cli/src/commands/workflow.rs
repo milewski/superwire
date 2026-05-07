@@ -12,6 +12,7 @@ use superwire_core::dsl::{
     parse_workflow, AgentForLoop, AgentForLoopPattern, CallArgument, Declaration, Expression, ObjectField, StringTemplatePart,
     TypeExpression, TypedField, Workflow,
 };
+use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME};
 use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use superwire_core::semantic::support::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
 use superwire_core::semantic::{compile_workflow_pipeline, ExecutionPlan, TypedWorkflowIr, WorkflowPipelineInput};
@@ -35,6 +36,7 @@ impl WorkflowCommand {
             WorkflowSubcommand::ToJson(to_json_workflow_command) => to_json_workflow_command.execute(),
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
+            WorkflowSubcommand::Lock(lock_workflow_command) => lock_workflow_command.execute(),
         }
     }
 }
@@ -44,6 +46,8 @@ enum WorkflowSubcommand {
     ToJson(ToJsonWorkflowCommand),
     Check(CheckWorkflowCommand),
     Run(RunWorkflowCommand),
+    #[command(after_help = "Example:\n  superwire-cli workflow lock workflows/*.wire --vars-file .wire.vars --output superwire.lock")]
+    Lock(LockWorkflowCommand),
 }
 
 #[derive(Debug, Args)]
@@ -263,6 +267,230 @@ impl RunWorkflowCommand {
                 "error": error.to_string(),
             }),
         )
+    }
+}
+
+#[derive(Debug, Args)]
+struct LockWorkflowCommand {
+    #[arg(value_name = "WORKFLOW_PATH", required = true)]
+    workflow_paths: Vec<PathBuf>,
+
+    #[arg(short = 'o', long = "output", value_name = "LOCK_PATH", default_value = PROJECT_MCP_LOCK_FILE_NAME)]
+    output_path: PathBuf,
+
+    #[arg(long, value_name = "VARS_JSON_FILE", default_value = ".wire.vars")]
+    vars_file: PathBuf,
+
+    #[arg(long, value_name = "JSON")]
+    input_json: Option<String>,
+
+    #[arg(long, value_name = "INPUT_JSON_FILE")]
+    input_file: Option<PathBuf>,
+
+    #[arg(long, value_name = "JSON")]
+    secrets_json: Option<String>,
+
+    #[arg(long, value_name = "SECRETS_JSON_FILE")]
+    secrets_file: Option<PathBuf>,
+
+    #[arg(long = "set", value_name = "KEY=VALUE", number_of_values = 1)]
+    set: Option<Vec<String>>,
+}
+
+impl LockWorkflowCommand {
+    fn execute(self) -> Result<(), CommandError> {
+        self.validate_payload_arguments()?;
+
+        let lock_root = self.output_path.parent().unwrap_or_else(|| Path::new("."));
+        let variables_context = self.vars_context()?;
+        let command_context = self.command_context()?;
+        let lock_context = Self::merge_contexts(variables_context, command_context);
+        let mut project_lock = ProjectMcpLock::empty();
+
+        for workflow_path in &self.workflow_paths {
+            let workflow_source = fs::read_to_string(workflow_path).map_err(|read_error| {
+                CommandError::invalid_input(format!("failed to read workflow file {}: {read_error}", workflow_path.display()))
+            })?;
+
+            let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
+                CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &workflow_path.display().to_string()))
+            })?;
+            let workflow_lock = Self::discover_workflow_lock(&parsed_workflow, lock_context.as_ref())?;
+
+            project_lock.insert_workflow_lock(lock_root, workflow_path, workflow_lock);
+        }
+
+        project_lock.write_to_path(&self.output_path).map_err(|mcp_error| {
+            CommandError::internal(format!(
+                "failed to write MCP project lock {}: {mcp_error}",
+                self.output_path.display()
+            ))
+        })?;
+
+        println!("wrote {}", self.output_path.display());
+
+        Ok(())
+    }
+
+    fn validate_payload_arguments(&self) -> Result<(), CommandError> {
+        if self.input_json.is_some() && self.input_file.is_some() {
+            return Err(CommandError::invalid_input("use either --input-json or --input-file, not both"));
+        }
+
+        if self.input_json.is_some() && self.set.is_some() {
+            return Err(CommandError::invalid_input("use either --input-json or --set, not both"));
+        }
+
+        if self.input_file.is_some() && self.set.is_some() {
+            return Err(CommandError::invalid_input("use either --input-file or --set, not both"));
+        }
+
+        if self.secrets_json.is_some() && self.secrets_file.is_some() {
+            return Err(CommandError::invalid_input("use either --secrets-json or --secrets-file, not both"));
+        }
+
+        Ok(())
+    }
+
+    fn vars_context(&self) -> Result<Option<McpLockResolutionContext>, CommandError> {
+        if !self.vars_file.exists() {
+            return Ok(None);
+        }
+
+        let vars_text = fs::read_to_string(&self.vars_file).map_err(|read_error| {
+            CommandError::invalid_input(format!("failed to read vars file {}: {read_error}", self.vars_file.display()))
+        })?;
+        let vars_context = serde_json::from_str::<McpLockResolutionContext>(&vars_text)
+            .map_err(|parse_error| CommandError::invalid_input(format!("vars file must be valid json: {parse_error}")))?;
+
+        Ok(Some(vars_context))
+    }
+
+    fn command_context(&self) -> Result<Option<McpLockResolutionContext>, CommandError> {
+        let input = self.input_value()?;
+        let secrets = self.secrets_value()?;
+
+        if input.is_empty() && secrets.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(McpLockResolutionContext {
+            input: input.into_iter().collect(),
+            secrets: secrets.into_iter().collect(),
+            dynamic: BTreeMap::new(),
+            agent_outputs: BTreeMap::new(),
+            agent_contexts: BTreeMap::new(),
+        }))
+    }
+
+    fn merge_contexts(
+        variables_context: Option<McpLockResolutionContext>,
+        command_context: Option<McpLockResolutionContext>,
+    ) -> Option<McpLockResolutionContext> {
+        let Some(command_context) = command_context else {
+            return variables_context;
+        };
+        let mut merged_context = variables_context.unwrap_or_default();
+
+        if !command_context.input.is_empty() {
+            merged_context.input = command_context.input;
+        }
+
+        if !command_context.secrets.is_empty() {
+            merged_context.secrets = command_context.secrets;
+        }
+
+        Some(merged_context)
+    }
+
+    fn input_value(&self) -> Result<Map<String, Value>, CommandError> {
+        let base_payload = self.payload_as_object(self.input_json.as_deref(), self.input_file.as_deref(), "input payload")?;
+        self.apply_dot_params(base_payload)
+    }
+
+    fn secrets_value(&self) -> Result<Map<String, Value>, CommandError> {
+        self.payload_as_object(self.secrets_json.as_deref(), self.secrets_file.as_deref(), "secrets payload")
+    }
+
+    fn apply_dot_params(&self, mut payload: Map<String, Value>) -> Result<Map<String, Value>, CommandError> {
+        let Some(set_args) = &self.set else {
+            return Ok(payload);
+        };
+
+        for key_value_pair in set_args {
+            let Some((key, value)) = key_value_pair.split_once('=') else {
+                return Err(CommandError::invalid_input(format!(
+                    "invalid --set format: expected KEY=VALUE, got '{key_value_pair}'"
+                )));
+            };
+
+            let key = key.trim();
+            let value = value.trim();
+            let mut current_payload = &mut payload;
+            let key_parts: Vec<&str> = key.split('.').collect();
+
+            for (key_part_index, key_part) in key_parts.iter().enumerate() {
+                let is_last_key_part = key_part_index == key_parts.len() - 1;
+
+                if is_last_key_part {
+                    current_payload.insert((*key_part).to_string(), Value::String(value.to_string()));
+                } else {
+                    if !current_payload.contains_key(*key_part) {
+                        current_payload.insert((*key_part).to_string(), Value::Object(Map::new()));
+                    }
+
+                    let Some(object_payload) = current_payload.get_mut(*key_part).and_then(Value::as_object_mut) else {
+                        return Err(CommandError::invalid_input(format!(
+                            "cannot set nested value on non-object path: {key}"
+                        )));
+                    };
+
+                    current_payload = object_payload;
+                }
+            }
+        }
+
+        Ok(payload)
+    }
+
+    fn payload_as_object(
+        &self,
+        inline_payload: Option<&str>,
+        payload_file_path: Option<&Path>,
+        payload_label: &str,
+    ) -> Result<Map<String, Value>, CommandError> {
+        let payload_json = if let Some(inline_payload) = inline_payload {
+            inline_payload.to_string()
+        } else if let Some(payload_file_path) = payload_file_path {
+            fs::read_to_string(payload_file_path).map_err(|read_error| {
+                CommandError::invalid_input(format!(
+                    "failed to read {payload_label} file {}: {read_error}",
+                    payload_file_path.display()
+                ))
+            })?
+        } else {
+            "{}".to_string()
+        };
+
+        let parsed_payload_value = serde_json::from_str::<Value>(&payload_json)
+            .map_err(|parse_error| CommandError::invalid_input(format!("{payload_label} must be valid json: {parse_error}")))?;
+
+        let Some(parsed_payload_object) = parsed_payload_value.as_object() else {
+            return Err(CommandError::invalid_input(format!("{payload_label} must be a json object")));
+        };
+
+        Ok(parsed_payload_object.clone())
+    }
+
+    fn discover_workflow_lock(
+        parsed_workflow: &Workflow,
+        lock_context: Option<&McpLockResolutionContext>,
+    ) -> Result<McpLock, CommandError> {
+        McpLock::discover_from_workflow_with_lock_context(parsed_workflow, lock_context).map_err(|mcp_error| {
+            CommandError::invalid_input(format!(
+                "failed to discover MCP typings; provide dynamic values with --vars-file .wire.vars, --input-json, --secrets-json, or --set: {mcp_error}"
+            ))
+        })
     }
 }
 

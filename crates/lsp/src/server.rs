@@ -2,8 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
-use superwire_core::dsl::parse_workflow;
-use superwire_core::mcp::{McpLock, McpServerConfig};
+use superwire_core::mcp::{McpLock, ProjectMcpLock};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
 
@@ -115,7 +114,7 @@ impl LanguageServer {
     fn handle_did_open(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
         let open_params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
 
-        let mcp_lock = refresh_or_read_mcp_lock(&open_params.text_document.uri, &open_params.text_document.text);
+        let mcp_lock = read_project_mcp_lock(&open_params.text_document.uri);
 
         self.documents.insert(
             open_params.text_document.uri.clone(),
@@ -131,14 +130,11 @@ impl LanguageServer {
         let change_params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
 
         if let Some(last_change) = change_params.content_changes.last() {
-            let existing_document = self.documents.get(&change_params.text_document.uri);
-            let should_refresh_mcp_lock =
-                existing_document.is_none_or(|document_state| should_refresh_mcp_lock(document_state.source_text(), &last_change.text));
-            let mcp_lock = if should_refresh_mcp_lock {
-                refresh_or_read_mcp_lock(&change_params.text_document.uri, &last_change.text)
-            } else {
-                existing_document.and_then(DocumentState::mcp_lock)
-            };
+            let mcp_lock = read_project_mcp_lock(&change_params.text_document.uri).or_else(|| {
+                self.documents
+                    .get(&change_params.text_document.uri)
+                    .and_then(DocumentState::mcp_lock)
+            });
 
             if let Some(document_state) = self.documents.get_mut(&change_params.text_document.uri) {
                 document_state.replace_text(last_change.text.clone(), mcp_lock);
@@ -631,65 +627,20 @@ fn markdown_hover(markdown: &str) -> Value {
     })
 }
 
-fn refresh_or_read_mcp_lock(document_uri: &str, source_text: &str) -> Option<McpLock> {
-    let lock_path = lock_path_for_document_uri(document_uri)?;
-    let existing_lock = McpLock::read_from_path(&lock_path).ok();
+fn read_project_mcp_lock(document_uri: &str) -> Option<McpLock> {
+    let workflow_path = path_for_document_uri(document_uri)?;
+    let lock_path = ProjectMcpLock::discover_lock_path_for_workflow(&workflow_path)?;
+    let lock_root = lock_path.parent()?;
+    let project_lock = ProjectMcpLock::read_from_path(&lock_path).ok()?;
 
-    if let Ok(workflow) = parse_workflow(source_text) {
-        if let Ok(mut mcp_lock) = McpLock::discover_from_workflow_with_lock_context(
-            &workflow,
-            existing_lock.as_ref().and_then(|lock| lock.resolution_context.as_ref()),
-        ) {
-            if mcp_lock.resolution_context.is_none() {
-                mcp_lock.resolution_context = existing_lock.as_ref().and_then(|lock| lock.resolution_context.clone());
-            }
-
-            let _ = mcp_lock.write_to_path(&lock_path);
-
-            return Some(mcp_lock);
-        }
-    }
-
-    existing_lock
+    project_lock.workflow_lock(lock_root, &workflow_path).cloned()
 }
 
-fn should_refresh_mcp_lock(previous_source_text: &str, next_source_text: &str) -> bool {
-    match (mcp_config_signature(previous_source_text), mcp_config_signature(next_source_text)) {
-        (Some(previous_signature), Some(next_signature)) => previous_signature != next_signature,
-        (None, Some(_)) => true,
-        (Some(_) | None, None) => false,
-    }
-}
-
-fn mcp_config_signature(source_text: &str) -> Option<Vec<String>> {
-    let workflow = parse_workflow(source_text).ok()?;
-    let mut server_configs = McpServerConfig::from_workflow(&workflow).ok()?;
-
-    server_configs.sort_by(|left_config, right_config| left_config.name.cmp(&right_config.name));
-
-    Some(
-        server_configs
-            .into_iter()
-            .map(|server_config| {
-                let headers = serde_json::to_string(&server_config.headers).unwrap_or_default();
-
-                format!("{}\0{}\0{}", server_config.name, server_config.endpoint, headers)
-            })
-            .collect(),
-    )
-}
-
-fn lock_path_for_document_uri(document_uri: &str) -> Option<PathBuf> {
+fn path_for_document_uri(document_uri: &str) -> Option<PathBuf> {
     let file_path = document_uri.strip_prefix("file://")?;
     let decoded_file_path = percent_decode_file_uri_path(file_path);
-    let mut lock_path = PathBuf::from(decoded_file_path);
-    let lock_extension = lock_path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map_or_else(|| "lock".to_string(), |extension| format!("{extension}.lock"));
-    lock_path.set_extension(lock_extension);
 
-    Some(lock_path)
+    Some(PathBuf::from(decoded_file_path))
 }
 
 fn percent_decode_file_uri_path(path: &str) -> String {
@@ -716,38 +667,17 @@ fn percent_decode_file_uri_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{refresh_or_read_mcp_lock, should_refresh_mcp_lock};
+    use super::read_project_mcp_lock;
     use serde_json::Value;
     use std::collections::BTreeMap;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
-    use superwire_core::mcp::{McpLock, McpLockResolutionContext};
+    use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock};
     use superwire_core::workflow_source;
 
     #[test]
-    fn refreshes_mcp_lock_only_when_mcp_config_changes() {
-        let source = workflow_source! {
-            mcp local {
-                endpoint: "http://localhost:8000/mcp/project"
-                headers: {
-                    Accept: "application/json"
-                }
-            }
-
-            output {
-                value: "ok"
-            }
-        };
-        let prompt_only_change = source.replace("ok", "done");
-        let endpoint_change = source.replace("/project", "/other");
-
-        assert!(!should_refresh_mcp_lock(source, &prompt_only_change));
-        assert!(should_refresh_mcp_lock(source, &endpoint_change));
-    }
-
-    #[test]
-    fn refresh_uses_lock_resolution_context_for_dynamic_mcp_config() {
+    fn reads_mcp_lock_from_project_lock_without_refreshing() {
         let server = TestMcpHttpServer::spawn();
         let workflow_source = workflow_source! {
             secrets {
@@ -763,15 +693,18 @@ mod tests {
 
             tool update_user_name from mcp.local.tool.update-user-name
         };
-        let temp_file_path = std::env::temp_dir().join(format!(
-            "superwire_lsp_lock_test_{}.wire",
+        let temp_directory_path = std::env::temp_dir().join(format!(
+            "superwire_lsp_lock_test_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("current time should be after unix epoch")
                 .as_nanos()
         ));
+        std::fs::create_dir_all(&temp_directory_path).expect("temporary directory should be created");
+        let temp_file_path = temp_directory_path.join("dynamic.wire");
+        std::fs::write(&temp_file_path, workflow_source).expect("temporary workflow should write");
         let document_uri = format!("file://{}", temp_file_path.display());
-        let lock_path = temp_file_path.with_extension("wire.lock");
+        let lock_path = temp_directory_path.join("superwire.lock");
         let lock_context = McpLockResolutionContext {
             input: BTreeMap::new(),
             secrets: [("mcp_endpoint".to_string(), Value::String(server.endpoint()))]
@@ -781,23 +714,27 @@ mod tests {
             agent_outputs: BTreeMap::new(),
             agent_contexts: BTreeMap::new(),
         };
-        let initial_lock = McpLock {
-            servers: BTreeMap::new(),
-            resolution_context: Some(lock_context.clone()),
-        };
+        let discovered_lock = McpLock::discover_from_workflow_with_lock_context(
+            &superwire_core::dsl::parse_workflow(workflow_source).expect("workflow should parse"),
+            Some(&lock_context),
+        )
+        .expect("MCP metadata should discover using lock context");
+        let mut project_lock = ProjectMcpLock::empty();
 
-        initial_lock
-            .write_to_path(&lock_path)
-            .expect("initial lock with resolution context should write");
+        project_lock.insert_workflow_lock(
+            temp_file_path.parent().expect("temporary workflow should have parent"),
+            &temp_file_path,
+            discovered_lock,
+        );
+        project_lock.write_to_path(&lock_path).expect("project lock should write");
 
-        let refreshed_lock = refresh_or_read_mcp_lock(&document_uri, workflow_source)
-            .expect("refresh should discover MCP metadata using lock resolution context");
+        let read_lock = read_project_mcp_lock(&document_uri).expect("project lock should read");
 
-        assert!(refreshed_lock.servers.contains_key("local"));
-        assert_eq!(refreshed_lock.resolution_context, Some(lock_context));
+        assert!(read_lock.servers.contains_key("local"));
+        assert_eq!(read_lock.resolution_context, Some(lock_context));
+        assert!(!temp_file_path.with_extension("wire.lock").exists());
 
-        let _ = std::fs::remove_file(&temp_file_path);
-        let _ = std::fs::remove_file(&lock_path);
+        let _ = std::fs::remove_dir_all(&temp_directory_path);
     }
 
     struct TestMcpHttpServer {

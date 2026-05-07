@@ -54,11 +54,6 @@ impl DocumentState {
     }
 
     #[must_use]
-    pub(super) fn source_text(&self) -> &str {
-        &self.text
-    }
-
-    #[must_use]
     pub(super) fn mcp_lock(&self) -> Option<McpLock> {
         self.semantic_snapshot.semantic_index.mcp_lock.clone()
     }
