@@ -2,6 +2,7 @@ use super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ObjectField, Reference,
     ReferenceKeyword, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
 };
+use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, WorkflowType};
@@ -59,6 +60,17 @@ impl ValidationReport {
             .map(|diagnostic| diagnostic.render_with_source(source_text, source_name))
             .collect::<Vec<_>>()
             .join("\n\n")
+    }
+
+    #[must_use]
+    pub fn render_for_output_target(&self, source_text: Option<&str>, source_name: &str) -> String {
+        if should_render_rich_diagnostics() {
+            if let Some(source_text) = source_text {
+                return self.render_with_source(source_text, source_name);
+            }
+        }
+
+        self.render()
     }
 
     fn push_issue(&mut self, issue: ValidationIssue) {

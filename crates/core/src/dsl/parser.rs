@@ -1,5 +1,6 @@
 use super::ast::{SourcePosition, SourceSpan, Workflow};
 use super::visitor::AstVisitor;
+use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use pest::error::{ErrorVariant, LineColLocation};
 use pest_derive::Parser;
@@ -187,6 +188,15 @@ impl DslParseError {
     #[must_use]
     pub fn render_with_source(&self, source_text: &str, source_name: &str) -> String {
         self.diagnostic().render_with_source(source_text, source_name)
+    }
+
+    #[must_use]
+    pub fn render_for_output_target(&self, source_text: &str, source_name: &str) -> String {
+        if should_render_rich_diagnostics() {
+            return self.render_with_source(source_text, source_name);
+        }
+
+        self.render()
     }
 
     fn format_expected_rule_list(expected_rules: &[Rule]) -> String {

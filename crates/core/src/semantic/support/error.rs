@@ -1,3 +1,4 @@
+use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::dsl::DslParseError;
 use crate::dsl::Workflow;
@@ -82,7 +83,11 @@ impl WorkflowSemanticError {
             Self::InvalidWorkflow { issues } => Self::InvalidWorkflow { issues },
             non_rendered_error => {
                 let rendered_error = if let Some(source_text) = workflow.source_text() {
-                    non_rendered_error.diagnostic_message().render_with_source(source_text, source_name)
+                    if should_render_rich_diagnostics() {
+                        non_rendered_error.diagnostic_message().render_with_source(source_text, source_name)
+                    } else {
+                        non_rendered_error.diagnostic_message().render()
+                    }
                 } else {
                     non_rendered_error.diagnostic_message().render()
                 };

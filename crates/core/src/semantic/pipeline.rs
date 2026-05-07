@@ -37,7 +37,7 @@ impl WorkflowPipeline<ParseStageOutput> {
     pub fn parse(input: WorkflowPipelineInput<'_>) -> Result<Self, WorkflowSemanticError> {
         let workflow = match input {
             WorkflowPipelineInput::Source(source_text) => parse_workflow(source_text).map_err(|parse_error| {
-                let rendered_details = parse_error.render_with_source(source_text, "<workflow>");
+                let rendered_details = parse_error.render_for_output_target(source_text, "<workflow>");
 
                 WorkflowSemanticError::ParseFailed {
                     source: parse_error,
@@ -127,11 +127,7 @@ impl NormalizeStageOutput {
         let validation_report = validate_workflow(&self.workflow);
 
         if validation_report.has_issues() {
-            let rendered_validation_issues = if let Some(source_text) = self.workflow.source_text() {
-                validation_report.render_with_source(source_text, "<workflow>")
-            } else {
-                validation_report.render()
-            };
+            let rendered_validation_issues = validation_report.render_for_output_target(self.workflow.source_text(), "<workflow>");
 
             return Err(WorkflowSemanticError::InvalidWorkflow {
                 issues: rendered_validation_issues,
@@ -382,7 +378,6 @@ mod tests {
             Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("unknown_input_field_reference")
                     && issues.contains("missing_field")
-                    && issues.contains("<workflow>:")
         ));
     }
 
@@ -518,7 +513,10 @@ mod tests {
             Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("duplicate_agent")
                     && issues.contains("agent greeting")
-                    && issues.contains("<workflow>:")
+                    && (
+                        (crate::diagnostic::should_render_rich_diagnostics() && issues.contains("<workflow>:"))
+                            || (!crate::diagnostic::should_render_rich_diagnostics() && !issues.contains("<workflow>:"))
+                    )
         ));
     }
 
@@ -537,11 +535,15 @@ mod tests {
             parse_result,
             Err(WorkflowSemanticError::ParseFailed { details, source: _ })
                 if details.contains("parse_error")
-                    && details.contains("<workflow>:")
-                    && details.contains("here")
                     && details.contains("Check for a typo")
-                    && !details.contains("-->")
                     && !details.contains("SourceSpan {")
+                    && (
+                        (crate::diagnostic::should_render_rich_diagnostics()
+                            && details.contains("<workflow>:")
+                            && details.contains("here")
+                            && !details.contains("-->"))
+                            || (!crate::diagnostic::should_render_rich_diagnostics() && !details.contains("<workflow>:"))
+                    )
         ));
     }
 

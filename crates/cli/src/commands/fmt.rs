@@ -85,7 +85,7 @@ impl FormatCommand {
             DslFormatError::Parse(parse_error) => CommandError::invalid_input(format!(
                 "failed to format {} due to syntax errors:\n{}",
                 workflow_path.display(),
-                parse_error.render_with_source(workflow_source, &workflow_path.display().to_string())
+                parse_error.render_for_output_target(workflow_source, &workflow_path.display().to_string())
             )),
         }
     }

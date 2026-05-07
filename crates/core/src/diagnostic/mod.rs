@@ -1,5 +1,15 @@
 use crate::dsl::SourceSpan;
 use ariadne::{Color, Config, Label, Report, ReportKind, Source};
+use std::io::IsTerminal;
+
+#[must_use]
+pub fn should_render_rich_diagnostics() -> bool {
+    if std::env::var("SUPERWIRE_ERROR_FORMAT").ok().as_deref() == Some("json") {
+        return false;
+    }
+
+    std::io::stderr().is_terminal()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DiagnosticSeverity {

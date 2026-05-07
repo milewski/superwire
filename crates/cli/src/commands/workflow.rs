@@ -73,7 +73,7 @@ impl VarsWorkflowCommand {
             let parsed_workflow = match parse_workflow(&workflow_source) {
                 Ok(parsed_workflow) => parsed_workflow,
                 Err(parse_error) => {
-                    generation_errors.push(parse_error.render_with_source(&workflow_source, &workflow_path.display().to_string()));
+                    generation_errors.push(parse_error.render_for_output_target(&workflow_source, &workflow_path.display().to_string()));
                     continue;
                 }
             };
@@ -208,7 +208,7 @@ impl CheckWorkflowCommand {
         })?;
 
         let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
-            CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &self.workflow_path.display().to_string()))
+            CommandError::invalid_input(parse_error.render_for_output_target(&workflow_source, &self.workflow_path.display().to_string()))
         })?;
 
         let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
@@ -265,7 +265,7 @@ impl RunWorkflowCommand {
             .map_err(|error| CommandError::internal(format!("failed to read workflow file {}: {error}", self.workflow_path.display())))?;
 
         let parsed_workflow = parse_workflow(&workflow_source).map_err(|error| {
-            CommandError::internal(error.render_with_source(&workflow_source, &self.workflow_path.display().to_string()))
+            CommandError::internal(error.render_for_output_target(&workflow_source, &self.workflow_path.display().to_string()))
         })?;
 
         let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)?;
@@ -527,7 +527,7 @@ impl LockWorkflowCommand {
             })?;
 
             let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
-                CommandError::invalid_input(parse_error.render_with_source(&workflow_source, &workflow_path.display().to_string()))
+                CommandError::invalid_input(parse_error.render_for_output_target(&workflow_source, &workflow_path.display().to_string()))
             })?;
             let workflow_lock_context = self.resolve_lock_context_with_prompts(&parsed_workflow, &mut lock_context)?;
 

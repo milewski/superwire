@@ -67,7 +67,7 @@ impl WorkflowExecutor {
 
     pub fn from_source(workflow_source: &str) -> Result<Self, ExecutorError> {
         let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
-            let details = parse_error.render_with_source(workflow_source, "<workflow>");
+            let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
 
             WorkflowSemanticError::ParseFailed {
                 source: parse_error,
@@ -87,7 +87,7 @@ impl WorkflowExecutor {
 
     pub fn from_source_with_runtime_values(workflow_source: &str, input: &Value, secrets: &Value) -> Result<Self, ExecutorError> {
         let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
-            let details = parse_error.render_with_source(workflow_source, "<workflow>");
+            let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
 
             WorkflowSemanticError::ParseFailed {
                 source: parse_error,
@@ -120,7 +120,7 @@ impl WorkflowExecutor {
         let validation_report = validate_workflow(&workflow);
 
         if validation_report.has_issues() {
-            let issues = validation_report.render_with_source(workflow_source, "<workflow>");
+            let issues = validation_report.render_for_output_target(Some(workflow_source), "<workflow>");
 
             return Err(WorkflowSemanticError::InvalidWorkflow { issues }.into());
         }
