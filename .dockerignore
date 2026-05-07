@@ -1,0 +1,10 @@
+.git
+.gitignore
+
+target
+**/target
+
+editors
+integration
+
+**/.DS_Store
