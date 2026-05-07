@@ -6,9 +6,11 @@ use superwire_core::mcp::{McpLock, ProjectMcpLock};
 use thiserror::Error;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdin, Stdout};
 
-use crate::document::{CodeLensHint, CompletionSuggestion, DocumentState, DocumentSymbolNode, FoldingRangeBlock, WorkspaceSymbolMatch};
+use crate::document::{
+    CodeActionSuggestion, CodeLensHint, CompletionSuggestion, DocumentState, DocumentSymbolNode, FoldingRangeBlock, WorkspaceSymbolMatch,
+};
 use crate::protocol::{
-    error_response, publish_diagnostics_notification, success_response, CodeLens, CodeLensParams, Command, Diagnostic,
+    error_response, publish_diagnostics_notification, success_response, CodeActionParams, CodeLens, CodeLensParams, Command, Diagnostic,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentFormattingParams,
     DocumentSymbol as ProtocolDocumentSymbol, DocumentSymbolParams, ExecuteCommandParams, FoldingRange, FoldingRangeParams, JsonRpcRequest,
     Location, Range, SymbolInformation, TextDocumentPositionParams, TextEdit, WorkspaceSymbolParams,
@@ -81,6 +83,7 @@ impl LanguageServer {
             "workspace/symbol" => self.handle_workspace_symbols(request.id, request.params),
             "textDocument/foldingRange" => self.handle_folding_ranges(request.id, request.params),
             "textDocument/formatting" => self.handle_formatting(request.id, request.params),
+            "textDocument/codeAction" => self.handle_code_action(request.id, request.params),
             "textDocument/codeLens" => self.handle_code_lens(request.id, request.params),
             "workspace/executeCommand" => self.handle_execute_command(request.id, request.params),
             _ => Ok(self.method_not_found_outcome(request.id)),
@@ -265,6 +268,19 @@ impl LanguageServer {
         })
     }
 
+    fn handle_code_action(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
+        let code_action_params: CodeActionParams = serde_json::from_value(params)?;
+
+        Ok(RequestOutcome {
+            response: Some(success_response(
+                request_id.unwrap_or(Value::Null),
+                self.code_action_result(&code_action_params),
+            )),
+            notifications: Vec::new(),
+            should_exit: false,
+        })
+    }
+
     fn handle_execute_command(&self, request_id: Option<Value>, params: Value) -> Result<RequestOutcome, ServerError> {
         let _execute_command_params: ExecuteCommandParams = serde_json::from_value(params)?;
 
@@ -407,6 +423,20 @@ impl LanguageServer {
 
         json!(code_lenses)
     }
+
+    fn code_action_result(&self, code_action_params: &CodeActionParams) -> Value {
+        let Some(document_state) = self.documents.get(&code_action_params.text_document.uri) else {
+            return json!([]);
+        };
+
+        let code_actions = document_state
+            .code_actions(code_action_params.range.start)
+            .into_iter()
+            .map(|code_action| code_action_to_protocol(code_action, &code_action_params.text_document.uri))
+            .collect::<Vec<_>>();
+
+        json!(code_actions)
+    }
 }
 
 impl RequestOutcome {
@@ -514,6 +544,7 @@ fn initialize_result() -> Value {
             "workspaceSymbolProvider": true,
             "foldingRangeProvider": true,
             "documentFormattingProvider": true,
+            "codeActionProvider": true,
             "completionProvider": {
                 "resolveProvider": false,
                 "triggerCharacters": [".", ":", "\""]
@@ -578,6 +609,25 @@ fn code_lens_hint_to_protocol(code_lens_hint: CodeLensHint) -> CodeLens {
             arguments: Vec::new(),
         },
     }
+}
+
+fn code_action_to_protocol(code_action: CodeActionSuggestion, document_uri: &str) -> Value {
+    let mut changes = serde_json::Map::new();
+    changes.insert(
+        document_uri.to_string(),
+        json!([{
+            "range": code_action.edit.range,
+            "newText": code_action.edit.new_text,
+        }]),
+    );
+
+    json!({
+        "title": code_action.title,
+        "kind": "quickfix",
+        "edit": {
+            "changes": changes
+        }
+    })
 }
 
 fn completion_item_to_value(completion_suggestion: CompletionSuggestion, completion_text_edit_range: Option<Range>) -> Value {

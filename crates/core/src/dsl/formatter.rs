@@ -348,6 +348,21 @@ impl McpToolBatchImportDeclaration {
 
         formatter.push_declaration_block_start(&header);
 
+        if !self.input_fields.is_empty() {
+            formatter.push_declaration_block_start(ToolPropertyName::Input.as_str());
+
+            for typed_field in &self.input_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.fixed_binding_fields.is_empty() || self.max_calls.is_some() || !self.output_fields.is_empty() || !self.tools.is_empty()
+            {
+                formatter.push_newline();
+            }
+        }
+
         if !self.fixed_binding_fields.is_empty() {
             formatter.push_declaration_block_start(ToolPropertyName::Bindings.as_str());
 
@@ -357,13 +372,27 @@ impl McpToolBatchImportDeclaration {
 
             formatter.push_declaration_block_end();
 
-            if self.max_calls.is_some() || !self.tools.is_empty() {
+            if self.max_calls.is_some() || !self.output_fields.is_empty() || !self.tools.is_empty() {
                 formatter.push_newline();
             }
         }
 
         if let Some(max_calls) = self.max_calls {
             formatter.push_line(&format!("{}: {max_calls}", ToolPropertyName::MaxCalls.as_str()));
+
+            if !self.output_fields.is_empty() || !self.items.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.output_fields.is_empty() {
+            formatter.push_declaration_block_start(ToolPropertyName::Output.as_str());
+
+            for typed_field in &self.output_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
 
             if !self.items.is_empty() {
                 formatter.push_newline();
@@ -392,7 +421,8 @@ impl super::ast::McpToolBatchImportItem {
             format!("{} {}", DeclarationKeyword::Tool.as_str(), self.source_name)
         };
 
-        if self.fixed_binding_fields.is_empty() {
+        if self.input_fields.is_empty() && self.fixed_binding_fields.is_empty() && self.max_calls.is_none() && self.output_fields.is_empty()
+        {
             formatter.push_line(&header);
 
             return;
@@ -400,8 +430,50 @@ impl super::ast::McpToolBatchImportItem {
 
         formatter.push_declaration_block_start(&header);
 
-        for object_field in &self.fixed_binding_fields {
-            object_field.push_to_formatter(formatter);
+        if let Some(max_calls) = self.max_calls {
+            formatter.push_line(&format!("{}: {max_calls}", ToolPropertyName::MaxCalls.as_str()));
+
+            if !self.input_fields.is_empty() || !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.input_fields.is_empty() {
+            formatter.push_declaration_block_start(ToolPropertyName::Input.as_str());
+
+            for typed_field in &self.input_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.fixed_binding_fields.is_empty() {
+            formatter.push_declaration_block_start(ToolPropertyName::Bindings.as_str());
+
+            for object_field in &self.fixed_binding_fields {
+                object_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.output_fields.is_empty() {
+            formatter.push_declaration_block_start(ToolPropertyName::Output.as_str());
+
+            for typed_field in &self.output_fields {
+                typed_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
         }
 
         formatter.push_declaration_block_end();
@@ -507,7 +579,8 @@ impl ToolDeclaration {
             ImportKeyword::From.as_str()
         );
 
-        if self.fixed_binding_fields.is_empty() && self.output_fields.is_empty() && self.max_calls.is_none() {
+        if self.input_fields.is_empty() && self.fixed_binding_fields.is_empty() && self.output_fields.is_empty() && self.max_calls.is_none()
+        {
             formatter.push_line(&header);
 
             return;
@@ -517,6 +590,20 @@ impl ToolDeclaration {
 
         if let Some(max_calls) = self.max_calls {
             formatter.push_line(&format!("max_calls: {max_calls}"));
+
+            if !self.input_fields.is_empty() || !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        if !self.input_fields.is_empty() {
+            formatter.push_declaration_block_start("input");
+
+            for input_field in &self.input_fields {
+                input_field.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
 
             if !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
                 formatter.push_newline();
@@ -2220,7 +2307,7 @@ mod tests {
     fn formatter_renders_mcp_tool_batch_imports() {
         let source_text =
             "from mcp.local.tool{bindings{project_id:1 task_id:2}tool create-sorting-task as create_sorting_task{title:\"Sort\"}tool assign-task}\n";
-        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task {\n        title: \"Sort\"\n    }\n    tool assign-task\n}\n";
+        let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create-sorting-task as create_sorting_task {\n        bindings {\n            title: \"Sort\"\n        }\n    }\n    tool assign-task\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("batch import workflow should format successfully");
 

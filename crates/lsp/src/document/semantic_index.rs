@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
     AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ImportKeyword, McpCallOperation,
-    ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, TypeExpression, TypedField, Workflow,
+    ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, ToolPropertyName, TypeExpression,
+    TypedField, Workflow,
 };
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::ProviderDriver;
@@ -516,82 +517,128 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn mcp_input_field_suggestions(
+    pub fn mcp_tool_schema_field_suggestions(
         &self,
         tool_name: &str,
+        property_name: ToolPropertyName,
         field_prefix: &str,
         existing_field_names: &[String],
     ) -> Vec<CompletionSuggestion> {
-        let Some(tool_summary) = self.tools.get(tool_name) else {
-            return Vec::new();
-        };
-
-        let mcp_tool_name = match &tool_summary.mcp_tool_name {
-            Some(name) => name.as_str(),
-            None => return Vec::new(),
-        };
-
-        let server_name = tool_summary.mcp_server_name.as_deref();
-
-        let Some(mcp_lock) = &self.mcp_lock else {
-            return Vec::new();
-        };
-
-        let mcp_tool_lock = if let Some(server_name) = server_name {
-            mcp_lock
-                .servers
-                .get(server_name)
-                .and_then(|server_lock| server_lock.tools.get(mcp_tool_name))
-        } else {
-            mcp_lock
-                .servers
-                .values()
-                .find_map(|server_lock| server_lock.tools.get(mcp_tool_name))
-        };
-
-        let Some(mcp_tool_lock) = mcp_tool_lock else {
-            return Vec::new();
-        };
-
-        let Some(properties) = &mcp_tool_lock.input_schema.properties else {
-            return Vec::new();
-        };
-
-        let required_fields = &mcp_tool_lock.input_schema.required;
-
-        properties
+        self.mcp_tool_schema_fields(tool_name, property_name)
             .iter()
-            .filter(|(field_name, _)| field_name.starts_with(field_prefix))
-            .filter(|(field_name, _)| !existing_field_names.contains(field_name))
-            .map(|(field_name, field_schema)| {
-                let is_required = required_fields.contains(field_name);
-                let field_type = field_schema.get("type").and_then(serde_json::Value::as_str).unwrap_or("string");
-                let description = field_schema
-                    .get("description")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_string);
+            .filter(|typed_field| typed_field.name.starts_with(field_prefix))
+            .filter(|typed_field| !existing_field_names.contains(&typed_field.name))
+            .map(|typed_field| {
+                let rendered_type = typed_field.field_type.render_type();
+                let insert_text = if property_name == ToolPropertyName::Bindings {
+                    format!("{}: $1", typed_field.name)
+                } else {
+                    format!("{}: {rendered_type}", typed_field.name)
+                };
 
                 CompletionSuggestion {
-                    label: field_name.clone(),
+                    label: typed_field.name.clone(),
                     kind: CompletionKind::Property,
-                    detail: description.clone().unwrap_or_else(|| {
-                        if is_required {
-                            format!("{field_type} (required)")
-                        } else {
-                            field_type.to_string()
-                        }
-                    }),
-                    documentation: description.unwrap_or_else(|| {
-                        if is_required {
-                            format!("Required MCP tool input field of type `{field_type}`.")
-                        } else {
-                            format!("Optional MCP tool input field of type `{field_type}`.")
-                        }
-                    }),
-                    insert_text: format!("{field_name}: $1"),
+                    detail: typed_field.description.clone().unwrap_or_else(|| rendered_type.clone()),
+                    documentation: typed_field
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| format!("MCP tool {} field of type `{rendered_type}`.", property_name.as_str())),
+                    insert_text,
                 }
             })
             .collect()
+    }
+
+    pub fn mcp_tool_schema_fields(&self, tool_name: &str, property_name: ToolPropertyName) -> Vec<TypedField> {
+        let Some(mcp_tool_lock) = self.mcp_tool_lock(tool_name) else {
+            return Vec::new();
+        };
+
+        Self::schema_fields_from_mcp_tool_lock(mcp_tool_lock, property_name)
+    }
+
+    pub fn mcp_tool_schema_fields_for_source(
+        &self,
+        server_name: Option<&str>,
+        mcp_tool_name: &str,
+        property_name: ToolPropertyName,
+    ) -> Vec<TypedField> {
+        let Some(mcp_tool_lock) = self.mcp_tool_lock_for_source(server_name, mcp_tool_name) else {
+            return Vec::new();
+        };
+
+        Self::schema_fields_from_mcp_tool_lock(mcp_tool_lock, property_name)
+    }
+
+    pub fn mcp_tool_batch_common_schema_fields(
+        &self,
+        server_name: &str,
+        tool_names: &[String],
+        property_name: ToolPropertyName,
+    ) -> Vec<TypedField> {
+        let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
+            return Vec::new();
+        };
+        let tool_locks = if tool_names.is_empty() {
+            server_lock.tools.values().collect::<Vec<_>>()
+        } else {
+            tool_names
+                .iter()
+                .filter_map(|tool_name| server_lock.tools.get(tool_name))
+                .collect::<Vec<_>>()
+        };
+        let mut tool_locks = tool_locks.into_iter();
+        let Some(first_tool_lock) = tool_locks.next() else {
+            return Vec::new();
+        };
+        let mut common_fields = Self::schema_fields_from_mcp_tool_lock(first_tool_lock, property_name);
+
+        for mcp_tool_lock in tool_locks {
+            let tool_fields = Self::schema_fields_from_mcp_tool_lock(mcp_tool_lock, property_name);
+
+            common_fields.retain(|common_field| {
+                tool_fields
+                    .iter()
+                    .any(|tool_field| tool_field.name == common_field.name && tool_field.field_type == common_field.field_type)
+            });
+        }
+
+        common_fields
+    }
+
+    fn schema_fields_from_mcp_tool_lock(
+        mcp_tool_lock: &superwire_core::mcp::McpToolLock,
+        property_name: ToolPropertyName,
+    ) -> Vec<TypedField> {
+        match property_name {
+            ToolPropertyName::Input | ToolPropertyName::Bindings => mcp_tool_lock.input_fields_except(&[]),
+            ToolPropertyName::Output => mcp_tool_lock.output_fields(),
+            ToolPropertyName::Description | ToolPropertyName::MaxCalls => Vec::new(),
+        }
+    }
+
+    fn mcp_tool_lock(&self, tool_name: &str) -> Option<&superwire_core::mcp::McpToolLock> {
+        let tool_summary = self.tools.get(tool_name)?;
+        let mcp_tool_name = tool_summary.mcp_tool_name.as_deref()?;
+
+        self.mcp_tool_lock_for_source(tool_summary.mcp_server_name.as_deref(), mcp_tool_name)
+    }
+
+    fn mcp_tool_lock_for_source(&self, server_name: Option<&str>, mcp_tool_name: &str) -> Option<&superwire_core::mcp::McpToolLock> {
+        let mcp_lock = self.mcp_lock.as_ref()?;
+
+        if let Some(server_name) = server_name {
+            return mcp_lock
+                .servers
+                .get(server_name)
+                .and_then(|server_lock| server_lock.tools.get(mcp_tool_name));
+        }
+
+        mcp_lock
+            .servers
+            .values()
+            .find_map(|server_lock| server_lock.tools.get(mcp_tool_name))
     }
 
     pub fn from_workflow_with_mcp_lock(workflow: &Workflow, mcp_lock: Option<McpLock>) -> Self {

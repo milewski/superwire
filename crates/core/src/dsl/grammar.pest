@@ -29,8 +29,8 @@ prompt_import_declaration = { "prompt" ~ ("from" | identifier ~ "from") ~ mcp_im
 mcp_tool_batch_import_declaration = { "from" ~ mcp_tool_batch_import_source ~ mcp_tool_batch_import_block }
 mcp_tool_batch_import_source = { "mcp" ~ "." ~ identifier ~ "." ~ "tool" }
 mcp_tool_batch_import_block = { "{" ~ mcp_tool_batch_import_property* ~ "}" }
-mcp_tool_batch_import_property = _{ named_object_property | named_unsigned_integer_property | mcp_tool_batch_import_item }
-mcp_tool_batch_import_item = { "tool" ~ mcp_import_name ~ ("as" ~ identifier)? ~ object_expression? }
+mcp_tool_batch_import_property = _{ named_tool_block_property | named_object_property | named_unsigned_integer_property | mcp_tool_batch_import_item }
+mcp_tool_batch_import_item = { "tool" ~ mcp_import_name ~ ("as" ~ identifier)? ~ (tool_import_block | object_expression)? }
 
 tool_import_block = { "{" ~ tool_import_property* ~ "}" }
 tool_import_property = _{ named_tool_block_property | named_object_property | named_unsigned_integer_property }

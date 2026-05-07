@@ -300,6 +300,70 @@ struct LockWorkflowCommand {
     set: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct WorkflowVarsFile {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    input: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    secrets: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    dynamic: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    agent_outputs: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    agent_contexts: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    overrides: BTreeMap<String, McpLockResolutionContext>,
+}
+
+impl WorkflowVarsFile {
+    fn root_context(&self) -> McpLockResolutionContext {
+        McpLockResolutionContext {
+            input: self.input.clone(),
+            secrets: self.secrets.clone(),
+            dynamic: self.dynamic.clone(),
+            agent_outputs: self.agent_outputs.clone(),
+            agent_contexts: self.agent_contexts.clone(),
+        }
+    }
+
+    fn override_context(&self, lock_root: &Path, workflow_path: &Path) -> Option<&McpLockResolutionContext> {
+        self.override_path_candidates(lock_root, workflow_path)
+            .iter()
+            .find_map(|path_candidate| self.overrides.get(path_candidate))
+    }
+
+    fn override_path_candidates(&self, lock_root: &Path, workflow_path: &Path) -> Vec<String> {
+        let mut candidates = Vec::new();
+        Self::push_path_candidate(&mut candidates, workflow_path);
+
+        if let Ok(canonical_workflow_path) = workflow_path.canonicalize() {
+            Self::push_path_candidate(&mut candidates, &canonical_workflow_path);
+        }
+
+        if let Ok(relative_workflow_path) = workflow_path.strip_prefix(lock_root) {
+            Self::push_path_candidate(&mut candidates, relative_workflow_path);
+        }
+
+        let normalized_lock_root = lock_root.canonicalize().unwrap_or_else(|_error| lock_root.to_path_buf());
+        let normalized_workflow_path = workflow_path.canonicalize().unwrap_or_else(|_error| workflow_path.to_path_buf());
+
+        if let Ok(relative_workflow_path) = normalized_workflow_path.strip_prefix(&normalized_lock_root) {
+            Self::push_path_candidate(&mut candidates, relative_workflow_path);
+        }
+
+        candidates
+    }
+
+    fn push_path_candidate(candidates: &mut Vec<String>, path: &Path) {
+        let path_candidate = path.to_string_lossy().replace('\\', "/");
+
+        if !candidates.contains(&path_candidate) {
+            candidates.push(path_candidate);
+        }
+    }
+}
+
 impl LockWorkflowCommand {
     fn execute(self) -> Result<(), CommandError> {
         self.validate_payload_arguments()?;
@@ -311,12 +375,14 @@ impl LockWorkflowCommand {
             .unwrap_or_else(|| Path::new("."));
         let variables_context = self.vars_context()?;
         let command_context = self.command_context()?;
-        let mut lock_context = Self::merge_contexts(variables_context, command_context).unwrap_or_default();
         let mut prompted_value_was_captured = false;
+        let mut prompted_lock_context = None;
         let workflow_paths = self.collect_workflow_paths()?;
         let mut project_lock = self.read_existing_project_lock()?;
 
         for workflow_path in &workflow_paths {
+            let workflow_variables_context = self.workflow_vars_context(variables_context.as_ref(), lock_root, workflow_path);
+            let mut lock_context = Self::merge_contexts(workflow_variables_context, command_context.clone()).unwrap_or_default();
             let workflow_source = fs::read_to_string(workflow_path).map_err(|read_error| {
                 CommandError::invalid_input(format!("failed to read workflow file {}: {read_error}", workflow_path.display()))
             })?;
@@ -328,6 +394,7 @@ impl LockWorkflowCommand {
 
             if workflow_lock_context.prompted_value_was_captured {
                 prompted_value_was_captured = true;
+                prompted_lock_context = Some(workflow_lock_context.lock_context.clone());
             }
 
             let workflow_lock = Self::discover_workflow_lock(&parsed_workflow, workflow_lock_context.as_ref())?;
@@ -335,7 +402,7 @@ impl LockWorkflowCommand {
             project_lock.insert_workflow_lock_with_source(lock_root, workflow_path, workflow_lock, &workflow_source);
         }
 
-        self.persist_prompted_lock_context_if_needed(&lock_context, prompted_value_was_captured)?;
+        self.persist_prompted_lock_context_if_needed(&prompted_lock_context.unwrap_or_default(), prompted_value_was_captured)?;
 
         project_lock.write_to_path(&self.output_path).map_err(|mcp_error| {
             CommandError::internal(format!(
@@ -452,7 +519,7 @@ impl LockWorkflowCommand {
         Ok(())
     }
 
-    fn vars_context(&self) -> Result<Option<McpLockResolutionContext>, CommandError> {
+    fn vars_context(&self) -> Result<Option<WorkflowVarsFile>, CommandError> {
         let vars_file = self.effective_vars_file();
 
         if !vars_file.exists() {
@@ -461,10 +528,26 @@ impl LockWorkflowCommand {
 
         let vars_text = fs::read_to_string(&vars_file)
             .map_err(|read_error| CommandError::invalid_input(format!("failed to read vars file {}: {read_error}", vars_file.display())))?;
-        let vars_context = serde_json::from_str::<McpLockResolutionContext>(&vars_text)
+        let vars_context = serde_json::from_str::<WorkflowVarsFile>(&vars_text)
             .map_err(|parse_error| CommandError::invalid_input(format!("vars file must be valid json: {parse_error}")))?;
 
         Ok(Some(vars_context))
+    }
+
+    fn workflow_vars_context(
+        &self,
+        variables_context: Option<&WorkflowVarsFile>,
+        lock_root: &Path,
+        workflow_path: &Path,
+    ) -> Option<McpLockResolutionContext> {
+        let variables_context = variables_context?;
+        let mut workflow_context = variables_context.root_context();
+
+        if let Some(override_context) = variables_context.override_context(lock_root, workflow_path) {
+            Self::merge_context_into(&mut workflow_context, override_context);
+        }
+
+        Some(workflow_context)
     }
 
     fn command_context(&self) -> Result<Option<McpLockResolutionContext>, CommandError> {
@@ -493,15 +576,43 @@ impl LockWorkflowCommand {
         };
         let mut merged_context = variables_context.unwrap_or_default();
 
-        if !command_context.input.is_empty() {
-            merged_context.input = command_context.input;
-        }
-
-        if !command_context.secrets.is_empty() {
-            merged_context.secrets = command_context.secrets;
-        }
+        Self::merge_context_into(&mut merged_context, &command_context);
 
         Some(merged_context)
+    }
+
+    fn merge_context_into(base_context: &mut McpLockResolutionContext, override_context: &McpLockResolutionContext) {
+        Self::merge_value_maps(&mut base_context.input, &override_context.input);
+        Self::merge_value_maps(&mut base_context.secrets, &override_context.secrets);
+        Self::merge_value_maps(&mut base_context.dynamic, &override_context.dynamic);
+        Self::merge_value_maps(&mut base_context.agent_outputs, &override_context.agent_outputs);
+        Self::merge_value_maps(&mut base_context.agent_contexts, &override_context.agent_contexts);
+    }
+
+    fn merge_value_maps(base_values: &mut BTreeMap<String, Value>, override_values: &BTreeMap<String, Value>) {
+        for (field_name, override_value) in override_values {
+            match (base_values.get_mut(field_name), override_value) {
+                (Some(Value::Object(base_object)), Value::Object(override_object)) => {
+                    Self::merge_json_objects(base_object, override_object);
+                }
+                _ => {
+                    base_values.insert(field_name.clone(), override_value.clone());
+                }
+            }
+        }
+    }
+
+    fn merge_json_objects(base_object: &mut Map<String, Value>, override_object: &Map<String, Value>) {
+        for (field_name, override_value) in override_object {
+            match (base_object.get_mut(field_name), override_value) {
+                (Some(Value::Object(base_child_object)), Value::Object(override_child_object)) => {
+                    Self::merge_json_objects(base_child_object, override_child_object);
+                }
+                _ => {
+                    base_object.insert(field_name.clone(), override_value.clone());
+                }
+            }
+        }
     }
 
     fn resolve_lock_context_with_prompts(

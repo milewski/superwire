@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+mod code_action;
 mod completion;
 mod completion_context;
 mod definition;
@@ -18,12 +19,12 @@ mod types;
 use snapshot::SemanticSnapshot;
 use text_utils::is_symbol_character;
 pub use types::{
-    CodeLensHint, CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic, DocumentFormattingEdit, DocumentSymbolNode,
-    FoldingRangeBlock, SymbolKind, WorkspaceSymbolMatch,
+    CodeActionEdit, CodeActionSuggestion, CodeLensHint, CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic,
+    DocumentFormattingEdit, DocumentSymbolNode, FoldingRangeBlock, SymbolKind, WorkspaceSymbolMatch,
 };
 
-use superwire_core::dsl::TypeExpression;
-use superwire_core::mcp::McpLock;
+use superwire_core::dsl::{parse_workflow, Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
+use superwire_core::mcp::{McpLock, McpToolLock};
 use superwire_core::semantic::ProviderDriver;
 
 use crate::protocol::Position;
@@ -60,7 +61,288 @@ impl DocumentState {
 
     #[must_use]
     pub fn diagnostics(&self) -> Vec<DocumentDiagnostic> {
-        self.semantic_snapshot.diagnostics(&self.text)
+        let mut diagnostics = self.semantic_snapshot.diagnostics(&self.text);
+        diagnostics.extend(self.mcp_schema_diagnostics());
+
+        diagnostics
+    }
+
+    fn mcp_schema_diagnostics(&self) -> Vec<DocumentDiagnostic> {
+        let Some(mcp_lock) = self.semantic_snapshot.semantic_index.mcp_lock.as_ref() else {
+            return Vec::new();
+        };
+        let Ok(workflow) = parse_workflow(&self.text) else {
+            return Vec::new();
+        };
+        let mut diagnostics = Vec::new();
+
+        for declaration in workflow.declarations() {
+            match declaration {
+                Declaration::Tool(tool_declaration) => {
+                    if let Some(superwire_core::dsl::ToolSource::Mcp(mcp_tool_source)) = &tool_declaration.source {
+                        if let Some(mcp_tool_lock) =
+                            Self::mcp_tool_lock(mcp_lock, mcp_tool_source.server_name.as_deref(), &mcp_tool_source.tool_name)
+                        {
+                            diagnostics.extend(self.tool_schema_override_diagnostics(
+                                &tool_declaration.name,
+                                mcp_tool_lock,
+                                &tool_declaration.input_fields,
+                                ToolPropertyName::Input,
+                            ));
+                            diagnostics.extend(self.binding_override_diagnostics(
+                                &tool_declaration.name,
+                                mcp_tool_lock,
+                                &tool_declaration.fixed_binding_fields,
+                            ));
+                            diagnostics.extend(self.tool_schema_override_diagnostics(
+                                &tool_declaration.name,
+                                mcp_tool_lock,
+                                &tool_declaration.output_fields,
+                                ToolPropertyName::Output,
+                            ));
+                        }
+                    }
+                }
+                Declaration::McpToolBatch(mcp_tool_batch) => {
+                    let Some(server_lock) = mcp_lock.servers.get(&mcp_tool_batch.server_name) else {
+                        continue;
+                    };
+                    let tool_locks = mcp_tool_batch
+                        .items
+                        .iter()
+                        .filter_map(|item| {
+                            server_lock
+                                .tools
+                                .get(&item.source_name)
+                                .map(|tool_lock| (item.local_name.as_str(), tool_lock))
+                        })
+                        .collect::<Vec<_>>();
+
+                    diagnostics.extend(self.batch_common_schema_diagnostics(
+                        &tool_locks,
+                        &mcp_tool_batch.input_fields,
+                        ToolPropertyName::Input,
+                    ));
+                    diagnostics.extend(self.batch_common_schema_diagnostics(
+                        &tool_locks,
+                        &mcp_tool_batch.output_fields,
+                        ToolPropertyName::Output,
+                    ));
+                    diagnostics.extend(self.batch_binding_override_diagnostics(&tool_locks, &mcp_tool_batch.fixed_binding_fields));
+
+                    for item in &mcp_tool_batch.items {
+                        let Some(mcp_tool_lock) = server_lock.tools.get(&item.source_name) else {
+                            continue;
+                        };
+
+                        diagnostics.extend(self.tool_schema_override_diagnostics(
+                            &item.local_name,
+                            mcp_tool_lock,
+                            &item.input_fields,
+                            ToolPropertyName::Input,
+                        ));
+                        diagnostics.extend(self.binding_override_diagnostics(&item.local_name, mcp_tool_lock, &item.fixed_binding_fields));
+                        diagnostics.extend(self.tool_schema_override_diagnostics(
+                            &item.local_name,
+                            mcp_tool_lock,
+                            &item.output_fields,
+                            ToolPropertyName::Output,
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        diagnostics
+    }
+
+    fn mcp_tool_lock<'lock>(mcp_lock: &'lock McpLock, server_name: Option<&str>, tool_name: &str) -> Option<&'lock McpToolLock> {
+        if let Some(server_name) = server_name {
+            return mcp_lock
+                .servers
+                .get(server_name)
+                .and_then(|server_lock| server_lock.tools.get(tool_name));
+        }
+
+        mcp_lock.servers.values().find_map(|server_lock| server_lock.tools.get(tool_name))
+    }
+
+    fn tool_schema_override_diagnostics(
+        &self,
+        tool_name: &str,
+        mcp_tool_lock: &McpToolLock,
+        typed_fields: &[TypedField],
+        property_name: ToolPropertyName,
+    ) -> Vec<DocumentDiagnostic> {
+        let expected_fields = Self::mcp_schema_fields(mcp_tool_lock, property_name);
+
+        typed_fields
+            .iter()
+            .filter_map(|typed_field| {
+                let expected_field = expected_fields
+                    .iter()
+                    .find(|expected_field| expected_field.name == typed_field.name);
+                let message = Self::schema_field_validation_message(tool_name, property_name, typed_field, expected_field)?;
+
+                Some(self.mcp_schema_diagnostic(typed_field.span, message))
+            })
+            .collect()
+    }
+
+    fn batch_common_schema_diagnostics(
+        &self,
+        tool_locks: &[(&str, &McpToolLock)],
+        typed_fields: &[TypedField],
+        property_name: ToolPropertyName,
+    ) -> Vec<DocumentDiagnostic> {
+        let mut diagnostics = Vec::new();
+
+        for typed_field in typed_fields {
+            for (tool_name, mcp_tool_lock) in tool_locks {
+                let expected_fields = Self::mcp_schema_fields(mcp_tool_lock, property_name);
+                let expected_field = expected_fields
+                    .iter()
+                    .find(|expected_field| expected_field.name == typed_field.name);
+                let Some(message) = Self::schema_field_validation_message(tool_name, property_name, typed_field, expected_field) else {
+                    continue;
+                };
+
+                diagnostics.push(self.mcp_schema_diagnostic(typed_field.span, message));
+            }
+        }
+
+        diagnostics
+    }
+
+    fn schema_field_validation_message(
+        tool_name: &str,
+        property_name: ToolPropertyName,
+        typed_field: &TypedField,
+        expected_field: Option<&TypedField>,
+    ) -> Option<String> {
+        let Some(expected_field) = expected_field else {
+            return Some(format!(
+                "MCP tool `{tool_name}` has no `{}` field `{}` in the lock file.",
+                property_name.as_str(),
+                typed_field.name
+            ));
+        };
+
+        if expected_field.field_type == typed_field.field_type {
+            return None;
+        }
+
+        Some(format!(
+            "MCP tool `{tool_name}` `{}` field `{}` must be `{}`, found `{}`.",
+            property_name.as_str(),
+            typed_field.name,
+            expected_field.field_type.render_type(),
+            typed_field.field_type.render_type()
+        ))
+    }
+
+    fn binding_override_diagnostics(
+        &self,
+        tool_name: &str,
+        mcp_tool_lock: &McpToolLock,
+        binding_fields: &[superwire_core::dsl::ObjectField],
+    ) -> Vec<DocumentDiagnostic> {
+        let expected_fields = Self::mcp_schema_fields(mcp_tool_lock, ToolPropertyName::Input);
+
+        binding_fields
+            .iter()
+            .filter_map(|binding_field| {
+                let expected_field = expected_fields
+                    .iter()
+                    .find(|expected_field| expected_field.name == binding_field.name);
+                let message = Self::binding_field_validation_message(tool_name, &binding_field.name, &binding_field.value, expected_field)?;
+
+                Some(self.mcp_schema_diagnostic(binding_field.span, message))
+            })
+            .collect()
+    }
+
+    fn batch_binding_override_diagnostics(
+        &self,
+        tool_locks: &[(&str, &McpToolLock)],
+        binding_fields: &[superwire_core::dsl::ObjectField],
+    ) -> Vec<DocumentDiagnostic> {
+        let mut diagnostics = Vec::new();
+
+        for binding_field in binding_fields {
+            for (tool_name, mcp_tool_lock) in tool_locks {
+                let expected_fields = Self::mcp_schema_fields(mcp_tool_lock, ToolPropertyName::Input);
+                let expected_field = expected_fields
+                    .iter()
+                    .find(|expected_field| expected_field.name == binding_field.name);
+                let Some(message) =
+                    Self::binding_field_validation_message(tool_name, &binding_field.name, &binding_field.value, expected_field)
+                else {
+                    continue;
+                };
+
+                diagnostics.push(self.mcp_schema_diagnostic(binding_field.span, message));
+            }
+        }
+
+        diagnostics
+    }
+
+    fn binding_field_validation_message(
+        tool_name: &str,
+        field_name: &str,
+        value: &Expression,
+        expected_field: Option<&TypedField>,
+    ) -> Option<String> {
+        let Some(expected_field) = expected_field else {
+            return Some(format!(
+                "MCP tool `{tool_name}` has no input field `{field_name}` in the lock file."
+            ));
+        };
+
+        if Self::literal_matches_type(value, &expected_field.field_type) {
+            return None;
+        }
+
+        Some(format!(
+            "MCP tool `{tool_name}` binding `{field_name}` must be `{}`.",
+            expected_field.field_type.render_type()
+        ))
+    }
+
+    fn mcp_schema_fields(mcp_tool_lock: &McpToolLock, property_name: ToolPropertyName) -> Vec<TypedField> {
+        match property_name {
+            ToolPropertyName::Input | ToolPropertyName::Bindings => mcp_tool_lock.input_fields_except(&[]),
+            ToolPropertyName::Output => mcp_tool_lock.output_fields(),
+            ToolPropertyName::Description | ToolPropertyName::MaxCalls => Vec::new(),
+        }
+    }
+
+    fn literal_matches_type(value: &Expression, expected_type: &TypeExpression) -> bool {
+        match (value, expected_type) {
+            (Expression::StringLiteral(_), TypeExpression::String | TypeExpression::StringEnum(_))
+            | (Expression::NumberLiteral(_), TypeExpression::Number | TypeExpression::Float)
+            | (Expression::BooleanLiteral(_), TypeExpression::Boolean)
+            | (Expression::NullLiteral, TypeExpression::Null) => true,
+            (expression, TypeExpression::Union(type_expressions)) => type_expressions
+                .iter()
+                .any(|type_expression| Self::literal_matches_type(expression, type_expression)),
+            (Expression::StringTemplate(_), TypeExpression::String)
+            | (Expression::Reference(_) | Expression::FunctionCall(_) | Expression::ToolCall(_) | Expression::McpCall(_), _)
+            | (Expression::ArrayLiteral(_), TypeExpression::Array { .. } | TypeExpression::Tuple(_))
+            | (Expression::ObjectLiteral(_), TypeExpression::Object(_)) => true,
+            _ => false,
+        }
+    }
+
+    fn mcp_schema_diagnostic(&self, span: superwire_core::dsl::SourceSpan, message: String) -> DocumentDiagnostic {
+        DocumentDiagnostic {
+            range: position::source_span_to_range(&self.text, span),
+            severity: DiagnosticSeverity::Error,
+            code: crate::protocol::DiagnosticCode::InvalidToolBinding,
+            message,
+        }
     }
 
     fn line_prefix(&self, position: Position) -> Option<String> {

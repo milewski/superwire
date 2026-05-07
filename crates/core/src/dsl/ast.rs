@@ -435,7 +435,9 @@ pub struct ToolDeclaration {
 pub struct McpToolBatchImportDeclaration {
     pub server_name: String,
     pub fixed_binding_fields: Vec<ObjectField>,
+    pub input_fields: Vec<TypedField>,
     pub max_calls: Option<u64>,
+    pub output_fields: Vec<TypedField>,
     pub items: Vec<McpToolBatchImportItem>,
     pub tools: Vec<ToolDeclaration>,
     pub span: SourceSpan,
@@ -446,13 +448,24 @@ pub struct McpToolBatchImportItem {
     pub source_name: String,
     pub local_name: String,
     pub alias: Option<String>,
+    pub input_fields: Vec<TypedField>,
+    pub max_calls: Option<u64>,
     pub fixed_binding_fields: Vec<ObjectField>,
+    pub output_fields: Vec<TypedField>,
     pub span: SourceSpan,
 }
 
 impl McpToolBatchImportItem {
     #[must_use]
-    pub fn new(source_name: String, local_name: Option<String>, fixed_binding_fields: Vec<ObjectField>, span: SourceSpan) -> Self {
+    pub fn new(
+        source_name: String,
+        local_name: Option<String>,
+        input_fields: Vec<TypedField>,
+        max_calls: Option<u64>,
+        fixed_binding_fields: Vec<ObjectField>,
+        output_fields: Vec<TypedField>,
+        span: SourceSpan,
+    ) -> Self {
         let alias = local_name;
         let local_name = alias.clone().unwrap_or_else(|| source_name.replace('-', "_"));
 
@@ -460,30 +473,50 @@ impl McpToolBatchImportItem {
             source_name,
             local_name,
             alias,
+            input_fields,
+            max_calls,
             fixed_binding_fields,
+            output_fields,
             span,
         }
     }
 
     #[must_use]
-    pub fn to_tool_declaration(&self, server_name: &str, fixed_binding_fields: &[ObjectField], max_calls: Option<u64>) -> ToolDeclaration {
+    pub fn to_tool_declaration(
+        &self,
+        server_name: &str,
+        input_fields: &[TypedField],
+        fixed_binding_fields: &[ObjectField],
+        max_calls: Option<u64>,
+        output_fields: &[TypedField],
+    ) -> ToolDeclaration {
         let mut fixed_binding_fields = fixed_binding_fields.to_vec();
         fixed_binding_fields.extend(self.fixed_binding_fields.clone());
+        let input_fields = if self.input_fields.is_empty() {
+            input_fields.to_vec()
+        } else {
+            self.input_fields.clone()
+        };
+        let output_fields = if self.output_fields.is_empty() {
+            output_fields.to_vec()
+        } else {
+            self.output_fields.clone()
+        };
 
         ToolDeclaration {
             name: self.local_name.clone(),
             description: None,
-            max_calls,
+            max_calls: self.max_calls.or(max_calls),
             source: Some(ToolSource::Mcp(McpToolSource {
                 server_name: Some(server_name.to_string()),
                 tool_name: self.source_name.clone(),
                 span: self.span,
             })),
             imported: true,
-            input_fields: Vec::new(),
+            input_fields,
             binding_fields: Vec::new(),
             fixed_binding_fields,
-            output_fields: Vec::new(),
+            output_fields,
             span: self.span,
         }
     }

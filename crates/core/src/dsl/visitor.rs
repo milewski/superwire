@@ -14,12 +14,15 @@ pub struct AstVisitor;
 
 struct McpToolBatchImportBlock {
     fixed_binding_fields: Vec<ObjectField>,
+    input_fields: Vec<TypedField>,
     max_calls: Option<u64>,
+    output_fields: Vec<TypedField>,
     import_items: Vec<McpToolBatchImportItem>,
 }
 
 #[derive(Default)]
 struct ToolImportBlock {
+    input_fields: Vec<TypedField>,
     fixed_binding_fields: Vec<ObjectField>,
     max_calls: Option<u64>,
     output_fields: Vec<TypedField>,
@@ -254,7 +257,7 @@ impl AstVisitor {
             max_calls: import_block.max_calls,
             source: Some(ToolSource::Mcp(source.as_tool_source())),
             imported: true,
-            input_fields: Vec::new(),
+            input_fields: import_block.input_fields,
             binding_fields: Vec::new(),
             fixed_binding_fields: import_block.fixed_binding_fields,
             output_fields: import_block.output_fields,
@@ -276,13 +279,23 @@ impl AstVisitor {
         let tools = import_block
             .import_items
             .iter()
-            .map(|import_item| import_item.to_tool_declaration(&server_name, &import_block.fixed_binding_fields, import_block.max_calls))
+            .map(|import_item| {
+                import_item.to_tool_declaration(
+                    &server_name,
+                    &import_block.input_fields,
+                    &import_block.fixed_binding_fields,
+                    import_block.max_calls,
+                    &import_block.output_fields,
+                )
+            })
             .collect::<Vec<_>>();
 
         Ok(Declaration::McpToolBatch(McpToolBatchImportDeclaration {
             server_name,
             fixed_binding_fields: import_block.fixed_binding_fields,
+            input_fields: import_block.input_fields,
             max_calls: import_block.max_calls,
+            output_fields: import_block.output_fields,
             items: import_block.import_items,
             tools,
             span: declaration_span,
@@ -298,8 +311,10 @@ impl AstVisitor {
     fn visit_mcp_tool_batch_import_block(&self, block_pair: Pair<'_, Rule>) -> Result<McpToolBatchImportBlock, DslParseError> {
         let block_span = source_span_from_pair(&block_pair);
         let mut fixed_binding_fields = Vec::new();
+        let mut input_fields = Vec::new();
         let mut import_items = Vec::new();
         let mut max_calls = None;
+        let mut output_fields = Vec::new();
 
         for property_pair in block_pair.into_inner() {
             match property_pair.as_rule() {
@@ -333,6 +348,27 @@ impl AstVisitor {
                     let max_calls_pair = self.next_pair(&mut inner_pairs, "MCP tool batch max calls", "MCP tool batch import")?;
                     max_calls = Some(self.parse_unsigned_integer(max_calls_pair, "MCP tool batch import max calls")?);
                 }
+                Rule::named_tool_block_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "MCP tool batch property name", "MCP tool batch import")?;
+                    let block_pair = self.next_pair(&mut inner_pairs, "MCP tool batch block property value", "MCP tool batch import")?;
+
+                    match ToolPropertyName::from_identifier(property_name.as_str()) {
+                        Some(ToolPropertyName::Input) => input_fields.extend(self.visit_tool_typed_fields_block(block_pair)?),
+                        Some(ToolPropertyName::Bindings) => {
+                            let (_, fixed_fields) = self.visit_tool_bindings_block(block_pair)?;
+                            fixed_binding_fields.extend(fixed_fields);
+                        }
+                        Some(ToolPropertyName::Output) => output_fields.extend(self.visit_tool_typed_fields_block(block_pair)?),
+                        _ => {
+                            return Err(DslParseError::unexpected_with_span(
+                                Rule::named_tool_block_property,
+                                "MCP tool batch import property",
+                                block_span,
+                            ));
+                        }
+                    }
+                }
                 Rule::mcp_tool_batch_import_item => {
                     import_items.push(self.visit_mcp_tool_batch_import_item(property_pair)?);
                 }
@@ -342,7 +378,9 @@ impl AstVisitor {
 
         Ok(McpToolBatchImportBlock {
             fixed_binding_fields,
+            input_fields,
             max_calls,
+            output_fields,
             import_items,
         })
     }
@@ -353,15 +391,20 @@ impl AstVisitor {
         let source_name_pair = self.next_pair(&mut inner_pairs, "MCP tool import name", "MCP tool batch import item")?;
         let source_name = source_name_pair.as_str().split_whitespace().collect::<String>();
         let mut local_name = None;
-        let mut fixed_binding_fields = Vec::new();
+        let mut import_block = ToolImportBlock::default();
 
         for item_property_pair in inner_pairs {
             match item_property_pair.as_rule() {
                 Rule::identifier => {
                     local_name = Some(item_property_pair.as_str().to_string());
                 }
+                Rule::tool_import_block => {
+                    import_block = self.visit_tool_import_block(item_property_pair)?;
+                }
                 Rule::object_expression => {
-                    fixed_binding_fields.extend(self.visit_object_expression(item_property_pair)?);
+                    import_block
+                        .fixed_binding_fields
+                        .extend(self.visit_object_expression(item_property_pair)?);
                 }
                 _ => unreachable!("MCP tool batch import item should contain only valid properties"),
             }
@@ -370,7 +413,10 @@ impl AstVisitor {
         Ok(McpToolBatchImportItem::new(
             source_name,
             local_name,
-            fixed_binding_fields,
+            import_block.input_fields,
+            import_block.max_calls,
+            import_block.fixed_binding_fields,
+            import_block.output_fields,
             item_span,
         ))
     }
@@ -519,6 +565,9 @@ impl AstVisitor {
                     let block_pair = self.next_pair(&mut inner_pairs, "tool import block property value", "tool import block")?;
 
                     match ToolPropertyName::from_identifier(property_name.as_str()) {
+                        Some(ToolPropertyName::Input) => {
+                            import_block.input_fields.extend(self.visit_tool_typed_fields_block(block_pair)?);
+                        }
                         Some(ToolPropertyName::Bindings) => {
                             let (_, fixed_fields) = self.visit_tool_bindings_block(block_pair)?;
                             import_block.fixed_binding_fields.extend(fixed_fields);

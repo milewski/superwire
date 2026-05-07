@@ -214,6 +214,104 @@ fn reads_default_vars_file_next_to_custom_output_path() {
 }
 
 #[test]
+fn applies_vars_file_overrides_per_workflow_path() {
+    let test_mcp_server = TestMcpHttpServer::spawn();
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        secrets {
+            mcp_endpoint: string
+            models: {
+                flash: string
+                max: string
+                pro: string
+            }
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        tool update_user_name from mcp.local.tool.update-user-name
+    };
+    let first_workflow_path = temporary_workspace.write_file("workflows/first.wire", workflow_source);
+    let second_workflow_path = temporary_workspace.write_file("workflows/second.wire", workflow_source);
+    let vars_path = temporary_workspace.write_json_file(
+        ".wire.vars",
+        &json!({
+            "input": {
+                "project_id": 14
+            },
+            "secrets": {
+                "models": {
+                    "flash": "example",
+                    "max": "example"
+                }
+            },
+            "overrides": {
+                "workflows/first.wire": {
+                    "input": {
+                        "task_id": 109
+                    },
+                    "secrets": {
+                        "mcp_endpoint": test_mcp_server.endpoint(),
+                        "models": {
+                            "pro": "example"
+                        }
+                    }
+                },
+                "workflows/second.wire": {
+                    "input": {
+                        "task_id": 110
+                    },
+                    "secrets": {
+                        "mcp_endpoint": test_mcp_server.endpoint(),
+                        "models": {
+                            "pro": "example"
+                        }
+                    }
+                }
+            }
+        }),
+    );
+    let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
+
+    let command_output = run_workflow_lock_command_with_current_directory(
+        &[
+            first_workflow_path.as_os_str(),
+            second_workflow_path.as_os_str(),
+            std::ffi::OsStr::new("--vars-file"),
+            vars_path.as_os_str(),
+            std::ffi::OsStr::new("--output"),
+            output_lock_path.as_os_str(),
+        ],
+        &temporary_workspace.root_directory,
+    );
+    let standard_error = String::from_utf8_lossy(&command_output.stderr);
+
+    assert!(
+        command_output.status.success(),
+        "workflow lock command should succeed: {standard_error}"
+    );
+
+    let lock_json: Value =
+        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+
+    assert_eq!(
+        lock_json.pointer("/workflows/workflows~1first.wire/servers/local/tools/update-user-name/name"),
+        Some(&json!("update-user-name"))
+    );
+    assert_eq!(
+        lock_json.pointer("/workflows/workflows~1second.wire/servers/local/tools/update-user-name/name"),
+        Some(&json!("update-user-name"))
+    );
+}
+
+#[test]
 fn appends_new_workflows_when_lock_file_already_exists() {
     let temporary_workspace = TemporaryWorkspace::new();
     let first_workflow_source = workflow_template! {

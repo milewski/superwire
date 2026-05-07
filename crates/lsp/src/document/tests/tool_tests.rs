@@ -209,17 +209,19 @@ fn test_mcp_lock() -> McpLock {
             serde_json::json!({
                 "type": "object",
                 "properties": {
+                    "common_shared_among_all_feature": { "type": "string" },
                     "project_id": { "type": "number" },
                     "task_id": { "type": "number" }
                 },
-                "required": ["project_id", "task_id"]
+                "required": ["common_shared_among_all_feature", "project_id", "task_id"]
             }),
             Some(serde_json::json!({
                 "type": "object",
                 "properties": {
+                    "shared": { "type": "string" },
                     "participants": { "type": "array", "items": { "type": "object" } }
                 },
-                "required": ["participants"]
+                "required": ["shared", "participants"]
             })),
         )
         .expect("test MCP input schema should parse"),
@@ -232,16 +234,18 @@ fn test_mcp_lock() -> McpLock {
             serde_json::json!({
                 "type": "object",
                 "properties": {
+                    "common_shared_among_all_feature": { "type": "string" },
                     "user_name": { "type": "string" }
                 },
-                "required": ["user_name"]
+                "required": ["common_shared_among_all_feature", "user_name"]
             }),
             Some(serde_json::json!({
                 "type": "object",
                 "properties": {
+                    "shared": { "type": "string" },
                     "success": { "type": "boolean" }
                 },
-                "required": ["success"]
+                "required": ["shared", "success"]
             })),
         )
         .expect("test MCP input schema should parse"),
@@ -336,8 +340,178 @@ fn suggests_batch_tool_import_properties() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "bindings", "max_calls", "tool");
-    assert_completion_excludes_labels!(&completion_suggestions, "input", "output", DeclarationKeyword::Agent);
+    assert_completion_contains_labels!(&completion_suggestions, "input", "bindings", "max_calls", "output", "tool");
+    assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Agent);
+}
+
+#[test]
+fn suggests_mcp_output_fields_inside_imported_tool_output_block() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+
+            tool list_all_participants_who_has_answered_given_task {
+                output {
+                    <cursor>
+                }
+            }
+        }
+    });
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "participants");
+
+    assert_eq!(completion_suggestion.insert_text, "participants: [{  }]");
+}
+
+#[test]
+fn suggests_common_mcp_input_fields_inside_batch_input_block() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            input {
+                <cursor>
+            }
+
+            tool list_all_participants_who_has_answered_given_task
+            tool update-user-name
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "common_shared_among_all_feature");
+    assert_completion_excludes_labels!(&completion_suggestions, "project_id", "task_id", "user_name");
+}
+
+#[test]
+fn suggests_common_mcp_output_fields_inside_batch_output_block() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            output {
+                <cursor>
+            }
+
+            tool list_all_participants_who_has_answered_given_task
+            tool update-user-name
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "shared");
+    assert_completion_excludes_labels!(&completion_suggestions, "participants", "success");
+}
+
+#[test]
+fn suggests_mcp_input_fields_inside_tool_binding_override_block() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            tool list_all_participants_who_has_answered_given_task {
+                bindings {
+                    <cursor>
+                }
+            }
+        }
+    });
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "project_id");
+
+    assert_eq!(completion_suggestion.insert_text, "project_id: $1");
+}
+
+#[test]
+fn reports_invalid_mcp_batch_common_schema_field() {
+    let source = inline_document_template! {
+        from mcp.local.tool {
+            output {
+                participants: [{  }]
+            }
+
+            tool list_all_participants_who_has_answered_given_task
+            tool update-user-name
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+    let diagnostics = document_state.diagnostics();
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
+    assert!(diagnostics.iter().any(|diagnostic| diagnostic.message.contains("update_user_name")));
+}
+
+#[test]
+fn reports_invalid_mcp_tool_override_schema_field_type() {
+    let source = inline_document_template! {
+        from mcp.local.tool {
+            tool list_all_participants_who_has_answered_given_task {
+                output {
+                    shared: number
+                }
+            }
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+    let diagnostics = document_state.diagnostics();
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
+    assert!(diagnostics.iter().any(|diagnostic| diagnostic.message.contains("must be `string`")));
+}
+
+#[test]
+fn reports_invalid_mcp_tool_binding_override_property() {
+    let source = inline_document_template! {
+        from mcp.local.tool {
+            tool list_all_participants_who_has_answered_given_task {
+                bindings {
+                    unknown: 123
+                }
+            }
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+    let diagnostics = document_state.diagnostics();
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
+    assert!(diagnostics.iter().any(|diagnostic| diagnostic.message.contains("unknown")));
+}
+
+#[test]
+fn inserts_mcp_output_schema_when_completing_output_property() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            tool list_all_participants_who_has_answered_given_task {
+                out<cursor>
+            }
+        }
+    });
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "output");
+
+    assert_eq!(
+        completion_suggestion.insert_text,
+        "output {\n    participants: [{  }]\n    shared: string\n}"
+    );
+}
+
+#[test]
+fn offers_code_action_to_fill_mcp_output_schema_block() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        from mcp.local.tool {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+
+            tool list_all_participants_who_has_answered_given_task {
+                output {
+                    <cursor>
+                }
+            }
+        }
+    });
+    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
+    let code_actions = document_state.code_actions(cursor_position);
+
+    assert_eq!(code_actions.len(), 1);
+    assert_eq!(code_actions[0].title, "Fill output schema from MCP lock");
+    assert!(code_actions[0].edit.new_text.contains("participants: [{  }]"));
 }
 
 #[test]

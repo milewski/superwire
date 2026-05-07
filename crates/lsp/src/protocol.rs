@@ -102,6 +102,13 @@ pub struct CodeLensParams {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CodeActionParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+    pub range: Range,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ExecuteCommandParams {
     pub command: String,
     #[serde(default)]

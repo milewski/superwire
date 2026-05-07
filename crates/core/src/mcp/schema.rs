@@ -5,12 +5,12 @@ use serde_json::Value;
 
 impl super::McpToolLock {
     #[must_use]
-    pub(super) fn input_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField> {
+    pub fn input_fields_except(&self, excluded_field_names: &[&str]) -> Vec<TypedField> {
         self.input_schema.typed_fields_except(excluded_field_names)
     }
 
     #[must_use]
-    pub(super) fn output_fields(&self) -> Vec<TypedField> {
+    pub fn output_fields(&self) -> Vec<TypedField> {
         self.output_schema.as_ref().map(TypedJsonSchema::typed_fields).unwrap_or_default()
     }
 }

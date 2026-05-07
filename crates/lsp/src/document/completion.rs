@@ -1,6 +1,6 @@
 use superwire_core::dsl::{
     parse_workflow, AgentExpressionPropertyName, AgentPropertyName, AgentResponseFormat, DeclarationKeyword, ForClauseKeyword,
-    ImportKeyword, ReferenceKeyword, ToolCallKeyword,
+    ImportKeyword, ReferenceKeyword, ToolCallKeyword, ToolPropertyName,
 };
 
 use crate::protocol::{Position, Range};
@@ -20,7 +20,7 @@ use super::semantic_index::SemanticIndex;
 use super::text_utils::{
     is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
 };
-use super::{CompletionSuggestion, DocumentState};
+use super::{CompletionKind, CompletionSuggestion, DocumentState, RenderTypeExpression};
 use superwire_core::semantic::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
@@ -34,6 +34,12 @@ struct ToolCallBindingCompletionContext {
 struct McpToolBatchItemCompletionContext {
     server_name: String,
     tool_prefix: String,
+}
+
+pub(super) enum McpToolSchemaSource {
+    LocalTool(String),
+    McpTool { server_name: Option<String>, tool_name: String },
+    McpToolBatch { server_name: String, tool_names: Vec<String> },
 }
 
 struct ReferenceCompletionInputs<'completion> {
@@ -73,6 +79,13 @@ impl DocumentState {
                     &tool_call_binding_completion_context.binding_prefix,
                     &tool_call_binding_completion_context.existing_binding_names,
                 );
+            }
+        }
+
+        if !inside_interpolation_expression && !line_prefix.contains(':') {
+            if let Some(mcp_tool_schema_field_suggestions) = self.mcp_tool_schema_field_suggestions(position, &line_prefix, &semantic_index)
+            {
+                return mcp_tool_schema_field_suggestions;
             }
         }
 
@@ -250,10 +263,9 @@ impl DocumentState {
         if !line_prefix.contains(':') {
             let trimmed_prefix = line_prefix.trim_start();
 
-            if let Some(tool_name) = semantic_index.tool_name_at_position(position) {
-                let existing_fields = self.existing_typed_field_names(position);
-                let field_prefix = super::text_utils::trailing_identifier(trimmed_prefix).unwrap_or_default();
-                let mcp_suggestions = semantic_index.mcp_input_field_suggestions(tool_name, field_prefix, &existing_fields);
+            if let Some(mcp_tool_schema_source) = self.mcp_tool_schema_source_at_position(position, semantic_index) {
+                let mcp_suggestions =
+                    self.mcp_tool_schema_field_suggestions_for_source(semantic_index, position, trimmed_prefix, mcp_tool_schema_source);
 
                 if !mcp_suggestions.is_empty() {
                     return Some(mcp_suggestions);
@@ -385,7 +397,7 @@ impl DocumentState {
                 return None;
             }
 
-            if let Some(scope_suggestions) = Self::property_scope_suggestions(completion_scope, line_prefix) {
+            if let Some(scope_suggestions) = self.property_scope_suggestions(semantic_index, completion_scope, line_prefix, position) {
                 return Some(scope_suggestions);
             }
 
@@ -395,6 +407,180 @@ impl DocumentState {
         }
 
         self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
+    }
+
+    fn mcp_tool_schema_field_suggestions(
+        &self,
+        position: Position,
+        line_prefix: &str,
+        semantic_index: &SemanticIndex,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        self.tool_schema_property_name_at_position(position)?;
+        let mcp_tool_schema_source = self.mcp_tool_schema_source_at_position(position, semantic_index)?;
+
+        Some(self.mcp_tool_schema_field_suggestions_for_source(semantic_index, position, line_prefix.trim_start(), mcp_tool_schema_source))
+    }
+
+    fn mcp_tool_schema_field_suggestions_for_source(
+        &self,
+        semantic_index: &SemanticIndex,
+        position: Position,
+        trimmed_prefix: &str,
+        mcp_tool_schema_source: McpToolSchemaSource,
+    ) -> Vec<CompletionSuggestion> {
+        let existing_fields = self.existing_typed_field_names(position);
+        let field_prefix = super::text_utils::trailing_identifier(trimmed_prefix).unwrap_or_default();
+        let Some(tool_property_name) = self.tool_schema_property_name_at_position(position) else {
+            return Vec::new();
+        };
+
+        match mcp_tool_schema_source {
+            McpToolSchemaSource::LocalTool(tool_name) => {
+                semantic_index.mcp_tool_schema_field_suggestions(&tool_name, tool_property_name, field_prefix, &existing_fields)
+            }
+            McpToolSchemaSource::McpTool { server_name, tool_name } => semantic_index
+                .mcp_tool_schema_fields_for_source(server_name.as_deref(), &tool_name, tool_property_name)
+                .iter()
+                .filter(|typed_field| typed_field.name.starts_with(field_prefix))
+                .filter(|typed_field| !existing_fields.contains(&typed_field.name))
+                .map(|typed_field| Self::mcp_tool_schema_field_suggestion(typed_field, tool_property_name))
+                .collect(),
+            McpToolSchemaSource::McpToolBatch { server_name, tool_names } => semantic_index
+                .mcp_tool_batch_common_schema_fields(&server_name, &tool_names, tool_property_name)
+                .iter()
+                .filter(|typed_field| typed_field.name.starts_with(field_prefix))
+                .filter(|typed_field| !existing_fields.contains(&typed_field.name))
+                .map(|typed_field| Self::mcp_tool_schema_field_suggestion(typed_field, tool_property_name))
+                .collect(),
+        }
+    }
+
+    fn mcp_tool_schema_field_suggestion(
+        typed_field: &superwire_core::dsl::TypedField,
+        tool_property_name: ToolPropertyName,
+    ) -> CompletionSuggestion {
+        let rendered_type = typed_field.field_type.render_type();
+        let insert_text = if tool_property_name == ToolPropertyName::Bindings {
+            format!("{}: $1", typed_field.name)
+        } else {
+            format!("{}: {rendered_type}", typed_field.name)
+        };
+
+        CompletionSuggestion {
+            label: typed_field.name.clone(),
+            kind: CompletionKind::Property,
+            detail: typed_field.description.clone().unwrap_or_else(|| rendered_type.clone()),
+            documentation: typed_field
+                .description
+                .clone()
+                .unwrap_or_else(|| format!("MCP tool {} field of type `{rendered_type}`.", tool_property_name.as_str())),
+            insert_text,
+        }
+    }
+
+    pub(super) fn tool_schema_property_name_at_position(&self, position: Position) -> Option<ToolPropertyName> {
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let source_prefix = &self.text[..cursor_offset];
+
+        [ToolPropertyName::Input, ToolPropertyName::Bindings, ToolPropertyName::Output]
+            .into_iter()
+            .filter_map(|tool_property_name| {
+                let property_name = tool_property_name.as_str();
+                let property_name_index = source_prefix.rfind(property_name)?;
+
+                if !Self::is_keyword_boundary(source_prefix, property_name_index, property_name.len()) {
+                    return None;
+                }
+
+                let after_property_name = &source_prefix[property_name_index + property_name.len()..];
+                let open_brace_relative_index = after_property_name.find('{')?;
+                let open_brace_index = property_name_index + property_name.len() + open_brace_relative_index;
+
+                if Self::block_balance(&source_prefix[open_brace_index..]) <= 0 {
+                    return None;
+                }
+
+                Some((open_brace_index, tool_property_name))
+            })
+            .max_by_key(|(open_brace_index, _)| *open_brace_index)
+            .map(|(_, tool_property_name)| tool_property_name)
+    }
+
+    pub(super) fn mcp_tool_schema_source_at_position(
+        &self,
+        position: Position,
+        semantic_index: &SemanticIndex,
+    ) -> Option<McpToolSchemaSource> {
+        if let Some(tool_name) = semantic_index.tool_name_at_position(position) {
+            return Some(McpToolSchemaSource::LocalTool(tool_name.to_string()));
+        }
+
+        let mcp_tool_batch_schema_source = self.mcp_tool_batch_schema_source_at_position(position);
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let source_prefix = &self.text[..cursor_offset];
+        let tool_keyword = DeclarationKeyword::Tool.as_str();
+        let tool_keyword_index = source_prefix.rfind(tool_keyword)?;
+
+        if !Self::is_keyword_boundary(source_prefix, tool_keyword_index, tool_keyword.len()) {
+            return None;
+        }
+
+        let after_tool_keyword = source_prefix[tool_keyword_index + tool_keyword.len()..].trim_start();
+        let tool_name = after_tool_keyword
+            .chars()
+            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_' || *character == '-')
+            .collect::<String>();
+
+        if tool_name.is_empty() {
+            return mcp_tool_batch_schema_source;
+        }
+
+        let before_tool_keyword = &source_prefix[..tool_keyword_index];
+        let import_keyword = ImportKeyword::From.as_str();
+        let import_keyword_index = before_tool_keyword.rfind(import_keyword)?;
+        let import_header = &before_tool_keyword[import_keyword_index + import_keyword.len()..];
+        let import_header = import_header
+            .chars()
+            .take_while(|character| *character != '{')
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        let mut import_segments = import_header.split('.');
+
+        if import_segments.next()? != DeclarationKeyword::Mcp.as_str() {
+            return None;
+        }
+
+        let server_name = import_segments.next()?.to_string();
+
+        if import_segments.next()? != DeclarationKeyword::Tool.as_str() || import_segments.next().is_some() {
+            return None;
+        }
+
+        Some(McpToolSchemaSource::McpTool {
+            server_name: Some(server_name),
+            tool_name,
+        })
+    }
+
+    fn mcp_tool_batch_schema_source_at_position(&self, position: Position) -> Option<McpToolSchemaSource> {
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let workflow = parse_workflow(&self.text).ok()?;
+
+        workflow.declarations().iter().find_map(|declaration| {
+            let superwire_core::dsl::Declaration::McpToolBatch(mcp_tool_batch) = declaration else {
+                return None;
+            };
+            let span_range = mcp_tool_batch.span.to_byte_range(&self.text)?;
+
+            if !span_range.contains(&cursor_offset) {
+                return None;
+            }
+
+            Some(McpToolSchemaSource::McpToolBatch {
+                server_name: mcp_tool_batch.server_name.clone(),
+                tool_names: mcp_tool_batch.items.iter().map(|item| item.source_name.clone()).collect(),
+            })
+        })
     }
 
     fn mcp_tool_batch_item_completion_context(&self, position: Position, line_prefix: &str) -> Option<McpToolBatchItemCompletionContext> {
@@ -516,7 +702,7 @@ impl DocumentState {
         })
     }
 
-    fn is_keyword_boundary(source_text: &str, keyword_index: usize, keyword_length: usize) -> bool {
+    pub(super) fn is_keyword_boundary(source_text: &str, keyword_index: usize, keyword_length: usize) -> bool {
         let before_keyword = source_text[..keyword_index].chars().next_back();
         let after_keyword = source_text[keyword_index + keyword_length..].chars().next();
 
@@ -524,7 +710,7 @@ impl DocumentState {
             && !after_keyword.is_some_and(|character| character.is_ascii_alphanumeric() || character == '_')
     }
 
-    fn block_balance(source_prefix: &str) -> i32 {
+    pub(super) fn block_balance(source_prefix: &str) -> i32 {
         source_prefix.chars().fold(0, |balance, character| match character {
             '{' => balance + 1,
             '}' => balance - 1,
@@ -611,14 +797,79 @@ impl DocumentState {
         Some(Vec::new())
     }
 
-    fn property_scope_suggestions(completion_scope: CompletionScope, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
+    fn property_scope_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        completion_scope: CompletionScope,
+        line_prefix: &str,
+        position: Position,
+    ) -> Option<Vec<CompletionSuggestion>> {
         match completion_scope {
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
-            CompletionScope::ToolProperties => Some(tool_property_scope_suggestions(line_prefix)),
+            CompletionScope::ToolProperties => Some(self.tool_property_suggestions(semantic_index, line_prefix, position)),
             CompletionScope::McpToolBatchImport => Some(mcp_tool_batch_import_scope_suggestions(line_prefix)),
             CompletionScope::General | CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => None,
         }
+    }
+
+    fn tool_property_suggestions(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+    ) -> Vec<CompletionSuggestion> {
+        let Some(mcp_tool_schema_source) = self.mcp_tool_schema_source_at_position(position, semantic_index) else {
+            return tool_property_scope_suggestions(line_prefix);
+        };
+        let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+        ToolPropertyName::all()
+            .into_iter()
+            .filter(|property_name| property_name.as_str().starts_with(property_prefix))
+            .map(|property_name| {
+                let schema_fields = match &mcp_tool_schema_source {
+                    McpToolSchemaSource::LocalTool(tool_name) => semantic_index.mcp_tool_schema_fields(tool_name, property_name),
+                    McpToolSchemaSource::McpTool { server_name, tool_name } => {
+                        semantic_index.mcp_tool_schema_fields_for_source(server_name.as_deref(), tool_name, property_name)
+                    }
+                    McpToolSchemaSource::McpToolBatch { server_name, tool_names } => {
+                        semantic_index.mcp_tool_batch_common_schema_fields(server_name, tool_names, property_name)
+                    }
+                };
+
+                if schema_fields.is_empty() {
+                    return tool_property_scope_suggestions(property_name.as_str())
+                        .into_iter()
+                        .find(|completion_suggestion| completion_suggestion.label == property_name.as_str())
+                        .unwrap_or_else(|| CompletionSuggestion {
+                            label: property_name.as_str().to_string(),
+                            kind: CompletionKind::Property,
+                            detail: "Tool declaration property".to_string(),
+                            documentation: "Property available inside a `tool` declaration.".to_string(),
+                            insert_text: property_name.as_str().to_string(),
+                        });
+                }
+
+                CompletionSuggestion {
+                    label: property_name.as_str().to_string(),
+                    kind: CompletionKind::Property,
+                    detail: "MCP schema property".to_string(),
+                    documentation: format!("Insert `{}` with fields discovered from the MCP lock file.", property_name.as_str()),
+                    insert_text: Self::render_schema_property_snippet(property_name, &schema_fields),
+                }
+            })
+            .collect()
+    }
+
+    fn render_schema_property_snippet(property_name: ToolPropertyName, schema_fields: &[superwire_core::dsl::TypedField]) -> String {
+        let rendered_fields = schema_fields
+            .iter()
+            .map(|typed_field| format!("    {}: {}", typed_field.name, typed_field.field_type.render_type()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!("{} {{\n{rendered_fields}\n}}", property_name.as_str())
     }
 
     fn should_defer_to_reference_completion(line_prefix: &str) -> bool {
@@ -1162,7 +1413,7 @@ impl DocumentState {
         after_agent_keyword.contains(for_keyword_with_spaces.as_str()) && after_agent_keyword.contains(in_keyword_with_spaces.as_str())
     }
 
-    fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
+    pub(super) fn semantic_index_for_completion(&self, position: Position) -> SemanticIndex {
         if self.semantic_snapshot.parse_error.is_none() {
             return self.semantic_snapshot.semantic_index.clone();
         }

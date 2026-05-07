@@ -1,6 +1,18 @@
 use crate::protocol::Range;
 
 #[derive(Debug, Clone)]
+pub struct CodeActionSuggestion {
+    pub title: String,
+    pub edit: CodeActionEdit,
+}
+
+#[derive(Debug, Clone)]
+pub struct CodeActionEdit {
+    pub range: Range,
+    pub new_text: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct DocumentDiagnostic {
     pub range: Range,
     pub severity: DiagnosticSeverity,

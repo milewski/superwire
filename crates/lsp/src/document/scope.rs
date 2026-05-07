@@ -124,10 +124,16 @@ impl ScopeScannerTokenState {
             return ScopeBlock::TypedDeclaration;
         }
 
-        if parent_block == Some(ScopeBlock::McpToolBatchImport)
-            && ToolPropertyName::from_identifier(last_identifier) == Some(ToolPropertyName::Bindings)
-        {
-            return ScopeBlock::Other;
+        if parent_block == Some(ScopeBlock::McpToolBatchImport) {
+            match ToolPropertyName::from_identifier(last_identifier) {
+                Some(ToolPropertyName::Input | ToolPropertyName::Output) => {
+                    return ScopeBlock::TypedDeclaration;
+                }
+                Some(ToolPropertyName::Bindings) => {
+                    return ScopeBlock::Other;
+                }
+                _ => {}
+            }
         }
 
         if let Some(pending_property) = &self.pending_property {
@@ -381,8 +387,10 @@ pub fn mcp_tool_batch_import_scope_suggestions(line_prefix: &str) -> Vec<Complet
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
     [
+        ToolPropertyName::Input.as_str(),
         ToolPropertyName::Bindings.as_str(),
         ToolPropertyName::MaxCalls.as_str(),
+        ToolPropertyName::Output.as_str(),
         DeclarationKeyword::Tool.as_str(),
     ]
     .into_iter()
