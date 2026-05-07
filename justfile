@@ -8,7 +8,7 @@ cli *arguments:
 
 # Build IntelliJ plugin (bundles LSP binaries)
 intellij-build:
-    cd editors/intellij && JAVA_HOME=/home/milewski/.local/share/mise/installs/java/21 ./gradlew clean buildPlugin
+    cd editors/intellij && JAVA_HOME=$HOME/.local/share/mise/installs/java/21.0.2 ./gradlew clean buildPlugin
 
 build-cli-alpine:
     cargo build -p superwire-cli --release --target x86_64-unknown-linux-musl
@@ -16,7 +16,7 @@ build-cli-alpine:
 
 # Build the executor Docker image
 build-docker tag="latest":
-    docker build -t superwire-executor:{{tag}} -f crates/executor/Dockerfile .
+    docker build -t rmilewski/superwire-executor:{{tag}} -f Dockerfile .
 
 # Commit and push all submodules, then commit and push the main repo
 # Usage: just submodule-push "commit message"
