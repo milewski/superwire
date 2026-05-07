@@ -463,6 +463,14 @@ fn request_with_input(fixture: &str, input: serde_json::Value) -> crate::api::Ex
     execution_request
 }
 
+fn fixture_with_mcp_endpoint(workflow_source: &str, endpoint: &str) -> String {
+    let endpoint_value = serde_json::to_string(endpoint).expect("endpoint string should serialize");
+
+    workflow_source
+        .replace("secrets.mcp_endpoint", &endpoint_value)
+        .replace("secrets {\n    mcp_endpoint: string\n}\n\n", "")
+}
+
 #[tokio::test]
 async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
     let server = TestMcpHttpServer::spawn([]);
@@ -529,7 +537,7 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
 #[tokio::test]
 async fn fixture_exposes_root_and_agent_level_max_calls_configuration() {
     let server = TestMcpHttpServer::spawn([]);
-    let workflow_source = fixtures::TOOL_MAX_CALLS_SCOPES.replace("__ENDPOINT__", &server.endpoint());
+    let workflow_source = fixture_with_mcp_endpoint(fixtures::TOOL_MAX_CALLS_SCOPES, &server.endpoint());
     let model_provider = TrackingModelProvider::new(vec![json!("first"), json!("second")]);
     let service = ExecutorService::new(model_provider.clone());
 
@@ -616,7 +624,7 @@ async fn explicit_mcp_resource_and_prompt_calls_are_available_as_values() {
 #[tokio::test]
 async fn mcp_read_resource_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
-    let workflow_source = fixtures::MCP_READ_RESOURCE.replace("__ENDPOINT__", &server.endpoint());
+    let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_READ_RESOURCE, &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
     let service = ExecutorService::new(model_provider);
 
@@ -632,7 +640,7 @@ async fn mcp_read_resource_fixture_executes() {
 #[tokio::test]
 async fn mcp_render_prompt_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
-    let workflow_source = fixtures::MCP_RENDER_PROMPT.replace("__ENDPOINT__", &server.endpoint());
+    let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_RENDER_PROMPT, &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
     let service = ExecutorService::new(model_provider);
 
@@ -650,7 +658,7 @@ async fn mcp_render_prompt_fixture_executes() {
 #[tokio::test]
 async fn mcp_read_render_dependency_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
-    let workflow_source = fixtures::MCP_READ_RENDER_DEPENDENCIES.replace("__ENDPOINT__", &server.endpoint());
+    let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_READ_RENDER_DEPENDENCIES, &server.endpoint());
     let model_provider = TrackingModelProvider::new(Vec::new());
     let service = ExecutorService::new(model_provider);
 
@@ -869,7 +877,7 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
 #[tokio::test]
 async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
     let server = TestMcpHttpServer::spawn([]);
-    let workflow_source = fixtures::MCP_TOOL_BATCH_IMPORTS.replace("__ENDPOINT__", &server.endpoint());
+    let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_TOOL_BATCH_IMPORTS, &server.endpoint());
     let model_provider = TrackingModelProvider::new(vec![json!("done")]);
     let service = ExecutorService::new(model_provider.clone());
 
