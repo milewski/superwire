@@ -6,17 +6,21 @@ on:
     paths:
       - 'crates/executor/**'
       - 'crates/core/**'
+      - 'crates/cli/**'
+      - 'crates/lsp/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - 'superwire-executor.yml'
+      - '.github/workflows/superwire-executor.yml'
   pull_request:
     branches: [main]
     paths:
       - 'crates/executor/**'
       - 'crates/core/**'
+      - 'crates/cli/**'
+      - 'crates/lsp/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - 'superwire-executor.yml'
+      - '.github/workflows/superwire-executor.yml'
   workflow_dispatch:
 
 env:

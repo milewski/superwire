@@ -6,11 +6,13 @@ on:
     paths:
       - 'editors/intellij/**'
       - 'crates/lsp/**'
+      - '.github/workflows/intellij.yml'
   push:
     branches: [main]
     paths:
       - 'editors/intellij/**'
       - 'crates/lsp/**'
+      - '.github/workflows/intellij.yml'
   workflow_dispatch:
 
 env:

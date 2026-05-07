@@ -14,6 +14,10 @@ build-cli-alpine:
     cargo build -p superwire-cli --release --target x86_64-unknown-linux-musl
     mv target/x86_64-unknown-linux-musl/release/superwire-cli ./superwire-cli
 
+# Build the executor Docker image
+build-docker tag="latest":
+    docker build -t superwire-executor:{{tag}} -f crates/executor/Dockerfile .
+
 # Commit and push all submodules, then commit and push the main repo
 # Usage: just submodule-push "commit message"
 submodule-push commit_message:
