@@ -1,0 +1,38 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+mcp local {
+    endpoint: "__ENDPOINT__"
+}
+
+tool fetch_numbers from mcp.local.tool.fetch_numbers {
+    bindings {
+        override: 10
+        base: "keep"
+        append: ""
+    }
+}
+
+agent analyzer {
+    model: openai("model-a")
+
+    dynamic {
+        example: call tool.fetch_numbers {
+            bindings {
+                override: 123
+                append: "xyz"
+            }
+        }
+    }
+
+    prompt: "Process fetched values"
+    output: string
+}
+
+output {
+    result: agent.analyzer
+}

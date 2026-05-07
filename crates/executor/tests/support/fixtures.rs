@@ -29,3 +29,6 @@ pub const MCP_TOOL_BATCH_IMPORTS: &str = include_str!("../fixtures/026_mcp_tool_
 pub const AGENT_RESPONSE_FORMAT_JSON_SCHEMA: &str = include_str!("../fixtures/027_agent_response_format_json_schema.wire");
 pub const MCP_TOOL_OUTPUT_ITERABLE_TYPE_MISMATCH: &str = include_str!("../fixtures/030_mcp_tool_output_iterable_type_mismatch.wire");
 pub const MULTIPLE_PROVIDERS_MODELS: &str = include_str!("../fixtures/031_multiple_providers_models.wire");
+pub const AGENT_LOCAL_DYNAMIC_TOOL_SCOPE: &str = include_str!("../fixtures/032_agent_local_dynamic_tool_scope.wire");
+pub const AGENT_LOCAL_DYNAMIC_BINDINGS_OVERRIDE_APPEND: &str =
+    include_str!("../fixtures/033_agent_local_dynamic_bindings_override_append.wire");
