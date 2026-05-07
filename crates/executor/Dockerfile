@@ -8,11 +8,6 @@ WORKDIR /workspace
 
 RUN mkdir -p .cargo
 
-RUN echo '[source.crates-io]' >> .cargo/config.toml && \
-    echo 'replace-with = "vendored-sources"' >> .cargo/config.toml && \
-    echo '[source.vendored-sources]' >> .cargo/config.toml && \
-    echo 'local-registry = "/usr/local/cargo/registry"' >> .cargo/config.toml
-
 COPY Cargo.toml Cargo.lock ./
 
 COPY crates/core/Cargo.toml crates/core/Cargo.toml
@@ -20,9 +15,7 @@ COPY crates/lsp/Cargo.toml crates/lsp/Cargo.toml
 COPY crates/cli/Cargo.toml crates/cli/Cargo.toml
 COPY crates/executor/Cargo.toml crates/executor/Cargo.toml
 
-RUN cargo fetch --locked
-
-COPY crates/executor/src crates/executor/src
+COPY crates/ crates/
 
 RUN cargo build --release -p superwire-executor --locked
 
