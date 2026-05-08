@@ -1,7 +1,8 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DynamicBlock,
     Expression, FunctionCall, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportPropertyName, McpImportSource,
-    McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem,
+    McpPromptBatchImportDeclaration, McpPromptBatchImportItem, McpPromptImportDeclaration, McpResourceBatchImportDeclaration,
+    McpResourceBatchImportItem, McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem,
     McpToolBatchImportPropertyName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
     ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
     ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, Workflow,
@@ -72,6 +73,8 @@ impl AstVisitor {
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
             Rule::schema_declaration => self.visit_schema_declaration(declaration_pair),
             Rule::mcp_tool_batch_import_declaration => self.visit_mcp_tool_batch_import_declaration(declaration_pair),
+            Rule::mcp_resource_batch_import_declaration => self.visit_mcp_resource_batch_import_declaration(declaration_pair),
+            Rule::mcp_prompt_batch_import_declaration => self.visit_mcp_prompt_batch_import_declaration(declaration_pair),
             Rule::tool_block_declaration => self.visit_tool_block_declaration(declaration_pair),
             Rule::tool_import_declaration => self.visit_tool_import_declaration(declaration_pair),
             Rule::resource_import_declaration => self.visit_resource_import_declaration(declaration_pair),
@@ -416,6 +419,198 @@ impl AstVisitor {
         ))
     }
 
+    fn visit_mcp_resource_batch_import_declaration(&self, import_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&import_pair);
+        let mut inner_pairs = import_pair.into_inner();
+        let source_pair = self.next_pair(
+            &mut inner_pairs,
+            "MCP resource batch import source",
+            "MCP resource batch import declaration",
+        )?;
+        let block_pair = self.next_pair(
+            &mut inner_pairs,
+            "MCP resource batch import block",
+            "MCP resource batch import declaration",
+        )?;
+        let server_name = self.visit_mcp_tool_batch_import_source(source_pair)?;
+        let (parameters, items) = self.visit_mcp_resource_batch_import_block(block_pair)?;
+        let resources = items
+            .iter()
+            .map(|item| item.to_resource_import_declaration(&server_name, &parameters))
+            .collect::<Vec<_>>();
+
+        Ok(Declaration::McpResourceBatch(McpResourceBatchImportDeclaration {
+            server_name,
+            parameters,
+            items,
+            resources,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_mcp_prompt_batch_import_declaration(&self, import_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&import_pair);
+        let mut inner_pairs = import_pair.into_inner();
+        let source_pair = self.next_pair(
+            &mut inner_pairs,
+            "MCP prompt batch import source",
+            "MCP prompt batch import declaration",
+        )?;
+        let block_pair = self.next_pair(
+            &mut inner_pairs,
+            "MCP prompt batch import block",
+            "MCP prompt batch import declaration",
+        )?;
+        let server_name = self.visit_mcp_tool_batch_import_source(source_pair)?;
+        let (parameters, items) = self.visit_mcp_prompt_batch_import_block(block_pair)?;
+        let prompts = items
+            .iter()
+            .map(|item| item.to_prompt_import_declaration(&server_name, &parameters))
+            .collect::<Vec<_>>();
+
+        Ok(Declaration::McpPromptBatch(McpPromptBatchImportDeclaration {
+            server_name,
+            parameters,
+            items,
+            prompts,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_mcp_resource_batch_import_block(
+        &self,
+        block_pair: Pair<'_, Rule>,
+    ) -> Result<(Vec<ObjectField>, Vec<McpResourceBatchImportItem>), DslParseError> {
+        let block_span = source_span_from_pair(&block_pair);
+        let context = "MCP resource batch import";
+        let mut parameters = Vec::new();
+        let mut items = Vec::new();
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::named_object_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "MCP import property name", context)?;
+
+                    if McpImportPropertyName::from_identifier(property_name.as_str()).is_none() {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_object_property,
+                            "MCP import property",
+                            block_span,
+                        ));
+                    }
+
+                    let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP import parameters", context)?;
+                    parameters.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                Rule::mcp_resource_batch_import_item => items.push(self.visit_mcp_resource_batch_import_item(property_pair)?),
+                _ => unreachable!("MCP named batch import block should contain only valid properties"),
+            }
+        }
+
+        Ok((parameters, items))
+    }
+
+    fn visit_mcp_resource_batch_import_item(&self, item_pair: Pair<'_, Rule>) -> Result<McpResourceBatchImportItem, DslParseError> {
+        let context = "MCP resource batch import";
+        let item_span = source_span_from_pair(&item_pair);
+        let mut inner_pairs = item_pair.into_inner();
+        let source_name_pair = self.next_pair(&mut inner_pairs, "MCP import name", context)?;
+        let source_name = source_name_pair.as_str().to_string();
+
+        if !McpImportKind::Resource.wire_item_name_is_snake_case(&source_name) {
+            return Err(DslParseError::Pest {
+                message: "MCP resource names in .wire files must be snake_case".to_string(),
+                expected_rules: Vec::new(),
+                span: source_span_from_pair(&source_name_pair),
+            });
+        }
+
+        let mut local_name = None;
+        let mut parameters = Vec::new();
+
+        for item_property_pair in inner_pairs {
+            match item_property_pair.as_rule() {
+                Rule::identifier => {
+                    local_name = Some(item_property_pair.as_str().to_string());
+                }
+                Rule::mcp_import_block => {
+                    parameters = self.visit_mcp_import_block(item_property_pair)?;
+                }
+                _ => unreachable!("MCP named batch import item should contain only valid properties"),
+            }
+        }
+
+        Ok(McpResourceBatchImportItem::new(source_name, local_name, parameters, item_span))
+    }
+
+    fn visit_mcp_prompt_batch_import_block(
+        &self,
+        block_pair: Pair<'_, Rule>,
+    ) -> Result<(Vec<ObjectField>, Vec<McpPromptBatchImportItem>), DslParseError> {
+        let block_span = source_span_from_pair(&block_pair);
+        let context = "MCP prompt batch import";
+        let mut parameters = Vec::new();
+        let mut items = Vec::new();
+
+        for property_pair in block_pair.into_inner() {
+            match property_pair.as_rule() {
+                Rule::named_object_property => {
+                    let mut inner_pairs = property_pair.into_inner();
+                    let property_name = self.next_identifier(&mut inner_pairs, "MCP import property name", context)?;
+
+                    if McpImportPropertyName::from_identifier(property_name.as_str()).is_none() {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::named_object_property,
+                            "MCP import property",
+                            block_span,
+                        ));
+                    }
+
+                    let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP import parameters", context)?;
+                    parameters.extend(self.visit_object_expression(object_expression_pair)?);
+                }
+                Rule::mcp_prompt_batch_import_item => items.push(self.visit_mcp_prompt_batch_import_item(property_pair)?),
+                _ => unreachable!("MCP named batch import block should contain only valid properties"),
+            }
+        }
+
+        Ok((parameters, items))
+    }
+
+    fn visit_mcp_prompt_batch_import_item(&self, item_pair: Pair<'_, Rule>) -> Result<McpPromptBatchImportItem, DslParseError> {
+        let context = "MCP prompt batch import";
+        let item_span = source_span_from_pair(&item_pair);
+        let mut inner_pairs = item_pair.into_inner();
+        let source_name_pair = self.next_pair(&mut inner_pairs, "MCP import name", context)?;
+        let source_name = source_name_pair.as_str().to_string();
+
+        if !McpImportKind::Prompt.wire_item_name_is_snake_case(&source_name) {
+            return Err(DslParseError::Pest {
+                message: "MCP prompt names in .wire files must be snake_case".to_string(),
+                expected_rules: Vec::new(),
+                span: source_span_from_pair(&source_name_pair),
+            });
+        }
+
+        let mut local_name = None;
+        let mut parameters = Vec::new();
+
+        for item_property_pair in inner_pairs {
+            match item_property_pair.as_rule() {
+                Rule::identifier => {
+                    local_name = Some(item_property_pair.as_str().to_string());
+                }
+                Rule::mcp_import_block => {
+                    parameters = self.visit_mcp_import_block(item_property_pair)?;
+                }
+                _ => unreachable!("MCP named batch import item should contain only valid properties"),
+            }
+        }
+
+        Ok(McpPromptBatchImportItem::new(source_name, local_name, parameters, item_span))
+    }
+
     fn visit_resource_import_declaration(&self, resource_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
         let declaration_span = source_span_from_pair(&resource_pair);
         let (name, source, parameters) = self.visit_named_mcp_import(resource_pair, "resource import declaration")?;
@@ -481,9 +676,9 @@ impl AstVisitor {
         let item_name_pair = self.next_pair(&mut inner_pairs, "MCP import name", "MCP import reference")?;
         let item_name = item_name_pair.as_str().split_whitespace().collect::<String>();
 
-        if kind == McpImportKind::Tool && !McpImportKind::wire_tool_name_is_snake_case(&item_name) {
+        if !kind.wire_item_name_is_snake_case(&item_name) {
             return Err(DslParseError::Pest {
-                message: "MCP tool names in .wire files must be snake_case".to_string(),
+                message: format!("MCP {} names in .wire files must be snake_case", kind.as_str()),
                 expected_rules: Vec::new(),
                 span: source_span_from_pair(&item_name_pair),
             });

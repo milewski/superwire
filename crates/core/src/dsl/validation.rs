@@ -1122,6 +1122,20 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
             }
+            Declaration::McpResourceBatch(resource_batch_import_declaration) => {
+                for resource_import_declaration in &resource_batch_import_declaration.resources {
+                    let inserted_resource = validation_index.resource_names.insert(resource_import_declaration.name.clone());
+
+                    if !inserted_resource {
+                        validation_report.push_issue_with_span(
+                            ValidationIssue::DuplicateResource {
+                                resource_name: resource_import_declaration.name.clone(),
+                            },
+                            Some(resource_import_declaration.span),
+                        );
+                    }
+                }
+            }
             Declaration::McpPrompt(prompt_import_declaration) => {
                 let inserted_prompt = validation_index.prompt_names.insert(prompt_import_declaration.name.clone());
 
@@ -1132,6 +1146,20 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                         },
                         Some(prompt_import_declaration.span),
                     );
+                }
+            }
+            Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                for prompt_import_declaration in &prompt_batch_import_declaration.prompts {
+                    let inserted_prompt = validation_index.prompt_names.insert(prompt_import_declaration.name.clone());
+
+                    if !inserted_prompt {
+                        validation_report.push_issue_with_span(
+                            ValidationIssue::DuplicatePrompt {
+                                prompt_name: prompt_import_declaration.name.clone(),
+                            },
+                            Some(prompt_import_declaration.span),
+                        );
+                    }
                 }
             }
             Declaration::Dynamic(_) => {}
@@ -1310,6 +1338,48 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                         Some(prompt_import_declaration.span),
                         validation_report,
                     );
+                }
+            }
+            Declaration::McpResourceBatch(resource_batch_import_declaration) => {
+                for resource_import_declaration in &resource_batch_import_declaration.resources {
+                    let resource_context = ValidationContext::Resource(resource_import_declaration.name.clone());
+
+                    report_duplicate_object_field_names(
+                        resource_import_declaration.parameters.as_slice(),
+                        resource_context.clone(),
+                        Some(resource_import_declaration.span),
+                        validation_report,
+                    );
+
+                    for parameter in &resource_import_declaration.parameters {
+                        report_duplicate_expression_object_fields(
+                            &parameter.value,
+                            resource_context.clone(),
+                            Some(resource_import_declaration.span),
+                            validation_report,
+                        );
+                    }
+                }
+            }
+            Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                for prompt_import_declaration in &prompt_batch_import_declaration.prompts {
+                    let prompt_context = ValidationContext::Prompt(prompt_import_declaration.name.clone());
+
+                    report_duplicate_object_field_names(
+                        prompt_import_declaration.parameters.as_slice(),
+                        prompt_context.clone(),
+                        Some(prompt_import_declaration.span),
+                        validation_report,
+                    );
+
+                    for parameter in &prompt_import_declaration.parameters {
+                        report_duplicate_expression_object_fields(
+                            &parameter.value,
+                            prompt_context.clone(),
+                            Some(prompt_import_declaration.span),
+                            validation_report,
+                        );
+                    }
                 }
             }
             Declaration::Agent(agent_declaration) => {
@@ -1790,6 +1860,8 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
             | Declaration::McpServer(_)
             | Declaration::McpResource(_)
             | Declaration::McpPrompt(_)
+            | Declaration::McpResourceBatch(_)
+            | Declaration::McpPromptBatch(_)
             | Declaration::Dynamic(_)
             | Declaration::Output(_) => {}
         }
@@ -2331,6 +2403,34 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                         prompt_context.clone(),
                         SecretReferencePolicy::Allow,
                     );
+                }
+            }
+            Declaration::McpResourceBatch(resource_batch_import_declaration) => {
+                for resource_import_declaration in &resource_batch_import_declaration.resources {
+                    let resource_context = ValidationContext::Resource(resource_import_declaration.name.clone());
+
+                    for parameter in &resource_import_declaration.parameters {
+                        keyword_reference_validation_state.validate_expression(
+                            &parameter.value,
+                            &workflow_dynamic_field_types,
+                            resource_context.clone(),
+                            SecretReferencePolicy::Allow,
+                        );
+                    }
+                }
+            }
+            Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                for prompt_import_declaration in &prompt_batch_import_declaration.prompts {
+                    let prompt_context = ValidationContext::Prompt(prompt_import_declaration.name.clone());
+
+                    for parameter in &prompt_import_declaration.parameters {
+                        keyword_reference_validation_state.validate_expression(
+                            &parameter.value,
+                            &workflow_dynamic_field_types,
+                            prompt_context.clone(),
+                            SecretReferencePolicy::Allow,
+                        );
+                    }
                 }
             }
             Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
@@ -3708,11 +3808,11 @@ mod tests {
             tool search { query: string }
             tool search { query: string }
 
-            resource readme from mcp.local.resource.project-readme
-            resource readme from mcp.local.resource.project-readme
+            resource readme from mcp.local.resource.project_readme
+            resource readme from mcp.local.resource.project_readme
 
-            prompt system_prompt from mcp.local.prompt.system-prompt
-            prompt system_prompt from mcp.local.prompt.system-prompt
+            prompt system_prompt from mcp.local.prompt.system_prompt
+            prompt system_prompt from mcp.local.prompt.system_prompt
 
             agent researcher {}
             agent researcher {}
@@ -3786,8 +3886,8 @@ mod tests {
     #[test]
     fn accepts_imported_mcp_call_references() {
         let workflow = parse_inline_workflow! {
-            resource project_readme from mcp.local.resource.project-readme
-            prompt system_prompt from mcp.local.prompt.system-prompt
+            resource project_readme from mcp.local.resource.project_readme
+            prompt system_prompt from mcp.local.prompt.system_prompt
 
             dynamic {
                 readme: read resource.project_readme
@@ -3814,8 +3914,8 @@ mod tests {
     #[test]
     fn reports_wrong_mcp_call_reference_roots() {
         let workflow = parse_inline_workflow! {
-            resource project_readme from mcp.local.resource.project-readme
-            prompt system_prompt from mcp.local.prompt.system-prompt
+            resource project_readme from mcp.local.resource.project_readme
+            prompt system_prompt from mcp.local.prompt.system_prompt
 
             dynamic {
                 readme: read prompt.system_prompt

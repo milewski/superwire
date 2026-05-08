@@ -147,6 +147,10 @@ impl Workflow {
             Declaration::McpResource(resource_import_declaration) if resource_import_declaration.name == resource_name => {
                 Some(resource_import_declaration)
             }
+            Declaration::McpResourceBatch(resource_batch_import_declaration) => resource_batch_import_declaration
+                .resources
+                .iter()
+                .find(|resource_import_declaration| resource_import_declaration.name == resource_name),
             _ => None,
         })
     }
@@ -157,21 +161,27 @@ impl Workflow {
             Declaration::McpPrompt(prompt_import_declaration) if prompt_import_declaration.name == prompt_name => {
                 Some(prompt_import_declaration)
             }
+            Declaration::McpPromptBatch(prompt_batch_import_declaration) => prompt_batch_import_declaration
+                .prompts
+                .iter()
+                .find(|prompt_import_declaration| prompt_import_declaration.name == prompt_name),
             _ => None,
         })
     }
 
     pub fn resource_imports(&self) -> impl Iterator<Item = &McpResourceImportDeclaration> {
-        self.declarations.iter().filter_map(|declaration| match declaration {
-            Declaration::McpResource(resource_import_declaration) => Some(resource_import_declaration),
-            _ => None,
+        self.declarations.iter().flat_map(|declaration| match declaration {
+            Declaration::McpResource(resource_import_declaration) => std::slice::from_ref(resource_import_declaration).iter(),
+            Declaration::McpResourceBatch(resource_batch_import_declaration) => resource_batch_import_declaration.resources.iter(),
+            _ => [].iter(),
         })
     }
 
     pub fn prompt_imports(&self) -> impl Iterator<Item = &McpPromptImportDeclaration> {
-        self.declarations.iter().filter_map(|declaration| match declaration {
-            Declaration::McpPrompt(prompt_import_declaration) => Some(prompt_import_declaration),
-            _ => None,
+        self.declarations.iter().flat_map(|declaration| match declaration {
+            Declaration::McpPrompt(prompt_import_declaration) => std::slice::from_ref(prompt_import_declaration).iter(),
+            Declaration::McpPromptBatch(prompt_batch_import_declaration) => prompt_batch_import_declaration.prompts.iter(),
+            _ => [].iter(),
         })
     }
 
@@ -201,6 +211,8 @@ impl Workflow {
             | Declaration::Schema(_)
             | Declaration::Tool(_)
             | Declaration::McpToolBatch(_)
+            | Declaration::McpResourceBatch(_)
+            | Declaration::McpPromptBatch(_)
             | Declaration::McpResource(_)
             | Declaration::McpPrompt(_)
             | Declaration::Agent(_)
@@ -218,6 +230,8 @@ pub enum Declaration {
     Schema(SchemaDeclaration),
     Tool(ToolDeclaration),
     McpToolBatch(McpToolBatchImportDeclaration),
+    McpResourceBatch(McpResourceBatchImportDeclaration),
+    McpPromptBatch(McpPromptBatchImportDeclaration),
     McpResource(McpResourceImportDeclaration),
     McpPrompt(McpPromptImportDeclaration),
     Dynamic(DynamicBlock),
@@ -236,6 +250,8 @@ impl Declaration {
             | Self::Secrets(_)
             | Self::Input(_)
             | Self::Schema(_)
+            | Self::McpResourceBatch(_)
+            | Self::McpPromptBatch(_)
             | Self::McpResource(_)
             | Self::McpPrompt(_)
             | Self::Dynamic(_)
@@ -444,6 +460,42 @@ pub struct McpToolBatchImportDeclaration {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpResourceBatchImportDeclaration {
+    pub server_name: String,
+    pub parameters: Vec<ObjectField>,
+    pub items: Vec<McpResourceBatchImportItem>,
+    pub resources: Vec<McpResourceImportDeclaration>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpResourceBatchImportItem {
+    pub source_name: String,
+    pub local_name: String,
+    pub alias: Option<String>,
+    pub parameters: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpPromptBatchImportDeclaration {
+    pub server_name: String,
+    pub parameters: Vec<ObjectField>,
+    pub items: Vec<McpPromptBatchImportItem>,
+    pub prompts: Vec<McpPromptImportDeclaration>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpPromptBatchImportItem {
+    pub source_name: String,
+    pub local_name: String,
+    pub alias: Option<String>,
+    pub parameters: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpToolBatchImportItem {
     pub source_name: String,
     pub local_name: String,
@@ -517,6 +569,74 @@ impl McpToolBatchImportItem {
             binding_fields: Vec::new(),
             fixed_binding_fields,
             output_fields,
+            span: self.span,
+        }
+    }
+}
+
+impl McpResourceBatchImportItem {
+    #[must_use]
+    pub fn new(source_name: String, local_name: Option<String>, parameters: Vec<ObjectField>, span: SourceSpan) -> Self {
+        let alias = local_name;
+        let local_name = alias.clone().unwrap_or_else(|| source_name.replace('-', "_"));
+
+        Self {
+            source_name,
+            local_name,
+            alias,
+            parameters,
+            span,
+        }
+    }
+
+    #[must_use]
+    pub fn to_resource_import_declaration(&self, server_name: &str, shared_parameters: &[ObjectField]) -> McpResourceImportDeclaration {
+        let mut parameters = shared_parameters.to_vec();
+        parameters.extend(self.parameters.clone());
+
+        McpResourceImportDeclaration {
+            name: self.local_name.clone(),
+            source: McpImportSource {
+                server_name: server_name.to_string(),
+                kind: McpImportKind::Resource,
+                item_name: self.source_name.clone(),
+                span: self.span,
+            },
+            parameters,
+            span: self.span,
+        }
+    }
+}
+
+impl McpPromptBatchImportItem {
+    #[must_use]
+    pub fn new(source_name: String, local_name: Option<String>, parameters: Vec<ObjectField>, span: SourceSpan) -> Self {
+        let alias = local_name;
+        let local_name = alias.clone().unwrap_or_else(|| source_name.replace('-', "_"));
+
+        Self {
+            source_name,
+            local_name,
+            alias,
+            parameters,
+            span,
+        }
+    }
+
+    #[must_use]
+    pub fn to_prompt_import_declaration(&self, server_name: &str, shared_parameters: &[ObjectField]) -> McpPromptImportDeclaration {
+        let mut parameters = shared_parameters.to_vec();
+        parameters.extend(self.parameters.clone());
+
+        McpPromptImportDeclaration {
+            name: self.local_name.clone(),
+            source: McpImportSource {
+                server_name: server_name.to_string(),
+                kind: McpImportKind::Prompt,
+                item_name: self.source_name.clone(),
+                span: self.span,
+            },
+            parameters,
             span: self.span,
         }
     }
@@ -636,6 +756,13 @@ impl McpImportKind {
         }
 
         characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+    }
+
+    #[must_use]
+    pub fn wire_item_name_is_snake_case(self, item_name: &str) -> bool {
+        let _ = self;
+
+        Self::wire_tool_name_is_snake_case(item_name)
     }
 
     #[must_use]

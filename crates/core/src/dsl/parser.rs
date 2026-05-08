@@ -534,13 +534,13 @@ mod tests {
                 workspace_id: string
             }
 
-            resource project_readme from mcp.local.resource.project-readme {
+            resource project_readme from mcp.local.resource.project_readme {
                 params {
                     workspace_id: input.workspace_id
                 }
             }
 
-            prompt from mcp.local.prompt.system-prompt
+            prompt from mcp.local.prompt.system_prompt
 
             tool from mcp.local.tool.create_sorting_task_for_task_group_tool {
                 bindings {
@@ -559,13 +559,13 @@ mod tests {
         assert_eq!(resource_import.name, "project_readme");
         assert_eq!(resource_import.source.server_name, "local");
         assert_eq!(resource_import.source.kind, McpImportKind::Resource);
-        assert_eq!(resource_import.source.item_name, "project-readme");
+        assert_eq!(resource_import.source.item_name, "project_readme");
         assert_eq!(resource_import.parameters.len(), 1);
 
         let prompt_import = workflow.prompt_imports().next().expect("prompt import should parse");
         assert_eq!(prompt_import.name, "system_prompt");
         assert_eq!(prompt_import.source.kind, McpImportKind::Prompt);
-        assert_eq!(prompt_import.source.item_name, "system-prompt");
+        assert_eq!(prompt_import.source.item_name, "system_prompt");
 
         let inferred_tool = workflow
             .find_tool("create_sorting_task_for_task_group_tool")
@@ -667,10 +667,66 @@ mod tests {
     }
 
     #[test]
+    fn parses_mcp_resource_and_prompt_batch_imports_with_shared_parameters() {
+        let workflow = parse_inline_workflow! {
+            from mcp.local.resource {
+                params {
+                    workspace_id: input.workspace_id
+                }
+
+                resource task_type_resource
+                resource project_readme {
+                    params {
+                        section: "setup"
+                    }
+                }
+            }
+
+            from mcp.local.prompt {
+                bindings {
+                    workspace_id: input.workspace_id
+                }
+
+                prompt task_summary_prompt
+                prompt system_prompt {
+                    bindings {
+                        task_type: "investigation"
+                    }
+                }
+            }
+        };
+
+        assert_eq!(workflow.resource_imports().count(), 2);
+        assert_eq!(workflow.prompt_imports().count(), 2);
+
+        let task_type_resource = workflow
+            .find_resource_import("task_type_resource")
+            .expect("resource from batch import should parse");
+        assert_eq!(task_type_resource.source.server_name, "local");
+        assert_eq!(task_type_resource.parameters.len(), 1);
+
+        let project_readme = workflow
+            .find_resource_import("project_readme")
+            .expect("resource with item params should parse");
+        assert_eq!(project_readme.parameters.len(), 2);
+
+        let task_summary_prompt = workflow
+            .find_prompt_import("task_summary_prompt")
+            .expect("prompt from batch import should parse");
+        assert_eq!(task_summary_prompt.source.server_name, "local");
+        assert_eq!(task_summary_prompt.parameters.len(), 1);
+
+        let system_prompt = workflow
+            .find_prompt_import("system_prompt")
+            .expect("prompt with item bindings should parse");
+        assert_eq!(system_prompt.parameters.len(), 2);
+    }
+
+    #[test]
     fn parses_resource_read_and_prompt_render_expressions() {
         let workflow = parse_inline_workflow! {
-            resource project_readme from mcp.local.resource.project-readme
-            prompt system_prompt from mcp.local.prompt.system-prompt
+            resource project_readme from mcp.local.resource.project_readme
+            prompt system_prompt from mcp.local.prompt.system_prompt
 
             dynamic {
                 readme: read resource.project_readme {

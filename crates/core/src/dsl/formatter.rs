@@ -1,12 +1,14 @@
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use thiserror::Error;
 
 use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
-    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, McpCall, McpImportKind, McpPromptImportDeclaration,
-    McpResourceImportDeclaration, McpToolBatchImportDeclaration, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall,
-    ToolDeclaration, ToolPropertyName, TypeExpression, TypedField, Workflow,
+    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, McpCall, McpImportKind, McpPromptBatchImportDeclaration,
+    McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceImportDeclaration, McpToolBatchImportDeclaration,
+    ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolPropertyName, TypeExpression, TypedField,
+    Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -277,6 +279,8 @@ impl Declaration {
             }
             Self::Tool(tool_declaration) => tool_declaration.push_to_formatter(formatter),
             Self::McpToolBatch(tool_batch_import_declaration) => tool_batch_import_declaration.push_to_formatter(formatter),
+            Self::McpResourceBatch(resource_batch_import_declaration) => resource_batch_import_declaration.push_to_formatter(formatter),
+            Self::McpPromptBatch(prompt_batch_import_declaration) => prompt_batch_import_declaration.push_to_formatter(formatter),
             Self::McpResource(resource_import_declaration) => resource_import_declaration.push_to_formatter(formatter),
             Self::McpPrompt(prompt_import_declaration) => prompt_import_declaration.push_to_formatter(formatter),
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
@@ -400,6 +404,112 @@ impl McpToolBatchImportDeclaration {
 
         for item in &self.items {
             item.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
+    }
+}
+
+impl McpResourceBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let header = format!(
+            "{} mcp.{}.{}",
+            ImportKeyword::From.as_str(),
+            self.server_name,
+            McpImportKind::Resource.as_str()
+        );
+
+        formatter.push_declaration_block_start(&header);
+
+        if !self.parameters.is_empty() {
+            formatter.push_declaration_block_start("params");
+
+            for parameter in &self.parameters {
+                parameter.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.items.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        for item in &self.items {
+            let mut header = format!("resource {}", item.source_name);
+
+            if let Some(alias) = &item.alias {
+                let _ = write!(header, " as {alias}");
+            }
+
+            if item.parameters.is_empty() {
+                formatter.push_line(&header);
+
+                continue;
+            }
+
+            formatter.push_declaration_block_start(&header);
+            formatter.push_declaration_block_start("params");
+
+            for parameter in &item.parameters {
+                parameter.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+            formatter.push_declaration_block_end();
+        }
+
+        formatter.push_declaration_block_end();
+    }
+}
+
+impl McpPromptBatchImportDeclaration {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        let header = format!(
+            "{} mcp.{}.{}",
+            ImportKeyword::From.as_str(),
+            self.server_name,
+            McpImportKind::Prompt.as_str()
+        );
+
+        formatter.push_declaration_block_start(&header);
+
+        if !self.parameters.is_empty() {
+            formatter.push_declaration_block_start("bindings");
+
+            for parameter in &self.parameters {
+                parameter.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+
+            if !self.items.is_empty() {
+                formatter.push_newline();
+            }
+        }
+
+        for item in &self.items {
+            let mut header = format!("prompt {}", item.source_name);
+
+            if let Some(alias) = &item.alias {
+                let _ = write!(header, " as {alias}");
+            }
+
+            if item.parameters.is_empty() {
+                formatter.push_line(&header);
+
+                continue;
+            }
+
+            formatter.push_declaration_block_start(&header);
+            formatter.push_declaration_block_start("bindings");
+
+            for parameter in &item.parameters {
+                parameter.push_to_formatter(formatter);
+            }
+
+            formatter.push_declaration_block_end();
+            formatter.push_declaration_block_end();
         }
 
         formatter.push_declaration_block_end();

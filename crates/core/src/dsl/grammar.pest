@@ -7,6 +7,8 @@ declaration = _{
     | input_declaration
     | schema_declaration
     | mcp_tool_batch_import_declaration
+    | mcp_resource_batch_import_declaration
+    | mcp_prompt_batch_import_declaration
     | tool_import_declaration
     | resource_import_declaration
     | prompt_import_declaration
@@ -31,6 +33,18 @@ mcp_tool_batch_import_source = { "mcp" ~ "." ~ identifier ~ "." ~ "tool" }
 mcp_tool_batch_import_block = { "{" ~ mcp_tool_batch_import_property* ~ "}" }
 mcp_tool_batch_import_property = _{ named_tool_block_property | named_object_property | named_unsigned_integer_property | mcp_tool_batch_import_item }
 mcp_tool_batch_import_item = { "tool" ~ mcp_import_name ~ ("as" ~ identifier)? ~ tool_import_block? }
+
+mcp_resource_batch_import_declaration = { "from" ~ mcp_resource_batch_import_source ~ mcp_resource_batch_import_block }
+mcp_resource_batch_import_source = { "mcp" ~ "." ~ identifier ~ "." ~ "resource" }
+mcp_resource_batch_import_block = { "{" ~ mcp_resource_batch_import_property* ~ "}" }
+mcp_resource_batch_import_property = _{ named_object_property | mcp_resource_batch_import_item }
+mcp_resource_batch_import_item = { "resource" ~ mcp_import_name ~ ("as" ~ identifier)? ~ mcp_import_block? }
+
+mcp_prompt_batch_import_declaration = { "from" ~ mcp_prompt_batch_import_source ~ mcp_prompt_batch_import_block }
+mcp_prompt_batch_import_source = { "mcp" ~ "." ~ identifier ~ "." ~ "prompt" }
+mcp_prompt_batch_import_block = { "{" ~ mcp_prompt_batch_import_property* ~ "}" }
+mcp_prompt_batch_import_property = _{ named_object_property | mcp_prompt_batch_import_item }
+mcp_prompt_batch_import_item = { "prompt" ~ mcp_import_name ~ ("as" ~ identifier)? ~ mcp_import_block? }
 
 tool_import_block = { "{" ~ tool_import_property* ~ "}" }
 tool_import_property = _{ named_tool_block_property | named_object_property | named_unsigned_integer_property }
