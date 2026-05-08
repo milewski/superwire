@@ -255,12 +255,30 @@ impl SemanticToolingSnapshot {
                         resource_import_declaration.span,
                     );
                 }
+                Declaration::McpResourceBatch(resource_batch_import_declaration) => {
+                    for resource_import_declaration in &resource_batch_import_declaration.resources {
+                        declaration_index.push_symbol(
+                            ToolingSymbolCategory::Resource,
+                            resource_import_declaration.name.clone(),
+                            resource_import_declaration.span,
+                        );
+                    }
+                }
                 Declaration::McpPrompt(prompt_import_declaration) => {
                     declaration_index.push_symbol(
                         ToolingSymbolCategory::Prompt,
                         prompt_import_declaration.name.clone(),
                         prompt_import_declaration.span,
                     );
+                }
+                Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                    for prompt_import_declaration in &prompt_batch_import_declaration.prompts {
+                        declaration_index.push_symbol(
+                            ToolingSymbolCategory::Prompt,
+                            prompt_import_declaration.name.clone(),
+                            prompt_import_declaration.span,
+                        );
+                    }
                 }
                 Declaration::Dynamic(_) | Declaration::Output(_) => {}
             }

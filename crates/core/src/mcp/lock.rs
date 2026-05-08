@@ -202,6 +202,8 @@ impl McpLock {
                 | Declaration::Secrets(_)
                 | Declaration::Input(_)
                 | Declaration::Schema(_)
+                | Declaration::McpResourceBatch(_)
+                | Declaration::McpPromptBatch(_)
                 | Declaration::McpResource(_)
                 | Declaration::McpPrompt(_)
                 | Declaration::Dynamic(_)
