@@ -745,8 +745,24 @@ impl SemanticIndex {
             Declaration::McpResource(resource_import_declaration) => {
                 self.resource_names.push(resource_import_declaration.name.clone());
             }
+            Declaration::McpResourceBatch(resource_batch_import_declaration) => {
+                self.resource_names.extend(
+                    resource_batch_import_declaration
+                        .resources
+                        .iter()
+                        .map(|resource_import_declaration| resource_import_declaration.name.clone()),
+                );
+            }
             Declaration::McpPrompt(prompt_import_declaration) => {
                 self.prompt_names.push(prompt_import_declaration.name.clone());
+            }
+            Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                self.prompt_names.extend(
+                    prompt_batch_import_declaration
+                        .prompts
+                        .iter()
+                        .map(|prompt_import_declaration| prompt_import_declaration.name.clone()),
+                );
             }
             Declaration::Dynamic(dynamic_block) => {
                 self.insert_workflow_dynamic_block(dynamic_block);
@@ -1650,6 +1666,22 @@ impl SemanticIndex {
                 detail: "MCP tool batch import".to_string(),
                 documentation: "Batch imports MCP tools from a server and applies shared bindings.".to_string(),
                 insert_text: "from mcp.$1.tool {\n    bindings {\n        $2\n    }\n\n    tool $3\n}".to_string(),
+            });
+
+            completion_suggestions.push(CompletionSuggestion {
+                label: ImportKeyword::From.as_str().to_string(),
+                kind: CompletionKind::Keyword,
+                detail: "MCP resource batch import".to_string(),
+                documentation: "Batch imports MCP resources from a server and applies shared params or bindings.".to_string(),
+                insert_text: "from mcp.$1.resource {\n    params {\n        $2\n    }\n\n    resource $3\n}".to_string(),
+            });
+
+            completion_suggestions.push(CompletionSuggestion {
+                label: ImportKeyword::From.as_str().to_string(),
+                kind: CompletionKind::Keyword,
+                detail: "MCP prompt batch import".to_string(),
+                documentation: "Batch imports MCP prompts from a server and applies shared params or bindings.".to_string(),
+                insert_text: "from mcp.$1.prompt {\n    bindings {\n        $2\n    }\n\n    prompt $3\n}".to_string(),
             });
         }
 

@@ -161,9 +161,15 @@ impl ScopeScannerTokenState {
         if self.recent_identifiers.len() >= 4
             && self.recent_identifiers[self.recent_identifiers.len() - 4] == ImportKeyword::From.as_str()
             && self.recent_identifiers[self.recent_identifiers.len() - 3] == DeclarationKeyword::Mcp.as_str()
-            && self.recent_identifiers[self.recent_identifiers.len() - 1] == DeclarationKeyword::Tool.as_str()
         {
-            return ScopeBlock::McpToolBatchImport;
+            let import_kind = &self.recent_identifiers[self.recent_identifiers.len() - 1];
+
+            if import_kind == DeclarationKeyword::Tool.as_str()
+                || import_kind == DeclarationKeyword::Resource.as_str()
+                || import_kind == DeclarationKeyword::Prompt.as_str()
+            {
+                return ScopeBlock::McpToolBatchImport;
+            }
         }
 
         if let Some(agent_keyword_index) = self
@@ -390,6 +396,9 @@ pub fn mcp_tool_batch_import_scope_suggestions(line_prefix: &str) -> Vec<Complet
         ToolPropertyName::MaxCalls.as_str(),
         ToolPropertyName::Output.as_str(),
         DeclarationKeyword::Tool.as_str(),
+        "params",
+        DeclarationKeyword::Resource.as_str(),
+        DeclarationKeyword::Prompt.as_str(),
     ]
     .into_iter()
     .filter(|property_name| property_name.starts_with(property_prefix))

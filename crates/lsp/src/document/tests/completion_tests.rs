@@ -1318,7 +1318,7 @@ fn suggests_tools_inside_dynamic_tool_call_callee() {
 #[test]
 fn suggests_resources_inside_dynamic_read_callee() {
     let completion_suggestions = inline_completion_suggestions! {
-        resource project_readme from mcp.local.resource.project-readme
+        resource project_readme from mcp.local.resource.project_readme
 
         dynamic {
             readme: read resource.<cursor>
@@ -1331,7 +1331,7 @@ fn suggests_resources_inside_dynamic_read_callee() {
 #[test]
 fn suggests_prompts_inside_dynamic_render_callee() {
     let completion_suggestions = inline_completion_suggestions! {
-        prompt system_prompt from mcp.local.prompt.system-prompt
+        prompt system_prompt from mcp.local.prompt.system_prompt
 
         dynamic {
             instructions: render prompt.<cursor>

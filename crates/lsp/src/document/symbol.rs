@@ -126,6 +126,34 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: Vec::new(),
                 }
             }
+            Self::McpResourceBatch(resource_batch_import_declaration) => {
+                let declaration_range = source_span_to_range(source_text, resource_batch_import_declaration.span);
+                let child_symbols = resource_batch_import_declaration
+                    .resources
+                    .iter()
+                    .map(|resource_import_declaration| {
+                        let declaration_range = source_span_to_range(source_text, resource_import_declaration.span);
+
+                        DocumentSymbolNode {
+                            name: resource_import_declaration.name.clone(),
+                            detail: Some("MCP resource import".to_string()),
+                            kind: SymbolKind::Object,
+                            range: declaration_range,
+                            selection_range: declaration_range,
+                            children: Vec::new(),
+                        }
+                    })
+                    .collect();
+
+                DocumentSymbolNode {
+                    name: format!("mcp.{}.resource", resource_batch_import_declaration.server_name),
+                    detail: Some("MCP resource batch import".to_string()),
+                    kind: SymbolKind::Module,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: child_symbols,
+                }
+            }
             Self::McpPrompt(prompt_import_declaration) => {
                 let declaration_range = source_span_to_range(source_text, prompt_import_declaration.span);
 
@@ -136,6 +164,34 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
+                }
+            }
+            Self::McpPromptBatch(prompt_batch_import_declaration) => {
+                let declaration_range = source_span_to_range(source_text, prompt_batch_import_declaration.span);
+                let child_symbols = prompt_batch_import_declaration
+                    .prompts
+                    .iter()
+                    .map(|prompt_import_declaration| {
+                        let declaration_range = source_span_to_range(source_text, prompt_import_declaration.span);
+
+                        DocumentSymbolNode {
+                            name: prompt_import_declaration.name.clone(),
+                            detail: Some("MCP prompt import".to_string()),
+                            kind: SymbolKind::Field,
+                            range: declaration_range,
+                            selection_range: declaration_range,
+                            children: Vec::new(),
+                        }
+                    })
+                    .collect();
+
+                DocumentSymbolNode {
+                    name: format!("mcp.{}.prompt", prompt_batch_import_declaration.server_name),
+                    detail: Some("MCP prompt batch import".to_string()),
+                    kind: SymbolKind::Module,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: child_symbols,
                 }
             }
             Self::Input(input_declaration) => {
