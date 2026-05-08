@@ -74,12 +74,16 @@ impl OpenAiChatCompletionResponseText {
     }
 
     fn deserialize(self) -> Result<super::response::OpenAiChatCompletionResponse, String> {
-        if !self.status.is_success() {
-            return Err(OpenAiErrorResponse::message_from_response_text(&self.text)
-                .unwrap_or_else(|| format!("provider returned HTTP {}: {}", self.status, self.text)));
+        if let Some(error_message) = OpenAiErrorResponse::message_from_response_text(&self.text) {
+            return Err(error_message);
         }
 
-        serde_json::from_str(&self.text).map_err(|error| format!("failed to parse chat completion response: {error}"))
+        if !self.status.is_success() {
+            return Err(format!("provider returned HTTP {}: {}", self.status, self.text));
+        }
+
+        serde_json::from_str(&self.text)
+            .map_err(|error| format!("failed to parse chat completion response: {error}; response body: {}", self.text))
     }
 }
 
@@ -90,13 +94,31 @@ struct OpenAiErrorResponse {
 
 #[derive(Debug, Deserialize)]
 struct OpenAiErrorBody {
-    message: String,
+    message: Value,
 }
 
 impl OpenAiErrorResponse {
     fn message_from_response_text(response_text: &str) -> Option<String> {
         serde_json::from_str::<Self>(response_text)
             .ok()
-            .map(|response| response.error.message)
+            .map(|response| match response.error.message {
+                Value::String(message) => message,
+                message => message.to_string(),
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenAiErrorResponse;
+
+    #[test]
+    fn extracts_provider_error_message_from_success_status_body() {
+        let message = OpenAiErrorResponse::message_from_response_text(
+            r#"{"error":{"message":"invalid function schema","type":"invalid_request_error"}}"#,
+        )
+        .expect("provider error body should parse");
+
+        assert_eq!(message, "invalid function schema");
     }
 }
