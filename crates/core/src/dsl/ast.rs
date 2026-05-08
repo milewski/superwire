@@ -784,7 +784,6 @@ impl AgentDeclaration {
         self.properties.iter().filter_map(|property| match property {
             AgentProperty::Dynamic(dynamic_block) => Some(dynamic_block),
             AgentProperty::Model(_)
-            | AgentProperty::ResponseFormat(_)
             | AgentProperty::Prompt(_)
             | AgentProperty::Output {
                 output_type_expression: _,
@@ -808,7 +807,6 @@ impl AgentDeclaration {
                 AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
                 AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
-                | AgentProperty::ResponseFormat(_)
                 | AgentProperty::Prompt(_)
                 | AgentProperty::Output {
                     output_type_expression: _,
@@ -879,17 +877,6 @@ impl AgentDeclaration {
 
         None
     }
-
-    #[must_use]
-    pub fn response_format(&self) -> Option<AgentResponseFormat> {
-        for agent_property in &self.properties {
-            if let AgentProperty::ResponseFormat(response_format) = agent_property {
-                return Some(*response_format);
-            }
-        }
-
-        None
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -925,7 +912,6 @@ impl AgentForLoopPattern {
 pub enum AgentProperty {
     Dynamic(DynamicBlock),
     Model(Expression),
-    ResponseFormat(AgentResponseFormat),
     Prompt(Expression),
     Output {
         output_type_expression: TypeExpression,
@@ -946,7 +932,6 @@ impl AgentProperty {
         match self {
             Self::Dynamic(_) => AgentPropertyName::Dynamic,
             Self::Model(_) => AgentPropertyName::Model,
-            Self::ResponseFormat(_) => AgentPropertyName::ResponseFormat,
             Self::Prompt(_) => AgentPropertyName::Prompt,
             Self::Output {
                 output_type_expression: _,
@@ -964,7 +949,6 @@ impl AgentProperty {
 pub enum AgentPropertyName {
     Dynamic,
     Model,
-    ResponseFormat,
     Prompt,
     Output,
     Context,
@@ -975,11 +959,10 @@ pub enum AgentPropertyName {
 
 impl AgentPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 8] {
+    pub fn all() -> [Self; 7] {
         [
             Self::Dynamic,
             Self::Model,
-            Self::ResponseFormat,
             Self::Prompt,
             Self::Output,
             Self::Context,
@@ -997,7 +980,6 @@ impl AgentPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Model => "model",
-            Self::ResponseFormat => "response_format",
             Self::Dynamic => "dynamic",
             Self::Prompt => "prompt",
             Self::Output => "output",
@@ -1069,42 +1051,6 @@ pub enum AgentExpressionPropertyName {
     Context,
     Inference,
     Tools,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AgentResponseFormat {
-    Auto,
-    JsonSchema,
-    JsonObject,
-    InstructionOnly,
-}
-
-impl AgentResponseFormat {
-    #[must_use]
-    pub fn all() -> [Self; 4] {
-        [Self::Auto, Self::JsonSchema, Self::JsonObject, Self::InstructionOnly]
-    }
-
-    #[must_use]
-    pub fn from_identifier(identifier: &str) -> Option<Self> {
-        match identifier {
-            "auto" => Some(Self::Auto),
-            "json_schema" => Some(Self::JsonSchema),
-            "json_object" => Some(Self::JsonObject),
-            "instruction_only" => Some(Self::InstructionOnly),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::JsonSchema => "json_schema",
-            Self::JsonObject => "json_object",
-            Self::InstructionOnly => "instruction_only",
-        }
-    }
 }
 
 impl AgentExpressionPropertyName {

@@ -1373,7 +1373,6 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                                 validation_report,
                             );
                         }
-                        AgentProperty::ResponseFormat(_) => {}
                         AgentProperty::Unknown { name, span } => {
                             validation_report.push_issue_with_span(
                                 ValidationIssue::UnknownAgentProperty {
@@ -2296,7 +2295,6 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                             output_type_expression: _,
                             description: _,
                         }
-                        | AgentProperty::ResponseFormat(_)
                         | AgentProperty::Unknown { name: _, span: _ } => {}
                     }
                 }
@@ -3527,7 +3525,6 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                     output_type_expression: _,
                     description: _,
                 }
-                | AgentProperty::ResponseFormat(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }

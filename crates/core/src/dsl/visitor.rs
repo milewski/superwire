@@ -1,10 +1,10 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName, AgentResponseFormat, CallArgument, Declaration,
-    DynamicBlock, Expression, FunctionCall, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportPropertyName,
-    McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration,
-    McpToolBatchImportItem, McpToolBatchImportPropertyName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference,
-    ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart,
-    ToolCall, ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DynamicBlock,
+    Expression, FunctionCall, InputDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportPropertyName, McpImportSource,
+    McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem,
+    McpToolBatchImportPropertyName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
+    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
+    ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -981,7 +981,6 @@ impl AstVisitor {
 
         match agent_property_name {
             AgentPropertyName::Model => Ok(AgentProperty::Model(self.visit_expression(value_pair)?)),
-            AgentPropertyName::ResponseFormat => self.visit_agent_response_format_property(value_pair),
             AgentPropertyName::Prompt => Ok(AgentProperty::Prompt(self.visit_expression(value_pair)?)),
             AgentPropertyName::Output => self.visit_agent_output_property(value_pair, inner_pairs, property_span),
             AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
@@ -993,14 +992,6 @@ impl AstVisitor {
                 property_span,
             )),
         }
-    }
-
-    fn visit_agent_response_format_property(&self, value_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
-        let response_format = AgentResponseFormat::from_identifier(value_pair.as_str()).ok_or_else(|| {
-            DslParseError::unexpected_with_span(value_pair.as_rule(), "response format property", source_span_from_pair(&value_pair))
-        })?;
-
-        Ok(AgentProperty::ResponseFormat(response_format))
     }
 
     fn visit_agent_output_property(
