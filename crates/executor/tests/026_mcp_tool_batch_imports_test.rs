@@ -183,7 +183,7 @@ async fn fails_after_model_repeats_same_tool_call_too_many_times() {
     let error_message = execution_error.to_string();
 
     assert!(
-        error_message.contains("tool") || error_message.contains("valid JSON output"),
+        error_message.contains("tool") || error_message.contains("finalize"),
         "{error_message}"
     );
 }

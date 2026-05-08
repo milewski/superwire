@@ -53,7 +53,6 @@ struct ModelTurnDraft {
     expected_prompt: Option<String>,
     expected_tools: Option<Vec<String>>,
     expected_tool_schemas: BTreeMap<String, Value>,
-    expected_response_format: Option<Format>,
     message_assertions: Vec<MessageAssertion>,
     response: Option<ModelTurnResponse>,
 }
@@ -61,14 +60,6 @@ struct ModelTurnDraft {
 enum WorkflowSource {
     Inline(String),
     File(PathBuf),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Format {
-    Auto,
-    JsonSchema,
-    JsonObject,
-    InstructionOnly,
 }
 
 #[derive(Debug, Default)]
@@ -112,7 +103,6 @@ struct ModelTurn {
     expected_prompt: Option<String>,
     expected_tools: Option<Vec<String>>,
     expected_tool_schemas: BTreeMap<String, Value>,
-    expected_response_format: Option<Format>,
     message_assertions: Vec<MessageAssertion>,
     response: ModelTurnResponse,
 }
@@ -397,11 +387,6 @@ impl<'model> ModelTurnBuilder<'model> {
         self
     }
 
-    pub fn with_response_format(mut self, response_format: Format) -> Self {
-        self.turn.expected_response_format = Some(response_format);
-        self
-    }
-
     pub fn respond_json(mut self, response: Value) -> &'model mut ModelBuilder {
         self.turn.response = Some(ModelTurnResponse::Json(response));
         self.finish()
@@ -439,7 +424,6 @@ impl ModelTurnDraft {
             expected_prompt: self.expected_prompt,
             expected_tools: self.expected_tools,
             expected_tool_schemas: self.expected_tool_schemas,
-            expected_response_format: self.expected_response_format.clone(),
             message_assertions: self.message_assertions,
             response: self.response.expect("model turn must define a response"),
         }
@@ -639,7 +623,6 @@ impl Clone for ModelTurn {
             expected_prompt: self.expected_prompt.clone(),
             expected_tools: self.expected_tools.clone(),
             expected_tool_schemas: self.expected_tool_schemas.clone(),
-            expected_response_format: self.expected_response_format.clone(),
             message_assertions: self.message_assertions.clone(),
             response: self.response.clone(),
         }
@@ -748,56 +731,8 @@ impl ModelTurn {
             assert_tool_schema(request_body, tool_name, expected_schema)?;
         }
 
-        if let Some(expected_response_format) = self.expected_response_format.clone() {
-            expected_response_format.assert_request(request_body)?;
-        }
-
         for message_assertion in &self.message_assertions {
             message_assertion(messages);
-        }
-
-        Ok(())
-    }
-}
-
-impl Format {
-    fn assert_request(self, request_body: &Value) -> Result<(), String> {
-        match self {
-            Self::Auto => {
-                let actual_response_format_type = request_body.pointer("/response_format/type").and_then(Value::as_str);
-
-                if actual_response_format_type != Some("json_schema") {
-                    return Err(format!(
-                        "expected auto response format first request to use `json_schema`, got {actual_response_format_type:?}"
-                    ));
-                }
-            }
-            Self::JsonSchema => {
-                let actual_response_format_type = request_body.pointer("/response_format/type").and_then(Value::as_str);
-
-                if actual_response_format_type != Some("json_schema") {
-                    return Err(format!(
-                        "expected response_format type `json_schema`, got {actual_response_format_type:?}"
-                    ));
-                }
-            }
-            Self::JsonObject => {
-                let actual_response_format_type = request_body.pointer("/response_format/type").and_then(Value::as_str);
-
-                if actual_response_format_type != Some("json_object") {
-                    return Err(format!(
-                        "expected response_format type `json_object`, got {actual_response_format_type:?}"
-                    ));
-                }
-            }
-            Self::InstructionOnly => {
-                if request_body.get("response_format").is_some() {
-                    return Err(format!(
-                        "expected response_format to be omitted, got {:?}",
-                        request_body.get("response_format")
-                    ));
-                }
-            }
         }
 
         Ok(())
@@ -814,7 +749,13 @@ impl ModelTurnResponse {
 
     fn to_openai_response(&self) -> Value {
         match self {
-            Self::Json(output) => openai_content_response(serde_json::to_string(output).expect("scripted output should serialize")),
+            Self::Json(output) => openai_tool_call_response([ToolCall::new(
+                "finalize",
+                json!({
+                    "type": "success",
+                    "output": output,
+                }),
+            )]),
             Self::Text(output) => openai_content_response(output.clone()),
             Self::ToolCalls(tool_calls) => json!({
                 "id": "chatcmpl_test",
@@ -1073,6 +1014,32 @@ fn openai_content_response(content: String) -> Value {
     })
 }
 
+fn openai_tool_call_response<const CALL_COUNT: usize>(tool_calls: [ToolCall; CALL_COUNT]) -> Value {
+    json!({
+        "id": "chatcmpl_test",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "test-model",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "tool_calls": tool_calls.iter().enumerate().map(|(index, tool_call)| {
+                    json!({
+                        "id": format!("call_{}", index + 1),
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.name,
+                            "arguments": serde_json::to_string(&tool_call.arguments).expect("tool call arguments should serialize"),
+                        }
+                    })
+                }).collect::<Vec<_>>()
+            }
+        }]
+    })
+}
+
 fn assert_tool_names(request_body: &Value, expected_tools: &[String]) -> Result<(), String> {
     let mut actual_tools = request_body
         .get("tools")
@@ -1080,6 +1047,7 @@ fn assert_tool_names(request_body: &Value, expected_tools: &[String]) -> Result<
         .unwrap_or(&Vec::new())
         .iter()
         .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+        .filter(|tool_name| *tool_name != "finalize")
         .map(str::to_string)
         .collect::<Vec<_>>();
     let mut expected_tools = expected_tools.to_vec();

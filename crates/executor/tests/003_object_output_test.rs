@@ -6,7 +6,7 @@ use support::fixtures;
 use support::runner::TestRunner;
 
 #[tokio::test]
-async fn asserts_response_format_for_structured_json() {
+async fn executes_structured_json_output() {
     let output = TestRunner::workflow(fixtures::OBJECT_OUTPUT)
         .provider("openai", |provider| {
             provider.api_key("test-api-key");

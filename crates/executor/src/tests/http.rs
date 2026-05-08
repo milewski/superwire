@@ -74,24 +74,6 @@ async fn tracking_provider_records_all_calls() {
 }
 
 #[tokio::test]
-async fn agent_response_format_reaches_model_request() {
-    let provider = TrackingModelProvider::new(vec![json!("ok")]);
-    let service = ExecutorService::new(provider.clone());
-    let request = support::request(fixtures::AGENT_RESPONSE_FORMAT_JSON_SCHEMA);
-
-    service.execute(request).await.expect("execution should succeed");
-
-    let recorded_requests = provider
-        .recorded_requests
-        .lock()
-        .expect("recorded requests lock should not be poisoned");
-
-    let model_request = recorded_requests.first().expect("model request should be recorded");
-
-    assert_eq!(model_request.response_format, crate::ModelResponseFormat::JsonSchema);
-}
-
-#[tokio::test]
 async fn http_returns_final_output() {
     let router = executor_router_with_service(support::service(vec![json!("ok")]));
     let request_body = json!({ "workflow_source": fixtures::MINIMUM });

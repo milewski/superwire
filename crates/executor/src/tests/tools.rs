@@ -892,7 +892,13 @@ async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
         .expect("tracking lock should not be poisoned");
     let request = recorded_requests.first().expect("model request should be recorded");
 
-    assert_eq!(request.tools.len(), 3);
+    let workflow_tools = request
+        .tools
+        .iter()
+        .filter(|tool_definition| tool_definition.name != "finalize")
+        .collect::<Vec<_>>();
+
+    assert_eq!(workflow_tools.len(), 3);
 
     let create_sorting_task = request
         .tools

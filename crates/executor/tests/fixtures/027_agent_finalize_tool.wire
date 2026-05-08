@@ -7,8 +7,7 @@ provider openai {
 
 agent greeting {
     model: openai("model-a")
-    response_format: instruction_only
-    prompt: "Write a greeting."
+    prompt: "Write a short welcome message."
     output: string
 }
 
