@@ -12,7 +12,9 @@ mod test_macros;
 #[cfg(test)]
 mod tests;
 
-pub use api::{ExecutionOptions, ExecutionRequest, ExecutionResponse};
+pub use api::{
+    ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, ValidationRequest, ValidationResponse,
+};
 pub use event::{ExecutorEvent, ExecutorEventKind};
 pub use model::{ModelRequest, ModelResponse, OpenAiModelProvider};
 pub use runtime::{ExecutorError, WorkflowExecutor};

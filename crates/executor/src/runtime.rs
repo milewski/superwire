@@ -244,6 +244,45 @@ impl WorkflowExecutor {
         Ok(output)
     }
 
+    pub fn validate_runtime_configuration(&self, input: &Value, secrets: &Value) -> Result<(), ExecutorError> {
+        let input_values = self.resolve_input_values(input)?;
+        let secret_values = self.resolve_secret_values(secrets)?;
+        let mut runtime_state = RuntimeState::new(input_values, secret_values);
+        let tool_call_tracker = ToolCallTracker::default();
+
+        self.execute_workflow_dynamic_blocks(&mut runtime_state, None, &tool_call_tracker)?;
+
+        self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
+
+        for planned_agent in self.execution_plan.planned_agents.values() {
+            let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, &runtime_state, None, &tool_call_tracker)?;
+            let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
+
+            evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
+
+            let prompt_expression = planned_agent
+                .declaration
+                .required_expression_property(AgentExpressionPropertyName::Prompt)
+                .map_err(|missing_property| WorkflowSemanticError::InvalidAgentProperty {
+                    agent_name: planned_agent.name.clone(),
+                    property: missing_property.as_str().to_string(),
+                    message: "property is required".to_string(),
+                })?;
+
+            let _prompt = normalize_prompt(self.evaluate_runtime_expression(
+                prompt_expression,
+                &evaluation_context,
+                &format!("prompt for agent `{}`", planned_agent.name),
+                None,
+                &tool_call_tracker,
+            )?);
+
+            let _resolved_tools = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
+        }
+
+        Ok(())
+    }
+
     fn resolve_input_values(&self, input: &Value) -> Result<Map<String, Value>, ExecutorError> {
         if let Some(input_type) = &self.execution_plan.input_type {
             if input.is_null() {

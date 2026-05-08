@@ -1,7 +1,8 @@
-use crate::api::{ExecutionRequest, ExecutionResponse};
+use crate::api::{ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, ValidationRequest, ValidationResponse};
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
+use superwire_core::dsl::format_workflow_source;
 use tokio::sync::mpsc;
 
 const EVENT_BUFFER_SIZE: usize = 64;
@@ -56,6 +57,38 @@ where
         log::info!("workflow execution completed");
 
         Ok(ExecutionResponse { output })
+    }
+
+    pub fn validate(&self, request: ValidationRequest) -> Result<ValidationResponse, ExecutorError> {
+        let workflow_source = request
+            .execution
+            .resolved_workflow_source()
+            .map_err(|message| ExecutorError::Other { message })?;
+
+        let executor =
+            WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.execution.input, &request.execution.secrets)?;
+
+        executor.validate_runtime_configuration(&request.execution.input, &request.execution.secrets)?;
+
+        Ok(ValidationResponse {
+            valid: true,
+            details: None,
+        })
+    }
+
+    pub fn format(&self, request: FormatRequest) -> Result<FormatResponse, ExecutorError> {
+        let workflow_source = request
+            .resolved_workflow_source()
+            .map_err(|message| ExecutorError::Other { message })?;
+
+        let formatted_workflow_source = format_workflow_source(&workflow_source).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })?;
+
+        Ok(FormatResponse {
+            valid: true,
+            formatted_workflow_source,
+        })
     }
 
     pub fn execute_stream(&self, request: ExecutionRequest) -> mpsc::Receiver<ExecutorEvent> {

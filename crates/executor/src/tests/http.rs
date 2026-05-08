@@ -129,3 +129,77 @@ async fn http_accepts_base64_workflow_source() {
     let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
     assert_eq!(response_json, json!({ "output": { "greeting": "ok" } }));
 }
+
+#[tokio::test]
+async fn http_validate_returns_success_without_execution() {
+    let router = executor_router_with_service(support::service(vec![json!("unused")]));
+    let request_body = json!({
+        "workflow_source": fixtures::INPUT_STRING,
+        "input": { "topic": "testing" }
+    });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/validate")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.oneshot(request).await.expect("request should execute");
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+    assert_eq!(response_json, json!({ "valid": true }));
+}
+
+#[tokio::test]
+async fn http_validate_returns_same_input_error_as_execute() {
+    let router = executor_router_with_service(support::service(vec![]));
+    let request_body = json!({
+        "workflow_source": fixtures::INPUT_STRING,
+        "input": { "topic": 123 }
+    });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/validate")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.oneshot(request).await.expect("request should execute");
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+    assert!(response_json["error"]
+        .as_str()
+        .is_some_and(|error_message| error_message.contains("declared `input` block")));
+}
+
+#[tokio::test]
+async fn http_format_formats_source_after_validation() {
+    let router = executor_router_with_service(support::service(vec![]));
+    let request_body = json!({
+        "workflow_source": "output { greeting: \"ok\" }"
+    });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/format")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.oneshot(request).await.expect("request should execute");
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+    assert_eq!(response_json["valid"], json!(true));
+    assert!(response_json["formatted_workflow_source"].as_str().is_some());
+}

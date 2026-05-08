@@ -1,4 +1,4 @@
-use crate::api::ExecutionRequest;
+use crate::api::{ExecutionRequest, FormatRequest, ValidationRequest};
 use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
@@ -25,6 +25,8 @@ where
     Router::new()
         .route("/execute", post(execute_handler::<ModelProviderType>))
         .route("/execute/stream", post(execute_stream_handler::<ModelProviderType>))
+        .route("/validate", post(validate_handler::<ModelProviderType>))
+        .route("/format", post(format_handler::<ModelProviderType>))
         .with_state(service)
 }
 
@@ -57,4 +59,24 @@ where
     let event_stream = ReceiverStream::new(event_receiver).map(event_to_sse_result);
 
     Sse::new(event_stream)
+}
+
+async fn validate_handler<ModelProviderType>(
+    State(service): State<ExecutorService<ModelProviderType>>,
+    Json(request): Json<ValidationRequest>,
+) -> Result<Response, ExecutorHttpError>
+where
+    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+{
+    Ok(Json(service.validate(request)?).into_response())
+}
+
+async fn format_handler<ModelProviderType>(
+    State(service): State<ExecutorService<ModelProviderType>>,
+    Json(request): Json<FormatRequest>,
+) -> Result<Response, ExecutorHttpError>
+where
+    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+{
+    Ok(Json(service.format(request)?).into_response())
 }
