@@ -855,7 +855,6 @@ impl SemanticIndex {
                 description: _,
             } => Some(output_type_expression),
             AgentProperty::Model(_)
-            | AgentProperty::ResponseFormat(_)
             | AgentProperty::Prompt(_)
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
