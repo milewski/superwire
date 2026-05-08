@@ -1,5 +1,5 @@
 use crate::model::types::ModelRequest;
-use async_openai::types::{ChatCompletionTool, ChatCompletionToolChoiceOption, ResponseFormat};
+use async_openai::types::{ChatCompletionTool, ChatCompletionToolChoiceOption};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -11,8 +11,6 @@ pub(super) struct OpenAiChatCompletionRequest {
     pub(super) tools: Vec<ChatCompletionTool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tool_choice: Option<ChatCompletionToolChoiceOption>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) response_format: Option<ResponseFormat>,
 }
 
 #[derive(Debug, Clone)]

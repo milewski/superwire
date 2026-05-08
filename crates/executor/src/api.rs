@@ -75,16 +75,6 @@ impl Default for ExecutionOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ModelResponseFormat {
-    #[default]
-    Auto,
-    JsonSchema,
-    JsonObject,
-    InstructionOnly,
-}
-
 fn default_max_concurrency() -> usize {
     10
 }

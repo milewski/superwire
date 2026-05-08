@@ -3,7 +3,6 @@ pub mod state;
 
 pub use error::ExecutorError;
 
-use crate::api::ModelResponseFormat;
 use crate::event::ExecutorEvent;
 use crate::model::{
     normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker,
@@ -15,8 +14,8 @@ use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use superwire_core::dsl::{
-    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, AgentResponseFormat, Declaration,
-    Expression, ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
+    parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
+    ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
 use superwire_core::mcp::{McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -55,16 +54,6 @@ struct AgentExecutionContext {
 }
 
 impl WorkflowExecutor {
-    fn agent_response_format(planned_agent: &PlannedAgent) -> ModelResponseFormat {
-        match planned_agent.declaration.response_format() {
-            Some(AgentResponseFormat::Auto) => ModelResponseFormat::Auto,
-            Some(AgentResponseFormat::JsonSchema) => ModelResponseFormat::JsonSchema,
-            Some(AgentResponseFormat::JsonObject) => ModelResponseFormat::JsonObject,
-            Some(AgentResponseFormat::InstructionOnly) => ModelResponseFormat::InstructionOnly,
-            None => ModelResponseFormat::Auto,
-        }
-    }
-
     pub fn from_source(workflow_source: &str) -> Result<Self, ExecutorError> {
         let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
             let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
@@ -528,6 +517,9 @@ impl WorkflowExecutor {
             ModelToolSource::Local => Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` is not backed by MCP"),
             }),
+            ModelToolSource::Finalize => Err(ExecutorError::Other {
+                message: format!("deterministic tool call `{tool_name}` cannot use internal finalize tool"),
+            }),
         }
     }
 
@@ -584,7 +576,8 @@ impl WorkflowExecutor {
             format!("{}\n\n{agent_prompt}", agent_execution_context.import_context)
         };
         let output_schema = workflow_type_to_json_schema(&planned_agent.iteration_output_type);
-        let tool_definitions = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
+        let mut tool_definitions = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
+        tool_definitions.push(ModelToolDefinition::finalize(output_schema.clone()));
         let tool_names = tool_definitions
             .iter()
             .map(|tool_definition| tool_definition.name.clone())
@@ -615,7 +608,6 @@ impl WorkflowExecutor {
                 model_name,
                 prompt,
                 output_schema,
-                response_format: Self::agent_response_format(planned_agent),
                 tools: tool_definitions,
                 event_sender: agent_execution_context.event_sender.clone(),
                 mcp_pool: self.mcp_pool.clone(),

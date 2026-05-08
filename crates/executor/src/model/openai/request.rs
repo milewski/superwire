@@ -1,20 +1,12 @@
-use super::format::{format_response_schema_name, format_tool_name};
+use super::format::format_tool_name;
 use super::transport::OpenAiChatCompletionRequest;
-use crate::api::ModelResponseFormat;
 use crate::model::types::ModelRequest;
 use crate::runtime::ExecutorError;
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionToolArgs,
-    ChatCompletionToolChoiceOption, FunctionObjectArgs, ResponseFormat, ResponseFormatJsonSchema,
+    ChatCompletionToolChoiceOption, FunctionObjectArgs,
 };
 use serde_json::Value;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum OpenAiResponseMode {
-    JsonSchema,
-    JsonObject,
-    InstructionOnly,
-}
 
 impl super::OpenAiModelProvider {
     pub(super) fn build_initial_messages(&self, request: &ModelRequest) -> Result<Vec<Value>, ExecutorError> {
@@ -24,7 +16,7 @@ impl super::OpenAiModelProvider {
         })?;
         let system_message = ChatCompletionRequestSystemMessageArgs::default()
             .content(format!(
-                "You are executing a deterministic workflow agent. Respond only with a JSON value that matches this JSON Schema. Do not include markdown, prose, or code fences. Schema: {output_schema_text}"
+                "You are executing a deterministic workflow agent. You must finish by calling the internal `finalize` tool. Do not end with assistant text. For success, call `finalize` with type `success` and an `output` value that matches this JSON Schema: {output_schema_text}. If you cannot fulfill the request, call `finalize` with type `fail` and a clear `reason`. Never put failure or apology text in a success output."
             ))
             .build()
             .map_err(|error| ExecutorError::Model {
@@ -48,7 +40,6 @@ impl super::OpenAiModelProvider {
     pub(super) fn build_completion_request(
         &self,
         request: &ModelRequest,
-        response_mode: OpenAiResponseMode,
         messages: Vec<Value>,
     ) -> Result<OpenAiChatCompletionRequest, ExecutorError> {
         let tools = request
@@ -81,49 +72,12 @@ impl super::OpenAiModelProvider {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let response_format = response_mode.response_format(request);
-
         Ok(OpenAiChatCompletionRequest {
             model: request.model_name.clone(),
             messages,
             tools,
             tool_choice: (!request.tools.is_empty()).then_some(ChatCompletionToolChoiceOption::Auto),
-            response_format,
         })
-    }
-}
-
-impl OpenAiResponseMode {
-    pub(super) fn response_modes(response_format: ModelResponseFormat) -> Vec<Self> {
-        match response_format {
-            ModelResponseFormat::Auto => vec![Self::JsonSchema, Self::JsonObject, Self::InstructionOnly],
-            ModelResponseFormat::JsonSchema => vec![Self::JsonSchema],
-            ModelResponseFormat::JsonObject => vec![Self::JsonObject],
-            ModelResponseFormat::InstructionOnly => vec![Self::InstructionOnly],
-        }
-    }
-
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::JsonSchema => "json_schema",
-            Self::JsonObject => "json_object",
-            Self::InstructionOnly => "instruction_only",
-        }
-    }
-
-    fn response_format(self, request: &ModelRequest) -> Option<ResponseFormat> {
-        match self {
-            Self::JsonSchema => Some(ResponseFormat::JsonSchema {
-                json_schema: ResponseFormatJsonSchema {
-                    description: Some(format!("Output schema for agent `{}`", request.agent_name)),
-                    name: format_response_schema_name(&request.agent_name),
-                    schema: Some(request.output_schema.clone()),
-                    strict: Some(true),
-                },
-            }),
-            Self::JsonObject => Some(ResponseFormat::JsonObject),
-            Self::InstructionOnly => None,
-        }
     }
 }
 

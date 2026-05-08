@@ -1,8 +1,7 @@
-use super::format::{format_response_schema_name, format_tool_name};
-use super::request::OpenAiResponseMode;
+use super::format::format_tool_name;
 use super::response::{ChatCompletionResponseExt, OpenAiChatCompletionResponse};
+use super::tool::ToolCallOutcome;
 use super::OpenAiModelProvider;
-use crate::api::ModelResponseFormat;
 use crate::event::ExecutorEventKind;
 use crate::model::provider::ModelProvider;
 use crate::model::{ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker};
@@ -17,70 +16,8 @@ use superwire_core::mcp::{McpClientPool, McpServerConfig};
 use superwire_core::semantic::support::provider::OpenAIProviderConfig;
 
 #[test]
-fn formats_response_schema_name_for_openai_constraints() {
-    assert_eq!(format_response_schema_name("agent name!*"), "agent_name__");
-}
-
-#[test]
 fn formats_tool_name_for_openai_constraints() {
     assert_eq!(format_tool_name("update user!*"), "update_user__");
-}
-
-#[test]
-fn orders_response_modes_from_strict_to_compatible() {
-    assert_eq!(
-        OpenAiResponseMode::response_modes(ModelResponseFormat::Auto),
-        vec![
-            OpenAiResponseMode::JsonSchema,
-            OpenAiResponseMode::JsonObject,
-            OpenAiResponseMode::InstructionOnly,
-        ]
-    );
-}
-
-#[test]
-fn configured_response_mode_disables_fallback_modes() {
-    assert_eq!(
-        OpenAiResponseMode::response_modes(ModelResponseFormat::JsonObject),
-        vec![OpenAiResponseMode::JsonObject]
-    );
-    assert_eq!(
-        OpenAiResponseMode::response_modes(ModelResponseFormat::InstructionOnly),
-        vec![OpenAiResponseMode::InstructionOnly]
-    );
-}
-
-#[tokio::test]
-async fn configured_json_object_response_format_skips_json_schema_request() {
-    let provider = OpenAiModelProvider;
-    let model_server = TestOpenAiHttpServer::spawn(vec![json!({
-        "id": "chatcmpl_1",
-        "object": "chat.completion",
-        "created": 1,
-        "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "finish_reason": "stop",
-            "message": {
-                "role": "assistant",
-                "content": "{\"success\":true}"
-            }
-        }]
-    })]);
-    let mcp_server = TestMcpHttpServer::spawn();
-    let mut request = model_request(model_server.endpoint(), mcp_server.endpoint());
-
-    request.response_format = ModelResponseFormat::JsonObject;
-
-    let response = provider.generate(request).await.expect("model should complete");
-
-    assert_eq!(response.output, json!({ "success": true }));
-
-    let requests = model_server.requests();
-    let first_request = requests.first().expect("chat completion request should be sent");
-
-    assert_eq!(requests.len(), 1);
-    assert_eq!(first_request.pointer("/response_format/type"), Some(&json!("json_object")));
 }
 
 #[test]
@@ -145,10 +82,17 @@ async fn replays_reasoning_content_after_tool_call() {
             "model": "deepseek-reasoner",
             "choices": [{
                 "index": 0,
-                "finish_reason": "stop",
+                "finish_reason": "tool_calls",
                 "message": {
                     "role": "assistant",
-                    "content": "{\"success\":true}"
+                    "tool_calls": [{
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {
+                            "name": "finalize",
+                            "arguments": "{\"type\":\"success\",\"output\":{\"success\":true}}"
+                        }
+                    }]
                 }
             }]
         }),
@@ -187,9 +131,11 @@ fn executes_mcp_tool_call_from_model_request() {
         },
     };
 
-    let result = provider
-        .execute_tool_call(&request, &tool_call)
-        .expect("MCP tool call should execute");
+    let result = continue_result(
+        provider
+            .execute_tool_call(&request, &tool_call)
+            .expect("MCP tool call should execute"),
+    );
 
     assert_eq!(result, serde_json::json!({ "success": true }));
     assert_eq!(
@@ -241,9 +187,11 @@ fn rejects_invalid_tool_arguments_before_mcp_call() {
         },
     };
 
-    let result = provider
-        .execute_tool_call(&request, &tool_call)
-        .expect("invalid tool arguments should be returned as a tool result");
+    let result = continue_result(
+        provider
+            .execute_tool_call(&request, &tool_call)
+            .expect("invalid tool arguments should be returned as a tool result"),
+    );
 
     assert_eq!(result["error"], "tool_argument_schema_mismatch");
     assert_eq!(result["tool_name"], "update_user_name");
@@ -356,9 +304,11 @@ fn rejects_schema_mismatched_tool_call_payload_and_never_dispatches_mcp_call() {
         },
     };
 
-    let result = provider
-        .execute_tool_call(&request, &tool_call)
-        .expect("schema mismatches should return a tool validation error");
+    let result = continue_result(
+        provider
+            .execute_tool_call(&request, &tool_call)
+            .expect("schema mismatches should return a tool validation error"),
+    );
 
     assert_eq!(result["error"], "tool_argument_schema_mismatch");
     assert_eq!(result["tool_name"], "update_user_name");
@@ -403,9 +353,11 @@ fn returns_tool_error_when_max_calls_limit_is_exceeded() {
         .execute_tool_call(&request, &tool_call)
         .expect("first tool call should succeed");
 
-    let result = provider
-        .execute_tool_call(&request, &tool_call)
-        .expect("max_calls error should be returned as a tool result");
+    let result = continue_result(
+        provider
+            .execute_tool_call(&request, &tool_call)
+            .expect("max_calls error should be returned as a tool result"),
+    );
 
     assert_eq!(result["error"], "tool_call_limit_exceeded");
     assert_eq!(result["tool_name"], "update_user_name");
@@ -486,10 +438,17 @@ async fn retries_after_max_calls_tool_error() {
             "model": "deepseek-reasoner",
             "choices": [{
                 "index": 0,
-                "finish_reason": "stop",
+                "finish_reason": "tool_calls",
                 "message": {
                     "role": "assistant",
-                    "content": "{\"success\":true}"
+                    "tool_calls": [{
+                        "id": "call_3",
+                        "type": "function",
+                        "function": {
+                            "name": "finalize",
+                            "arguments": "{\"type\":\"success\",\"output\":{\"success\":true}}"
+                        }
+                    }]
                 }
             }]
         }),
@@ -565,25 +524,34 @@ fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
         model_name: "deepseek-reasoner".to_string(),
         prompt: "Rename the user".to_string(),
         output_schema: serde_json::json!({ "type": "object" }),
-        response_format: ModelResponseFormat::Auto,
-        tools: vec![ModelToolDefinition {
-            name: "update_user_name".to_string(),
-            description: Some("Update a user name".to_string()),
-            source: ModelToolSource::Mcp {
-                server_name: Some("local".to_string()),
-                tool_name: "update-user-name".to_string(),
-                endpoint: String::new(),
-                headers: BTreeMap::new(),
+        tools: vec![
+            ModelToolDefinition {
+                name: "update_user_name".to_string(),
+                description: Some("Update a user name".to_string()),
+                source: ModelToolSource::Mcp {
+                    server_name: Some("local".to_string()),
+                    tool_name: "update-user-name".to_string(),
+                    endpoint: String::new(),
+                    headers: BTreeMap::new(),
+                },
+                input_schema: serde_json::json!({ "type": "object" }),
+                output_schema: serde_json::json!({ "type": "object" }),
+                bindings: serde_json::json!({ "project_id": 14, "user_id": 123 }),
+                max_calls: None,
+                max_calls_scope: ToolCallLimitScope::Workflow,
             },
-            input_schema: serde_json::json!({ "type": "object" }),
-            output_schema: serde_json::json!({ "type": "object" }),
-            bindings: serde_json::json!({ "project_id": 14, "user_id": 123 }),
-            max_calls: None,
-            max_calls_scope: ToolCallLimitScope::Workflow,
-        }],
+            ModelToolDefinition::finalize(serde_json::json!({ "type": "object" })),
+        ],
         event_sender: None,
         mcp_pool,
         tool_call_tracker: ToolCallTracker::default(),
+    }
+}
+
+fn continue_result(tool_call_outcome: ToolCallOutcome) -> Value {
+    match tool_call_outcome {
+        ToolCallOutcome::Continue(value) => value,
+        ToolCallOutcome::Finalized(_) => panic!("expected regular tool result"),
     }
 }
 

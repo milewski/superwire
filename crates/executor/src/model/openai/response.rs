@@ -26,6 +26,8 @@ pub(super) trait ChatCompletionResponseExt {
     fn extract_tool_calls(&self) -> Option<Vec<ChatCompletionMessageToolCall>>;
 
     fn extract_tool_call_message(&self) -> Result<Value, ExecutorError>;
+
+    fn extract_assistant_content_message(&self) -> Option<Value>;
 }
 
 impl ChatCompletionResponseExt for OpenAiChatCompletionResponse {
@@ -57,6 +59,14 @@ impl ChatCompletionResponseExt for OpenAiChatCompletionResponse {
 
         Ok(message.to_assistant_request_message())
     }
+
+    fn extract_assistant_content_message(&self) -> Option<Value> {
+        self.choices
+            .iter()
+            .map(|choice| &choice.message)
+            .find(|message| message.has_content())
+            .map(OpenAiChatCompletionMessage::to_assistant_request_message)
+    }
 }
 
 impl OpenAiChatCompletionMessage {
@@ -70,11 +80,16 @@ impl OpenAiChatCompletionMessage {
         self.tool_calls.as_ref().is_some_and(|tool_calls| !tool_calls.is_empty())
     }
 
+    fn has_content(&self) -> bool {
+        self.content.as_deref().is_some_and(|content| !content.trim().is_empty())
+    }
+
     fn to_assistant_request_message(&self) -> Value {
-        let mut request_message = serde_json::json!({
-            "role": "assistant",
-            "tool_calls": self.tool_calls.clone(),
-        });
+        let mut request_message = serde_json::json!({ "role": "assistant" });
+
+        if let Some(tool_calls) = &self.tool_calls {
+            request_message["tool_calls"] = serde_json::json!(tool_calls);
+        }
 
         if let Some(content) = &self.content {
             request_message["content"] = Value::String(content.clone());

@@ -1,7 +1,3 @@
-pub(super) fn format_response_schema_name(agent_name: &str) -> String {
-    format_openai_identifier(agent_name, "agent_output")
-}
-
 pub(super) fn format_tool_name(tool_name: &str) -> String {
     format_openai_identifier(tool_name, "tool")
 }

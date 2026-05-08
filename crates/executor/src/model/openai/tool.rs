@@ -17,11 +17,22 @@ impl super::OpenAiModelProvider {
         &self,
         request: &ModelRequest,
         tool_calls: &[ChatCompletionMessageToolCall],
-    ) -> Result<Vec<Value>, ExecutorError> {
+    ) -> Result<ToolCallRound, ExecutorError> {
         let mut messages = Vec::new();
 
         for tool_call in tool_calls {
-            let tool_result = self.execute_tool_call(request, tool_call)?;
+            let tool_outcome = self.execute_tool_call(request, tool_call)?;
+
+            if let ToolCallOutcome::Finalized(finalize_result) = tool_outcome {
+                return Ok(ToolCallRound {
+                    messages,
+                    finalize_result: Some(finalize_result),
+                });
+            }
+
+            let ToolCallOutcome::Continue(tool_result) = tool_outcome else {
+                unreachable!("finalize outcome should return above");
+            };
             let tool_result_text = serde_json::to_string(&tool_result).map_err(|error| ExecutorError::Model {
                 agent_name: request.agent_name.clone(),
                 message: format!("failed to serialize tool result: {error}"),
@@ -38,14 +49,17 @@ impl super::OpenAiModelProvider {
             messages.push(ChatCompletionRequestMessage::Tool(tool_message).to_json_value(&request.agent_name)?);
         }
 
-        Ok(messages)
+        Ok(ToolCallRound {
+            messages,
+            finalize_result: None,
+        })
     }
 
     pub(super) fn execute_tool_call(
         &self,
         request: &ModelRequest,
         tool_call: &ChatCompletionMessageToolCall,
-    ) -> Result<Value, ExecutorError> {
+    ) -> Result<ToolCallOutcome, ExecutorError> {
         let tool_definition = request
             .tools
             .iter()
@@ -56,7 +70,7 @@ impl super::OpenAiModelProvider {
             })?;
 
         if let Some(tool_error) = request.call_limit_error(tool_definition) {
-            return Ok(tool_error);
+            return Ok(ToolCallOutcome::Continue(tool_error));
         }
 
         log::debug!(
@@ -70,7 +84,9 @@ impl super::OpenAiModelProvider {
             Err(error) => {
                 let tool_error = tool_definition.argument_error(format!("tool arguments must be valid JSON: {error}"));
 
-                request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+                if !matches!(tool_definition.source, ModelToolSource::Finalize) {
+                    request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+                }
                 log::warn!(
                     "rejected tool call with invalid JSON arguments: agent={}, tool={}, error={}",
                     request.agent_name,
@@ -78,14 +94,16 @@ impl super::OpenAiModelProvider {
                     error
                 );
 
-                return Ok(tool_error);
+                return Ok(ToolCallOutcome::Continue(tool_error));
             }
         };
 
         if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
             let tool_error = tool_definition.argument_error(message);
 
-            request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+            if !matches!(tool_definition.source, ModelToolSource::Finalize) {
+                request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone());
+            }
             log::warn!(
                 "rejected tool call before MCP dispatch: agent={}, tool={}, error={}",
                 request.agent_name,
@@ -93,7 +111,11 @@ impl super::OpenAiModelProvider {
                 tool_error.get("message").and_then(Value::as_str).unwrap_or("schema mismatch")
             );
 
-            return Ok(tool_error);
+            return Ok(ToolCallOutcome::Continue(tool_error));
+        }
+
+        if matches!(tool_definition.source, ModelToolSource::Finalize) {
+            return tool_definition.parse_finalize_arguments(arguments).map(ToolCallOutcome::Finalized);
         }
 
         if let (Some(argument_object), Some(binding_object)) = (arguments.as_object_mut(), tool_definition.bindings.as_object()) {
@@ -140,8 +162,9 @@ impl super::OpenAiModelProvider {
                     tool_definition.name
                 );
 
-                Ok(normalized_result)
+                Ok(ToolCallOutcome::Continue(normalized_result))
             }
+            ModelToolSource::Finalize => unreachable!("finalize tool calls should return before MCP dispatch"),
             ModelToolSource::Local => Err(ExecutorError::Model {
                 agent_name: request.agent_name.clone(),
                 message: format!("tool `{}` is not backed by MCP", tool_definition.name),
@@ -150,7 +173,39 @@ impl super::OpenAiModelProvider {
     }
 }
 
+pub(super) struct ToolCallRound {
+    pub(super) messages: Vec<Value>,
+    pub(super) finalize_result: Option<FinalizeResult>,
+}
+
+pub(super) enum ToolCallOutcome {
+    Continue(Value),
+    Finalized(FinalizeResult),
+}
+
+pub(super) enum FinalizeResult {
+    Success(Value),
+    Fail(String),
+}
+
 impl ModelToolDefinition {
+    fn parse_finalize_arguments(&self, arguments: Value) -> Result<FinalizeResult, ExecutorError> {
+        match arguments.get("type").and_then(Value::as_str) {
+            Some("success") => Ok(FinalizeResult::Success(arguments.get("output").cloned().unwrap_or(Value::Null))),
+            Some("fail") => Ok(FinalizeResult::Fail(
+                arguments
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent failed without a reason")
+                    .to_string(),
+            )),
+            _ => Err(ExecutorError::Model {
+                agent_name: "unknown".to_string(),
+                message: "validated finalize arguments did not include a supported type".to_string(),
+            }),
+        }
+    }
+
     fn argument_error(&self, message: String) -> Value {
         serde_json::json!({
             "error": "tool_argument_schema_mismatch",

@@ -1,4 +1,3 @@
-use crate::api::ModelResponseFormat;
 use crate::event::ExecutorEvent;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -15,7 +14,6 @@ pub struct ModelRequest {
     pub model_name: String,
     pub prompt: String,
     pub output_schema: Value,
-    pub response_format: ModelResponseFormat,
     pub tools: Vec<ModelToolDefinition>,
     pub event_sender: Option<mpsc::Sender<ExecutorEvent>>,
     pub mcp_pool: McpClientPool,
@@ -32,6 +30,60 @@ pub struct ModelToolDefinition {
     pub bindings: Value,
     pub max_calls: Option<u64>,
     pub max_calls_scope: ToolCallLimitScope,
+}
+
+impl ModelToolDefinition {
+    #[must_use]
+    pub fn finalize(output_schema: Value) -> Self {
+        Self {
+            name: "finalize".to_string(),
+            description: Some(
+                "Finish the agent run. Use success with output matching the schema, or fail with a clear reason when the request cannot be fulfilled."
+                    .to_string(),
+            ),
+            source: ModelToolSource::Finalize,
+            input_schema: finalize_tool_schema(output_schema),
+            output_schema: serde_json::json!({ "type": "object" }),
+            bindings: Value::Null,
+            max_calls: None,
+            max_calls_scope: ToolCallLimitScope::Workflow,
+        }
+    }
+}
+
+fn finalize_tool_schema(output_schema: Value) -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "enum": ["success", "fail"],
+            },
+            "output": output_schema,
+            "reason": {
+                "type": "string",
+                "minLength": 1,
+            },
+        },
+        "required": ["type"],
+        "additionalProperties": false,
+        "oneOf": [
+            {
+                "properties": {
+                    "type": { "const": "success" },
+                },
+                "required": ["type", "output"],
+                "not": { "required": ["reason"] },
+            },
+            {
+                "properties": {
+                    "type": { "const": "fail" },
+                },
+                "required": ["type", "reason"],
+                "not": { "required": ["output"] },
+            },
+        ],
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +132,7 @@ impl ToolCallTracker {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelToolSource {
+    Finalize,
     Local,
     Mcp {
         server_name: Option<String>,
