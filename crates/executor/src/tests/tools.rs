@@ -319,11 +319,11 @@ impl TestMcpCatalog {
 
     fn resources(&self) -> Vec<Value> {
         vec![json!({
-            "name": "project-readme",
+            "name": "project_readme",
             "title": "Project README",
             "description": "The project readme file",
             "mimeType": "text/markdown",
-            "uri": "file://resources/project-readme"
+            "uri": "file://resources/project_readme"
         })]
     }
 
@@ -331,7 +331,7 @@ impl TestMcpCatalog {
         json!({
             "contents": [
                 {
-                    "uri": "file://resources/project-readme",
+                    "uri": "file://resources/project_readme",
                     "mimeType": "text/markdown",
                     "text": "# Project README\nUse stable sorting."
                 }
@@ -490,13 +490,13 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
             workspace_id: string
         }
 
-        resource project_readme from mcp.local.resource.project-readme {
+        resource project_readme from mcp.local.resource.project_readme {
             bindings {
                 workspace_id: input.workspace_id
             }
         }
 
-        prompt system_prompt from mcp.local.prompt.system-prompt {
+        prompt system_prompt from mcp.local.prompt.system_prompt {
             bindings {
                 workspace_id: input.workspace_id
             }
@@ -579,13 +579,13 @@ async fn explicit_mcp_resource_and_prompt_calls_are_available_as_values() {
             workspace_id: string
         }
 
-        resource project_readme from mcp.local.resource.project-readme {
+        resource project_readme from mcp.local.resource.project_readme {
             bindings {
                 workspace_id: input.workspace_id
             }
         }
 
-        prompt system_prompt from mcp.local.prompt.system-prompt
+        prompt system_prompt from mcp.local.prompt.system_prompt
 
         dynamic {
             readme: read resource.project_readme {

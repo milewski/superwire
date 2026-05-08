@@ -165,13 +165,13 @@ async fn explicit_mcp_calls_emit_started_and_completed_events() {
             workspace_id: string
         }
 
-        resource project_readme from mcp.local.resource.project-readme {
+        resource project_readme from mcp.local.resource.project_readme {
             bindings {
                 workspace_id: input.workspace_id
             }
         }
 
-        prompt system_prompt from mcp.local.prompt.system-prompt
+        prompt system_prompt from mcp.local.prompt.system_prompt
 
         dynamic {
             readme: read resource.project_readme {
@@ -341,11 +341,11 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
             "result": {
                 "resources": [
                     {
-                        "name": "project-readme",
+                        "name": "project_readme",
                         "title": "Project README",
                         "description": "The project readme file",
                         "mimeType": "text/markdown",
-                        "uri": "file://resources/project-readme"
+                        "uri": "file://resources/project_readme"
                     }
                 ]
             }
@@ -356,7 +356,7 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
             "result": {
                 "contents": [
                     {
-                        "uri": "file://resources/project-readme",
+                        "uri": "file://resources/project_readme",
                         "mimeType": "text/markdown",
                         "text": "# Project README\nUse stable sorting."
                     }

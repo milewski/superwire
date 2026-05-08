@@ -10,7 +10,7 @@ input {
     workspace_id: string
 }
 
-resource project_readme from mcp.local.resource.project-readme {
+resource project_readme from mcp.local.resource.project_readme {
     bindings {
         workspace_id: input.workspace_id
     }

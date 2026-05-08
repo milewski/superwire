@@ -10,14 +10,14 @@ async fn resolves_mcp_read_render_dependencies() {
     let output = TestRunner::workflow(fixtures::MCP_READ_RENDER_DEPENDENCIES)
         .input(json!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
-            mcp.resource("project-readme", |resource| {
+            mcp.resource("project_readme", |resource| {
                 resource
-                    .uri("file://resources/project-readme")
+                    .uri("file://resources/project_readme")
                     .mime_type("text/markdown")
                     .text("# Project README\nUse stable sorting.");
             });
 
-            mcp.prompt("system-prompt", |prompt| {
+            mcp.prompt("system_prompt", |prompt| {
                 prompt.description("System prompt").text("Follow project conventions.");
             });
         })
@@ -41,7 +41,7 @@ async fn resolves_mcp_read_render_dependencies() {
     assert_eq!(
         read_resource_request.pointer("/params"),
         Some(&json!({
-            "uri": "file://resources/project-readme"
+            "uri": "file://resources/project_readme"
         }))
     );
 
@@ -53,7 +53,7 @@ async fn resolves_mcp_read_render_dependencies() {
     assert_eq!(
         render_prompt_request.pointer("/params"),
         Some(&json!({
-            "name": "system-prompt",
+            "name": "system_prompt",
             "arguments": {
                 "readme": "# Project README\nUse stable sorting."
             }

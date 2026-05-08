@@ -10,9 +10,9 @@ async fn reads_mcp_resource_as_dynamic_value() {
     let output = TestRunner::workflow(fixtures::MCP_READ_RESOURCE)
         .input(json!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
-            mcp.resource("project-readme", |resource| {
+            mcp.resource("project_readme", |resource| {
                 resource
-                    .uri("file://resources/project-readme")
+                    .uri("file://resources/project_readme")
                     .mime_type("text/markdown")
                     .text("# Project README\nUse stable sorting.");
             });
@@ -33,7 +33,7 @@ async fn reads_mcp_resource_as_dynamic_value() {
     assert_eq!(
         read_resource_request.pointer("/params"),
         Some(&json!({
-            "uri": "file://resources/project-readme"
+            "uri": "file://resources/project_readme"
         }))
     );
 }

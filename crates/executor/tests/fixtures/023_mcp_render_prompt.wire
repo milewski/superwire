@@ -10,7 +10,7 @@ input {
     workspace_id: string
 }
 
-prompt system_prompt from mcp.local.prompt.system-prompt {
+prompt system_prompt from mcp.local.prompt.system_prompt {
     bindings {
         workspace_id: input.workspace_id
     }
