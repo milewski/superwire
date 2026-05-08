@@ -10,6 +10,13 @@ pub enum McpError {
         expected: &'static str,
     },
 
+    #[error("MCP declaration `{server_name}` property `{property_name}` could not be resolved: {reason}")]
+    InvalidPropertyEvaluation {
+        server_name: String,
+        property_name: String,
+        reason: String,
+    },
+
     #[error("MCP server `{server_name}` HTTP request for `{method}` failed: {message}")]
     Http {
         server_name: String,

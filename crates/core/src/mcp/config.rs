@@ -81,10 +81,10 @@ impl McpServerConfig {
                         evaluation_context,
                         &format!("MCP server `{server_name}` property `endpoint`"),
                     )
-                    .map_err(|_error| McpError::InvalidProperty {
+                    .map_err(|error| McpError::InvalidPropertyEvaluation {
                         server_name: server_name.clone(),
                         property_name: "endpoint".to_string(),
-                        expected: "a string or reference that resolves to a string",
+                        reason: error.to_string(),
                     })?;
                     let string_value = value.as_str().ok_or_else(|| McpError::InvalidProperty {
                         server_name: server_name.clone(),
@@ -149,10 +149,10 @@ impl McpServerConfig {
                 evaluation_context,
                 &format!("MCP server `{server_name}` header `{}`", header_field.name),
             )
-            .map_err(|_error| McpError::InvalidProperty {
+            .map_err(|error| McpError::InvalidPropertyEvaluation {
                 server_name: server_name.to_string(),
                 property_name: format!("headers.{}", header_field.name),
-                expected: "a string or reference that resolves to a string",
+                reason: error.to_string(),
             })?;
             let string_value = value.as_str().ok_or_else(|| McpError::InvalidProperty {
                 server_name: server_name.to_string(),
