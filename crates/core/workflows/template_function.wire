@@ -17,7 +17,7 @@ input {
 agent research_brief {
     model: openai("gpt-4.1-mini")
 
-    prompt: template("prompts/research_brief.md", {
+    instruction: template("prompts/research_brief.md", {
         study_name: input.study_name
         audience: input.audience
         findings: input.findings

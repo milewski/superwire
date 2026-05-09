@@ -34,8 +34,8 @@ from mcp.local {
 
 agent task_manager {
     model: openai("gpt-4.1-mini")
-    tools: [tool.create_task]
-    prompt: "Create a task"
+    uses: [tool.create_task, prompt.create_task_instructions, resource.all_tasks]
+    instruction: "Create a task"
     output: string
 }
 

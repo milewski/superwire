@@ -11,19 +11,19 @@ input {
 
 agent branch_a {
     model: openai("model-a")
-    prompt: "Analyze {{ input.topic }} from perspective A."
+    instruction: "Analyze {{ input.topic }} from perspective A."
     output: string
 }
 
 agent branch_b {
     model: openai("model-a")
-    prompt: "Analyze {{ input.topic }} from perspective B."
+    instruction: "Analyze {{ input.topic }} from perspective B."
     output: string
 }
 
 agent merger {
     model: openai("model-a")
-    prompt: "Merge these analyses: A={{ agent.branch_a }}, B={{ agent.branch_b }}"
+    instruction: "Merge these analyses: A={{ agent.branch_a }}, B={{ agent.branch_b }}"
     output: string
 }
 

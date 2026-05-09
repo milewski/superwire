@@ -14,7 +14,7 @@ agent release_analyst {
         max_tokens: 12_000
     }
 
-    prompt: "Write a short release readiness note."
+    instruction: "Write a short release readiness note."
     output: string
 }
 

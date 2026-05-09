@@ -17,7 +17,7 @@ schema AllTypes {
 
 agent typed_example {
     model: openai("model-a")
-    prompt: "Generate a typed object."
+    instruction: "Generate a typed object."
     output: schema.AllTypes
 }
 

@@ -18,19 +18,19 @@ input {
 
 agent draft {
     model: primary("model-a")
-    prompt: "Draft summary for {{ input.topic }}"
+    instruction: "Draft summary for {{ input.topic }}"
     output: string
 }
 
 agent review {
     model: backup("model-b")
-    prompt: "Review this draft: {{ agent.draft }}"
+    instruction: "Review this draft: {{ agent.draft }}"
     output: string
 }
 
 agent finalize {
     model: primary("model-c")
-    prompt: "Finalize using review: {{ agent.review }}"
+    instruction: "Finalize using review: {{ agent.review }}"
     output: string
 }
 

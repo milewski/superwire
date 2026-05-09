@@ -8,7 +8,7 @@ provider ollama {
 
 agent alpha {
     model: ollama("qwen3:8b")
-    prompt: "Generate participants and tasks for a sprint planning note."
+    instruction: "Generate participants and tasks for a sprint planning note."
     output: {
         tasks: [{
             id: number "the unique identifier of the task"
@@ -22,7 +22,7 @@ agent alpha {
 
 agent analyzer for { id, name } in agent.alpha.participants {
     model: ollama("qwen3:8b")
-    prompt: "Write a short workload summary for participant #{{ id }} ({{ name }})."
+    instruction: "Write a short workload summary for participant #{{ id }} ({{ name }})."
     output: {
         participant_id: number
         participant_name: string

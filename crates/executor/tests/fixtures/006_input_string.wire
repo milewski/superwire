@@ -11,7 +11,7 @@ input {
 
 agent writer {
     model: openai("model-a")
-    prompt: "Write about {{ input.topic }}."
+    instruction: "Write about {{ input.topic }}."
     output: string
 }
 

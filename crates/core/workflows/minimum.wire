@@ -14,7 +14,7 @@ agent greeting {
     model: ollama("qwen3.5:32b")
 
     // Provide the instruction sent to the model.
-    prompt: "Write a short welcome message."
+    instruction: "Write a short welcome message."
 
     // Define the expected output type for this agent.
     output: string

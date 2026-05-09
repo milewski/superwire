@@ -44,8 +44,8 @@ from mcp.local.tool {
 
 agent task_manager {
     model: openai("gpt-4.1-mini")
-    tools: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
-    prompt: "Manage project tasks"
+    uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
+    instruction: "Manage project tasks"
     output: string
 }
 

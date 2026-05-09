@@ -9,7 +9,7 @@ provider ollama {
 
 agent summary {
     model: ollama("qwen3.5:8b")
-    prompt: "Write a short project status summary and a confidence score."
+    instruction: "Write a short project status summary and a confidence score."
     output: {
         text: string
         confidence: number

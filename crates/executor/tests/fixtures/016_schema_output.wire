@@ -13,7 +13,7 @@ schema Person {
 
 agent profile {
     model: openai("model-a")
-    prompt: "Generate a person profile."
+    instruction: "Generate a person profile."
     output: schema.Person
 }
 

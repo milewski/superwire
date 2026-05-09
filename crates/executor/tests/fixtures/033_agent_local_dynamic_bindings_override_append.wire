@@ -28,7 +28,7 @@ agent analyzer {
         }
     }
 
-    prompt: "Process fetched values"
+    instruction: "Process fetched values"
     output: string
 }
 

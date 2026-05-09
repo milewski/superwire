@@ -7,7 +7,7 @@ provider openai {
 
 agent summary {
     model: openai("model-a")
-    prompt: "Write a project status summary with a confidence score."
+    instruction: "Write a project status summary with a confidence score."
     output: {
         text: string
         confidence: float

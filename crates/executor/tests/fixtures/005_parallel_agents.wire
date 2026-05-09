@@ -11,7 +11,7 @@ input {
 
 agent changelog {
     model: openai("model-a")
-    prompt: "Write release notes for {{ input.product_name }}."
+    instruction: "Write release notes for {{ input.product_name }}."
     output: {
         markdown: string
     }
@@ -19,7 +19,7 @@ agent changelog {
 
 agent social_thread {
     model: openai("model-a")
-    prompt: "Create a launch thread for {{ input.product_name }}."
+    instruction: "Create a launch thread for {{ input.product_name }}."
     output: {
         posts: [string]
     }
@@ -27,7 +27,7 @@ agent social_thread {
 
 agent customer_email {
     model: openai("model-a")
-    prompt: "Write an announcement email for {{ input.product_name }}."
+    instruction: "Write an announcement email for {{ input.product_name }}."
     output: {
         subject: string
         body: string

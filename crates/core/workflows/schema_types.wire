@@ -72,7 +72,7 @@ input {
 agent typed_example {
     model: ollama("qwen3.5:32b")
 
-    prompt: """
+    instruction: """
         Generate a JSON object that matches the AllTypes schema exactly.
         - Lead={{ input.lead_participant }},
         - participants={{ input.participant_list }},

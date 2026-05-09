@@ -11,7 +11,7 @@ input {
 
 agent processor {
     model: openai("model-a")
-    prompt: "Process these items: {{ input.items }}"
+    instruction: "Process these items: {{ input.items }}"
     output: {
         processed: [string]
         count: number

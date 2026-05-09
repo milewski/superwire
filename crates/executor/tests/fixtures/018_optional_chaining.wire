@@ -7,7 +7,7 @@ provider openai {
 
 agent data {
     model: openai("model-a")
-    prompt: "Generate data with a nullable nested object."
+    instruction: "Generate data with a nullable nested object."
     output: {
         label: string
         details: {

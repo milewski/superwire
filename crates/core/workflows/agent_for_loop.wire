@@ -20,7 +20,7 @@ input {
 // Step 1: convert raw text into a structured list.
 agent findings {
     model: ollama("qwen3:8b")
-    prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
+    instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
     output: {
         items: [string]
     }
@@ -30,7 +30,7 @@ agent findings {
 // Iterations of this `for` run in parallel.
 agent remediation_plan for finding in agent.findings.items {
     model: ollama("qwen3:8b")
-    prompt: "Create a remediation plan for finding: {{ finding }}"
+    instruction: "Create a remediation plan for finding: {{ finding }}"
     output: {
         title: string
         steps: [string]
@@ -43,7 +43,7 @@ agent remediation_plan for finding in agent.findings.items {
 // This creates 4 parallel runs with number=1, number=2, number=3, number=4.
 agent number_note for number in [1, 2, 3, 4] {
     model: ollama("qwen3:8b")
-    prompt: "Write a short note for number {{ number }}"
+    instruction: "Write a short note for number {{ number }}"
     output: {
         number: number
         note: string
@@ -54,7 +54,7 @@ agent number_note for number in [1, 2, 3, 4] {
 // This creates one run per value in `input.numbers`.
 agent input_number_note for n in input.numbers {
     model: ollama("qwen3:8b")
-    prompt: "Write a short note for input number {{ n }}"
+    instruction: "Write a short note for input number {{ n }}"
     output: {
         number: number
         note: string

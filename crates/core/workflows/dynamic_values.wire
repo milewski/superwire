@@ -32,7 +32,7 @@ agent writer {
         rendered_prompt: "{{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to {{ dynamic.max_bullets }} bullets."
     }
 
-    prompt: dynamic.rendered_prompt
+    instruction: dynamic.rendered_prompt
     output: {
         summary: string
     }

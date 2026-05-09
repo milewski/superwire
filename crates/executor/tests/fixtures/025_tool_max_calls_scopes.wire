@@ -23,23 +23,23 @@ tool fetch_shared from mcp.local.tool.fetch_task_data {
 
 agent first_agent {
     model: openai("model-a")
-    tools: [
+    uses: [
         tool.fetch_shared {
             max_calls: 1
         },
     ]
-    prompt: "First"
+    instruction: "First"
     output: string
 }
 
 agent second_agent {
     model: openai("model-a")
-    tools: [
+    uses: [
         tool.fetch_shared {
             max_calls: 1
         },
     ]
-    prompt: "Second"
+    instruction: "Second"
     output: string
 }
 

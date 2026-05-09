@@ -7,7 +7,7 @@ provider openai {
 
 agent profile {
     model: openai("model-a")
-    prompt: "Generate a user profile with name, age, and role."
+    instruction: "Generate a user profile with name, age, and role."
     output: {
         name: string
         age: number

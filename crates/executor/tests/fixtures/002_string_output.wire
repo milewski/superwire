@@ -7,7 +7,7 @@ provider openai {
 
 agent summarizer {
     model: openai("model-a")
-    prompt: "Write a one-sentence project summary."
+    instruction: "Write a one-sentence project summary."
     output: string
 }
 

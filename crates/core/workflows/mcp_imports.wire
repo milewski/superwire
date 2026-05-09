@@ -51,7 +51,7 @@ dynamic {
 agent project_creator {
     model: openai("gpt-4.1-mini")
 
-    prompt: """
+    instruction: """
         Create a project from imported MCP context.
         {{ dynamic.instructions }}
         {{ dynamic.readme }}
@@ -64,8 +64,8 @@ agent project_creator {
 
 agent task_sorter {
     model: openai("gpt-4.1-mini")
-    prompt: "Create sorting tasks for the generated project."
-    tools: [tool.create_sorting_task_for_task_group]
+    instruction: "Create sorting tasks for the generated project."
+    uses: [tool.create_sorting_task_for_task_group]
     output: string
 }
 

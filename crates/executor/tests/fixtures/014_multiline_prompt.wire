@@ -8,7 +8,7 @@ provider openai {
 agent writer {
     model: openai("model-a")
 
-    prompt: """
+    instruction: """
         You are a friendly assistant.
         Write a short welcome message.
         Keep it to one sentence.

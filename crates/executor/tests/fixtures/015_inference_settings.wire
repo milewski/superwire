@@ -13,7 +13,7 @@ agent analyst {
         max_tokens: 4000
     }
 
-    prompt: "Analyze the current release readiness."
+    instruction: "Analyze the current release readiness."
     output: string
 }
 

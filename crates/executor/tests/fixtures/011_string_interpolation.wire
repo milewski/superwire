@@ -12,7 +12,7 @@ input {
 
 agent release_notes {
     model: openai("model-a")
-    prompt: "Write release notes for {{ input.product_name }} targeting {{ input.audience }}."
+    instruction: "Write release notes for {{ input.product_name }} targeting {{ input.audience }}."
     output: {
         title: string
         body: string
@@ -21,7 +21,7 @@ agent release_notes {
 
 agent launch_message {
     model: openai("model-a")
-    prompt: """
+    instruction: """
         Write a launch message for {{ input.audience }}.
 
         Product: {{ input.product_name }}

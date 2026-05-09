@@ -34,7 +34,7 @@ dynamic {
 
 agent summarizer {
     model: openai("model-a")
-    prompt: "Summarize: {{ dynamic.data }}"
+    instruction: "Summarize: {{ dynamic.data }}"
     output: {
         summary: string
     }

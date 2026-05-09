@@ -11,7 +11,7 @@ input {
 
 agent assistant {
     model: openai("model-a")
-    prompt: "Answer: {{ input.question }}"
+    instruction: "Answer: {{ input.question }}"
     output: {
         answer: string
         confidence: float

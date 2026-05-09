@@ -30,7 +30,7 @@ input {
 // This prompt reads directly from `input`.
 agent release_summary {
     model: openai("gpt-4.1-mini")
-    prompt: "Write a short release summary for {{ input.product_name }} based on these highlights: {{ input.release_highlights }}"
+    instruction: "Write a short release summary for {{ input.product_name }} based on these highlights: {{ input.release_highlights }}"
     output: {
         summary: string "Short release summary"
         key_points: [string; 3] "Exactly three key points from the release"
@@ -44,7 +44,7 @@ agent release_summary {
 agent launch_message {
     model: openai("gpt-4.1-mini")
 
-    prompt: """
+    instruction: """
         Write a launch message for {{ input.audience }}.
         
         Product: {{ input.product_name }}
@@ -67,7 +67,7 @@ agent launch_message {
 agent qa_check {
     model: openai("gpt-4.1-mini")
 
-    prompt: """
+    instruction: """
         Review this generated launch content for clarity and consistency.
         
         Release summary object: {{ agent.release_summary }}
