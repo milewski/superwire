@@ -10,13 +10,13 @@ fn completes_agent_references_inside_prompt_string_interpolation() {
 
         agent context_agent {
             model: openai("gpt-4.1-mini")
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            prompt: "example {{ agent.<cursor> }}"
+            instruction: "example {{ agent.<cursor> }}"
             output: string
         }
     };
@@ -86,7 +86,7 @@ fn suggests_only_agent_and_input_roots_inside_interpolation_expression() {
         }
 
         agent writer {
-            prompt: "Write a short welcome message. {{ <cursor> }}"
+            instruction: "Write a short welcome message. {{ <cursor> }}"
             output: string
         }
     };
@@ -115,7 +115,7 @@ fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() 
         }
 
         agent writer {
-            prompt: "Write a short welcome message. {{ schema.<cursor> }}"
+            instruction: "Write a short welcome message. {{ schema.<cursor> }}"
             output: string
         }
     };
@@ -138,13 +138,13 @@ fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
 
         agent context_agent {
             model: openai("gpt-4.1-mini")
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            prompt: """
+            instruction: """
                 example {{ agent.<cursor> }}
             """
             output: string
@@ -164,7 +164,7 @@ fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            prompt: """
+            instruction: """
                 Like this <cursor>
             """
             output: string
@@ -184,7 +184,7 @@ fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            prompt: "hello <cursor>world"
+            instruction: "hello <cursor>world"
             output: string
         }
     };
@@ -202,7 +202,7 @@ fn uses_agent_output_field_description_for_interpolation_completion() {
         }
 
         agent greetings2 {
-            prompt: "Explain: {{ agent.greetings.<cursor> }}."
+            instruction: "Explain: {{ agent.greetings.<cursor> }}."
             output: string
         }
     };

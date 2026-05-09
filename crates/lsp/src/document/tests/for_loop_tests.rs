@@ -8,7 +8,7 @@ fn completes_input_fields_in_for_loop_iterable_reference() {
         }
 
         agent worker for item in input.<cursor> {
-            prompt: item
+            instruction: item
         }
     };
 
@@ -23,7 +23,7 @@ fn completes_agent_names_in_for_loop_iterable_reference() {
         }
 
         agent remediation_plan for finding in agent.<cursor> {
-            prompt: finding
+            instruction: finding
         }
     };
 
@@ -39,7 +39,7 @@ fn suppresses_non_iterable_input_field_suggestions_in_for_loop_iterable_referenc
         }
 
         agent worker for item in input.<cursor> {
-            prompt: item
+            instruction: item
         }
     };
 
@@ -69,7 +69,7 @@ fn suppresses_non_iterable_input_field_suggestions_in_for_loop_iterable_referenc
         }
 
         agent worker for item in input.<cursor> {
-            prompt: item
+            instruction: item
         }
     };
 
@@ -85,7 +85,7 @@ fn completes_iterable_secrets_fields_in_for_loop_iterable_reference() {
         }
 
         agent remediation_plan for finding in secrets.<cursor> {
-            prompt: finding
+            instruction: finding
         }
     };
 
@@ -102,7 +102,7 @@ fn suggests_agent_properties_inside_for_loop_agent_block() {
         }
     };
 
-    assert_completion_contains!(&completion_suggestions, AgentExpressionPropertyName::Prompt);
+    assert_completion_contains!(&completion_suggestions, AgentExpressionPropertyName::Instruction);
     assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting);
 }
 
@@ -117,7 +117,7 @@ fn suggests_inference_settings_inside_for_loop_agent_inference_object() {
     };
 
     assert_completion_contains_all_inference_settings!(&completion_suggestions);
-    assert_completion_excludes_labels!(&completion_suggestions, AgentExpressionPropertyName::Tools);
+    assert_completion_excludes_labels!(&completion_suggestions, AgentExpressionPropertyName::Uses);
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
 
         agent input_number_note for n in input.numbers {
             model: ollama("qwen3:8b")
-            prompt: "Write a short note for input number {{ <cursor> }}"
+            instruction: "Write a short note for input number {{ <cursor> }}"
             output: {
                 number: number
                 note: string
@@ -151,7 +151,7 @@ fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
         }
 
         agent input_number_note for n in agent.number_note {
-            prompt: "Write a short note for input number {{ n.<cursor> }}"
+            instruction: "Write a short note for input number {{ n.<cursor> }}"
             output: {
                 number: number
                 note: string
@@ -186,7 +186,7 @@ fn suggests_iterator_name_for_agent_iterable_for_loop() {
         }
 
         agent input_number_note for n in agent.number_note {
-            prompt: "Write a short note {{ <cursor> }}"
+            instruction: "Write a short note {{ <cursor> }}"
             output: string
         }
     };
@@ -229,7 +229,7 @@ fn suggests_for_keyword_after_agent_name_in_agent_header() {
     assert_completion_excludes_labels!(
         &completion_suggestions,
         DeclarationKeyword::Provider,
-        AgentExpressionPropertyName::Prompt
+        AgentExpressionPropertyName::Instruction
     );
 
     let for_keyword_completion = completion_suggestions
@@ -278,7 +278,7 @@ fn suggests_destructuring_field_names_from_agent_iterable_output() {
 
         agent findings {
             model: ollama("qwen3:8b")
-            prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
+            instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
             output: {
                 items: [{
                     id: string
@@ -288,7 +288,7 @@ fn suggests_destructuring_field_names_from_agent_iterable_output() {
         }
 
         agent remediation_plan for { <cursor> } in agent.findings.items {
-            prompt: "{{ id }}"
+            instruction: "{{ id }}"
             output: string
         }
     });
@@ -305,7 +305,7 @@ fn excludes_existing_destructured_field_names_from_suggestions() {
 
         agent findings {
             model: ollama("qwen3:8b")
-            prompt: "Parse this text into a short list of findings: {{ input.findings_text }}"
+            instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
             output: {
                 items: [{
                     id: string
@@ -315,7 +315,7 @@ fn excludes_existing_destructured_field_names_from_suggestions() {
         }
 
         agent remediation_plan for { id, <cursor> } in agent.findings.items {
-            prompt: "{{ id }}"
+            instruction: "{{ id }}"
             output: string
         }
     });
@@ -364,7 +364,7 @@ fn suggests_object_destructuring_bindings_inside_prompt_interpolation_expression
         }
 
         agent analyzer for { id, profile } in agent.alpha.participants {
-            prompt: "Analyze participant {{ <cursor> }}"
+            instruction: "Analyze participant {{ <cursor> }}"
             output: string
         }
     };
@@ -389,7 +389,7 @@ fn completes_object_destructuring_binding_fields_from_for_loop_iterable() {
         }
 
         agent analyzer for { id, profile } in agent.alpha.participants {
-            prompt: "Analyze participant {{ profile.<cursor> }}"
+            instruction: "Analyze participant {{ profile.<cursor> }}"
             output: string
         }
     };
@@ -409,7 +409,7 @@ fn completes_iterable_references_for_object_destructuring_for_clause() {
         }
 
         agent analyzer for { id, name } in input.<cursor> {
-            prompt: "Analyze participant {{ id }} {{ name }}"
+            instruction: "Analyze participant {{ id }} {{ name }}"
             output: string
         }
     };

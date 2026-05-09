@@ -5,7 +5,7 @@ fn definition_resolves_agent_output_field_in_output_reference() {
     let source_template = inline_document_template! {
         agent task_summary_aggregator {
             model: openai("gpt-4o")
-            prompt: "aggregate summaries"
+            instruction: "aggregate summaries"
             output: {
                 summary: string
                 themes: [{
@@ -41,7 +41,7 @@ fn definition_resolves_for_loop_binding_field_to_iterable_item_field_declaration
     let source_template = inline_document_template! {
         agent participants_fetcher {
             model: openai("gpt-4o")
-            prompt: "fetch participants"
+            instruction: "fetch participants"
             output: {
                 participants: [
                     {
@@ -54,7 +54,7 @@ fn definition_resolves_for_loop_binding_field_to_iterable_item_field_declaration
 
         agent participant_answer_analyzer for participant in agent.participants_fetcher.participants {
             model: openai("gpt-4o")
-            prompt: "participant id is {{ participant.<cursor>id }}"
+            instruction: "participant id is {{ participant.<cursor>id }}"
         }
     };
 

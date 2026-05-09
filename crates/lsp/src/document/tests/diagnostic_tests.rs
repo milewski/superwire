@@ -22,7 +22,7 @@ fn reports_unknown_model_for_provider_diagnostic() {
 
         agent writer {
             model: openai("gpt-4.1")
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     };
@@ -44,7 +44,7 @@ fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
 
         agent writer {
             model: openai(secrets.openai_model)
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     };
@@ -63,7 +63,7 @@ fn reports_unknown_agent_property_diagnostic() {
 
         agent writer {
             model: openai("gpt-4.1-mini")
-            prompt: "hello"
+            instruction: "hello"
             retries: 3
             output: string
         }
@@ -90,7 +90,7 @@ fn reports_invalid_inference_setting_value_type_diagnostic() {
 fn reports_invalid_bare_tool_reference_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent tooling {
-            tools: [tool]
+            uses: [tool]
         }
     };
 
@@ -101,7 +101,7 @@ fn reports_invalid_bare_tool_reference_diagnostic() {
 fn reports_parse_error_for_call_style_tool_binding_overrides() {
     let diagnostics = inline_diagnostics! {
         agent tooling {
-            tools: [
+            uses: [
                 tool.fetch_participant_answer(project_id: input.project_id, task_id: input.task_id)
             ]
         }
@@ -149,7 +149,7 @@ fn allows_block_style_tool_binding_overrides() {
 
         agent participant_answer_analyzer {
             model: openai("gpt-4.1-mini")
-            tools: [
+            uses: [
                 tool.fetch_participant_answer {
                     bindings {
                         project_id: input.project_id
@@ -196,7 +196,7 @@ fn reports_missing_tool_binding_overrides_diagnostic() {
 
         agent participant_answer_analyzer for participant in dynamic.data.participants {
             model: openai("gpt-4.1-mini")
-            tools: [
+            uses: [
                 tool.fetch_participant_answer
             ]
         }
@@ -236,7 +236,7 @@ fn allows_fixed_tool_bindings_without_overrides() {
 
         agent participant_answer_analyzer for participant in dynamic.data.participants {
             model: openai("gpt-4.1-mini")
-            tools: [
+            uses: [
                 tool.fetch_participant_answer
             ]
         }
@@ -271,7 +271,7 @@ fn reports_invalid_tool_binding_override_type_diagnostic() {
 
         agent participant_answer_analyzer {
             model: openai("gpt-4.1-mini")
-            tools: [
+            uses: [
                 tool.fetch_participant_answer {
                     bindings {
                         project_id: input.project_id
@@ -356,13 +356,13 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
 
         agent context_agent {
             model: openai("gpt-4.1-mini")
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            prompt: "example {{ agent.context_agent }} {{ input.query }} {{ schema.Payload }} {{ secrets.api_key }}"
+            instruction: "example {{ agent.context_agent }} {{ input.query }} {{ schema.Payload }} {{ secrets.api_key }}"
             output: string
         }
     };
@@ -388,7 +388,7 @@ fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic(
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            prompt: """
+            instruction: """
                 example {{ input.query }}
                 forbidden {{ secrets.api_key }}
             """
@@ -441,8 +441,8 @@ fn reports_duplicate_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent greeting {
             model: ollama("qwen3.5:8b")
-            prompt: "Write a short welcome message."
-            prompt: "Write a short welcome message."
+            instruction: "Write a short welcome message."
+            instruction: "Write a short welcome message."
             output: string
         }
     };

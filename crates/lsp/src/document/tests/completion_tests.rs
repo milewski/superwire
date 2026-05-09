@@ -127,7 +127,7 @@ fn agent_property_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             },
             expected_present_labels: vec![
                 AgentExpressionPropertyName::Model.as_str(),
-                AgentExpressionPropertyName::Prompt.as_str(),
+                AgentExpressionPropertyName::Instruction.as_str(),
             ],
             expected_absent_labels: vec![],
             expects_empty_suggestions: false,
@@ -146,7 +146,7 @@ fn agent_property_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expected_present_labels: vec![],
             expected_absent_labels: vec![
                 AgentExpressionPropertyName::Model.as_str(),
-                AgentExpressionPropertyName::Prompt.as_str(),
+                AgentExpressionPropertyName::Instruction.as_str(),
             ],
             expects_empty_suggestions: false,
         },
@@ -238,13 +238,13 @@ fn interpolation_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
 
                 agent context_agent {
                     model: openai("gpt-4.1-mini")
-                    prompt: "hello"
+                    instruction: "hello"
                     output: string
                 }
 
                 agent worker {
                     model: openai("gpt-4.1-mini")
-                    prompt: "example {{ agent.<cursor> }}"
+                    instruction: "example {{ agent.<cursor> }}"
                     output: string
                 }
             },
@@ -264,13 +264,13 @@ fn interpolation_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
 
                 agent context_agent {
                     model: openai("gpt-4.1-mini")
-                    prompt: "hello"
+                    instruction: "hello"
                     output: string
                 }
 
                 agent worker {
                     model: openai("gpt-4.1-mini")
-                    prompt: "example {{ agent.<cursor> }}"
+                    instruction: "example {{ agent.<cursor> }}"
                     output: string
                 }
             },
@@ -293,7 +293,7 @@ fn for_loop_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 }
 
                 agent worker for item in input.<cursor> {
-                    prompt: item
+                    instruction: item
                 }
             },
             expected_present_labels: vec!["products"],
@@ -310,7 +310,7 @@ fn for_loop_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 }
 
                 agent worker for item in input.<cursor> {
-                    prompt: item
+                    instruction: item
                 }
             },
             expected_present_labels: vec![],
@@ -323,12 +323,12 @@ fn for_loop_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
 fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
     vec![
         CompletionMatrixCase {
-            case_name: "tools_expression_suggests_tool_keyword",
+            case_name: "uses_expression_suggests_tool_keyword",
             context: CompletionMatrixContext::Tools,
             expectation_kind: CompletionExpectationKind::Positive,
             source_template: inline_document_template! {
                 agent tooling {
-                    tools: <cursor>
+                    uses: <cursor>
                 }
             },
             expected_present_labels: vec![ReferenceKeyword::Tool.as_str()],
@@ -345,7 +345,7 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 }
 
                 agent tooling {
-                    tools: [tool.<cursor>]
+                    uses: [tool.<cursor>]
                 }
             },
             expected_present_labels: vec!["knowledge_base_search"],
@@ -368,7 +368,7 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 }
 
                 agent tooling {
-                    tools: [tool.knowledge_base_search {
+                    uses: [tool.knowledge_base_search {
                         bindings {
                             <cursor>
                         }
@@ -546,7 +546,7 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
         }
 
         input {
-            prompt: string
+            instruction: string
         }
 
         secrets {
@@ -712,8 +712,8 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
     assert_completion_contains_labels!(
         &completion_suggestions,
         AgentExpressionPropertyName::Model,
-        AgentExpressionPropertyName::Prompt,
-        AgentExpressionPropertyName::Tools,
+        AgentExpressionPropertyName::Instruction,
+        AgentExpressionPropertyName::Uses,
         "output"
     );
 
@@ -748,7 +748,7 @@ fn suggests_only_context_function_for_agent_context_property_value() {
 fn suggests_only_valid_prompt_value_roots_and_literals() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
-            prompt: <cursor>
+            instruction: <cursor>
             output: string
         }
     };
@@ -781,7 +781,7 @@ fn suggests_only_valid_prompt_value_roots_and_literals() {
 fn uses_current_line_indentation_for_multiline_prompt_literal_completion() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
-            prompt: <cursor>
+            instruction: <cursor>
             output: string
         }
     });
@@ -809,7 +809,7 @@ fn uses_current_line_indentation_for_multiline_prompt_literal_completion() {
 fn suppresses_invalid_prompt_reference_roots() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
-            prompt: secrets.<cursor>
+            instruction: secrets.<cursor>
             output: string
         }
     };
@@ -852,7 +852,7 @@ fn suggests_only_object_literal_for_inference_property_value() {
         ReferenceKeyword::Agent,
         ReferenceKeyword::Input,
         AgentExpressionPropertyName::Model,
-        AgentExpressionPropertyName::Prompt,
+        AgentExpressionPropertyName::Instruction,
         "number",
         "string"
     );
@@ -884,7 +884,7 @@ fn suggests_only_inference_value_reference_roots_for_integer_setting() {
         }
 
         agent helper {
-            prompt: "hello"
+            instruction: "hello"
             output: {
                 max_tokens: number
                 label: string
@@ -964,7 +964,7 @@ fn suggests_agent_properties_before_inference_block() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, AgentExpressionPropertyName::Prompt);
+    assert_completion_contains_labels!(&completion_suggestions, AgentExpressionPropertyName::Instruction);
     assert_completion_excludes_labels!(&completion_suggestions, InferenceSetting);
 }
 
@@ -1008,7 +1008,7 @@ fn completes_registered_provider_models_inside_model_call() {
 
         agent writer {
             model: openai("<cursor>")
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     };
@@ -1035,7 +1035,7 @@ fn suggests_only_declared_providers_for_model_property_value() {
 
         agent writer {
             model: <cursor>
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     };
@@ -1046,7 +1046,7 @@ fn suggests_only_declared_providers_for_model_property_value() {
         &completion_suggestions,
         BuiltinFunctionName::Context,
         ReferenceKeyword::Agent,
-        AgentExpressionPropertyName::Prompt,
+        AgentExpressionPropertyName::Instruction,
         DeclarationKeyword::Provider,
         InferenceSetting::MaxTokens,
         "string"
@@ -1074,7 +1074,7 @@ fn suggests_reference_roots_inside_model_call_expression() {
 
         agent writer {
             model: openai(<cursor>)
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     };
@@ -1102,7 +1102,7 @@ fn completion_text_edit_range_replaces_model_provider_prefix() {
 
         agent writer {
             model: op
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     }
@@ -1163,7 +1163,7 @@ fn suggests_only_global_dynamic_fields_outside_agents() {
                 alpha_only: "alpha"
             }
 
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
@@ -1172,7 +1172,7 @@ fn suggests_only_global_dynamic_fields_outside_agents() {
                 beta_only: "beta"
             }
 
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
@@ -1198,7 +1198,7 @@ fn suggests_global_and_local_dynamic_fields_inside_agent() {
                 alpha_only: "alpha"
             }
 
-            prompt: dynamic.<cursor>
+            instruction: dynamic.<cursor>
             output: string
         }
 
@@ -1207,7 +1207,7 @@ fn suggests_global_and_local_dynamic_fields_inside_agent() {
                 beta_only: "beta"
             }
 
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     };
@@ -1228,7 +1228,7 @@ fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
         }
 
         agent writer {
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
@@ -1345,7 +1345,7 @@ fn suggests_prompts_inside_dynamic_render_callee() {
 fn suggests_mcp_calls_for_agent_prompt_values() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
-            prompt: <cursor>
+            instruction: <cursor>
             output: string
         }
     };
@@ -1395,7 +1395,7 @@ fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
 
         agent writer {
             model: openai("<cursor>")
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
     });
@@ -1415,7 +1415,7 @@ fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
 fn completion_text_edit_range_for_prompt_value_keeps_space_after_separator() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
-            prompt: <cursor>
+            instruction: <cursor>
             output: string
         }
     });
@@ -1435,7 +1435,7 @@ fn completion_text_edit_range_for_prompt_value_keeps_space_after_separator() {
 fn completion_text_edit_range_for_prompt_reference_after_separator_keeps_root_and_separator() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
-            prompt: agent.<cursor>
+            instruction: agent.<cursor>
             output: string
         }
     });
@@ -1517,7 +1517,7 @@ fn completion_text_edit_range_for_agent_property_inserts_at_current_line_cursor(
 fn suppresses_fallback_suggestions_after_terminal_agent_output_reference() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
-            prompt: "hello"
+            instruction: "hello"
             output: string
         }
 
@@ -1533,7 +1533,7 @@ fn suppresses_fallback_suggestions_after_terminal_agent_output_reference() {
 fn suggests_agent_output_fields_for_nested_agent_output_reference() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
-            prompt: "hello"
+            instruction: "hello"
             output: {
                 message: string
                 language: string
@@ -1642,7 +1642,7 @@ fn uses_schema_field_description_in_reference_completion_documentation() {
         }
 
         agent writer {
-            prompt: "hello {{ input.profile.<cursor> }}"
+            instruction: "hello {{ input.profile.<cursor> }}"
             output: string
         }
     };
@@ -1782,8 +1782,8 @@ fn suppresses_agent_property_suggestions_inside_agent_output_object_field_value(
     assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
     assert_completion_excludes_labels!(
         &completion_suggestions,
-        AgentExpressionPropertyName::Tools,
-        AgentExpressionPropertyName::Prompt
+        AgentExpressionPropertyName::Uses,
+        AgentExpressionPropertyName::Instruction
     );
 }
 
@@ -1802,7 +1802,7 @@ fn suggests_only_types_inside_nested_agent_output_object_field_value() {
     assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
     assert_completion_excludes_labels!(
         &completion_suggestions,
-        AgentExpressionPropertyName::Tools,
+        AgentExpressionPropertyName::Uses,
         DeclarationKeyword::Provider
     );
 }

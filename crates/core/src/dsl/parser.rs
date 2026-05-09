@@ -282,8 +282,8 @@ mod tests {
     use super::parse_workflow;
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
-        AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, McpCallOperation, McpImportKind, ReferenceKeyword,
-        ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
+        AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, McpCallOperation,
+        McpImportKind, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -312,7 +312,7 @@ mod tests {
 
             agent greeting {
                 model: ollama("qwen3.5:32b")
-                prompt: "Write a short welcome message."
+                instruction: "Write a short welcome message."
                 output: string
             }
 
@@ -354,7 +354,7 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent remediation_plan for finding in agent.findings.items {
                 model: ollama("qwen3:8b")
-                prompt: "Create a remediation plan for finding: {{ finding }}"
+                instruction: "Create a remediation plan for finding: {{ finding }}"
                 output: string
             }
         };
@@ -387,7 +387,7 @@ mod tests {
     fn parses_object_destructuring_for_loop_agent_structure() {
         let workflow = parse_inline_workflow! {
             agent participant_analyzer for { id, name } in agent.alpha.participants {
-                prompt: "Analyze participant {{ id }} and {{ name }}"
+                instruction: "Analyze participant {{ id }} and {{ name }}"
                 output: string
             }
         };
@@ -421,7 +421,7 @@ mod tests {
     fn parses_tools_entries_and_binding_overrides() {
         let workflow = parse_inline_workflow! {
             agent assistant_with_tools {
-                tools: [
+                uses: [
                     tool.web_search,
                     tool.knowledge_base_search {
                         bindings {
@@ -443,18 +443,18 @@ mod tests {
             .find_agent("assistant_with_tools")
             .expect("missing agent declaration: assistant_with_tools");
 
-        let tools_property = tools_agent
+        let uses_property = tools_agent
             .properties
             .iter()
-            .find(|agent_property| matches!(agent_property, AgentProperty::Tools(_)))
-            .expect("tools property should exist");
+            .find(|agent_property| matches!(agent_property, AgentProperty::Uses(_)))
+            .expect("uses property should exist");
 
-        let AgentProperty::Tools(tools_expression) = tools_property else {
-            unreachable!("tools property matcher should guarantee variant");
+        let AgentProperty::Uses(uses_expression) = uses_property else {
+            unreachable!("uses property matcher should guarantee variant");
         };
 
-        let Expression::ArrayLiteral(tools_entries) = tools_expression else {
-            panic!("tools property should be an array literal");
+        let Expression::ArrayLiteral(tools_entries) = uses_expression else {
+            panic!("uses property should be an array literal");
         };
 
         assert_eq!(tools_entries.len(), 3);
@@ -471,10 +471,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_call_style_tool_binding_overrides_inside_tools_property() {
+    fn rejects_call_style_tool_binding_overrides_inside_uses_property() {
         let workflow_source = workflow_source! {
             agent assistant_with_tools {
-                tools: [
+                uses: [
                     tool.knowledge_base_search(password: secrets.knowledge_base_password)
                 ]
             }
@@ -755,6 +755,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_agent_instruction_and_mixed_uses() {
+        let workflow = parse_inline_workflow! {
+            resource all_tasks from mcp.local.resource.all_tasks
+            prompt create_task_instructions from mcp.local.prompt.create_task_instructions
+            tool create_task from mcp.local.tool.create_task
+
+            agent task_manager {
+                model: openai("gpt-4.1-mini")
+                instruction: "Create a task"
+                uses: [tool.create_task, prompt.create_task_instructions, resource.all_tasks]
+                output: string
+            }
+        };
+
+        let agent_declaration = workflow.find_agent("task_manager").expect("agent should parse");
+
+        assert!(agent_declaration
+            .expression_property(AgentExpressionPropertyName::Instruction)
+            .is_some());
+        assert!(agent_declaration.expression_property(AgentExpressionPropertyName::Uses).is_some());
+    }
+
+    #[test]
     fn parses_resource_read_and_prompt_render_expressions() {
         let workflow = parse_inline_workflow! {
             resource project_readme from mcp.local.resource.project_readme
@@ -894,7 +917,7 @@ mod tests {
                     }
                 }
 
-                prompt: "{{ dynamic.local_issue.title }}"
+                instruction: "{{ dynamic.local_issue.title }}"
                 output: string
             }
         };
@@ -1076,7 +1099,7 @@ mod tests {
     fn parses_string_interpolation_as_structured_template_parts() {
         let workflow = parse_inline_workflow! {
             agent interpolation_test {
-                prompt: "A {{ agent.alpha.summary }} B {{ input.topic }} C"
+                instruction: "A {{ agent.alpha.summary }} B {{ input.topic }} C"
                 output: string
             }
         };
@@ -1085,18 +1108,18 @@ mod tests {
             .find_agent("interpolation_test")
             .expect("missing agent declaration: interpolation_test");
 
-        let prompt_property = interpolation_agent
+        let instruction_property = interpolation_agent
             .properties
             .iter()
-            .find(|agent_property| matches!(agent_property, AgentProperty::Prompt(_)))
-            .expect("prompt property should exist");
+            .find(|agent_property| matches!(agent_property, AgentProperty::Instruction(_)))
+            .expect("instruction property should exist");
 
-        let AgentProperty::Prompt(prompt_expression) = prompt_property else {
-            unreachable!("prompt property matcher should guarantee variant");
+        let AgentProperty::Instruction(instruction_expression) = instruction_property else {
+            unreachable!("instruction property matcher should guarantee variant");
         };
 
-        let Expression::StringTemplate(prompt_template) = prompt_expression else {
-            panic!("prompt should parse as string template");
+        let Expression::StringTemplate(prompt_template) = instruction_expression else {
+            panic!("instruction should parse as string template");
         };
 
         assert_eq!(prompt_template.parts.len(), 5);
@@ -1133,7 +1156,7 @@ mod tests {
     fn rejects_single_brace_interpolation_in_string_literals() {
         let workflow_source = workflow_source! {
             agent interpolation_test {
-                prompt: "A { agent.alpha.summary }"
+                instruction: "A { agent.alpha.summary }"
                 output: string
             }
         };
@@ -1145,7 +1168,7 @@ mod tests {
 
     #[test]
     fn parse_errors_include_span_for_invalid_token() {
-        let parse_result = parse_workflow("agent a {\n    prompt: \"hello\"\n}\n@\n");
+        let parse_result = parse_workflow("agent a {\n    instruction: \"hello\"\n}\n@\n");
 
         let parse_error = parse_result.expect_err("workflow should fail to parse");
         let parse_error_span = parse_error.span().expect("parse errors should include source span");
@@ -1178,7 +1201,7 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent greeting {
                 model: ollama("qwen3.5:8b")
-                prompt: "test"
+                instruction: "test"
                 output: string "example"
             }
         };

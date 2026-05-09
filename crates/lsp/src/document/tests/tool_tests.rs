@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use superwire_core::mcp::{McpLock, McpServerLock, McpToolLock};
 
 #[test]
-fn suggests_tool_keyword_inside_tools_expression_context() {
+fn suggests_tool_keyword_inside_uses_expression_context() {
     let completion_suggestions = inline_completion_suggestions! {
         agent tooling {
-            tools: <cursor>
+            uses: <cursor>
         }
     };
 
@@ -23,7 +23,7 @@ fn suggests_declared_tools_for_tool_namespace_reference() {
         }
 
         agent tooling {
-            tools: [tool.<cursor>]
+            uses: [tool.<cursor>]
         }
     };
 
@@ -40,7 +40,7 @@ fn suggests_declared_tools_for_multiline_tool_namespace_reference() {
         }
 
         agent tooling {
-            tools: [
+            uses: [
                 tool.<cursor>,
             ]
         }
@@ -75,7 +75,7 @@ fn inserts_plain_tool_name_for_tool_without_bounded_arguments() {
         }
 
         agent tooling {
-            tools: [tool.<cursor>]
+            uses: [tool.<cursor>]
         }
     };
 
@@ -94,7 +94,7 @@ fn inserts_binding_block_for_tool_with_bounded_arguments_when_block_does_not_exi
         }
 
         agent tooling {
-            tools: [tool.<cursor>]
+            uses: [tool.<cursor>]
         }
     };
 
@@ -120,7 +120,7 @@ fn inserts_plain_tool_name_when_binding_block_already_exists() {
         }
 
         agent tooling {
-            tools: [tool.<cursor> {
+            uses: [tool.<cursor> {
                 bindings {
                     password: secrets.knowledge_base_password
                 }
@@ -171,8 +171,8 @@ fn uses_mcp_lock_for_imported_tool_schema() {
 
         agent tooling {
             model: openai("gpt-4.1-mini")
-            tools: [tool.update_user_name]
-            prompt: "Rename the user"
+            uses: [tool.update_user_name]
+            instruction: "Rename the user"
             output: string
         }
     };
@@ -548,7 +548,7 @@ fn indexes_batch_imported_tools_for_agent_references() {
         }
 
         agent tooling {
-            tools: [tool.<cursor>]
+            uses: [tool.<cursor>]
         }
     });
 
@@ -609,7 +609,7 @@ fn suggests_bounded_arguments_inside_tool_call() {
         }
 
         agent tooling {
-            tools: [tool.knowledge_base_search {
+            uses: [tool.knowledge_base_search {
                 bindings {
                     <cursor>
                 }
