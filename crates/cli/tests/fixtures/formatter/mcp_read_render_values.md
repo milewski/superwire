@@ -1,9 +1,9 @@
 ```wire
 mcp local{endpoint:"https://mcp.example.test/rpc"}
 input{workspace_id:string}
-resource project_readme from mcp.local.resource.project-readme{params{workspace_id:input.workspace_id}}
-prompt system_prompt from mcp.local.prompt.system-prompt
-dynamic{readme:read resource.project_readme{params{section:"setup"}} instructions:render prompt.system_prompt{params{readme:dynamic.readme audience:"maintainers"}}}
+resource project_readme from mcp.local.resource.project_readme{bindings{workspace_id:input.workspace_id}}
+prompt system_prompt from mcp.local.prompt.system_prompt
+dynamic{readme:read resource.project_readme{bindings{section:"setup"}} instructions:render prompt.system_prompt{bindings{readme:dynamic.readme audience:"maintainers"}}}
 output{readme:dynamic.readme instructions:dynamic.instructions}
 ```
 ---
@@ -16,22 +16,22 @@ input {
     workspace_id: string
 }
 
-resource project_readme from mcp.local.resource.project-readme {
+resource project_readme from mcp.local.resource.project_readme {
     bindings {
         workspace_id: input.workspace_id
     }
 }
 
-prompt system_prompt from mcp.local.prompt.system-prompt
+prompt system_prompt from mcp.local.prompt.system_prompt
 
 dynamic {
     readme: read resource.project_readme {
-        params {
+        bindings {
             section: "setup"
         }
     }
     instructions: render prompt.system_prompt {
-        params {
+        bindings {
             readme: dynamic.readme
             audience: "maintainers"
         }

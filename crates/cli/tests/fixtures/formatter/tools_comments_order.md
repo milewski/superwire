@@ -4,7 +4,7 @@ agent assistant_with_tools {
 
     // The agent can decide when to call these tools.
     // Tool binding overrides can use literals, references, and secrets.
-    tools: [
+    uses: [
         // No arguments.
         tool.web_search,
 
@@ -25,7 +25,7 @@ agent assistant_with_tools {
         }
     ]
 
-    prompt: "Answer the question using tools when needed: {{ input.question }}"
+    instruction: "Answer the question using tools when needed: {{ input.question }}"
     output: {
         answer: string
         sources: [string]
@@ -39,7 +39,7 @@ agent assistant_with_tools {
 
     // The agent can decide when to call these tools.
     // Tool binding overrides can use literals, references, and secrets.
-    tools: [
+    uses: [
         // No arguments.
         tool.web_search,
 
@@ -60,7 +60,7 @@ agent assistant_with_tools {
         },
     ]
 
-    prompt: "Answer the question using tools when needed: {{ input.question }}"
+    instruction: "Answer the question using tools when needed: {{ input.question }}"
     output: {
         answer: string
         sources: [string]

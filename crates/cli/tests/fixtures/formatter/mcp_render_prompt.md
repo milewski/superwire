@@ -1,8 +1,8 @@
 ```wire
 mcp local{endpoint:"https://mcp.example.test/rpc"}
 input{audience:string topic:string}
-prompt system_prompt from mcp.local.prompt.system-prompt{bindings{audience:input.audience}}
-dynamic{instructions:render prompt.system_prompt{params{topic:input.topic}}}
+prompt system_prompt from mcp.local.prompt.system_prompt{bindings{audience:input.audience}}
+dynamic{instructions:render prompt.system_prompt{bindings{topic:input.topic}}}
 output{instructions:dynamic.instructions}
 ```
 ---
@@ -16,7 +16,7 @@ input {
     topic: string
 }
 
-prompt system_prompt from mcp.local.prompt.system-prompt {
+prompt system_prompt from mcp.local.prompt.system_prompt {
     bindings {
         audience: input.audience
     }
@@ -24,7 +24,7 @@ prompt system_prompt from mcp.local.prompt.system-prompt {
 
 dynamic {
     instructions: render prompt.system_prompt {
-        params {
+        bindings {
             topic: input.topic
         }
     }

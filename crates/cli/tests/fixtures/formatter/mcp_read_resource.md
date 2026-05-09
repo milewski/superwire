@@ -1,8 +1,8 @@
 ```wire
 mcp local{endpoint:"https://mcp.example.test/rpc"}
 input{workspace_id:string section:string}
-resource project_readme from mcp.local.resource.project-readme{bindings{workspace_id:input.workspace_id}}
-dynamic{readme:read resource.project_readme{params{section:input.section}}}
+resource project_readme from mcp.local.resource.project_readme{bindings{workspace_id:input.workspace_id}}
+dynamic{readme:read resource.project_readme{bindings{section:input.section}}}
 output{readme:dynamic.readme}
 ```
 ---
@@ -16,7 +16,7 @@ input {
     section: string
 }
 
-resource project_readme from mcp.local.resource.project-readme {
+resource project_readme from mcp.local.resource.project_readme {
     bindings {
         workspace_id: input.workspace_id
     }
@@ -24,7 +24,7 @@ resource project_readme from mcp.local.resource.project-readme {
 
 dynamic {
     readme: read resource.project_readme {
-        params {
+        bindings {
             section: input.section
         }
     }

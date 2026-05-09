@@ -1,7 +1,7 @@
 ```wire
 input { topic:string "Main topic" count:number "How many outputs" }
 
-agent writer {prompt:"Write" output:{summary:string "One-line summary" ok:boolean "Status flag"}}
+agent writer {instruction:"Write" output:{summary:string "One-line summary" ok:boolean "Status flag"}}
 
 output { result:agent.writer }
 ```
@@ -13,7 +13,7 @@ input {
 }
 
 agent writer {
-    prompt: "Write"
+    instruction: "Write"
     output: {
         summary: string "One-line summary"
         ok: boolean "Status flag"

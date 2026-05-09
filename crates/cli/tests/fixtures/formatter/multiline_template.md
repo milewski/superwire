@@ -2,12 +2,12 @@
 provider openai {driver:"openai" models:["gpt-4o-mini"]}
 input { topic:string }
 
-agent writer {model:openai("gpt-4o-mini") prompt:"""Write about {{input.topic}}
+agent writer {model:openai("gpt-4o-mini") instruction:"""Write about {{input.topic}}
 Keep it short and clear.""" output:string}
 
 agent writer2 {
     model: openai("gpt-4o-mini")
-    prompt: """
+    instruction: """
     Write about {{ input.topic }}
     Keep it short and clear.
     """
@@ -30,7 +30,7 @@ input {
 agent writer {
     model: openai("gpt-4o-mini")
 
-    prompt: """
+    instruction: """
         Write about {{ input.topic }}
         Keep it short and clear.
     """
@@ -41,7 +41,7 @@ agent writer {
 agent writer2 {
     model: openai("gpt-4o-mini")
 
-    prompt: """
+    instruction: """
         Write about {{ input.topic }}
         Keep it short and clear.
     """

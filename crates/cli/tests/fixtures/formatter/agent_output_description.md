@@ -1,7 +1,7 @@
 ```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
-    prompt: "test"
+    instruction: "test"
     output: string "example"
 }
 ```
@@ -9,7 +9,7 @@ agent greeting {
 ```wire
 agent greeting {
     model: ollama("qwen3.5:8b")
-    prompt: "test"
+    instruction: "test"
     output: string "example"
 }
 ```
