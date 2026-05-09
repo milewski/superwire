@@ -44,7 +44,7 @@ pub struct TypedAgentIr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentPropertyName {
     Model,
-    Prompt,
+    Instruction,
 }
 
 impl AgentPropertyName {
@@ -52,7 +52,7 @@ impl AgentPropertyName {
     fn as_str(self) -> &'static str {
         match self {
             Self::Model => "model",
-            Self::Prompt => "prompt",
+            Self::Instruction => "instruction",
         }
     }
 }
@@ -229,7 +229,7 @@ fn collect_typed_agents(
         let final_output_type = workflow_type_from_dsl(&final_output_type_expression, named_schema_types)?;
 
         let (provider_name, model_expression) = parse_agent_model_binding(agent_declaration)?;
-        required_agent_property_expression(agent_declaration, AgentPropertyName::Prompt)?;
+        required_agent_property_expression(agent_declaration, AgentPropertyName::Instruction)?;
 
         let provider_declaration = workflow.find_provider(&provider_name);
         let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration);
@@ -266,10 +266,10 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
     for agent_property in &agent_declaration.properties {
         match agent_property {
             AgentProperty::Model(expression)
-            | AgentProperty::Prompt(expression)
+            | AgentProperty::Instruction(expression)
             | AgentProperty::Context(expression)
             | AgentProperty::Inference(expression)
-            | AgentProperty::Tools(expression) => {
+            | AgentProperty::Uses(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
             }
             AgentProperty::Dynamic(dynamic_block) => {
@@ -498,16 +498,16 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
     for agent_property in &agent_declaration.properties {
         match agent_property {
             AgentProperty::Model(expression) if property_name == AgentPropertyName::Model => return Some(expression),
-            AgentProperty::Prompt(expression) if property_name == AgentPropertyName::Prompt => return Some(expression),
+            AgentProperty::Instruction(expression) if property_name == AgentPropertyName::Instruction => return Some(expression),
             AgentProperty::Model(_)
-            | AgentProperty::Prompt(_)
+            | AgentProperty::Instruction(_)
             | AgentProperty::Output {
                 output_type_expression: _,
                 description: _,
             }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
+            | AgentProperty::Uses(_)
             | AgentProperty::Dynamic(_)
             | AgentProperty::Unknown { name: _, span: _ } => {}
         }
@@ -551,13 +551,13 @@ mod tests {
 
             agent researcher {
                 model: openai("model-a")
-                prompt: input.topic
+                instruction: input.topic
                 output: string
             }
 
             agent scorer for item in [agent.researcher] {
                 model: openai("model-a")
-                prompt: "score {{ item }}"
+                instruction: "score {{ item }}"
                 output: number
             }
 
@@ -624,7 +624,7 @@ mod tests {
 
             agent base {
                 model: base_provider("model-a")
-                prompt: "base"
+                instruction: "base"
                 output: {
                     endpoint: string
                 }
@@ -632,7 +632,7 @@ mod tests {
 
             agent dependent {
                 model: dynamic_provider("model-a")
-                prompt: "dependent"
+                instruction: "dependent"
                 output: string
             }
 
@@ -661,7 +661,7 @@ mod tests {
 
         let workflow = parse_inline_workflow! {
             agent missing_model {
-                prompt: "hello"
+                instruction: "hello"
                 output: string
             }
 
@@ -679,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn fails_typecheck_when_agent_prompt_property_is_missing() {
+    fn fails_typecheck_when_agent_instruction_property_is_missing() {
         #[derive(Debug, Deserialize, JsonSchema)]
         #[allow(dead_code)]
         struct Output {
@@ -692,13 +692,13 @@ mod tests {
                 models: ["model-a"]
             }
 
-            agent missing_prompt {
+            agent missing_instruction {
                 model: openai("model-a")
                 output: string
             }
 
             output {
-                value: agent.missing_prompt
+                value: agent.missing_instruction
             }
         };
 
@@ -706,7 +706,7 @@ mod tests {
 
         assert!(matches!(
             typecheck_result,
-            Err(WorkflowSemanticError::InvalidAgentProperty { property, .. }) if property == "prompt"
+            Err(WorkflowSemanticError::InvalidAgentProperty { property, .. }) if property == "instruction"
         ));
     }
 }

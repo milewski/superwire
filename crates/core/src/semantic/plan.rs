@@ -234,13 +234,13 @@ mod tests {
 
             agent first {
                 model: openai("model-a")
-                prompt: input.topic
+                instruction: input.topic
                 output: string
             }
 
             agent second {
                 model: openai("model-a")
-                prompt: agent.first
+                instruction: agent.first
                 output: string
             }
 

@@ -293,13 +293,13 @@ mod tests {
 
             agent first {
                 model: openai("model-a")
-                prompt: input.topic
+                instruction: input.topic
                 output: string
             }
 
             agent second {
                 model: openai("model-a")
-                prompt: agent.first
+                instruction: agent.first
                 output: string
             }
 
@@ -385,7 +385,7 @@ mod tests {
     fn validation_stage_rejects_output_reference_without_agent_output_type() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                prompt: "Write a short welcome message."
+                instruction: "Write a short welcome message."
             }
 
             output {
@@ -441,7 +441,7 @@ mod tests {
     fn typecheck_stage_reports_missing_output_block_as_formatted_diagnostic() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                prompt: "Write a short welcome message."
+                instruction: "Write a short welcome message."
                 output: string
             }
         };
@@ -466,7 +466,7 @@ mod tests {
     fn typecheck_stage_wraps_invalid_agent_property_as_formatted_diagnostic() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                prompt: "Write a short welcome message."
+                instruction: "Write a short welcome message."
                 output: string
             }
 
@@ -495,11 +495,11 @@ mod tests {
     fn validation_stage_renders_source_snippet_with_arrow() {
         let workflow_source = workflow_source! {
             agent greeting {
-                prompt: "first"
+                instruction: "first"
             }
 
             agent greeting {
-                prompt: "second"
+                instruction: "second"
             }
         };
 
@@ -524,7 +524,7 @@ mod tests {
     fn parse_stage_renders_source_snippet_with_arrow() {
         let broken_workflow_source = workflow_source! {
             agent greeting {
-                prompt: "hello"
+                instruction: "hello"
             }
             @
         };

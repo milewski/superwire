@@ -1048,7 +1048,7 @@ mod tests {
 
             agent writer {
                 model: openai("gpt-4o")
-                prompt: "Write"
+                instruction: "Write"
                 output: schema.Report
             }
 
@@ -1086,7 +1086,7 @@ mod tests {
 
             agent writer {
                 model: openai("gpt-4o")
-                prompt: input.topic
+                instruction: input.topic
                 output: schema.Report
             }
 
@@ -1132,7 +1132,7 @@ mod tests {
 
             agent writer {
                 model: openai("gpt-4o")
-                prompt: input.topic
+                instruction: input.topic
             }
 
             @
