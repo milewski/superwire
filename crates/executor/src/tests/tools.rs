@@ -39,8 +39,8 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
 
         agent updater {
             model: openai("gpt-4.1-mini")
-            tools: [tool.local_update_user]
-            prompt: "Rename the user"
+            uses: [tool.local_update_user]
+            instruction: "Rename the user"
             output: string
         }
 
@@ -504,7 +504,7 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
 
         agent updater {
             model: openai("gpt-4.1-mini")
-            prompt: "Rename the user"
+            instruction: "Rename the user"
             output: string
         }
 
@@ -703,8 +703,8 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
 
         agent updater {
             model: openai("gpt-4.1-mini")
-            tools: [tool.list_participants]
-            prompt: "List participants"
+            uses: [tool.list_participants]
+            instruction: "List participants"
             output: string
         }
 
@@ -757,8 +757,8 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
 
         agent updater {
             model: openai("gpt-4.1-mini")
-            tools: [tool.local_update_user]
-            prompt: "Rename the user"
+            uses: [tool.local_update_user]
+            instruction: "Rename the user"
             output: string
         }
 
@@ -831,8 +831,8 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
 
         agent project_editor {
             model: openai("gpt-4.1-mini")
-            tools: [tool.edit_project]
-            prompt: "Edit project"
+            uses: [tool.edit_project]
+            instruction: "Edit project"
             output: string
         }
 

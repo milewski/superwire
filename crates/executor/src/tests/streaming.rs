@@ -95,7 +95,7 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
 
         agent summarizer {
             model: openai("model-a")
-            prompt: "Summarize {{ dynamic.data }}"
+            instruction: "Summarize {{ dynamic.data }}"
             output: {
                 summary: string
             }

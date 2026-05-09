@@ -16,7 +16,7 @@ async fn for_loop_over_literal_array() {
 
         agent note for number in [1, 2, 3] {
             model: openai("model-a")
-            prompt: "Write note for {{ number }}"
+            instruction: "Write note for {{ number }}"
             output: {
                 number: number
                 note: string
@@ -74,7 +74,7 @@ async fn for_loop_over_input_array() {
 
         agent processor for item in input.items {
             model: openai("model-a")
-            prompt: "Process {{ item }}"
+            instruction: "Process {{ item }}"
             output: string
         }
 
@@ -113,7 +113,7 @@ async fn for_loop_with_object_destructuring() {
 
         agent summarizer for { id, name } in input.participants {
             model: openai("model-a")
-            prompt: "Summarize {{ id }} {{ name }}"
+            instruction: "Summarize {{ id }} {{ name }}"
             output: string
         }
 
@@ -156,7 +156,7 @@ async fn for_loop_empty_array_produces_empty_output() {
 
         agent processor for item in input.items {
             model: openai("model-a")
-            prompt: "Process {{ item }}"
+            instruction: "Process {{ item }}"
             output: string
         }
 
@@ -188,7 +188,7 @@ async fn for_loop_respects_max_concurrency() {
 
         agent writer for number in [1, 2, 3, 4, 5] {
             model: openai("model-a")
-            prompt: "Write {{ number }}"
+            instruction: "Write {{ number }}"
             output: string
         }
 
@@ -232,13 +232,13 @@ async fn for_loop_can_reference_output_in_later_agent() {
 
         agent scorer for item in [10, 20, 30] {
             model: openai("model-a")
-            prompt: "Score {{ item }}"
+            instruction: "Score {{ item }}"
             output: number
         }
 
         agent aggregator {
             model: openai("model-a")
-            prompt: "Aggregate {{ agent.scorer }}"
+            instruction: "Aggregate {{ agent.scorer }}"
             output: string
         }
 

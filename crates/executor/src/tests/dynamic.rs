@@ -80,7 +80,7 @@ async fn deterministic_tool_call_in_dynamic_block_executes_via_mcp() {
 
         agent summarizer {
             model: openai("model-a")
-            prompt: "Summarize: {{ dynamic.data }}"
+            instruction: "Summarize: {{ dynamic.data }}"
             output: {
                 summary: string
             }
@@ -139,7 +139,7 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
 
         agent processor {
             model: openai("model-a")
-            prompt: "Process {{ dynamic.result }}"
+            instruction: "Process {{ dynamic.result }}"
             output: string
         }
 
@@ -229,7 +229,7 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
                 }
             }
 
-            prompt: "Context: ready"
+            instruction: "Context: ready"
             output: string
         }
 

@@ -15,13 +15,22 @@ async fn batches_mixed_mcp_imports_with_bindings() {
                 model
                     .turn()
                     .expect_prompt("Create a task")
-                    .expect_tools(["create_task"])
+                    .expect_tools(["create_task", "read_all_tasks", "render_create_task_instructions"])
+                    .respond_tool_calls([
+                        call!("render_create_task_instructions", { "audience": "maintainers" }),
+                        call!("read_all_tasks", {}),
+                    ]);
+
+                model
+                    .turn()
+                    .expect_prompt("Create a task")
+                    .expect_tools(["create_task", "read_all_tasks", "render_create_task_instructions"])
                     .respond_tool_calls([call!("create_task", { "title": "first" })]);
 
                 model
                     .turn()
                     .expect_prompt("Create a task")
-                    .expect_tools(["create_task"])
+                    .expect_tools(["create_task", "read_all_tasks", "render_create_task_instructions"])
                     .respond_json(json!("created"));
             });
         })
