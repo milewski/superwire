@@ -889,10 +889,10 @@ impl SemanticIndex {
                 description: _,
             } => Some(output_type_expression),
             AgentProperty::Model(_)
-            | AgentProperty::Prompt(_)
+            | AgentProperty::Instruction(_)
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
+            | AgentProperty::Uses(_)
             | AgentProperty::Dynamic(_)
             | AgentProperty::Unknown { name: _, span: _ } => None,
         });

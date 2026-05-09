@@ -276,11 +276,11 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
         match self {
             Self::Dynamic => "Dynamic block",
             Self::Model => "Model binding (required)",
-            Self::Prompt => "Prompt expression (required)",
+            Self::Instruction => "Instruction expression (required)",
             Self::Output => "Output type",
             Self::Context => "Context expression",
             Self::Inference => "Inference settings object",
-            Self::Tools => "Tools expression",
+            Self::Uses => "Usable capabilities expression",
             Self::Unknown => "Unknown property",
         }
     }
@@ -289,11 +289,11 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
         match self {
             Self::Dynamic => "Declares one or more dynamic values available as `dynamic.<field>`.",
             Self::Model => "Selects provider and model call used by this agent.",
-            Self::Prompt => "Defines the prompt sent to the provider.",
+            Self::Instruction => "Defines the instruction sent to the provider.",
             Self::Output => "Declares the expected structured output type.",
             Self::Context => "Prepends evaluated context to the rendered prompt.",
             Self::Inference => "Configures sampling and provider retry behavior.",
-            Self::Tools => "Declares tool references available to this agent.",
+            Self::Uses => "Declares tool, MCP prompt, and MCP resource references available to this agent.",
             Self::Unknown => "Unsupported agent property.",
         }
     }

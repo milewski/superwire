@@ -933,7 +933,7 @@ impl DocumentState {
             AgentExpressionPropertyName::Model => {
                 Some(semantic_index.provider_call_suggestions(&agent_property_value_completion_context.value_prefix))
             }
-            AgentExpressionPropertyName::Prompt => {
+            AgentExpressionPropertyName::Instruction => {
                 if inside_interpolation_expression || ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
                     return None;
                 }
@@ -955,7 +955,7 @@ impl DocumentState {
 
                 Some(semantic_index.inference_object_suggestions(&agent_property_value_completion_context.value_prefix))
             }
-            AgentExpressionPropertyName::Tools => None,
+            AgentExpressionPropertyName::Uses => None,
         }
     }
 
@@ -1172,7 +1172,7 @@ impl DocumentState {
         let is_prompt_property_reference = line_has_property_separator
             && !inside_interpolation_expression
             && AgentPropertyValueCompletionContext::from_line_prefix(line_prefix)
-                .is_some_and(|completion_context| completion_context.property_name == AgentExpressionPropertyName::Prompt);
+                .is_some_and(|completion_context| completion_context.property_name == AgentExpressionPropertyName::Instruction);
 
         if !is_prompt_property_reference {
             return None;
@@ -1317,7 +1317,7 @@ impl DocumentState {
 
     fn should_suppress_prompt_string_literal_suggestions(line_prefix: &str) -> bool {
         if let Some(agent_property_value_completion_context) = AgentPropertyValueCompletionContext::from_line_prefix(line_prefix) {
-            return agent_property_value_completion_context.property_name == AgentExpressionPropertyName::Prompt
+            return agent_property_value_completion_context.property_name == AgentExpressionPropertyName::Instruction
                 && agent_property_value_completion_context.inside_string_literal;
         }
 
@@ -1327,7 +1327,9 @@ impl DocumentState {
             return false;
         };
 
-        line_before_value.trim_end().ends_with(AgentExpressionPropertyName::Prompt.as_str())
+        line_before_value
+            .trim_end()
+            .ends_with(AgentExpressionPropertyName::Instruction.as_str())
             && super::completion_context::ValueCompletionContext::from_value_prefix(value_prefix).inside_string_literal
     }
 
