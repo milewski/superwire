@@ -357,11 +357,11 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|headers|api_key|models|model|tools|context|output|prompt|inference|description)\\b(?=\\s*:)",
+          "match": "\\b(driver|endpoint|headers|api_key|models|model|instruction|uses|context|output|inference|description)\\b(?=\\s*:)",
           "name": "variable.parameter.wire"
         },
         {
-          "match": "(?<![.-])\\b(provider|schema|tool|resource|prompt|agent|dynamic|input|bindings|params|output|secrets|for|in|from|call|read|render|mcp)\\b(?![.-])",
+          "match": "(?<![.-])\\b(provider|schema|tool|resource|prompt|agent|dynamic|input|bindings|output|secrets|for|in|from|call|read|render|mcp)\\b(?![.-])",
           "name": "keyword.control.wire"
         },
         {

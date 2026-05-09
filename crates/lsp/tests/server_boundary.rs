@@ -301,7 +301,7 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
         }
 
         agent helper {
-            prompt: "Name: ${input.first}"
+            instruction: "Name: ${input.first}"
         }
     };
 
@@ -320,7 +320,7 @@ async fn routes_lifecycle_completion_and_hover_requests_over_stdio() {
         }
 
         agent helper {
-            prompt: "Name: ${input.first}"
+            instruction: "Name: ${input.first}"
         }
     };
 
@@ -441,7 +441,7 @@ async fn supports_definition_symbols_folding_formatting_and_code_lens_requests()
 
         agent writer {
         model: openai("gpt-4o")
-        prompt: "Write report"
+        instruction: "Write report"
         output: schema.Report
         }
 
