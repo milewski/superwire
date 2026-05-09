@@ -9,6 +9,7 @@ declaration = _{
     | mcp_tool_batch_import_declaration
     | mcp_resource_batch_import_declaration
     | mcp_prompt_batch_import_declaration
+    | mcp_batch_import_declaration
     | tool_import_declaration
     | resource_import_declaration
     | prompt_import_declaration
@@ -46,6 +47,11 @@ mcp_prompt_batch_import_block = { "{" ~ mcp_prompt_batch_import_property* ~ "}" 
 mcp_prompt_batch_import_property = _{ named_object_property | mcp_prompt_batch_import_item }
 mcp_prompt_batch_import_item = { "prompt" ~ mcp_import_name ~ ("as" ~ identifier)? ~ mcp_import_block? }
 
+mcp_batch_import_declaration = { "from" ~ mcp_batch_import_source ~ mcp_batch_import_block }
+mcp_batch_import_source = { "mcp" ~ "." ~ identifier }
+mcp_batch_import_block = { "{" ~ mcp_batch_import_property* ~ "}" }
+mcp_batch_import_property = _{ named_object_property | named_tool_block_property | named_unsigned_integer_property | mcp_resource_batch_import_item | mcp_prompt_batch_import_item | mcp_tool_batch_import_item }
+
 tool_import_block = { "{" ~ tool_import_property* ~ "}" }
 tool_import_property = _{ named_tool_block_property | named_object_property | named_unsigned_integer_property }
 
@@ -59,8 +65,7 @@ tool_block = { "{" ~ tool_property* ~ "}" }
 tool_property = _{ named_plain_string_property | named_unsigned_integer_property | named_tool_block_property | tool_input_field }
 named_tool_block_property = { identifier ~ tool_bindings_block }
 tool_input_field = { typed_field }
-mcp_tool_name = { mcp_tool_name_segment ~ ("-" ~ mcp_tool_name_segment)* }
-mcp_tool_name_segment = @{ (ASCII_ALPHA | ASCII_DIGIT | "_")+ }
+mcp_tool_name = @{ (ASCII_ALPHA | ASCII_DIGIT | "_")+ ~ ("-" ~ (ASCII_ALPHA | ASCII_DIGIT | "_")+)* }
 
 dynamic_declaration = { "dynamic" ~ object_expression }
 

@@ -147,6 +147,10 @@ impl Workflow {
             Declaration::McpResource(resource_import_declaration) if resource_import_declaration.name == resource_name => {
                 Some(resource_import_declaration)
             }
+            Declaration::McpBatch(batch_import_declaration) => batch_import_declaration
+                .resources
+                .iter()
+                .find(|resource_import_declaration| resource_import_declaration.name == resource_name),
             Declaration::McpResourceBatch(resource_batch_import_declaration) => resource_batch_import_declaration
                 .resources
                 .iter()
@@ -161,6 +165,10 @@ impl Workflow {
             Declaration::McpPrompt(prompt_import_declaration) if prompt_import_declaration.name == prompt_name => {
                 Some(prompt_import_declaration)
             }
+            Declaration::McpBatch(batch_import_declaration) => batch_import_declaration
+                .prompts
+                .iter()
+                .find(|prompt_import_declaration| prompt_import_declaration.name == prompt_name),
             Declaration::McpPromptBatch(prompt_batch_import_declaration) => prompt_batch_import_declaration
                 .prompts
                 .iter()
@@ -172,6 +180,7 @@ impl Workflow {
     pub fn resource_imports(&self) -> impl Iterator<Item = &McpResourceImportDeclaration> {
         self.declarations.iter().flat_map(|declaration| match declaration {
             Declaration::McpResource(resource_import_declaration) => std::slice::from_ref(resource_import_declaration).iter(),
+            Declaration::McpBatch(batch_import_declaration) => batch_import_declaration.resources.iter(),
             Declaration::McpResourceBatch(resource_batch_import_declaration) => resource_batch_import_declaration.resources.iter(),
             _ => [].iter(),
         })
@@ -180,6 +189,7 @@ impl Workflow {
     pub fn prompt_imports(&self) -> impl Iterator<Item = &McpPromptImportDeclaration> {
         self.declarations.iter().flat_map(|declaration| match declaration {
             Declaration::McpPrompt(prompt_import_declaration) => std::slice::from_ref(prompt_import_declaration).iter(),
+            Declaration::McpBatch(batch_import_declaration) => batch_import_declaration.prompts.iter(),
             Declaration::McpPromptBatch(prompt_batch_import_declaration) => prompt_batch_import_declaration.prompts.iter(),
             _ => [].iter(),
         })
@@ -210,6 +220,7 @@ impl Workflow {
             | Declaration::Input(_)
             | Declaration::Schema(_)
             | Declaration::Tool(_)
+            | Declaration::McpBatch(_)
             | Declaration::McpToolBatch(_)
             | Declaration::McpResourceBatch(_)
             | Declaration::McpPromptBatch(_)
@@ -229,6 +240,7 @@ pub enum Declaration {
     Input(InputDeclaration),
     Schema(SchemaDeclaration),
     Tool(ToolDeclaration),
+    McpBatch(McpBatchImportDeclaration),
     McpToolBatch(McpToolBatchImportDeclaration),
     McpResourceBatch(McpResourceBatchImportDeclaration),
     McpPromptBatch(McpPromptBatchImportDeclaration),
@@ -244,6 +256,7 @@ impl Declaration {
     pub fn tool_declarations(&self) -> ToolDeclarationIter<'_> {
         match self {
             Self::Tool(tool_declaration) => ToolDeclarationIter::Single(Some(tool_declaration)),
+            Self::McpBatch(batch_import_declaration) => ToolDeclarationIter::Batch(batch_import_declaration.tools.iter()),
             Self::McpToolBatch(tool_batch_import_declaration) => ToolDeclarationIter::Batch(tool_batch_import_declaration.tools.iter()),
             Self::Provider(_)
             | Self::McpServer(_)
@@ -444,6 +457,22 @@ pub struct ToolDeclaration {
     pub binding_fields: Vec<TypedField>,
     pub fixed_binding_fields: Vec<ObjectField>,
     pub output_fields: Vec<TypedField>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpBatchImportDeclaration {
+    pub server_name: String,
+    pub fixed_binding_fields: Vec<ObjectField>,
+    pub input_fields: Vec<TypedField>,
+    pub max_calls: Option<u64>,
+    pub output_fields: Vec<TypedField>,
+    pub tool_items: Vec<McpToolBatchImportItem>,
+    pub resource_items: Vec<McpResourceBatchImportItem>,
+    pub prompt_items: Vec<McpPromptBatchImportItem>,
+    pub tools: Vec<ToolDeclaration>,
+    pub resources: Vec<McpResourceImportDeclaration>,
+    pub prompts: Vec<McpPromptImportDeclaration>,
     pub span: SourceSpan,
 }
 
@@ -808,13 +837,12 @@ impl ToolPropertyName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum McpImportPropertyName {
     Bindings,
-    Params,
 }
 
 impl McpImportPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 2] {
-        [Self::Bindings, Self::Params]
+    pub fn all() -> [Self; 1] {
+        [Self::Bindings]
     }
 
     #[must_use]
@@ -826,7 +854,6 @@ impl McpImportPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Bindings => "bindings",
-            Self::Params => "params",
         }
     }
 }

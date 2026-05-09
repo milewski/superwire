@@ -197,6 +197,11 @@ impl McpLock {
                         self.apply_to_tool_declaration(tool_declaration);
                     }
                 }
+                Declaration::McpBatch(batch_import_declaration) => {
+                    for tool_declaration in &mut batch_import_declaration.tools {
+                        self.apply_to_tool_declaration(tool_declaration);
+                    }
+                }
                 Declaration::Provider(_)
                 | Declaration::McpServer(_)
                 | Declaration::Secrets(_)

@@ -535,7 +535,7 @@ mod tests {
             }
 
             resource project_readme from mcp.local.resource.project_readme {
-                params {
+                bindings {
                     workspace_id: input.workspace_id
                 }
             }
@@ -670,13 +670,13 @@ mod tests {
     fn parses_mcp_resource_and_prompt_batch_imports_with_shared_parameters() {
         let workflow = parse_inline_workflow! {
             from mcp.local.resource {
-                params {
+                bindings {
                     workspace_id: input.workspace_id
                 }
 
                 resource task_type_resource
                 resource project_readme {
-                    params {
+                    bindings {
                         section: "setup"
                     }
                 }
@@ -707,7 +707,7 @@ mod tests {
 
         let project_readme = workflow
             .find_resource_import("project_readme")
-            .expect("resource with item params should parse");
+            .expect("resource with item bindings should parse");
         assert_eq!(project_readme.parameters.len(), 2);
 
         let task_summary_prompt = workflow
@@ -723,6 +723,38 @@ mod tests {
     }
 
     #[test]
+    fn parses_mixed_mcp_batch_imports_with_shared_bindings() {
+        let workflow = parse_inline_workflow! {
+            from mcp.local {
+                bindings {
+                    project_id: input.project_id
+                }
+
+                resource all_tasks
+                prompt create_task_instructions
+                tool create_task
+            }
+        };
+
+        assert_eq!(workflow.tool_declarations().count(), 1);
+        assert_eq!(workflow.resource_imports().count(), 1);
+        assert_eq!(workflow.prompt_imports().count(), 1);
+
+        let tool_declaration = workflow.find_tool("create_task").expect("mixed batch tool should parse");
+        assert_eq!(tool_declaration.fixed_binding_fields.len(), 1);
+
+        let resource_import = workflow
+            .find_resource_import("all_tasks")
+            .expect("mixed batch resource should parse");
+        assert_eq!(resource_import.parameters.len(), 1);
+
+        let prompt_import = workflow
+            .find_prompt_import("create_task_instructions")
+            .expect("mixed batch prompt should parse");
+        assert_eq!(prompt_import.parameters.len(), 1);
+    }
+
+    #[test]
     fn parses_resource_read_and_prompt_render_expressions() {
         let workflow = parse_inline_workflow! {
             resource project_readme from mcp.local.resource.project_readme
@@ -730,7 +762,7 @@ mod tests {
 
             dynamic {
                 readme: read resource.project_readme {
-                    params {
+                    bindings {
                         section: "setup"
                     }
                 }
