@@ -1597,10 +1597,10 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                             }
                         }
                         AgentProperty::Model(expression)
-                        | AgentProperty::Prompt(expression)
+                        | AgentProperty::Instruction(expression)
                         | AgentProperty::Context(expression)
                         | AgentProperty::Inference(expression)
-                        | AgentProperty::Tools(expression) => {
+                        | AgentProperty::Uses(expression) => {
                             report_duplicate_expression_object_fields(
                                 expression,
                                 agent_context.clone(),
@@ -2284,17 +2284,19 @@ fn validate_model_expression(
 
 fn validate_agent_tool_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {
     let mut reported_unknown_tools = HashSet::<(String, String)>::new();
+    let mut reported_unknown_prompts = HashSet::<(String, String)>::new();
+    let mut reported_unknown_resources = HashSet::<(String, String)>::new();
 
     for declaration in workflow.declarations() {
         let Declaration::Agent(agent_declaration) = declaration else {
             continue;
         };
 
-        let Some(tools_expression) = agent_declaration.expression_property(crate::dsl::AgentExpressionPropertyName::Tools) else {
+        let Some(uses_expression) = agent_declaration.expression_property(crate::dsl::AgentExpressionPropertyName::Uses) else {
             continue;
         };
 
-        for tool_name in tools_expression.referenced_tool_names() {
+        for tool_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Tool) {
             if validation_index.tool_names.contains(&tool_name) {
                 continue;
             }
@@ -2313,33 +2315,72 @@ fn validate_agent_tool_references(workflow: &Workflow, validation_index: &Valida
                 Some(agent_declaration.span),
             );
         }
+
+        for prompt_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Prompt) {
+            if validation_index.prompt_names.contains(&prompt_name) {
+                continue;
+            }
+
+            let issue_key = (agent_declaration.name.clone(), prompt_name.clone());
+
+            if reported_unknown_prompts.insert(issue_key.clone()) {
+                validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownPromptReference {
+                        prompt_name: issue_key.1,
+                        context: ValidationContext::Agent(issue_key.0),
+                    },
+                    Some(agent_declaration.span),
+                );
+            }
+        }
+
+        for resource_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Resource) {
+            if validation_index.resource_names.contains(&resource_name) {
+                continue;
+            }
+
+            let issue_key = (agent_declaration.name.clone(), resource_name.clone());
+
+            if reported_unknown_resources.insert(issue_key.clone()) {
+                validation_report.push_issue_with_span(
+                    ValidationIssue::UnknownResourceReference {
+                        resource_name: issue_key.1,
+                        context: ValidationContext::Agent(issue_key.0),
+                    },
+                    Some(agent_declaration.span),
+                );
+            }
+        }
     }
 }
 
 trait ToolReferenceCollector {
-    fn referenced_tool_names(&self) -> Vec<String>;
+    fn referenced_names_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Vec<String>;
 }
 
 impl ToolReferenceCollector for Expression {
-    fn referenced_tool_names(&self) -> Vec<String> {
+    fn referenced_names_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Vec<String> {
         let Expression::ArrayLiteral(tool_expressions) = self else {
             return Vec::new();
         };
 
-        tool_expressions.iter().filter_map(Expression::direct_tool_name).collect()
+        tool_expressions
+            .iter()
+            .filter_map(|expression| expression.direct_name_for_keyword(reference_keyword))
+            .collect()
     }
 }
 
 trait DirectToolName {
-    fn direct_tool_name(&self) -> Option<String>;
+    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String>;
 }
 
 impl DirectToolName for Expression {
-    fn direct_tool_name(&self) -> Option<String> {
+    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
         match self {
-            Self::Reference(reference) => reference.direct_tool_name(),
-            Self::FunctionCall(function_call) => function_call.direct_tool_name(),
-            Self::ToolCall(tool_call) => tool_call.callee.direct_tool_name(),
+            Self::Reference(reference) => reference.direct_name_for_keyword(reference_keyword),
+            Self::FunctionCall(function_call) => function_call.direct_name_for_keyword(reference_keyword),
+            Self::ToolCall(tool_call) => tool_call.callee.direct_name_for_keyword(reference_keyword),
             Self::McpCall(_) => None,
             Self::StringLiteral(_)
             | Self::StringTemplate(_)
@@ -2353,14 +2394,14 @@ impl DirectToolName for Expression {
 }
 
 impl DirectToolName for FunctionCall {
-    fn direct_tool_name(&self) -> Option<String> {
-        self.callee.direct_tool_name()
+    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        self.callee.direct_name_for_keyword(reference_keyword)
     }
 }
 
 impl DirectToolName for Reference {
-    fn direct_tool_name(&self) -> Option<String> {
-        if self.root_keyword() != Some(ReferenceKeyword::Tool) || self.accesses.len() != 1 || self.accesses[0].optional {
+    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        if self.root_keyword() != Some(reference_keyword) || self.accesses.len() != 1 || self.accesses[0].optional {
             return None;
         }
 
@@ -2489,7 +2530,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
 
                 for agent_property in &agent_declaration.properties {
                     match agent_property {
-                        AgentProperty::Prompt(model_expression) | AgentProperty::Context(model_expression) => {
+                        AgentProperty::Instruction(model_expression) | AgentProperty::Context(model_expression) => {
                             keyword_reference_validation_state.validate_expression(
                                 model_expression,
                                 &agent_dynamic_field_types,
@@ -2515,16 +2556,16 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                 SecretReferencePolicy::Allow,
                             );
                         }
-                        AgentProperty::Tools(tools_expression) => {
+                        AgentProperty::Uses(uses_expression) => {
                             keyword_reference_validation_state.validate_expression(
-                                tools_expression,
+                                uses_expression,
                                 &agent_dynamic_field_types,
                                 agent_context.clone(),
                                 SecretReferencePolicy::Allow,
                             );
                             keyword_reference_validation_state.validate_agent_tool_bindings(
                                 agent_declaration,
-                                tools_expression,
+                                uses_expression,
                                 &agent_dynamic_field_types,
                             );
                         }
@@ -2843,7 +2884,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         };
 
         for tool_expression in tool_expressions {
-            let Some(tool_name) = tool_expression.direct_tool_name() else {
+            let Some(tool_name) = tool_expression.direct_name_for_keyword(ReferenceKeyword::Tool) else {
                 continue;
             };
 
@@ -3820,10 +3861,10 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                     }
                 }
                 AgentProperty::Model(model_expression)
-                | AgentProperty::Prompt(model_expression)
+                | AgentProperty::Instruction(model_expression)
                 | AgentProperty::Context(model_expression)
                 | AgentProperty::Inference(model_expression)
-                | AgentProperty::Tools(model_expression) => {
+                | AgentProperty::Uses(model_expression) => {
                     collect_agent_dependencies_from_expression(model_expression, &mut referenced_agents);
                 }
                 AgentProperty::Output {
@@ -3986,7 +4027,7 @@ mod tests {
             }
 
             agent researcher {
-                prompt: input.title
+                instruction: input.title
                 output: string
             }
 
@@ -4038,7 +4079,7 @@ mod tests {
     fn reports_unknown_tool_reference() {
         let workflow = parse_inline_workflow! {
             agent researcher {
-                tools: [tool.web_search]
+                uses: [tool.web_search]
             }
         };
 
@@ -4057,7 +4098,7 @@ mod tests {
             }
 
             agent researcher {
-                tools: [tool.web_search]
+                uses: [tool.web_search]
             }
         };
 
@@ -4157,7 +4198,7 @@ mod tests {
             }
 
             agent participant_answer_analyzer {
-                tools: [tool.fetch_participant_answer]
+                uses: [tool.fetch_participant_answer]
             }
         };
 
@@ -4190,7 +4231,7 @@ mod tests {
             }
 
             agent participant_answer_analyzer {
-                tools: [tool.fetch_participant_answer]
+                uses: [tool.fetch_participant_answer]
             }
         };
 
@@ -4219,7 +4260,7 @@ mod tests {
             }
 
             agent project_creator {
-                tools: [tool.create_task_group_for_project]
+                uses: [tool.create_task_group_for_project]
                 output: {
                     project_id: number
                 }
@@ -4259,7 +4300,7 @@ mod tests {
             }
 
             agent participant_answer_analyzer {
-                tools: [
+                uses: [
                     tool.fetch_participant_answer {
                         bindings {
                             project_id: input.project_id
@@ -4296,7 +4337,7 @@ mod tests {
             }
 
             agent participant_answer_analyzer {
-                tools: [
+                uses: [
                     tool.fetch_participant_answer {
                         bindings {
                             project_id: input.project_id
@@ -4383,8 +4424,8 @@ mod tests {
 
             agent greeting {
                 model: ollama("qwen3.5:8b")
-                prompt: "hello"
-                prompt: "welcome"
+                instruction: "hello"
+                instruction: "welcome"
                 inference: {
                     temperature: 0.2
                     temperature: 0.4
@@ -4412,7 +4453,7 @@ mod tests {
         assert_workflow_issues_contain!(
             workflow,
             ValidationIssue::DuplicateProperty { property_name, context }
-                if property_name == "prompt" && *context == ValidationContext::Agent("greeting".to_string()),
+                if property_name == "instruction" && *context == ValidationContext::Agent("greeting".to_string()),
             ValidationIssue::DuplicateProperty { property_name, context }
                 if property_name == "models" && *context == ValidationContext::Provider("ollama".to_string()),
             ValidationIssue::DuplicateProperty { property_name, context }
@@ -4468,7 +4509,7 @@ mod tests {
 
             agent researcher {
                 model: openai("gpt-4.1-mini")
-                prompt: "Analyze this"
+                instruction: "Analyze this"
                 retries: 3
             }
         };
@@ -4497,13 +4538,13 @@ mod tests {
     fn unknown_agent_property_diagnostic_suggests_closest_property_name() {
         let issue = ValidationIssue::UnknownAgentProperty {
             agent_name: "writer".to_string(),
-            property_name: "prom_t".to_string(),
+            property_name: "instrction".to_string(),
         };
 
         let diagnostic = issue.diagnostic(None);
         let help_message = diagnostic.help.expect("unknown property diagnostics should include help");
 
-        assert!(help_message.contains("Did you mean `prompt`?"));
+        assert!(help_message.contains("Did you mean `instruction`?"));
         assert!(help_message.contains("Supported properties:"));
     }
 
@@ -4666,7 +4707,7 @@ mod tests {
             }
 
             agent researcher {
-                prompt: "Use token {{ secrets.api_key }}"
+                instruction: "Use token {{ secrets.api_key }}"
             }
         };
 
@@ -4699,7 +4740,7 @@ mod tests {
     fn reports_missing_input_declaration_for_input_reference() {
         let workflow = parse_inline_workflow! {
             agent researcher {
-                prompt: input.topic
+                instruction: input.topic
             }
         };
 
@@ -4718,7 +4759,7 @@ mod tests {
             }
 
             agent researcher {
-                prompt: input.topic
+                instruction: input.topic
             }
         };
 
@@ -4731,7 +4772,7 @@ mod tests {
 
     #[test]
     fn reference_diagnostics_include_reference_span() {
-        let workflow_source = "input {\n    title: string\n}\n\nagent researcher {\n    prompt: input.topic\n}\n";
+        let workflow_source = "input {\n    title: string\n}\n\nagent researcher {\n    instruction: input.topic\n}\n";
         let workflow = parse_workflow(workflow_source).expect("workflow should parse");
         let validation_report = validate_workflow(&workflow);
 
@@ -4744,7 +4785,7 @@ mod tests {
             .expect("unknown input field diagnostics should include span");
 
         assert_eq!(unknown_input_field_span.start.line, 6);
-        assert_eq!(unknown_input_field_span.start.column, 13);
+        assert_eq!(unknown_input_field_span.start.column, 18);
     }
 
     #[test]
@@ -4757,7 +4798,7 @@ mod tests {
             }
 
             agent researcher {
-                prompt: input.profile.age
+                instruction: input.profile.age
             }
         };
 
@@ -4777,7 +4818,7 @@ mod tests {
     fn reports_missing_secrets_declaration_for_secrets_reference() {
         let workflow = parse_inline_workflow! {
             agent researcher {
-                prompt: secrets.api_key
+                instruction: secrets.api_key
             }
         };
 
@@ -4796,7 +4837,7 @@ mod tests {
             }
 
             agent researcher {
-                prompt: secrets.api_key
+                instruction: secrets.api_key
             }
         };
 
@@ -4817,7 +4858,7 @@ mod tests {
             }
 
             agent researcher {
-                prompt: secrets.credentials.key
+                instruction: secrets.credentials.key
             }
         };
 
@@ -4837,11 +4878,11 @@ mod tests {
     fn reports_invalid_bare_keyword_root_references() {
         let workflow = parse_inline_workflow! {
             agent researcher {
-                prompt: input
+                instruction: input
             }
 
             agent tooling {
-                tools: [tool]
+                uses: [tool]
             }
 
             output {
@@ -4986,11 +5027,11 @@ mod tests {
     fn reports_missing_agent_output_type_for_nested_agent_field_reference() {
         let workflow = parse_inline_workflow! {
             agent producer {
-                prompt: "produce"
+                instruction: "produce"
             }
 
             agent consumer {
-                prompt: agent.producer.summary
+                instruction: agent.producer.summary
             }
         };
 
@@ -5007,7 +5048,7 @@ mod tests {
     fn reports_missing_agent_output_type_for_output_agent_reference() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                prompt: "Write a short welcome message."
+                instruction: "Write a short welcome message."
             }
 
             output {
@@ -5253,11 +5294,11 @@ mod tests {
     fn reports_agent_dependency_cycles() {
         let workflow = parse_inline_workflow! {
             agent alpha {
-                prompt: agent.beta
+                instruction: agent.beta
             }
 
             agent beta {
-                prompt: agent.alpha
+                instruction: agent.alpha
             }
         };
 
@@ -5274,11 +5315,11 @@ mod tests {
     fn reports_agent_dependency_cycles_from_interpolated_prompt_bindings() {
         let workflow = parse_inline_workflow! {
             agent alpha {
-                prompt: "Something {{ agent.beta }}"
+                instruction: "Something {{ agent.beta }}"
             }
 
             agent beta {
-                prompt: "Something {{ agent.alpha }}"
+                instruction: "Something {{ agent.alpha }}"
             }
         };
 
@@ -5314,7 +5355,7 @@ mod tests {
     fn reports_missing_dynamic_declaration_for_dynamic_reference() {
         let workflow = parse_inline_workflow! {
             agent researcher {
-                prompt: dynamic.topic
+                instruction: dynamic.topic
                 output: string
             }
         };

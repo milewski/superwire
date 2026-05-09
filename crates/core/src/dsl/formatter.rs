@@ -909,7 +909,7 @@ impl AgentProperty {
         match self {
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
-            Self::Prompt(expression) => formatter.push_agent_property_expression(AgentPropertyName::Prompt.as_str(), expression),
+            Self::Instruction(expression) => formatter.push_agent_property_expression(AgentPropertyName::Instruction.as_str(), expression),
             Self::Output {
                 output_type_expression,
                 description,
@@ -920,20 +920,20 @@ impl AgentProperty {
             ),
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
-            Self::Tools(expression) => self.push_agent_tools_property(formatter, expression),
+            Self::Uses(expression) => self.push_agent_binding_list_property(formatter, AgentPropertyName::Uses, expression),
             Self::Unknown { name: _, span: _ } => {}
         }
     }
 
-    fn push_agent_tools_property(&self, formatter: &mut DslFormatter, expression: &Expression) {
+    fn push_agent_binding_list_property(&self, formatter: &mut DslFormatter, property_name: AgentPropertyName, expression: &Expression) {
         let Expression::ArrayLiteral(tool_bindings) = expression else {
-            formatter.push_agent_property_expression(AgentPropertyName::Tools.as_str(), expression);
+            formatter.push_agent_property_expression(property_name.as_str(), expression);
 
             return;
         };
 
         formatter.push_indent();
-        formatter.output.push_str(AgentPropertyName::Tools.as_str());
+        formatter.output.push_str(property_name.as_str());
         formatter.output.push_str(": ");
 
         if tool_bindings.is_empty() {
@@ -2495,9 +2495,9 @@ mod tests {
 
     #[test]
     fn formatter_renders_object_destructuring_for_loop_pattern() {
-        let source_text = "agent analyzer for {id,name,} in agent.alpha.participants {prompt:\"hello\" output:string}\n";
+        let source_text = "agent analyzer for {id,name,} in agent.alpha.participants {instruction:\"hello\" output:string}\n";
         let expected_output =
-            "agent analyzer for { id, name } in agent.alpha.participants {\n    prompt: \"hello\"\n    output: string\n}\n";
+            "agent analyzer for { id, name } in agent.alpha.participants {\n    instruction: \"hello\"\n    output: string\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("workflow should format successfully");
 
