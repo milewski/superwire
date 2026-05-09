@@ -573,19 +573,26 @@ impl DocumentState {
         let workflow = parse_workflow(&self.text).ok()?;
 
         workflow.declarations().iter().find_map(|declaration| {
-            let superwire_core::dsl::Declaration::McpToolBatch(mcp_tool_batch) = declaration else {
-                return None;
+            let (server_name, span, tool_names) = match declaration {
+                superwire_core::dsl::Declaration::McpToolBatch(mcp_tool_batch) => (
+                    mcp_tool_batch.server_name.clone(),
+                    mcp_tool_batch.span,
+                    mcp_tool_batch.items.iter().map(|item| item.source_name.clone()).collect(),
+                ),
+                superwire_core::dsl::Declaration::McpBatch(mcp_batch) => (
+                    mcp_batch.server_name.clone(),
+                    mcp_batch.span,
+                    mcp_batch.tool_items.iter().map(|item| item.source_name.clone()).collect(),
+                ),
+                _ => return None,
             };
-            let span_range = mcp_tool_batch.span.to_byte_range(&self.text)?;
+            let span_range = span.to_byte_range(&self.text)?;
 
             if !span_range.contains(&cursor_offset) {
                 return None;
             }
 
-            Some(McpToolSchemaSource::McpToolBatch {
-                server_name: mcp_tool_batch.server_name.clone(),
-                tool_names: mcp_tool_batch.items.iter().map(|item| item.source_name.clone()).collect(),
-            })
+            Some(McpToolSchemaSource::McpToolBatch { server_name, tool_names })
         })
     }
 
@@ -629,8 +636,10 @@ impl DocumentState {
 
         let server_name = import_segments.next()?.to_string();
 
-        if import_segments.next()? != DeclarationKeyword::Tool.as_str() || import_segments.next().is_some() {
-            return None;
+        match import_segments.next() {
+            Some(segment) if segment == DeclarationKeyword::Tool.as_str() && import_segments.next().is_none() => {}
+            None => {}
+            _ => return None,
         }
 
         Some(McpToolBatchItemCompletionContext {

@@ -396,7 +396,6 @@ pub fn mcp_tool_batch_import_scope_suggestions(line_prefix: &str) -> Vec<Complet
         ToolPropertyName::MaxCalls.as_str(),
         ToolPropertyName::Output.as_str(),
         DeclarationKeyword::Tool.as_str(),
-        "params",
         DeclarationKeyword::Resource.as_str(),
         DeclarationKeyword::Prompt.as_str(),
     ]

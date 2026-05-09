@@ -67,6 +67,7 @@ impl DocumentState {
         diagnostics
     }
 
+    #[allow(clippy::too_many_lines)]
     fn mcp_schema_diagnostics(&self) -> Vec<DocumentDiagnostic> {
         let Some(mcp_lock) = self.semantic_snapshot.semantic_index.mcp_lock.as_ref() else {
             return Vec::new();
@@ -130,6 +131,48 @@ impl DocumentState {
                     diagnostics.extend(self.batch_binding_override_diagnostics(&tool_locks, &mcp_tool_batch.fixed_binding_fields));
 
                     for item in &mcp_tool_batch.items {
+                        let Some((_, mcp_tool_lock)) = server_lock.find_tool_with_name(&item.source_name) else {
+                            continue;
+                        };
+
+                        diagnostics.extend(self.tool_schema_override_diagnostics(
+                            &item.local_name,
+                            mcp_tool_lock,
+                            &item.input_fields,
+                            ToolPropertyName::Input,
+                        ));
+                        diagnostics.extend(self.binding_override_diagnostics(&item.local_name, mcp_tool_lock, &item.fixed_binding_fields));
+                        diagnostics.extend(self.tool_schema_override_diagnostics(
+                            &item.local_name,
+                            mcp_tool_lock,
+                            &item.output_fields,
+                            ToolPropertyName::Output,
+                        ));
+                    }
+                }
+                Declaration::McpBatch(mcp_batch) => {
+                    let Some(server_lock) = mcp_lock.servers.get(&mcp_batch.server_name) else {
+                        continue;
+                    };
+                    let tool_locks = mcp_batch
+                        .tool_items
+                        .iter()
+                        .filter_map(|item| {
+                            server_lock
+                                .find_tool_with_name(&item.source_name)
+                                .map(|(_resolved_tool_name, tool_lock)| (item.local_name.as_str(), tool_lock))
+                        })
+                        .collect::<Vec<_>>();
+
+                    diagnostics.extend(self.batch_common_schema_diagnostics(&tool_locks, &mcp_batch.input_fields, ToolPropertyName::Input));
+                    diagnostics.extend(self.batch_common_schema_diagnostics(
+                        &tool_locks,
+                        &mcp_batch.output_fields,
+                        ToolPropertyName::Output,
+                    ));
+                    diagnostics.extend(self.batch_binding_override_diagnostics(&tool_locks, &mcp_batch.fixed_binding_fields));
+
+                    for item in &mcp_batch.tool_items {
                         let Some((_, mcp_tool_lock)) = server_lock.find_tool_with_name(&item.source_name) else {
                             continue;
                         };
