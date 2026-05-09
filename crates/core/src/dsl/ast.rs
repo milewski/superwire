@@ -938,14 +938,14 @@ impl AgentDeclaration {
         self.properties.iter().filter_map(|property| match property {
             AgentProperty::Dynamic(dynamic_block) => Some(dynamic_block),
             AgentProperty::Model(_)
-            | AgentProperty::Prompt(_)
+            | AgentProperty::Instruction(_)
             | AgentProperty::Output {
                 output_type_expression: _,
                 description: _,
             }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
-            | AgentProperty::Tools(_)
+            | AgentProperty::Uses(_)
             | AgentProperty::Unknown { name: _, span: _ } => None,
         })
     }
@@ -955,20 +955,22 @@ impl AgentDeclaration {
         for agent_property in &self.properties {
             match agent_property {
                 AgentProperty::Model(expression) if property_name == AgentExpressionPropertyName::Model => return Some(expression),
-                AgentProperty::Prompt(expression) if property_name == AgentExpressionPropertyName::Prompt => return Some(expression),
+                AgentProperty::Instruction(expression) if property_name == AgentExpressionPropertyName::Instruction => {
+                    return Some(expression)
+                }
                 AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => return Some(expression),
                 AgentProperty::Inference(expression) if property_name == AgentExpressionPropertyName::Inference => return Some(expression),
-                AgentProperty::Tools(expression) if property_name == AgentExpressionPropertyName::Tools => return Some(expression),
+                AgentProperty::Uses(expression) if property_name == AgentExpressionPropertyName::Uses => return Some(expression),
                 AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
-                | AgentProperty::Prompt(_)
+                | AgentProperty::Instruction(_)
                 | AgentProperty::Output {
                     output_type_expression: _,
                     description: _,
                 }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
-                | AgentProperty::Tools(_)
+                | AgentProperty::Uses(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }
@@ -1066,14 +1068,14 @@ impl AgentForLoopPattern {
 pub enum AgentProperty {
     Dynamic(DynamicBlock),
     Model(Expression),
-    Prompt(Expression),
+    Instruction(Expression),
     Output {
         output_type_expression: TypeExpression,
         description: Option<String>,
     },
     Context(Expression),
     Inference(Expression),
-    Tools(Expression),
+    Uses(Expression),
     Unknown {
         name: String,
         span: SourceSpan,
@@ -1086,14 +1088,14 @@ impl AgentProperty {
         match self {
             Self::Dynamic(_) => AgentPropertyName::Dynamic,
             Self::Model(_) => AgentPropertyName::Model,
-            Self::Prompt(_) => AgentPropertyName::Prompt,
+            Self::Instruction(_) => AgentPropertyName::Instruction,
             Self::Output {
                 output_type_expression: _,
                 description: _,
             } => AgentPropertyName::Output,
             Self::Context(_) => AgentPropertyName::Context,
             Self::Inference(_) => AgentPropertyName::Inference,
-            Self::Tools(_) => AgentPropertyName::Tools,
+            Self::Uses(_) => AgentPropertyName::Uses,
             Self::Unknown { name: _, span: _ } => AgentPropertyName::Unknown,
         }
     }
@@ -1103,11 +1105,11 @@ impl AgentProperty {
 pub enum AgentPropertyName {
     Dynamic,
     Model,
-    Prompt,
+    Instruction,
     Output,
     Context,
     Inference,
-    Tools,
+    Uses,
     Unknown,
 }
 
@@ -1117,11 +1119,11 @@ impl AgentPropertyName {
         [
             Self::Dynamic,
             Self::Model,
-            Self::Prompt,
+            Self::Instruction,
             Self::Output,
             Self::Context,
             Self::Inference,
-            Self::Tools,
+            Self::Uses,
         ]
     }
 
@@ -1135,11 +1137,11 @@ impl AgentPropertyName {
         match self {
             Self::Model => "model",
             Self::Dynamic => "dynamic",
-            Self::Prompt => "prompt",
+            Self::Instruction => "instruction",
             Self::Output => "output",
             Self::Context => "context",
             Self::Inference => "inference",
-            Self::Tools => "tools",
+            Self::Uses => "uses",
             Self::Unknown => "unknown",
         }
     }
@@ -1201,10 +1203,10 @@ impl AgentPropertyName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AgentExpressionPropertyName {
     Model,
-    Prompt,
+    Instruction,
     Context,
     Inference,
-    Tools,
+    Uses,
 }
 
 impl AgentExpressionPropertyName {
@@ -1212,10 +1214,10 @@ impl AgentExpressionPropertyName {
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "model" => Some(Self::Model),
-            "prompt" => Some(Self::Prompt),
+            "instruction" => Some(Self::Instruction),
             "context" => Some(Self::Context),
             "inference" => Some(Self::Inference),
-            "tools" => Some(Self::Tools),
+            "uses" => Some(Self::Uses),
             _ => None,
         }
     }
@@ -1224,10 +1226,10 @@ impl AgentExpressionPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Model => "model",
-            Self::Prompt => "prompt",
+            Self::Instruction => "instruction",
             Self::Context => "context",
             Self::Inference => "inference",
-            Self::Tools => "tools",
+            Self::Uses => "uses",
         }
     }
 }
@@ -2059,8 +2061,8 @@ mod tests {
     #[test]
     fn suggests_closest_agent_property_name_for_typos() {
         assert_eq!(
-            AgentPropertyName::suggested_from_identifier("prom_t"),
-            Some(AgentPropertyName::Prompt)
+            AgentPropertyName::suggested_from_identifier("instrction"),
+            Some(AgentPropertyName::Instruction)
         );
 
         assert_eq!(

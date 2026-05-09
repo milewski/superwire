@@ -1316,11 +1316,11 @@ impl AstVisitor {
 
         match agent_property_name {
             AgentPropertyName::Model => Ok(AgentProperty::Model(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Prompt => Ok(AgentProperty::Prompt(self.visit_expression(value_pair)?)),
+            AgentPropertyName::Instruction => Ok(AgentProperty::Instruction(self.visit_expression(value_pair)?)),
             AgentPropertyName::Output => self.visit_agent_output_property(value_pair, inner_pairs, property_span),
             AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
             AgentPropertyName::Inference => Ok(AgentProperty::Inference(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Tools => Ok(AgentProperty::Tools(self.visit_tools_expression(value_pair)?)),
+            AgentPropertyName::Uses => Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?)),
             AgentPropertyName::Dynamic | AgentPropertyName::Unknown => Err(DslParseError::unexpected_with_span(
                 Rule::named_agent_value_property,
                 "agent value property",
