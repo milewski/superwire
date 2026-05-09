@@ -589,12 +589,12 @@ async fn explicit_mcp_resource_and_prompt_calls_are_available_as_values() {
 
         dynamic {
             readme: read resource.project_readme {
-                params {
+                bindings {
                     section: "setup"
                 }
             }
             instructions: render prompt.system_prompt {
-                params {
+                bindings {
                     readme: dynamic.readme
                 }
             }

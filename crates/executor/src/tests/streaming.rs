@@ -175,12 +175,12 @@ async fn explicit_mcp_calls_emit_started_and_completed_events() {
 
         dynamic {
             readme: read resource.project_readme {
-                params {
+                bindings {
                     section: "setup"
                 }
             }
             instructions: render prompt.system_prompt {
-                params {
+                bindings {
                     readme: dynamic.readme
                 }
             }

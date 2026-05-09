@@ -20,12 +20,12 @@ prompt system_prompt from mcp.local.prompt.system_prompt
 
 dynamic {
     readme: read resource.project_readme {
-        params {
+        bindings {
             section: "setup"
         }
     }
     instructions: render prompt.system_prompt {
-        params {
+        bindings {
             readme: dynamic.readme
         }
     }

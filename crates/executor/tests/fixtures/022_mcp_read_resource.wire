@@ -18,7 +18,7 @@ resource project_readme from mcp.local.resource.project_readme {
 
 dynamic {
     readme: read resource.project_readme {
-        params {
+        bindings {
             section: "setup"
         }
     }
