@@ -140,6 +140,18 @@ pub enum ModelToolSource {
         endpoint: String,
         headers: BTreeMap<String, String>,
     },
+    McpPrompt {
+        server_name: String,
+        prompt_name: String,
+        endpoint: String,
+        headers: BTreeMap<String, String>,
+    },
+    McpResource {
+        server_name: String,
+        resource_name: String,
+        endpoint: String,
+        headers: BTreeMap<String, String>,
+    },
 }
 
 #[derive(Debug, Clone)]

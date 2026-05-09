@@ -260,24 +260,24 @@ impl WorkflowExecutor {
 
             evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
 
-            let prompt_expression = planned_agent
+            let instruction_expression = planned_agent
                 .declaration
-                .required_expression_property(AgentExpressionPropertyName::Prompt)
+                .required_expression_property(AgentExpressionPropertyName::Instruction)
                 .map_err(|missing_property| WorkflowSemanticError::InvalidAgentProperty {
                     agent_name: planned_agent.name.clone(),
                     property: missing_property.as_str().to_string(),
                     message: "property is required".to_string(),
                 })?;
 
-            let _prompt = normalize_prompt(self.evaluate_runtime_expression(
-                prompt_expression,
+            let _instruction = normalize_prompt(self.evaluate_runtime_expression(
+                instruction_expression,
                 &evaluation_context,
-                &format!("prompt for agent `{}`", planned_agent.name),
+                &format!("instruction for agent `{}`", planned_agent.name),
                 None,
                 &tool_call_tracker,
             )?);
 
-            let _resolved_tools = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
+            let _resolved_uses = self.resolve_agent_use_definitions(planned_agent, &evaluation_context)?;
         }
 
         Ok(())
@@ -556,6 +556,9 @@ impl WorkflowExecutor {
             ModelToolSource::Local => Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` is not backed by MCP"),
             }),
+            ModelToolSource::McpPrompt { .. } | ModelToolSource::McpResource { .. } => Err(ExecutorError::Other {
+                message: format!("deterministic tool call `{tool_name}` cannot target MCP prompts or resources"),
+            }),
             ModelToolSource::Finalize => Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` cannot use internal finalize tool"),
             }),
@@ -594,28 +597,28 @@ impl WorkflowExecutor {
             });
         };
         let model_name = evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
-        let prompt_expression = planned_agent
+        let instruction_expression = planned_agent
             .declaration
-            .required_expression_property(AgentExpressionPropertyName::Prompt)
+            .required_expression_property(AgentExpressionPropertyName::Instruction)
             .map_err(|missing_property| WorkflowSemanticError::InvalidAgentProperty {
                 agent_name: planned_agent.name.clone(),
                 property: missing_property.as_str().to_string(),
                 message: "property is required".to_string(),
             })?;
-        let agent_prompt = normalize_prompt(self.evaluate_runtime_expression(
-            prompt_expression,
+        let agent_instruction = normalize_prompt(self.evaluate_runtime_expression(
+            instruction_expression,
             &evaluation_context,
-            &format!("prompt for agent `{}`", planned_agent.name),
+            &format!("instruction for agent `{}`", planned_agent.name),
             None,
             &agent_execution_context.tool_call_tracker,
         )?);
         let prompt = if agent_execution_context.import_context.is_empty() {
-            agent_prompt
+            agent_instruction
         } else {
-            format!("{}\n\n{agent_prompt}", agent_execution_context.import_context)
+            format!("{}\n\n{agent_instruction}", agent_execution_context.import_context)
         };
         let output_schema = workflow_type_to_json_schema(&planned_agent.iteration_output_type);
-        let mut tool_definitions = self.resolve_agent_tool_definitions(planned_agent, &evaluation_context)?;
+        let mut tool_definitions = self.resolve_agent_use_definitions(planned_agent, &evaluation_context)?;
         tool_definitions.push(ModelToolDefinition::finalize(output_schema.clone()));
         let tool_names = tool_definitions
             .iter()
@@ -817,26 +820,60 @@ impl WorkflowExecutor {
         Ok(dynamic_values)
     }
 
-    fn resolve_agent_tool_definitions(
+    fn resolve_agent_use_definitions(
         &self,
         planned_agent: &PlannedAgent,
         evaluation_context: &EvaluationContext,
     ) -> Result<Vec<ModelToolDefinition>, ExecutorError> {
-        let Some(tools_expression) = planned_agent.declaration.expression_property(AgentExpressionPropertyName::Tools) else {
+        let Some(uses_expression) = planned_agent.declaration.expression_property(AgentExpressionPropertyName::Uses) else {
             return Ok(Vec::new());
         };
-        let Expression::ArrayLiteral(tool_expressions) = tools_expression else {
+        let Expression::ArrayLiteral(use_expressions) = uses_expression else {
             return Err(ExecutorError::Other {
-                message: format!("tools for agent `{}` must be an array", planned_agent.name),
+                message: format!("uses for agent `{}` must be an array", planned_agent.name),
             });
         };
         let mut tool_definitions = Vec::new();
 
-        for tool_expression in tool_expressions {
-            tool_definitions.push(self.resolve_agent_tool_definition(tool_expression, planned_agent, evaluation_context)?);
+        for use_expression in use_expressions {
+            tool_definitions.push(self.resolve_agent_use_definition(use_expression, planned_agent, evaluation_context)?);
         }
 
         Ok(tool_definitions)
+    }
+
+    fn resolve_agent_use_definition(
+        &self,
+        use_expression: &Expression,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<ModelToolDefinition, ExecutorError> {
+        let reference = match use_expression {
+            Expression::Reference(reference) => reference,
+            Expression::ToolCall(tool_call) => &tool_call.callee,
+            _ => {
+                return Err(ExecutorError::Other {
+                    message: format!(
+                        "uses for agent `{}` must contain tool, prompt, or resource references",
+                        planned_agent.name
+                    ),
+                });
+            }
+        };
+
+        match reference.root_keyword() {
+            Some(ReferenceKeyword::Tool) => self.resolve_agent_tool_definition(use_expression, planned_agent, evaluation_context),
+            Some(ReferenceKeyword::Prompt | ReferenceKeyword::Resource) => {
+                let reference_keyword = reference.root_keyword().expect("reference keyword should exist");
+                self.resolve_agent_mcp_import_tool_definition(use_expression, planned_agent, evaluation_context, reference_keyword)
+            }
+            _ => Err(ExecutorError::Other {
+                message: format!(
+                    "uses for agent `{}` must use tool, prompt, or resource references",
+                    planned_agent.name
+                ),
+            }),
+        }
     }
 
     fn evaluate_runtime_expression(
@@ -1215,6 +1252,156 @@ impl WorkflowExecutor {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn resolve_agent_mcp_import_tool_definition(
+        &self,
+        import_expression: &Expression,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+        reference_keyword: ReferenceKeyword,
+    ) -> Result<ModelToolDefinition, ExecutorError> {
+        let (reference, override_binding_fields, override_max_calls) = match import_expression {
+            Expression::Reference(reference) => (reference, Vec::new(), None),
+            Expression::ToolCall(tool_call) => (&tool_call.callee, tool_call.binding_fields.clone(), tool_call.max_calls),
+            _ => {
+                return Err(ExecutorError::Other {
+                    message: format!(
+                        "{} for agent `{}` must contain {} references",
+                        reference_keyword.as_str(),
+                        planned_agent.name,
+                        reference_keyword.as_str()
+                    ),
+                });
+            }
+        };
+        let import_name = reference.import_name(reference_keyword).ok_or_else(|| ExecutorError::Other {
+            message: format!(
+                "{} for agent `{}` must use `{}.<name>` references",
+                reference_keyword.as_str(),
+                planned_agent.name,
+                reference_keyword.as_str()
+            ),
+        })?;
+        let (server_name, source_item_name, import_parameters) = match reference_keyword {
+            ReferenceKeyword::Prompt => {
+                let prompt_import = self.workflow.find_prompt_import(import_name).ok_or_else(|| ExecutorError::Other {
+                    message: format!("agent `{}` references unknown prompt `{import_name}`", planned_agent.name),
+                })?;
+
+                (
+                    prompt_import.source.server_name.clone(),
+                    prompt_import.source.item_name.clone(),
+                    prompt_import.parameters.as_slice(),
+                )
+            }
+            ReferenceKeyword::Resource => {
+                let resource_import = self
+                    .workflow
+                    .find_resource_import(import_name)
+                    .ok_or_else(|| ExecutorError::Other {
+                        message: format!("agent `{}` references unknown resource `{import_name}`", planned_agent.name),
+                    })?;
+
+                (
+                    resource_import.source.server_name.clone(),
+                    resource_import.source.item_name.clone(),
+                    resource_import.parameters.as_slice(),
+                )
+            }
+            ReferenceKeyword::Tool
+            | ReferenceKeyword::Agent
+            | ReferenceKeyword::Dynamic
+            | ReferenceKeyword::Input
+            | ReferenceKeyword::Secrets => {
+                return Err(ExecutorError::Other {
+                    message: format!("unsupported MCP import reference `{}`", reference_keyword.as_str()),
+                });
+            }
+        };
+        let bindings = self.resolve_mcp_import_parameters(import_parameters, evaluation_context, import_name)?;
+        let bindings = self.merge_mcp_import_binding_overrides(bindings, &override_binding_fields, evaluation_context, import_name)?;
+        let server_config = self.resolve_mcp_import_server(&server_name, evaluation_context)?;
+        let source = match reference_keyword {
+            ReferenceKeyword::Prompt => ModelToolSource::McpPrompt {
+                server_name,
+                prompt_name: source_item_name,
+                endpoint: server_config.endpoint,
+                headers: server_config.headers,
+            },
+            ReferenceKeyword::Resource => ModelToolSource::McpResource {
+                server_name,
+                resource_name: source_item_name,
+                endpoint: server_config.endpoint,
+                headers: server_config.headers,
+            },
+            ReferenceKeyword::Tool
+            | ReferenceKeyword::Agent
+            | ReferenceKeyword::Dynamic
+            | ReferenceKeyword::Input
+            | ReferenceKeyword::Secrets => {
+                unreachable!("unsupported MCP import reference should return earlier")
+            }
+        };
+        let tool_name = match reference_keyword {
+            ReferenceKeyword::Prompt => format!("render_{import_name}"),
+            ReferenceKeyword::Resource => format!("read_{import_name}"),
+            ReferenceKeyword::Tool
+            | ReferenceKeyword::Agent
+            | ReferenceKeyword::Dynamic
+            | ReferenceKeyword::Input
+            | ReferenceKeyword::Secrets => {
+                unreachable!("unsupported MCP import reference should return earlier")
+            }
+        };
+
+        Ok(ModelToolDefinition {
+            name: tool_name,
+            description: Some(format!(
+                "{} MCP {} `{import_name}`",
+                reference_keyword.as_str(),
+                reference_keyword.as_str()
+            )),
+            source,
+            input_schema: Self::open_object_schema(),
+            output_schema: serde_json::json!({ "type": "string" }),
+            bindings,
+            max_calls: override_max_calls,
+            max_calls_scope: ToolCallLimitScope::Agent {
+                agent_name: planned_agent.name.clone(),
+            },
+        })
+    }
+
+    fn merge_mcp_import_binding_overrides(
+        &self,
+        bindings: Value,
+        override_binding_fields: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+        import_name: &str,
+    ) -> Result<Value, ExecutorError> {
+        let mut binding_object = bindings.as_object().cloned().unwrap_or_default();
+
+        for override_binding_field in override_binding_fields {
+            let binding_value = self.evaluate_runtime_expression(
+                &override_binding_field.value,
+                evaluation_context,
+                &format!("MCP import `{import_name}` binding `{}`", override_binding_field.name),
+                None,
+                &ToolCallTracker::default(),
+            )?;
+            binding_object.insert(override_binding_field.name.clone(), binding_value);
+        }
+
+        Ok(Value::Object(binding_object))
+    }
+
+    fn open_object_schema() -> Value {
+        serde_json::json!({
+            "type": "object",
+            "additionalProperties": true,
+        })
+    }
+
     fn model_tool_source(
         &self,
         tool_declaration: &superwire_core::dsl::ToolDeclaration,
@@ -1267,11 +1454,20 @@ impl WorkflowExecutor {
 
 trait ToolReferenceExt {
     fn tool_name(&self) -> Option<&str>;
+    fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str>;
 }
 
 impl ToolReferenceExt for Reference {
     fn tool_name(&self) -> Option<&str> {
         if self.root_keyword() != Some(ReferenceKeyword::Tool) {
+            return None;
+        }
+
+        self.first_access_field()
+    }
+
+    fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str> {
+        if self.root_keyword() != Some(reference_keyword) {
             return None;
         }
 

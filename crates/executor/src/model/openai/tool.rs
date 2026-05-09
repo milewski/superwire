@@ -55,6 +55,7 @@ impl super::OpenAiModelProvider {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(super) fn execute_tool_call(
         &self,
         request: &ModelRequest,
@@ -164,6 +165,60 @@ impl super::OpenAiModelProvider {
 
                 Ok(ToolCallOutcome::Continue(normalized_result))
             }
+            ModelToolSource::McpPrompt {
+                server_name,
+                prompt_name,
+                endpoint,
+                headers,
+            } => {
+                let server_config = McpServerConfig {
+                    name: server_name.clone(),
+                    endpoint: endpoint.clone(),
+                    headers: headers.clone(),
+                };
+
+                request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
+                let result = request
+                    .mcp_pool
+                    .get(&server_config)?
+                    .get_prompt(prompt_name, arguments)
+                    .map_err(|error| ExecutorError::Model {
+                        agent_name: request.agent_name.clone(),
+                        message: error.to_string(),
+                    })?;
+                let rendered_result = Value::String(render_mcp_prompt_result(&result));
+
+                request.send_tool_call_completed(tool_definition.name.clone(), rendered_result.clone());
+
+                Ok(ToolCallOutcome::Continue(rendered_result))
+            }
+            ModelToolSource::McpResource {
+                server_name,
+                resource_name,
+                endpoint,
+                headers,
+            } => {
+                let server_config = McpServerConfig {
+                    name: server_name.clone(),
+                    endpoint: endpoint.clone(),
+                    headers: headers.clone(),
+                };
+
+                request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
+                let result = request
+                    .mcp_pool
+                    .get(&server_config)?
+                    .read_resource(resource_name, arguments)
+                    .map_err(|error| ExecutorError::Model {
+                        agent_name: request.agent_name.clone(),
+                        message: error.to_string(),
+                    })?;
+                let rendered_result = Value::String(render_mcp_resource_result(&result));
+
+                request.send_tool_call_completed(tool_definition.name.clone(), rendered_result.clone());
+
+                Ok(ToolCallOutcome::Continue(rendered_result))
+            }
             ModelToolSource::Finalize => unreachable!("finalize tool calls should return before MCP dispatch"),
             ModelToolSource::Local => Err(ExecutorError::Model {
                 agent_name: request.agent_name.clone(),
@@ -171,6 +226,36 @@ impl super::OpenAiModelProvider {
             }),
         }
     }
+}
+
+fn render_mcp_prompt_result(result: &Value) -> String {
+    result
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(|messages| {
+            messages
+                .iter()
+                .filter_map(|message| message.pointer("/content/text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|content| !content.is_empty())
+        .unwrap_or_else(|| result.to_string())
+}
+
+fn render_mcp_resource_result(result: &Value) -> String {
+    result
+        .get("contents")
+        .and_then(Value::as_array)
+        .map(|contents| {
+            contents
+                .iter()
+                .filter_map(|content| content.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|content| !content.is_empty())
+        .unwrap_or_else(|| result.to_string())
 }
 
 pub(super) struct ToolCallRound {
