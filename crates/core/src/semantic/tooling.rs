@@ -194,6 +194,7 @@ pub struct ToolSchemaSummary {
 
 impl SemanticToolingSnapshot {
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn from_workflow(workflow: &Workflow) -> Self {
         let mut declaration_index = ToolingDeclarationIndex::default();
         let mut input_fields = BTreeMap::new();
@@ -254,6 +255,36 @@ impl SemanticToolingSnapshot {
                         resource_import_declaration.name.clone(),
                         resource_import_declaration.span,
                     );
+                }
+                Declaration::McpBatch(batch_import_declaration) => {
+                    for tool_declaration in declaration.tool_declarations() {
+                        declaration_index.push_symbol(ToolingSymbolCategory::Tool, tool_declaration.name.clone(), tool_declaration.span);
+                        tools.insert(
+                            tool_declaration.name.clone(),
+                            ToolSchemaSummary {
+                                description: tool_declaration.description.clone(),
+                                source: tool_declaration.source.clone(),
+                                input_fields: typed_fields_to_map(&tool_declaration.input_fields),
+                                bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
+                            },
+                        );
+                    }
+
+                    for resource_import_declaration in &batch_import_declaration.resources {
+                        declaration_index.push_symbol(
+                            ToolingSymbolCategory::Resource,
+                            resource_import_declaration.name.clone(),
+                            resource_import_declaration.span,
+                        );
+                    }
+
+                    for prompt_import_declaration in &batch_import_declaration.prompts {
+                        declaration_index.push_symbol(
+                            ToolingSymbolCategory::Prompt,
+                            prompt_import_declaration.name.clone(),
+                            prompt_import_declaration.span,
+                        );
+                    }
                 }
                 Declaration::McpResourceBatch(resource_batch_import_declaration) => {
                     for resource_import_declaration in &resource_batch_import_declaration.resources {
