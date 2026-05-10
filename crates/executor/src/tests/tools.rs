@@ -81,7 +81,7 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
     assert_eq!(tool_definition.output_schema["required"], serde_json::json!(["success"]));
 }
 
-struct TestMcpHttpServer {
+pub(crate) struct TestMcpHttpServer {
     endpoint: String,
 }
 
@@ -111,7 +111,7 @@ struct SchemaField {
 struct TestMcpCatalog;
 
 impl TestMcpHttpServer {
-    fn spawn(expected_headers: impl IntoIterator<Item = (String, String)>) -> Self {
+    pub(crate) fn spawn(expected_headers: impl IntoIterator<Item = (String, String)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
         let expected_headers = expected_headers.into_iter().collect::<BTreeMap<_, _>>();
@@ -127,7 +127,7 @@ impl TestMcpHttpServer {
         Self { endpoint }
     }
 
-    fn endpoint(&self) -> String {
+    pub(crate) fn endpoint(&self) -> String {
         self.endpoint.clone()
     }
 }

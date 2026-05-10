@@ -283,6 +283,45 @@ impl WorkflowExecutor {
         Ok(())
     }
 
+    pub fn validate_runtime_configuration_without_input(&self, secrets: &Value) -> Result<(), ExecutorError> {
+        let input_values = self.placeholder_input_values_for_validation();
+        let secret_values = self.resolve_secret_values(secrets)?;
+        let mut runtime_state = RuntimeState::new(input_values, secret_values);
+        let tool_call_tracker = ToolCallTracker::default();
+
+        self.execute_workflow_dynamic_blocks(&mut runtime_state, None, &tool_call_tracker)?;
+
+        self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
+
+        for planned_agent in self.execution_plan.planned_agents.values() {
+            let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, &runtime_state, None, &tool_call_tracker)?;
+            let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
+
+            evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
+
+            let instruction_expression = planned_agent
+                .declaration
+                .required_expression_property(AgentExpressionPropertyName::Instruction)
+                .map_err(|missing_property| WorkflowSemanticError::InvalidAgentProperty {
+                    agent_name: planned_agent.name.clone(),
+                    property: missing_property.as_str().to_string(),
+                    message: "property is required".to_string(),
+                })?;
+
+            let _instruction = normalize_prompt(self.evaluate_runtime_expression(
+                instruction_expression,
+                &evaluation_context,
+                &format!("instruction for agent `{}`", planned_agent.name),
+                None,
+                &tool_call_tracker,
+            )?);
+
+            let _resolved_uses = self.resolve_agent_use_definitions(planned_agent, &evaluation_context)?;
+        }
+
+        Ok(())
+    }
+
     fn resolve_input_values(&self, input: &Value) -> Result<Map<String, Value>, ExecutorError> {
         if let Some(input_type) = &self.execution_plan.input_type {
             if input.is_null() {
@@ -338,6 +377,20 @@ impl WorkflowExecutor {
             expected: "no input".to_string(),
             found: value_kind_name(input).to_string(),
         })
+    }
+
+    fn placeholder_input_values_for_validation(&self) -> Map<String, Value> {
+        let Some(input_type) = &self.execution_plan.input_type else {
+            return Map::new();
+        };
+
+        match input_type {
+            WorkflowType::Object(field_types) => field_types
+                .keys()
+                .map(|field_name| (field_name.clone(), Value::Null))
+                .collect::<Map<String, Value>>(),
+            _ => Map::new(),
+        }
     }
 
     fn input_fields_consumed_by_bindings(&self) -> HashSet<String> {

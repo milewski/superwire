@@ -1,6 +1,7 @@
 use super::fixtures;
 use super::support;
 use super::support::TrackingModelProvider;
+use super::tools::TestMcpHttpServer;
 use crate::server::executor_router_with_service;
 use crate::service::ExecutorService;
 use base64::prelude::{Engine as _, BASE64_STANDARD};
@@ -134,8 +135,7 @@ async fn http_accepts_base64_workflow_source() {
 async fn http_validate_returns_success_without_execution() {
     let router = executor_router_with_service(support::service(vec![json!("unused")]));
     let request_body = json!({
-        "workflow_source": fixtures::INPUT_STRING,
-        "input": { "topic": "testing" }
+        "workflow_source": fixtures::INPUT_STRING
     });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -155,7 +155,7 @@ async fn http_validate_returns_success_without_execution() {
 }
 
 #[tokio::test]
-async fn http_validate_returns_same_input_error_as_execute() {
+async fn http_validate_rejects_input_field() {
     let router = executor_router_with_service(support::service(vec![]));
     let request_body = json!({
         "workflow_source": fixtures::INPUT_STRING,
@@ -169,15 +169,74 @@ async fn http_validate_returns_same_input_error_as_execute() {
         .expect("request should build");
 
     let response = router.oneshot(request).await.expect("request should execute");
-    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let body_text = String::from_utf8(body.to_vec()).expect("response body should be UTF-8");
+    assert!(body_text.contains("unknown field `input`"));
+}
+
+#[tokio::test]
+async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
+    let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
+    let router = executor_router_with_service(support::service(vec![]));
+    let workflow_source = superwire_core::workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        secrets {
+            mcp_endpoint: string
+            mcp_token: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+            headers: {
+                Authorization: secrets.mcp_token
+            }
+        }
+
+        tool local_update_user from mcp.local.tool.update_user_name
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            uses: [tool.local_update_user]
+            instruction: "Rename the user"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    };
+    let request_body = json!({
+        "workflow_source": workflow_source,
+        "secrets": {
+            "mcp_endpoint": server.endpoint(),
+            "mcp_token": "Bearer secret-token"
+        }
+    });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/validate")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.oneshot(request).await.expect("request should execute");
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body should read");
     let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
-    assert!(response_json["error"]
-        .as_str()
-        .is_some_and(|error_message| error_message.contains("declared `input` block")));
+    assert_eq!(response_json, json!({ "valid": true }));
 }
 
 #[tokio::test]

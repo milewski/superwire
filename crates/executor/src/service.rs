@@ -2,6 +2,7 @@ use crate::api::{ExecutionRequest, ExecutionResponse, FormatRequest, FormatRespo
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
+use serde_json::Value;
 use superwire_core::dsl::format_workflow_source;
 use tokio::sync::mpsc;
 
@@ -61,14 +62,13 @@ where
 
     pub fn validate(&self, request: ValidationRequest) -> Result<ValidationResponse, ExecutorError> {
         let workflow_source = request
-            .execution
             .resolved_workflow_source()
             .map_err(|message| ExecutorError::Other { message })?;
 
-        let executor =
-            WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.execution.input, &request.execution.secrets)?;
+        let empty_input = Value::Null;
+        let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &empty_input, &request.secrets)?;
 
-        executor.validate_runtime_configuration(&request.execution.input, &request.execution.secrets)?;
+        executor.validate_runtime_configuration_without_input(&request.secrets)?;
 
         Ok(ValidationResponse {
             valid: true,
