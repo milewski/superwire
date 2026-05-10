@@ -158,6 +158,29 @@ fn reports_parse_error_for_batch_tool_root_level_binding_fields() {
 }
 
 #[test]
+fn allows_mcp_batch_item_bindings_to_override_shared_bindings() {
+    let diagnostics = inline_diagnostics! {
+        input {
+            project_id: number
+        }
+
+        from mcp.local {
+            bindings {
+                project_id: input.project_id
+            }
+
+            prompt dynamic_summary_prompt {
+                bindings {
+                    project_id: 123
+                }
+            }
+        }
+    };
+
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::DuplicateProperty));
+}
+
+#[test]
 fn allows_block_style_tool_binding_overrides() {
     let diagnostics = inline_diagnostics! {
         input {

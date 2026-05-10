@@ -723,6 +723,34 @@ mod tests {
     }
 
     #[test]
+    fn mcp_batch_item_bindings_override_shared_bindings() {
+        let workflow = parse_inline_workflow! {
+            from mcp.local {
+                bindings {
+                    project_id: input.project_id
+                }
+
+                prompt dynamic_summary_prompt {
+                    bindings {
+                        project_id: 123
+                    }
+                }
+            }
+        };
+
+        let prompt_import = workflow
+            .find_prompt_import("dynamic_summary_prompt")
+            .expect("prompt import from mixed MCP batch should parse");
+
+        assert_eq!(prompt_import.parameters.len(), 1);
+        assert_eq!(prompt_import.parameters[0].name, "project_id");
+        assert!(matches!(
+            &prompt_import.parameters[0].value,
+            Expression::NumberLiteral(number_literal) if number_literal == "123"
+        ));
+    }
+
+    #[test]
     fn parses_mixed_mcp_batch_imports_with_shared_bindings() {
         let workflow = parse_inline_workflow! {
             from mcp.local {

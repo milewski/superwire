@@ -571,8 +571,7 @@ impl McpToolBatchImportItem {
         max_calls: Option<u64>,
         output_fields: &[TypedField],
     ) -> ToolDeclaration {
-        let mut fixed_binding_fields = fixed_binding_fields.to_vec();
-        fixed_binding_fields.extend(self.fixed_binding_fields.clone());
+        let fixed_binding_fields = Self::merged_object_fields_with_overrides(fixed_binding_fields, &self.fixed_binding_fields);
         let input_fields = if self.input_fields.is_empty() {
             input_fields.to_vec()
         } else {
@@ -601,6 +600,25 @@ impl McpToolBatchImportItem {
             span: self.span,
         }
     }
+
+    fn merged_object_fields_with_overrides(shared_object_fields: &[ObjectField], local_object_fields: &[ObjectField]) -> Vec<ObjectField> {
+        let mut merged_object_fields = shared_object_fields.to_vec();
+
+        for local_object_field in local_object_fields {
+            if let Some(existing_field_index) = merged_object_fields
+                .iter()
+                .position(|existing_object_field| existing_object_field.name == local_object_field.name)
+            {
+                merged_object_fields[existing_field_index] = local_object_field.clone();
+
+                continue;
+            }
+
+            merged_object_fields.push(local_object_field.clone());
+        }
+
+        merged_object_fields
+    }
 }
 
 impl McpResourceBatchImportItem {
@@ -620,8 +638,7 @@ impl McpResourceBatchImportItem {
 
     #[must_use]
     pub fn to_resource_import_declaration(&self, server_name: &str, shared_parameters: &[ObjectField]) -> McpResourceImportDeclaration {
-        let mut parameters = shared_parameters.to_vec();
-        parameters.extend(self.parameters.clone());
+        let parameters = Self::merged_parameters_with_overrides(shared_parameters, &self.parameters);
 
         McpResourceImportDeclaration {
             name: self.local_name.clone(),
@@ -634,6 +651,25 @@ impl McpResourceBatchImportItem {
             parameters,
             span: self.span,
         }
+    }
+
+    fn merged_parameters_with_overrides(shared_parameters: &[ObjectField], local_parameters: &[ObjectField]) -> Vec<ObjectField> {
+        let mut merged_parameters = shared_parameters.to_vec();
+
+        for local_parameter in local_parameters {
+            if let Some(existing_parameter_index) = merged_parameters
+                .iter()
+                .position(|existing_parameter| existing_parameter.name == local_parameter.name)
+            {
+                merged_parameters[existing_parameter_index] = local_parameter.clone();
+
+                continue;
+            }
+
+            merged_parameters.push(local_parameter.clone());
+        }
+
+        merged_parameters
     }
 }
 
@@ -654,8 +690,7 @@ impl McpPromptBatchImportItem {
 
     #[must_use]
     pub fn to_prompt_import_declaration(&self, server_name: &str, shared_parameters: &[ObjectField]) -> McpPromptImportDeclaration {
-        let mut parameters = shared_parameters.to_vec();
-        parameters.extend(self.parameters.clone());
+        let parameters = Self::merged_parameters_with_overrides(shared_parameters, &self.parameters);
 
         McpPromptImportDeclaration {
             name: self.local_name.clone(),
@@ -668,6 +703,25 @@ impl McpPromptBatchImportItem {
             parameters,
             span: self.span,
         }
+    }
+
+    fn merged_parameters_with_overrides(shared_parameters: &[ObjectField], local_parameters: &[ObjectField]) -> Vec<ObjectField> {
+        let mut merged_parameters = shared_parameters.to_vec();
+
+        for local_parameter in local_parameters {
+            if let Some(existing_parameter_index) = merged_parameters
+                .iter()
+                .position(|existing_parameter| existing_parameter.name == local_parameter.name)
+            {
+                merged_parameters[existing_parameter_index] = local_parameter.clone();
+
+                continue;
+            }
+
+            merged_parameters.push(local_parameter.clone());
+        }
+
+        merged_parameters
     }
 }
 
