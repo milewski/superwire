@@ -26,9 +26,12 @@ The server publishes diagnostics from the shared DSL pipeline:
 
 - parse/syntax errors with source spans
 - semantic validation errors from `superwire-core`
-- invalid agent properties
+- invalid agent properties (with suggestions for typos)
 - unknown provider/model bindings
 - invalid reference paths and schema references
+- secret leaks in instructions and output
+- missing input/secrets declarations for referenced fields
+- dependency cycles between agents or dynamic blocks
 
 ## Completion behavior
 
@@ -36,23 +39,27 @@ The server offers context-aware completions for:
 
 - provider driver values (`driver: "..."`)
 - provider driver-specific properties (`endpoint`, `api_key`, `models`, etc.)
-- model names declared under provider `models` when editing `model: provider("...")`
+- model names declared under provider `models`
 - named schemas after `schema.` in type positions
-- nested singleton/object fields like `input.profile.name.<cursor>`
+- nested fields like `input.profile.name.<cursor>`
 - built-in symbols and workflow keywords
+- agent names, input fields, secrets fields, dynamic block names
+- tool, resource, and prompt names from MCP imports
 
 ## Hover behavior
 
 Hover text is available for:
 
-- declared `schema.Name` references and schema field summaries
+- declared `schema.Name` references and field summaries
 - declared `agent.name` references with output type information
-- declared `input.field` and `secrets.field` references with inferred type information
+- `input.field` and `secrets.field` references with type information
+- `dynamic.block_name` references with computed type information
 - provider model calls such as `openai(...)`
+- tool, resource, and prompt import references
 
 ## Trigger characters
 
-The server currently triggers completion on:
+The server triggers completion on:
 
 - `.`
 - `:`

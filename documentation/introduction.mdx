@@ -1,16 +1,19 @@
 ---
 title: Introduction
-description: A practical guide to the Engine AI workflow DSL, validation rules, and runtime behavior.
+description: A practical guide to the Superwire workflow DSL, validation rules, and runtime behavior.
 ---
 
-Engine AI is a declarative language for describing agent workflows.
-A workflow is a plain text file made from a small set of declarations:
+Superwire is a declarative language for describing agent workflows.
+A workflow is a plain text file (`.wire`) made from a small set of declarations:
 
-- providers, which define where models come from
-- input and secrets, which define typed external values
-- schemas, which define reusable output shapes
-- agents, which define model calls and dependencies
-- output, which defines the final JSON object returned by the workflow
+- **providers**, which define where models come from and how to reach them
+- **input**, which defines typed values passed in at execution time
+- **secrets**, which define sensitive values passed in separately from normal input
+- **schemas**, which define reusable named output types
+- **agents**, which define model calls, references, and behavior
+- **output**, which shapes the final JSON object returned by the workflow
+- **dynamic** blocks, which compute values at runtime through tool calls and MCP integrations
+- **MCP** declarations, which connect to external tools, resources, and prompts
 
 ```wire
 provider ollama {
@@ -21,7 +24,7 @@ provider ollama {
 
 agent greeting {
     model: ollama("qwen3.5:32b")
-    prompt: "Write a short welcome message."
+    instruction: "Write a short welcome message."
     output: string
 }
 
@@ -37,6 +40,9 @@ output {
   <Card title="DSL Reference" icon="code" href="/syntax/overview">
     See the exact grammar features, operators, and expression forms.
   </Card>
+  <Card title="MCP & Tools" icon="plug" href="/mcp/mcp-servers">
+    Connect to external tools, resources, and prompts.
+  </Card>
   <Card title="Examples" icon="lightbulb" href="/examples/basic-agent">
     Start from practical workflows based on the repository examples.
   </Card>
@@ -47,19 +53,21 @@ output {
 
 ## What the stack does today
 
-Engine AI has three useful layers:
+Superwire has three useful layers:
 
 1. **Parser**: converts workflow text into a typed AST.
 2. **Validator**: checks names, schema references, dependency cycles, secret leaks, and reference paths.
-3. **Runtime**: executes validated workflows with built-in OpenAI and Ollama drivers.
+3. **Runtime**: executes validated workflows with built-in OpenAI and Ollama drivers, MCP tool/resource/prompt integrations, and deterministic tool support.
 
 <Info>
-  The runtime executes all agent properties: <code>model</code>, <code>prompt</code>,
-  <code>output</code>, <code>context</code>, <code>inference</code>, and <code>tools</code>.
-  Built-in functions <code>context(...)</code>, <code>compact(...)</code>, and
-  <code>template(...)</code> are also evaluated. Agent <code>for</code> loops run
-  iterations in parallel. <code>tool.*</code> references are only supported within
-  the <code>tools:</code> property.
+  The runtime executes all agent properties: <code>model</code>,
+  <code>instruction</code>, <code>output</code>, <code>context</code>,
+  <code>inference</code>, <code>tools</code>, and <code>uses</code>.
+  Built-in functions <code>context(...)</code>, <code>compact(...)</code>,
+  and <code>template(...)</code> are also evaluated. Agent <code>for</code>
+  loops run iterations in parallel. <code>tool.*</code> references are
+  resolved through the MCP tool and batch import system. Dynamic blocks
+  compute values at runtime through tool calls and MCP integrations.
 </Info>
 
 ## Why this DSL is useful
@@ -68,6 +76,7 @@ Engine AI has three useful layers:
 - **Typed**: schemas, arrays, tuples, unions, and enums are first-class.
 - **Composable**: agent references form a dependency graph automatically.
 - **Safe**: validation blocks leaked secrets and invalid reference paths early.
+- **Extensible**: MCP integrations bring in tools, resources, and prompts from external servers.
 - **Embeddable**: the Rust API supports parse-only, validate-only, and execution flows.
 
 ## A more complete example
@@ -87,7 +96,7 @@ input {
 
 agent release_summary {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize {{ input.product_name }} for {{ input.audience }}."
+    instruction: "Summarize {{ input.product_name }} for {{ input.audience }}."
     output: {
         summary: string
         key_points: [string; 3]
@@ -100,6 +109,10 @@ output {
     key_points: agent.release_summary.key_points
 }
 ```
+
+## The `instruction` property
+
+You may notice that agents use **`instruction:`** rather than `prompt:`. This is the canonical property name in the DSL. It defines the text sent to the LLM as the primary instruction.
 
 ## Next steps
 

@@ -71,7 +71,19 @@
               "syntax/operators",
               "syntax/control-flow",
               "syntax/string-interpolation",
-              "syntax/comments"
+              "syntax/comments",
+              "syntax/expressions",
+              "syntax/type-annotations"
+            ]
+          },
+          {
+            "group": "MCP & Tools",
+            "pages": [
+              "mcp/mcp-servers",
+              "mcp/tools",
+              "mcp/resources",
+              "mcp/prompts",
+              "mcp/batch-imports"
             ]
           },
           {
@@ -79,7 +91,6 @@
             "pages": [
               "advanced/parallel-execution",
               "advanced/context-sharing",
-              "advanced/tool-calling",
               "advanced/error-handling"
             ]
           },
@@ -90,14 +101,6 @@
               "guides/testing",
               "guides/best-practices",
               "guides/migration"
-            ]
-          },
-          {
-            "group": "Integrations",
-            "pages": [
-              "integrations/ollama",
-              "integrations/openai",
-              "integrations/custom-provider-factories"
             ]
           }
         ]
@@ -125,7 +128,9 @@
               "examples/multi-agent",
               "examples/structured-output",
               "examples/parallel-processing",
-              "examples/context-management"
+              "examples/context-management",
+              "examples/mcp-tools",
+              "examples/nested-output"
             ]
           }
         ]

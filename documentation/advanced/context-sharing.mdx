@@ -3,7 +3,7 @@ title: Context and Compaction
 description: Document the `context:` property and the current grammar for `context(...)` and `compact(...)`.
 ---
 
-The DSL supports a `context:` property on agents.
+The DSL supports a `context:` property on agents and built-in functions for controlling what context reaches the model.
 
 ## Full-context syntax
 
@@ -11,21 +11,25 @@ The DSL supports a `context:` property on agents.
 agent summary_from_full_context {
     model: openai("gpt-4.1-mini")
     context: context(agent.research_analysis)
-    prompt: "Write a short executive summary from the available context."
+    instruction: "Write a short executive summary from the available context."
     output: string
 }
 ```
+
+`context(agent.name)` passes the full output of the referenced agent as context.
 
 ## Compacted-context syntax
 
 ```wire
-agent summary_from_default_compact_context {
+agent summary_from_compact_context {
     model: openai("gpt-4.1-mini")
     context: compact(agent.research_analysis)
-    prompt: "Write a short executive summary from the compacted prior context."
+    instruction: "Write a short executive summary from the compacted prior context."
     output: string
 }
 ```
+
+`compact(agent.name)` indicates that the context should be reduced before sending to the model.
 
 ## Custom compaction call
 
@@ -39,12 +43,12 @@ agent summary_from_custom_compact_context {
             temperature: 0.1
             max_tokens: 1_500
         },
-        prompt: """
+        instruction: """
             Compact this prior context for an executive summary step.
             Keep only the highest-signal themes and essential quotes.
         """
     )
-    prompt: "Write a short executive summary from the customized compacted context."
+    instruction: "Write a short executive summary from the customized compacted context."
     output: {
         summary: string
         top_actions: [string; 3]
@@ -52,22 +56,35 @@ agent summary_from_custom_compact_context {
 }
 ```
 
+Named arguments on `compact(...)` — `agent`, `model`, `inference`, `instruction` — let you configure how compaction happens.
+
 ## What the syntax expresses
 
-- `context(agent.name)` means reuse full prior context
-- `compact(agent.name)` means derive a reduced context view
-- named arguments allow the DSL to describe a custom compaction step
+- `context(agent.name)` — reuse full prior context
+- `compact(agent.name)` — derive a reduced context view
+- Named arguments allow the DSL to describe a custom compaction step
 
 ## Runtime behavior
 
-`context(...)` and `compact(...)` are fully evaluated at runtime when used in an agent's `context:` property. The `context(...)` function returns the full prior context from the referenced agent. The `compact(...)` function currently returns the same context value as `context(...)` -- the distinction is in type inference, where `compact(...)` is restricted to agent context expressions only.
+`context(...)` and `compact(...)` are fully evaluated at runtime when used in an agent's `context:` property.
 
 <Tip>
-  Named arguments on `compact(...)` (model, inference, prompt) are parsed and
-  validated, but the current runtime does not use them to perform a separate
-  compaction model call. They are reserved for future use.
+  Named arguments on <code>compact(...)</code> (model, inference, instruction) are
+  parsed and validated. Their runtime behavior depends on the configured model provider.
 </Tip>
 
-## When to use this page
+## The `template(...)` function
 
-Use this page as the language reference for context-related syntax. Both `context(...)` and `compact(...)` are executed at runtime when used in agent `context:` properties.
+A third context-related function, `template(...)`, loads a prompt template from a file and evaluates it:
+
+```wire
+agent summary {
+    model: openai("gpt-4.1-mini")
+    instruction: template("prompts/summary.md", {
+        topic: input.topic
+    })
+    output: string
+}
+```
+
+This is useful for keeping complex prompts in separate files.

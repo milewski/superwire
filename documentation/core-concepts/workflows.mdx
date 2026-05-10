@@ -3,7 +3,7 @@ title: Workflows
 description: See how declarations combine into a complete workflow file and final output object.
 ---
 
-A workflow is the complete `.ai` file. The top-level grammar is intentionally small so most of the complexity stays inside agents and type expressions.
+A workflow is the complete `.wire` file. The top-level grammar is intentionally small so most of the complexity stays inside agents and type expressions.
 
 ## Full workflow anatomy
 
@@ -31,7 +31,7 @@ schema Brief {
 
 agent summarize_notes {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize {{ input.interview_notes }} for {{ input.study_name }}."
+    instruction: "Summarize {{ input.interview_notes }} for {{ input.study_name }}."
     output: schema.Brief
 }
 
@@ -48,8 +48,8 @@ The `output` declaration is an object expression, not a type block.
 
 That means each field can be built from:
 
-- literals
-- references
+- literals (strings, numbers, booleans)
+- references (`agent.name`, `input.field`)
 - arrays
 - objects
 - interpolated strings
@@ -72,7 +72,7 @@ The language distinguishes normal input from secret declarations:
 - `input` is for regular business data
 - `secrets` is for sensitive configuration and credentials
 
-Validation prevents `secrets.*` references from being used in prompts, context, and workflow output.
+Validation prevents `secrets.*` references from being used in instructions or output.
 
 The current runtime API accepts typed input and secrets values. The `WorkflowRuntime::run_with_secrets` and `run_with_runner_and_secrets` methods pass secrets through the execution pipeline.
 
@@ -81,6 +81,6 @@ The current runtime API accepts typed input and secrets values. The `WorkflowRun
 The grammar allows workflows without a top-level `output` block. In the current runtime, omitting `output` yields an empty JSON object.
 
 <Tip>
-  Most production workflows should still define `output` explicitly so the
+  Most production workflows should still define <code>output</code> explicitly so the
   public result stays stable even when agent internals change.
 </Tip>

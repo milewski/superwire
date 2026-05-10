@@ -1,112 +1,171 @@
 ---
-title: Testing Workflows
-description: Parse, validate, and execute workflows in Rust tests with deterministic providers.
+title: Testing
+description: Parse, validate, and execute workflows inside Rust tests.
 ---
 
-The Rust API supports three useful testing layers.
+Superwire provides several ways to test workflows without a live LLM provider.
 
-## Parse-only tests
+## Parse and validate without execution
 
-Use parse tests when you want fast syntax coverage.
-
-```rust
-use superwire_core::dsl::parse_workflow;
-
-#[test]
-fn workflow_parses() {
-    let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
-    let workflow = parse_workflow(workflow_source).expect("workflow should parse");
-
-    assert!(!workflow.declarations().is_empty());
-}
-```
-
-## Validation tests
-
-Use validation tests when you want to check names, references, or secret-safety rules without calling a provider.
+The fastest tests only parse and validate:
 
 ```rust
 use superwire_core::dsl::{parse_workflow, validate_workflow};
 
 #[test]
-fn workflow_validates() {
-    let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
-    let workflow = parse_workflow(workflow_source).expect("workflow should parse");
-    let report = validate_workflow(&workflow);
-
-    assert!(report.is_valid(), "{report:?}");
-}
-```
-
-## Runtime tests with scripted outputs
-
-The most practical execution test pattern uses a custom `AgentRunner` so you can assert output wiring without a live model.
-
-```rust
-use async_trait::async_trait;
-use superwire_core::parse_inline_workflow;
-use superwire_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntime, WorkflowRuntimeError};
-use schemars::JsonSchema;
-use serde::Deserialize;
-use serde_json::json;
-
-struct ScriptedRunner;
-
-#[async_trait]
-impl AgentRunner for ScriptedRunner {
-    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
-        Ok(AgentExecutionResult {
-            output: json!(format!("Hello from {}", request.agent_name)),
-            context: json!({"prompt": request.prompt}),
-        })
-    }
-}
-
-#[derive(Debug, Deserialize, JsonSchema, PartialEq)]
-struct Output {
-    greeting: String,
-}
-
-#[tokio::test]
-async fn workflow_executes_with_scripted_runner() {
-    let workflow = parse_inline_workflow! {
+fn valid_workflow_parses() {
+    let source = r#"
         provider openai {
             driver: "openai"
             endpoint: "https://api.openai.com/v1"
-            api_key: "test-api-key"
-            models: ["model-a"]
+            models: ["gpt-4.1-mini"]
         }
 
         agent greeting {
-            model: openai("model-a")
-            prompt: "Say hello"
+            model: openai("gpt-4.1-mini")
+            instruction: "Say hello."
             output: string
         }
 
         output {
             greeting: agent.greeting
         }
-    };
+    "#;
 
-    let runtime = WorkflowRuntime::<(), Output>::new(workflow).expect("runtime should compile");
-    let execution_result = runtime
-        .run_with_runner((), &ScriptedRunner)
-        .await
-        .expect("workflow should execute successfully");
-
-    assert_eq!(
-        execution_result,
-        Output {
-            greeting: "Hello from greeting".to_string(),
-        }
-    );
+    let workflow = parse_workflow(source).expect("parse failed");
+    let report = validate_workflow(&workflow);
+    assert!(report.is_valid(), "validation failed: {:?}", report.issues);
 }
 ```
 
-## What to test explicitly
+## Detect validation errors
 
-- parse success for representative samples
-- validation failures for known bad inputs
-- prompt interpolation behavior
-- output type mismatches
-- dependency ordering in multi-agent flows
+```rust
+use superwire_core::dsl::{parse_workflow, validate_workflow};
+
+#[test]
+fn secret_leak_detected() {
+    let source = r#"
+        secrets {
+            api_key: string
+        }
+
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: secrets.api_key
+            models: ["gpt-4.1-mini"]
+        }
+
+        agent greeting {
+            model: openai("gpt-4.1-mini")
+            instruction: "The secret is {{ secrets.api_key }}"
+            output: string
+        }
+
+        output {
+            greeting: agent.greeting
+        }
+    "#;
+
+    let workflow = parse_workflow(source).expect("parse failed");
+    let report = validate_workflow(&workflow);
+    assert!(!report.is_valid());
+}
+```
+
+## Execute with a mock provider
+
+For full execution tests without external dependencies, implement a custom `AgentRunner`:
+
+```rust
+use superwire_core::runtime::*;
+use superwire_core::dsl::parse_workflow;
+use std::sync::Arc;
+
+struct MockRunner;
+
+#[async_trait::async_trait]
+impl AgentRunner for MockRunner {
+    async fn run_agent(
+        &self,
+        _request: AgentExecutionRequest,
+    ) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        Ok(AgentExecutionResult {
+            output: serde_json::json!("mock response"),
+            context: serde_json::Value::Null,
+        })
+    }
+}
+
+#[tokio::test]
+async fn execute_with_mock() {
+    let source = r#"
+        provider mock {
+            driver: "openai"
+            endpoint: "http://localhost:1234"
+            models: ["model-a"]
+        }
+
+        agent greeting {
+            model: mock("model-a")
+            instruction: "Say hello."
+            output: string
+        }
+
+        output {
+            greeting: agent.greeting
+        }
+    "#;
+
+    let workflow = parse_workflow(source).unwrap();
+    let runtime = WorkflowRuntime::new(Arc::new(MockRunner));
+    let output = runtime.execute(&workflow, None).await.unwrap();
+
+    assert_eq!(output["greeting"], "mock response");
+}
+```
+
+## Testing fixture files
+
+The repository includes `.wire` fixture files in `crates/executor/tests/fixtures/`. You can use these in your own tests:
+
+```rust
+use std::fs;
+
+#[test]
+fn fixture_parses() {
+    let source = fs::read_to_string(
+        "crates/executor/tests/fixtures/001_minimum.wire"
+    ).unwrap();
+    let workflow = superwire_core::dsl::parse_workflow(&source);
+    assert!(workflow.is_ok());
+}
+```
+
+## Testing dynamic blocks and MCP integrations
+
+For workflows that use `dynamic` blocks with `call tool.xxx`, provide a custom runner that handles the registered tools:
+
+```rust
+use superwire_core::runtime::*;
+
+struct ToolAwareRunner;
+
+#[async_trait::async_trait]
+impl AgentRunner for ToolAwareRunner {
+    async fn run_agent(
+        &self,
+        request: AgentExecutionRequest,
+    ) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
+        // Access tools from request.tools
+        // Execute them as needed and return results
+        Ok(AgentExecutionResult {
+            output: serde_json::json!({"status": "ok"}),
+            context: serde_json::Value::Null,
+        })
+    }
+}
+```
+
+See the [Rust API](/api-reference/rust-api) page for the full runtime interface.

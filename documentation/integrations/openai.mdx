@@ -1,45 +1,66 @@
 ---
-title: OpenAI-Compatible Endpoints
-description: Configure the built-in OpenAI driver with explicit endpoint and API key settings.
+title: OpenAI
+description: Configure Superwire to use the OpenAI API as a model provider.
 ---
 
-The runtime includes a built-in OpenAI-compatible driver.
-
-## Required configuration
+## Provider declaration
 
 ```wire
 provider openai {
     driver: "openai"
     endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
+    models: ["gpt-4.1-mini", "gpt-4.1"]
+}
+```
+
+## Required settings
+
+| Setting | Description |
+| --- | --- |
+| `driver` | Must be `"openai"` |
+| `endpoint` | API endpoint URL |
+| `api_key` | OpenAI API key (use `secrets` in production) |
+
+## Optional settings
+
+| Setting | Description |
+| --- | --- |
+| `models` | List of allowed model names for validation |
+
+## Agent binding
+
+```wire
+agent summarizer {
+    model: openai("gpt-4.1-mini")
+    instruction: "Summarize the following: {{ input.text }}"
+    output: string
+}
+```
+
+## Using secrets for the API key
+
+In production, store your key in `secrets`:
+
+```wire
+secrets {
+    openai_api_key: string
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.openai_api_key
     models: ["gpt-4.1-mini"]
 }
 ```
 
-Required runtime settings:
+## Named model arguments
 
-- `driver`
-- `endpoint`
-- `api_key`
-
-Optional validation setting:
-
-- `models`
-
-## Agent example
+The `model` call supports named arguments:
 
 ```wire
-agent analyst {
-    model: openai("gpt-4.1-mini")
-    prompt: "Analyze {{ input.notes }} and return the main risks."
-    output: {
-        risks: [string]
-    }
-}
+model: openai(model: "gpt-4.1-mini")
 ```
 
-## Notes
-
-- `endpoint` should include the API base path expected by your OpenAI-compatible service
-- `api_key` is parsed as a string literal by the current runtime provider parser
-- built-in drivers are currently `openai` and `ollama`
+This is equivalent to the positional form `openai("gpt-4.1-mini")`.

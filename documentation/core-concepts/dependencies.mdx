@@ -1,9 +1,9 @@
 ---
 title: Dependencies
-description: Engine AI builds the execution graph from agent references automatically.
+description: Superwire builds the execution graph from agent references automatically.
 ---
 
-Engine AI does not require you to list edges manually. Dependencies come from references.
+Superwire does not require you to list edges manually. Dependencies come from references.
 
 ## Dependency rule
 
@@ -12,7 +12,7 @@ If an agent expression references another agent through `agent.<name>`, the curr
 ```wire
 agent first {
     model: scripted("mock-model")
-    prompt: "First prompt: {{ input.subject }}"
+    instruction: "First prompt: {{ input.subject }}"
     output: {
         summary: string
     }
@@ -20,7 +20,7 @@ agent first {
 
 agent second {
     model: scripted("mock-model")
-    prompt: "Second prompt: {{ agent.first.summary }}"
+    instruction: "Second prompt: {{ agent.first.summary }}"
     output: string
 }
 ```
@@ -32,12 +32,14 @@ In this case, `second` runs after `first`.
 The dependency graph is built from references found in:
 
 - `model`
-- `prompt`
+- `instruction`
 - `context`
 - `inference`
 - `tools`
+- `uses`
 - custom agent properties
 - loop iterables in `agent ... for ... in ...`
+- dynamic block expressions
 
 ## What does not create dependencies
 
@@ -52,13 +54,13 @@ Validation rejects cycles before runtime execution.
 ```wire
 agent alpha {
     model: openai("gpt-4.1-mini")
-    prompt: "Use {{ agent.beta }}"
+    instruction: "Use {{ agent.beta }}"
     output: string
 }
 
 agent beta {
     model: openai("gpt-4.1-mini")
-    prompt: "Use {{ agent.alpha }}"
+    instruction: "Use {{ agent.alpha }}"
     output: string
 }
 ```

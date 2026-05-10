@@ -9,10 +9,10 @@ Parsing returns `DslParseError`.
 
 Important variants include:
 
-- `Pest`
-- `MissingNode`
-- `UnexpectedRule`
-- `InvalidIntegerLiteral`
+- `Pest` — raw pest parse error
+- `MissingNode` — expected AST node not found
+- `UnexpectedRule` — unexpected grammar rule encountered
+- `InvalidIntegerLiteral` — malformed integer literal
 
 Parse errors expose source spans through `DslParseError::span()`.
 
@@ -22,16 +22,19 @@ Validation returns a `ValidationReport` with zero or more `ValidationIssue` valu
 
 Common issue categories include:
 
-- duplicate declarations
+- duplicate declarations (providers, schemas, agents, input, secrets, output)
+- duplicate properties within a declaration
 - unknown schema references
-- invalid model expressions
+- invalid model expressions (must be `provider("model")` form)
 - unknown providers or unknown models
-- invalid keyword roots
-- missing input or secrets declarations
-- secret leaks in prompts or output
-- invalid reference paths
+- invalid keyword reference roots
+- missing input or secrets declarations for referenced fields
+- secret leaks in instructions or output
+- invalid reference paths (field does not exist on the type)
 - missing agent output types for field access
-- dependency cycles
+- dependency cycles between agents
+- dependency cycles between dynamic blocks
+- invalid `uses:` references or `max_calls` overrides
 
 ## Runtime diagnostics
 
@@ -39,25 +42,26 @@ Execution returns `WorkflowRuntimeError`.
 
 Important variants include:
 
-- `ParseFailed`
-- `InvalidWorkflow`
-- `ExecutionPlanInvariant`
-- `MissingDeclaration`
-- `UnsupportedFeature`
-- `ProviderConfiguration`
-- `ExpressionEvaluation`
-- `InvalidAgentProperty`
-- `InputTypeMismatch`
-- `OutputTypeMismatch`
-- `InputValueMismatch`
-- `AgentExecutionFailed`
-- `AgentOutputTypeMismatch`
-- `SerializationFailed`
-- `OutputDeserializationFailed`
-- `Other`
+- `ParseFailed` — could not parse the workflow at runtime
+- `InvalidWorkflow` — workflow failed validation
+- `ExecutionPlanInvariant` — internal execution plan error
+- `MissingDeclaration` — referenced declaration not found
+- `UnsupportedFeature` — feature not yet supported by the runtime
+- `ProviderConfiguration` — provider could not be configured
+- `ExpressionEvaluation` — expression evaluation failed
+- `InvalidAgentProperty` — unrecognized agent property
+- `InputTypeMismatch` — provided input does not match declared types
+- `OutputTypeMismatch` — agent output does not match declared type
+- `InputValueMismatch` — wrong number or type of input values
+- `AgentExecutionFailed` — agent call to LLM failed
+- `AgentOutputTypeMismatch` — LLM response does not match output schema
+- `SerializationFailed` — could not serialize/deserialize data
+- `OutputDeserializationFailed` — could not deserialize agent output
+- `Other` — catch-all for unexpected errors
 
 ## Practical advice
 
 - surface parse spans directly in editors or test failures
 - treat validation as a required preflight step
 - reserve runtime errors for provider failures, unsupported features, input/output mismatches, and agent execution failures
+- use the validation report's structured issues for IDE integration

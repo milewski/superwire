@@ -3,7 +3,7 @@ title: Building Workflows
 description: A practical workflow-authoring process that starts from outputs and works backward.
 ---
 
-A good Engine AI workflow usually gets easier to maintain when you design it from the outside in.
+A good Superwire workflow usually gets easier to maintain when you design it from the outside in.
 
 ## 1. Start with the final output
 
@@ -42,14 +42,14 @@ provider openai {
 }
 ```
 
-## 4. Keep prompts focused
+## 4. Keep instructions focused
 
-Prefer small, typed stages over one huge prompt.
+Prefer small, typed stages over one huge instruction.
 
 ```wire
 agent summarize_notes {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize these notes into three findings: {{ input.notes }}"
+    instruction: "Summarize these notes into three findings: {{ input.notes }}"
     output: {
         findings: [string; 3]
     }
@@ -63,20 +63,128 @@ Downstream stages should read from upstream stages through `agent.*` references.
 ```wire
 agent create_brief {
     model: openai("gpt-4.1-mini")
-    prompt: "Turn these findings into a brief: {{ agent.summarize_notes.findings }}"
-    output: schema.ReleaseSummary
+    instruction: "Create a brief from these findings: {{ agent.summarize_notes.summary }}"
+    output: {
+        brief: string
+        action_items: [string; 3]
+    }
 }
 ```
 
-## 6. Keep workflow output stable
+## 6. Use `dynamic` blocks for computed values
 
-The top-level `output` block is the contract you expose to callers. Resist the urge to mirror every internal field directly.
+When you need tool calls or MCP integrations to produce values at runtime, use `dynamic` blocks:
 
-## Checklist
+```wire
+secrets {
+    mcp_endpoint: string
+}
 
-- providers are named clearly
-- secrets never appear in prompts or output
-- agent outputs have explicit types
-- shared shapes use named schemas
-- public output is smaller than internal agent output
-- model names are listed in each provider for validation
+mcp local {
+    endpoint: secrets.mcp_endpoint
+}
+
+tool fetch_context from mcp.local.tool.fetch_context
+
+dynamic {
+    context: call tool.fetch_context
+}
+
+agent analyze {
+    model: openai("gpt-4.1-mini")
+    instruction: "Analyze with context: {{ dynamic.context }}"
+    output: string
+}
+```
+
+## 7. Protect sensitive values
+
+Put credentials and API keys in `secrets`, never in `input` or `instruction` strings.
+
+```wire
+secrets {
+    database_url: string
+}
+
+provider postgres_agent {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "test-api-key"
+    models: ["gpt-4.1-mini"]
+}
+```
+
+## 8. Use `uses:` for agent tool access
+
+Give agents explicit tool access through `uses:`:
+
+```wire
+from mcp.local.tool {
+    tool search_database
+    tool write_report
+}
+
+agent researcher {
+    model: openai("gpt-4.1-mini")
+    uses: [tool.search_database]
+    instruction: "Research the topic: {{ input.topic }}"
+    output: {
+        findings: [string]
+    }
+}
+
+agent writer {
+    model: openai("gpt-4.1-mini")
+    uses: [tool.write_report]
+    instruction: "Write a report from these findings: {{ agent.researcher }}"
+    output: string
+}
+```
+
+## 9. Validate before executing
+
+Always parse and validate workflows before running them:
+
+```rust
+use superwire_core::dsl::{parse_workflow, validate_workflow};
+
+let workflow = parse_workflow(source)?;
+let report = validate_workflow(&workflow);
+assert!(report.is_valid(), "Workflow has validation errors: {:?}", report.issues);
+```
+
+## 10. Iterate with `for` loops for batch work
+
+When you need to process a collection, use the `for ... in` loop:
+
+```wire
+input {
+    items: [string]
+}
+
+agent process_item for item in input.items {
+    model: openai("gpt-4.1-mini")
+    instruction: "Process: {{ item }}"
+    output: {
+        original: string
+        result: string
+    }
+}
+
+output {
+    results: agent.process_item
+}
+```
+
+## Quick checklist
+
+- [ ] Define `output` first to clarify the goal
+- [ ] Declare providers with explicit model lists
+- [ ] Put secrets in `secrets`, not `input`
+- [ ] Use schemas for shared structures
+- [ ] Keep instructions small and focused
+- [ ] Wire dependencies through references, not duplication
+- [ ] Use `dynamic` for tool calls and MCP operations
+- [ ] Use `uses:` for agent tool access
+- [ ] Validate before executing
+- [ ] Add field descriptions for schema clarity

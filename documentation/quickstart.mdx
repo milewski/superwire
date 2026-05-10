@@ -26,7 +26,7 @@ provider ollama {
 
 agent greeting {
     model: ollama("qwen3.5:8b")
-    prompt: "Write a one-sentence welcome message for a new user."
+    instruction: "Write a one-sentence welcome message for a new user."
     output: string
 }
 
@@ -34,6 +34,8 @@ output {
     greeting: agent.greeting
 }
 ```
+
+Note the **`instruction:`** property — not `prompt:`. This is the agent property that holds the text sent to the model.
 
 ## 3. Execute it from Rust
 
@@ -77,7 +79,7 @@ input {
 
 agent summary {
     model: ollama("qwen3.5:8b")
-    prompt: "Explain {{ input.topic }} for {{ input.audience }}."
+    instruction: "Explain {{ input.topic }} for {{ input.audience }}."
     output: {
         title: string
         summary: string
@@ -132,12 +134,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 5. Know the current runtime boundary
 
-The default runtime executes `model`, `prompt`, `output`, `context`, `inference`, `tools`, `for` loop agents, `context(...)`, `compact(...)`, and `template(...)`.
+The default runtime executes `model`, `instruction`, `output`, `context`, `inference`, `tools`, `uses`, `for` loop agents, `context(...)`, `compact(...)`, and `template(...)`.
+
+Dynamic blocks, MCP server integrations (`mcp` declarations, tool calls via `call`, resource reads via `read`, prompt renders via `render`), and batch imports are also supported.
 
 <Info>
-  `tool.*` references are executed within the `tools:` property. Using
-  `tool.*` in general expressions (such as prompts, output, or interpolation)
-  returns `UnsupportedFeature` at runtime.
+  `tool.*` references are resolved through the MCP tool system and are only available
+  within agent <code>uses:</code> arrays or <code>dynamic</code> blocks. The
+  <code>call tool.xxx</code> expression form is used in dynamic blocks.
 </Info>
 
 ## Continue reading

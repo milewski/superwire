@@ -1,6 +1,6 @@
 ---
 title: Agents
-description: Define model calls, prompts, output types, and dependency edges.
+description: Define model calls, instructions, output types, and dependency edges.
 ---
 
 Agents are the center of the DSL. They describe a named unit of work that can reference input, secrets, and prior agent outputs.
@@ -10,7 +10,7 @@ Agents are the center of the DSL. They describe a named unit of work that can re
 ```wire
 agent summary {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize {{ input.notes }}."
+    instruction: "Summarize {{ input.notes }}."
     output: string
 }
 ```
@@ -20,22 +20,24 @@ agent summary {
 ```wire
 agent <name> [for <item> in <expression>] {
     model: <expression>
-    prompt: <expression>
+    instruction: <expression>
     output: <type_expression>
     context: <expression>
     inference: <expression>
     tools: <expression>
+    uses: <expression>
 }
 ```
 
 ## Built-in properties
 
 - **`model`**: provider/model binding such as `openai("gpt-4.1-mini")`
-- **`prompt`**: string literal or interpolated string sent to the model
+- **`instruction`**: string literal or interpolated string sent to the model as the primary prompt
 - **`output`**: type expression used to validate the returned JSON value
-- **`context`**: reserved property for explicit context wiring
+- **`context`**: reserved property for explicit context wiring (see [Context and Compaction](/advanced/context-sharing))
 - **`inference`**: structured generation settings such as temperature and token limits
-- **`tools`**: list of tool references such as `tool.search` or `tool.search(query: input.topic)`
+- **`tools`**: list of tool references such as `tool.search` or `tool.search(query: input.topic)` (legacy inline form)
+- **`uses`**: list of tool references bound from MCP server imports, with optional per-agent `max_calls` overrides
 
 ## A full example
 
@@ -48,7 +50,7 @@ agent research_brief {
         max_tokens: 12_000
     }
 
-    prompt: "Write a concise research brief about {{ input.topic }}."
+    instruction: "Write a concise research brief about {{ input.topic }}."
 
     output: {
         summary: string
@@ -67,36 +69,69 @@ Agent expressions can use:
 - `agent.other_agent`
 - `agent.other_agent.field`
 - `agent.other_agent.nullable_field?.nested_field`
+- `dynamic.block_name`
+- `dynamic.block_name.field`
 
 Referencing `agent.other_agent` creates a dependency edge automatically.
 
+## Response format
+
+The `output` property supports a response format hint:
+
+```wire
+agent structured_writer {
+    model: openai("gpt-4.1-mini")
+    instruction: "Extract the data from this text."
+    output: {
+        json_schema: "auto"
+        schema: {
+            name: string
+            age: number
+        }
+    }
+}
+```
+
+Accepted values: `auto`, `json_schema`, `json_object`, `instruction_only`.
+
 ## Loop form
 
-The grammar also supports agent loops:
+The grammar supports agent loops:
 
 ```wire
 agent remediation_plan for finding in agent.findings.items {
     model: openai("gpt-4.1-mini")
-    prompt: "Create a remediation plan for {{ finding }}."
+    instruction: "Create a remediation plan for {{ finding }}."
+    output: string
+}
+```
+
+Object destructuring is also supported:
+
+```wire
+agent process_items for { id, name } in input.items {
+    model: openai("gpt-4.1-mini")
+    instruction: "Process item {{ id }}: {{ name }}"
     output: string
 }
 ```
 
 ## Current runtime behavior
 
-The default runtime executes all six agent properties:
+The default runtime executes all agent properties:
 
 - `model`
-- `prompt`
+- `instruction`
 - `output`
 - `context`
 - `inference`
 - `tools`
+- `uses`
 
 It also fully evaluates `for` loop iteration (with parallel execution per iteration), `context(...)`, `compact(...)`, and `template(...)` function calls.
 
 <Info>
   <code>tool.*</code> references are only executed within the <code>tools:</code>
-  property. Using <code>tool.*</code> in general expressions returns
-  <code>UnsupportedFeature</code> at runtime.
+  property or via <code>uses:</code>. Use the <code>call tool.xxx</code> expression
+  in <code>dynamic</code> blocks for tool invocation in other contexts.
 </Info>

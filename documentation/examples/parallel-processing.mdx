@@ -3,7 +3,11 @@ title: Parallel Processing
 description: Author a looped agent over an input array and see the intended result shape.
 ---
 
-This example is based on `crates/core/workflows/agent_for_loop.ai`.
+Based on `crates/executor/tests/fixtures/005_parallel_agents.wire`.
+
+## Multiple independent agents
+
+When agents have no inter-dependencies, the runtime executes them concurrently:
 
 ```wire
 provider openai {
@@ -14,12 +18,56 @@ provider openai {
 }
 
 input {
+    product_name: string
+}
+
+agent changelog {
+    model: openai("gpt-4.1-mini")
+    instruction: "Write release notes for {{ input.product_name }}."
+    output: {
+        markdown: string
+    }
+}
+
+agent social_thread {
+    model: openai("gpt-4.1-mini")
+    instruction: "Create a launch thread for {{ input.product_name }}."
+    output: {
+        posts: [string]
+    }
+}
+
+agent customer_email {
+    model: openai("gpt-4.1-mini")
+    instruction: "Write an announcement email for {{ input.product_name }}."
+    output: {
+        subject: string
+        body: string
+    }
+}
+
+output {
+    changelog: agent.changelog.markdown
+    posts: agent.social_thread.posts
+    email_subject: agent.customer_email.subject
+    email_body: agent.customer_email.body
+}
+```
+
+All three agents — `changelog`, `social_thread`, and `customer_email` — run in parallel because none depends on another agent's output.
+
+## Looped agents
+
+For processing each element of an array, use the `for ... in` syntax:
+
+```wire
+input {
     numbers: [number]
 }
 
 agent input_number_note for n in input.numbers {
     model: openai("gpt-4.1-mini")
-    prompt: "Write a short note for input number {{ n }}"
+    instruction: "Write a short note for input number {{ n }}."
     output: {
         number: number
         note: string
@@ -42,4 +90,38 @@ Intended output shape:
 }
 ```
 
-Looped agents execute in the current runtime and return an array value at `agent.<looped_agent_name>`.
+Looped agents execute in parallel — each iteration is independent.
+
+## Diamond dependencies
+
+When two branches converge on a third agent, the runtime respects the full dependency graph:
+
+```wire
+input {
+    topic: string
+}
+
+agent branch_a {
+    model: openai("gpt-4.1-mini")
+    instruction: "Analyze {{ input.topic }} from perspective A."
+    output: string
+}
+
+agent branch_b {
+    model: openai("gpt-4.1-mini")
+    instruction: "Analyze {{ input.topic }} from perspective B."
+    output: string
+}
+
+agent merger {
+    model: openai("gpt-4.1-mini")
+    instruction: "Merge these analyses: A={{ agent.branch_a }}, B={{ agent.branch_b }}"
+    output: string
+}
+
+output {
+    merged: agent.merger
+}
+```
+
+`branch_a` and `branch_b` run in parallel. `merger` waits for both to complete.

@@ -1,94 +1,167 @@
 ---
-title: Migration from Legacy Syntax
-description: Update older examples that used assignment arrows, terminal agents, and `for_each` loops.
+title: Migration Guide
+description: Migrating to the current Superwire DSL from older versions.
 ---
 
-Older examples in this repository's documentation used an earlier DSL shape. The current grammar is more explicit and uses `:` consistently.
+## `prompt` → `instruction`
 
-## Replace assignment arrows with colons
+The agent property for specifying what the model receives has been renamed.
 
-Before:
-
-```wire
-model <- "ollama/qwen3:8b"
-prompt <- "Say hello"
-```
-
-Now:
-
-```wire
-model: ollama("qwen3.5:8b")
-prompt: "Say hello"
-```
-
-## Replace terminal-agent markers with an explicit output block
-
-Before:
-
-```wire
-<- agent greeting {
-    ...
-}
-```
-
-Now:
-
+**Before:**
 ```wire
 agent greeting {
+    model: openai("gpt-4.1-mini")
+    prompt: "Write a short welcome message."
+    output: string
+}
+```
+
+**After:**
+```wire
+agent greeting {
+    model: openai("gpt-4.1-mini")
+    instruction: "Write a short welcome message."
+    output: string
+}
+```
+
+## New `uses:` property
+
+The `tools:` array for inline tool references is still supported, but a new `uses:` property provides better scoping and `max_calls` control.
+
+**Before (inline `tools:`):**
+```wire
+agent assistant {
+    model: openai("gpt-4.1-mini")
+    tools: [tool.web_search]
+    instruction: "Search and summarize."
+    output: string
+}
+```
+
+**After (with `uses:`):**
+```wire
+tool web_search from mcp.local.tool.web_search
+
+agent assistant {
+    model: openai("gpt-4.1-mini")
+    uses: [tool.web_search]
+    instruction: "Search and summarize."
+    output: string
+}
+```
+
+## New `dynamic` blocks
+
+Dynamic blocks replace ad-hoc expression embedding for tool calls and MCP operations.
+
+**Before (tool calls in arbitrary expressions):**
+```wire
+// Not supported or limited
+```
+
+**After (dynamic blocks):**
+```wire
+dynamic {
+    data: call tool.fetch_data {
+        input { id: input.item_id }
+    }
+}
+
+agent processor {
+    model: openai("gpt-4.1-mini")
+    instruction: "Process: {{ dynamic.data }}"
+    output: string
+}
+```
+
+## New MCP server declarations
+
+MCP servers are now declared with `mcp` blocks instead of being embedded in tool references.
+
+```wire
+mcp local {
+    endpoint: "http://localhost:3000"
+    headers: { Authorization: "Bearer token" }
+}
+
+tool fetch_user from mcp.local.tool.fetch_user
+```
+
+## Batch imports
+
+Multiple tools, resources, or prompts from the same server can be imported in a single `from` block:
+
+```wire
+from mcp.local.tool {
+    bindings {
+        project_id: input.project_id
+    }
+
+    tool create_task {
+        bindings { task_id: input.task_id }
+    }
+
+    tool update_task
+}
+```
+
+## New reference roots
+
+The grammar now supports additional reference keyword roots:
+
+- `dynamic.*` — access dynamic block results
+- `resource.*` — reference imported resources
+- `prompt.*` — reference imported prompt templates
+
+Previously, only `agent.*`, `input.*`, `secrets.*`, and `tool.*` were supported.
+
+## `max_calls` for tools
+
+Tool call limits can now be set at the tool declaration level or overridden per-agent:
+
+```wire
+tool fetch_data from mcp.local.tool.fetch_data {
+    max_calls: 10
+}
+
+agent limited_agent {
+    uses: [tool.fetch_data { max_calls: 3 }]
     ...
 }
+```
 
-output {
-    greeting: agent.greeting
+## Context functions
+
+The `context(...)` and `compact(...)` functions are now fully supported in agent `context:` properties. Use them to control what prior agent output is sent as context to the next agent.
+
+```wire
+agent summary {
+    model: openai("gpt-4.1-mini")
+    context: compact(agent.research_analysis)
+    instruction: "Summarize the above."
+    output: string
 }
 ```
 
-## Replace `for_each` with `for ... in ...`
+## Object destructuring in for-loops
 
-Before:
-
-```wire
-agent process for_each item in input.items {
-    ...
-}
-```
-
-Now:
+Loop patterns now support destructuring:
 
 ```wire
-agent process for item in input.items {
-    ...
-}
+// Before: single variable
+agent process for item in input.items { ... }
+
+// After: also supports destructuring
+agent process for { id, name } in input.items { ... }
 ```
 
-## Use explicit provider calls for models
+## Summary of changes
 
-Before:
-
-```wire
-model <- "ollama/qwen3:8b"
-```
-
-Now:
-
-```wire
-model: ollama("qwen3:8b")
-```
-
-## Add explicit keyword roots in references
-
-Prefer current forms such as:
-
-```wire
-input.topic
-agent.summary.text
-secrets.openai_api_key
-```
-
-## Final migration checklist
-
-- replace `<-` with `:`
-- add a top-level `output { ... }` block
-- switch old model strings to provider calls
-- replace `for_each` with `for ... in ...`
-- re-run parsing and validation after the update
+| What changed | Old syntax | New syntax |
+| --- | --- | --- |
+| Agent instruction | `prompt:` | `instruction:` |
+| Tool access | `tools: [tool.xxx]` inline | `uses: [tool.xxx]` with `tool` declarations |
+| MCP connection | embedded in tool refs | `mcp` declaration blocks |
+| Runtime computation | limited | `dynamic` blocks with `call`, `read`, `render` |
+| Reference roots | `agent`, `input`, `secrets`, `tool` | + `dynamic`, `resource`, `prompt` |

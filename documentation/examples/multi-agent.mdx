@@ -17,7 +17,7 @@ input {
 
 agent summarize_notes {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize these interview notes into three findings: {{ input.interview_notes }}"
+    instruction: "Summarize these interview notes into three findings: {{ input.interview_notes }}"
     output: {
         findings: [string; 3]
         summary: string
@@ -26,7 +26,7 @@ agent summarize_notes {
 
 agent review_findings {
     model: openai("gpt-4.1-mini")
-    prompt: "Review this summary and call out the biggest research risk: {{ agent.summarize_notes.summary }}"
+    instruction: "Review this summary and call out the biggest research risk: {{ agent.summarize_notes.summary }}"
     output: {
         biggest_risk: string
         follow_up_questions: [string]
@@ -44,6 +44,8 @@ output {
 ## What it demonstrates
 
 - `input.*` references in the first agent
-- `agent.*` references in the second agent
-- automatic dependency ordering
+- `agent.*` references in the second agent (creates a dependency edge)
+- automatic dependency ordering (`review_findings` waits for `summarize_notes`)
 - structured output validation on both agents
+- fixed-length array type `[string; 3]`
+- field access in the output block (`agent.summarize_notes.findings`)

@@ -3,7 +3,7 @@ title: Data Types
 description: The complete type system used by input, secrets, schemas, and agent output declarations.
 ---
 
-Engine AI uses the same type expression grammar in four places:
+Superwire uses the same type expression grammar in four places:
 
 - `input { ... }`
 - `secrets { ... }`
@@ -39,7 +39,7 @@ schema ResearchSummary {
 ```wire
 [string]
 [number]
-[{ id: string score: number }]
+[{ id: string, score: number }]
 ```
 
 ### Fixed-length arrays

@@ -13,26 +13,32 @@ Both forms support interpolation.
 ## Basic interpolation
 
 ```wire
-prompt: "Write a summary for {{ input.product_name }}"
+instruction: "Write a summary for {{ input.product_name }}."
 ```
 
 ## Interpolating agent output
 
 ```wire
-prompt: "Analyze this summary: {{ agent.release_summary.summary }}"
+instruction: "Analyze this summary: {{ agent.release_summary.summary }}"
 ```
 
 When a prompt references another agent, that reference also creates a dependency edge.
 
+## Interpolating dynamic and tool results
+
+```wire
+instruction: "Based on fetched data: {{ dynamic.fetched_data }}"
+```
+
 ## Multiline interpolation
 
 ```wire
-prompt: """
+instruction: """
     Write a launch message for {{ input.audience }}.
 
     Product: {{ input.product_name }}
-    Summary: {{ agent.release_summary.summary }}
-    Key points: {{ agent.release_summary.key_points }}
+    Title: {{ agent.release_notes.title }}
+    Body: {{ agent.release_notes.body }}
 """
 ```
 

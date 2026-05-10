@@ -1,0 +1,90 @@
+---
+title: Resources
+description: Read external resources through MCP servers.
+---
+
+Resources are read-only data sources exposed by MCP servers — files, API endpoints, database records, and more.
+
+## Importing a resource
+
+```wire
+mcp local {
+    endpoint: "http://localhost:3000"
+}
+
+resource project_readme from mcp.local.resource.project_readme
+```
+
+The syntax mirrors tool imports:
+
+```wire
+resource <local_name> from <mcp_server>.resource.<remote_name>
+```
+
+## Reading a resource
+
+Use the `read` expression in a `dynamic` block to fetch a resource at runtime:
+
+```wire
+dynamic {
+    readme: read resource.project_readme {
+        bindings {
+            section: "setup"
+        }
+    }
+}
+```
+
+## With input bindings
+
+Resources often need parameters that come from input or other workflow state:
+
+```wire
+input {
+    workspace_id: string
+}
+
+resource project_readme from mcp.local.resource.project_readme {
+    bindings {
+        workspace_id: input.workspace_id
+    }
+}
+
+dynamic {
+    readme: read resource.project_readme
+}
+```
+
+The `bindings` block on the import captures static or input-derived parameters when the resource is first accessed. You can also overlay bindings at read time for additional parameters.
+
+## Using resource values
+
+Once read, resource values are available via `dynamic`:
+
+```wire
+output {
+    readme: dynamic.readme
+}
+```
+
+## Referencing other dynamic values in read bindings
+
+```wire
+dynamic {
+    readme: read resource.project_readme {
+        bindings {
+            section: "setup"
+        }
+    }
+    instructions: render prompt.system_prompt {
+        bindings {
+            readme: dynamic.readme
+        }
+    }
+}
+```
+
+<Info>
+  Resource reads execute at runtime and can depend on other dynamic values
+  through binding overlays.
+</Info>

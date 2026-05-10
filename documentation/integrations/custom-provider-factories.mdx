@@ -1,55 +1,81 @@
 ---
-title: Custom Agent Runners
-description: Extend runtime execution by implementing `AgentRunner` and passing it to `WorkflowRuntime::run_with_runner`.
+title: Custom Provider Factories
+description: Implement your own `ProviderDriver` to connect Superwire to any LLM backend.
 ---
 
-The current runtime API does not expose `WorkflowProviderFactory` or dynamic provider registration.
+Superwire's runtime is provider-agnostic. You can implement the `ProviderDriver` trait to connect any LLM backend.
 
-For custom execution logic, implement `AgentRunner` and run workflows with `run_with_runner(...)`.
-
-## Extension point
+## The `ProviderDriver` trait
 
 ```rust
-use async_trait::async_trait;
-use superwire_core::runtime::{AgentExecutionRequest, AgentExecutionResult, AgentRunner, WorkflowRuntimeError};
-use serde_json::json;
+#[async_trait::async_trait]
+pub trait ProviderDriver: Send + Sync {
+    async fn generate(
+        &self,
+        config: &ProviderConfig,
+    ) -> Result<GenerateResponse, ProviderError>;
+}
+```
 
-struct MyRunner;
+## Registering a custom driver
 
-#[async_trait]
-impl AgentRunner for MyRunner {
-    async fn run_agent(&self, request: &AgentExecutionRequest) -> Result<AgentExecutionResult, WorkflowRuntimeError> {
-        let synthetic_output = json!({
-            "agent": request.agent_name,
-            "model": request.model_name,
-            "prompt": request.prompt,
-        });
+Use the `register_provider_driver!` macro:
 
-        Ok(AgentExecutionResult {
-            output: synthetic_output,
-            context: json!({"runner": "my-runner"}),
-        })
+```rust
+superwire_core::register_provider_driver!("my_driver", MyCustomDriver);
+```
+
+## Using it in a workflow
+
+```wire
+provider my_provider {
+    driver: "my_driver"
+    endpoint: "http://my-custom-endpoint.local"
+    models: ["custom-model-v1"]
+}
+
+agent my_agent {
+    model: my_provider("custom-model-v1")
+    instruction: "Do something useful."
+    output: string
+}
+```
+
+## Configuration
+
+All properties in the provider block are available to your driver through `ProviderConfig`. Access them by key:
+
+```rust
+impl ProviderDriver for MyCustomDriver {
+    async fn generate(
+        &self,
+        config: &ProviderConfig,
+    ) -> Result<GenerateResponse, ProviderError> {
+        let endpoint = config.get_string("endpoint");
+        let api_key = config.get_string("api_key");
+        // ...
     }
 }
 ```
 
-## Running with a custom runner
+## Model validation
 
-```rust
-use superwire_core::runtime::WorkflowRuntime;
+If your provider supports a known model list, add `models:` to the provider block. The framework validates that agent `model:` calls reference entries in this list.
 
-let runtime = WorkflowRuntime::<Input, Output>::new(workflow)?;
-let output = runtime.run_with_runner(input, &MyRunner).await?;
+```wire
+provider my_provider {
+    driver: "my_driver"
+    endpoint: "http://my-custom-endpoint.local"
+    models: ["custom-model-v1", "custom-model-v2"]
+}
 ```
 
-## Practical use cases
+## Error handling
 
-1. deterministic integration tests without live model calls
-2. custom transport or queue-backed execution
-3. request/response tracing for observability
-4. policy checks before dispatching agent calls
+Return `ProviderError` from your driver to surface errors to the workflow runtime:
 
-## Current limitation
+```rust
+Err(ProviderError::Other("Service unavailable".into()))
+```
 
-Provider declarations still parse into the built-in `ProviderConfig` variants (`openai` and `ollama`).
-If you need new provider drivers, add them in `superwire-core` and wire them into runtime provider parsing.
+See the [Rust API](/api-reference/rust-api) page for the full interface.

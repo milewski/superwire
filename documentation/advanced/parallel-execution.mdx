@@ -3,7 +3,7 @@ title: Parallel Execution
 description: Understand how dependency analysis shapes execution order and where true concurrency currently stands.
 ---
 
-Engine AI computes execution order from agent references.
+Superwire computes execution order from agent references and dynamic block dependencies.
 
 ## Automatic parallelism
 
@@ -12,45 +12,45 @@ Two agents can run in parallel when neither depends on the other.
 ```wire
 agent sentiment {
     model: openai("gpt-4.1-mini")
-    prompt: "Classify sentiment for {{ input.text }}"
+    instruction: "Classify sentiment for {{ input.text }}"
     output: string
 }
 
 agent topics {
     model: openai("gpt-4.1-mini")
-    prompt: "Extract topics from {{ input.text }}"
+    instruction: "Extract topics from {{ input.text }}"
     output: [string]
 }
 ```
 
-Because both agents depend only on `input.text`, they are independent in the dependency graph.
+Because both agents depend only on `input.text`, they are independent in the dependency graph and run concurrently.
 
 ## Serial execution by reference
 
 ```wire
 agent summary {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize {{ input.text }}"
+    instruction: "Summarize {{ input.text }}"
     output: string
 }
 
 agent review {
     model: openai("gpt-4.1-mini")
-    prompt: "Review this summary: {{ agent.summary }}"
+    instruction: "Review this summary: {{ agent.summary }}"
     output: string
 }
 ```
 
-`review` waits for `summary` because its prompt references `agent.summary`.
+`review` waits for `summary` because its instruction references `agent.summary`.
 
 ## Loop syntax and intended behavior
 
-The grammar also supports looped agents:
+The grammar supports looped agents:
 
 ```wire
 agent remediation_plan for finding in agent.findings.items {
     model: openai("gpt-4.1-mini")
-    prompt: "Create a remediation plan for {{ finding }}"
+    instruction: "Create a remediation plan for {{ finding }}."
     output: {
         title: string
         steps: [string]
@@ -58,17 +58,35 @@ agent remediation_plan for finding in agent.findings.items {
 }
 ```
 
-This syntax produces one run per item and returns an array of outputs.
+Each iteration runs independently and the result is an array of outputs.
+
+## Dynamic block dependencies
+
+Dynamic blocks also participate in dependency analysis:
+
+```wire
+dynamic {
+    raw_data: call tool.fetch_data {
+        input { project_id: input.project_id }
+    }
+}
+
+agent analyze {
+    model: openai("gpt-4.1-mini")
+    instruction: "Analyze: {{ dynamic.raw_data }}"
+    output: string
+}
+```
+
+The `analyze` agent depends on the `raw_data` dynamic block and waits for it to complete.
 
 ## Current runtime behavior
 
-The runtime executes agents in dependency order using **parallel batches**. Agents with no unresolved dependencies within the same batch run concurrently via `try_join_all`. Within each batch, iterations of looped agents also execute in parallel.
-
-Dependency analysis determines which agents run first, which run in parallel, and which must wait for upstream results.
+The runtime executes work items in dependency order using **parallel batches**. Items with no unresolved dependencies within the same batch run concurrently via `try_join_all`. Within each batch, iterations of looped agents also execute in parallel.
 
 ## Performance guidance
 
-- keep agents independent unless downstream steps truly need upstream data
-- reference only the fields you need from previous agents
-- break wide fan-out workflows into stable, typed stages
-- declare `output` types so failures surface early
+- Keep agents independent unless downstream steps truly need upstream data.
+- Reference only the fields you need from previous agents.
+- Break wide fan-out workflows into stable, typed stages.
+- Declare `output` types so failures surface early.

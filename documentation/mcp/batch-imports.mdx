@@ -1,0 +1,155 @@
+---
+title: Batch Imports
+description: Import multiple tools, resources, or prompts in a single block from an MCP server.
+---
+
+Batch imports reduce boilerplate when you need several items from the same MCP server.
+
+## Batch import syntax
+
+```wire
+from <mcp_server>.<kind> {
+    <item>
+    <item>
+    ...
+}
+```
+
+Where `<kind>` is `tool`, `resource`, or `prompt`.
+
+## Batch tool import
+
+```wire
+from mcp.local.tool {
+    bindings {
+        project_id: input.project_id
+    }
+
+    tool create_sorting_task {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+
+    tool update_task_status {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+
+    tool assign_task {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+}
+```
+
+The shared `bindings` block at the top level provides parameters inherited by all tools. Individual tools can add or override bindings.
+
+This is equivalent to:
+
+```wire
+tool create_sorting_task from mcp.local.tool.create_sorting_task {
+    bindings {
+        project_id: input.project_id
+        task_id: input.task_id
+    }
+}
+
+tool update_task_status from mcp.local.tool.update_task_status {
+    bindings {
+        project_id: input.project_id
+        task_id: input.task_id
+    }
+}
+
+tool assign_task from mcp.local.tool.assign_task {
+    bindings {
+        project_id: input.project_id
+        task_id: input.task_id
+    }
+}
+```
+
+## Batch resource import
+
+```wire
+from mcp.local.resource {
+    bindings {
+        project_id: input.project_id
+    }
+
+    resource all_tasks
+}
+```
+
+## Batch prompt import
+
+```wire
+from mcp.local.prompt {
+    bindings {
+        project_id: input.project_id
+    }
+
+    prompt create_task_instructions {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+}
+```
+
+## Mixed batch import
+
+When you need tools, resources, and prompts from the same server, use the combined form:
+
+```wire
+from mcp.local {
+    bindings {
+        project_id: input.project_id
+    }
+
+    resource all_tasks
+    prompt create_task_instructions
+    tool create_task {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+}
+```
+
+This imports tools, resources, and prompts from `mcp.local` with shared top-level bindings.
+
+## Aliasing imports
+
+Items can optionally be renamed with `as`:
+
+```wire
+from mcp.local.tool {
+    tool fetch_task as get_task_data
+}
+```
+
+## Using imported items in agents
+
+Imported tools appear in the `tool.*` or resource/prompt in the `resource.*`/`prompt.*` namespace and can be listed in an agent's `uses:` array:
+
+```wire
+agent task_manager {
+    model: openai("gpt-4.1-mini")
+    uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
+    instruction: "Manage project tasks"
+    output: string
+}
+```
+
+## Binding scoping
+
+Top-level bindings in a batch import are inherited by all items. Item-level bindings are merged on top, with item-level values taking precedence. You can override or append to inherited bindings.
+
+<Info>
+  Batch imports are a syntactic convenience — the runtime resolves them to individual
+  tool/resource/prompt declarations with merged bindings at parse time.
+</Info>

@@ -1,16 +1,21 @@
 ---
 title: Core Concepts
-description: Understand the declarations that make up an Engine AI workflow.
+description: Understand the declarations that make up a Superwire workflow.
 ---
 
-A workflow is a sequence of declarations. The grammar currently supports six top-level declaration kinds:
+A workflow is a sequence of declarations. The grammar currently supports these top-level declaration kinds:
 
-- `provider`
-- `secrets`
-- `input`
-- `schema`
-- `agent`
-- `output`
+- `provider` — model backend configuration
+- `mcp` — MCP server connection settings
+- `secrets` — sensitive runtime values
+- `input` — regular runtime values
+- `schema` — reusable named types
+- `tool` — tool definitions (inline or imported from MCP)
+- `resource` — resource imports from MCP servers
+- `prompt` — prompt imports from MCP servers
+- `dynamic` — runtime-computed values via tool calls and MCP
+- `agent` — model calls with instructions and output types
+- `output` — the final JSON object returned by the workflow
 
 ```wire
 provider openai {
@@ -35,7 +40,7 @@ schema Brief {
 
 agent write_brief {
     model: openai("gpt-4.1-mini")
-    prompt: "Write a short brief about {{ input.topic }}."
+    instruction: "Write a short brief about {{ input.topic }}."
     output: schema.Brief
 }
 
@@ -47,10 +52,13 @@ output {
 ## Mental model
 
 - **Providers** describe model backends and backend-specific settings.
+- **MCP servers** describe connections to external tool/resource/prompt providers.
 - **Input** describes non-secret values passed in at execution time.
 - **Secrets** describes sensitive values passed in separately from normal input.
 - **Schemas** define reusable named types.
+- **Tools** define function-like operations that agents can call.
 - **Agents** define model calls and references to prior state.
+- **Dynamic blocks** compute values at runtime through tool calls or MCP operations.
 - **Output** shapes the final JSON document returned by the workflow.
 
 ## Declaration ordering
@@ -59,16 +67,17 @@ The parser accepts declarations in any order, and validation resolves references
 
 <Tip>
   Even though the language does not require a strict order, most teams keep
-  providers, secrets, input, and schemas near the top, then agents, then the
-  final `output` block.
+  providers, secrets, input, schemas, and MCP declarations near the top, then tools, dynamic blocks, and agents, then the final <code>output</code> block.
 </Tip>
 
 ## What creates dependencies
 
-Agent dependencies are inferred from references such as `agent.summary` or `agent.summary.text`.
+Agent dependencies are inferred from references such as `agent.summary` or `agent.summary.title`.
 
 - Referencing `input.*` does **not** create an agent dependency.
 - Referencing `agent.*` **does** create an agent dependency.
+- Referencing `dynamic.*` **does** create a dependency on the dynamic block.
+- Referencing `tool.*` creates a dependency when used in `uses:` or dynamic blocks.
 - Validation detects circular dependencies before execution.
 
 ## Where to go next

@@ -1,0 +1,126 @@
+---
+title: Type Annotations
+description: How types are expressed in input, secrets, schemas, and agent output.
+---
+
+Type annotations appear in four places in a Superwire workflow:
+
+- `input { field: type }`
+- `secrets { field: type }`
+- `schema Name { field: type }`
+- `agent name { output: type }`
+
+## Scalar types
+
+The five primitive scalar types:
+
+| Type | Description |
+| --- | --- |
+| `string` | UTF-8 text |
+| `number` | Integer or decimal number |
+| `float` | Floating-point number |
+| `boolean` | `true` or `false` |
+| `null` | Absence of value |
+
+## Schema references
+
+Reference a named schema with `schema.Name`:
+
+```wire
+schema Participant {
+    name: string
+    role: string
+}
+
+schema ResearchSummary {
+    lead: schema.Participant
+}
+```
+
+## Arrays
+
+Dynamic arrays:
+
+```wire
+[string]
+[number]
+[schema.Participant]
+```
+
+Fixed-length arrays enforce an exact count:
+
+```wire
+[string; 3]
+```
+
+## Tuples
+
+Ordered sequences with per-position types:
+
+```wire
+(string, number, [string; 3])
+```
+
+## Objects
+
+Inline object types:
+
+```wire
+{
+    title: string
+    score: number
+}
+```
+
+Objects can be nested:
+
+```wire
+{
+    metadata: {
+        created_at: string
+        updated_at: string
+    }
+}
+```
+
+## Unions
+
+Combine types with `|`:
+
+```wire
+string | null
+schema.Participant | schema.Organization
+"draft" | "ready" | "published"
+```
+
+## String enums
+
+String literals in a union create an exact set of allowed values:
+
+```wire
+status: "draft" | "ready" | "published"
+```
+
+At runtime, the model must produce one of the exact string values listed.
+
+## Field descriptions
+
+Add a human-readable description after any typed field:
+
+```wire
+schema ReleaseNote {
+    title: string "Short human-readable title"
+    impact: "low" | "medium" | "high" "Severity bucket"
+    body: string "Full text of the release note"
+}
+```
+
+Descriptions are stored in the AST and available to tooling (e.g., the LSP for hover information).
+
+## Type checking rules
+
+- All referenced schemas must be declared
+- Array element types must be compatible with the declared type
+- Union members must be compatible with at least one branch
+- Nullable fields (`| null`) require optional chaining (`?.`) when accessed downstream
+- Agent output types determine the expected shape of the model's response

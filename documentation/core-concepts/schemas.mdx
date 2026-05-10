@@ -35,7 +35,7 @@ input {
 
 agent summarize {
     model: ollama("qwen3.5:32b")
-    prompt: "Summarize the provided research context."
+    instruction: "Summarize the provided research context."
     output: schema.ResearchSummary
 }
 ```
@@ -60,7 +60,7 @@ The parser stores these descriptions in the AST so schema-aware tooling can use 
 - arrays: `[string]`
 - fixed-length arrays: `[string; 3]`
 - tuples: `(string, number, [string; 3])`
-- objects: `{ title: string score: number }`
+- objects: `{ title: string, score: number }`
 - unions: `string | null`
 - string enums: `"draft" | "ready" | "published"`
 

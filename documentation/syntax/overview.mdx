@@ -3,7 +3,7 @@ title: Syntax Overview
 description: A map of the current grammar, expression forms, and declaration shapes.
 ---
 
-The Engine AI DSL is intentionally compact. At the top level, a workflow is just a sequence of declarations.
+The Superwire DSL is intentionally compact. At the top level, a workflow is just a sequence of declarations.
 
 ## Top-level declarations
 
@@ -11,40 +11,51 @@ The Engine AI DSL is intentionally compact. At the top level, a workflow is just
 workflow = declaration*
 declaration =
     provider
+  | mcp
   | secrets
   | input
   | schema
+  | tool
+  | resource
+  | prompt
+  | dynamic
   | agent
   | output
+  | from          (batch import)
 ```
 
 ## Declarations at a glance
 
 | Declaration | Shape | Purpose |
 | --- | --- | --- |
-| `provider` | `provider name { key: value }` | Configure a backend |
+| `provider` | `provider name { key: value }` | Configure a model backend |
+| `mcp` | `mcp name { key: value }` | Connect to an MCP server |
 | `secrets` | `secrets { field: type }` | Declare sensitive runtime values |
 | `input` | `input { field: type }` | Declare regular runtime values |
 | `schema` | `schema Name { field: type }` | Name a reusable type |
+| `tool` | `tool name from mcp.x.y.z` | Import a tool from an MCP server |
+| `resource` | `resource name from mcp.x.y.z` | Import a resource from an MCP server |
+| `prompt` | `prompt name from mcp.x.y.z` | Import a prompt template from an MCP server |
+| `dynamic` | `dynamic { field: expression }` | Compute values at runtime |
 | `agent` | `agent name { ... }` | Define model work |
 | `output` | `output { field: expression }` | Build the final result |
 
 ## Expression forms
 
-Values inside providers, agents, and output fields can be:
+Values inside providers, agents, dynamic blocks, and output fields can be:
 
-- function calls
-- object literals
-- array literals
-- booleans
-- `null`
-- numbers
-- strings and multiline strings
-- references such as `input.topic` or `agent.summary.title`
+- **literals** — strings, numbers, booleans, `null`
+- **references** — `input.topic`, `agent.summary.title`, `dynamic.config.value`
+- **function calls** — `template("path", { ... })`, `context(agent.x)`, `compact(agent.x)`
+- **tool calls** — `call tool.name { input { ... } }`
+- **MCP calls** — `read resource.name { bindings { ... } }`, `render prompt.name { bindings { ... } }`
+- **object expressions** — `{ key: value, ... }`
+- **array expressions** — `[1, 2, 3]`
+- **string interpolation** — `"text {{ expression }} text"`
 
 ## Type forms
 
-Type positions inside `input`, `secrets`, `schema`, and agent `output` can be:
+Type positions inside `input`, `secrets`, `schema`, tool bindings, and agent `output` can be:
 
 - scalars
 - schema references
@@ -58,7 +69,7 @@ Type positions inside `input`, `secrets`, `schema`, and agent `output` can be:
 
 - whitespace is ignored between tokens
 - comments use `//` and run to the end of the line
-- multiline strings use triple quotes
+- multiline strings use triple quotes (`"""`)
 
 ## Important distinction
 

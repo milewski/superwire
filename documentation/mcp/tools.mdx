@@ -1,0 +1,84 @@
+---
+title: Tools
+description: Import and call external tools through MCP servers.
+---
+
+Tools let your agents call external functions — calculators, APIs, database queries, file operations, and more.
+
+## Importing a single tool
+
+```wire
+mcp local {
+    endpoint: "http://localhost:3000"
+}
+
+tool fetch_user from mcp.local.tool.fetch_user
+```
+
+The syntax is:
+
+```wire
+tool <local_name> from <mcp_server>.<kind>.<remote_name>
+```
+
+Where `<kind>` is one of `tool`, `resource`, or `prompt`.
+
+## Tool input schema
+
+You can declare the expected input schema for a tool:
+
+```wire
+tool fetch_user from mcp.local.tool.fetch_user {
+    input {
+        user_id: number
+        include_details: boolean
+    }
+}
+```
+
+## Tool `max_calls`
+
+Limit how many times a tool can be called within its scope:
+
+```wire
+tool fetch_user from mcp.local.tool.fetch_user {
+    max_calls: 3
+}
+```
+
+## Calling tools with `call`
+
+Use the `call` expression in a `dynamic` block to invoke a tool at runtime:
+
+```wire
+dynamic {
+    user: call tool.fetch_user {
+        input {
+            user_id: 42
+        }
+    }
+}
+```
+
+## Agent `uses` property
+
+Agents declare which tools they use with the `uses:` property:
+
+```wire
+agent assistant {
+    model: openai("gpt-4.1-mini")
+    uses: [
+        tool.fetch_user,
+        tool.search { max_calls: 5 }
+    ]
+    instruction: "Look up user {{ input.user_id }} and summarize their profile."
+    output: string
+}
+```
+
+The `uses:` array lists tool references. You can optionally override `max_calls` per tool at the agent level.
+
+<Info>
+  Tools listed in <code>uses:</code> are available to the agent at runtime.
+  The agent must list every tool it intends to call — undeclared tools are not accessible.
+</Info>

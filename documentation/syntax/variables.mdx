@@ -22,10 +22,13 @@ Examples:
 
 The language reserves these reference roots:
 
-- `agent`
-- `input`
-- `secrets`
-- `tool`
+- `agent` — access agent outputs
+- `input` — access input fields
+- `secrets` — access secret values
+- `dynamic` — access dynamic block results
+- `tool` — reference imported tools
+- `resource` — reference imported resources
+- `prompt` — reference imported prompts
 
 Examples:
 
@@ -34,7 +37,10 @@ input.topic
 secrets.openai_api_key
 agent.summary
 agent.summary.title
-tool.web_search
+dynamic.config.threshold
+tool.fetch_user
+resource.user_list
+prompt.system_instructions
 ```
 
 ## Dot access
@@ -44,6 +50,7 @@ Use `.` to access a nested field.
 ```wire
 agent.summary.title
 input.customer.profile.name
+dynamic.result.values
 ```
 
 ## Optional chaining
@@ -58,17 +65,18 @@ Validation allows optional chaining when the path can be followed through the de
 
 ## Bare identifiers
 
-The grammar allows a plain identifier as a reference root. This is mainly useful for expression forms such as loop variables and function-call syntax.
+The grammar allows a plain identifier as a reference root. This is mainly useful for loop variables and function-call syntax.
 
 ```wire
 agent remediation_plan for finding in agent.findings.items {
-    prompt: "Create a remediation plan for {{ finding }}"
+    instruction: "Create a remediation plan for {{ finding }}."
     output: string
 }
 ```
 
 <Warning>
   The current default runtime only resolves keyword-root references such as
-  `agent.*`, `input.*`, and `secrets.*`. Plain identifier references are not
-  resolved during runtime execution today.
+  `agent.*`, `input.*`, `secrets.*`, `dynamic.*`, `tool.*`, `resource.*`, and
+  `prompt.*`. Plain identifier references are not resolved during runtime
+  execution today.
 </Warning>

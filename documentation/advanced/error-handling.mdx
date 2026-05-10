@@ -3,7 +3,7 @@ title: Validation and Runtime Status
 description: Understand parser diagnostics, validation problems, and which DSL features the default runtime executes today.
 ---
 
-Engine AI surfaces problems in three stages.
+Superwire surfaces problems in three stages.
 
 ## 1. Parse errors
 
@@ -23,23 +23,27 @@ Validation runs before execution and reports all discovered issues as a `Validat
 Important validation checks include:
 
 - duplicate providers, schemas, agents, input blocks, secrets blocks, or output blocks
+- duplicate properties within a declaration
 - unknown schema references such as `schema.Missing`
 - invalid `model:` expressions
 - unknown providers or models
-- unknown `agent.*`, `input.*`, or `secrets.*` references
-- secret leaks into prompts, context, or workflow output
+- unknown `agent.*`, `input.*`, `secrets.*`, `dynamic.*`, `tool.*`, `resource.*`, or `prompt.*` references
+- secret leaks into instructions or output
 - invalid nested reference paths
 - missing agent `output` types when field access is used
-- dependency cycles between agents
+- dependency cycles between agents or dynamic blocks
+- invalid `uses:` references or `max_calls` overrides
 
 ## 3. Runtime errors
 
 Runtime execution can still fail after validation, for example when:
 
 - a provider cannot be constructed
+- an MCP server is unreachable
 - a live model call fails
 - agent output does not match its declared type
-- the workflow uses syntax that the default runtime does not yet execute
+- a tool call returns an unexpected result
+- the workflow uses syntax that the runtime does not support
 
 ## Current support matrix
 
@@ -53,30 +57,34 @@ Runtime execution can still fail after validation, for example when:
 | Output object construction | yes | yes | yes |
 | Optional chaining `?.` | yes | yes | yes |
 | Agent `for` loops | yes | yes | yes |
-| `context(...)` and `compact(...)` | yes | partially | yes |
-| `template(...)` | yes | partially | yes |
-| `tool.*` references in `tools:` | yes | partially | yes |
-| `tools:` property execution | yes | partially | yes |
+| `context(...)` and `compact(...)` | yes | yes | yes |
+| `template(...)` | yes | yes | yes |
 | `inference:` execution | yes | yes | yes |
-| `context:` execution | yes | partially | yes |
-| `tool.*` in general expressions | yes | partially | no |
-| custom agent properties | yes | yes | preserved only |
+| `context:` execution | yes | yes | yes |
+| MCP server declarations | yes | yes | yes |
+| Tool imports (`tool x from mcp.y.z`) | yes | yes | yes |
+| Resource imports (`resource x from mcp.y.z`) | yes | yes | yes |
+| Prompt imports (`prompt x from mcp.y.z`) | yes | yes | yes |
+| Batch imports (`from mcp.x.{...}`) | yes | yes | yes |
+| `call tool.xxx` in dynamic blocks | yes | yes | yes |
+| `read resource.xxx` in dynamic blocks | yes | yes | yes |
+| `render prompt.xxx` in dynamic blocks | yes | yes | yes |
+| Agent-level `dynamic` blocks | yes | yes | yes |
+| `uses:` with tool references | yes | yes | yes |
+| `max_calls` on tools | yes | yes | yes |
+| `response_format_value` (`auto`, etc.) | yes | partial | depends on provider |
+| `tool.*` in general expressions | yes | partial | no |
 
 <Info>
-  "Partially" means the validator understands the syntax enough to walk
+  "Partial" means the validator understands the syntax enough to walk
   references, detect dependency edges, and enforce some safety rules, but it
   does not guarantee full semantic validation.
 </Info>
 
-<Warning>
-  `tool.*` references are only executed within the `tools:` property. Using
-  `tool.*` in general expressions (such as prompts, output, or interpolation)
-  returns `UnsupportedFeature` at runtime.
-</Warning>
-
-## Recommended workflow
+## Practical workflow
 
 1. Parse with `parse_workflow`
 2. Validate with `validate_workflow`
 3. Only execute features the runtime currently supports
 4. Declare `output` types so runtime mismatches fail fast
+5. Use the `ValidationReport` to catch issues before reaching the runtime

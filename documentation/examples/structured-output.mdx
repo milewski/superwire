@@ -28,7 +28,7 @@ input {
 
 agent summarize_release {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
+    instruction: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
     output: schema.ReleaseSummary
 }
 
@@ -41,7 +41,8 @@ output {
 
 ## What it demonstrates
 
-- named schema reuse through `schema.ReleaseSummary`
-- string enums inside output types
-- fixed-length arrays
-- nested object access in the final output
+- Named schema reuse through `schema.ReleaseSummary`
+- String enums inside output types (`"draft" | "ready" | "published"`)
+- Fixed-length arrays (`[string; 3]`)
+- Nested object access in the final output (`agent.summarize_release.metadata.confidence`)
+- Field descriptions on schema fields

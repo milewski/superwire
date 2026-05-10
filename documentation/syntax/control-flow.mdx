@@ -1,11 +1,11 @@
 ---
 title: Control Flow
-description: The current grammar-level control flow feature is the agent `for` loop.
+description: The current grammar-level control flow features: agent for-loops and dynamic blocks.
 ---
 
-The current DSL has one explicit control-flow construct: looping an agent over a collection.
+The DSL supports explicit control flow through agent `for` loops and implicit flow through dynamic blocks.
 
-## Syntax
+## Agent for-loop syntax
 
 ```wire
 agent <name> for <item_name> in <expression> {
@@ -22,7 +22,7 @@ input {
 
 agent input_number_note for n in input.numbers {
     model: openai("gpt-4.1-mini")
-    prompt: "Write a short note for input number {{ n }}"
+    instruction: "Write a short note for input number {{ n }}."
     output: {
         number: number
         note: string
@@ -30,10 +30,23 @@ agent input_number_note for n in input.numbers {
 }
 ```
 
+## Object destructuring in loops
+
+You can destructure objects in the loop pattern:
+
+```wire
+agent process_item for { id, name } in input.items {
+    model: openai("gpt-4.1-mini")
+    instruction: "Process item {{ id }}: {{ name }}"
+    output: string
+}
+```
+
 ## Common iterable sources
 
 - input arrays: `input.items`
 - agent-produced arrays: `agent.findings.items`
+- dynamic block results: `dynamic.results.values`
 - inline literals: `[1, 2, 3, 4]`
 
 ## Expected result shape
@@ -48,6 +61,4 @@ output {
 
 ## Current runtime status
 
-Looped agents execute in the default runtime.
-
-Each loop iteration produces one output item, and referencing the looped agent returns the full output array.
+Looped agents execute in the default runtime. Each loop iteration produces one output item, and referencing the looped agent returns the full output array. Iterations execute in parallel.

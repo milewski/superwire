@@ -3,8 +3,6 @@ title: Context Management
 description: Express full-context and compacted-context flows in the current DSL.
 ---
 
-This example is based on `crates/core/workflows/context_compaction.ai`.
-
 ```wire
 provider openai {
     driver: "openai"
@@ -20,7 +18,7 @@ input {
 
 agent research_analysis {
     model: openai("gpt-4.1-mini")
-    prompt: "Analyze this customer feedback for {{ input.product_name }}: {{ input.customer_feedback }}"
+    instruction: "Analyze this customer feedback for {{ input.product_name }}: {{ input.customer_feedback }}"
     output: {
         themes: [string]
         risks: [string]
@@ -31,7 +29,7 @@ agent research_analysis {
 agent summary_from_full_context {
     model: openai("gpt-4.1-mini")
     context: context(agent.research_analysis)
-    prompt: "Write a short executive summary from the available context."
+    instruction: "Write a short executive summary from the available context."
     output: string
 }
 
@@ -44,9 +42,9 @@ agent summary_from_custom_compact_context {
             temperature: 0.1
             max_tokens: 1_500
         },
-        prompt: "Keep only the highest-signal themes and risks."
+        instruction: "Keep only the highest-signal themes and risks."
     )
-    prompt: "Write a short executive summary from the customized compacted context."
+    instruction: "Write a short executive summary from the customized compacted context."
     output: {
         summary: string
         top_actions: [string; 3]
@@ -54,4 +52,15 @@ agent summary_from_custom_compact_context {
 }
 ```
 
-`context(...)` and `compact(...)` execute in the current runtime when used in agent `context:` properties.
+## What it demonstrates
+
+- `context(agent.x)` passes the full output of an agent as context
+- `compact(...)` with named arguments configures a custom compaction step
+- Nested object output types with multiple fields
+- Field references in the output block (`agent.summary_from_custom_compact_context.summary`)
+
+<Info>
+  <code>context(...)</code> and <code>compact(...)</code> execute at runtime when used
+  in an agent <code>context:</code> property. See the
+  <a href="/advanced/context-sharing">Context and Compaction</a> page for details.
+</Info>

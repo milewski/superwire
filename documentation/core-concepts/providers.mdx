@@ -32,7 +32,7 @@ Agents select a provider by calling the provider name in the `model` property.
 ```wire
 agent summarizer {
     model: openai("gpt-4.1-mini")
-    prompt: "Summarize the release notes."
+    instruction: "Summarize the release notes."
     output: string
 }
 ```
@@ -113,13 +113,13 @@ provider openai_cloud {
 
 agent redact_notes {
     model: ollama_local("qwen3.5:8b")
-    prompt: "Remove names and email addresses from {{ input.notes }}."
+    instruction: "Remove names and email addresses from {{ input.notes }}."
     output: [string]
 }
 
 agent synthesize {
     model: openai_cloud("gpt-4.1-mini")
-    prompt: "Summarize {{ agent.redact_notes }} into key insights."
+    instruction: "Summarize {{ agent.redact_notes }} into key insights."
     output: {
         insights: [string]
         recommendations: [string]

@@ -11,7 +11,7 @@ The DSL is small enough that punctuation matters a lot. This page collects the k
 
 ```wire
 driver: "openai"
-prompt: "Write a summary"
+instruction: "Write a summary"
 title: string
 ```
 
@@ -22,6 +22,7 @@ Use `.` for normal field access.
 ```wire
 agent.summary.title
 input.topic
+dynamic.config.threshold
 ```
 
 ## `?.` optional field access
@@ -74,8 +75,10 @@ template("prompts/research_brief.md", {
 Braces are used for:
 
 - provider bodies
+- mcp server bodies
 - input/secrets/schema blocks
 - agent blocks
+- tool bindings
 - object expressions
 - inline object type expressions
 

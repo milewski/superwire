@@ -1,0 +1,44 @@
+---
+title: MCP Servers
+description: Connect to Model Context Protocol servers for tools, resources, and prompts.
+---
+
+MCP (Model Context Protocol) servers let your workflow access external tools, resources, and prompt templates. Superwire supports first-class MCP integration.
+
+## Declaring an MCP server
+
+```wire
+mcp local {
+    endpoint: "http://localhost:3000"
+    headers: {
+        Authorization: "Bearer my-token"
+    }
+}
+```
+
+The `mcp` declaration creates a named server connection. The body is an object expression whose fields depend on the server type.
+
+### Server properties
+
+- **`endpoint`** — URL of the MCP server
+- **`headers`** — optional object of HTTP headers
+- Custom properties are preserved for server-specific configuration
+
+## Referencing MCP servers
+
+Once declared, MCP servers are referenced by name throughout the workflow:
+
+```wire
+mcp github {
+    endpoint: "https://mcp.github.com"
+    headers: { Authorization: "Bearer {{ secrets.github_token }}" }
+}
+```
+
+## Connection lifecycle
+
+MCP servers are established at workflow startup. The runtime maintains connection pools so that tools, resources, and prompts from the same server share a single connection.
+
+<Tip>
+  Use `secrets` to pass sensitive connection details like API tokens into MCP server configuration.
+</Tip>

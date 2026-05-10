@@ -1,0 +1,141 @@
+---
+title: Expressions
+description: The full expression language: references, calls, tool calls, MCP calls, objects, and arrays.
+---
+
+Expressions are the building blocks of values in Superwire. They appear in agent properties, dynamic blocks, output fields, and provider configuration.
+
+## Reference expressions
+
+References read values from other parts of the workflow using keyword roots and dot access.
+
+```wire
+input.topic
+agent.summary.title
+secrets.api_key
+dynamic.config.threshold
+tool.fetch_user
+resource.user_list
+prompt.system_instructions
+```
+
+Use `?.` for optional chaining on nullable paths:
+
+```wire
+agent.data.details?.score
+```
+
+## Literal expressions
+
+```wire
+"hello"               // string
+42                    // number
+3.14                  // float
+true                  // boolean
+null                  // null
+```
+
+## Object expressions
+
+```wire
+{ name: input.name, age: input.age }
+```
+
+Field names can be identifiers or string literals:
+
+```wire
+{ "full name": agent.summary.title }
+```
+
+## Array expressions
+
+```wire
+[1, 2, 3]
+["a", "b", "c"]
+```
+
+Trailing commas are allowed:
+
+```wire
+[1, 2, 3,]
+```
+
+## Function calls
+
+Call built-in or user-defined functions with parentheses:
+
+```wire
+template("prompts/summary.md", { topic: input.topic })
+context(agent.research)
+compact(agent.research)
+```
+
+Named arguments are supported:
+
+```wire
+template(path: "prompts/summary.md", vars: { topic: input.topic })
+```
+
+## Tool call expressions
+
+Used inside `dynamic` blocks to invoke imported tools at runtime:
+
+```wire
+call tool.fetch_user {
+    input {
+        user_id: input.user_id
+    }
+}
+```
+
+The tool must be imported and the agent must declare it in `uses:`.
+
+## MCP call expressions
+
+### `read` — fetch a resource
+
+```wire
+read resource.project_readme {
+    bindings {
+        section: "setup"
+    }
+}
+```
+
+### `render` — render a prompt template
+
+```wire
+render prompt.system_prompt {
+    bindings {
+        audience: "maintainers"
+    }
+}
+```
+
+Both `read` and `render` can overlay bindings at call time in addition to any bindings specified on the import declaration.
+
+## String interpolation
+
+Inside quoted strings and multiline strings, `{{ }}` embeds expression values:
+
+```wire
+"Hello, {{ input.name }}!"
+```
+
+```wire
+"""
+Summary: {{ agent.summary.text }}
+Score: {{ agent.summary.confidence }}
+"""
+```
+
+## Expression precedence
+
+Expressions are evaluated in this order (highest to lowest):
+
+1. References and literals
+2. Function calls, tool calls, MCP calls
+3. Object and array expressions
+4. String interpolation
+
+Use parentheses to clarify intent when mixing complex expressions.

@@ -1,38 +1,163 @@
 ---
 title: Best Practices
-description: Author workflows that validate cleanly, stay readable, and remain easy to evolve.
+description: Patterns and conventions for writing maintainable Superwire workflows.
 ---
 
-## Prefer named schemas over repeated inline objects
+## Design from the output backward
 
-Inline objects are great for tiny cases, but named schemas make large workflows easier to read and reuse.
+Start by defining the `output` block, then work backward to determine which agents and data sources you need.
 
-## Always declare `models` in providers
+```wire
+// 1. What do I need?
+output {
+    report: agent.report_renderer
+    metadata: agent.metadata_collector
+}
 
-The provider `models` list enables validation to catch typos before runtime.
+// 2. What agents produce those fields?
+agent report_renderer { ... }
+agent metadata_collector { ... }
 
-## Give every externally useful agent an `output` type
+// 3. What inputs do they need?
+input { ... }
+```
 
-Typed outputs turn ambiguous model responses into explicit contracts.
+## Keep agents small and focused
 
-## Keep secrets in `secrets`, never in `input`
+Each agent should do one thing well. Avoid monolithic prompts.
 
-Validation protects `secrets.*` from leaking into prompts and output. That protection only works if sensitive values are modeled as secrets.
+```wire
+// Bad: one agent doing everything
+agent everything {
+    instruction: "Read the data, analyze it, format a report, and write a summary email."
+    output: { ... }
+}
 
-## Keep prompts data-rich and instruction-light
+// Good: small, composable agents
+agent data_reader {
+    instruction: "Read and summarize the key data points."
+    output: { points: [string] }
+}
 
-Prefer:
+agent analyzer {
+    instruction: "Analyze these data points: {{ agent.data_reader }}"
+    output: { insights: [string] }
+}
+```
 
-- explicit fields from upstream agents
-- small, typed intermediate stages
-- stable public `output` contracts
+## Use schemas for shared types
 
-Over:
+If multiple agents or the output block reference the same structure, define it once.
 
-- giant prompts with multiple jobs
-- whole-object references when only one field is needed
-- exposing raw internal agent output directly to callers
+```wire
+schema Summary {
+    title: string
+    body: string
+    word_count: number
+}
 
-## Use optional chaining only where the type really is nullable
+agent intro_writer {
+    output: schema.Summary
+}
 
-`?.` is most readable when it reflects an actual `| null` branch in your type definitions.
+agent conclusion_writer {
+    output: schema.Summary
+}
+```
+
+## Protect secrets
+
+- Always use `secrets` for API keys, passwords, and tokens.
+- Never reference `secrets.*` in `instruction` or `output` — the validator will catch it.
+- Use secret references in provider configuration:
+
+```wire
+secrets {
+    openai_key: string
+}
+
+provider openai {
+    driver: "openai"
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.openai_key
+    models: ["gpt-4.1-mini"]
+}
+```
+
+## Use `uses:` for tool access
+
+Prefer the `uses:` property for agent tool access. It makes dependencies explicit and enables per-agent `max_calls` limits.
+
+```wire
+tool search from mcp.local.tool.search
+
+agent researcher {
+    model: openai("gpt-4.1-mini")
+    uses: [tool.search { max_calls: 5 }]
+    instruction: "Research: {{ input.topic }}"
+    output: string
+}
+```
+
+## Use `dynamic` for complex runtime computation
+
+When you need tool calls or MCP operations that don't fit in `uses:`, use `dynamic` blocks:
+
+```wire
+dynamic {
+    data: call tool.fetch_data
+}
+
+agent processor {
+    instruction: "Process: {{ dynamic.data }}"
+    output: string
+}
+```
+
+## Leverage parallel execution
+
+Structure workflows so independent agents run in parallel. Avoid unnecessary sequential chains.
+
+```wire
+// These two run concurrently:
+agent sentiment {
+    instruction: "Analyze sentiment of {{ input.text }}"
+    output: string
+}
+
+agent topics {
+    instruction: "Extract topics from {{ input.text }}"
+    output: [string]
+}
+
+// This waits for both:
+agent combine {
+    instruction: "Combine results: sentiment={{ agent.sentiment }}, topics={{ agent.topics }}"
+    output: string
+}
+```
+
+## Add field descriptions
+
+Descriptions help tooling and collaborators understand your schema:
+
+```wire
+schema ReleaseNote {
+    title: string "One-line summary of the change"
+    impact: "low" | "medium" | "high" "How impactful is this change?"
+}
+```
+
+## Use optional chaining for nullable fields
+
+Prevent runtime errors with `?.` on nullable paths:
+
+```wire
+output {
+    score: agent.data.details?.score
+}
+```
+
+## Validate early, validate often
+
+Always call `validate_workflow` in your CI pipeline and tests. Parse errors and validation issues surface before any execution happens.
