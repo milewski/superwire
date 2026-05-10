@@ -131,7 +131,13 @@ impl DocumentState {
         let field_indent = format!("{indent}    ");
         let rendered_fields = schema_fields
             .iter()
-            .map(|typed_field| format!("{field_indent}{}: {}", typed_field.name, typed_field.field_type.render_type()))
+            .map(|typed_field| {
+                format!(
+                    "{field_indent}{}: {}",
+                    typed_field.name,
+                    typed_field.field_type.render_type_expanded(field_indent.as_str())
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 

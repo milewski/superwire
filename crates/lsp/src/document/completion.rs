@@ -567,8 +567,10 @@ impl DocumentState {
 
         let server_name = import_segments.next()?.to_string();
 
-        if import_segments.next()? != DeclarationKeyword::Tool.as_str() || import_segments.next().is_some() {
-            return None;
+        match import_segments.next() {
+            Some(import_kind) if import_kind == DeclarationKeyword::Tool.as_str() && import_segments.next().is_none() => {}
+            None => {}
+            _ => return None,
         }
 
         Some(McpToolSchemaSource::McpTool {
@@ -1021,20 +1023,35 @@ impl DocumentState {
                     kind: CompletionKind::Property,
                     detail: "MCP schema property".to_string(),
                     documentation: format!("Insert `{}` with fields discovered from the MCP lock file.", property_name.as_str()),
-                    insert_text: Self::render_schema_property_snippet(property_name, &schema_fields),
+                    insert_text: Self::render_schema_property_snippet(property_name, &schema_fields, line_prefix),
                 }
             })
             .collect()
     }
 
-    fn render_schema_property_snippet(property_name: ToolPropertyName, schema_fields: &[superwire_core::dsl::TypedField]) -> String {
+    fn render_schema_property_snippet(
+        property_name: ToolPropertyName,
+        schema_fields: &[superwire_core::dsl::TypedField],
+        line_prefix: &str,
+    ) -> String {
+        let property_indent = line_prefix
+            .chars()
+            .take_while(|character| character.is_whitespace())
+            .collect::<String>();
+        let field_indent = format!("{property_indent}    ");
         let rendered_fields = schema_fields
             .iter()
-            .map(|typed_field| format!("    {}: {}", typed_field.name, typed_field.field_type.render_type()))
+            .map(|typed_field| {
+                format!(
+                    "{field_indent}{}: {}",
+                    typed_field.name,
+                    typed_field.field_type.render_type_expanded(field_indent.as_str())
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
-        format!("{} {{\n{rendered_fields}\n}}", property_name.as_str())
+        format!("{} {{\n{rendered_fields}\n{property_indent}}}", property_name.as_str())
     }
 
     fn should_defer_to_reference_completion(line_prefix: &str) -> bool {

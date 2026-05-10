@@ -250,6 +250,43 @@ fn test_mcp_lock() -> McpLock {
         )
         .expect("test MCP input schema should parse"),
     );
+    tools.insert(
+        "get_task_group_tasks".to_string(),
+        McpToolLock::from_json_schema_values(
+            "get_task_group_tasks".to_string(),
+            Some("Get task group tasks".to_string()),
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+            Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "task_group_id": { "type": "number" },
+                    "task_group_title": { "type": "string" },
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "description": { "type": "string" },
+                                "duration": { "type": "number" },
+                                "id": { "type": "number" },
+                                "mandatory": { "type": "boolean" },
+                                "options": { "type": "string" },
+                                "title": { "type": "string" },
+                                "type": { "type": "string" }
+                            },
+                            "required": ["description", "duration", "id", "mandatory", "options", "title", "type"]
+                        }
+                    }
+                },
+                "required": ["task_group_id", "task_group_title", "tasks"]
+            })),
+        )
+        .expect("test MCP task group schema should parse"),
+    );
     let mut servers = BTreeMap::new();
     servers.insert(
         "local".to_string(),
@@ -413,7 +450,7 @@ fn suggests_mcp_output_fields_inside_imported_tool_output_block() {
 
     let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "participants");
 
-    assert_eq!(completion_suggestion.insert_text, "participants: [{  }]");
+    assert_eq!(completion_suggestion.insert_text, "participants: [{}]");
 }
 
 #[test]
@@ -562,8 +599,45 @@ fn inserts_mcp_output_schema_when_completing_output_property() {
 
     assert_eq!(
         completion_suggestion.insert_text,
-        "output {\n    participants: [{  }]\n    shared: string\n}"
+        "output {\n    participants: [{}]\n    shared: string\n}"
     );
+}
+
+#[test]
+fn inserts_expanded_mcp_output_schema_with_contextual_indentation() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        from mcp.local {
+            tool get_task_group_tasks {
+                out<cursor>
+            }
+        }
+    });
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "output");
+
+    assert_eq!(
+        completion_suggestion.insert_text,
+        "output {\n    task_group_id: number\n    task_group_title: string\n    tasks: [\n        {\n            description: string,\n            duration: number,\n            id: number,\n            mandatory: boolean,\n            options: string,\n            title: string,\n            type: string,\n        }\n    ]\n}"
+    );
+}
+
+#[test]
+fn accepts_structurally_matching_mcp_output_schema_from_lock_file() {
+    let source = inline_document_template! {
+        from mcp.local {
+            tool get_task_group_tasks {
+                output {
+                    task_group_id: number
+                    task_group_title: string
+                    tasks: [{ description: string, duration: number, id: number, mandatory: boolean, options: string, title: string, type: string }]
+                }
+            }
+        }
+    };
+    let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
+    let diagnostics = document_state.diagnostics();
+
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::InvalidToolBinding));
 }
 
 #[test]
@@ -587,7 +661,7 @@ fn offers_code_action_to_fill_mcp_output_schema_block() {
 
     assert_eq!(code_actions.len(), 1);
     assert_eq!(code_actions[0].title, "Fill output schema from MCP lock");
-    assert!(code_actions[0].edit.new_text.contains("participants: [{  }]"));
+    assert!(code_actions[0].edit.new_text.contains("participants: [{}]"));
 }
 
 #[test]

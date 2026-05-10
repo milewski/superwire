@@ -276,7 +276,7 @@ impl DocumentState {
             ));
         };
 
-        if expected_field.field_type == typed_field.field_type {
+        if Self::type_expressions_match(&expected_field.field_type, &typed_field.field_type) {
             return None;
         }
 
@@ -383,6 +383,54 @@ impl DocumentState {
         }
     }
 
+    fn type_expressions_match(expected_type: &TypeExpression, found_type: &TypeExpression) -> bool {
+        match (expected_type, found_type) {
+            (TypeExpression::String, TypeExpression::String)
+            | (TypeExpression::Number, TypeExpression::Number)
+            | (TypeExpression::Float, TypeExpression::Float)
+            | (TypeExpression::Boolean, TypeExpression::Boolean)
+            | (TypeExpression::Null, TypeExpression::Null) => true,
+            (TypeExpression::SchemaReference(expected_schema), TypeExpression::SchemaReference(found_schema)) => {
+                expected_schema == found_schema
+            }
+            (TypeExpression::StringEnum(expected_value), TypeExpression::StringEnum(found_value)) => expected_value == found_value,
+            (TypeExpression::StringEnumReference(expected_reference), TypeExpression::StringEnumReference(found_reference)) => {
+                expected_reference == found_reference
+            }
+            (
+                TypeExpression::Array {
+                    item_type: expected_item_type,
+                    fixed_length: expected_fixed_length,
+                },
+                TypeExpression::Array {
+                    item_type: found_item_type,
+                    fixed_length: found_fixed_length,
+                },
+            ) => {
+                expected_fixed_length == found_fixed_length
+                    && Self::type_expressions_match(expected_item_type.as_ref(), found_item_type.as_ref())
+            }
+            (TypeExpression::Tuple(expected_items), TypeExpression::Tuple(found_items))
+            | (TypeExpression::Union(expected_items), TypeExpression::Union(found_items)) => {
+                expected_items.len() == found_items.len()
+                    && expected_items
+                        .iter()
+                        .zip(found_items)
+                        .all(|(expected_item, found_item)| Self::type_expressions_match(expected_item, found_item))
+            }
+            (TypeExpression::Object(expected_fields), TypeExpression::Object(found_fields)) => {
+                expected_fields.len() == found_fields.len()
+                    && expected_fields.iter().all(|expected_field| {
+                        found_fields
+                            .iter()
+                            .find(|found_field| found_field.name == expected_field.name)
+                            .is_some_and(|found_field| Self::type_expressions_match(&expected_field.field_type, &found_field.field_type))
+                    })
+            }
+            _ => false,
+        }
+    }
+
     fn mcp_schema_diagnostic(&self, span: superwire_core::dsl::SourceSpan, message: String) -> DocumentDiagnostic {
         DocumentDiagnostic {
             range: position::source_span_to_range(&self.text, span),
@@ -467,6 +515,8 @@ fn all_provider_property_names() -> Vec<&'static str> {
 
 trait RenderTypeExpression {
     fn render_type(&self) -> String;
+
+    fn render_type_expanded(&self, indent: &str) -> String;
 }
 
 impl RenderTypeExpression for TypeExpression {
@@ -497,6 +547,10 @@ impl RenderTypeExpression for TypeExpression {
                 format!("({tuple_item_strings})")
             }
             Self::Object(typed_fields) => {
+                if typed_fields.is_empty() {
+                    return "{}".to_string();
+                }
+
                 let field_strings = typed_fields
                     .iter()
                     .map(|typed_field| format!("{}: {}", typed_field.name, typed_field.field_type.render_type()))
@@ -510,6 +564,55 @@ impl RenderTypeExpression for TypeExpression {
                 .map(RenderTypeExpression::render_type)
                 .collect::<Vec<_>>()
                 .join(" | "),
+        }
+    }
+
+    fn render_type_expanded(&self, indent: &str) -> String {
+        match self {
+            Self::Array { item_type, fixed_length } => {
+                if fixed_length.is_some() || !matches!(item_type.as_ref(), Self::Object(_)) {
+                    return self.render_type();
+                }
+
+                if matches!(item_type.as_ref(), Self::Object(typed_fields) if typed_fields.is_empty()) {
+                    return self.render_type();
+                }
+
+                let item_indent = format!("{indent}    ");
+                let closing_indent = indent.to_string();
+
+                format!("[\n{}\n{closing_indent}]", item_type.render_type_expanded(item_indent.as_str()))
+            }
+            Self::Object(typed_fields) => {
+                if typed_fields.is_empty() {
+                    return "{}".to_string();
+                }
+
+                let field_indent = format!("{indent}    ");
+                let rendered_fields = typed_fields
+                    .iter()
+                    .map(|typed_field| {
+                        format!(
+                            "{field_indent}{}: {},",
+                            typed_field.name,
+                            typed_field.field_type.render_type_expanded(field_indent.as_str())
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                format!("{indent}{{\n{rendered_fields}\n{indent}}}")
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::SchemaReference(_)
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Tuple(_)
+            | Self::Union(_) => self.render_type(),
         }
     }
 }
