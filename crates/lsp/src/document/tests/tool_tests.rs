@@ -334,6 +334,19 @@ fn suggests_mcp_tool_names_inside_batch_tool_import_item() {
 }
 
 #[test]
+fn excludes_already_imported_mcp_tool_names_inside_batch_tool_import_item() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        from mcp.local.tool {
+            tool list_all_participants_who_has_answered_given_task
+            tool <cursor>
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "update_user_name");
+    assert_completion_excludes_labels!(&completion_suggestions, "list_all_participants_who_has_answered_given_task");
+}
+
+#[test]
 fn suggests_batch_tool_import_properties() {
     let completion_suggestions = inline_completion_suggestions! {
         from mcp.local.tool {

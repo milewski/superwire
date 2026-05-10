@@ -504,7 +504,12 @@ impl SemanticIndex {
             .collect()
     }
 
-    pub fn mcp_tool_batch_item_suggestions(&self, server_name: &str, tool_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn mcp_tool_batch_item_suggestions(
+        &self,
+        server_name: &str,
+        tool_prefix: &str,
+        existing_tool_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
         let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
             return Vec::new();
         };
@@ -514,6 +519,7 @@ impl SemanticIndex {
             .keys()
             .map(|tool_name| McpServerLock::normalize_item_name(tool_name))
             .filter(|normalized_tool_name| normalized_tool_name.starts_with(tool_prefix))
+            .filter(|normalized_tool_name| !existing_tool_names.contains(normalized_tool_name))
             .collect::<Vec<_>>();
 
         normalized_tool_names.sort();

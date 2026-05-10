@@ -2,6 +2,7 @@ use superwire_core::dsl::{
     parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword,
     ToolCallKeyword, ToolPropertyName,
 };
+use superwire_core::mcp::McpServerLock;
 
 use crate::protocol::{Position, Range};
 
@@ -34,6 +35,7 @@ struct ToolCallBindingCompletionContext {
 struct McpToolBatchItemCompletionContext {
     server_name: String,
     tool_prefix: String,
+    existing_tool_names: Vec<String>,
 }
 
 pub(super) enum McpToolSchemaSource {
@@ -641,6 +643,8 @@ impl DocumentState {
         }
 
         let server_name = import_segments.next()?.to_string();
+        let batch_block_prefix = &batch_prefix[open_brace_index + 1..];
+        let existing_tool_names = Self::existing_batch_tool_names_from_block_prefix(batch_block_prefix);
 
         match import_segments.next() {
             Some(segment) if segment == DeclarationKeyword::Tool.as_str() && import_segments.next().is_none() => {}
@@ -651,6 +655,7 @@ impl DocumentState {
         Some(McpToolBatchItemCompletionContext {
             server_name,
             tool_prefix: after_tool_keyword.trim().to_string(),
+            existing_tool_names,
         })
     }
 
@@ -665,7 +670,30 @@ impl DocumentState {
         Some(semantic_index.mcp_tool_batch_item_suggestions(
             &batch_item_completion_context.server_name,
             &batch_item_completion_context.tool_prefix,
+            &batch_item_completion_context.existing_tool_names,
         ))
+    }
+
+    fn existing_batch_tool_names_from_block_prefix(batch_block_prefix: &str) -> Vec<String> {
+        let tool_keyword = DeclarationKeyword::Tool.as_str();
+
+        batch_block_prefix
+            .lines()
+            .filter_map(|source_line| {
+                let trimmed_source_line = source_line.trim_start();
+                let after_tool_keyword = trimmed_source_line.strip_prefix(tool_keyword)?.trim_start();
+                let tool_name = after_tool_keyword
+                    .chars()
+                    .take_while(|character| character.is_ascii_alphanumeric() || *character == '_' || *character == '-')
+                    .collect::<String>();
+
+                if tool_name.is_empty() {
+                    return None;
+                }
+
+                Some(McpServerLock::normalize_item_name(&tool_name))
+            })
+            .collect()
     }
 
     fn tool_call_binding_completion_context(&self, position: Position, line_prefix: &str) -> Option<ToolCallBindingCompletionContext> {
