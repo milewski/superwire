@@ -1,4 +1,5 @@
 use super::fixtures;
+use crate::api::ValidationRequest;
 use crate::model::{ModelToolSource, ToolCallLimitScope};
 use crate::service::ExecutorService;
 use crate::tests::support::{request, TrackingModelProvider};
@@ -6,6 +7,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_core::workflow_source;
 
@@ -83,12 +85,14 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
 
 pub(crate) struct TestMcpHttpServer {
     endpoint: String,
+    recorded_methods: Arc<Mutex<Vec<TestMcpMethod>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TestMcpMethod {
+pub(crate) enum TestMcpMethod {
     Initialized,
     ToolsList,
+    ToolsCall,
     ResourcesList,
     ResourcesRead,
     PromptsGet,
@@ -116,19 +120,33 @@ impl TestMcpHttpServer {
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
         let expected_headers = expected_headers.into_iter().collect::<BTreeMap<_, _>>();
         let catalog = TestMcpCatalog;
+        let recorded_methods = Arc::new(Mutex::new(Vec::new()));
+        let server_recorded_methods = Arc::clone(&recorded_methods);
 
         thread::spawn(move || {
             for incoming_stream in listener.incoming().take(12) {
                 let stream = incoming_stream.expect("test MCP stream should open");
-                handle_mcp_request(stream, &expected_headers, &catalog);
+                handle_mcp_request(stream, &expected_headers, &catalog, &server_recorded_methods);
             }
         });
 
-        Self { endpoint }
+        Self {
+            endpoint,
+            recorded_methods,
+        }
     }
 
     pub(crate) fn endpoint(&self) -> String {
         self.endpoint.clone()
+    }
+
+    pub(crate) fn method_count(&self, method: TestMcpMethod) -> usize {
+        self.recorded_methods
+            .lock()
+            .expect("MCP method records lock should not be poisoned")
+            .iter()
+            .filter(|recorded_method| **recorded_method == method)
+            .count()
     }
 }
 
@@ -137,6 +155,7 @@ impl TestMcpMethod {
         match request.get("method").and_then(Value::as_str) {
             Some("notifications/initialized") => Self::Initialized,
             Some("tools/list") => Self::ToolsList,
+            Some("tools/call") => Self::ToolsCall,
             Some("resources/list") => Self::ResourcesList,
             Some("resources/read") => Self::ResourcesRead,
             Some("prompts/get") => Self::PromptsGet,
@@ -161,6 +180,7 @@ impl TestMcpCatalog {
         match method {
             TestMcpMethod::Initialized => None,
             TestMcpMethod::ToolsList => Some(jsonrpc_result(2, json!({ "tools": self.tools() }))),
+            TestMcpMethod::ToolsCall => Some(jsonrpc_result(3, json!({ "content": [{ "type": "text", "text": "{}" }] }))),
             TestMcpMethod::ResourcesList => Some(jsonrpc_result(2, json!({ "resources": self.resources() }))),
             TestMcpMethod::ResourcesRead => Some(jsonrpc_result(3, self.project_readme_content())),
             TestMcpMethod::PromptsGet => Some(jsonrpc_result(2, self.system_prompt_result())),
@@ -354,7 +374,12 @@ impl TestMcpCatalog {
     }
 }
 
-fn handle_mcp_request(mut stream: TcpStream, expected_headers: &BTreeMap<String, String>, catalog: &TestMcpCatalog) {
+fn handle_mcp_request(
+    mut stream: TcpStream,
+    expected_headers: &BTreeMap<String, String>,
+    catalog: &TestMcpCatalog,
+    recorded_methods: &Arc<Mutex<Vec<TestMcpMethod>>>,
+) {
     let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
     let mut request_headers = BTreeMap::new();
     let mut content_length = 0_usize;
@@ -388,7 +413,14 @@ fn handle_mcp_request(mut stream: TcpStream, expected_headers: &BTreeMap<String,
     let mut request_body = vec![0_u8; content_length];
     reader.read_exact(&mut request_body).expect("request body should read");
     let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
-    let response = if let Some(response_body) = catalog.response_for(TestMcpMethod::from_request(&request)) {
+    let method = TestMcpMethod::from_request(&request);
+
+    recorded_methods
+        .lock()
+        .expect("MCP method records lock should not be poisoned")
+        .push(method);
+
+    let response = if let Some(response_body) = catalog.response_for(method) {
         let response_body = response_body.to_string();
 
         format!(
@@ -720,6 +752,163 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
         .execute(request(&workflow_source))
         .await
         .expect("execution should accept null input when all fields are consumed by bindings");
+}
+
+#[test]
+fn validation_does_not_execute_workflow_dynamic_tool_calls() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        tool list_participants from mcp.local.tool.list_participants {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+        }
+
+        dynamic {
+            data: call tool.list_participants
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            instruction: "List participants"
+            output: string
+        }
+
+        output {
+            value: dynamic.data
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+
+    service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("validation should be static and succeed without input values");
+
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[test]
+fn validation_does_not_execute_agent_dynamic_tool_calls() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        tool list_participants from mcp.local.tool.list_participants {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+
+            dynamic {
+                data: call tool.list_participants
+            }
+
+            instruction: "List participants"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+
+    service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("validation should not execute agent-local dynamic values");
+
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[test]
+fn validation_rejects_dynamic_tool_call_missing_required_input() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool list_participants from mcp.local.tool.list_participants
+
+        dynamic {
+            data: call tool.list_participants
+        }
+
+        output {
+            value: dynamic.data
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+    let error = service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect_err("validation should reject the missing required tool input statically");
+    let error_message = error.to_string();
+
+    assert!(
+        error_message.contains("Missing `dynamic` declaration") || error_message.contains("missing required `input` field `project_id`"),
+        "unexpected validation error: {error_message}"
+    );
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
 }
 
 #[tokio::test]

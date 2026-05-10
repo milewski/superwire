@@ -247,38 +247,9 @@ impl WorkflowExecutor {
     pub fn validate_runtime_configuration(&self, input: &Value, secrets: &Value) -> Result<(), ExecutorError> {
         let input_values = self.resolve_input_values(input)?;
         let secret_values = self.resolve_secret_values(secrets)?;
-        let mut runtime_state = RuntimeState::new(input_values, secret_values);
-        let tool_call_tracker = ToolCallTracker::default();
-
-        self.execute_workflow_dynamic_blocks(&mut runtime_state, None, &tool_call_tracker)?;
+        let runtime_state = RuntimeState::new(input_values, secret_values);
 
         self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
-
-        for planned_agent in self.execution_plan.planned_agents.values() {
-            let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, &runtime_state, None, &tool_call_tracker)?;
-            let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
-
-            evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
-
-            let instruction_expression = planned_agent
-                .declaration
-                .required_expression_property(AgentExpressionPropertyName::Instruction)
-                .map_err(|missing_property| WorkflowSemanticError::InvalidAgentProperty {
-                    agent_name: planned_agent.name.clone(),
-                    property: missing_property.as_str().to_string(),
-                    message: "property is required".to_string(),
-                })?;
-
-            let _instruction = normalize_prompt(self.evaluate_runtime_expression(
-                instruction_expression,
-                &evaluation_context,
-                &format!("instruction for agent `{}`", planned_agent.name),
-                None,
-                &tool_call_tracker,
-            )?);
-
-            let _resolved_uses = self.resolve_agent_use_definitions(planned_agent, &evaluation_context)?;
-        }
 
         Ok(())
     }
@@ -286,38 +257,9 @@ impl WorkflowExecutor {
     pub fn validate_runtime_configuration_without_input(&self, secrets: &Value) -> Result<(), ExecutorError> {
         let input_values = self.placeholder_input_values_for_validation();
         let secret_values = self.resolve_secret_values(secrets)?;
-        let mut runtime_state = RuntimeState::new(input_values, secret_values);
-        let tool_call_tracker = ToolCallTracker::default();
-
-        self.execute_workflow_dynamic_blocks(&mut runtime_state, None, &tool_call_tracker)?;
+        let runtime_state = RuntimeState::new(input_values, secret_values);
 
         self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
-
-        for planned_agent in self.execution_plan.planned_agents.values() {
-            let agent_dynamic_values = self.execute_agent_dynamic_blocks(planned_agent, &runtime_state, None, &tool_call_tracker)?;
-            let evaluation_context = runtime_state.evaluation_context(agent_dynamic_values);
-
-            evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
-
-            let instruction_expression = planned_agent
-                .declaration
-                .required_expression_property(AgentExpressionPropertyName::Instruction)
-                .map_err(|missing_property| WorkflowSemanticError::InvalidAgentProperty {
-                    agent_name: planned_agent.name.clone(),
-                    property: missing_property.as_str().to_string(),
-                    message: "property is required".to_string(),
-                })?;
-
-            let _instruction = normalize_prompt(self.evaluate_runtime_expression(
-                instruction_expression,
-                &evaluation_context,
-                &format!("instruction for agent `{}`", planned_agent.name),
-                None,
-                &tool_call_tracker,
-            )?);
-
-            let _resolved_uses = self.resolve_agent_use_definitions(planned_agent, &evaluation_context)?;
-        }
 
         Ok(())
     }
