@@ -30,7 +30,12 @@ impl SemanticIndex {
                 if provider_summary.models.is_empty() {
                     "none".to_string()
                 } else {
-                    provider_summary.models.join(", ")
+                    provider_summary
+                        .models
+                        .iter()
+                        .map(super::semantic_index::ProviderModelValue::label)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 }
             ));
         }

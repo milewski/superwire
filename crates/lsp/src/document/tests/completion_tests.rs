@@ -1017,7 +1017,27 @@ fn completes_registered_provider_models_inside_model_call() {
 
     let gpt_model_completion = completion_suggestion_by_label(&completion_suggestions, "gpt-4.1-mini");
 
-    assert_eq!(gpt_model_completion.insert_text, "gpt-4.1-mini");
+    assert_eq!(gpt_model_completion.insert_text, "\"gpt-4.1-mini\"");
+}
+
+#[test]
+fn completes_dynamic_provider_models_inside_empty_string_model_call() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai {
+            driver: "openai"
+            models: [secrets.models.pro]
+        }
+
+        agent writer {
+            model: openai("<cursor>")
+            instruction: "hello"
+            output: string
+        }
+    };
+
+    let dynamic_model_completion = completion_suggestion_by_label(&completion_suggestions, "secrets.models.pro");
+
+    assert_eq!(dynamic_model_completion.insert_text, "secrets.models.pro");
 }
 
 #[test]
@@ -1406,9 +1426,35 @@ fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
         .expect("model name completion should include a replacement range");
 
     assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
-    assert_eq!(completion_text_edit_range.start.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character - 1);
     assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
-    assert_eq!(completion_text_edit_range.end.character, cursor_position.character);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character + 1);
+}
+
+#[test]
+fn completion_text_edit_range_replaces_empty_model_string_for_dynamic_model() {
+    let (source, cursor_position) = source_with_cursor(inline_document_template! {
+        provider openai {
+            driver: "openai"
+            models: [secrets.models.pro]
+        }
+
+        agent writer {
+            model: openai("<cursor>")
+            instruction: "hello"
+            output: string
+        }
+    });
+
+    let document_state = DocumentState::new(source, None);
+    let completion_text_edit_range = document_state
+        .completion_text_edit_range(cursor_position)
+        .expect("dynamic model completion should replace the string literal");
+
+    assert_eq!(completion_text_edit_range.start.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.start.character, cursor_position.character - 1);
+    assert_eq!(completion_text_edit_range.end.line, cursor_position.line);
+    assert_eq!(completion_text_edit_range.end.character, cursor_position.character + 1);
 }
 
 #[test]

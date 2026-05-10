@@ -190,8 +190,22 @@ impl DocumentState {
     #[must_use]
     pub fn completion_text_edit_range(&self, position: Position) -> Option<Range> {
         let line_prefix = self.line_prefix(position)?;
+        let line_suffix = self.line_suffix(position).unwrap_or_default();
 
         if let Some(model_call_completion_context) = ModelCallCompletionContext::from_line_prefix(&line_prefix) {
+            if model_call_completion_context.replaces_empty_string_literal && line_suffix.starts_with('"') {
+                return Some(Range {
+                    start: Position {
+                        line: position.line,
+                        character: position.character.saturating_sub(1),
+                    },
+                    end: Position {
+                        line: position.line,
+                        character: position.character + 1,
+                    },
+                });
+            }
+
             return Some(Self::text_edit_range_for_prefix(
                 position,
                 &model_call_completion_context.model_prefix,

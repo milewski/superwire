@@ -64,7 +64,34 @@ pub struct SemanticIndex {
 #[derive(Debug, Clone)]
 pub struct ProviderSummary {
     pub driver: Option<ProviderDriver>,
-    pub models: Vec<String>,
+    pub models: Vec<ProviderModelValue>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProviderModelValue {
+    StringLiteral(String),
+    Reference(String),
+}
+
+impl ProviderModelValue {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::StringLiteral(model_name) | Self::Reference(model_name) => model_name,
+        }
+    }
+
+    fn insert_text(&self, model_call_context: &ModelCallCompletionContext) -> String {
+        match self {
+            Self::StringLiteral(model_name) => {
+                if model_call_context.replaces_empty_string_literal || !model_call_context.inside_string_literal {
+                    return format!("\"{model_name}\"");
+                }
+
+                model_name.clone()
+            }
+            Self::Reference(reference_path) => reference_path.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1413,21 +1440,13 @@ impl SemanticIndex {
         let mut completion_suggestions = provider_summary
             .models
             .iter()
-            .filter(|model_name| model_name.starts_with(&model_call_context.model_prefix))
-            .map(|model_name| {
-                let insert_text = if model_call_context.inside_string_literal {
-                    model_name.clone()
-                } else {
-                    format!("\"{model_name}\"")
-                };
-
-                CompletionSuggestion {
-                    label: model_name.clone(),
-                    kind: CompletionKind::Value,
-                    detail: format!("Model from `{}` provider", model_call_context.provider_name),
-                    documentation: "Model declared in provider `models` list.".to_string(),
-                    insert_text,
-                }
+            .filter(|model_value| model_value.label().starts_with(&model_call_context.model_prefix))
+            .map(|model_value| CompletionSuggestion {
+                label: model_value.label().to_string(),
+                kind: CompletionKind::Value,
+                detail: format!("Model from `{}` provider", model_call_context.provider_name),
+                documentation: "Model declared in provider `models` list.".to_string(),
+                insert_text: model_value.insert_text(model_call_context),
             })
             .collect::<Vec<_>>();
 
@@ -2566,22 +2585,34 @@ impl SemanticIndex {
     }
 }
 
-fn extract_models(model_expression: &Expression) -> Option<Vec<String>> {
+fn extract_models(model_expression: &Expression) -> Option<Vec<ProviderModelValue>> {
     let Expression::ArrayLiteral(model_values) = model_expression else {
         return None;
     };
 
-    let mut model_names = Vec::<String>::new();
+    let mut model_values_from_expression = Vec::<ProviderModelValue>::new();
 
     for model_value in model_values {
-        let Expression::StringLiteral(model_name) = model_value else {
-            return None;
-        };
-
-        model_names.push(model_name.clone());
+        match model_value {
+            Expression::StringLiteral(model_name) => {
+                model_values_from_expression.push(ProviderModelValue::StringLiteral(model_name.clone()));
+            }
+            Expression::Reference(reference) => {
+                model_values_from_expression.push(ProviderModelValue::Reference(reference.render_path()));
+            }
+            Expression::StringTemplate(_)
+            | Expression::NumberLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral
+            | Expression::FunctionCall(_)
+            | Expression::ToolCall(_)
+            | Expression::McpCall(_)
+            | Expression::ArrayLiteral(_)
+            | Expression::ObjectLiteral(_) => return None,
+        }
     }
 
-    Some(model_names)
+    Some(model_values_from_expression)
 }
 
 fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpression> {

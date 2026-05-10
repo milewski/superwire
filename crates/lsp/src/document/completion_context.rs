@@ -195,6 +195,7 @@ pub struct ModelCallCompletionContext {
     pub provider_name: String,
     pub model_prefix: String,
     pub inside_string_literal: bool,
+    pub replaces_empty_string_literal: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +222,8 @@ impl ModelCallCompletionContext {
 
         Some(Self {
             provider_name,
+            replaces_empty_string_literal: value_completion_context.inside_string_literal
+                && value_completion_context.value_prefix.is_empty(),
             model_prefix: value_completion_context.value_prefix,
             inside_string_literal: value_completion_context.inside_string_literal,
         })
