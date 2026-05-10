@@ -347,15 +347,51 @@ fn excludes_already_imported_mcp_tool_names_inside_batch_tool_import_item() {
 }
 
 #[test]
-fn suggests_batch_tool_import_properties() {
+fn suggests_only_tool_keyword_inside_scoped_tool_batch_import() {
     let completion_suggestions = inline_completion_suggestions! {
         from mcp.local.tool {
             <cursor>
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "input", "bindings", "max_calls", "output", "tool");
-    assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Agent);
+    assert_completion_contains_labels!(&completion_suggestions, "tool");
+    assert_completion_excludes_labels!(&completion_suggestions, "prompt", "resource", DeclarationKeyword::Agent);
+}
+
+#[test]
+fn suggests_item_keywords_inside_unscoped_batch_import() {
+    let completion_suggestions = inline_completion_suggestions! {
+        from mcp.local {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "tool", "prompt", "resource");
+    assert_completion_excludes_labels!(&completion_suggestions, "input", "bindings", "max_calls", "output");
+}
+
+#[test]
+fn suggests_mcp_prompt_names_inside_unscoped_batch_prompt_item() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        from mcp.local {
+            prompt <cursor>
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "system_prompt", "review_prompt");
+}
+
+#[test]
+fn excludes_already_imported_prompt_names_inside_unscoped_batch_prompt_item() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        from mcp.local {
+            prompt system_prompt
+            prompt <cursor>
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "review_prompt");
+    assert_completion_excludes_labels!(&completion_suggestions, "system_prompt");
 }
 
 #[test]

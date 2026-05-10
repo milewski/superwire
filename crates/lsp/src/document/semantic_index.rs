@@ -327,6 +327,28 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn prompt_interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = self.prompt_value_root_suggestions(root_prefix);
+
+        if let Some(for_loop_binding_names) = self.for_loop_binding_names_at_position(position) {
+            for for_loop_binding_name in for_loop_binding_names {
+                if !for_loop_binding_name.starts_with(root_prefix) {
+                    continue;
+                }
+
+                completion_suggestions.push(CompletionSuggestion {
+                    label: for_loop_binding_name.to_string(),
+                    kind: CompletionKind::Variable,
+                    detail: "For-loop iterator variable".to_string(),
+                    documentation: "Iterator binding declared in the current agent for-clause.".to_string(),
+                    insert_text: for_loop_binding_name.to_string(),
+                });
+            }
+        }
+
+        completion_suggestions
+    }
+
     pub fn prompt_value_suggestions(&self, value_prefix: &str, line_prefix: &str) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self.prompt_value_root_suggestions(value_prefix);
         let single_line_literal = "\"\"";
@@ -533,6 +555,72 @@ impl SemanticIndex {
                 detail: "MCP tool".to_string(),
                 documentation: format!("Import MCP tool `{normalized_tool_name}` from server `{server_name}`."),
                 insert_text: normalized_tool_name,
+            })
+            .collect()
+    }
+
+    pub fn mcp_resource_batch_item_suggestions(
+        &self,
+        server_name: &str,
+        resource_prefix: &str,
+        existing_resource_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
+        let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
+            return Vec::new();
+        };
+
+        let mut normalized_resource_names = server_lock
+            .resources
+            .iter()
+            .map(|resource_name| McpServerLock::normalize_item_name(resource_name))
+            .filter(|normalized_resource_name| normalized_resource_name.starts_with(resource_prefix))
+            .filter(|normalized_resource_name| !existing_resource_names.contains(normalized_resource_name))
+            .collect::<Vec<_>>();
+
+        normalized_resource_names.sort();
+        normalized_resource_names.dedup();
+
+        normalized_resource_names
+            .into_iter()
+            .map(|normalized_resource_name| CompletionSuggestion {
+                label: normalized_resource_name.clone(),
+                kind: CompletionKind::Value,
+                detail: "MCP resource".to_string(),
+                documentation: format!("Import MCP resource `{normalized_resource_name}` from server `{server_name}`."),
+                insert_text: normalized_resource_name,
+            })
+            .collect()
+    }
+
+    pub fn mcp_prompt_batch_item_suggestions(
+        &self,
+        server_name: &str,
+        prompt_prefix: &str,
+        existing_prompt_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
+        let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
+            return Vec::new();
+        };
+
+        let mut normalized_prompt_names = server_lock
+            .prompts
+            .iter()
+            .map(|prompt_name| McpServerLock::normalize_item_name(prompt_name))
+            .filter(|normalized_prompt_name| normalized_prompt_name.starts_with(prompt_prefix))
+            .filter(|normalized_prompt_name| !existing_prompt_names.contains(normalized_prompt_name))
+            .collect::<Vec<_>>();
+
+        normalized_prompt_names.sort();
+        normalized_prompt_names.dedup();
+
+        normalized_prompt_names
+            .into_iter()
+            .map(|normalized_prompt_name| CompletionSuggestion {
+                label: normalized_prompt_name.clone(),
+                kind: CompletionKind::Value,
+                detail: "MCP prompt".to_string(),
+                documentation: format!("Import MCP prompt `{normalized_prompt_name}` from server `{server_name}`."),
+                insert_text: normalized_prompt_name,
             })
             .collect()
     }

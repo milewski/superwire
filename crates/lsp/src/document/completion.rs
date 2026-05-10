@@ -32,10 +32,11 @@ struct ToolCallBindingCompletionContext {
     existing_binding_names: Vec<String>,
 }
 
-struct McpToolBatchItemCompletionContext {
+struct McpBatchItemCompletionContext {
     server_name: String,
-    tool_prefix: String,
-    existing_tool_names: Vec<String>,
+    item_kind: DeclarationKeyword,
+    item_prefix: String,
+    existing_item_names: Vec<String>,
 }
 
 pub(super) enum McpToolSchemaSource {
@@ -604,22 +605,7 @@ impl DocumentState {
         })
     }
 
-    fn mcp_tool_batch_item_completion_context(&self, position: Position, line_prefix: &str) -> Option<McpToolBatchItemCompletionContext> {
-        let trimmed_line_prefix = line_prefix.trim_start();
-        let tool_keyword = DeclarationKeyword::Tool.as_str();
-        let tool_keyword_start_index = trimmed_line_prefix.rfind(tool_keyword)?;
-
-        if !Self::is_keyword_boundary(trimmed_line_prefix, tool_keyword_start_index, tool_keyword.len()) {
-            return None;
-        }
-
-        let after_tool_keyword = trimmed_line_prefix[tool_keyword_start_index + tool_keyword.len()..].trim_start();
-        let after_tool_keyword = if after_tool_keyword.is_empty() { "" } else { after_tool_keyword };
-
-        if after_tool_keyword.split_whitespace().nth(1).is_some() {
-            return None;
-        }
-
+    fn mcp_batch_item_completion_context(&self, position: Position) -> Option<McpBatchItemCompletionContext> {
         let cursor_offset = byte_offset_for_position(&self.text, position)?;
         let source_prefix = &self.text[..cursor_offset];
         let header_start = source_prefix.rfind(ImportKeyword::From.as_str())?;
@@ -644,18 +630,20 @@ impl DocumentState {
 
         let server_name = import_segments.next()?.to_string();
         let batch_block_prefix = &batch_prefix[open_brace_index + 1..];
-        let existing_tool_names = Self::existing_batch_tool_names_from_block_prefix(batch_block_prefix);
+        let (item_kind, item_prefix) = Self::mcp_batch_item_completion_target(batch_block_prefix)?;
+        let existing_item_names = Self::existing_batch_item_names_from_block_prefix(batch_block_prefix, item_kind);
 
         match import_segments.next() {
-            Some(segment) if segment == DeclarationKeyword::Tool.as_str() && import_segments.next().is_none() => {}
+            Some(segment) if segment == item_kind.as_str() && import_segments.next().is_none() => {}
             None => {}
             _ => return None,
         }
 
-        Some(McpToolBatchItemCompletionContext {
+        Some(McpBatchItemCompletionContext {
             server_name,
-            tool_prefix: after_tool_keyword.trim().to_string(),
-            existing_tool_names,
+            item_kind,
+            item_prefix,
+            existing_item_names,
         })
     }
 
@@ -663,37 +651,161 @@ impl DocumentState {
         &self,
         semantic_index: &SemanticIndex,
         position: Position,
-        line_prefix: &str,
+        _line_prefix: &str,
     ) -> Option<Vec<CompletionSuggestion>> {
-        let batch_item_completion_context = self.mcp_tool_batch_item_completion_context(position, line_prefix)?;
+        let batch_item_completion_context = self.mcp_batch_item_completion_context(position)?;
 
-        Some(semantic_index.mcp_tool_batch_item_suggestions(
-            &batch_item_completion_context.server_name,
-            &batch_item_completion_context.tool_prefix,
-            &batch_item_completion_context.existing_tool_names,
-        ))
+        match batch_item_completion_context.item_kind {
+            DeclarationKeyword::Tool => Some(semantic_index.mcp_tool_batch_item_suggestions(
+                &batch_item_completion_context.server_name,
+                &batch_item_completion_context.item_prefix,
+                &batch_item_completion_context.existing_item_names,
+            )),
+            DeclarationKeyword::Resource => Some(semantic_index.mcp_resource_batch_item_suggestions(
+                &batch_item_completion_context.server_name,
+                &batch_item_completion_context.item_prefix,
+                &batch_item_completion_context.existing_item_names,
+            )),
+            DeclarationKeyword::Prompt => Some(semantic_index.mcp_prompt_batch_item_suggestions(
+                &batch_item_completion_context.server_name,
+                &batch_item_completion_context.item_prefix,
+                &batch_item_completion_context.existing_item_names,
+            )),
+            _ => Some(Vec::new()),
+        }
     }
 
-    fn existing_batch_tool_names_from_block_prefix(batch_block_prefix: &str) -> Vec<String> {
-        let tool_keyword = DeclarationKeyword::Tool.as_str();
+    fn existing_batch_item_names_from_block_prefix(batch_block_prefix: &str, item_kind: DeclarationKeyword) -> Vec<String> {
+        let item_keyword = item_kind.as_str();
 
         batch_block_prefix
             .lines()
             .filter_map(|source_line| {
                 let trimmed_source_line = source_line.trim_start();
-                let after_tool_keyword = trimmed_source_line.strip_prefix(tool_keyword)?.trim_start();
-                let tool_name = after_tool_keyword
+                let after_item_keyword = trimmed_source_line.strip_prefix(item_keyword)?.trim_start();
+                let item_name = after_item_keyword
                     .chars()
                     .take_while(|character| character.is_ascii_alphanumeric() || *character == '_' || *character == '-')
                     .collect::<String>();
 
-                if tool_name.is_empty() {
+                if item_name.is_empty() {
                     return None;
                 }
 
-                Some(McpServerLock::normalize_item_name(&tool_name))
+                Some(McpServerLock::normalize_item_name(&item_name))
             })
             .collect()
+    }
+
+    fn mcp_batch_item_completion_target(batch_block_prefix: &str) -> Option<(DeclarationKeyword, String)> {
+        let mut brace_balance = 0_i32;
+        let mut token_start_index = None;
+        let mut last_item_keyword = None;
+
+        for (character_index, character) in batch_block_prefix.char_indices() {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                if brace_balance == 0 && token_start_index.is_none() {
+                    token_start_index = Some(character_index);
+                }
+
+                continue;
+            }
+
+            if let Some(start_index) = token_start_index.take() {
+                let identifier = &batch_block_prefix[start_index..character_index];
+
+                if brace_balance == 0 {
+                    if let Some(declaration_keyword) = DeclarationKeyword::from_identifier(identifier) {
+                        if matches!(
+                            declaration_keyword,
+                            DeclarationKeyword::Tool | DeclarationKeyword::Prompt | DeclarationKeyword::Resource
+                        ) {
+                            last_item_keyword = Some((declaration_keyword, character_index));
+                        }
+                    }
+                }
+            }
+
+            match character {
+                '{' => brace_balance += 1,
+                '}' => brace_balance -= 1,
+                _ => {}
+            }
+        }
+
+        if let Some(start_index) = token_start_index {
+            let identifier = &batch_block_prefix[start_index..];
+
+            if brace_balance == 0 {
+                if let Some(declaration_keyword) = DeclarationKeyword::from_identifier(identifier) {
+                    if matches!(
+                        declaration_keyword,
+                        DeclarationKeyword::Tool | DeclarationKeyword::Prompt | DeclarationKeyword::Resource
+                    ) {
+                        last_item_keyword = Some((declaration_keyword, batch_block_prefix.len()));
+                    }
+                }
+            }
+        }
+
+        let (item_kind, item_keyword_end_index) = last_item_keyword?;
+        let after_item_keyword = &batch_block_prefix[item_keyword_end_index..];
+
+        if !after_item_keyword.starts_with(char::is_whitespace) {
+            return None;
+        }
+
+        let item_prefix = after_item_keyword.trim_start();
+
+        if item_prefix.split_whitespace().nth(1).is_some() {
+            return None;
+        }
+
+        Some((item_kind, item_prefix.trim().to_string()))
+    }
+
+    fn mcp_batch_import_allowed_keywords_at_position(&self, position: Position) -> Option<Vec<DeclarationKeyword>> {
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let source_prefix = &self.text[..cursor_offset];
+        let header_start = source_prefix.rfind(ImportKeyword::From.as_str())?;
+        let batch_prefix = &source_prefix[header_start..];
+        let open_brace_index = batch_prefix.find('{')?;
+
+        if !Self::block_is_still_open(&batch_prefix[open_brace_index..]) {
+            return None;
+        }
+
+        let header = batch_prefix[..open_brace_index].trim();
+        let import_path = header.strip_prefix(ImportKeyword::From.as_str())?.trim();
+        let import_path = import_path
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        let mut import_segments = import_path.split('.');
+
+        if import_segments.next()? != DeclarationKeyword::Mcp.as_str() {
+            return None;
+        }
+
+        let _server_name = import_segments.next()?;
+
+        match import_segments.next() {
+            Some(import_kind) if import_kind == DeclarationKeyword::Tool.as_str() && import_segments.next().is_none() => {
+                Some(vec![DeclarationKeyword::Tool])
+            }
+            Some(import_kind) if import_kind == DeclarationKeyword::Resource.as_str() && import_segments.next().is_none() => {
+                Some(vec![DeclarationKeyword::Resource])
+            }
+            Some(import_kind) if import_kind == DeclarationKeyword::Prompt.as_str() && import_segments.next().is_none() => {
+                Some(vec![DeclarationKeyword::Prompt])
+            }
+            None => Some(vec![
+                DeclarationKeyword::Tool,
+                DeclarationKeyword::Prompt,
+                DeclarationKeyword::Resource,
+            ]),
+            _ => None,
+        }
     }
 
     fn tool_call_binding_completion_context(&self, position: Position, line_prefix: &str) -> Option<ToolCallBindingCompletionContext> {
@@ -857,7 +969,11 @@ impl DocumentState {
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
             CompletionScope::ToolProperties => Some(self.tool_property_suggestions(semantic_index, line_prefix, position)),
-            CompletionScope::McpToolBatchImport => Some(mcp_tool_batch_import_scope_suggestions(line_prefix)),
+            CompletionScope::McpToolBatchImport => {
+                let allowed_keywords = self.mcp_batch_import_allowed_keywords_at_position(position)?;
+
+                Some(mcp_tool_batch_import_scope_suggestions(line_prefix, &allowed_keywords))
+            }
             CompletionScope::General | CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => None,
         }
     }
@@ -1388,7 +1504,7 @@ impl DocumentState {
         inside_interpolation_expression: bool,
     ) -> Vec<CompletionSuggestion> {
         if Self::is_prompt_interpolation_reference_context(line_prefix, inside_interpolation_expression) {
-            return semantic_index.prompt_value_root_suggestions(root_prefix);
+            return semantic_index.prompt_interpolation_root_suggestions(root_prefix, position);
         }
 
         semantic_index.interpolation_root_suggestions(root_prefix, position)

@@ -158,18 +158,8 @@ impl ScopeScannerTokenState {
             return ScopeBlock::Dynamic;
         }
 
-        if self.recent_identifiers.len() >= 4
-            && self.recent_identifiers[self.recent_identifiers.len() - 4] == ImportKeyword::From.as_str()
-            && self.recent_identifiers[self.recent_identifiers.len() - 3] == DeclarationKeyword::Mcp.as_str()
-        {
-            let import_kind = &self.recent_identifiers[self.recent_identifiers.len() - 1];
-
-            if import_kind == DeclarationKeyword::Tool.as_str()
-                || import_kind == DeclarationKeyword::Resource.as_str()
-                || import_kind == DeclarationKeyword::Prompt.as_str()
-            {
-                return ScopeBlock::McpToolBatchImport;
-            }
+        if self.is_mcp_batch_import_open_brace() {
+            return ScopeBlock::McpToolBatchImport;
         }
 
         if let Some(agent_keyword_index) = self
@@ -215,6 +205,36 @@ impl ScopeScannerTokenState {
         }
 
         ScopeBlock::Other
+    }
+
+    fn is_mcp_batch_import_open_brace(&self) -> bool {
+        if self.recent_identifiers.len() >= 3 {
+            let import_keyword_index = self.recent_identifiers.len() - 3;
+
+            if self.recent_identifiers[import_keyword_index] == ImportKeyword::From.as_str()
+                && self.recent_identifiers[import_keyword_index + 1] == DeclarationKeyword::Mcp.as_str()
+            {
+                return true;
+            }
+        }
+
+        if self.recent_identifiers.len() < 4 {
+            return false;
+        }
+
+        let import_keyword_index = self.recent_identifiers.len() - 4;
+
+        if self.recent_identifiers[import_keyword_index] != ImportKeyword::From.as_str()
+            || self.recent_identifiers[import_keyword_index + 1] != DeclarationKeyword::Mcp.as_str()
+        {
+            return false;
+        }
+
+        let import_kind = &self.recent_identifiers[import_keyword_index + 3];
+
+        import_kind == DeclarationKeyword::Tool.as_str()
+            || import_kind == DeclarationKeyword::Resource.as_str()
+            || import_kind == DeclarationKeyword::Prompt.as_str()
     }
 
     fn clear_after_brace(&mut self) {
@@ -387,26 +407,22 @@ pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSugge
         .collect()
 }
 
-pub fn mcp_tool_batch_import_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+pub fn mcp_tool_batch_import_scope_suggestions(
+    line_prefix: &str,
+    allowed_declaration_keywords: &[DeclarationKeyword],
+) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    [
-        ToolPropertyName::Input.as_str(),
-        ToolPropertyName::Bindings.as_str(),
-        ToolPropertyName::MaxCalls.as_str(),
-        ToolPropertyName::Output.as_str(),
-        DeclarationKeyword::Tool.as_str(),
-        DeclarationKeyword::Resource.as_str(),
-        DeclarationKeyword::Prompt.as_str(),
-    ]
-    .into_iter()
-    .filter(|property_name| property_name.starts_with(property_prefix))
-    .map(|property_name| CompletionSuggestion {
-        label: property_name.to_string(),
-        kind: CompletionKind::Property,
-        detail: "MCP tool batch import item".to_string(),
-        documentation: "Shared binding, call limit, or tool item inside an MCP tool batch import.".to_string(),
-        insert_text: property_name.to_string(),
-    })
-    .collect()
+    allowed_declaration_keywords
+        .iter()
+        .map(|declaration_keyword| declaration_keyword.as_str())
+        .filter(|property_name| property_name.starts_with(property_prefix))
+        .map(|property_name| CompletionSuggestion {
+            label: property_name.to_string(),
+            kind: CompletionKind::Property,
+            detail: "MCP batch import item".to_string(),
+            documentation: "MCP batch import item inside this block.".to_string(),
+            insert_text: property_name.to_string(),
+        })
+        .collect()
 }
