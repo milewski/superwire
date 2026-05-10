@@ -212,3 +212,22 @@ fn uses_agent_output_field_description_for_interpolation_completion() {
     assert_eq!(message_completion.detail, "some description of the message");
     assert_eq!(message_completion.documentation, "some description of the message");
 }
+
+#[test]
+fn completes_secrets_references_inside_non_prompt_string_interpolation() {
+    let completion_suggestions = inline_completion_suggestions! {
+        secrets {
+            mcp_api_token: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_api_token
+            headers: {
+                Accept: "application/json"
+                Authorization: "Bearer {{ secrets.<cursor> }}"
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "mcp_api_token");
+}

@@ -396,17 +396,22 @@ impl SemanticIndex {
     }
 
     pub fn interpolation_root_suggestions(&self, root_prefix: &str, position: Position) -> Vec<CompletionSuggestion> {
-        let mut completion_suggestions = [ReferenceKeyword::Agent, ReferenceKeyword::Dynamic, ReferenceKeyword::Input]
-            .into_iter()
-            .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
-            .map(|reference_keyword| CompletionSuggestion {
-                label: reference_keyword.as_str().to_string(),
-                kind: CompletionKind::Module,
-                detail: "Interpolation reference root".to_string(),
-                documentation: format!("Use `{}.<path>` inside interpolation expressions.", reference_keyword.as_str()),
-                insert_text: format!("{}.", reference_keyword.as_str()),
-            })
-            .collect::<Vec<_>>();
+        let mut completion_suggestions = [
+            ReferenceKeyword::Agent,
+            ReferenceKeyword::Dynamic,
+            ReferenceKeyword::Input,
+            ReferenceKeyword::Secrets,
+        ]
+        .into_iter()
+        .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
+        .map(|reference_keyword| CompletionSuggestion {
+            label: reference_keyword.as_str().to_string(),
+            kind: CompletionKind::Module,
+            detail: "Interpolation reference root".to_string(),
+            documentation: format!("Use `{}.<path>` inside interpolation expressions.", reference_keyword.as_str()),
+            insert_text: format!("{}.", reference_keyword.as_str()),
+        })
+        .collect::<Vec<_>>();
 
         if let Some(for_loop_binding_names) = self.for_loop_binding_names_at_position(position) {
             for for_loop_binding_name in for_loop_binding_names {
