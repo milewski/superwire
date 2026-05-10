@@ -223,7 +223,7 @@ impl ReferenceCompletionConstraint {
 
 impl SemanticIndex {
     fn normalized_mcp_import_name(import_name: &str) -> String {
-        McpServerLock::normalize_tool_name(import_name)
+        McpServerLock::normalize_item_name(import_name)
     }
 
     fn mcp_tool_name_suggestions(&self, server_name: &str, pending_prefix: &str) -> Vec<CompletionSuggestion> {

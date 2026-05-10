@@ -507,7 +507,7 @@ impl SemanticIndex {
         let mut normalized_tool_names = server_lock
             .tools
             .keys()
-            .map(|tool_name| McpServerLock::normalize_tool_name(tool_name))
+            .map(|tool_name| McpServerLock::normalize_item_name(tool_name))
             .filter(|normalized_tool_name| normalized_tool_name.starts_with(tool_prefix))
             .collect::<Vec<_>>();
 

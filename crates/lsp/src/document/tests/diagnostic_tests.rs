@@ -13,6 +13,36 @@ fn reports_parse_diagnostics_for_invalid_syntax() {
 }
 
 #[test]
+fn reports_mcp_resource_import_names_must_be_snake_case() {
+    let diagnostics = inline_diagnostics! {
+        mcp local {
+            endpoint: "http://localhost:3000"
+        }
+
+        resource project_readme from mcp.local.resource.project-readme
+    };
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("MCP resource names in .wire files must be snake_case")));
+}
+
+#[test]
+fn reports_mcp_prompt_import_names_must_be_snake_case() {
+    let diagnostics = inline_diagnostics! {
+        mcp local {
+            endpoint: "http://localhost:3000"
+        }
+
+        prompt system_prompt from mcp.local.prompt.system-prompt
+    };
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("MCP prompt names in .wire files must be snake_case")));
+}
+
+#[test]
 fn reports_unknown_model_for_provider_diagnostic() {
     let diagnostics = inline_diagnostics! {
         provider openai {

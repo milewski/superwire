@@ -35,11 +35,11 @@ async fn batches_mixed_mcp_imports_with_bindings() {
             });
         })
         .mcp("local", |mcp| {
-            mcp.prompt("create_task_instructions", |prompt| {
+            mcp.prompt("create-task-instructions", |prompt| {
                 prompt.description("Task instructions").text("Create the requested task.");
             });
 
-            mcp.resource("all_tasks", |resource| {
+            mcp.resource("all-tasks", |resource| {
                 resource
                     .uri("file://resources/all_tasks")
                     .mime_type("text/markdown")
@@ -73,7 +73,13 @@ async fn batches_mixed_mcp_imports_with_bindings() {
         }))
     );
 
-    assert_mcp_request_was_sent(&output.mcp_requests["local"], "prompts/get");
+    let prompt_request = output.mcp_requests["local"]
+        .iter()
+        .find(|request| request.get("method") == Some(&json!("prompts/get")))
+        .expect("prompts/get request should be present");
+
+    assert_eq!(prompt_request.pointer("/params/name"), Some(&json!("create-task-instructions")));
+
     assert_mcp_request_was_sent(&output.mcp_requests["local"], "resources/read");
 }
 

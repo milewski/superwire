@@ -1,4 +1,4 @@
-use crate::dsl::{Declaration, ToolDeclaration, ToolSource, Workflow};
+use crate::dsl::{Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, ToolDeclaration, ToolSource, Workflow};
 use crate::mcp::schema::to_json_value;
 use crate::mcp::{McpClient, McpError, McpServerConfig};
 use crate::semantic::support::expression::EvaluationContext;
@@ -201,16 +201,36 @@ impl McpLock {
                     for tool_declaration in &mut batch_import_declaration.tools {
                         self.apply_to_tool_declaration(tool_declaration);
                     }
+
+                    for resource_import_declaration in &mut batch_import_declaration.resources {
+                        self.apply_to_resource_import_declaration(resource_import_declaration);
+                    }
+
+                    for prompt_import_declaration in &mut batch_import_declaration.prompts {
+                        self.apply_to_prompt_import_declaration(prompt_import_declaration);
+                    }
+                }
+                Declaration::McpResourceBatch(resource_batch_import_declaration) => {
+                    for resource_import_declaration in &mut resource_batch_import_declaration.resources {
+                        self.apply_to_resource_import_declaration(resource_import_declaration);
+                    }
+                }
+                Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                    for prompt_import_declaration in &mut prompt_batch_import_declaration.prompts {
+                        self.apply_to_prompt_import_declaration(prompt_import_declaration);
+                    }
+                }
+                Declaration::McpResource(resource_import_declaration) => {
+                    self.apply_to_resource_import_declaration(resource_import_declaration);
+                }
+                Declaration::McpPrompt(prompt_import_declaration) => {
+                    self.apply_to_prompt_import_declaration(prompt_import_declaration);
                 }
                 Declaration::Provider(_)
                 | Declaration::McpServer(_)
                 | Declaration::Secrets(_)
                 | Declaration::Input(_)
                 | Declaration::Schema(_)
-                | Declaration::McpResourceBatch(_)
-                | Declaration::McpPromptBatch(_)
-                | Declaration::McpResource(_)
-                | Declaration::McpPrompt(_)
                 | Declaration::Dynamic(_)
                 | Declaration::Agent(_)
                 | Declaration::Output(_) => {}
@@ -228,6 +248,34 @@ impl McpLock {
         }
 
         tool_declaration.apply_mcp_schema(mcp_tool);
+    }
+
+    fn apply_to_resource_import_declaration(&self, resource_import_declaration: &mut McpResourceImportDeclaration) {
+        if let Some(resolved_resource_name) = self.find_resource_name(
+            &resource_import_declaration.source.server_name,
+            &resource_import_declaration.source.item_name,
+        ) {
+            resource_import_declaration.source.item_name = resolved_resource_name;
+        }
+    }
+
+    fn apply_to_prompt_import_declaration(&self, prompt_import_declaration: &mut McpPromptImportDeclaration) {
+        if let Some(resolved_prompt_name) = self.find_prompt_name(
+            &prompt_import_declaration.source.server_name,
+            &prompt_import_declaration.source.item_name,
+        ) {
+            prompt_import_declaration.source.item_name = resolved_prompt_name;
+        }
+    }
+
+    #[must_use]
+    fn find_resource_name(&self, server_name: &str, requested_resource_name: &str) -> Option<String> {
+        self.servers.get(server_name)?.find_resource_with_name(requested_resource_name)
+    }
+
+    #[must_use]
+    fn find_prompt_name(&self, server_name: &str, requested_prompt_name: &str) -> Option<String> {
+        self.servers.get(server_name)?.find_prompt_with_name(requested_prompt_name)
     }
 
     #[must_use]
@@ -257,10 +305,10 @@ impl McpServerLock {
             return Some((requested_tool_name.to_string(), mcp_tool_lock));
         }
 
-        let normalized_requested_name = Self::normalize_tool_name(requested_tool_name);
+        let normalized_requested_name = Self::normalize_item_name(requested_tool_name);
 
         for (tool_name, mcp_tool_lock) in &self.tools {
-            if Self::normalize_tool_name(tool_name) == normalized_requested_name {
+            if Self::normalize_item_name(tool_name) == normalized_requested_name {
                 return Some((tool_name.clone(), mcp_tool_lock));
             }
         }
@@ -269,11 +317,38 @@ impl McpServerLock {
     }
 
     #[must_use]
-    pub fn normalize_tool_name(tool_name: &str) -> String {
+    pub fn find_resource_with_name(&self, requested_resource_name: &str) -> Option<String> {
+        Self::find_listed_item_with_name(&self.resources, requested_resource_name)
+    }
+
+    #[must_use]
+    pub fn find_prompt_with_name(&self, requested_prompt_name: &str) -> Option<String> {
+        Self::find_listed_item_with_name(&self.prompts, requested_prompt_name)
+    }
+
+    #[must_use]
+    fn find_listed_item_with_name(listed_item_names: &[String], requested_item_name: &str) -> Option<String> {
+        if listed_item_names
+            .iter()
+            .any(|listed_item_name| listed_item_name == requested_item_name)
+        {
+            return Some(requested_item_name.to_string());
+        }
+
+        let normalized_requested_name = Self::normalize_item_name(requested_item_name);
+
+        listed_item_names
+            .iter()
+            .find(|listed_item_name| Self::normalize_item_name(listed_item_name) == normalized_requested_name)
+            .cloned()
+    }
+
+    #[must_use]
+    pub fn normalize_item_name(item_name: &str) -> String {
         let mut normalized_name = String::new();
         let mut previous_was_underscore = false;
 
-        for (index, character) in tool_name.chars().enumerate() {
+        for (index, character) in item_name.chars().enumerate() {
             if character.is_ascii_uppercase() {
                 if index > 0 && !previous_was_underscore {
                     normalized_name.push('_');
@@ -299,6 +374,11 @@ impl McpServerLock {
         }
 
         normalized_name.trim_matches('_').to_string()
+    }
+
+    #[must_use]
+    pub fn normalize_tool_name(tool_name: &str) -> String {
+        Self::normalize_item_name(tool_name)
     }
 }
 

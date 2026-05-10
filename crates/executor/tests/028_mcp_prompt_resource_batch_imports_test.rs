@@ -10,11 +10,11 @@ async fn batches_prompt_and_resource_imports_with_bindings() {
     let output = TestRunner::workflow(fixtures::MCP_PROMPT_RESOURCE_BATCH_IMPORTS)
         .input(json!({ "project_id": 14, "task_id": 7 }))
         .mcp("local", |mcp| {
-            mcp.prompt("create_task_instructions", |prompt| {
+            mcp.prompt("create-task-instructions", |prompt| {
                 prompt.description("Task instructions").text("Create the requested task.");
             });
 
-            mcp.resource("all_tasks", |resource| {
+            mcp.resource("all-tasks", |resource| {
                 resource
                     .uri("file://resources/all_tasks")
                     .mime_type("text/markdown")
@@ -32,7 +32,7 @@ async fn batches_prompt_and_resource_imports_with_bindings() {
     assert!(output.output["tasks"].as_str().is_some_and(|tasks| tasks.contains("# Tasks")));
 
     let expected_prompt_parameters = json!({
-            "name": "create_task_instructions",
+            "name": "create-task-instructions",
             "arguments": {
                 "audience": "maintainers"
             }

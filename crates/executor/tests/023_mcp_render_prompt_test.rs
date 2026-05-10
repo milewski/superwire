@@ -10,7 +10,7 @@ async fn renders_mcp_prompt_as_dynamic_value() {
     let output = TestRunner::workflow(fixtures::MCP_RENDER_PROMPT)
         .input(json!({ "workspace_id": "workspace-1" }))
         .mcp("local", |mcp| {
-            mcp.prompt("system_prompt", |prompt| {
+            mcp.prompt("system-prompt", |prompt| {
                 prompt.description("System prompt").text("Follow project conventions.");
             });
         })
@@ -30,7 +30,7 @@ async fn renders_mcp_prompt_as_dynamic_value() {
     assert_eq!(
         render_prompt_request.pointer("/params"),
         Some(&json!({
-            "name": "system_prompt",
+            "name": "system-prompt",
             "arguments": {
                 "workspace_id": "workspace-1",
                 "audience": "maintainers"

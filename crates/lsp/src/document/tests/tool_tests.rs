@@ -255,8 +255,8 @@ fn test_mcp_lock() -> McpLock {
         "local".to_string(),
         McpServerLock {
             tools,
-            resources: vec!["project_readme".to_string(), "release_notes".to_string()],
-            prompts: vec!["system_prompt".to_string(), "review_prompt".to_string()],
+            resources: vec!["project-readme".to_string(), "release-notes".to_string()],
+            prompts: vec!["system-prompt".to_string(), "review-prompt".to_string()],
         },
     );
 
