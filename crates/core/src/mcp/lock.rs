@@ -51,6 +51,8 @@ pub struct McpServerLock {
     pub resources: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prompts: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prompt_arguments: BTreeMap<String, Vec<McpPromptArgumentLock>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +61,14 @@ pub struct McpToolLock {
     pub description: Option<String>,
     pub input_schema: ToolInputSchema,
     pub output_schema: Option<ToolOutputSchema>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct McpPromptArgumentLock {
+    pub name: String,
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl McpToolLock {
@@ -238,6 +248,33 @@ impl McpLock {
         }
     }
 
+    #[must_use]
+    pub fn validate_prompt_import_bindings(&self, workflow: &Workflow) -> Vec<String> {
+        let mut messages = Vec::new();
+
+        for prompt_import_declaration in workflow.prompt_imports() {
+            let Some(server_lock) = self.servers.get(&prompt_import_declaration.source.server_name) else {
+                continue;
+            };
+            let Some(prompt_arguments) = server_lock.prompt_arguments_for_name(&prompt_import_declaration.source.item_name) else {
+                continue;
+            };
+
+            for prompt_argument in prompt_arguments.iter().filter(|prompt_argument| prompt_argument.required) {
+                if prompt_import_declaration.has_parameter_binding(&prompt_argument.name) {
+                    continue;
+                }
+
+                messages.push(format!(
+                    "MCP prompt `{}` requires binding `{}` from server prompt `{}`",
+                    prompt_import_declaration.name, prompt_argument.name, prompt_import_declaration.source.item_name
+                ));
+            }
+        }
+
+        messages
+    }
+
     fn apply_to_tool_declaration(&self, tool_declaration: &mut ToolDeclaration) {
         let Some((resolved_tool_name, mcp_tool)) = self.find_tool_for_tool_declaration(tool_declaration) else {
             return;
@@ -327,6 +364,13 @@ impl McpServerLock {
     }
 
     #[must_use]
+    pub fn prompt_arguments_for_name(&self, requested_prompt_name: &str) -> Option<&[McpPromptArgumentLock]> {
+        let prompt_name = self.find_prompt_with_name(requested_prompt_name)?;
+
+        self.prompt_arguments.get(&prompt_name).map(std::vec::Vec::as_slice)
+    }
+
+    #[must_use]
     fn find_listed_item_with_name(listed_item_names: &[String], requested_item_name: &str) -> Option<String> {
         if listed_item_names
             .iter()
@@ -379,6 +423,13 @@ impl McpServerLock {
     #[must_use]
     pub fn normalize_tool_name(tool_name: &str) -> String {
         Self::normalize_item_name(tool_name)
+    }
+}
+
+impl McpPromptImportDeclaration {
+    #[must_use]
+    fn has_parameter_binding(&self, parameter_name: &str) -> bool {
+        self.parameters.iter().any(|parameter| parameter.name == parameter_name)
     }
 }
 

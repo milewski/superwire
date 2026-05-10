@@ -88,6 +88,7 @@ pub struct McpResourceBuilder {
 pub struct McpPromptBuilder {
     description: Option<String>,
     text: Option<String>,
+    arguments: Vec<McpPromptArgumentScript>,
 }
 
 struct ProviderScript {
@@ -147,6 +148,14 @@ struct McpResourceScript {
 struct McpPromptScript {
     description: String,
     text: String,
+    arguments: Vec<McpPromptArgumentScript>,
+}
+
+#[derive(Debug, Clone)]
+struct McpPromptArgumentScript {
+    name: String,
+    description: String,
+    required: bool,
 }
 
 struct ProviderServer {
@@ -530,10 +539,23 @@ impl McpPromptBuilder {
         self
     }
 
+    pub fn argument(&mut self, name: impl Into<String>, required: bool) -> &mut Self {
+        let name = name.into();
+
+        self.arguments.push(McpPromptArgumentScript {
+            description: format!("Test prompt argument {name}"),
+            name,
+            required,
+        });
+
+        self
+    }
+
     fn build(self) -> McpPromptScript {
         McpPromptScript {
             description: self.description.unwrap_or_else(|| "Test MCP prompt".to_string()),
             text: self.text.unwrap_or_default(),
+            arguments: self.arguments,
         }
     }
 }
@@ -584,6 +606,7 @@ impl Clone for McpPromptScript {
         Self {
             description: self.description.clone(),
             text: self.text.clone(),
+            arguments: self.arguments.clone(),
         }
     }
 }
@@ -932,9 +955,20 @@ impl McpScript {
                 json!({
                     "name": prompt_name,
                     "description": prompt.description,
+                    "arguments": prompt.arguments.iter().map(McpPromptArgumentScript::to_json).collect::<Vec<_>>(),
                 })
             })
             .collect()
+    }
+}
+
+impl McpPromptArgumentScript {
+    fn to_json(&self) -> Value {
+        json!({
+            "name": self.name,
+            "description": self.description,
+            "required": self.required,
+        })
     }
 }
 

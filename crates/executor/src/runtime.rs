@@ -67,6 +67,14 @@ impl WorkflowExecutor {
             message: error.to_string(),
         })?;
         mcp_lock.apply_to_workflow(&mut workflow);
+        let prompt_binding_errors = mcp_lock.validate_prompt_import_bindings(&workflow);
+
+        if !prompt_binding_errors.is_empty() {
+            return Err(ExecutorError::Other {
+                message: prompt_binding_errors.join("; "),
+            });
+        }
+
         let mcp_pool = McpClientPool::from_workflow(&workflow).map_err(|error| ExecutorError::Other {
             message: error.to_string(),
         })?;
@@ -97,6 +105,14 @@ impl WorkflowExecutor {
 
         log::debug!("discovered MCP schemas using runtime values: servers={}", mcp_lock.servers.len());
         mcp_lock.apply_to_workflow(&mut workflow);
+        let prompt_binding_errors = mcp_lock.validate_prompt_import_bindings(&workflow);
+
+        if !prompt_binding_errors.is_empty() {
+            return Err(ExecutorError::Other {
+                message: prompt_binding_errors.join("; "),
+            });
+        }
+
         let mcp_pool = McpClientPool::from_workflow_with_context(&workflow, &evaluation_context).map_err(|error| ExecutorError::Other {
             message: error.to_string(),
         })?;

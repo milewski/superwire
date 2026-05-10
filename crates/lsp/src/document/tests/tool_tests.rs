@@ -257,6 +257,7 @@ fn test_mcp_lock() -> McpLock {
             tools,
             resources: vec!["project-readme".to_string(), "release-notes".to_string()],
             prompts: vec!["system-prompt".to_string(), "review-prompt".to_string()],
+            prompt_arguments: BTreeMap::new(),
         },
     );
 

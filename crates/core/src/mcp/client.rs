@@ -1,5 +1,5 @@
 use crate::mcp::schema::to_json_value;
-use crate::mcp::{McpError, McpServerConfig, McpServerLock, McpToolLock};
+use crate::mcp::{McpError, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock};
 use rust_mcp_schema::{
     CallToolRequest, CallToolRequestParams, ClientCapabilities, GetPromptRequest, GetPromptRequestParams, Implementation,
     InitializeRequest, InitializeRequestParams, InitializedNotification, JsonrpcResponse, ListPromptsRequest, ListPromptsResult,
@@ -80,7 +80,9 @@ impl McpClient {
         let mut server_lock = McpServerLock::from(list_tools_result);
 
         server_lock.resources = self.list_resource_names().unwrap_or_default();
-        server_lock.prompts = self.list_prompt_names().unwrap_or_default();
+        let prompt_arguments = self.list_prompt_arguments().unwrap_or_default();
+        server_lock.prompts = prompt_arguments.keys().cloned().collect();
+        server_lock.prompt_arguments = prompt_arguments;
 
         log::info!(
             "MCP tools/list completed: server={}, tools={}",
@@ -106,19 +108,28 @@ impl McpClient {
         Ok(resource_names)
     }
 
-    fn list_prompt_names(&self) -> Result<Vec<String>, McpError> {
+    fn list_prompt_arguments(&self) -> Result<BTreeMap<String, Vec<McpPromptArgumentLock>>, McpError> {
         let list_prompts_result =
             self.request_result::<ListPromptsResult, _>(ListPromptsRequest::method_value(), &mcp_request!(ListPromptsRequest, 2, None))?;
-        let mut prompt_names = list_prompts_result
+        let prompt_arguments = list_prompts_result
             .prompts
             .into_iter()
-            .map(|prompt| prompt.name)
-            .collect::<Vec<_>>();
+            .map(|prompt| {
+                let arguments = prompt
+                    .arguments
+                    .into_iter()
+                    .map(|argument| McpPromptArgumentLock {
+                        name: argument.name,
+                        required: argument.required.unwrap_or(false),
+                        description: argument.description,
+                    })
+                    .collect::<Vec<_>>();
 
-        prompt_names.sort();
-        prompt_names.dedup();
+                (prompt.name, arguments)
+            })
+            .collect::<BTreeMap<_, _>>();
 
-        Ok(prompt_names)
+        Ok(prompt_arguments)
     }
 
     pub fn list_resources(&self) -> Result<BTreeMap<String, String>, McpError> {
@@ -420,11 +431,15 @@ fn string_arguments(arguments: Value) -> Option<BTreeMap<String, String>> {
         arguments
             .as_object()?
             .iter()
-            .filter_map(|(argument_name, argument_value)| {
-                argument_value
-                    .as_str()
-                    .map(|argument_value| (argument_name.clone(), argument_value.to_string()))
-            })
+            .map(|(argument_name, argument_value)| (argument_name.clone(), prompt_argument_value(argument_value)))
             .collect(),
     )
+}
+
+fn prompt_argument_value(argument_value: &Value) -> String {
+    match argument_value {
+        Value::String(string_value) => string_value.clone(),
+        Value::Null | Value::Bool(_) | Value::Number(_) => argument_value.to_string(),
+        Value::Array(_) | Value::Object(_) => serde_json::to_string(argument_value).expect("JSON value should serialize"),
+    }
 }
