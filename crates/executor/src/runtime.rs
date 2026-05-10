@@ -245,21 +245,14 @@ impl WorkflowExecutor {
     }
 
     pub fn validate_runtime_configuration(&self, input: &Value, secrets: &Value) -> Result<(), ExecutorError> {
-        let input_values = self.resolve_input_values(input)?;
-        let secret_values = self.resolve_secret_values(secrets)?;
-        let runtime_state = RuntimeState::new(input_values, secret_values);
-
-        self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
+        self.resolve_input_values(input)?;
+        self.resolve_secret_values(secrets)?;
 
         Ok(())
     }
 
     pub fn validate_runtime_configuration_without_input(&self, secrets: &Value) -> Result<(), ExecutorError> {
-        let input_values = self.placeholder_input_values_for_validation();
-        let secret_values = self.resolve_secret_values(secrets)?;
-        let runtime_state = RuntimeState::new(input_values, secret_values);
-
-        self.resolve_mcp_import_context(&runtime_state.evaluation_context(HashMap::new()))?;
+        self.resolve_secret_values(secrets)?;
 
         Ok(())
     }
@@ -319,20 +312,6 @@ impl WorkflowExecutor {
             expected: "no input".to_string(),
             found: value_kind_name(input).to_string(),
         })
-    }
-
-    fn placeholder_input_values_for_validation(&self) -> Map<String, Value> {
-        let Some(input_type) = &self.execution_plan.input_type else {
-            return Map::new();
-        };
-
-        match input_type {
-            WorkflowType::Object(field_types) => field_types
-                .keys()
-                .map(|field_name| (field_name.clone(), Value::Null))
-                .collect::<Map<String, Value>>(),
-            _ => Map::new(),
-        }
     }
 
     fn input_fields_consumed_by_bindings(&self) -> HashSet<String> {

@@ -93,6 +93,7 @@ pub(crate) enum TestMcpMethod {
     Initialized,
     ToolsList,
     ToolsCall,
+    PromptsList,
     ResourcesList,
     ResourcesRead,
     PromptsGet,
@@ -156,6 +157,7 @@ impl TestMcpMethod {
             Some("notifications/initialized") => Self::Initialized,
             Some("tools/list") => Self::ToolsList,
             Some("tools/call") => Self::ToolsCall,
+            Some("prompts/list") => Self::PromptsList,
             Some("resources/list") => Self::ResourcesList,
             Some("resources/read") => Self::ResourcesRead,
             Some("prompts/get") => Self::PromptsGet,
@@ -181,6 +183,7 @@ impl TestMcpCatalog {
             TestMcpMethod::Initialized => None,
             TestMcpMethod::ToolsList => Some(jsonrpc_result(2, json!({ "tools": self.tools() }))),
             TestMcpMethod::ToolsCall => Some(jsonrpc_result(3, json!({ "content": [{ "type": "text", "text": "{}" }] }))),
+            TestMcpMethod::PromptsList => Some(jsonrpc_result(2, json!({ "prompts": self.prompts() }))),
             TestMcpMethod::ResourcesList => Some(jsonrpc_result(2, json!({ "resources": self.resources() }))),
             TestMcpMethod::ResourcesRead => Some(jsonrpc_result(3, self.project_readme_content())),
             TestMcpMethod::PromptsGet => Some(jsonrpc_result(2, self.system_prompt_result())),
@@ -344,6 +347,14 @@ impl TestMcpCatalog {
             "description": "The project readme file",
             "mimeType": "text/markdown",
             "uri": "file://resources/project_readme"
+        })]
+    }
+
+    fn prompts(&self) -> Vec<Value> {
+        vec![json!({
+            "name": "system_prompt",
+            "title": "System Prompt",
+            "description": "The system prompt"
         })]
     }
 
@@ -865,6 +876,111 @@ fn validation_does_not_execute_agent_dynamic_tool_calls() {
 
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
+}
+
+#[test]
+fn validation_does_not_fetch_mcp_prompt_imports() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        prompt system_prompt from mcp.local.prompt.system_prompt {
+            bindings {
+                project_id: input.project_id
+                type_id: input.task_id
+                type: "task"
+            }
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            instruction: "Summarize task"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+
+    service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("validation should list prompt imports without rendering them");
+
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::PromptsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::PromptsGet), 0);
+}
+
+#[test]
+fn validation_does_not_read_mcp_resource_imports() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        provider openai {
+            driver: "openai"
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+            models: ["gpt-4.1-mini"]
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            workspace_id: string
+        }
+
+        resource project_readme from mcp.local.resource.project_readme {
+            bindings {
+                workspace_id: input.workspace_id
+            }
+        }
+
+        agent updater {
+            model: openai("gpt-4.1-mini")
+            instruction: "Summarize project"
+            output: string
+        }
+
+        output {
+            value: agent.updater
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
+
+    service
+        .validate(ValidationRequest {
+            workflow_source: Some(workflow_source),
+            workflow_source_base64: None,
+            secrets: Value::Null,
+        })
+        .expect("validation should list resource imports without reading them");
+
+    assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ResourcesList), 1);
+    assert_eq!(server.method_count(TestMcpMethod::ResourcesRead), 0);
 }
 
 #[test]
