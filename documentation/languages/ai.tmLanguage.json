@@ -1,7 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "ai",
-  "scopeName": "source.ai",
+  "name": "Superwire DSL",
+  "scopeName": "source.wire",
+  "fileTypes": [
+    "wire"
+  ],
   "patterns": [
     {
       "include": "#comments"
@@ -10,19 +13,43 @@
       "include": "#provider"
     },
     {
-      "include": "#secrets-block"
+      "include": "#mcp"
     },
     {
-      "include": "#schema"
+      "include": "#secrets-block"
     },
     {
       "include": "#input-block"
     },
     {
-      "include": "#output-block"
+      "include": "#schema"
+    },
+    {
+      "include": "#tool"
+    },
+    {
+      "include": "#mcp-import"
+    },
+    {
+      "include": "#mcp-tool-batch-import"
+    },
+    {
+      "include": "#mcp-resource-batch-import"
+    },
+    {
+      "include": "#mcp-prompt-batch-import"
+    },
+    {
+      "include": "#mcp-mixed-batch-import"
+    },
+    {
+      "include": "#dynamic-block"
     },
     {
       "include": "#agent"
+    },
+    {
+      "include": "#output-block"
     },
     {
       "include": "#expressions"
@@ -32,7 +59,7 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.ai",
+          "name": "comment.line.double-slash.wire",
           "match": "//.*$"
         }
       ]
@@ -41,10 +68,30 @@
       "begin": "\\b(provider)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
         },
         "2": {
-          "name": "entity.name.type.provider.ai"
+          "name": "entity.name.type.provider.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp": {
+      "begin": "\\b(mcp)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.type.mcp.wire"
         }
       },
       "end": "\\}",
@@ -61,27 +108,7 @@
       "begin": "\\b(secrets)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
-        }
-      },
-      "end": "\\}",
-      "patterns": [
-        {
-          "include": "#property-assignment"
-        },
-        {
-          "include": "#expressions"
-        }
-      ]
-    },
-    "schema": {
-      "begin": "\\b(schema)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
-      "beginCaptures": {
-        "1": {
-          "name": "keyword.control.ai"
-        },
-        "2": {
-          "name": "entity.name.type.schema.ai"
+          "name": "keyword.control.wire"
         }
       },
       "end": "\\}",
@@ -98,7 +125,357 @@
       "begin": "\\b(input)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
+          "name": "keyword.control.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "schema": {
+      "begin": "\\b(schema)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.type.schema.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool": {
+      "begin": "\\b(tool)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:from\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool)(\\.)([A-Za-z0-9_-]+))?\\s*(\\{(?=[^}]))?",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.function.tool.wire"
+        },
+        "3": {
+          "name": "keyword.other.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        },
+        "5": {
+          "name": "entity.name.namespace.wire"
+        },
+        "6": {
+          "name": "punctuation.accessor.wire"
+        },
+        "7": {
+          "name": "keyword.other.wire"
+        },
+        "8": {
+          "name": "punctuation.accessor.wire"
+        },
+        "9": {
+          "name": "entity.name.function.wire"
+        },
+        "10": {
+          "name": "punctuation.section.block.begin.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#tool-field-block"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool-field-block": {
+      "begin": "\\b(input|bindings|params|output)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-import": {
+      "begin": "\\b(tool|resource|prompt)\\s+([A-Za-z_][A-Za-z0-9_]*)?\\s+from\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool|resource|prompt)(\\.)([A-Za-z0-9_-]+)\\s*[\\{]?",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.function.mcp-import.wire"
+        },
+        "3": {
+          "name": "keyword.other.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        },
+        "5": {
+          "name": "entity.name.namespace.wire"
+        },
+        "6": {
+          "name": "punctuation.accessor.wire"
+        },
+        "7": {
+          "name": "keyword.other.wire"
+        },
+        "8": {
+          "name": "punctuation.accessor.wire"
+        },
+        "9": {
+          "name": "entity.name.function.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#tool-field-block"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-tool-batch-import": {
+      "begin": "\\b(from)\\b\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "keyword.other.wire"
+        },
+        "3": {
+          "name": "punctuation.accessor.wire"
+        },
+        "4": {
+          "name": "entity.name.namespace.wire"
+        },
+        "5": {
+          "name": "punctuation.accessor.wire"
+        },
+        "6": {
+          "name": "keyword.other.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#mcp-batch-item"
+        },
+        {
+          "include": "#tool-field-block"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-resource-batch-import": {
+      "begin": "\\b(from)\\b\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(resource)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "keyword.other.wire"
+        },
+        "3": {
+          "name": "punctuation.accessor.wire"
+        },
+        "4": {
+          "name": "entity.name.namespace.wire"
+        },
+        "5": {
+          "name": "punctuation.accessor.wire"
+        },
+        "6": {
+          "name": "keyword.other.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#mcp-batch-item"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-prompt-batch-import": {
+      "begin": "\\b(from)\\b\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(prompt)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "keyword.other.wire"
+        },
+        "3": {
+          "name": "punctuation.accessor.wire"
+        },
+        "4": {
+          "name": "entity.name.namespace.wire"
+        },
+        "5": {
+          "name": "punctuation.accessor.wire"
+        },
+        "6": {
+          "name": "keyword.other.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#mcp-batch-item"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-mixed-batch-import": {
+      "begin": "\\b(from)\\b\\s+(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "keyword.other.wire"
+        },
+        "3": {
+          "name": "punctuation.accessor.wire"
+        },
+        "4": {
+          "name": "entity.name.namespace.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#mcp-batch-item"
+        },
+        {
+          "include": "#tool-field-block"
+        },
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "mcp-batch-item": {
+      "patterns": [
+        {
+          "begin": "\\b(tool|resource|prompt)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\s+(?:as)\\s+([A-Za-z_][A-Za-z0-9_]*))?\\s*(\\{)?",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.wire"
+            },
+            "2": {
+              "name": "entity.name.function.wire"
+            },
+            "3": {
+              "name": "keyword.control.wire"
+            },
+            "4": {
+              "name": "entity.name.function.wire"
+            },
+            "5": {
+              "name": "punctuation.section.block.begin.wire"
+            }
+          },
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "#property-assignment"
+            },
+            {
+              "include": "#expressions"
+            }
+          ]
+        }
+      ]
+    },
+    "dynamic-block": {
+      "begin": "\\b(dynamic)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "agent": {
+      "begin": "\\b(agent)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(for)\\s+((?:[A-Za-z_][A-Za-z0-9_]*|\\{\\s*[A-Za-z_][A-Za-z0-9_]*(?:\\s*,\\s*[A-Za-z_][A-Za-z0-9_]*)*\\s*,?\\s*\\}))\\s+(in)\\s+([^\\{]+?))?\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.function.agent.wire"
+        },
+        "3": {
+          "name": "keyword.control.wire"
+        },
+        "4": {
+          "name": "variable.other.wire"
+        },
+        "5": {
+          "name": "keyword.control.wire"
+        },
+        "6": {
+          "name": "variable.other.reference.wire"
         }
       },
       "end": "\\}",
@@ -115,39 +492,7 @@
       "begin": "\\b(output)\\s*\\{",
       "beginCaptures": {
         "1": {
-          "name": "keyword.control.ai"
-        }
-      },
-      "end": "\\}",
-      "patterns": [
-        {
-          "include": "#property-assignment"
-        },
-        {
-          "include": "#expressions"
-        }
-      ]
-    },
-    "agent": {
-      "begin": "\\b(agent)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(in)\\s+([^\\{]+?))?\\s*\\{",
-      "beginCaptures": {
-        "1": {
-          "name": "keyword.control.ai"
-        },
-        "2": {
-          "name": "entity.name.function.agent.ai"
-        },
-        "3": {
-          "name": "keyword.control.ai"
-        },
-        "4": {
-          "name": "variable.other.ai"
-        },
-        "5": {
-          "name": "keyword.control.ai"
-        },
-        "6": {
-          "name": "variable.other.reference.ai"
+          "name": "keyword.control.wire"
         }
       },
       "end": "\\}",
@@ -163,21 +508,21 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|headers|api_key|models|model|tools|context|output|prompt|inference|description)\\b(?=\\s*:)",
-          "name": "variable.parameter.ai"
+          "match": "\\b(driver|endpoint|headers|api_key|models|model|instruction|uses|context|output|inference|description|max_calls|bindings|parameters)\\b(?=\\s*:)",
+          "name": "variable.parameter.wire"
         },
         {
-          "match": "\\b(provider|schema|tool|agent|dynamic|input|bindings|output|secrets|for|in|call|mcp)\\b",
-          "name": "keyword.control.ai"
+          "match": "(?<![.-])\\b(provider|schema|tool|resource|prompt|agent|dynamic|input|bindings|output|secrets|for|in|from|call|read|render|mcp|as)\\b(?![.-])",
+          "name": "keyword.control.wire"
         },
         {
           "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.other.property.ai"
+              "name": "variable.other.property.wire"
             },
             "2": {
-              "name": "punctuation.separator.ai"
+              "name": "punctuation.separator.wire"
             }
           }
         }
@@ -195,7 +540,19 @@
           "include": "#strings"
         },
         {
+          "include": "#agent-tool-bindings"
+        },
+        {
           "include": "#tool-calls"
+        },
+        {
+          "include": "#mcp-calls"
+        },
+        {
+          "include": "#mcp-tool-sources"
+        },
+        {
+          "include": "#call-expression"
         },
         {
           "include": "#namespaced-function-calls"
@@ -228,31 +585,320 @@
           "include": "#operators"
         },
         {
-          "name": "punctuation.separator.ai",
+          "name": "punctuation.separator.wire",
           "match": ","
+        }
+      ]
+    },
+    "call-expression": {
+      "patterns": [
+        {
+          "match": "\\bcall\\s+(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.control.wire"
+            },
+            "2": {
+              "name": "punctuation.accessor.wire"
+            },
+            "3": {
+              "name": "entity.name.function.wire"
+            }
+          }
+        }
+      ]
+    },
+    "mcp-calls": {
+      "patterns": [
+        {
+          "match": "\\b(read|render)\\s+(resource|prompt)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.control.wire"
+            },
+            "2": {
+              "name": "keyword.other.wire"
+            },
+            "3": {
+              "name": "punctuation.accessor.wire"
+            },
+            "4": {
+              "name": "entity.name.function.mcp-call.wire"
+            }
+          }
+        }
+      ]
+    },
+    "mcp-tool-sources": {
+      "patterns": [
+        {
+          "match": "\\b(mcp)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\.)(tool|resource|prompt)(\\.)([A-Za-z0-9_-]+)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.wire"
+            },
+            "2": {
+              "name": "punctuation.accessor.wire"
+            },
+            "3": {
+              "name": "entity.name.namespace.wire"
+            },
+            "4": {
+              "name": "punctuation.accessor.wire"
+            },
+            "5": {
+              "name": "keyword.other.wire"
+            },
+            "6": {
+              "name": "punctuation.accessor.wire"
+            },
+            "7": {
+              "name": "entity.name.function.wire"
+            }
+          }
+        }
+      ]
+    },
+    "agent-tool-bindings": {
+      "begin": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.other.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "entity.name.function.wire"
+        },
+        "4": {
+          "name": "punctuation.section.block.begin.wire"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "namespaced-function-calls": {
+      "begin": "\\b(?!tool\\b)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.namespace.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "entity.name.function.wire"
+        },
+        "4": {
+          "name": "punctuation.section.arguments.begin.wire"
+        }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.arguments.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.wire"
+            },
+            "2": {
+              "name": "punctuation.separator.wire"
+            }
+          }
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "function-calls": {
+      "begin": "\\b([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)\\s*(\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.function.wire"
+        },
+        "2": {
+          "name": "punctuation.section.arguments.begin.wire"
+        }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.arguments.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.wire"
+            },
+            "2": {
+              "name": "punctuation.separator.wire"
+            }
+          }
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "tool-references": {
+      "patterns": [
+        {
+          "match": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.wire"
+            },
+            "2": {
+              "name": "punctuation.accessor.wire"
+            },
+            "3": {
+              "name": "entity.name.function.wire"
+            }
+          }
+        }
+      ]
+    },
+    "references": {
+      "patterns": [
+        {
+          "match": "\\b(agent|dynamic|input|schema|tool|resource|prompt|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
+          "captures": {
+            "1": {
+              "name": "keyword.other.wire"
+            },
+            "2": {
+              "name": "punctuation.accessor.wire"
+            },
+            "3": {
+              "name": "variable.other.wire"
+            },
+            "4": {
+              "name": "punctuation.accessor.wire"
+            },
+            "5": {
+              "name": "variable.other.property.wire"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.wire",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "include": "#string-interpolation"
+            },
+            {
+              "name": "constant.character.escape.wire",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "multiline-strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.wire",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "include": "#string-interpolation"
+            }
+          ]
+        }
+      ]
+    },
+    "string-interpolation": {
+      "patterns": [
+        {
+          "name": "meta.embedded.line.wire",
+          "begin": "\\{\\{",
+          "end": "\\}\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.begin.wire"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.end.wire"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#expressions"
+            }
+          ]
+        }
+      ]
+    },
+    "arrays": {
+      "begin": "\\[",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.array.begin.wire"
+        }
+      },
+      "end": "\\]",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.array.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expressions"
         }
       ]
     },
     "types": {
       "patterns": [
         {
-          "name": "storage.type.ai",
+          "name": "storage.type.wire",
           "match": "\\b(string|number|float|boolean|null)\\b"
         },
         {
-          "match": "\\b(agent|input|schema|tool|secrets)\\b",
-          "name": "keyword.other.ai"
+          "match": "\\b(agent|input|schema|tool|resource|prompt|secrets|dynamic)\\b(?=\\s*\\.)",
+          "name": "keyword.other.wire"
         },
         {
-          "name": "entity.name.type.schema-reference.ai",
-          "match": "\\bschema\\.[A-Za-z_][A-Za-z0-9_]*\\b"
+          "name": "entity.name.type.schema-reference.wire",
+          "match": "\\bschema\\.[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*\\b"
         }
       ]
     },
     "numbers": {
       "patterns": [
         {
-          "name": "constant.numeric.ai",
+          "name": "constant.numeric.wire",
           "match": "\\b\\d(?:[\\d_]*\\d)?(?:\\.\\d(?:[\\d_]*\\d)?)?\\b"
         }
       ]
@@ -260,7 +906,7 @@
     "booleans": {
       "patterns": [
         {
-          "name": "constant.language.boolean.ai",
+          "name": "constant.language.boolean.wire",
           "match": "\\b(true|false)\\b"
         }
       ]
@@ -268,15 +914,15 @@
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.ai",
+          "name": "keyword.operator.wire",
           "match": "\\|"
         },
         {
-          "name": "keyword.operator.ai",
+          "name": "keyword.operator.wire",
           "match": "\\?\\."
         },
         {
-          "name": "punctuation.separator.ai",
+          "name": "punctuation.separator.wire",
           "match": ";"
         }
       ]
@@ -285,13 +931,13 @@
       "begin": "\\{",
       "beginCaptures": {
         "0": {
-          "name": "punctuation.section.block.begin.ai"
+          "name": "punctuation.section.block.begin.wire"
         }
       },
       "end": "\\}",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.block.end.ai"
+          "name": "punctuation.section.block.end.wire"
         }
       },
       "patterns": [
@@ -307,22 +953,22 @@
       "begin": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
       "beginCaptures": {
         "1": {
-          "name": "keyword.other.ai"
+          "name": "keyword.other.wire"
         },
         "2": {
-          "name": "punctuation.accessor.ai"
+          "name": "punctuation.accessor.wire"
         },
         "3": {
-          "name": "entity.name.function.ai"
+          "name": "entity.name.function.wire"
         },
         "4": {
-          "name": "punctuation.section.arguments.begin.ai"
+          "name": "punctuation.section.arguments.begin.wire"
         }
       },
       "end": "\\)",
       "endCaptures": {
         "0": {
-          "name": "punctuation.section.arguments.end.ai"
+          "name": "punctuation.section.arguments.end.wire"
         }
       },
       "patterns": [
@@ -330,209 +976,17 @@
           "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.parameter.ai"
+              "name": "variable.parameter.wire"
             },
             "2": {
-              "name": "punctuation.separator.ai"
+              "name": "punctuation.separator.wire"
             }
           }
         },
-        {
-          "include": "#expressions"
-        }
-      ]
-    },
-    "namespaced-function-calls": {
-      "begin": "\\b(?!tool\\b)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)(\\()",
-      "beginCaptures": {
-        "1": {
-          "name": "entity.name.namespace.ai"
-        },
-        "2": {
-          "name": "punctuation.accessor.ai"
-        },
-        "3": {
-          "name": "entity.name.function.ai"
-        },
-        "4": {
-          "name": "punctuation.section.arguments.begin.ai"
-        }
-      },
-      "end": "\\)",
-      "endCaptures": {
-        "0": {
-          "name": "punctuation.section.arguments.end.ai"
-        }
-      },
-      "patterns": [
-        {
-          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
-          "captures": {
-            "1": {
-              "name": "variable.parameter.ai"
-            },
-            "2": {
-              "name": "punctuation.separator.ai"
-            }
-          }
-        },
-        {
-          "include": "#expressions"
-        }
-      ]
-    },
-    "function-calls": {
-      "begin": "\\b([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)\\s*(\\()",
-      "beginCaptures": {
-        "1": {
-          "name": "entity.name.function.ai"
-        },
-        "2": {
-          "name": "punctuation.section.arguments.begin.ai"
-        }
-      },
-      "end": "\\)",
-      "endCaptures": {
-        "0": {
-          "name": "punctuation.section.arguments.end.ai"
-        }
-      },
-      "patterns": [
-        {
-          "match": "(\\b[A-Za-z_][A-Za-z0-9_]*\\b)\\s*(:)",
-          "captures": {
-            "1": {
-              "name": "variable.parameter.ai"
-            },
-            "2": {
-              "name": "punctuation.separator.ai"
-            }
-          }
-        },
-        {
-          "include": "#expressions"
-        }
-      ]
-    },
-    "tool-references": {
-      "patterns": [
-        {
-          "match": "\\b(tool)(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b",
-          "captures": {
-            "1": {
-              "name": "keyword.other.ai"
-            },
-            "2": {
-              "name": "punctuation.accessor.ai"
-            },
-            "3": {
-              "name": "entity.name.function.ai"
-            }
-          }
-        }
-      ]
-    },
-    "references": {
-      "patterns": [
-        {
-          "match": "\\b(agent|input|schema|tool|secrets)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*",
-          "captures": {
-            "1": {
-              "name": "keyword.other.ai"
-            },
-            "2": {
-              "name": "punctuation.accessor.ai"
-            },
-            "3": {
-              "name": "variable.other.ai"
-            },
-            "4": {
-              "name": "punctuation.accessor.ai"
-            },
-            "5": {
-              "name": "variable.other.property.ai"
-            }
-          }
-        }
-      ]
-    },
-    "strings": {
-      "patterns": [
-        {
-          "name": "string.quoted.double.ai",
-          "begin": "\"",
-          "end": "\"",
-          "patterns": [
-            {
-              "include": "#string-interpolation"
-            },
-            {
-              "name": "constant.character.escape.ai",
-              "match": "\\\\."
-            }
-          ]
-        }
-      ]
-    },
-    "multiline-strings": {
-      "patterns": [
-        {
-          "name": "string.quoted.triple.ai",
-          "begin": "\"\"\"",
-          "end": "\"\"\"",
-          "patterns": [
-            {
-              "include": "#string-interpolation"
-            }
-          ]
-        }
-      ]
-    },
-    "string-interpolation": {
-      "patterns": [
-        {
-          "name": "meta.embedded.line.ai",
-          "begin": "\\{\\{",
-          "end": "\\}\\}",
-          "beginCaptures": {
-            "0": {
-              "name": "punctuation.definition.template-expression.begin.ai"
-            }
-          },
-          "endCaptures": {
-            "0": {
-              "name": "punctuation.definition.template-expression.end.ai"
-            }
-          },
-          "patterns": [
-            {
-              "include": "#expressions"
-            }
-          ]
-        }
-      ]
-    },
-    "arrays": {
-      "begin": "\\[",
-      "beginCaptures": {
-        "0": {
-          "name": "punctuation.section.array.begin.ai"
-        }
-      },
-      "end": "\\]",
-      "endCaptures": {
-        "0": {
-          "name": "punctuation.section.array.end.ai"
-        }
-      },
-      "patterns": [
         {
           "include": "#expressions"
         }
       ]
     }
-  },
-  "fileTypes": [
-    "ai"
-  ]
+  }
 }
