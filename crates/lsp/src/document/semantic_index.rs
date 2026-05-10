@@ -31,7 +31,9 @@ pub struct SemanticIndex {
     pub tool_names: Vec<String>,
     pub tool_locations: Vec<NamedSpan>,
     pub resource_names: Vec<String>,
+    pub resource_locations: Vec<NamedSpan>,
     pub prompt_names: Vec<String>,
+    pub prompt_locations: Vec<NamedSpan>,
     pub input_fields: BTreeMap<String, TypeExpression>,
     pub input_field_metadata: BTreeMap<String, FieldMetadata>,
     input_field_locations: HashMap<String, SourceSpan>,
@@ -768,7 +770,9 @@ impl SemanticIndex {
             tool_names: Vec::new(),
             tool_locations: Vec::new(),
             resource_names: Vec::new(),
+            resource_locations: Vec::new(),
             prompt_names: Vec::new(),
+            prompt_locations: Vec::new(),
             input_fields: BTreeMap::new(),
             input_field_metadata: BTreeMap::new(),
             input_field_locations: HashMap::new(),
@@ -842,44 +846,33 @@ impl SemanticIndex {
                 }
             }
             Declaration::McpResource(resource_import_declaration) => {
-                self.resource_names.push(resource_import_declaration.name.clone());
+                self.insert_resource_import_declaration(resource_import_declaration);
             }
             Declaration::McpBatch(batch_import_declaration) => {
                 for tool_declaration in declaration.tool_declarations() {
                     self.insert_tool_declaration(tool_declaration);
                 }
 
-                self.resource_names.extend(
-                    batch_import_declaration
-                        .resources
-                        .iter()
-                        .map(|resource_import_declaration| resource_import_declaration.name.clone()),
-                );
-                self.prompt_names.extend(
-                    batch_import_declaration
-                        .prompts
-                        .iter()
-                        .map(|prompt_import_declaration| prompt_import_declaration.name.clone()),
-                );
+                for resource_import_declaration in &batch_import_declaration.resources {
+                    self.insert_resource_import_declaration(resource_import_declaration);
+                }
+
+                for prompt_import_declaration in &batch_import_declaration.prompts {
+                    self.insert_prompt_import_declaration(prompt_import_declaration);
+                }
             }
             Declaration::McpResourceBatch(resource_batch_import_declaration) => {
-                self.resource_names.extend(
-                    resource_batch_import_declaration
-                        .resources
-                        .iter()
-                        .map(|resource_import_declaration| resource_import_declaration.name.clone()),
-                );
+                for resource_import_declaration in &resource_batch_import_declaration.resources {
+                    self.insert_resource_import_declaration(resource_import_declaration);
+                }
             }
             Declaration::McpPrompt(prompt_import_declaration) => {
-                self.prompt_names.push(prompt_import_declaration.name.clone());
+                self.insert_prompt_import_declaration(prompt_import_declaration);
             }
             Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
-                self.prompt_names.extend(
-                    prompt_batch_import_declaration
-                        .prompts
-                        .iter()
-                        .map(|prompt_import_declaration| prompt_import_declaration.name.clone()),
-                );
+                for prompt_import_declaration in &prompt_batch_import_declaration.prompts {
+                    self.insert_prompt_import_declaration(prompt_import_declaration);
+                }
             }
             Declaration::Dynamic(dynamic_block) => {
                 self.insert_workflow_dynamic_block(dynamic_block);
@@ -966,6 +959,22 @@ impl SemanticIndex {
             span: tool_declaration.span,
         });
         self.typed_declaration_locations.push(tool_declaration.span);
+    }
+
+    fn insert_resource_import_declaration(&mut self, resource_import_declaration: &superwire_core::dsl::McpResourceImportDeclaration) {
+        self.resource_names.push(resource_import_declaration.name.clone());
+        self.resource_locations.push(NamedSpan {
+            name: resource_import_declaration.name.clone(),
+            span: resource_import_declaration.span,
+        });
+    }
+
+    fn insert_prompt_import_declaration(&mut self, prompt_import_declaration: &superwire_core::dsl::McpPromptImportDeclaration) {
+        self.prompt_names.push(prompt_import_declaration.name.clone());
+        self.prompt_locations.push(NamedSpan {
+            name: prompt_import_declaration.name.clone(),
+            span: prompt_import_declaration.span,
+        });
     }
 
     fn insert_agent_declaration(&mut self, agent_declaration: &superwire_core::dsl::AgentDeclaration) {
@@ -1149,7 +1158,9 @@ impl SemanticIndex {
             tool_names,
             tool_locations,
             resource_names: Vec::new(),
+            resource_locations: Vec::new(),
             prompt_names: Vec::new(),
+            prompt_locations: Vec::new(),
             input_fields: tooling_snapshot.input_fields().clone(),
             input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
             input_field_locations: HashMap::new(),
@@ -2256,7 +2267,8 @@ impl SemanticIndex {
             ),
             ReferenceKeyword::Agent => self.agent_reference_definition_span(reference_completion_path, selected_segment_index),
             ReferenceKeyword::Tool => self.tool_reference_definition_span(reference_completion_path, selected_segment_index),
-            ReferenceKeyword::Resource | ReferenceKeyword::Prompt => None,
+            ReferenceKeyword::Resource => self.resource_reference_definition_span(reference_completion_path, selected_segment_index),
+            ReferenceKeyword::Prompt => self.prompt_reference_definition_span(reference_completion_path, selected_segment_index),
         }
     }
 
@@ -2298,6 +2310,36 @@ impl SemanticIndex {
         let output_type_expression = tool_summary.output_type_expression.as_ref()?;
 
         self.field_span_for_type_access_path(output_type_expression, &selected_accesses[1..])
+    }
+
+    fn resource_reference_definition_span(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+        let resource_name = selected_accesses.first()?;
+
+        if selected_accesses.len() == 1 {
+            return self.resource_span(resource_name);
+        }
+
+        None
+    }
+
+    fn prompt_reference_definition_span(
+        &self,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+        let prompt_name = selected_accesses.first()?;
+
+        if selected_accesses.len() == 1 {
+            return self.prompt_span(prompt_name);
+        }
+
+        None
     }
 
     fn schema_reference_definition_span(
@@ -2473,6 +2515,20 @@ impl SemanticIndex {
             .iter()
             .find(|tool_location| tool_location.name == tool_name)
             .map(|tool_location| tool_location.span)
+    }
+
+    fn resource_span(&self, resource_name: &str) -> Option<SourceSpan> {
+        self.resource_locations
+            .iter()
+            .find(|resource_location| resource_location.name == resource_name)
+            .map(|resource_location| resource_location.span)
+    }
+
+    fn prompt_span(&self, prompt_name: &str) -> Option<SourceSpan> {
+        self.prompt_locations
+            .iter()
+            .find(|prompt_location| prompt_location.name == prompt_name)
+            .map(|prompt_location| prompt_location.span)
     }
 
     fn reference_expression_type(
