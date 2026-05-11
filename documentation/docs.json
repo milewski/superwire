@@ -95,6 +95,15 @@
             ]
           },
           {
+            "group": "Integrations",
+            "pages": [
+              "integrations/ollama",
+              "integrations/openai",
+              "integrations/laravel",
+              "integrations/custom-provider-factories"
+            ]
+          },
+          {
             "group": "Guides",
             "pages": [
               "guides/building-workflows",
