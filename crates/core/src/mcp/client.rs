@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+const MCP_ACCEPT_HEADER: &str = "application/json, text/event-stream";
+
 macro_rules! mcp_request {
     ($request_type:ident, $request_id:expr $(, $params:expr)?) => {
         $request_type::new(RequestId::Integer($request_id) $(, $params)?)
@@ -277,11 +279,7 @@ impl McpClient {
 
     fn notify(&self, notification: &impl Serialize) -> Result<(), McpError> {
         let method = InitializedNotification::method_value();
-        let mut request = ureq::post(&self.server_config.endpoint).header("content-type", "application/json");
-
-        for (header_name, header_value) in &self.server_config.headers {
-            request = request.header(header_name, header_value);
-        }
+        let request = self.http_post_request();
 
         request.send_json(notification).map_err(|error| McpError::Http {
             server_name: self.server_config.name.clone(),
@@ -334,11 +332,7 @@ impl McpClient {
     }
 
     fn post(&self, method: &str, body: &impl Serialize) -> Result<Value, McpError> {
-        let mut request = ureq::post(&self.server_config.endpoint).header("content-type", "application/json");
-
-        for (header_name, header_value) in &self.server_config.headers {
-            request = request.header(header_name, header_value);
-        }
+        let request = self.http_post_request();
 
         let mut response = request.send_json(body).map_err(|error| McpError::Http {
             server_name: self.server_config.name.clone(),
@@ -346,11 +340,266 @@ impl McpClient {
             message: error.to_string(),
         })?;
 
-        response.body_mut().read_json::<Value>().map_err(|error| McpError::Http {
+        let response_body = response.body_mut().read_to_string().map_err(|error| McpError::Http {
             server_name: self.server_config.name.clone(),
             method: method.to_string(),
             message: error.to_string(),
+        })?;
+
+        Self::parse_response_body(&response_body).map_err(|message| McpError::InvalidResponse {
+            server_name: self.server_config.name.clone(),
+            method: method.to_string(),
+            message,
         })
+    }
+
+    fn http_post_request(&self) -> ureq::RequestBuilder<ureq::typestate::WithBody> {
+        let mut request = ureq::post(&self.server_config.endpoint);
+
+        for (header_name, header_value) in &self.server_config.headers {
+            request = request.header(header_name, header_value);
+        }
+
+        request
+            .header("content-type", "application/json")
+            .header("accept", MCP_ACCEPT_HEADER)
+    }
+
+    fn parse_response_body(response_body: &str) -> Result<Value, String> {
+        serde_json::from_str(response_body)
+            .or_else(|json_error| Self::parse_event_stream_response(response_body).ok_or_else(|| json_error.to_string()))
+    }
+
+    fn parse_event_stream_response(response_body: &str) -> Option<Value> {
+        let mut event_data = Vec::new();
+
+        for response_line in response_body.lines() {
+            let response_line = response_line.trim_end_matches('\r');
+
+            if response_line.is_empty() {
+                if let Some(value) = Self::parse_event_data(&event_data) {
+                    return Some(value);
+                }
+
+                event_data.clear();
+                continue;
+            }
+
+            if let Some(data) = response_line.strip_prefix("data:") {
+                event_data.push(data.trim_start());
+            }
+        }
+
+        Self::parse_event_data(&event_data)
+    }
+
+    fn parse_event_data(event_data: &[&str]) -> Option<Value> {
+        if event_data.is_empty() {
+            return None;
+        }
+
+        let event_body = event_data.join("\n");
+
+        serde_json::from_str(&event_body).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+
+    #[derive(Clone, Copy)]
+    enum TestResponseKind {
+        Json,
+        EventStream,
+    }
+
+    #[derive(Debug)]
+    struct TestHttpRequest {
+        headers: BTreeMap<String, String>,
+        body: Value,
+    }
+
+    #[test]
+    fn sends_json_and_event_stream_accept_header_for_all_mcp_requests() {
+        let (endpoint, received_requests, server_thread) = spawn_mcp_server(TestResponseKind::Json);
+        let client = McpClient::new(McpServerConfig {
+            name: "local".to_string(),
+            endpoint,
+            headers: BTreeMap::new(),
+        });
+
+        client.list_tools().expect("tools should list");
+        server_thread.join().expect("server thread should finish");
+
+        let received_requests = received_requests.lock().expect("received requests lock should not poison");
+        let received_methods = received_requests
+            .iter()
+            .map(|request| request.body.get("method").and_then(Value::as_str).unwrap_or_default())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            received_methods,
+            vec![
+                InitializeRequest::method_value(),
+                InitializedNotification::method_value(),
+                ListToolsRequest::method_value(),
+                ListResourcesRequest::method_value(),
+                ListPromptsRequest::method_value(),
+            ]
+        );
+
+        for request in received_requests.iter() {
+            assert_eq!(request.headers.get("accept").map(String::as_str), Some(MCP_ACCEPT_HEADER));
+            assert_eq!(request.headers.get("content-type").map(String::as_str), Some("application/json"));
+        }
+    }
+
+    #[test]
+    fn reads_mcp_json_rpc_results_from_event_stream_responses() {
+        let (endpoint, _received_requests, server_thread) = spawn_mcp_server(TestResponseKind::EventStream);
+        let client = McpClient::new(McpServerConfig {
+            name: "local".to_string(),
+            endpoint,
+            headers: BTreeMap::new(),
+        });
+
+        let server_lock = client.list_tools().expect("tools should list from event stream responses");
+
+        server_thread.join().expect("server thread should finish");
+        assert!(server_lock.tools.contains_key("echo"));
+        assert_eq!(server_lock.resources, vec!["project-readme".to_string()]);
+        assert_eq!(server_lock.prompts, vec!["summarize".to_string()]);
+    }
+
+    fn spawn_mcp_server(response_kind: TestResponseKind) -> (String, Arc<Mutex<Vec<TestHttpRequest>>>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server should bind");
+        let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
+        let received_requests = Arc::new(Mutex::new(Vec::new()));
+        let thread_received_requests = Arc::clone(&received_requests);
+        let server_thread = thread::spawn(move || {
+            for incoming_stream in listener.incoming().take(5) {
+                let mut stream = incoming_stream.expect("incoming stream should open");
+                let request = read_test_http_request(&stream).expect("HTTP request should read");
+                let response = test_response_for_request(&request.body, response_kind);
+
+                thread_received_requests
+                    .lock()
+                    .expect("received requests lock should not poison")
+                    .push(request);
+                stream.write_all(response.as_bytes()).expect("HTTP response should write");
+            }
+        });
+
+        (endpoint, received_requests, server_thread)
+    }
+
+    fn read_test_http_request(stream: &TcpStream) -> Option<TestHttpRequest> {
+        let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
+        let mut headers = BTreeMap::new();
+        let mut content_length = 0_usize;
+        let mut header_line = String::new();
+
+        loop {
+            header_line.clear();
+            reader.read_line(&mut header_line).expect("header line should read");
+
+            if header_line == "\r\n" || header_line.is_empty() {
+                break;
+            }
+
+            if let Some((header_name, header_value)) = header_line.trim_end().split_once(':') {
+                let normalized_header_name = header_name.to_ascii_lowercase();
+                let normalized_header_value = header_value.trim().to_string();
+
+                if normalized_header_name == "content-length" {
+                    content_length = normalized_header_value.parse().expect("content length should parse");
+                }
+
+                headers.insert(normalized_header_name, normalized_header_value);
+            }
+        }
+
+        if content_length == 0 {
+            return None;
+        }
+
+        let mut request_body = vec![0_u8; content_length];
+        reader.read_exact(&mut request_body).expect("request body should read");
+        let body = serde_json::from_slice(&request_body).expect("request body should be JSON");
+
+        Some(TestHttpRequest { headers, body })
+    }
+
+    fn test_response_for_request(request_body: &Value, response_kind: TestResponseKind) -> String {
+        let method = request_body.get("method").and_then(Value::as_str).unwrap_or_default();
+
+        if method == InitializedNotification::method_value() {
+            return "HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n".to_string();
+        }
+
+        let response_body = json!({
+            "jsonrpc": "2.0",
+            "id": request_body.get("id").cloned().unwrap_or_else(|| json!(1)),
+            "result": result_for_method(method),
+        });
+
+        match response_kind {
+            TestResponseKind::Json => http_json_response(response_body),
+            TestResponseKind::EventStream => http_event_stream_response(response_body),
+        }
+    }
+
+    fn result_for_method(method: &str) -> Value {
+        match method {
+            method if method == InitializeRequest::method_value() => json!({}),
+            method if method == ListToolsRequest::method_value() => json!({
+                "tools": [{
+                    "name": "echo",
+                    "description": "Echo input",
+                    "inputSchema": { "type": "object" },
+                }]
+            }),
+            method if method == ListResourcesRequest::method_value() => json!({
+                "resources": [{
+                    "name": "project-readme",
+                    "uri": "file:///README.md",
+                    "mimeType": "text/markdown",
+                }]
+            }),
+            method if method == ListPromptsRequest::method_value() => json!({
+                "prompts": [{
+                    "name": "summarize",
+                    "description": "Summarize text",
+                    "arguments": [],
+                }]
+            }),
+            _ => json!({}),
+        }
+    }
+
+    fn http_json_response(body: Value) -> String {
+        let body = body.to_string();
+
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
+    }
+
+    fn http_event_stream_response(body: Value) -> String {
+        let body = format!("event: message\ndata: {body}\n\n");
+
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        )
     }
 }
 
