@@ -1157,6 +1157,14 @@ impl TypeExpression {
                 formatter.output.push('}');
             }
             Self::Union(union_members) => {
+                if Self::push_nullable_union_to_formatter(union_members, formatter) {
+                    return;
+                }
+
+                if Self::push_string_enum_union_to_formatter(union_members, formatter) {
+                    return;
+                }
+
                 let mut union_member_iterator = union_members.iter().peekable();
 
                 while let Some(union_member) = union_member_iterator.next() {
@@ -1168,6 +1176,65 @@ impl TypeExpression {
                 }
             }
         }
+    }
+
+    fn push_nullable_union_to_formatter(union_members: &[Self], formatter: &mut DslFormatter) -> bool {
+        if !union_members.iter().any(|union_member| matches!(union_member, Self::Null)) {
+            return false;
+        }
+
+        let non_null_members = union_members
+            .iter()
+            .filter(|union_member| !matches!(union_member, Self::Null))
+            .collect::<Vec<_>>();
+
+        if non_null_members.len() == 1 {
+            formatter.output.push_str("maybe ");
+            non_null_members[0].push_to_formatter(formatter);
+
+            return true;
+        }
+
+        if non_null_members
+            .iter()
+            .all(|union_member| matches!(union_member, Self::StringEnum(_)))
+        {
+            formatter.output.push_str("maybe ");
+            Self::push_string_enum_members_to_formatter(non_null_members.as_slice(), formatter);
+
+            return true;
+        }
+
+        false
+    }
+
+    fn push_string_enum_union_to_formatter(union_members: &[Self], formatter: &mut DslFormatter) -> bool {
+        if !union_members.iter().all(|union_member| matches!(union_member, Self::StringEnum(_))) {
+            return false;
+        }
+
+        let enum_members = union_members.iter().collect::<Vec<_>>();
+        Self::push_string_enum_members_to_formatter(enum_members.as_slice(), formatter);
+
+        true
+    }
+
+    fn push_string_enum_members_to_formatter(enum_members: &[&Self], formatter: &mut DslFormatter) {
+        formatter.output.push_str("enum { ");
+
+        let mut enum_member_iterator = enum_members.iter().peekable();
+
+        while let Some(enum_member) = enum_member_iterator.next() {
+            if let Self::StringEnum(enum_value) = enum_member {
+                formatter.output.push_str(enum_value);
+            }
+
+            if enum_member_iterator.peek().is_some() {
+                formatter.output.push_str(", ");
+            }
+        }
+
+        formatter.output.push_str(" }");
     }
 }
 

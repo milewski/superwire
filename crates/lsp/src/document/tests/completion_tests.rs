@@ -1608,9 +1608,9 @@ fn suppresses_field_completion_after_dot_access_on_nullable_reference_path() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
             output: {
-                nested: {
+                nested: maybe {
                     value: string
-                } | null
+                }
             }
         }
 
@@ -1627,9 +1627,9 @@ fn suggests_field_completion_after_optional_access_on_nullable_reference_path() 
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
             output: {
-                nested: {
+                nested: maybe {
                     value: string
-                } | null
+                }
             }
         }
 
