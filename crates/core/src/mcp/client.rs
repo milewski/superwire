@@ -66,8 +66,33 @@ impl McpClient {
             }
         );
 
-        self.request_value(InitializeRequest::method_value(), &initialize_request)?;
-        self.notify(&InitializedNotification::new(None))?;
+        if let Err(initialize_error) = self.request_value(InitializeRequest::method_value(), &initialize_request) {
+            if initialize_error.is_http_status(406) {
+                log::warn!(
+                    "MCP initialize not accepted by server {}; continuing without initialize handshake: {}",
+                    self.server_config.name,
+                    initialize_error
+                );
+
+                return Ok(());
+            }
+
+            return Err(initialize_error);
+        }
+
+        if let Err(notification_error) = self.notify(&InitializedNotification::new(None)) {
+            if notification_error.is_http_status(406) {
+                log::warn!(
+                    "MCP initialized notification not accepted by server {}; continuing: {}",
+                    self.server_config.name,
+                    notification_error
+                );
+
+                return Ok(());
+            }
+
+            return Err(notification_error);
+        }
 
         Ok(())
     }

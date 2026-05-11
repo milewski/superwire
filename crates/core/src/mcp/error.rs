@@ -53,3 +53,14 @@ pub enum McpError {
     #[error("failed to serialize MCP lock `{path}`: {source}")]
     SerializeLock { path: String, source: serde_json::Error },
 }
+
+impl McpError {
+    #[must_use]
+    pub fn is_http_status(&self, status_code: u16) -> bool {
+        let Self::Http { message, .. } = self else {
+            return false;
+        };
+
+        message.contains(&format!("status: {status_code}"))
+    }
+}

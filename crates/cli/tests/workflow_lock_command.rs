@@ -630,15 +630,25 @@ struct TestMcpHttpServer {
     endpoint: String,
 }
 
+#[derive(Clone, Copy)]
+enum TestMcpServerMode {
+    Standard,
+    RejectInitialize,
+}
+
 impl TestMcpHttpServer {
     fn spawn() -> Self {
+        Self::spawn_with_mode(TestMcpServerMode::Standard)
+    }
+
+    fn spawn_with_mode(server_mode: TestMcpServerMode) -> Self {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
 
         std::thread::spawn(move || {
             for incoming_stream in listener.incoming().take(24) {
                 let stream = incoming_stream.expect("test MCP stream should open");
-                handle_mcp_request(stream);
+                handle_mcp_request(stream, server_mode);
             }
         });
 
@@ -650,7 +660,7 @@ impl TestMcpHttpServer {
     }
 }
 
-fn handle_mcp_request(mut stream: std::net::TcpStream) {
+fn handle_mcp_request(mut stream: std::net::TcpStream, server_mode: TestMcpServerMode) {
     let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
     let mut content_length = 0_usize;
     let mut header_line = String::new();
@@ -671,7 +681,8 @@ fn handle_mcp_request(mut stream: std::net::TcpStream) {
     let mut request_body = vec![0_u8; content_length];
     reader.read_exact(&mut request_body).expect("request body should read");
     let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
-    let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
+    let request_method = request.get("method").and_then(Value::as_str);
+    let response = if let Some(response_body) = response_for_method(request_method) {
         let response_body = response_body.to_string();
 
         format!(
@@ -679,6 +690,10 @@ fn handle_mcp_request(mut stream: std::net::TcpStream) {
             response_body.len(),
             response_body
         )
+    } else if matches!(server_mode, TestMcpServerMode::RejectInitialize)
+        && (request_method == Some("initialize") || request_method == Some("notifications/initialized"))
+    {
+        "HTTP/1.1 406 Not Acceptable\r\ncontent-length: 0\r\n\r\n".to_string()
     } else {
         "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
     };
@@ -735,4 +750,54 @@ fn unique_suffix() -> String {
     let counter = UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
     format!("{timestamp_millis}-{process_identifier}-{counter}")
+}
+
+#[test]
+fn continues_lock_discovery_when_mcp_server_rejects_initialize_endpoints() {
+    let test_mcp_server = TestMcpHttpServer::spawn_with_mode(TestMcpServerMode::RejectInitialize);
+    let temporary_workspace = TemporaryWorkspace::new();
+    let workflow_source = workflow_template! {
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        tool update_user_name from mcp.local.tool.update_user_name
+    };
+
+    let workflow_path = temporary_workspace.write_file("workflows/reject-init.wire", workflow_source);
+    let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
+
+    let vars_path = temporary_workspace.write_json_file(
+        ".wire.vars",
+        &json!({
+            "secrets": {
+                "mcp_endpoint": test_mcp_server.endpoint()
+            }
+        }),
+    );
+
+    let command_output = run_workflow_lock_command(&[
+        workflow_path.as_os_str(),
+        std::ffi::OsStr::new("--vars-file"),
+        vars_path.as_os_str(),
+        std::ffi::OsStr::new("--output"),
+        output_lock_path.as_os_str(),
+    ]);
+
+    assert!(
+        command_output.status.success(),
+        "workflow lock command should continue when initialize endpoints return 406"
+    );
+
+    let lock_json: Value =
+        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+
+    assert_eq!(
+        lock_json.pointer("/workflows/workflows~1reject-init.wire/servers/local/tools/update-user-name/name"),
+        Some(&json!("update-user-name"))
+    );
 }
