@@ -542,7 +542,7 @@ impl RenderTypeExpression for TypeExpression {
             Self::Null => "null".to_string(),
             Self::AnyObject => "object".to_string(),
             Self::SchemaReference(schema_name) => format!("schema.{schema_name}"),
-            Self::StringEnum(enum_value) => format!("\"{enum_value}\""),
+            Self::StringEnum(enum_value) => render_string_enum_case(enum_value),
             Self::StringEnumReference(enum_reference) => enum_reference.render_path(),
             Self::Array { item_type, fixed_length } => {
                 if let Some(fixed_length) = fixed_length {
@@ -582,11 +582,29 @@ impl RenderTypeExpression for TypeExpression {
 
                 format!("variant {discriminator} {{ {case_names} }}")
             }
-            Self::Union(union_members) => union_members
-                .iter()
-                .map(RenderTypeExpression::render_type)
-                .collect::<Vec<_>>()
-                .join(" | "),
+            Self::Union(union_members) => {
+                if let Some(nullable_member) = nullable_union_member(union_members.as_slice()) {
+                    return format!("maybe {}", nullable_member.render_type());
+                }
+
+                if union_members.iter().all(|union_member| matches!(union_member, Self::StringEnum(_))) {
+                    let enum_values = union_members
+                        .iter()
+                        .filter_map(|union_member| match union_member {
+                            Self::StringEnum(enum_value) => Some(enum_value.clone()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+
+                    return render_string_enum_type(enum_values.as_slice());
+                }
+
+                union_members
+                    .iter()
+                    .map(RenderTypeExpression::render_type)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            }
         }
     }
 
@@ -643,6 +661,66 @@ impl RenderTypeExpression for TypeExpression {
             | Self::Union(_) => self.render_type(),
         }
     }
+}
+
+fn nullable_union_member(union_members: &[TypeExpression]) -> Option<TypeExpression> {
+    if !union_members
+        .iter()
+        .any(|union_member| matches!(union_member, TypeExpression::Null))
+    {
+        return None;
+    }
+
+    let non_null_members = union_members
+        .iter()
+        .filter(|union_member| !matches!(union_member, TypeExpression::Null))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if non_null_members.len() == 1 {
+        return non_null_members.into_iter().next();
+    }
+
+    if non_null_members
+        .iter()
+        .all(|non_null_member| matches!(non_null_member, TypeExpression::StringEnum(_)))
+    {
+        return Some(TypeExpression::Union(non_null_members));
+    }
+
+    None
+}
+
+fn render_string_enum_type(enum_values: &[String]) -> String {
+    let rendered_enum_values = enum_values
+        .iter()
+        .map(|enum_value| render_string_enum_case(enum_value))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!("enum {{ {rendered_enum_values} }}")
+}
+
+fn render_string_enum_case(enum_value: &str) -> String {
+    if is_wire_identifier(enum_value) {
+        return enum_value.to_string();
+    }
+
+    let escaped_enum_value = enum_value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped_enum_value}\"")
+}
+
+fn is_wire_identifier(value: &str) -> bool {
+    let mut characters = value.chars();
+    let Some(first_character) = characters.next() else {
+        return false;
+    };
+
+    if !(first_character.is_ascii_alphabetic() || first_character == '_') {
+        return false;
+    }
+
+    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
 fn type_symbol_suggestions() -> Vec<CompletionSuggestion> {

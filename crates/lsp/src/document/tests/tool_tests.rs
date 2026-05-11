@@ -199,6 +199,7 @@ fn accepts_local_output_schema_on_imported_mcp_tool() {
     assert!(document_state.diagnostics().is_empty());
 }
 
+#[allow(clippy::too_many_lines)]
 fn test_mcp_lock() -> McpLock {
     let mut tools = BTreeMap::new();
     tools.insert(
@@ -286,6 +287,34 @@ fn test_mcp_lock() -> McpLock {
             })),
         )
         .expect("test MCP task group schema should parse"),
+    );
+    tools.insert(
+        "fetch_participant_answer".to_string(),
+        McpToolLock::from_json_schema_values(
+            "fetch_participant_answer".to_string(),
+            Some("Fetch participant answer".to_string()),
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+            Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": ["string", "null"] }
+                        },
+                        "required": ["text"]
+                    },
+                    "participant_id": { "type": "number" },
+                    "task_id": { "type": "number" }
+                },
+                "required": ["answer", "participant_id", "task_id"]
+            })),
+        )
+        .expect("test MCP nullable schema should parse"),
     );
     let mut servers = BTreeMap::new();
     servers.insert(
@@ -619,6 +648,22 @@ fn inserts_expanded_mcp_output_schema_with_contextual_indentation() {
         completion_suggestion.insert_text,
         "output {\n    task_group_id: number\n    task_group_title: string\n    tasks: [\n        {\n            description: string,\n            duration: number,\n            id: number,\n            mandatory: boolean,\n            options: string,\n            title: string,\n            type: string,\n        }\n    ]\n}"
     );
+}
+
+#[test]
+fn inserts_mcp_output_schema_with_nullable_fields_using_maybe_syntax() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            tool fetch_participant_answer {
+                out<cursor>
+            }
+        }
+    });
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "output");
+
+    assert!(completion_suggestion.insert_text.contains("text: maybe string"));
+    assert!(!completion_suggestion.insert_text.contains("| null"));
 }
 
 #[test]
