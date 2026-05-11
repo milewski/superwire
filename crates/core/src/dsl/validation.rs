@@ -1,6 +1,6 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ObjectField, Reference,
-    ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, MatchBranch, ObjectField,
+    Reference, ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
@@ -1857,6 +1857,19 @@ fn report_duplicate_expression_object_fields(
                 report_duplicate_expression_object_fields(&object_field.value, context.clone(), duplicate_span, validation_report);
             }
         }
+        Expression::NullFallback(null_fallback) => {
+            report_duplicate_expression_object_fields(&null_fallback.value, context.clone(), duplicate_span, validation_report);
+            report_duplicate_expression_object_fields(&null_fallback.fallback, context, duplicate_span, validation_report);
+        }
+        Expression::Match(match_expression) => {
+            report_duplicate_expression_object_fields(&match_expression.value, context.clone(), duplicate_span, validation_report);
+
+            for branch in &match_expression.branches {
+                if let MatchBranch::Fallback { value, span: _ } = branch {
+                    report_duplicate_expression_object_fields(value, context.clone(), duplicate_span, validation_report);
+                }
+            }
+        }
         Expression::ArrayLiteral(array_values) => {
             for array_value in array_values {
                 report_duplicate_expression_object_fields(array_value, context.clone(), duplicate_span, validation_report);
@@ -1882,6 +1895,7 @@ fn report_duplicate_expression_object_fields(
         | Expression::NumberLiteral(_)
         | Expression::BooleanLiteral(_)
         | Expression::NullLiteral
+        | Expression::VariantProjection(_)
         | Expression::Reference(_) => {}
     }
 }
@@ -2452,7 +2466,10 @@ impl DirectToolName for Expression {
             Self::FunctionCall(function_call) => function_call.direct_name_for_keyword(reference_keyword),
             Self::ToolCall(tool_call) => tool_call.callee.direct_name_for_keyword(reference_keyword),
             Self::McpCall(_) => None,
-            Self::StringLiteral(_)
+            Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
+            | Self::StringLiteral(_)
             | Self::StringTemplate(_)
             | Self::NumberLiteral(_)
             | Self::BooleanLiteral(_)
@@ -2494,6 +2511,9 @@ impl AgentToolBindingFields for Expression {
             Self::Reference(_)
             | Self::FunctionCall(_)
             | Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
             | Self::StringLiteral(_)
             | Self::StringTemplate(_)
             | Self::NumberLiteral(_)
@@ -3253,6 +3273,27 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
             Expression::McpCall(mcp_call) => {
                 self.validate_mcp_call(mcp_call, dynamic_field_types, context, secret_reference_policy);
+            }
+            Expression::NullFallback(null_fallback) => {
+                self.validate_expression(&null_fallback.value, dynamic_field_types, context.clone(), secret_reference_policy);
+                self.validate_expression(&null_fallback.fallback, dynamic_field_types, context, secret_reference_policy);
+            }
+            Expression::VariantProjection(variant_projection) => {
+                self.validate_reference(&variant_projection.value, dynamic_field_types, context, secret_reference_policy);
+            }
+            Expression::Match(match_expression) => {
+                self.validate_expression(
+                    &match_expression.value,
+                    dynamic_field_types,
+                    context.clone(),
+                    secret_reference_policy,
+                );
+
+                for branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, span: _ } = branch {
+                        self.validate_expression(value, dynamic_field_types, context.clone(), secret_reference_policy);
+                    }
+                }
             }
             Expression::ArrayLiteral(array_values) => {
                 for array_value in array_values {
@@ -4044,6 +4085,22 @@ fn collect_agent_dependencies_from_expression(expression: &Expression, reference
 
             for object_field in &mcp_call.parameter_fields {
                 collect_agent_dependencies_from_expression(&object_field.value, referenced_agents);
+            }
+        }
+        Expression::NullFallback(null_fallback) => {
+            collect_agent_dependencies_from_expression(&null_fallback.value, referenced_agents);
+            collect_agent_dependencies_from_expression(&null_fallback.fallback, referenced_agents);
+        }
+        Expression::VariantProjection(variant_projection) => {
+            collect_agent_dependency_from_reference(&variant_projection.value, referenced_agents);
+        }
+        Expression::Match(match_expression) => {
+            collect_agent_dependencies_from_expression(&match_expression.value, referenced_agents);
+
+            for branch in &match_expression.branches {
+                if let MatchBranch::Fallback { value, span: _ } = branch {
+                    collect_agent_dependencies_from_expression(value, referenced_agents);
+                }
             }
         }
         Expression::ArrayLiteral(array_values) => {

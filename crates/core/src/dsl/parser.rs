@@ -1125,6 +1125,35 @@ mod tests {
     }
 
     #[test]
+    fn parses_fallback_projection_and_match_expressions() {
+        let workflow = parse_inline_workflow! {
+            output {
+                projected: agent.events.payload # user_created.user_id ?? "unknown"
+                matched: match agent.events.payload {
+                    user_created.user_id
+                    user_deleted.user_id
+                    _ "unknown"
+                }
+            }
+        };
+
+        let output_declaration = workflow.find_output().expect("output declaration should exist");
+        let projected_field = output_declaration
+            .fields
+            .iter()
+            .find(|field| field.name == "projected")
+            .expect("projected output field should exist");
+        let matched_field = output_declaration
+            .fields
+            .iter()
+            .find(|field| field.name == "matched")
+            .expect("matched output field should exist");
+
+        assert!(matches!(projected_field.value, Expression::NullFallback(_)));
+        assert!(matches!(matched_field.value, Expression::Match(_)));
+    }
+
+    #[test]
     fn parses_output_string_enum_references() {
         let workflow = parse_inline_workflow! {
             input {

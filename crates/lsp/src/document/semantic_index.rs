@@ -1407,6 +1407,9 @@ impl SemanticIndex {
                 | Expression::FunctionCall(_)
                 | Expression::ToolCall(_)
                 | Expression::McpCall(_)
+                | Expression::NullFallback(_)
+                | Expression::VariantProjection(_)
+                | Expression::Match(_)
                 | Expression::ArrayLiteral(_)
                 | Expression::ObjectLiteral(_) => None,
             });
@@ -2168,6 +2171,8 @@ impl SemanticIndex {
             Expression::Reference(reference) => self.reference_expression_type(reference, dynamic_fields),
             Expression::FunctionCall(_) => None,
             Expression::McpCall(_) => Some(TypeExpression::String),
+            Expression::NullFallback(null_fallback) => self.expression_type_with_dynamic_scope(&null_fallback.value, dynamic_fields),
+            Expression::VariantProjection(_) | Expression::Match(_) => None,
             Expression::ToolCall(tool_call) => {
                 let tool_name = tool_call.callee.first_access_field()?;
                 let tool_summary = self.tools.get(tool_name)?;
@@ -2631,6 +2636,9 @@ fn extract_models(model_expression: &Expression) -> Option<Vec<ProviderModelValu
             | Expression::FunctionCall(_)
             | Expression::ToolCall(_)
             | Expression::McpCall(_)
+            | Expression::NullFallback(_)
+            | Expression::VariantProjection(_)
+            | Expression::Match(_)
             | Expression::ArrayLiteral(_)
             | Expression::ObjectLiteral(_) => return None,
         }

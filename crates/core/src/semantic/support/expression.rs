@@ -1,4 +1,4 @@
-use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
+use crate::dsl::{Expression, MatchBranch, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart};
 use crate::semantic::support::types::parse_number_literal;
 use crate::semantic::WorkflowSemanticError;
 use serde_json::{Map, Value};
@@ -59,6 +59,41 @@ impl Expression {
             Self::McpCall(_) => Err(WorkflowSemanticError::UnsupportedFeature {
                 feature: "MCP resource and prompt calls must be executed by the workflow runtime".to_string(),
             }),
+            Self::NullFallback(null_fallback) => {
+                let value = null_fallback.value.evaluate(evaluation_context, context)?;
+
+                if value.is_null() {
+                    return null_fallback.fallback.evaluate(evaluation_context, context);
+                }
+
+                Ok(value)
+            }
+            Self::VariantProjection(variant_projection) => {
+                let value = evaluate_reference(&variant_projection.value, evaluation_context, context)?;
+                evaluate_variant_projection(value, &variant_projection.case_name, &variant_projection.field_path)
+            }
+            Self::Match(match_expression) => {
+                let value = match_expression.value.evaluate(evaluation_context, context)?;
+
+                for branch in &match_expression.branches {
+                    match branch {
+                        MatchBranch::Variant {
+                            case_name,
+                            field_path,
+                            span: _,
+                        } => {
+                            let projected_value = evaluate_variant_projection(value.clone(), case_name, field_path)?;
+
+                            if !projected_value.is_null() {
+                                return Ok(projected_value);
+                            }
+                        }
+                        MatchBranch::Fallback { value, span: _ } => return value.evaluate(evaluation_context, context),
+                    }
+                }
+
+                Ok(Value::Null)
+            }
             Self::ArrayLiteral(array_items) => {
                 let mut evaluated_items = Vec::with_capacity(array_items.len());
 
@@ -80,6 +115,39 @@ impl Expression {
             }
         }
     }
+}
+
+fn evaluate_variant_projection(value: Value, case_name: &str, field_path: &[String]) -> Result<Value, WorkflowSemanticError> {
+    let Some(object_fields) = value.as_object() else {
+        return Ok(Value::Null);
+    };
+    let has_matching_discriminator = object_fields
+        .values()
+        .any(|field_value| matches!(field_value, Value::String(discriminator_value) if discriminator_value == case_name));
+
+    if !has_matching_discriminator {
+        return Ok(Value::Null);
+    }
+
+    let Some((first_field_name, remaining_field_path)) = field_path.split_first() else {
+        return Ok(value);
+    };
+    let Some(mut current_value) = object_fields.get(first_field_name) else {
+        return Ok(Value::Null);
+    };
+
+    for field_name in remaining_field_path {
+        let Some(current_object_fields) = current_value.as_object() else {
+            return Ok(Value::Null);
+        };
+        let Some(next_value) = current_object_fields.get(field_name) else {
+            return Ok(Value::Null);
+        };
+
+        current_value = next_value;
+    }
+
+    Ok(current_value.clone())
 }
 
 fn evaluate_reference(
@@ -278,6 +346,22 @@ impl Expression {
 
                 for object_field in &mcp_call.parameter_fields {
                     object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_agent_dependencies(agent_dependencies);
+                null_fallback.fallback.collect_agent_dependencies(agent_dependencies);
+            }
+            Self::VariantProjection(variant_projection) => {
+                collect_reference_dependency(&variant_projection.value, agent_dependencies);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_agent_dependencies(agent_dependencies);
+
+                for branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, span: _ } = branch {
+                        value.collect_agent_dependencies(agent_dependencies);
+                    }
                 }
             }
             Self::ArrayLiteral(array_items) => {

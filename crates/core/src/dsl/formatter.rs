@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
-    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, McpBatchImportDeclaration, McpCall, McpImportKind,
+    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, MatchBranch, McpBatchImportDeclaration, McpCall, McpImportKind,
     McpPromptBatchImportDeclaration, McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceImportDeclaration,
     McpToolBatchImportDeclaration, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolPropertyName,
     TypeExpression, TypedField, Workflow,
@@ -1181,6 +1181,33 @@ impl ObjectField {
     }
 }
 
+impl MatchBranch {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_indent();
+
+        match self {
+            Self::Variant {
+                case_name,
+                field_path,
+                span: _,
+            } => {
+                formatter.output.push_str(case_name);
+
+                for field_name in field_path {
+                    formatter.output.push('.');
+                    formatter.output.push_str(field_name);
+                }
+            }
+            Self::Fallback { value, span: _ } => {
+                formatter.output.push_str("_ ");
+                value.push_to_formatter(formatter, ExpressionFormat::Inline);
+            }
+        }
+
+        formatter.push_newline();
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ExpressionFormat {
     Canonical,
@@ -1207,6 +1234,36 @@ impl Expression {
             Self::FunctionCall(function_call) => function_call.push_to_formatter(formatter),
             Self::ToolCall(tool_call) => tool_call.push_to_formatter(formatter),
             Self::McpCall(mcp_call) => mcp_call.push_to_formatter(formatter),
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.push_to_formatter(formatter, ExpressionFormat::Inline);
+                formatter.output.push_str(" ?? ");
+                null_fallback.fallback.push_to_formatter(formatter, ExpressionFormat::Inline);
+            }
+            Self::VariantProjection(variant_projection) => {
+                variant_projection.value.push_to_formatter(formatter);
+                formatter.output.push('#');
+                formatter.output.push_str(&variant_projection.case_name);
+
+                for field_name in &variant_projection.field_path {
+                    formatter.output.push('.');
+                    formatter.output.push_str(field_name);
+                }
+            }
+            Self::Match(match_expression) => {
+                formatter.output.push_str("match ");
+                match_expression.value.push_to_formatter(formatter, ExpressionFormat::Inline);
+                formatter.output.push_str(" {");
+                formatter.push_newline();
+                formatter.indentation_depth += 1;
+
+                for match_branch in &match_expression.branches {
+                    match_branch.push_to_formatter(formatter);
+                }
+
+                formatter.indentation_depth -= 1;
+                formatter.push_indent();
+                formatter.output.push('}');
+            }
             Self::ArrayLiteral(array_items) => {
                 self.push_array_literal_to_formatter(formatter, array_items, expression_format);
             }
@@ -1381,7 +1438,10 @@ impl Expression {
             | Self::Reference(_)
             | Self::FunctionCall(_)
             | Self::ToolCall(_)
-            | Self::McpCall(_) => true,
+            | Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_) => true,
+            Self::Match(_) => false,
         }
     }
 
@@ -1728,6 +1788,9 @@ impl Expression {
             | Self::FunctionCall(_)
             | Self::ToolCall(_)
             | Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
             | Self::ArrayLiteral(_) => false,
         }
     }

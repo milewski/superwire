@@ -1,4 +1,4 @@
-use crate::dsl::{Expression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall};
+use crate::dsl::{Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall};
 use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use std::collections::HashMap;
@@ -60,6 +60,43 @@ impl Expression {
 
                 Ok(WorkflowType::String)
             }
+            Self::NullFallback(null_fallback) => {
+                let value_type = null_fallback.value.infer_type(type_inference_context, context)?;
+
+                if !value_type.can_be_null() {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("left side of `??` must be nullable, found {value_type}"),
+                    });
+                }
+
+                let inner_type = value_type.without_null();
+                let fallback_type = null_fallback.fallback.infer_type(type_inference_context, context)?;
+
+                if !ensure_type_matches(&inner_type, &fallback_type) {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("fallback expects {inner_type}, found {fallback_type}"),
+                    });
+                }
+
+                Ok(inner_type)
+            }
+            Self::VariantProjection(variant_projection) => {
+                let value_type = infer_reference_type(&variant_projection.value, type_inference_context, context)?;
+                let inner_type = value_type.without_null();
+                let Some(projected_type) =
+                    inner_type.variant_case_field_type(&variant_projection.case_name, &variant_projection.field_path)
+                else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("invalid variant projection case `{}`", variant_projection.case_name),
+                    });
+                };
+
+                Ok(WorkflowType::nullable(projected_type))
+            }
+            Self::Match(match_expression) => match_expression.infer_type(type_inference_context, context),
             Self::ArrayLiteral(array_items) => {
                 if array_items.is_empty() {
                     return Err(WorkflowSemanticError::ExpressionEvaluation {
@@ -91,6 +128,63 @@ impl Expression {
 
                 Ok(WorkflowType::Object(field_types))
             }
+        }
+    }
+}
+
+impl MatchExpression {
+    fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
+        let matched_type = self.value.infer_type(type_inference_context, context)?;
+        let matched_inner_type = matched_type.without_null();
+        let mut branch_types = Vec::new();
+
+        for branch in &self.branches {
+            branch_types.push(branch.infer_type(&matched_inner_type, type_inference_context, context)?);
+        }
+
+        if branch_types.is_empty() {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: "match expression requires at least one branch".to_string(),
+            });
+        }
+
+        let first_branch_type = branch_types[0].clone();
+
+        for branch_type in branch_types.iter().skip(1) {
+            if ensure_type_matches(&first_branch_type, branch_type) {
+                continue;
+            }
+
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("match branches return incompatible types: {first_branch_type} and {branch_type}"),
+            });
+        }
+
+        Ok(first_branch_type)
+    }
+}
+
+impl MatchBranch {
+    fn infer_type(
+        &self,
+        matched_type: &WorkflowType,
+        type_inference_context: &TypeInferenceContext,
+        context: &str,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        match self {
+            Self::Variant {
+                case_name,
+                field_path,
+                span: _,
+            } => matched_type
+                .variant_case_field_type(case_name, field_path)
+                .ok_or_else(|| WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!("invalid match case `{case_name}`"),
+                }),
+            Self::Fallback { value, span: _ } => value.infer_type(type_inference_context, context),
         }
     }
 }
@@ -294,8 +388,17 @@ fn resolve_reference_access_path(
     for access in accesses.iter().skip(access_start_index) {
         let mut next_candidate_types = Vec::new();
 
+        if candidate_types.iter().any(WorkflowType::can_be_null) && !access.optional {
+            return Err(WorkflowSemanticError::ExpressionEvaluation {
+                context: context.to_string(),
+                message: format!("cannot access `{}` through a nullable value; use `?.`", access.field),
+            });
+        }
+
         for candidate_type in &candidate_types {
-            collect_field_types(candidate_type, &access.field, &mut next_candidate_types);
+            if let Some(field_type) = candidate_type.without_null().field_type(&access.field) {
+                next_candidate_types.push(field_type);
+            }
         }
 
         if access.optional {
@@ -313,38 +416,6 @@ fn resolve_reference_access_path(
     }
 
     Ok(merge_types(candidate_types))
-}
-
-fn collect_field_types(candidate_type: &WorkflowType, field_name: &str, next_candidate_types: &mut Vec<WorkflowType>) {
-    match candidate_type {
-        WorkflowType::Object(fields) => {
-            if let Some(field_type) = fields.get(field_name) {
-                next_candidate_types.push(field_type.clone());
-            }
-        }
-        WorkflowType::Variant { discriminator, cases } => {
-            if discriminator == field_name {
-                next_candidate_types.extend(cases.keys().cloned().map(|case_name| WorkflowType::StringEnum(vec![case_name])));
-            }
-        }
-        WorkflowType::Union(union_members) => {
-            for union_member in union_members {
-                collect_field_types(union_member, field_name, next_candidate_types);
-            }
-        }
-        WorkflowType::String
-        | WorkflowType::Integer
-        | WorkflowType::Float
-        | WorkflowType::Boolean
-        | WorkflowType::Null
-        | WorkflowType::AnyObject
-        | WorkflowType::StringEnum(_)
-        | WorkflowType::Array {
-            item_type: _,
-            fixed_length: _,
-        }
-        | WorkflowType::Tuple(_) => {}
-    }
 }
 
 fn merge_types(types: Vec<WorkflowType>) -> WorkflowType {
