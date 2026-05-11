@@ -1,6 +1,6 @@
 use superwire_core::dsl::{
     parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword,
-    ToolCallKeyword, ToolPropertyName,
+    ToolCallKeyword, ToolPropertyName, TypeExpression,
 };
 use superwire_core::mcp::McpServerLock;
 
@@ -1056,16 +1056,38 @@ impl DocumentState {
         let rendered_fields = schema_fields
             .iter()
             .map(|typed_field| {
+                let rendered_field_type = typed_field.field_type.render_type_expanded(field_indent.as_str());
+                let normalized_rendered_field_type =
+                    Self::normalize_rendered_field_type_snippet(&typed_field.field_type, &rendered_field_type, field_indent.as_str());
+
                 format!(
                     "{field_indent}{}: {}",
                     typed_field.name,
-                    typed_field.field_type.render_type_expanded(field_indent.as_str())
+                    normalized_rendered_field_type
                 )
             })
             .collect::<Vec<_>>()
             .join("\n");
 
         format!("{} {{\n{rendered_fields}\n{property_indent}}}", property_name.as_str())
+    }
+
+    fn normalize_rendered_field_type_snippet(
+        field_type: &TypeExpression,
+        rendered_field_type: &str,
+        field_indent: &str,
+    ) -> String {
+        if !matches!(field_type, TypeExpression::Object(_)) {
+            return rendered_field_type.to_string();
+        }
+
+        let rendered_prefix = format!("{field_indent}{{");
+
+        if let Some(stripped_rendered_field_type) = rendered_field_type.strip_prefix(rendered_prefix.as_str()) {
+            return format!("{{{stripped_rendered_field_type}");
+        }
+
+        rendered_field_type.to_string()
     }
 
     fn should_defer_to_reference_completion(line_prefix: &str) -> bool {
