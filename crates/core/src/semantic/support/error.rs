@@ -84,12 +84,12 @@ impl WorkflowSemanticError {
             non_rendered_error => {
                 let rendered_error = if let Some(source_text) = workflow.source_text() {
                     if should_render_rich_diagnostics() {
-                        non_rendered_error.diagnostic_message().render_with_source(source_text, source_name)
+                        non_rendered_error.diagnostic().render_with_source(source_text, source_name)
                     } else {
-                        non_rendered_error.diagnostic_message().render()
+                        non_rendered_error.diagnostic().render()
                     }
                 } else {
-                    non_rendered_error.diagnostic_message().render()
+                    non_rendered_error.diagnostic().render()
                 };
 
                 Self::InvalidWorkflow { issues: rendered_error }
@@ -97,7 +97,8 @@ impl WorkflowSemanticError {
         }
     }
 
-    fn diagnostic_message(&self) -> Diagnostic {
+    #[must_use]
+    pub fn diagnostic(&self) -> Diagnostic {
         let mut diagnostic = Diagnostic::new(
             DiagnosticCode::WorkflowCompilationError,
             DiagnosticSeverity::Error,

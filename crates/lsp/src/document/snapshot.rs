@@ -3,6 +3,7 @@ use superwire_core::diagnostic::{
 };
 use superwire_core::dsl::{parse_workflow, validate_workflow, DslParseError};
 use superwire_core::mcp::McpLock;
+use superwire_core::semantic::build_dynamic_typed_workflow_ir;
 
 use crate::protocol::DiagnosticCode;
 
@@ -27,7 +28,13 @@ impl SemanticSnapshot {
 
                 let validation_report = validate_workflow(&workflow);
                 let semantic_index = SemanticIndex::from_workflow_with_mcp_lock(&workflow, mcp_lock.cloned());
-                let diagnostics = validation_report.diagnostics();
+                let mut diagnostics = validation_report.diagnostics();
+
+                if diagnostics.is_empty() && workflow.find_output().is_some() {
+                    if let Err(semantic_error) = build_dynamic_typed_workflow_ir(&workflow) {
+                        diagnostics.push(semantic_error.diagnostic());
+                    }
+                }
 
                 Self {
                     parse_error: None,
