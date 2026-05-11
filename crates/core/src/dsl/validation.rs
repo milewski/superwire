@@ -1,6 +1,6 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, ObjectField, Reference,
-    ReferenceKeyword, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
+    ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
@@ -141,6 +141,13 @@ pub enum ValidationIssue {
     DuplicateSchema {
         schema_name: String,
     },
+    InvalidSchemaName {
+        schema_name: String,
+    },
+    InvalidVariantDiscriminatorField {
+        discriminator: String,
+        case_name: String,
+    },
     DuplicateTool {
         tool_name: String,
     },
@@ -270,6 +277,8 @@ impl ValidationIssue {
         match self {
             Self::DuplicateProvider { .. } => "duplicate_provider",
             Self::DuplicateSchema { .. } => "duplicate_schema",
+            Self::InvalidSchemaName { .. } => "invalid_schema_name",
+            Self::InvalidVariantDiscriminatorField { .. } => "invalid_variant_discriminator_field",
             Self::DuplicateTool { .. } => "duplicate_tool",
             Self::DuplicateResource { .. } => "duplicate_resource",
             Self::DuplicatePrompt { .. } => "duplicate_prompt",
@@ -314,6 +323,12 @@ impl ValidationIssue {
             }
             Self::DuplicateSchema { schema_name } => {
                 format!("Schema `{schema_name}` is declared more than once.")
+            }
+            Self::InvalidSchemaName { schema_name } => {
+                format!("Schema `{schema_name}` must use lowercase snake_case.")
+            }
+            Self::InvalidVariantDiscriminatorField { discriminator, case_name } => {
+                format!("Variant case `{case_name}` must not manually declare discriminator field `{discriminator}`.")
             }
             Self::DuplicateTool { tool_name } => {
                 format!("Tool `{tool_name}` is declared more than once.")
@@ -474,6 +489,10 @@ impl ValidationIssue {
             | Self::DuplicateAgent { .. }
             | Self::DuplicateSingletonDeclaration { .. }
             | Self::DuplicateProperty { .. } => Some(self.duplicate_declaration_help_message()),
+            Self::InvalidSchemaName { .. } => Some("Rename the schema using lowercase snake_case, such as `research_summary`.".to_string()),
+            Self::InvalidVariantDiscriminatorField { discriminator, .. } => Some(format!(
+                "Remove `{discriminator}` from the case body; the variant type injects this field automatically."
+            )),
             Self::UnknownAgentProperty {
                 agent_name: _,
                 property_name,
@@ -753,6 +772,11 @@ impl From<&ValidationIssue> for DiagnosticCode {
         match validation_issue {
             ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
             ValidationIssue::DuplicateSchema { schema_name: _ } => Self::DuplicateSchema,
+            ValidationIssue::InvalidSchemaName { schema_name: _ } => Self::InvalidSchemaName,
+            ValidationIssue::InvalidVariantDiscriminatorField {
+                discriminator: _,
+                case_name: _,
+            } => Self::InvalidVariantDiscriminatorField,
             ValidationIssue::DuplicateTool { tool_name: _ } => Self::DuplicateTool,
             ValidationIssue::DuplicateResource { resource_name: _ } => Self::DuplicateResource,
             ValidationIssue::DuplicatePrompt { prompt_name: _ } => Self::DuplicatePrompt,
@@ -857,6 +881,7 @@ struct ValidationIndex {
     prompt_names: HashSet<String>,
     schema_names: HashSet<String>,
     schema_field_types: HashMap<String, HashMap<String, TypeExpression>>,
+    schema_types: HashMap<String, TypeExpression>,
     input_field_types: Option<HashMap<String, TypeExpression>>,
     secrets_field_types: Option<HashMap<String, TypeExpression>>,
     agent_output_types: HashMap<String, Option<TypeExpression>>,
@@ -869,6 +894,10 @@ struct ValidationIndex {
 
 impl ValidationIndex {
     fn schema_type_expression(&self, schema_name: &str, span: SourceSpan) -> Option<TypeExpression> {
+        if let Some(schema_type) = self.schema_types.get(schema_name) {
+            return Some(schema_type.clone());
+        }
+
         let schema_field_types = self.schema_field_types.get(schema_name)?;
         let typed_fields = schema_field_types
             .iter()
@@ -884,11 +913,11 @@ impl ValidationIndex {
     }
 
     fn named_schema_types(&self, span: SourceSpan) -> HashMap<String, TypeExpression> {
-        self.schema_field_types
-            .keys()
+        self.schema_names
+            .iter()
             .filter_map(|schema_name| {
                 self.schema_type_expression(schema_name, span)
-                    .map(|schema_type_expression| (schema_name.clone(), schema_type_expression))
+                    .map(|schema_type| (schema_name.clone(), schema_type))
             })
             .collect()
     }
@@ -1014,6 +1043,15 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
             }
             Declaration::McpServer(_) => {}
             Declaration::Schema(schema_declaration) => {
+                if !is_lowercase_snake_case(&schema_declaration.name) {
+                    validation_report.push_issue_with_span(
+                        ValidationIssue::InvalidSchemaName {
+                            schema_name: schema_declaration.name.clone(),
+                        },
+                        Some(schema_declaration.span),
+                    );
+                }
+
                 let inserted_schema = validation_index.schema_names.insert(schema_declaration.name.clone());
 
                 if !inserted_schema {
@@ -1031,31 +1069,15 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 validation_index
                     .schema_field_types
                     .insert(schema_declaration.name.clone(), schema_field_types);
+                validation_index
+                    .schema_types
+                    .insert(schema_declaration.name.clone(), schema_declaration.type_expression());
             }
             Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
                 for tool_declaration in declaration.tool_declarations() {
                     let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
 
-                    let named_schema_types = validation_index
-                        .schema_field_types
-                        .iter()
-                        .map(|(schema_name, field_types)| {
-                            (
-                                schema_name.clone(),
-                                TypeExpression::Object(
-                                    field_types
-                                        .iter()
-                                        .map(|(field_name, field_type)| TypedField {
-                                            name: field_name.clone(),
-                                            field_type: field_type.clone(),
-                                            description: None,
-                                            span: tool_declaration.span,
-                                        })
-                                        .collect::<Vec<_>>(),
-                                ),
-                            )
-                        })
-                        .collect::<HashMap<_, _>>();
+                    let named_schema_types = validation_index.named_schema_types(tool_declaration.span);
 
                     if let Ok(tool_input_type) =
                         workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
@@ -1114,26 +1136,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                 for tool_declaration in declaration.tool_declarations() {
                     let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
 
-                    let named_schema_types = validation_index
-                        .schema_field_types
-                        .iter()
-                        .map(|(schema_name, field_types)| {
-                            (
-                                schema_name.clone(),
-                                TypeExpression::Object(
-                                    field_types
-                                        .iter()
-                                        .map(|(field_name, field_type)| TypedField {
-                                            name: field_name.clone(),
-                                            field_type: field_type.clone(),
-                                            description: None,
-                                            span: tool_declaration.span,
-                                        })
-                                        .collect::<Vec<_>>(),
-                                ),
-                            )
-                        })
-                        .collect::<HashMap<_, _>>();
+                    let named_schema_types = validation_index.named_schema_types(tool_declaration.span);
 
                     if let Ok(tool_input_type) =
                         workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
@@ -1343,6 +1346,20 @@ fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpre
         .collect()
 }
 
+fn is_lowercase_snake_case(identifier: &str) -> bool {
+    let mut characters = identifier.chars();
+
+    let Some(first_character) = characters.next() else {
+        return false;
+    };
+
+    if !first_character.is_ascii_lowercase() {
+        return false;
+    }
+
+    characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+}
+
 #[allow(clippy::too_many_lines)]
 fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut ValidationReport) {
     let mut seen_workflow_dynamic_field_names = HashSet::<String>::new();
@@ -1383,6 +1400,10 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
 
                 for schema_field in &schema_declaration.fields {
                     report_duplicate_type_expression_fields(&schema_field.field_type, schema_context.clone(), validation_report);
+                }
+
+                if let Some(root_variant) = &schema_declaration.root_variant {
+                    report_duplicate_type_expression_fields(root_variant, schema_context, validation_report);
                 }
             }
             Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
@@ -1759,11 +1780,31 @@ fn report_duplicate_type_expression_fields(
                 report_duplicate_type_expression_fields(&typed_field.field_type, context.clone(), validation_report);
             }
         }
+        TypeExpression::Variant { discriminator, cases } => {
+            for variant_case in cases {
+                report_duplicate_typed_field_names(variant_case.fields.as_slice(), context.clone(), validation_report);
+
+                for typed_field in &variant_case.fields {
+                    if typed_field.name == *discriminator {
+                        validation_report.push_issue_with_span(
+                            ValidationIssue::InvalidVariantDiscriminatorField {
+                                discriminator: discriminator.clone(),
+                                case_name: variant_case.name.clone(),
+                            },
+                            Some(typed_field.span),
+                        );
+                    }
+
+                    report_duplicate_type_expression_fields(&typed_field.field_type, context.clone(), validation_report);
+                }
+            }
+        }
         TypeExpression::String
         | TypeExpression::Number
         | TypeExpression::Float
         | TypeExpression::Boolean
         | TypeExpression::Null
+        | TypeExpression::AnyObject
         | TypeExpression::SchemaReference(_)
         | TypeExpression::StringEnum(_)
         | TypeExpression::StringEnumReference(_) => {}
@@ -1958,6 +1999,18 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                         &mut invalid_type_expression_references,
                     );
                 }
+
+                if let Some(root_variant) = &schema_declaration.root_variant {
+                    validate_type_expression_for_schemas(
+                        root_variant,
+                        schema_context,
+                        Some(schema_declaration.span),
+                        validation_index,
+                        validation_report,
+                        &mut unknown_schema_references,
+                        &mut invalid_type_expression_references,
+                    );
+                }
             }
             Declaration::Agent(agent_declaration) => {
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
@@ -2033,6 +2086,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_type_expression_for_schemas(
     type_expression: &TypeExpression,
     context: ValidationContext,
@@ -2100,6 +2154,21 @@ fn validate_type_expression_for_schemas(
                 );
             }
         }
+        TypeExpression::Variant { discriminator: _, cases } => {
+            for variant_case in cases {
+                for object_field in &variant_case.fields {
+                    validate_type_expression_for_schemas(
+                        &object_field.field_type,
+                        context.clone(),
+                        span,
+                        validation_index,
+                        validation_report,
+                        unknown_schema_references,
+                        invalid_type_expression_references,
+                    );
+                }
+            }
+        }
         TypeExpression::StringEnumReference(reference) => {
             if reference.validate_schema_string_enum_type_reference(
                 &context,
@@ -2142,6 +2211,7 @@ fn validate_type_expression_for_schemas(
         | TypeExpression::Float
         | TypeExpression::Boolean
         | TypeExpression::Null
+        | TypeExpression::AnyObject
         | TypeExpression::StringEnum(_) => {}
     }
 }
@@ -2761,10 +2831,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 continue;
             };
 
-            named_schema_types.insert(
-                schema_declaration.name.clone(),
-                TypeExpression::Object(schema_declaration.fields.clone()),
-            );
+            named_schema_types.insert(schema_declaration.name.clone(), schema_declaration.type_expression());
         }
 
         let input_type = workflow.find_input().and_then(|input_declaration| {
@@ -3092,10 +3159,15 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     | crate::semantic::support::types::WorkflowType::Float
                     | crate::semantic::support::types::WorkflowType::Boolean
                     | crate::semantic::support::types::WorkflowType::Null
+                    | crate::semantic::support::types::WorkflowType::AnyObject
                     | crate::semantic::support::types::WorkflowType::StringEnum(_)
                     | crate::semantic::support::types::WorkflowType::Union(_)
                     | crate::semantic::support::types::WorkflowType::Tuple(_)
-                    | crate::semantic::support::types::WorkflowType::Object(_) => None,
+                    | crate::semantic::support::types::WorkflowType::Object(_)
+                    | crate::semantic::support::types::WorkflowType::Variant {
+                        discriminator: _,
+                        cases: _,
+                    } => None,
                 })
             }
             crate::semantic::support::types::WorkflowType::String
@@ -3103,9 +3175,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             | crate::semantic::support::types::WorkflowType::Float
             | crate::semantic::support::types::WorkflowType::Boolean
             | crate::semantic::support::types::WorkflowType::Null
+            | crate::semantic::support::types::WorkflowType::AnyObject
             | crate::semantic::support::types::WorkflowType::StringEnum(_)
             | crate::semantic::support::types::WorkflowType::Tuple(_)
-            | crate::semantic::support::types::WorkflowType::Object(_) => None,
+            | crate::semantic::support::types::WorkflowType::Object(_)
+            | crate::semantic::support::types::WorkflowType::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
         }
     }
 
@@ -3627,12 +3704,23 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 }
             }
             TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_field_types) = self.validation_index.schema_field_types.get(schema_name) else {
+                let generated_span = SourceSpan {
+                    start: SourcePosition { line: 1, column: 1 },
+                    end: SourcePosition { line: 1, column: 1 },
+                };
+                let Some(schema_type) = self.validation_index.schema_type_expression(schema_name, generated_span) else {
                     return;
                 };
 
-                if let Some(field_type) = schema_field_types.get(field_name) {
-                    next_candidate_types.push(field_type.clone());
+                self.collect_next_types_for_field(&schema_type, field_name, next_candidate_types);
+            }
+            TypeExpression::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    next_candidate_types.extend(
+                        cases
+                            .iter()
+                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone())),
+                    );
                 }
             }
             TypeExpression::Union(type_expressions) => {
@@ -3645,6 +3733,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
@@ -3671,11 +3760,22 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     Self::collect_next_workflow_types_for_field(union_member, field_name, next_candidate_types);
                 }
             }
+            crate::semantic::support::types::WorkflowType::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    next_candidate_types.extend(
+                        cases
+                            .keys()
+                            .cloned()
+                            .map(|case_name| crate::semantic::support::types::WorkflowType::StringEnum(vec![case_name])),
+                    );
+                }
+            }
             crate::semantic::support::types::WorkflowType::String
             | crate::semantic::support::types::WorkflowType::Integer
             | crate::semantic::support::types::WorkflowType::Float
             | crate::semantic::support::types::WorkflowType::Boolean
             | crate::semantic::support::types::WorkflowType::Null
+            | crate::semantic::support::types::WorkflowType::AnyObject
             | crate::semantic::support::types::WorkflowType::StringEnum(_)
             | crate::semantic::support::types::WorkflowType::Array {
                 item_type: _,
@@ -3730,13 +3830,18 @@ fn workflow_type_can_be_null(workflow_type: &crate::semantic::support::types::Wo
         | crate::semantic::support::types::WorkflowType::Integer
         | crate::semantic::support::types::WorkflowType::Float
         | crate::semantic::support::types::WorkflowType::Boolean
+        | crate::semantic::support::types::WorkflowType::AnyObject
         | crate::semantic::support::types::WorkflowType::StringEnum(_)
         | crate::semantic::support::types::WorkflowType::Array {
             item_type: _,
             fixed_length: _,
         }
         | crate::semantic::support::types::WorkflowType::Tuple(_)
-        | crate::semantic::support::types::WorkflowType::Object(_) => false,
+        | crate::semantic::support::types::WorkflowType::Object(_)
+        | crate::semantic::support::types::WorkflowType::Variant {
+            discriminator: _,
+            cases: _,
+        } => false,
     }
 }
 
@@ -4043,13 +4148,47 @@ mod tests {
     }
 
     #[test]
+    fn reports_invalid_schema_names() {
+        let workflow = parse_inline_workflow! {
+            schema ResearchSummary {
+                title: string
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidSchemaName { schema_name } if schema_name == "ResearchSummary"
+        );
+    }
+
+    #[test]
+    fn reports_variant_case_discriminator_fields() {
+        let workflow = parse_inline_workflow! {
+            schema event_payload {
+                payload: variant type {
+                    user_created {
+                        type: string
+                        user_id: string
+                    }
+                }
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidVariantDiscriminatorField { discriminator, case_name }
+                if discriminator == "type" && case_name == "user_created"
+        );
+    }
+
+    #[test]
     fn reports_duplicate_named_resource_names() {
         let workflow = parse_inline_workflow! {
             provider openai { driver: "openai" }
             provider openai { driver: "anthropic" }
 
-            schema User { name: string }
-            schema User { id: string }
+            schema user { name: string }
+            schema user { id: string }
 
             tool search { query: string }
             tool search { query: string }
@@ -4067,7 +4206,7 @@ mod tests {
         assert_workflow_issues_contain!(
             workflow,
             ValidationIssue::DuplicateProvider { provider_name } if provider_name == "openai",
-            ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User",
+            ValidationIssue::DuplicateSchema { schema_name } if schema_name == "user",
             ValidationIssue::DuplicateTool { tool_name } if tool_name == "search",
             ValidationIssue::DuplicateResource { resource_name } if resource_name == "readme",
             ValidationIssue::DuplicatePrompt { prompt_name } if prompt_name == "system_prompt",
@@ -4361,14 +4500,14 @@ mod tests {
 
     #[test]
     fn duplicate_schema_diagnostics_include_declaration_span() {
-        let workflow_source = "schema User { name: string }\nschema User { id: string }\n";
+        let workflow_source = "schema user { name: string }\nschema user { id: string }\n";
         let workflow = parse_workflow(workflow_source).expect("workflow should parse");
         let validation_report = validate_workflow(&workflow);
 
         let duplicate_schema_span = validation_report
             .issues_with_spans()
             .find_map(|(validation_issue, issue_span)| match validation_issue {
-                ValidationIssue::DuplicateSchema { schema_name } if schema_name == "User" => issue_span,
+                ValidationIssue::DuplicateSchema { schema_name } if schema_name == "user" => issue_span,
                 _ => None,
             })
             .expect("duplicate schema diagnostics should include span");
@@ -4410,7 +4549,7 @@ mod tests {
                 models: ["qwen3.5:14b"]
             }
 
-            schema Greeting {
+            schema greeting {
                 message: string
                 message: string
             }
@@ -4457,7 +4596,7 @@ mod tests {
             ValidationIssue::DuplicateProperty { property_name, context }
                 if property_name == "models" && *context == ValidationContext::Provider("ollama".to_string()),
             ValidationIssue::DuplicateProperty { property_name, context }
-                if property_name == "message" && *context == ValidationContext::Schema("Greeting".to_string()),
+                if property_name == "message" && *context == ValidationContext::Schema("greeting".to_string()),
             ValidationIssue::DuplicateProperty { property_name, context }
                 if property_name == "id" && *context == ValidationContext::Input,
             ValidationIssue::DuplicateProperty { property_name, context }
@@ -5096,9 +5235,9 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent greeting {
                 output: {
-                    nested: {
+                    nested: maybe {
                         value: string
-                    } | null
+                    }
                 }
             }
 
@@ -5124,9 +5263,9 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent greeting {
                 output: {
-                    nested: {
+                    nested: maybe {
                         value: string
-                    } | null
+                    }
                 }
             }
 
@@ -5141,14 +5280,14 @@ mod tests {
     #[test]
     fn accepts_valid_nested_agent_output_reference_path() {
         let workflow = parse_inline_workflow! {
-            schema Report {
+            schema report {
                 payload: {
                     score: number
                 }
             }
 
             agent producer {
-                output: schema.Report
+                output: schema.report
             }
 
             output {
@@ -5167,8 +5306,8 @@ mod tests {
     #[test]
     fn reports_unknown_schema_references() {
         let workflow = parse_inline_workflow! {
-            schema Wrapper {
-                payload: schema.MissingSchema
+            schema wrapper {
+                payload: schema.missing_schema
             }
         };
 
@@ -5177,8 +5316,8 @@ mod tests {
             ValidationIssue::UnknownSchemaReference {
                 referenced_schema,
                 context
-            } if referenced_schema == "MissingSchema"
-                && *context == ValidationContext::Schema("Wrapper".to_owned())
+            } if referenced_schema == "missing_schema"
+                && *context == ValidationContext::Schema("wrapper".to_owned())
         );
     }
 
@@ -5186,7 +5325,7 @@ mod tests {
     fn allows_schema_field_enum_references_in_type_expressions() {
         let workflow = parse_inline_workflow! {
             schema main {
-                language_enum: "en_US" | "zh_CN" | "fr"
+                language_enum: enum { en_US, zh_CN, fr }
             }
 
             tool example {
@@ -5204,7 +5343,7 @@ mod tests {
     fn allows_schema_field_enum_references_inside_nested_array_objects() {
         let workflow = parse_inline_workflow! {
             schema main {
-                language: "en_US" | "zh_CN" | "fr"
+                language: enum { en_US, zh_CN, fr }
             }
 
             input {

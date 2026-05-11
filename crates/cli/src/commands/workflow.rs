@@ -128,6 +128,7 @@ impl VarsWorkflowCommand {
             TypeExpression::Float => Value::Number(serde_json::Number::from(0)),
             TypeExpression::Boolean => Value::Bool(false),
             TypeExpression::Null => Value::Null,
+            TypeExpression::AnyObject => Value::Object(Map::new()),
             TypeExpression::Object(object_fields) => {
                 let mut object_values = Map::new();
 
@@ -141,6 +142,12 @@ impl VarsWorkflowCommand {
                 Value::Object(object_values)
             }
             TypeExpression::SchemaReference(schema_name) => {
+                if let Some(schema_declaration) = parsed_workflow.find_schema(schema_name) {
+                    if let Some(root_variant) = &schema_declaration.root_variant {
+                        return Self::generate_value_from_type_expression(parsed_workflow, root_variant);
+                    }
+                }
+
                 let mut object_values = Map::new();
 
                 if let Some(schema_declaration) = parsed_workflow.find_schema(schema_name) {
@@ -163,6 +170,22 @@ impl VarsWorkflowCommand {
                 }
 
                 Value::Null
+            }
+            TypeExpression::Variant { discriminator, cases } => {
+                let Some(first_case) = cases.first() else {
+                    return Value::Object(Map::new());
+                };
+                let mut object_values = Map::new();
+                object_values.insert(discriminator.clone(), Value::String(first_case.name.clone()));
+
+                for object_field in &first_case.fields {
+                    object_values.insert(
+                        object_field.name.clone(),
+                        Self::generate_value_from_type_expression(parsed_workflow, &object_field.field_type),
+                    );
+                }
+
+                Value::Object(object_values)
             }
             TypeExpression::Array {
                 item_type: _,
@@ -874,7 +897,15 @@ impl LockWorkflowCommand {
     ) -> Option<&'workflow [TypedField]> {
         match type_expression {
             TypeExpression::Object(object_fields) => Some(object_fields),
-            TypeExpression::SchemaReference(schema_name) => Some(parsed_workflow.find_schema(schema_name)?.fields.as_slice()),
+            TypeExpression::SchemaReference(schema_name) => {
+                let schema_declaration = parsed_workflow.find_schema(schema_name)?;
+
+                if schema_declaration.root_variant.is_some() {
+                    return None;
+                }
+
+                Some(schema_declaration.fields.as_slice())
+            }
             TypeExpression::Union(type_expressions) => {
                 let mut object_fields = None;
 
@@ -897,13 +928,18 @@ impl LockWorkflowCommand {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
                 item_type: _,
                 fixed_length: _,
             }
-            | TypeExpression::Tuple(_) => None,
+            | TypeExpression::Tuple(_)
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
         }
     }
 
@@ -1009,6 +1045,7 @@ impl LockWorkflowCommand {
             TypeExpression::Float => "float",
             TypeExpression::Boolean => "boolean",
             TypeExpression::Null => "null",
+            TypeExpression::AnyObject => "json",
             TypeExpression::SchemaReference(_)
             | TypeExpression::Array {
                 item_type: _,
@@ -1016,6 +1053,10 @@ impl LockWorkflowCommand {
             }
             | TypeExpression::Tuple(_)
             | TypeExpression::Object(_)
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            }
             | TypeExpression::Union(_) => "json",
         }
     }
@@ -1065,7 +1106,12 @@ impl LockWorkflowCommand {
 
                 Ok(Value::Null)
             }
-            TypeExpression::SchemaReference(_)
+            TypeExpression::AnyObject
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            }
+            | TypeExpression::SchemaReference(_)
             | TypeExpression::Array {
                 item_type: _,
                 fixed_length: _,

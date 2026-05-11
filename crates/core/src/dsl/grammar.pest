@@ -23,7 +23,8 @@ provider_declaration = { "provider" ~ identifier ~ object_expression }
 mcp_declaration = { "mcp" ~ identifier ~ object_expression }
 secrets_declaration = { "secrets" ~ typed_block }
 input_declaration = { "input" ~ typed_block }
-schema_declaration = { "schema" ~ identifier ~ typed_block }
+schema_declaration = { "schema" ~ identifier ~ schema_body }
+schema_body = _{ typed_block | object_level_variant_type }
 tool_block_declaration = { "tool" ~ identifier ~ tool_block }
 tool_import_declaration = { "tool" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ tool_import_block? }
 resource_import_declaration = { "resource" ~ ("from" | identifier ~ "from") ~ mcp_import_reference ~ mcp_import_block? }
@@ -87,10 +88,10 @@ agent_tool_binding_property = _{ named_object_property | named_unsigned_integer_
 output_declaration = { "output" ~ object_expression }
 
 typed_block = { "{" ~ typed_field* ~ "}" }
-typed_field = { identifier ~ ":" ~ type_expression ~ plain_string_literal? ~ ","? }
+typed_field = { doc_comment* ~ identifier ~ ":" ~ type_expression ~ plain_string_literal? ~ ","? }
 
 tool_bindings_block = { "{" ~ tool_binding_field* ~ "}" }
-tool_binding_field = { identifier ~ ":" ~ (tool_binding_type_expression | expression) ~ plain_string_literal? ~ ","? }
+tool_binding_field = { doc_comment* ~ identifier ~ ":" ~ (tool_binding_type_expression | expression) ~ plain_string_literal? ~ ","? }
 tool_binding_type_expression = { tool_binding_type_term ~ ("|" ~ tool_binding_type_term)* }
 tool_binding_type_object = { "{" ~ typed_field* ~ "}" }
 tool_binding_type_term = _{
@@ -106,7 +107,10 @@ tool_binding_type_term = _{
 type_expression = { type_term ~ ("|" ~ type_term)* }
 
 type_term = _{
-    scalar_type
+    nullable_type
+    | enum_type
+    | variant_type
+    | scalar_type
     | schema_reference
     | reference
     | array_type
@@ -115,7 +119,14 @@ type_term = _{
     | plain_string_literal
 }
 
-scalar_type = { "string" | "number" | "float" | "boolean" | "null" }
+scalar_type = { "string" | "number" | "float" | "boolean" | "object" }
+nullable_type = { "maybe" ~ type_term }
+enum_type = { "enum" ~ "{" ~ enum_case* ~ "}" }
+enum_case = { identifier ~ ","? }
+variant_type = { "variant" ~ identifier ~ "{" ~ variant_case* ~ "}" }
+object_level_variant_type = { "{" ~ variant_type ~ "}" }
+variant_case = { variant_case_label ~ type_object }
+variant_case_label = { identifier | plain_string_literal }
 schema_reference = { "schema" ~ "." ~ identifier ~ !("." ~ identifier) }
 array_type = { "[" ~ type_expression ~ (";" ~ unsigned_integer_literal)? ~ "]" }
 tuple_type = { "(" ~ type_expression ~ ("," ~ type_expression)* ~ ")" }
@@ -185,6 +196,7 @@ plain_quoted_string = @{ "\"" ~ (escaped_character | !("\"" | NEWLINE) ~ ANY)* ~
 plain_multiline_string = @{ "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\"" }
 
 identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+doc_comment = @{ "///" ~ (!NEWLINE ~ ANY)* }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
-COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* }
+COMMENT = _{ "//" ~ !"/" ~ (!NEWLINE ~ ANY)* }

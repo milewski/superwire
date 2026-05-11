@@ -1052,15 +1052,24 @@ struct RenderedAgentProperty {
 
 impl TypedField {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        if let Some(description) = &self.description {
+            for description_line in description.lines() {
+                formatter.push_indent();
+                formatter.output.push_str("///");
+
+                if !description_line.is_empty() {
+                    formatter.output.push(' ');
+                    formatter.output.push_str(description_line);
+                }
+
+                formatter.push_newline();
+            }
+        }
+
         formatter.push_indent();
         formatter.output.push_str(&self.name);
         formatter.output.push_str(": ");
         self.field_type.push_to_formatter(formatter);
-
-        if let Some(description) = &self.description {
-            formatter.output.push(' ');
-            formatter.output.push_str(&render_plain_string_literal(description));
-        }
 
         formatter.push_newline();
     }
@@ -1074,6 +1083,7 @@ impl TypeExpression {
             Self::Float => formatter.output.push_str("float"),
             Self::Boolean => formatter.output.push_str("boolean"),
             Self::Null => formatter.output.push_str("null"),
+            Self::AnyObject => formatter.output.push_str("object"),
             Self::SchemaReference(schema_name) => {
                 formatter.output.push_str("schema.");
                 formatter.output.push_str(schema_name);
@@ -1112,6 +1122,34 @@ impl TypeExpression {
 
                 for typed_field in object_fields {
                     typed_field.push_to_formatter(formatter);
+                }
+
+                formatter.indentation_depth -= 1;
+                formatter.push_indent();
+                formatter.output.push('}');
+            }
+            Self::Variant { discriminator, cases } => {
+                formatter.output.push_str("variant ");
+                formatter.output.push_str(discriminator);
+                formatter.output.push_str(" {");
+                formatter.push_newline();
+                formatter.indentation_depth += 1;
+
+                for variant_case in cases {
+                    formatter.push_indent();
+                    formatter.output.push_str(&variant_case.name);
+                    formatter.output.push_str(" {");
+                    formatter.push_newline();
+                    formatter.indentation_depth += 1;
+
+                    for typed_field in &variant_case.fields {
+                        typed_field.push_to_formatter(formatter);
+                    }
+
+                    formatter.indentation_depth -= 1;
+                    formatter.push_indent();
+                    formatter.output.push('}');
+                    formatter.push_newline();
                 }
 
                 formatter.indentation_depth -= 1;

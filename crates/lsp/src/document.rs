@@ -378,7 +378,9 @@ impl DocumentState {
             (Expression::StringTemplate(_), TypeExpression::String)
             | (Expression::Reference(_) | Expression::FunctionCall(_) | Expression::ToolCall(_) | Expression::McpCall(_), _)
             | (Expression::ArrayLiteral(_), TypeExpression::Array { .. } | TypeExpression::Tuple(_))
-            | (Expression::ObjectLiteral(_), TypeExpression::Object(_)) => true,
+            | (Expression::ObjectLiteral(_), TypeExpression::Object(_) | TypeExpression::AnyObject | TypeExpression::Variant { .. }) => {
+                true
+            }
             _ => false,
         }
     }
@@ -389,7 +391,8 @@ impl DocumentState {
             | (TypeExpression::Number, TypeExpression::Number)
             | (TypeExpression::Float, TypeExpression::Float)
             | (TypeExpression::Boolean, TypeExpression::Boolean)
-            | (TypeExpression::Null, TypeExpression::Null) => true,
+            | (TypeExpression::Null, TypeExpression::Null)
+            | (TypeExpression::AnyObject, TypeExpression::AnyObject) => true,
             (TypeExpression::SchemaReference(expected_schema), TypeExpression::SchemaReference(found_schema)) => {
                 expected_schema == found_schema
             }
@@ -427,6 +430,16 @@ impl DocumentState {
                             .is_some_and(|found_field| Self::type_expressions_match(&expected_field.field_type, &found_field.field_type))
                     })
             }
+            (
+                TypeExpression::Variant {
+                    discriminator: expected_discriminator,
+                    cases: expected_cases,
+                },
+                TypeExpression::Variant {
+                    discriminator: found_discriminator,
+                    cases: found_cases,
+                },
+            ) => expected_discriminator == found_discriminator && expected_cases == found_cases,
             _ => false,
         }
     }
@@ -527,6 +540,7 @@ impl RenderTypeExpression for TypeExpression {
             Self::Float => "float".to_string(),
             Self::Boolean => "boolean".to_string(),
             Self::Null => "null".to_string(),
+            Self::AnyObject => "object".to_string(),
             Self::SchemaReference(schema_name) => format!("schema.{schema_name}"),
             Self::StringEnum(enum_value) => format!("\"{enum_value}\""),
             Self::StringEnumReference(enum_reference) => enum_reference.render_path(),
@@ -558,6 +572,15 @@ impl RenderTypeExpression for TypeExpression {
                     .join(", ");
 
                 format!("{{ {field_strings} }}")
+            }
+            Self::Variant { discriminator, cases } => {
+                let case_names = cases
+                    .iter()
+                    .map(|variant_case| variant_case.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+
+                format!("variant {discriminator} {{ {case_names} }}")
             }
             Self::Union(union_members) => union_members
                 .iter()
@@ -608,10 +631,15 @@ impl RenderTypeExpression for TypeExpression {
             | Self::Float
             | Self::Boolean
             | Self::Null
+            | Self::AnyObject
             | Self::SchemaReference(_)
             | Self::StringEnum(_)
             | Self::StringEnumReference(_)
             | Self::Tuple(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            }
             | Self::Union(_) => self.render_type(),
         }
     }
@@ -640,7 +668,7 @@ fn primitive_type_expressions() -> [TypeExpression; 5] {
         TypeExpression::Number,
         TypeExpression::Float,
         TypeExpression::Boolean,
-        TypeExpression::Null,
+        TypeExpression::AnyObject,
     ]
 }
 

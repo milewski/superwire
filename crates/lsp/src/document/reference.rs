@@ -774,6 +774,17 @@ impl SemanticIndex {
                     }
                 }
             }
+            TypeExpression::Variant { discriminator, cases } => {
+                available_fields.entry(discriminator.clone()).or_insert_with(|| FieldMetadata {
+                    field_type: TypeExpression::Union(
+                        cases
+                            .iter()
+                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone()))
+                            .collect(),
+                    ),
+                    description: None,
+                });
+            }
             TypeExpression::Union(union_members) => {
                 for union_member in union_members {
                     self.collect_available_fields(union_member, available_fields);
@@ -789,6 +800,7 @@ impl SemanticIndex {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_) => {}
         }
@@ -827,6 +839,11 @@ impl SemanticIndex {
             TypeExpression::Object(object_fields) => object_fields.iter().any(|typed_field| {
                 self.type_supports_numeric_reference_with_visited(&typed_field.field_type, numeric_reference_kind, visited_schema_names)
             }),
+            TypeExpression::Variant { discriminator: _, cases } => cases.iter().any(|variant_case| {
+                variant_case.fields.iter().any(|typed_field| {
+                    self.type_supports_numeric_reference_with_visited(&typed_field.field_type, numeric_reference_kind, visited_schema_names)
+                })
+            }),
             TypeExpression::SchemaReference(schema_name) => {
                 if !visited_schema_names.insert(schema_name.clone()) {
                     return false;
@@ -848,6 +865,7 @@ impl SemanticIndex {
             TypeExpression::String
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
@@ -882,11 +900,16 @@ impl ForLoopIterableType for TypeExpression {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::SchemaReference(_)
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
             | TypeExpression::Tuple(_)
-            | TypeExpression::Object(_) => false,
+            | TypeExpression::Object(_)
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            } => false,
         }
     }
 }

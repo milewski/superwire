@@ -88,6 +88,8 @@ impl From<CoreDiagnosticCode> for DiagnosticCode {
             CoreDiagnosticCode::InvalidIntegerLiteral => Self::InvalidIntegerLiteral,
             CoreDiagnosticCode::DuplicateProvider => Self::DuplicateProvider,
             CoreDiagnosticCode::DuplicateSchema => Self::DuplicateSchema,
+            CoreDiagnosticCode::InvalidSchemaName => Self::InvalidSchemaName,
+            CoreDiagnosticCode::InvalidVariantDiscriminatorField => Self::InvalidVariantDiscriminatorField,
             CoreDiagnosticCode::DuplicateTool => Self::DuplicateTool,
             CoreDiagnosticCode::DuplicateResource => Self::DuplicateResource,
             CoreDiagnosticCode::DuplicatePrompt => Self::DuplicatePrompt,

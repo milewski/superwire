@@ -996,13 +996,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_schema_union_types_and_optional_access() {
+    fn parses_schema_maybe_types_and_optional_access() {
         let workflow = parse_inline_workflow! {
-            schema AllTypes {
-                nullable_object: {
+            schema all_types {
+                nullable_object: maybe {
                     string_value: string
                     number_value: number
-                } | null
+                }
             }
 
             output {
@@ -1010,7 +1010,7 @@ mod tests {
             }
         };
 
-        let all_types_schema = workflow.find_schema("AllTypes").expect("missing schema declaration: AllTypes");
+        let all_types_schema = workflow.find_schema("all_types").expect("missing schema declaration: all_types");
 
         let nullable_object_field = all_types_schema
             .fields
@@ -1045,6 +1045,83 @@ mod tests {
             }
             _ => panic!("nullable_object_string should be a reference expression"),
         }
+    }
+
+    #[test]
+    fn parses_enum_and_variant_type_expressions() {
+        let workflow = parse_inline_workflow! {
+            schema event_payload {
+                status: enum {
+                    draft
+                    ready
+                    published
+                }
+
+                payload: variant type {
+                    user_created {
+                        user_id: string
+                    }
+
+                    "user.deleted" {
+                        user_id: string
+                        reason: maybe string
+                    }
+                }
+            }
+        };
+
+        let schema_declaration = workflow
+            .find_schema("event_payload")
+            .expect("missing schema declaration: event_payload");
+        let status_field = schema_declaration
+            .fields
+            .iter()
+            .find(|typed_field| typed_field.name == "status")
+            .expect("status field should exist");
+
+        let TypeExpression::Union(enum_members) = &status_field.field_type else {
+            panic!("status should parse as enum union");
+        };
+
+        assert_eq!(enum_members.len(), 3);
+        assert!(matches!(&enum_members[0], TypeExpression::StringEnum(enum_value) if enum_value == "draft"));
+
+        let payload_field = schema_declaration
+            .fields
+            .iter()
+            .find(|typed_field| typed_field.name == "payload")
+            .expect("payload field should exist");
+
+        let TypeExpression::Variant { discriminator, cases } = &payload_field.field_type else {
+            panic!("payload should parse as variant");
+        };
+
+        assert_eq!(discriminator, "type");
+        assert_eq!(cases.len(), 2);
+        assert_eq!(cases[0].name, "user_created");
+        assert_eq!(cases[1].name, "user.deleted");
+    }
+
+    #[test]
+    fn parses_object_level_schema_variant() {
+        let workflow = parse_inline_workflow! {
+            schema api_event {
+                variant type {
+                    user_created {
+                        user_id: string
+                    }
+
+                    user_deleted {
+                        user_id: string
+                    }
+                }
+            }
+        };
+
+        let schema_declaration = workflow.find_schema("api_event").expect("missing schema declaration: api_event");
+
+        assert!(schema_declaration.fields.is_empty());
+        assert!(matches!(schema_declaration.root_variant, Some(TypeExpression::Variant { .. })));
     }
 
     #[test]
@@ -1097,7 +1174,7 @@ mod tests {
     fn parses_schema_field_string_enum_references() {
         let workflow = parse_inline_workflow! {
             schema main {
-                language_enum: "en_US" | "zh_CN" | "fr"
+                language_enum: enum { en_US, zh_CN, fr }
             }
 
             tool example {

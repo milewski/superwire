@@ -13,7 +13,7 @@ pub use ast::{
     McpToolBatchImportItem, McpToolSource, ModelCallArgumentName, NamedArgument, ObjectField, OutputDeclaration, ProviderDeclaration,
     Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,
     StringTemplate, StringTemplatePart, ToolCall, ToolCallKeyword, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression,
-    TypedField, Workflow,
+    TypedField, VariantCase, Workflow,
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};
