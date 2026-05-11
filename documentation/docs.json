@@ -3,14 +3,14 @@
   "theme": "mint",
   "name": "Superwire",
   "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "dark": "/logo.svg",
+    "light": "/logo.svg"
   },
   "favicon": "/favicon.svg",
   "colors": {
-    "primary": "#0D9373",
-    "light": "#07C983",
-    "dark": "#0D9373"
+    "primary": "#FF7F00",
+    "light": "#FF9A33",
+    "dark": "#E06600"
   },
   "styling": {
     "codeblocks": {
