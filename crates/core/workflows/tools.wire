@@ -46,7 +46,7 @@ tool issue_tracker_lookup {
 
     bindings {
         project: string
-        status: "open" | "closed"
+        status: enum { open, closed }
         token: string
     }
 }

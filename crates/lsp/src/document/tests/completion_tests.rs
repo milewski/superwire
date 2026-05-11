@@ -879,7 +879,7 @@ fn suggests_only_inference_value_reference_roots_for_integer_setting() {
             label: string
         }
 
-        schema Limits {
+        schema limits {
             max_tokens: number
         }
 
@@ -935,7 +935,7 @@ fn suggests_only_numeric_resolving_input_fields_for_integer_inference_value() {
 #[test]
 fn suppresses_schema_reference_suggestions_for_integer_inference_value() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Limits {
+        schema limits {
             max_tokens: number
         }
 
@@ -1644,7 +1644,7 @@ fn suggests_field_completion_after_optional_access_on_nullable_reference_path() 
 #[test]
 fn completes_schema_references_in_type_context() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Person {
+        schema person {
             name: string
         }
 
@@ -1653,14 +1653,14 @@ fn completes_schema_references_in_type_context() {
         }
     };
 
-    assert_completion_contains!(&completion_suggestions, "Person");
+    assert_completion_contains!(&completion_suggestions, "person");
 }
 
 #[test]
 fn completes_schema_enum_fields_in_type_context() {
     let completion_suggestions = inline_completion_suggestions! {
         schema main {
-            language_enum: "en_US" | "zh_CN" | "fr"
+            language_enum: enum { en_US, zh_CN, fr }
             plain_language: string
         }
 
@@ -1678,13 +1678,13 @@ fn completes_schema_enum_fields_in_type_context() {
 #[test]
 fn uses_schema_field_description_in_reference_completion_documentation() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Person {
+        schema person {
             first_name: string "first name from schema"
             age: number
         }
 
         input {
-            profile: schema.Person
+            profile: schema.person
         }
 
         agent writer {
@@ -1704,37 +1704,37 @@ fn uses_schema_field_description_in_reference_completion_documentation() {
 #[test]
 fn excludes_current_schema_from_schema_type_suggestions() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Person {
+        schema person {
             related: schema.<cursor>
         }
 
-        schema Team {
+        schema team {
             members: [string]
         }
     };
 
-    assert_completion_contains!(&completion_suggestions, "Team");
-    assert_completion_excludes_labels!(&completion_suggestions, "Person");
+    assert_completion_contains!(&completion_suggestions, "team");
+    assert_completion_excludes_labels!(&completion_suggestions, "person");
 }
 
 #[test]
 fn excludes_current_schema_from_schema_type_suggestions_with_parse_errors() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Person {
+        schema person {
             related: schema.<cursor>
         }
 
         @
     };
 
-    assert_completion_excludes_labels!(&completion_suggestions, "Person");
+    assert_completion_excludes_labels!(&completion_suggestions, "person");
     assert!(completion_suggestions.is_empty());
 }
 
 #[test]
 fn suppresses_type_suggestions_after_non_schema_dot_access() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Test {
+        schema test {
             test: boolean.<cursor>
         }
     };

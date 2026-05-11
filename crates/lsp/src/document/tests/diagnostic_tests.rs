@@ -395,7 +395,7 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
             models: ["gpt-4.1-mini"]
         }
 
-        schema Payload {
+        schema payload {
             value: string
         }
 
@@ -415,7 +415,7 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
 
         agent worker {
             model: openai("gpt-4.1-mini")
-            instruction: "example {{ agent.context_agent }} {{ input.query }} {{ schema.Payload }} {{ secrets.api_key }}"
+            instruction: "example {{ agent.context_agent }} {{ input.query }} {{ schema.payload }} {{ secrets.api_key }}"
             output: string
         }
     };
@@ -518,7 +518,7 @@ fn reports_invalid_type_expression_reference_diagnostic() {
 fn accepts_nested_schema_enum_field_reference_diagnostics() {
     let diagnostics = inline_diagnostics! {
         schema main {
-            language: "en_US" | "zh_CN" | "fr"
+            language: enum { en_US, zh_CN, fr }
         }
 
         input {

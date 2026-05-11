@@ -5,7 +5,7 @@ provider openai {
     models: ["model-a"]
 }
 
-schema Person {
+schema person {
     name: string "Full name"
     age: number "Age in years"
     role: string "Job role"
@@ -14,7 +14,7 @@ schema Person {
 agent profile {
     model: openai("model-a")
     instruction: "Generate a person profile."
-    output: schema.Person
+    output: schema.person
 }
 
 output {
