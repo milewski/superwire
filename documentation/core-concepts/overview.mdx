@@ -5,17 +5,17 @@ description: Understand the declarations that make up a Superwire workflow.
 
 A workflow is a sequence of declarations. The grammar currently supports these top-level declaration kinds:
 
-- `provider` — model backend configuration
-- `mcp` — MCP server connection settings
-- `secrets` — sensitive runtime values
-- `input` — regular runtime values
-- `schema` — reusable named types
-- `tool` — tool definitions (inline or imported from MCP)
-- `resource` — resource imports from MCP servers
-- `prompt` — prompt imports from MCP servers
-- `dynamic` — runtime-computed values via tool calls and MCP
-- `agent` — model calls with instructions and output types
-- `output` — the final JSON object returned by the workflow
+- `provider` -- model backend configuration
+- `mcp` -- MCP server connection settings
+- `secrets` -- sensitive runtime values
+- `input` -- regular runtime values
+- `schema` -- reusable named types
+- `tool` -- tool definitions (inline or imported from MCP)
+- `resource` -- resource imports from MCP servers
+- `prompt` -- prompt imports from MCP servers
+- `dynamic` -- runtime-computed values via tool calls and MCP
+- `agent` -- model calls with instructions and output types
+- `output` -- the final JSON object returned by the workflow
 
 ```wire
 provider openai {

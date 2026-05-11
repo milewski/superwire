@@ -68,7 +68,7 @@ agent conclusion_writer {
 ## Protect secrets
 
 - Always use `secrets` for API keys, passwords, and tokens.
-- Never reference `secrets.*` in `instruction` or `output` — the validator will catch it.
+- Never reference `secrets.*` in `instruction` or `output` -- the validator will catch it.
 - Use secret references in provider configuration:
 
 ```wire

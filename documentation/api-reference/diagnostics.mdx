@@ -9,10 +9,10 @@ Parsing returns `DslParseError`.
 
 Important variants include:
 
-- `Pest` — raw pest parse error
-- `MissingNode` — expected AST node not found
-- `UnexpectedRule` — unexpected grammar rule encountered
-- `InvalidIntegerLiteral` — malformed integer literal
+- `Pest` -- raw pest parse error
+- `MissingNode` -- expected AST node not found
+- `UnexpectedRule` -- unexpected grammar rule encountered
+- `InvalidIntegerLiteral` -- malformed integer literal
 
 Parse errors expose source spans through `DslParseError::span()`.
 
@@ -42,22 +42,22 @@ Execution returns `WorkflowRuntimeError`.
 
 Important variants include:
 
-- `ParseFailed` — could not parse the workflow at runtime
-- `InvalidWorkflow` — workflow failed validation
-- `ExecutionPlanInvariant` — internal execution plan error
-- `MissingDeclaration` — referenced declaration not found
-- `UnsupportedFeature` — feature not yet supported by the runtime
-- `ProviderConfiguration` — provider could not be configured
-- `ExpressionEvaluation` — expression evaluation failed
-- `InvalidAgentProperty` — unrecognized agent property
-- `InputTypeMismatch` — provided input does not match declared types
-- `OutputTypeMismatch` — agent output does not match declared type
-- `InputValueMismatch` — wrong number or type of input values
-- `AgentExecutionFailed` — agent call to LLM failed
-- `AgentOutputTypeMismatch` — LLM response does not match output schema
-- `SerializationFailed` — could not serialize/deserialize data
-- `OutputDeserializationFailed` — could not deserialize agent output
-- `Other` — catch-all for unexpected errors
+- `ParseFailed` -- could not parse the workflow at runtime
+- `InvalidWorkflow` -- workflow failed validation
+- `ExecutionPlanInvariant` -- internal execution plan error
+- `MissingDeclaration` -- referenced declaration not found
+- `UnsupportedFeature` -- feature not yet supported by the runtime
+- `ProviderConfiguration` -- provider could not be configured
+- `ExpressionEvaluation` -- expression evaluation failed
+- `InvalidAgentProperty` -- unrecognized agent property
+- `InputTypeMismatch` -- provided input does not match declared types
+- `OutputTypeMismatch` -- agent output does not match declared type
+- `InputValueMismatch` -- wrong number or type of input values
+- `AgentExecutionFailed` -- agent call to LLM failed
+- `AgentOutputTypeMismatch` -- LLM response does not match output schema
+- `SerializationFailed` -- could not serialize/deserialize data
+- `OutputDeserializationFailed` -- could not deserialize agent output
+- `Other` -- catch-all for unexpected errors
 
 ## Practical advice
 

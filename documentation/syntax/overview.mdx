@@ -44,14 +44,14 @@ declaration =
 
 Values inside providers, agents, dynamic blocks, and output fields can be:
 
-- **literals** — strings, numbers, booleans, `null`
-- **references** — `input.topic`, `agent.summary.title`, `dynamic.config.value`
-- **function calls** — `template("path", { ... })`, `context(agent.x)`, `compact(agent.x)`
-- **tool calls** — `call tool.name { input { ... } }`
-- **MCP calls** — `read resource.name { bindings { ... } }`, `render prompt.name { bindings { ... } }`
-- **object expressions** — `{ key: value, ... }`
-- **array expressions** — `[1, 2, 3]`
-- **string interpolation** — `"text {{ expression }} text"`
+- **literals** -- strings, numbers, booleans, `null`
+- **references** -- `input.topic`, `agent.summary.title`, `dynamic.config.value`
+- **function calls** -- `template("path", { ... })`, `context(agent.x)`, `compact(agent.x)`
+- **tool calls** -- `call tool.name { input { ... } }`
+- **MCP calls** -- `read resource.name { bindings { ... } }`, `render prompt.name { bindings { ... } }`
+- **object expressions** -- `{ key: value, ... }`
+- **array expressions** -- `[1, 2, 3]`
+- **string interpolation** -- `"text {{ expression }} text"`
 
 ## Type forms
 
