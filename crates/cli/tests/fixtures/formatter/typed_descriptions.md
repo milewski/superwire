@@ -8,15 +8,19 @@ output { result:agent.writer }
 ---
 ```wire
 input {
-    topic: string "Main topic"
-    count: number "How many outputs"
+    /// Main topic
+    topic: string
+    /// How many outputs
+    count: number
 }
 
 agent writer {
     instruction: "Write"
     output: {
-        summary: string "One-line summary"
-        ok: boolean "Status flag"
+        /// One-line summary
+        summary: string
+        /// Status flag
+        ok: boolean
     }
 }
 
