@@ -302,14 +302,24 @@ fn test_mcp_lock() -> McpLock {
                 "type": "object",
                 "properties": {
                     "answer": {
+                        "description": "Answer",
                         "type": "object",
                         "properties": {
-                            "text": { "type": ["string", "null"] }
+                            "text": {
+                                "description": "The text content of the answer",
+                                "type": ["string", "null"]
+                            }
                         },
                         "required": ["text"]
                     },
-                    "participant_id": { "type": "number" },
-                    "task_id": { "type": "number" }
+                    "participant_id": {
+                        "description": "The ID of the participant",
+                        "type": "number"
+                    },
+                    "task_id": {
+                        "description": "The ID of the task",
+                        "type": "number"
+                    }
                 },
                 "required": ["answer", "participant_id", "task_id"]
             })),
@@ -662,6 +672,18 @@ fn inserts_mcp_output_schema_with_nullable_fields_using_maybe_syntax() {
 
     let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "output");
 
+    assert!(completion_suggestion.insert_text.contains("/// Answer"));
+    assert!(
+        completion_suggestion
+            .insert_text
+            .contains("/// The text content of the answer")
+    );
+    assert!(
+        completion_suggestion
+            .insert_text
+            .contains("/// The ID of the participant")
+    );
+    assert!(completion_suggestion.insert_text.contains("/// The ID of the task"));
     assert!(completion_suggestion.insert_text.contains("text: maybe string"));
     assert!(!completion_suggestion.insert_text.contains("| null"));
 }

@@ -633,10 +633,30 @@ impl RenderTypeExpression for TypeExpression {
                 let rendered_fields = typed_fields
                     .iter()
                     .map(|typed_field| {
-                        format!(
+                        let rendered_description = typed_field
+                            .description
+                            .as_ref()
+                            .map(|description_text| {
+                                description_text
+                                    .lines()
+                                    .map(|description_line| format!("{field_indent}/// {description_line}"))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            })
+                            .unwrap_or_default();
+
+                        let rendered_field = format!(
                             "{field_indent}{}: {},",
                             typed_field.name,
                             typed_field.field_type.render_type_expanded(field_indent.as_str())
+                        );
+
+                        if rendered_description.is_empty() {
+                            return rendered_field;
+                        }
+
+                        format!(
+                            "{rendered_description}\n{rendered_field}"
                         )
                     })
                     .collect::<Vec<_>>()
