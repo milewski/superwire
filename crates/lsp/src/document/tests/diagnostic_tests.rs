@@ -457,9 +457,9 @@ fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
     let diagnostics = inline_diagnostics! {
         agent greeting {
             output: {
-                nested: {
+                nested: maybe {
                     value: string
-                } | null
+                }
             }
         }
 
