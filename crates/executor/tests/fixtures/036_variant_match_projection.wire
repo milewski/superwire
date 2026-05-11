@@ -1,0 +1,47 @@
+provider openai {
+    driver: "openai"
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+    models: ["model-a"]
+}
+
+schema event_result {
+    event: variant type {
+        created {
+            id: string
+        }
+
+        deleted {
+            id: string
+        }
+    }
+
+    maybe_event: maybe variant type {
+        created {
+            id: string
+        }
+
+        deleted {
+            id: string
+        }
+    }
+}
+
+agent event_agent {
+    model: openai("model-a")
+    instruction: "Generate an event result."
+    output: schema.event_result
+}
+
+output {
+    event_id: match agent.event_agent.event {
+        created.id
+        deleted.id
+    }
+    created_id: agent.event_agent.event#created.id ?? "not-created"
+    nullable_event_id: match agent.event_agent.maybe_event {
+        created.id
+        deleted.id
+        _ "none"
+    }
+}

@@ -1,7 +1,7 @@
 use crate::dsl::{Expression, MatchBranch, MatchExpression, Reference, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolCall};
 use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Clone)]
 pub struct TypeInferenceContext {
@@ -137,6 +137,10 @@ impl MatchExpression {
         let matched_type = self.value.infer_type(type_inference_context, context)?;
         let matched_inner_type = matched_type.without_null();
         let mut branch_types = Vec::new();
+        let has_fallback_branch = self.branches.iter().any(MatchBranch::is_fallback);
+
+        self.validate_nullable_coverage(&matched_type, has_fallback_branch, context)?;
+        self.validate_variant_coverage(&matched_inner_type, has_fallback_branch, context)?;
 
         for branch in &self.branches {
             branch_types.push(branch.infer_type(&matched_inner_type, type_inference_context, context)?);
@@ -164,9 +168,71 @@ impl MatchExpression {
 
         Ok(first_branch_type)
     }
+
+    fn validate_nullable_coverage(
+        &self,
+        matched_type: &WorkflowType,
+        has_fallback_branch: bool,
+        context: &str,
+    ) -> Result<(), WorkflowSemanticError> {
+        if !matched_type.can_be_null() || has_fallback_branch {
+            return Ok(());
+        }
+
+        Err(WorkflowSemanticError::ExpressionEvaluation {
+            context: context.to_string(),
+            message: "nullable match expression requires a `_` fallback branch".to_string(),
+        })
+    }
+
+    fn validate_variant_coverage(
+        &self,
+        matched_type: &WorkflowType,
+        has_fallback_branch: bool,
+        context: &str,
+    ) -> Result<(), WorkflowSemanticError> {
+        if has_fallback_branch {
+            return Ok(());
+        }
+
+        let Some(case_names) = matched_type.variant_case_names() else {
+            return Ok(());
+        };
+
+        let matched_case_names = self.branches.iter().filter_map(MatchBranch::case_name).collect::<BTreeSet<_>>();
+        let missing_case_names = case_names
+            .iter()
+            .filter(|case_name| !matched_case_names.contains(case_name.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if missing_case_names.is_empty() {
+            return Ok(());
+        }
+
+        Err(WorkflowSemanticError::ExpressionEvaluation {
+            context: context.to_string(),
+            message: format!("non-exhaustive match expression; missing cases: {}", missing_case_names.join(", ")),
+        })
+    }
 }
 
 impl MatchBranch {
+    fn is_fallback(&self) -> bool {
+        matches!(self, Self::Fallback { value: _, span: _ })
+    }
+
+    fn case_name(&self) -> Option<&str> {
+        match self {
+            Self::Variant {
+                case_name,
+                field_path: _,
+                span: _,
+            } => Some(case_name),
+            Self::Fallback { value: _, span: _ } => None,
+        }
+    }
+
     fn infer_type(
         &self,
         matched_type: &WorkflowType,
@@ -424,4 +490,123 @@ fn merge_types(types: Vec<WorkflowType>) -> WorkflowType {
     }
 
     WorkflowType::Union(types).normalize()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dsl::{SourcePosition, SourceSpan};
+    use std::collections::BTreeMap;
+
+    fn empty_type_inference_context() -> TypeInferenceContext {
+        TypeInferenceContext {
+            input_type: None,
+            secrets_type: None,
+            agent_output_types: HashMap::new(),
+            tool_input_types: HashMap::new(),
+            tool_binding_types: HashMap::new(),
+            tool_output_types: HashMap::new(),
+            local_binding_types: HashMap::new(),
+        }
+    }
+
+    fn source_span() -> SourceSpan {
+        SourceSpan {
+            start: SourcePosition { line: 1, column: 1 },
+            end: SourcePosition { line: 1, column: 1 },
+        }
+    }
+
+    fn event_variant_type() -> WorkflowType {
+        WorkflowType::Variant {
+            discriminator: "type".to_string(),
+            cases: BTreeMap::from([
+                ("created".to_string(), BTreeMap::from([("id".to_string(), WorkflowType::String)])),
+                ("deleted".to_string(), BTreeMap::from([("id".to_string(), WorkflowType::String)])),
+            ]),
+        }
+    }
+
+    fn match_expression(branches: Vec<MatchBranch>) -> MatchExpression {
+        MatchExpression {
+            value: Box::new(Expression::Reference(Reference {
+                root: ReferenceRoot::Identifier("event".to_string()),
+                accesses: Vec::new(),
+                span: source_span(),
+            })),
+            branches,
+            span: source_span(),
+        }
+    }
+
+    fn variant_branch(case_name: &str) -> MatchBranch {
+        MatchBranch::Variant {
+            case_name: case_name.to_string(),
+            field_path: vec!["id".to_string()],
+            span: source_span(),
+        }
+    }
+
+    fn fallback_branch() -> MatchBranch {
+        MatchBranch::Fallback {
+            value: Expression::StringLiteral("fallback".to_string()),
+            span: source_span(),
+        }
+    }
+
+    #[test]
+    fn rejects_non_exhaustive_variant_match_without_fallback() {
+        let mut type_inference_context = empty_type_inference_context();
+        type_inference_context
+            .local_binding_types
+            .insert("event".to_string(), event_variant_type());
+        let match_expression = match_expression(vec![variant_branch("created")]);
+        let error = match_expression
+            .infer_type(&type_inference_context, "test")
+            .expect_err("non-exhaustive match should fail");
+
+        assert!(error.to_string().contains("missing cases: deleted"));
+    }
+
+    #[test]
+    fn accepts_exhaustive_variant_match_without_fallback() {
+        let mut type_inference_context = empty_type_inference_context();
+        type_inference_context
+            .local_binding_types
+            .insert("event".to_string(), event_variant_type());
+        let match_expression = match_expression(vec![variant_branch("created"), variant_branch("deleted")]);
+        let inferred_type = match_expression
+            .infer_type(&type_inference_context, "test")
+            .expect("exhaustive match should infer");
+
+        assert_eq!(inferred_type, WorkflowType::String);
+    }
+
+    #[test]
+    fn rejects_nullable_variant_match_without_fallback() {
+        let mut type_inference_context = empty_type_inference_context();
+        type_inference_context
+            .local_binding_types
+            .insert("event".to_string(), WorkflowType::nullable(event_variant_type()));
+        let match_expression = match_expression(vec![variant_branch("created"), variant_branch("deleted")]);
+        let error = match_expression
+            .infer_type(&type_inference_context, "test")
+            .expect_err("nullable match without fallback should fail");
+
+        assert!(error.to_string().contains("requires a `_` fallback branch"));
+    }
+
+    #[test]
+    fn accepts_nullable_variant_match_with_fallback() {
+        let mut type_inference_context = empty_type_inference_context();
+        type_inference_context
+            .local_binding_types
+            .insert("event".to_string(), WorkflowType::nullable(event_variant_type()));
+        let match_expression = match_expression(vec![variant_branch("created"), variant_branch("deleted"), fallback_branch()]);
+        let inferred_type = match_expression
+            .infer_type(&type_inference_context, "test")
+            .expect("nullable match with fallback should infer");
+
+        assert_eq!(inferred_type, WorkflowType::String);
+    }
 }
