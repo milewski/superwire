@@ -6,7 +6,7 @@ output { schema_name:"Review" }
 ---
 ```wire
 schema Review {
-    status: "approved" | "rejected"
+    status: enum { approved, rejected }
     tags: [string; 3]
     pair: (string, number)
     metadata: {
