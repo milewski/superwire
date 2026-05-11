@@ -443,7 +443,17 @@ pub struct InputDeclaration {
 pub struct SchemaDeclaration {
     pub name: String,
     pub fields: Vec<TypedField>,
+    pub root_variant: Option<TypeExpression>,
     pub span: SourceSpan,
+}
+
+impl SchemaDeclaration {
+    #[must_use]
+    pub fn type_expression(&self) -> TypeExpression {
+        self.root_variant
+            .clone()
+            .unwrap_or_else(|| TypeExpression::Object(self.fields.clone()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1309,6 +1319,7 @@ pub enum TypeExpression {
     Float,
     Boolean,
     Null,
+    AnyObject,
     SchemaReference(String),
     StringEnum(String),
     StringEnumReference(Reference),
@@ -1318,7 +1329,18 @@ pub enum TypeExpression {
     },
     Tuple(Vec<TypeExpression>),
     Object(Vec<TypedField>),
+    Variant {
+        discriminator: String,
+        cases: Vec<VariantCase>,
+    },
     Union(Vec<TypeExpression>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariantCase {
+    pub name: String,
+    pub fields: Vec<TypedField>,
+    pub span: SourceSpan,
 }
 
 impl TypeExpression {
@@ -1331,6 +1353,7 @@ impl TypeExpression {
             | Self::Number
             | Self::Float
             | Self::Boolean
+            | Self::AnyObject
             | Self::SchemaReference(_)
             | Self::StringEnum(_)
             | Self::StringEnumReference(_)
@@ -1339,7 +1362,23 @@ impl TypeExpression {
                 fixed_length: _,
             }
             | Self::Tuple(_)
-            | Self::Object(_) => false,
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => false,
+        }
+    }
+
+    #[must_use]
+    pub fn nullable(inner_type: Self) -> Self {
+        match inner_type {
+            Self::Union(mut type_expressions) => {
+                type_expressions.push(Self::Null);
+
+                Self::Union(type_expressions)
+            }
+            _ => Self::Union(vec![inner_type, Self::Null]),
         }
     }
 }
@@ -1659,6 +1698,7 @@ impl Reference {
                 "number" => Some(TypeExpression::Number),
                 "float" => Some(TypeExpression::Float),
                 "boolean" => Some(TypeExpression::Boolean),
+                "object" => Some(TypeExpression::AnyObject),
                 "null" => Some(TypeExpression::Null),
                 _ => Some(TypeExpression::StringEnumReference(self.clone())),
             };
@@ -1814,6 +1854,7 @@ impl TypeExpression {
             | Self::Float
             | Self::Boolean
             | Self::Null
+            | Self::AnyObject
             | Self::SchemaReference(_)
             | Self::StringEnum(_)
             | Self::StringEnumReference(_)
@@ -1821,7 +1862,11 @@ impl TypeExpression {
                 item_type: _,
                 fixed_length: _,
             }
-            | Self::Tuple(_) => None,
+            | Self::Tuple(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
         }
     }
 
@@ -1860,13 +1905,18 @@ impl TypeExpression {
             | Self::Float
             | Self::Boolean
             | Self::Null
+            | Self::AnyObject
             | Self::StringEnum(_)
             | Self::StringEnumReference(_)
             | Self::Array {
                 item_type: _,
                 fixed_length: _,
             }
-            | Self::Tuple(_) => None,
+            | Self::Tuple(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => None,
         }
     }
 
@@ -1880,6 +1930,7 @@ impl TypeExpression {
             | Self::Float
             | Self::Boolean
             | Self::Null
+            | Self::AnyObject
             | Self::SchemaReference(_)
             | Self::StringEnumReference(_)
             | Self::Array {
@@ -1887,7 +1938,11 @@ impl TypeExpression {
                 fixed_length: _,
             }
             | Self::Tuple(_)
-            | Self::Object(_) => false,
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => false,
         }
     }
 
@@ -1923,13 +1978,18 @@ impl TypeExpression {
             | Self::Float
             | Self::Boolean
             | Self::Null
+            | Self::AnyObject
             | Self::SchemaReference(_)
             | Self::Array {
                 item_type: _,
                 fixed_length: _,
             }
             | Self::Tuple(_)
-            | Self::Object(_) => false,
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => false,
         }
     }
 }

@@ -14,6 +14,7 @@ pub enum WorkflowType {
     Float,
     Boolean,
     Null,
+    AnyObject,
     StringEnum(Vec<String>),
     Array {
         item_type: Box<WorkflowType>,
@@ -21,6 +22,10 @@ pub enum WorkflowType {
     },
     Tuple(Vec<WorkflowType>),
     Object(BTreeMap<String, WorkflowType>),
+    Variant {
+        discriminator: String,
+        cases: BTreeMap<String, BTreeMap<String, WorkflowType>>,
+    },
     Union(Vec<WorkflowType>),
 }
 
@@ -41,8 +46,26 @@ impl WorkflowType {
 
                 Self::Object(normalized_fields)
             }
+            Self::Variant { discriminator, cases } => {
+                let normalized_cases = cases
+                    .into_iter()
+                    .map(|(case_name, fields)| {
+                        let normalized_fields = fields
+                            .into_iter()
+                            .map(|(field_name, field_type)| (field_name, field_type.normalize()))
+                            .collect();
+
+                        (case_name, normalized_fields)
+                    })
+                    .collect();
+
+                Self::Variant {
+                    discriminator,
+                    cases: normalized_cases,
+                }
+            }
             Self::Union(members) => normalize_union_members(members.into_iter().map(Self::normalize).collect()),
-            Self::String | Self::Integer | Self::Float | Self::Boolean | Self::Null | Self::StringEnum(_) => self,
+            Self::String | Self::Integer | Self::Float | Self::Boolean | Self::Null | Self::AnyObject | Self::StringEnum(_) => self,
         }
     }
 
@@ -53,6 +76,7 @@ impl WorkflowType {
             Self::Float => "float".to_string(),
             Self::Boolean => "boolean".to_string(),
             Self::Null => "null".to_string(),
+            Self::AnyObject => "object".to_string(),
             Self::StringEnum(enum_values) => format!("enum({})", enum_values.join("|")),
             Self::Array { item_type, fixed_length } => {
                 let Some(fixed_length) = fixed_length else {
@@ -74,6 +98,23 @@ impl WorkflowType {
                     .join(",");
 
                 format!("object({field_pairs})")
+            }
+            Self::Variant { discriminator, cases } => {
+                let case_pairs = cases
+                    .iter()
+                    .map(|(case_name, fields)| {
+                        let field_pairs = fields
+                            .iter()
+                            .map(|(field_name, field_type)| format!("{field_name}:{}", field_type.canonical_key()))
+                            .collect::<Vec<_>>()
+                            .join(",");
+
+                        format!("{case_name}({field_pairs})")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("|");
+
+                format!("variant({discriminator};{case_pairs})")
             }
             Self::Union(members) => {
                 let mut member_keys = members.iter().map(Self::canonical_key).collect::<Vec<_>>();
@@ -98,9 +139,14 @@ impl WorkflowType {
             | Self::Float
             | Self::Boolean
             | Self::Null
+            | Self::AnyObject
             | Self::StringEnum(_)
             | Self::Tuple(_)
-            | Self::Object(_) => false,
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => false,
         }
     }
 }
@@ -113,6 +159,7 @@ impl Display for WorkflowType {
             Self::Float => write!(formatter, "float"),
             Self::Boolean => write!(formatter, "boolean"),
             Self::Null => write!(formatter, "null"),
+            Self::AnyObject => write!(formatter, "object"),
             Self::StringEnum(enum_values) => {
                 let formatted_values = enum_values
                     .iter()
@@ -143,6 +190,11 @@ impl Display for WorkflowType {
 
                 write!(formatter, "{{ {formatted_fields} }}")
             }
+            Self::Variant { discriminator, cases } => {
+                let formatted_cases = cases.keys().cloned().collect::<Vec<_>>().join(" | ");
+
+                write!(formatter, "variant {discriminator} {{ {formatted_cases} }}")
+            }
             Self::Union(members) => {
                 let formatted_members = members.iter().map(ToString::to_string).collect::<Vec<_>>().join(" | ");
 
@@ -170,6 +222,7 @@ fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
         TypeExpression::Float => Ok(WorkflowType::Float),
         TypeExpression::Boolean => Ok(WorkflowType::Boolean),
         TypeExpression::Null => Ok(WorkflowType::Null),
+        TypeExpression::AnyObject => Ok(WorkflowType::AnyObject),
         TypeExpression::StringEnum(enum_value) => Ok(WorkflowType::StringEnum(vec![enum_value.clone()])),
         TypeExpression::StringEnumReference(reference) => {
             reference.workflow_type_for_string_enum_reference(named_schemas, resolution_stack)
@@ -192,6 +245,20 @@ fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(
             named_schemas,
             resolution_stack,
         )?)),
+        TypeExpression::Variant { discriminator, cases } => {
+            let mut resolved_cases = BTreeMap::new();
+
+            for case in cases {
+                let mut fields = resolve_object_fields(&case.fields, named_schemas, resolution_stack)?;
+                fields.insert(discriminator.clone(), WorkflowType::StringEnum(vec![case.name.clone()]));
+                resolved_cases.insert(case.name.clone(), fields);
+            }
+
+            Ok(WorkflowType::Variant {
+                discriminator: discriminator.clone(),
+                cases: resolved_cases,
+            })
+        }
         TypeExpression::Union(members) => {
             let mut resolved_members = Vec::with_capacity(members.len());
 
@@ -482,6 +549,10 @@ fn parse_object_schema(schema_value: &Value, definitions: &HashMap<String, Value
         }
     }
 
+    if fields.is_empty() && schema_value.get("additionalProperties") != Some(&Value::Bool(false)) {
+        return Ok(WorkflowType::AnyObject);
+    }
+
     Ok(WorkflowType::Object(fields))
 }
 
@@ -555,6 +626,7 @@ pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
         WorkflowType::Float => json!({ "type": "number" }),
         WorkflowType::Boolean => json!({ "type": "boolean" }),
         WorkflowType::Null => json!({ "type": "null" }),
+        WorkflowType::AnyObject => json!({ "type": "object" }),
         WorkflowType::StringEnum(enum_values) => json!({
             "type": "string",
             "enum": enum_values,
@@ -593,6 +665,30 @@ pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
                 "additionalProperties": false,
             })
         }
+        WorkflowType::Variant { discriminator, cases } => json!({
+            "oneOf": cases
+                .iter()
+                .map(|(case_name, fields)| {
+                    let mut properties = fields
+                        .iter()
+                        .map(|(field_name, field_type)| (field_name.clone(), workflow_type_to_json_schema(field_type)))
+                        .collect::<serde_json::Map<_, _>>();
+                    properties.insert(discriminator.clone(), json!({ "const": case_name }));
+
+                    let required = properties.keys().cloned().collect::<Vec<_>>();
+
+                    json!({
+                        "type": "object",
+                        "properties": properties,
+                        "required": required,
+                        "additionalProperties": false,
+                    })
+                })
+                .collect::<Vec<_>>(),
+            "discriminator": {
+                "propertyName": discriminator,
+            },
+        }),
         WorkflowType::Union(union_members) => json!({
             "oneOf": union_members
                 .iter()
@@ -702,5 +798,63 @@ pub fn value_kind_name(value: &Value) -> &'static str {
         Value::String(_) => "string",
         Value::Array(_) => "array",
         Value::Object(_) => "object",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
+    use crate::dsl::{SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn lowers_nullable_enum_to_string_enum_or_null() {
+        let type_expression = TypeExpression::nullable(TypeExpression::Union(vec![
+            TypeExpression::StringEnum("draft".to_string()),
+            TypeExpression::StringEnum("ready".to_string()),
+        ]));
+
+        let workflow_type =
+            workflow_type_from_dsl(&type_expression, &HashMap::<String, TypeExpression>::new()).expect("nullable enum should lower");
+
+        assert_eq!(
+            workflow_type,
+            WorkflowType::Union(vec![
+                WorkflowType::StringEnum(vec!["draft".to_string(), "ready".to_string()]),
+                WorkflowType::Null
+            ])
+        );
+    }
+
+    #[test]
+    fn maps_variant_to_discriminated_json_schema() {
+        let type_expression = TypeExpression::Variant {
+            discriminator: "type".to_string(),
+            cases: vec![VariantCase {
+                name: "user_created".to_string(),
+                fields: vec![TypedField {
+                    name: "user_id".to_string(),
+                    field_type: TypeExpression::String,
+                    description: None,
+                    span: generated_span(),
+                }],
+                span: generated_span(),
+            }],
+        };
+        let workflow_type =
+            workflow_type_from_dsl(&type_expression, &HashMap::<String, TypeExpression>::new()).expect("variant should lower");
+        let json_schema = workflow_type_to_json_schema(&workflow_type);
+
+        assert_eq!(json_schema["discriminator"]["propertyName"], json!("type"));
+        assert_eq!(json_schema["oneOf"][0]["properties"]["type"]["const"], json!("user_created"));
+        assert_eq!(json_schema["oneOf"][0]["required"], json!(["type", "user_id"]));
+    }
+
+    fn generated_span() -> SourceSpan {
+        SourceSpan {
+            start: SourcePosition { line: 1, column: 1 },
+            end: SourcePosition { line: 1, column: 1 },
+        }
     }
 }

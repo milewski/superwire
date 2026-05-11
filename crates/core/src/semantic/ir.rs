@@ -1,6 +1,6 @@
 use crate::dsl::{
     AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ObjectField, OutputDeclaration, ProviderDeclaration,
-    SchemaDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
+    SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::expression::collect_agent_dependencies;
 use crate::semantic::support::type_inference::TypeInferenceContext;
@@ -173,11 +173,11 @@ fn collect_named_schema_types(workflow: &Workflow) -> HashMap<String, TypeExpres
     let mut named_schema_types = HashMap::new();
 
     for declaration in workflow.declarations() {
-        let Declaration::Schema(SchemaDeclaration { name, fields, span: _ }) = declaration else {
+        let Declaration::Schema(schema_declaration) = declaration else {
             continue;
         };
 
-        named_schema_types.insert(name.clone(), TypeExpression::Object(fields.clone()));
+        named_schema_types.insert(schema_declaration.name.clone(), schema_declaration.type_expression());
     }
 
     named_schema_types
@@ -426,12 +426,17 @@ fn is_no_input_type(workflow_type: &WorkflowType) -> bool {
         | WorkflowType::Integer
         | WorkflowType::Float
         | WorkflowType::Boolean
+        | WorkflowType::AnyObject
         | WorkflowType::StringEnum(_)
         | WorkflowType::Array {
             item_type: _,
             fixed_length: _,
         }
         | WorkflowType::Tuple(_)
+        | WorkflowType::Variant {
+            discriminator: _,
+            cases: _,
+        }
         | WorkflowType::Union(_) => false,
     }
 }

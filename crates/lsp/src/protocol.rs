@@ -138,6 +138,10 @@ pub enum DiagnosticCode {
     DuplicateProvider,
     #[serde(rename = "duplicate_schema")]
     DuplicateSchema,
+    #[serde(rename = "invalid_schema_name")]
+    InvalidSchemaName,
+    #[serde(rename = "invalid_variant_discriminator_field")]
+    InvalidVariantDiscriminatorField,
     #[serde(rename = "duplicate_tool")]
     DuplicateTool,
     #[serde(rename = "duplicate_resource")]

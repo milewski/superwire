@@ -1752,6 +1752,16 @@ impl SemanticIndex {
                     }
                 }
             }
+            TypeExpression::Variant { discriminator, cases } => {
+                available_fields.entry(discriminator.clone()).or_insert_with(|| {
+                    TypeExpression::Union(
+                        cases
+                            .iter()
+                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone()))
+                            .collect(),
+                    )
+                });
+            }
             TypeExpression::Union(type_expressions) => {
                 for type_expression in type_expressions {
                     self.collect_type_fields(type_expression, available_fields);
@@ -1762,6 +1772,7 @@ impl SemanticIndex {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {
@@ -2121,10 +2132,15 @@ impl SemanticIndex {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::Object(_)
             | TypeExpression::SchemaReference(_)
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            }
             | TypeExpression::Union(_) => None,
         }
     }
@@ -2470,6 +2486,13 @@ impl SemanticIndex {
                 self.field_span_for_type_access_path(&typed_field.field_type, &field_accesses[1..])
             }
             TypeExpression::SchemaReference(schema_name) => self.schema_field_span(schema_name, field_accesses),
+            TypeExpression::Variant { discriminator, cases } => {
+                if field_accesses.len() == 1 && field_accesses.first().is_some_and(|field_access| field_access == discriminator) {
+                    return cases.first().map(|variant_case| variant_case.span);
+                }
+
+                None
+            }
             TypeExpression::Union(union_members) => {
                 for union_member in union_members {
                     if let Some(field_span) = self.field_span_for_type_access_path(union_member, field_accesses) {
@@ -2484,6 +2507,7 @@ impl SemanticIndex {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
             | TypeExpression::Array {

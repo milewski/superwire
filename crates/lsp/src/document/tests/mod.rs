@@ -254,6 +254,7 @@ impl CompletionLabel for TypeExpression {
             TypeExpression::Float => "float",
             TypeExpression::Boolean => "boolean",
             TypeExpression::Null => "null",
+            TypeExpression::AnyObject => "object",
             TypeExpression::SchemaReference(_)
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_)
@@ -263,6 +264,10 @@ impl CompletionLabel for TypeExpression {
             }
             | TypeExpression::Tuple(_)
             | TypeExpression::Object(_)
+            | TypeExpression::Variant {
+                discriminator: _,
+                cases: _,
+            }
             | TypeExpression::Union(_) => {
                 panic!("completion label is only defined for primitive TypeExpression variants")
             }

@@ -557,6 +557,15 @@ impl TypeExpression {
                     next_candidate_types.push(field_type.clone());
                 }
             }
+            TypeExpression::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    next_candidate_types.extend(
+                        cases
+                            .iter()
+                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone())),
+                    );
+                }
+            }
             TypeExpression::Union(union_members) => {
                 for union_member in union_members {
                     union_member.collect_next_types_for_field(tooling_snapshot, field_name, next_candidate_types);
@@ -572,6 +581,7 @@ impl TypeExpression {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_) => {}
         }
@@ -599,6 +609,16 @@ impl TypeExpression {
                     available_fields.entry(field_name.clone()).or_insert_with(|| field_type.clone());
                 }
             }
+            TypeExpression::Variant { discriminator, cases } => {
+                available_fields.entry(discriminator.clone()).or_insert_with(|| {
+                    TypeExpression::Union(
+                        cases
+                            .iter()
+                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone()))
+                            .collect(),
+                    )
+                });
+            }
             TypeExpression::Union(union_members) => {
                 for union_member in union_members {
                     union_member.collect_available_fields(tooling_snapshot, available_fields);
@@ -614,6 +634,7 @@ impl TypeExpression {
             | TypeExpression::Float
             | TypeExpression::Boolean
             | TypeExpression::Null
+            | TypeExpression::AnyObject
             | TypeExpression::StringEnum(_)
             | TypeExpression::StringEnumReference(_) => {}
         }

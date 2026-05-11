@@ -6,7 +6,7 @@ use super::ast::{
     McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, NamedArgument, ObjectField, OutputDeclaration,
     ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,
     StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression,
-    TypedField, Workflow,
+    TypedField, VariantCase, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -148,12 +148,27 @@ impl AstVisitor {
         let mut inner_pairs = schema_pair.into_inner();
 
         let schema_name = self.next_identifier(&mut inner_pairs, "schema name", "schema declaration")?;
-        let typed_block_pair = self.next_pair(&mut inner_pairs, "schema block", "schema declaration")?;
-        let fields = self.visit_typed_block(typed_block_pair)?;
+        let schema_body_pair = self.next_pair(&mut inner_pairs, "schema body", "schema declaration")?;
+        let (fields, root_variant) = match schema_body_pair.as_rule() {
+            Rule::typed_block => (self.visit_typed_block(schema_body_pair)?, None),
+            Rule::object_level_variant_type => {
+                let variant_pair = self.first_inner_pair(schema_body_pair, "object-level variant")?;
+
+                (Vec::new(), Some(self.visit_variant_type(variant_pair)?))
+            }
+            _ => {
+                return Err(DslParseError::unexpected_with_span(
+                    schema_body_pair.as_rule(),
+                    "schema body",
+                    source_span_from_pair(&schema_body_pair),
+                ));
+            }
+        };
 
         Ok(Declaration::Schema(SchemaDeclaration {
             name: schema_name,
             fields,
+            root_variant,
             span: declaration_span,
         }))
     }
@@ -1051,7 +1066,22 @@ impl AstVisitor {
         for field_pair in typed_fields_block_pair.into_inner() {
             let field_span = source_span_from_pair(&field_pair);
             let mut inner_pairs = field_pair.into_inner();
-            let field_name = self.next_identifier(&mut inner_pairs, "field name", "tool typed field")?;
+            let mut doc_comments = Vec::new();
+            let mut field_name = None;
+
+            for inner_pair in inner_pairs.by_ref() {
+                if inner_pair.as_rule() == Rule::doc_comment {
+                    doc_comments.push(Self::parse_doc_comment(inner_pair.as_str()));
+
+                    continue;
+                }
+
+                field_name = Some(inner_pair.as_str().to_owned());
+
+                break;
+            }
+
+            let field_name = field_name.ok_or_else(|| DslParseError::missing_with_span("field name", "tool typed field", field_span))?;
             let field_value_pair = self.next_pair(&mut inner_pairs, "field type", "tool typed field")?;
 
             if field_value_pair.as_rule() != Rule::tool_binding_type_expression {
@@ -1062,10 +1092,11 @@ impl AstVisitor {
                 ));
             }
 
-            let description = inner_pairs
+            let postfix_description = inner_pairs
                 .next()
                 .map(|description_pair| self.parse_string_literal(description_pair))
                 .transpose()?;
+            let description = Self::merge_doc_comments_with_postfix_description(doc_comments, postfix_description);
 
             typed_fields.push(TypedField {
                 name: field_name,
@@ -1094,13 +1125,20 @@ impl AstVisitor {
 
     fn visit_tool_binding_type_term(&self, type_term_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
         match type_term_pair.as_rule() {
+            Rule::nullable_type => {
+                let inner_type_pair = self.first_inner_pair(type_term_pair, "nullable type")?;
+
+                Ok(TypeExpression::nullable(self.visit_tool_binding_type_term(inner_type_pair)?))
+            }
+            Rule::enum_type => self.visit_enum_type(type_term_pair),
+            Rule::variant_type => self.visit_variant_type(type_term_pair),
             Rule::scalar_type => {
                 let scalar_type = match type_term_pair.as_str() {
                     "string" => TypeExpression::String,
                     "number" => TypeExpression::Number,
                     "float" => TypeExpression::Float,
                     "boolean" => TypeExpression::Boolean,
-                    "null" => TypeExpression::Null,
+                    "object" => TypeExpression::AnyObject,
                     _ => unreachable!("scalar type should be one of the grammar literals"),
                 };
 
@@ -1470,15 +1508,30 @@ impl AstVisitor {
     fn visit_typed_field(&self, typed_field_pair: Pair<'_, Rule>) -> Result<TypedField, DslParseError> {
         let typed_field_span = source_span_from_pair(&typed_field_pair);
         let mut inner_pairs = typed_field_pair.into_inner();
+        let mut doc_comments = Vec::new();
+        let mut field_name = None;
 
-        let field_name = self.next_identifier(&mut inner_pairs, "field name", "typed field")?;
+        for inner_pair in inner_pairs.by_ref() {
+            if inner_pair.as_rule() == Rule::doc_comment {
+                doc_comments.push(Self::parse_doc_comment(inner_pair.as_str()));
+
+                continue;
+            }
+
+            field_name = Some(inner_pair.as_str().to_owned());
+
+            break;
+        }
+
+        let field_name = field_name.ok_or_else(|| DslParseError::missing_with_span("field name", "typed field", typed_field_span))?;
         let field_type_pair = self.next_pair(&mut inner_pairs, "field type", "typed field")?;
         let field_type = self.visit_type_expression(field_type_pair)?;
 
-        let description = inner_pairs
+        let postfix_description = inner_pairs
             .next()
             .map(|description_pair| self.parse_string_literal(description_pair))
             .transpose()?;
+        let description = Self::merge_doc_comments_with_postfix_description(doc_comments, postfix_description);
 
         Ok(TypedField {
             name: field_name,
@@ -1486,6 +1539,18 @@ impl AstVisitor {
             description,
             span: typed_field_span,
         })
+    }
+
+    fn parse_doc_comment(comment_text: &str) -> String {
+        comment_text.trim_start_matches("///").trim_start().to_string()
+    }
+
+    fn merge_doc_comments_with_postfix_description(doc_comments: Vec<String>, postfix_description: Option<String>) -> Option<String> {
+        if doc_comments.is_empty() {
+            return postfix_description;
+        }
+
+        Some(doc_comments.join("\n"))
     }
 
     fn visit_type_expression(&self, type_expression_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
@@ -1512,13 +1577,20 @@ impl AstVisitor {
 
     fn visit_type_term(&self, type_term_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
         match type_term_pair.as_rule() {
+            Rule::nullable_type => {
+                let inner_type_pair = self.first_inner_pair(type_term_pair, "nullable type")?;
+
+                Ok(TypeExpression::nullable(self.visit_type_term(inner_type_pair)?))
+            }
+            Rule::enum_type => self.visit_enum_type(type_term_pair),
+            Rule::variant_type => self.visit_variant_type(type_term_pair),
             Rule::scalar_type => {
                 let scalar_type = match type_term_pair.as_str() {
                     "string" => TypeExpression::String,
                     "number" => TypeExpression::Number,
                     "float" => TypeExpression::Float,
                     "boolean" => TypeExpression::Boolean,
-                    "null" => TypeExpression::Null,
+                    "object" => TypeExpression::AnyObject,
                     _ => unreachable!("scalar type should be one of the grammar literals"),
                 };
 
@@ -1569,6 +1641,54 @@ impl AstVisitor {
                 Ok(TypeExpression::StringEnum(enum_value))
             }
             _ => unreachable!("type term should map to known type variants"),
+        }
+    }
+
+    fn visit_enum_type(&self, enum_type_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
+        let mut enum_values = Vec::new();
+
+        for enum_case_pair in enum_type_pair.into_inner() {
+            let enum_value = self.first_inner_pair(enum_case_pair, "enum case")?.as_str().to_owned();
+
+            enum_values.push(TypeExpression::StringEnum(enum_value));
+        }
+
+        Ok(TypeExpression::Union(enum_values))
+    }
+
+    fn visit_variant_type(&self, variant_type_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {
+        let mut inner_pairs = variant_type_pair.into_inner();
+        let discriminator = self.next_identifier(&mut inner_pairs, "variant discriminator", "variant type")?;
+        let mut cases = Vec::new();
+
+        for variant_case_pair in inner_pairs {
+            let case_span = source_span_from_pair(&variant_case_pair);
+            let mut case_pairs = variant_case_pair.into_inner();
+            let label_pair = self.next_pair(&mut case_pairs, "variant case label", "variant case")?;
+            let name = self.visit_variant_case_label(label_pair)?;
+            let object_pair = self.next_pair(&mut case_pairs, "variant case fields", "variant case")?;
+
+            cases.push(VariantCase {
+                name,
+                fields: self.visit_typed_block(object_pair)?,
+                span: case_span,
+            });
+        }
+
+        Ok(TypeExpression::Variant { discriminator, cases })
+    }
+
+    fn visit_variant_case_label(&self, label_pair: Pair<'_, Rule>) -> Result<String, DslParseError> {
+        let label_pair = self.first_inner_pair(label_pair, "variant case label")?;
+
+        match label_pair.as_rule() {
+            Rule::identifier => Ok(label_pair.as_str().to_owned()),
+            Rule::plain_quoted_string | Rule::plain_multiline_string => self.parse_string_literal(label_pair),
+            _ => Err(DslParseError::unexpected_with_span(
+                label_pair.as_rule(),
+                "variant case label",
+                source_span_from_pair(&label_pair),
+            )),
         }
     }
 

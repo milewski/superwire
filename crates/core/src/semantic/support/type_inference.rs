@@ -322,6 +322,11 @@ fn collect_field_types(candidate_type: &WorkflowType, field_name: &str, next_can
                 next_candidate_types.push(field_type.clone());
             }
         }
+        WorkflowType::Variant { discriminator, cases } => {
+            if discriminator == field_name {
+                next_candidate_types.extend(cases.keys().cloned().map(|case_name| WorkflowType::StringEnum(vec![case_name])));
+            }
+        }
         WorkflowType::Union(union_members) => {
             for union_member in union_members {
                 collect_field_types(union_member, field_name, next_candidate_types);
@@ -332,6 +337,7 @@ fn collect_field_types(candidate_type: &WorkflowType, field_name: &str, next_can
         | WorkflowType::Float
         | WorkflowType::Boolean
         | WorkflowType::Null
+        | WorkflowType::AnyObject
         | WorkflowType::StringEnum(_)
         | WorkflowType::Array {
             item_type: _,
