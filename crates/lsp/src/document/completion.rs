@@ -14,7 +14,7 @@ use super::completion_context::{
 use super::position::byte_offset_for_position;
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{
-    agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions,
+    agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, mcp_prompt_import_scope_suggestions,
     mcp_tool_batch_import_scope_suggestions, tool_property_scope_suggestions, CompletionScope,
 };
 use super::semantic_index::SemanticIndex;
@@ -990,6 +990,7 @@ impl DocumentState {
 
                 Some(mcp_tool_batch_import_scope_suggestions(line_prefix, &allowed_keywords))
             }
+            CompletionScope::McpPromptImport => Some(mcp_prompt_import_scope_suggestions(line_prefix)),
             CompletionScope::General | CompletionScope::TypedDeclarations | CompletionScope::DynamicValues => None,
         }
     }
@@ -1060,11 +1061,7 @@ impl DocumentState {
                 let normalized_rendered_field_type =
                     Self::normalize_rendered_field_type_snippet(&typed_field.field_type, &rendered_field_type, field_indent.as_str());
 
-                format!(
-                    "{field_indent}{}: {}",
-                    typed_field.name,
-                    normalized_rendered_field_type
-                )
+                format!("{field_indent}{}: {}", typed_field.name, normalized_rendered_field_type)
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -1072,11 +1069,7 @@ impl DocumentState {
         format!("{} {{\n{rendered_fields}\n{property_indent}}}", property_name.as_str())
     }
 
-    fn normalize_rendered_field_type_snippet(
-        field_type: &TypeExpression,
-        rendered_field_type: &str,
-        field_indent: &str,
-    ) -> String {
+    fn normalize_rendered_field_type_snippet(field_type: &TypeExpression, rendered_field_type: &str, field_indent: &str) -> String {
         if !matches!(field_type, TypeExpression::Object(_)) {
             return rendered_field_type.to_string();
         }

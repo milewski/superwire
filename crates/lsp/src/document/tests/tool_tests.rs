@@ -743,6 +743,27 @@ fn suggests_mcp_prompt_names_inside_prompt_import_path() {
 }
 
 #[test]
+fn suggests_only_bindings_inside_prompt_import_block() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        prompt from mcp.local.prompt.dynamic_summary_prompt {
+            <cursor>
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "bindings");
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "description",
+        "input",
+        "output",
+        "max_calls",
+        "tool",
+        "resource",
+        "prompt"
+    );
+}
+
+#[test]
 fn suggests_types_inside_tool_bounded_field() {
     let completion_suggestions = inline_completion_suggestions! {
         tool issue_tracker_lookup {
