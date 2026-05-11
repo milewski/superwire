@@ -12,6 +12,7 @@ pub enum CompletionScope {
     AgentProperties,
     ToolProperties,
     McpToolBatchImport,
+    McpPromptImport,
     InferenceSettings,
     TypedDeclarations,
     DynamicValues,
@@ -23,6 +24,7 @@ enum ScopeBlock {
     Agent,
     Tool,
     McpToolBatchImport,
+    McpPromptImport,
     Inference,
     TypedDeclaration,
     Dynamic,
@@ -73,6 +75,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
         Some(ScopeBlock::Tool) => CompletionScope::ToolProperties,
         Some(ScopeBlock::McpToolBatchImport) => CompletionScope::McpToolBatchImport,
+        Some(ScopeBlock::McpPromptImport) => CompletionScope::McpPromptImport,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
         Some(ScopeBlock::Dynamic) => CompletionScope::DynamicValues,
         Some(ScopeBlock::Other) | None => CompletionScope::General,
@@ -162,6 +165,10 @@ impl ScopeScannerTokenState {
             return ScopeBlock::McpToolBatchImport;
         }
 
+        if self.is_mcp_prompt_import_open_brace() {
+            return ScopeBlock::McpPromptImport;
+        }
+
         if let Some(agent_keyword_index) = self
             .recent_identifiers
             .iter()
@@ -235,6 +242,34 @@ impl ScopeScannerTokenState {
         import_kind == DeclarationKeyword::Tool.as_str()
             || import_kind == DeclarationKeyword::Resource.as_str()
             || import_kind == DeclarationKeyword::Prompt.as_str()
+    }
+
+    fn is_mcp_prompt_import_open_brace(&self) -> bool {
+        if self.recent_identifiers.len() >= 6 {
+            let import_identifiers = &self.recent_identifiers[self.recent_identifiers.len() - 6..];
+
+            if import_identifiers[0] == DeclarationKeyword::Prompt.as_str()
+                && import_identifiers[1] == ImportKeyword::From.as_str()
+                && import_identifiers[2] == DeclarationKeyword::Mcp.as_str()
+                && import_identifiers[4] == DeclarationKeyword::Prompt.as_str()
+            {
+                return true;
+            }
+        }
+
+        if self.recent_identifiers.len() >= 7 {
+            let import_identifiers = &self.recent_identifiers[self.recent_identifiers.len() - 7..];
+
+            if import_identifiers[0] == DeclarationKeyword::Prompt.as_str()
+                && import_identifiers[2] == ImportKeyword::From.as_str()
+                && import_identifiers[3] == DeclarationKeyword::Mcp.as_str()
+                && import_identifiers[5] == DeclarationKeyword::Prompt.as_str()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn clear_after_brace(&mut self) {
@@ -425,4 +460,21 @@ pub fn mcp_tool_batch_import_scope_suggestions(
             insert_text: property_name.to_string(),
         })
         .collect()
+}
+
+pub fn mcp_prompt_import_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+    let bindings_property_name = ToolPropertyName::Bindings.as_str();
+
+    if !bindings_property_name.starts_with(property_prefix) {
+        return Vec::new();
+    }
+
+    vec![CompletionSuggestion {
+        label: bindings_property_name.to_string(),
+        kind: CompletionKind::Property,
+        detail: "MCP prompt import property".to_string(),
+        documentation: "Bindings block for MCP prompt arguments.".to_string(),
+        insert_text: bindings_property_name.to_string(),
+    }]
 }
