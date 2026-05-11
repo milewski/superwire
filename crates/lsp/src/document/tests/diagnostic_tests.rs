@@ -472,6 +472,35 @@ fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
 }
 
 #[test]
+fn reports_workflow_compilation_diagnostic_for_non_exhaustive_variant_match() {
+    let diagnostics = inline_diagnostics! {
+        schema event_result {
+            event: variant type {
+                created {
+                    id: string
+                }
+
+                deleted {
+                    id: string
+                }
+            }
+        }
+
+        agent worker {
+            output: schema.event_result
+        }
+
+        output {
+            event_id: match agent.worker.event {
+                created.id
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::WorkflowCompilationError);
+}
+
+#[test]
 fn reports_invalid_for_loop_iterable_type_diagnostic_for_object_reference() {
     let diagnostics = inline_diagnostics! {
         agent summarizer {
