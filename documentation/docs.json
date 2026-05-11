@@ -4,7 +4,7 @@
   "name": "Superwire",
   "logo": {
     "dark": "/logo.svg",
-    "light": "/logo.svg"
+    "light": "/logo-light.svg"
   },
   "favicon": "/favicon.svg",
   "colors": {
