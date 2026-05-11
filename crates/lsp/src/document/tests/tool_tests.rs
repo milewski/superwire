@@ -1,6 +1,6 @@
 use super::*;
 use std::collections::BTreeMap;
-use superwire_core::mcp::{McpLock, McpServerLock, McpToolLock};
+use superwire_core::mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
 
 #[test]
 fn suggests_tool_keyword_inside_uses_expression_context() {
@@ -332,8 +332,26 @@ fn test_mcp_lock() -> McpLock {
         McpServerLock {
             tools,
             resources: vec!["project-readme".to_string(), "release-notes".to_string()],
-            prompts: vec!["system-prompt".to_string(), "review-prompt".to_string()],
-            prompt_arguments: BTreeMap::new(),
+            prompts: vec![
+                "system-prompt".to_string(),
+                "review-prompt".to_string(),
+                "dynamic-summary-prompt".to_string(),
+            ],
+            prompt_arguments: BTreeMap::from([(
+                "dynamic-summary-prompt".to_string(),
+                vec![
+                    McpPromptArgumentLock {
+                        name: "project_id".to_string(),
+                        required: true,
+                        description: Some("Project identifier to summarize".to_string()),
+                    },
+                    McpPromptArgumentLock {
+                        name: "user_id".to_string(),
+                        required: false,
+                        description: Some("Optional user context for personalization".to_string()),
+                    },
+                ],
+            )]),
         },
     );
 
@@ -782,6 +800,32 @@ fn suggests_only_bindings_inside_prompt_import_block() {
         "tool",
         "resource",
         "prompt"
+    );
+}
+
+#[test]
+fn suggests_mcp_prompt_arguments_inside_prompt_import_bindings_block() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        prompt from mcp.local.prompt.dynamic_summary_prompt {
+            bindings {
+                <cursor>
+            }
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "project_id", "user_id");
+
+    let project_id_completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "project_id");
+    assert_eq!(project_id_completion_suggestion.insert_text, "project_id: $1");
+    assert_eq!(project_id_completion_suggestion.detail, "Required prompt argument");
+    assert_eq!(project_id_completion_suggestion.documentation, "Project identifier to summarize");
+
+    let user_id_completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "user_id");
+    assert_eq!(user_id_completion_suggestion.insert_text, "user_id: $1");
+    assert_eq!(user_id_completion_suggestion.detail, "Optional prompt argument");
+    assert_eq!(
+        user_id_completion_suggestion.documentation,
+        "Optional user context for personalization"
     );
 }
 

@@ -11,7 +11,7 @@ use super::completion_context::{
     ForLoopDestructuringBindingCompletionContext, ForLoopIterableValueCompletionContext, InferenceSettingValueCompletionContext,
     ModelCallCompletionContext, OutputValueCompletionContext, ToolCallCompletionContext, ValueCompletionContext,
 };
-use super::position::byte_offset_for_position;
+use super::position::{byte_offset_for_position, source_span_contains_position};
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{
     agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, mcp_prompt_import_scope_suggestions,
@@ -37,6 +37,13 @@ struct McpBatchItemCompletionContext {
     item_kind: DeclarationKeyword,
     item_prefix: String,
     existing_item_names: Vec<String>,
+}
+
+struct PromptImportBindingCompletionContext {
+    server_name: String,
+    prompt_name: String,
+    binding_prefix: String,
+    existing_binding_names: Vec<String>,
 }
 
 pub(super) enum McpToolSchemaSource {
@@ -81,6 +88,15 @@ impl DocumentState {
                     &tool_call_binding_completion_context.tool_name,
                     &tool_call_binding_completion_context.binding_prefix,
                     &tool_call_binding_completion_context.existing_binding_names,
+                );
+            }
+
+            if let Some(prompt_import_binding_completion_context) = self.prompt_import_binding_completion_context(position, &line_prefix) {
+                return semantic_index.mcp_prompt_binding_suggestions(
+                    &prompt_import_binding_completion_context.server_name,
+                    &prompt_import_binding_completion_context.prompt_name,
+                    &prompt_import_binding_completion_context.binding_prefix,
+                    &prompt_import_binding_completion_context.existing_binding_names,
                 );
             }
         }
@@ -879,6 +895,55 @@ impl DocumentState {
         })
     }
 
+    fn prompt_import_binding_completion_context(
+        &self,
+        position: Position,
+        line_prefix: &str,
+    ) -> Option<PromptImportBindingCompletionContext> {
+        if line_prefix.contains(':') {
+            return None;
+        }
+
+        let cursor_offset = byte_offset_for_position(&self.text, position)?;
+        let source_prefix = &self.text[..cursor_offset];
+        let bindings_keyword = ToolPropertyName::Bindings.as_str();
+        let bindings_keyword_index = source_prefix.rfind(bindings_keyword)?;
+
+        if !Self::is_keyword_boundary(source_prefix, bindings_keyword_index, bindings_keyword.len()) {
+            return None;
+        }
+
+        let after_bindings_keyword = &source_prefix[bindings_keyword_index + bindings_keyword.len()..];
+        let bindings_open_brace_relative_index = after_bindings_keyword.find('{')?;
+        let bindings_open_brace_index = bindings_keyword_index + bindings_keyword.len() + bindings_open_brace_relative_index;
+        let bindings_block_prefix = &source_prefix[bindings_open_brace_index..];
+
+        if Self::block_balance(bindings_block_prefix) <= 0 {
+            return None;
+        }
+
+        let workflow = parse_workflow(&self.text).ok()?;
+        let prompt_import_declaration = workflow
+            .prompt_imports()
+            .filter(|prompt_import_declaration| source_span_contains_position(prompt_import_declaration.span, position))
+            .min_by_key(|prompt_import_declaration| {
+                prompt_import_declaration
+                    .span
+                    .to_byte_range(&self.text)
+                    .map_or(usize::MAX, |span_range| span_range.end.saturating_sub(span_range.start))
+            })?;
+
+        let binding_prefix = trailing_identifier(line_prefix).unwrap_or_default().to_string();
+        let existing_binding_names = Self::existing_object_field_names(&source_prefix[bindings_open_brace_index + 1..]);
+
+        Some(PromptImportBindingCompletionContext {
+            server_name: prompt_import_declaration.source.server_name.clone(),
+            prompt_name: prompt_import_declaration.source.item_name.clone(),
+            binding_prefix,
+            existing_binding_names,
+        })
+    }
+
     pub(super) fn is_keyword_boundary(source_text: &str, keyword_index: usize, keyword_length: usize) -> bool {
         let before_keyword = source_text[..keyword_index].chars().next_back();
         let after_keyword = source_text[keyword_index + keyword_length..].chars().next();
@@ -1057,11 +1122,29 @@ impl DocumentState {
         let rendered_fields = schema_fields
             .iter()
             .map(|typed_field| {
+                let rendered_description = typed_field
+                    .description
+                    .as_ref()
+                    .map(|description_text| {
+                        description_text
+                            .lines()
+                            .map(|description_line| format!("{field_indent}/// {description_line}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default();
+
                 let rendered_field_type = typed_field.field_type.render_type_expanded(field_indent.as_str());
                 let normalized_rendered_field_type =
                     Self::normalize_rendered_field_type_snippet(&typed_field.field_type, &rendered_field_type, field_indent.as_str());
 
-                format!("{field_indent}{}: {}", typed_field.name, normalized_rendered_field_type)
+                let rendered_field = format!("{field_indent}{}: {}", typed_field.name, normalized_rendered_field_type);
+
+                if rendered_description.is_empty() {
+                    return rendered_field;
+                }
+
+                format!("{rendered_description}\n{rendered_field}")
             })
             .collect::<Vec<_>>()
             .join("\n");
