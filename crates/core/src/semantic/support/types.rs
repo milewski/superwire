@@ -148,6 +148,27 @@ impl WorkflowType {
     }
 
     #[must_use]
+    pub fn variant_case_names(&self) -> Option<Vec<String>> {
+        match self {
+            Self::Variant { discriminator: _, cases } => Some(cases.keys().cloned().collect()),
+            Self::Union(members) => members.iter().find_map(Self::variant_case_names),
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn normalize(self) -> Self {
         match self {
             Self::Array { item_type, fixed_length } => Self::Array {

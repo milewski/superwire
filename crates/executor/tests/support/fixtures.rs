@@ -34,6 +34,7 @@ pub const AGENT_LOCAL_DYNAMIC_BINDINGS_OVERRIDE_APPEND: &str =
     include_str!("../fixtures/033_agent_local_dynamic_bindings_override_append.wire");
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE: &str = include_str!("../fixtures/034_mcp_tool_output_schema_override.wire");
 pub const MCP_PROMPT_REQUIRED_BINDING_VALIDATION: &str = include_str!("../fixtures/035_mcp_prompt_required_binding_validation.wire");
+pub const VARIANT_MATCH_PROJECTION: &str = include_str!("../fixtures/036_variant_match_projection.wire");
 
 // Negative Tests
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =
