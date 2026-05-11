@@ -654,6 +654,46 @@ impl SemanticIndex {
             .collect()
     }
 
+    pub fn mcp_prompt_binding_suggestions(
+        &self,
+        server_name: &str,
+        prompt_name: &str,
+        binding_prefix: &str,
+        existing_binding_names: &[String],
+    ) -> Vec<CompletionSuggestion> {
+        let Some(server_lock) = self.mcp_lock.as_ref().and_then(|mcp_lock| mcp_lock.servers.get(server_name)) else {
+            return Vec::new();
+        };
+        let Some(prompt_arguments) = server_lock.prompt_arguments_for_name(prompt_name) else {
+            return Vec::new();
+        };
+
+        prompt_arguments
+            .iter()
+            .filter(|prompt_argument| prompt_argument.name.starts_with(binding_prefix))
+            .filter(|prompt_argument| !existing_binding_names.contains(&prompt_argument.name))
+            .map(|prompt_argument| {
+                let requirement_detail = if prompt_argument.required { "Required prompt argument" } else { "Optional prompt argument" };
+                let documentation = prompt_argument.description.clone().unwrap_or_else(|| {
+                    format!(
+                        "{} argument `{}` from MCP prompt `{}`.",
+                        if prompt_argument.required { "Required" } else { "Optional" },
+                        prompt_argument.name,
+                        prompt_name,
+                    )
+                });
+
+                CompletionSuggestion {
+                    label: prompt_argument.name.clone(),
+                    kind: CompletionKind::Property,
+                    detail: requirement_detail.to_string(),
+                    documentation,
+                    insert_text: format!("{}: $1", prompt_argument.name),
+                }
+            })
+            .collect()
+    }
+
     pub fn mcp_tool_schema_field_suggestions(
         &self,
         tool_name: &str,
