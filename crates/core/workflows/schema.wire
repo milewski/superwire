@@ -10,7 +10,7 @@ provider ollama {
 }
 
 // Named schema: define once, reuse across agents.
-schema Person {
+schema person {
     name: string "Participant full name"
     age: number "Participant age in years"
     role: string "Participant role in the study"
@@ -24,7 +24,7 @@ agent named_profile {
     instruction: "Generate a fictional user research participant profile."
 
     // Reference a previously defined schema.
-    output: schema.Person
+    output: schema.person
 }
 
 // Agent B uses an inline schema.

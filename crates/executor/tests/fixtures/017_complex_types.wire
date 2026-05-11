@@ -5,20 +5,20 @@ provider openai {
     models: ["model-a"]
 }
 
-schema AllTypes {
+schema all_types {
     string_value: string "A string"
     number_value: number "A number"
     boolean_value: boolean "A boolean"
-    nullable_string: string | null "A nullable string"
+    nullable_string: maybe string "A nullable string"
     array: [string] "An array of strings"
     fixed_array: [string; 3] "Exactly three strings"
-    enum_value: "draft" | "ready" | "published" "A status enum"
+    enum_value: enum { draft, ready, published } "A status enum"
 }
 
 agent typed_example {
     model: openai("model-a")
     instruction: "Generate a typed object."
-    output: schema.AllTypes
+    output: schema.all_types
 }
 
 output {

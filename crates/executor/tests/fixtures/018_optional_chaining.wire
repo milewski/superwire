@@ -10,10 +10,10 @@ agent data {
     instruction: "Generate data with a nullable nested object."
     output: {
         label: string
-        details: {
+        details: maybe {
             score: number
             tags: [string]
-        } | null
+        }
     }
 }
 

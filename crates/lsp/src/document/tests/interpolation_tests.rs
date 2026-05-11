@@ -110,7 +110,7 @@ fn suggests_only_agent_and_input_roots_inside_interpolation_expression() {
 #[test]
 fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() {
     let completion_suggestions = inline_completion_suggestions! {
-        schema Person {
+        schema person {
             name: string
         }
 
