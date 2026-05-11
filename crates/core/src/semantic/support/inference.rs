@@ -83,7 +83,11 @@ impl InferenceSetting {
     pub fn accepts_expression(self, expression: &Expression) -> bool {
         match expression {
             Expression::NumberLiteral(number_literal) => self.accepts_number_literal(number_literal),
-            Expression::Reference(_) | Expression::FunctionCall(_) => true,
+            Expression::Reference(_)
+            | Expression::FunctionCall(_)
+            | Expression::NullFallback(_)
+            | Expression::VariantProjection(_)
+            | Expression::Match(_) => true,
             Expression::StringLiteral(_)
             | Expression::StringTemplate(_)
             | Expression::BooleanLiteral(_)

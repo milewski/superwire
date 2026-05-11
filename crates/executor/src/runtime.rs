@@ -901,7 +901,10 @@ impl WorkflowExecutor {
             | Expression::BooleanLiteral(_)
             | Expression::NullLiteral
             | Expression::Reference(_)
-            | Expression::FunctionCall(_) => Ok(evaluate_expression(expression, evaluation_context, context)?),
+            | Expression::FunctionCall(_)
+            | Expression::NullFallback(_)
+            | Expression::VariantProjection(_)
+            | Expression::Match(_) => Ok(evaluate_expression(expression, evaluation_context, context)?),
             Expression::ToolCall(tool_call) => {
                 self.execute_deterministic_tool_call(tool_call, evaluation_context, event_sender, tool_call_tracker)
             }

@@ -1394,8 +1394,45 @@ pub enum Expression {
     FunctionCall(FunctionCall),
     ToolCall(ToolCall),
     McpCall(McpCall),
+    NullFallback(NullFallbackExpression),
+    VariantProjection(VariantProjectionExpression),
+    Match(MatchExpression),
     ArrayLiteral(Vec<Expression>),
     ObjectLiteral(Vec<ObjectField>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NullFallbackExpression {
+    pub value: Box<Expression>,
+    pub fallback: Box<Expression>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariantProjectionExpression {
+    pub value: Reference,
+    pub case_name: String,
+    pub field_path: Vec<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchExpression {
+    pub value: Box<Expression>,
+    pub branches: Vec<MatchBranch>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchBranch {
+    Variant {
+        case_name: String,
+        field_path: Vec<String>,
+        span: SourceSpan,
+    },
+    Fallback {
+        value: Expression,
+        span: SourceSpan,
+    },
 }
 
 impl Expression {
@@ -1434,7 +1471,10 @@ impl Expression {
             | Self::NullLiteral
             | Self::FunctionCall(_)
             | Self::ToolCall(_)
-            | Self::McpCall(_) => None,
+            | Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_) => None,
         }
     }
 }
@@ -1626,6 +1666,22 @@ impl Expression {
 
                 for object_field in &mcp_call.parameter_fields {
                     object_field.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                null_fallback.fallback.collect_dynamic_dependencies(referenced_dynamic_fields);
+            }
+            Self::VariantProjection(variant_projection) => {
+                variant_projection.value.collect_dynamic_dependency(referenced_dynamic_fields);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_dynamic_dependencies(referenced_dynamic_fields);
+
+                for branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, span: _ } = branch {
+                        value.collect_dynamic_dependencies(referenced_dynamic_fields);
+                    }
                 }
             }
             Self::ArrayLiteral(array_values) => {

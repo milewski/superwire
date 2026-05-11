@@ -132,8 +132,12 @@ array_type = { "[" ~ type_expression ~ (";" ~ unsigned_integer_literal)? ~ "]" }
 tuple_type = { "(" ~ type_expression ~ ("," ~ type_expression)* ~ ")" }
 type_object = { "{" ~ typed_field* ~ "}" }
 
-expression = _{
-    tool_call_expression
+expression = _{ fallback_expression }
+fallback_expression = { expression_primary ~ ("??" ~ expression_primary)? }
+expression_primary = _{
+    match_expression
+    | variant_projection_expression
+    | tool_call_expression
     | mcp_call_expression
     | function_call
     | object_expression
@@ -144,6 +148,11 @@ expression = _{
     | string_expression
     | reference
 }
+match_expression = { "match" ~ expression ~ "{" ~ match_branch* ~ "}" }
+match_branch = _{ match_fallback_branch | match_variant_branch }
+match_fallback_branch = { "_" ~ expression }
+match_variant_branch = { variant_case_label ~ ("." ~ identifier)* }
+variant_projection_expression = { reference ~ "#" ~ identifier ~ ("." ~ identifier)* }
 
 tool_call_expression = { "call" ~ reference ~ tool_call_block? }
 tool_call_block = { "{" ~ tool_call_property* ~ "}" }

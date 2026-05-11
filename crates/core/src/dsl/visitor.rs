@@ -1,12 +1,12 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DynamicBlock,
-    Expression, FunctionCall, InputDeclaration, McpBatchImportDeclaration, McpCall, McpCallOperation, McpImportKind, McpImportPropertyName,
-    McpImportSource, McpPromptBatchImportDeclaration, McpPromptBatchImportItem, McpPromptImportDeclaration,
-    McpResourceBatchImportDeclaration, McpResourceBatchImportItem, McpResourceImportDeclaration, McpServerDeclaration,
-    McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, NamedArgument, ObjectField, OutputDeclaration,
-    ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan,
-    StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression,
-    TypedField, VariantCase, Workflow,
+    Expression, FunctionCall, InputDeclaration, MatchBranch, MatchExpression, McpBatchImportDeclaration, McpCall, McpCallOperation,
+    McpImportKind, McpImportPropertyName, McpImportSource, McpPromptBatchImportDeclaration, McpPromptBatchImportItem,
+    McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceBatchImportItem, McpResourceImportDeclaration,
+    McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, NamedArgument,
+    NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
+    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName,
+    ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase, VariantProjectionExpression, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use pest::iterators::{Pair, Pairs};
@@ -1029,6 +1029,9 @@ impl AstVisitor {
                     });
                 }
                 Rule::expression
+                | Rule::fallback_expression
+                | Rule::match_expression
+                | Rule::variant_projection_expression
                 | Rule::tool_call_expression
                 | Rule::mcp_call_expression
                 | Rule::function_call
@@ -1694,6 +1697,11 @@ impl AstVisitor {
 
     fn visit_expression(&self, expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
         match expression_pair.as_rule() {
+            Rule::fallback_expression => self.visit_fallback_expression(expression_pair),
+            Rule::match_expression => Ok(Expression::Match(self.visit_match_expression(expression_pair)?)),
+            Rule::variant_projection_expression => Ok(Expression::VariantProjection(
+                self.visit_variant_projection_expression(expression_pair)?,
+            )),
             Rule::function_call => Ok(Expression::FunctionCall(self.visit_function_call(expression_pair)?)),
             Rule::tool_call_expression => Ok(Expression::ToolCall(self.visit_tool_call_expression(expression_pair)?)),
             Rule::mcp_call_expression => Ok(Expression::McpCall(self.visit_mcp_call_expression(expression_pair)?)),
@@ -1710,6 +1718,91 @@ impl AstVisitor {
                 expression_pair.as_rule(),
                 "expression",
                 source_span_from_pair(&expression_pair),
+            )),
+        }
+    }
+
+    fn visit_fallback_expression(&self, fallback_expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {
+        let mut inner_pairs = fallback_expression_pair.into_inner();
+        let value_pair = self.next_pair(&mut inner_pairs, "fallback value", "fallback expression")?;
+        let value = self.visit_expression(value_pair)?;
+
+        let Some(fallback_pair) = inner_pairs.next() else {
+            return Ok(value);
+        };
+        let fallback = self.visit_expression(fallback_pair)?;
+
+        Ok(Expression::NullFallback(NullFallbackExpression {
+            value: Box::new(value),
+            fallback: Box::new(fallback),
+        }))
+    }
+
+    fn visit_variant_projection_expression(
+        &self,
+        variant_projection_pair: Pair<'_, Rule>,
+    ) -> Result<VariantProjectionExpression, DslParseError> {
+        let span = source_span_from_pair(&variant_projection_pair);
+        let mut inner_pairs = variant_projection_pair.into_inner();
+        let value_pair = self.next_pair(&mut inner_pairs, "variant projection value", "variant projection")?;
+        let value = self.visit_reference(value_pair)?;
+        let case_name = self.next_identifier(&mut inner_pairs, "variant projection case", "variant projection")?;
+        let field_path = inner_pairs.map(|field_pair| field_pair.as_str().to_owned()).collect();
+
+        Ok(VariantProjectionExpression {
+            value,
+            case_name,
+            field_path,
+            span,
+        })
+    }
+
+    fn visit_match_expression(&self, match_expression_pair: Pair<'_, Rule>) -> Result<MatchExpression, DslParseError> {
+        let span = source_span_from_pair(&match_expression_pair);
+        let mut inner_pairs = match_expression_pair.into_inner();
+        let value_pair = self.next_pair(&mut inner_pairs, "match value", "match expression")?;
+        let value = self.visit_expression(value_pair)?;
+        let mut branches = Vec::new();
+
+        for branch_pair in inner_pairs {
+            branches.push(self.visit_match_branch(branch_pair)?);
+        }
+
+        Ok(MatchExpression {
+            value: Box::new(value),
+            branches,
+            span,
+        })
+    }
+
+    fn visit_match_branch(&self, branch_pair: Pair<'_, Rule>) -> Result<MatchBranch, DslParseError> {
+        let span = source_span_from_pair(&branch_pair);
+
+        match branch_pair.as_rule() {
+            Rule::match_fallback_branch => {
+                let value_pair = self.first_inner_pair(branch_pair, "match fallback branch")?;
+
+                Ok(MatchBranch::Fallback {
+                    value: self.visit_expression(value_pair)?,
+                    span,
+                })
+            }
+            Rule::match_variant_branch => {
+                let mut inner_pairs = branch_pair.into_inner();
+                let label_pair = self.next_pair(&mut inner_pairs, "match case label", "match branch")?;
+                let case_name = self.visit_variant_case_label(label_pair)?;
+                let field_path = inner_pairs.map(|field_pair| field_pair.as_str().to_owned()).collect();
+
+                Ok(MatchBranch::Variant {
+                    case_name,
+                    field_path,
+                    span,
+                })
+            }
+            _ => Err(DslParseError::unexpected_with_span(
+                branch_pair.as_rule(),
+                "match branch",
+                source_span_from_pair(&branch_pair),
             )),
         }
     }
@@ -1922,8 +2015,12 @@ impl AstVisitor {
                     value: argument_value,
                 }))
             }
-            Rule::function_call
+            Rule::fallback_expression
+            | Rule::match_expression
+            | Rule::variant_projection_expression
+            | Rule::function_call
             | Rule::mcp_call_expression
+            | Rule::tool_call_expression
             | Rule::object_expression
             | Rule::array_expression
             | Rule::boolean_literal

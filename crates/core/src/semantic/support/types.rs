@@ -31,6 +31,123 @@ pub enum WorkflowType {
 
 impl WorkflowType {
     #[must_use]
+    pub fn can_be_null(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::Union(members) => members.iter().any(Self::can_be_null),
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_)
+            | Self::Variant {
+                discriminator: _,
+                cases: _,
+            } => false,
+        }
+    }
+
+    #[must_use]
+    pub fn without_null(&self) -> Self {
+        match self {
+            Self::Union(members) => {
+                let non_null_members = members
+                    .iter()
+                    .filter(|member| !matches!(member, Self::Null))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                normalize_union_members(non_null_members)
+            }
+            _ => self.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn nullable(inner_type: Self) -> Self {
+        normalize_union_members(vec![inner_type, Self::Null])
+    }
+
+    #[must_use]
+    pub fn field_type(&self, field_name: &str) -> Option<Self> {
+        match self {
+            Self::Object(fields) => fields.get(field_name).cloned(),
+            Self::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    return Some(Self::StringEnum(cases.keys().cloned().collect()));
+                }
+
+                None
+            }
+            Self::Union(members) => {
+                let field_types = members
+                    .iter()
+                    .filter(|member| !matches!(member, Self::Null))
+                    .filter_map(|member| member.field_type(field_name))
+                    .collect::<Vec<_>>();
+
+                if field_types.is_empty() {
+                    return None;
+                }
+
+                Some(normalize_union_members(field_types))
+            }
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn variant_case_field_type(&self, case_name: &str, field_path: &[String]) -> Option<Self> {
+        match self {
+            Self::Variant { discriminator: _, cases } => {
+                let case_fields = cases.get(case_name)?;
+                let (first_field_name, remaining_field_path) = field_path.split_first()?;
+                let mut current_type = case_fields.get(first_field_name)?.clone();
+
+                for field_name in remaining_field_path {
+                    current_type = current_type.field_type(field_name)?;
+                }
+
+                Some(current_type)
+            }
+            Self::Union(members) => members
+                .iter()
+                .find_map(|member| member.variant_case_field_type(case_name, field_path)),
+            Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_)
+            | Self::Object(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn normalize(self) -> Self {
         match self {
             Self::Array { item_type, fixed_length } => Self::Array {
