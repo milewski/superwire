@@ -36,6 +36,6 @@ npx mintlify lint
 - Keep Rust API content in API Reference or advanced integration pages.
 - Use `instruction:` for agent prompts.
 - Use `uses:` for agent tool access.
-- Agent outputs are always object blocks, for example `output: { answer: string }`.
+- Agent outputs are always object blocks, for example `output { answer: string }`.
 - Document the current unreleased language directly; avoid historical compatibility notes.
 - Keep examples small enough to copy into a single `.wire` file.

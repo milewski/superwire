@@ -45,7 +45,7 @@ agent reply {
     model: model.fast
     instruction: "Reply to {{ input.message }}"
 
-    output: {
+    output {
         message: string
     }
 }
@@ -78,7 +78,7 @@ agent creative_reply {
 
     instruction: "Write a creative reply to {{ input.message }}"
 
-    output: {
+    output {
         message: string
     }
 }
@@ -111,7 +111,7 @@ agent quick_reply {
     model: model.fast
     instruction: "Reply briefly to {{ input.message }}"
 
-    output: {
+    output {
         message: string
     }
 }
@@ -120,7 +120,7 @@ agent careful_review {
     model: model.smart
     instruction: "Review this carefully: {{ input.message }}"
 
-    output: {
+    output {
         review: string
     }
 }

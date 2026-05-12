@@ -10,7 +10,7 @@ agent summarize_task {
     model: model.fast
     instruction: "Summarize task {{ input.task_id }}."
 
-    output: {
+    output {
         summary: string
         next_action: string
     }
@@ -43,7 +43,7 @@ agent writer {
 
     instruction: "Create a draft for {{ input.topic }}."
 
-    output: {
+    output {
         draft: string
     }
 }
@@ -58,7 +58,7 @@ agent summarize_each for task in input.tasks {
     model: model.fast
     instruction: "Summarize {{ task.title }}."
 
-    output: {
+    output {
         title: string
         summary: string
     }
@@ -72,7 +72,7 @@ agent summarize_each for { a, b } in input.something {
     model: model.fast
     instruction: "Summarize A={{ a }} and B={{ b }}."
 
-    output: {
+    output {
         summary: string
     }
 }
@@ -89,7 +89,7 @@ agent investigate_task {
     model: model.fast
     instruction: "Investigate task {{ input.task_id }} and identify the main issue."
 
-    output: {
+    output {
         issue: string
         evidence: [string]
     }
@@ -100,7 +100,7 @@ agent propose_solution {
     context: context(agent.investigate_task)
     instruction: "Continue from the investigation and propose a concrete solution."
 
-    output: {
+    output {
         solution: string
         steps: [string]
     }

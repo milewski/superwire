@@ -24,7 +24,7 @@ agent summarize {
     model: model.fast
     instruction: "Summarize {{ input.task.title }}."
 
-    output: {
+    output {
         summary: string
         priority: schema.task.priority
     }

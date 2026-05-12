@@ -25,7 +25,7 @@ agent writer {
     uses: [prompt.writer_instructions]
     instruction: "Use the writing instructions to draft a response for {{ input.topic }}."
 
-    output: {
+    output {
         draft: string
     }
 }

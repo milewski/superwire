@@ -10,7 +10,7 @@ agent summarize {
     model: model.fast
     instruction: "Summarize task {{ input.task_id }} in project {{ input.project_id }}."
 
-    output: {
+    output {
         summary: string
     }
 }
@@ -25,7 +25,7 @@ agent writer {
     model: model.fast
     instruction: "Write a response using this summary: {{ agent.summarize.summary }}"
 
-    output: {
+    output {
         response: string
     }
 }

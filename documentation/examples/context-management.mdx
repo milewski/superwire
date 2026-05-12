@@ -25,7 +25,7 @@ agent investigate {
     model: model.fast
     instruction: "Investigate task {{ input.task_id }} and identify the problem."
 
-    output: {
+    output {
         problem: string
         evidence: [string]
     }
@@ -36,7 +36,7 @@ agent solve {
     context: context(agent.investigate)
     instruction: "Continue from the investigation and propose a solution."
 
-    output: {
+    output {
         solution: string
         steps: [string]
     }

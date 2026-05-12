@@ -39,7 +39,7 @@ agent summarize {
     model: model.fast
     instruction: "Summarize {{ input.title }}."
 
-    output: {
+    output {
         summary: string
         action_items: [string]
     }

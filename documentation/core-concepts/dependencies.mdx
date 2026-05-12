@@ -14,7 +14,7 @@ agent extract_facts {
     model: model.fast
     instruction: "Extract facts from {{ input.notes }}."
 
-    output: {
+    output {
         facts: [string]
     }
 }
@@ -23,7 +23,7 @@ agent write_summary {
     model: model.fast
     instruction: "Write a summary from {{ agent.extract_facts.facts }}."
 
-    output: {
+    output {
         summary: string
     }
 }
@@ -40,7 +40,7 @@ agent list_risks {
     model: model.fast
     instruction: "List risks for {{ input.topic }}."
 
-    output: {
+    output {
         risks: [string]
     }
 }
@@ -49,7 +49,7 @@ agent list_actions {
     model: model.fast
     instruction: "List action items for {{ input.topic }}."
 
-    output: {
+    output {
         actions: [string]
     }
 }

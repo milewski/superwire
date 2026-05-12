@@ -26,7 +26,7 @@ agent plan {
     model: model.fast
     instruction: "Create a plan for {{ input.topic }}."
 
-    output: {
+    output {
         summary: string
         tasks: [{ title: string, priority: enum { low, medium, high } }]
     }

@@ -12,7 +12,7 @@ agent extract_risks {
     model: model.fast
     instruction: "List risks for {{ input.topic }}."
 
-    output: {
+    output {
         risks: [string]
     }
 }
@@ -21,7 +21,7 @@ agent extract_actions {
     model: model.fast
     instruction: "List action items for {{ input.topic }}."
 
-    output: {
+    output {
         actions: [string]
     }
 }
@@ -30,7 +30,7 @@ agent create_plan {
     model: model.smart
     instruction: "Create a plan from risks {{ agent.extract_risks.risks }} and actions {{ agent.extract_actions.actions }}."
 
-    output: {
+    output {
         plan: string
     }
 }
@@ -45,7 +45,7 @@ agent summarize_each for task_id in input.task_ids {
     model: model.fast
     instruction: "Summarize task {{ task_id }}."
 
-    output: {
+    output {
         task_id: number
         summary: string
     }

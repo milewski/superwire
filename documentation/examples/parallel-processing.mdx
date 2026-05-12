@@ -25,7 +25,7 @@ agent analyze_each for { id, title, description } in input.tasks {
     model: model.fast
     instruction: "Analyze task {{ id }}: {{ title }}. Details: {{ description }}."
 
-    output: {
+    output {
         task_id: number
         summary: string
         risk: enum { low, medium, high }
@@ -36,7 +36,7 @@ agent aggregate {
     model: model.fast
     instruction: "Aggregate these task analyses: {{ agent.analyze_each }}."
 
-    output: {
+    output {
         overview: string
         high_risk_task_ids: [number]
     }

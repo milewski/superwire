@@ -16,7 +16,7 @@ agent summarize_each for task in input.tasks {
     model: model.fast
     instruction: "Summarize task {{ task.title }}."
 
-    output: {
+    output {
         task_id: number
         summary: string
     }
@@ -36,7 +36,7 @@ agent summarize_each for { id, title } in input.tasks {
     model: model.fast
     instruction: "Summarize task {{ id }}: {{ title }}."
 
-    output: {
+    output {
         task_id: number
         summary: string
     }

@@ -25,7 +25,7 @@ agent classify {
     model: model.fast
     instruction: "Classify {{ input.message }}."
 
-    output: {
+    output {
         category: enum { bug, feature, question }
         confidence: number
         reason: string
