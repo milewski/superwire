@@ -1,77 +1,67 @@
 ---
 title: Workflows
-description: Understand the anatomy of a complete .wire file.
+description: Understand the structure of a .wire workflow.
 ---
 
-A workflow file is a sequence of declarations. The order is chosen for readability; dependencies are discovered from references.
+A workflow file contains declarations. The executor validates the declarations, builds a dependency graph, runs the graph, and returns the `output` block as JSON.
 
-## Recommended order
+## Common declaration order
 
-1. `secrets`
-2. `input`
-3. `schema`
-4. `provider`
-5. `mcp`, `tool`, `resource`, and `prompt` imports
-6. `dynamic` blocks
-7. `agent` blocks
-8. final `output`
+A readable workflow usually uses this order:
 
-## Complete example
+1. `input`
+2. `secrets`
+3. `provider`
+4. `model`
+5. `schema`
+6. `mcp` and imports
+7. `dynamic`
+8. `agent`
+9. `output`
+
+The order is for readability. Dependencies are determined by references.
+
+## Small workflow
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
 input {
-    project_id: number
-    task_id: number
+    topic: string
 }
 
-schema task_brief {
-    title: string
-    summary: string
-    risk: enum { low, medium, high }
+secrets {
+    api_key: string
 }
 
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
     api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
 }
 
-agent create_brief {
-    model: ai("flash")
-    instruction: "Create a task brief for task {{ input.task_id }}."
-    output: schema.task_brief
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent summarize {
+    model: model.fast
+    instruction: "Summarize {{ input.topic }} in one paragraph."
+
+    output: {
+        summary: string
+    }
 }
 
 output {
-    project_id: input.project_id
-    task_id: input.task_id
-    brief: agent.create_brief
+    summary: agent.summarize.summary
 }
 ```
 
 ## Final output
 
-The final `output` block is the public JSON response returned by `/execute` and the payload in the final `/execute/stream` completion event.
+The final `output` block is an object expression. It determines the JSON shape returned by `/execute`.
 
 ```wire
 output {
-    task_id: input.task_id
-    title: agent.create_brief.title
-    summary: agent.create_brief.summary
+    summary: agent.summarize.summary
+    raw: agent.summarize
 }
 ```

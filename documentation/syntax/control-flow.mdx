@@ -9,12 +9,13 @@ Use `for ... in` when each item in a collection should be processed with the sam
 
 ```wire
 input {
-    task_ids: [number]
+    tasks: [{ id: number, title: string }]
 }
 
-agent summarize_each for task_id in input.task_ids {
-    model: ai("flash")
-    instruction: "Summarize task {{ task_id }}."
+agent summarize_each for task in input.tasks {
+    model: model.fast
+    instruction: "Summarize task {{ task.title }}."
+
     output: {
         task_id: number
         summary: string
@@ -23,6 +24,22 @@ agent summarize_each for task_id in input.task_ids {
 
 output {
     summaries: agent.summarize_each
+}
+```
+
+## Destructuring loop bindings
+
+Loop headers may destructure object-shaped items.
+
+```wire
+agent summarize_each for { id, title } in input.tasks {
+    model: model.fast
+    instruction: "Summarize task {{ id }}: {{ title }}."
+
+    output: {
+        task_id: number
+        summary: string
+    }
 }
 ```
 

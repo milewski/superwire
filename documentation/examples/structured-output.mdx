@@ -1,51 +1,38 @@
 ---
 title: Structured Output
-description: Return machine-readable fields from an agent.
+description: Return typed fields from an agent.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
-    request: string
+    message: string
 }
 
-schema classification {
-    category: enum { bug, feature, question }
-    confidence: number
-    reason: string
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
 }
 
 agent classify {
-    model: ai("flash")
-    instruction: "Classify this request: {{ input.request }}."
-    output: schema.classification
+    model: model.fast
+    instruction: "Classify {{ input.message }}."
+
+    output: {
+        category: enum { bug, feature, question }
+        confidence: number
+        reason: string
+    }
 }
 
 output {
-    category: agent.classify.category
-    confidence: agent.classify.confidence
-    reason: agent.classify.reason
+    result: agent.classify
 }
 ```
-
-Use structured outputs when callers need to route, filter, store, or validate the result.

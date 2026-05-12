@@ -1,137 +1,137 @@
 ---
 title: Introduction
-description: Learn what Superwire is, how workflows run, and how to execute your first .wire file through the Docker executor.
+description: Learn what Superwire is and run a tiny workflow through the Docker executor.
 ---
 
-Superwire is a declarative DSL for building AI agent workflows. A workflow is a plain text `.wire` file that describes:
+Superwire is a declarative DSL for building AI-agent workflows. A `.wire` file describes the inputs a workflow accepts, the secrets it needs, the model provider it uses, the agents that should run, and the final structured output.
 
-- which model providers are available
-- what input and secrets the caller must pass
-- which agents run and what each one returns
-- which tools, resources, and prompts can be imported from MCP servers
-- what final JSON object the caller receives
+Most applications do not embed the runtime directly. They send a `.wire` workflow to the Superwire executor server and receive either one JSON response or a stream of Server-Sent Events.
 
-The usual runtime path is the **Superwire executor service**. You run the Docker image, send a base64-encoded workflow to `/execute`, and receive JSON. For streaming UX, send the same payload to `/execute/stream` and consume Server-Sent Events.
+```text
+.wire source + input + secrets -> Superwire executor -> structured output
+```
+
+## Run the executor
+
+The executor is published as a Docker image:
 
 ```bash
 docker run --rm -p 8080:8080 rmilewski/superwire-executor
 ```
 
-<Info>
-  The examples below assume the executor is available at <code>http://localhost:8080</code>. Change the host or port to match your deployment.
-</Info>
+It exposes two endpoints:
+
+| Endpoint | Response style | Use when |
+| --- | --- | --- |
+| `POST /execute` | JSON | You want the final workflow result. |
+| `POST /execute/stream` | Server-Sent Events | You want progress events while the workflow runs. |
+
+Both endpoints use the same request body.
 
 ## A minimal workflow
 
-Save this as `task_summary.wire`:
+Create `hello.wire`:
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
 input {
-    project_id: number
-    task_id: number
+    message: string
 }
 
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
     api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
 }
 
-agent summarize_task {
-    model: ai("flash")
-    instruction: "Write a concise summary for task {{ input.task_id }} in project {{ input.project_id }}."
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent reply {
+    model: model.fast
+    instruction: "Reply to this message: {{ input.message }}"
+
     output: {
-        summary: string
-        next_action: string
+        message: string
     }
 }
 
 output {
-    project_id: input.project_id
-    task_id: input.task_id
-    summary: agent.summarize_task.summary
-    next_action: agent.summarize_task.next_action
+    result: agent.reply
 }
 ```
 
-Then execute it:
+This workflow has one public input, one secret, one provider instance, one model profile, one agent, and one final output.
+
+## Execute it
+
+Base64-encode the workflow source:
 
 ```bash
-WORKFLOW_SOURCE_BASE64=$(base64 -w0 task_summary.wire)
+WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
+```
 
+On macOS:
+
+```bash
+WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
+```
+
+Send it to the executor:
+
+```bash
 curl -s http://localhost:8080/execute \
   -H 'Content-Type: application/json' \
   -d @- <<JSON
 {
   "input": {
-    "project_id": 14,
-    "task_id": 109
+    "message": "Write a short welcome message for Superwire."
   },
   "secrets": {
-    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "mcp_summarizer_endpoint": "http://localhost:8000/mcp/summarizer",
-    "api_key": "YOUR_API_KEY",
-    "models": {
-      "flash": "qwen3.6-plus",
-      "pro": "qwen3.6-plus",
-      "max": "qwen3.6-plus"
-    }
+    "api_key": "sk-..."
   },
   "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
 }
 JSON
 ```
 
-The response is the final workflow output as JSON:
+The response is the workflow `output` block as JSON:
 
 ```json
 {
-  "project_id": 14,
-  "task_id": 109,
-  "summary": "...",
-  "next_action": "..."
+  "result": {
+    "message": "Welcome to Superwire — a concise way to describe and run AI workflows."
+  }
 }
 ```
 
-## Mental model
+## Stream the same workflow
 
-Superwire runs as a dependency graph. If an agent references `input.project_id`, that value must be present in the request. If an agent references `agent.other_agent.summary`, Superwire runs `other_agent` before the dependent agent. Independent agents can run concurrently.
+Use `/execute/stream` when your UI needs progress events:
 
-<CardGroup cols={2}>
-  <Card title="Quickstart" icon="play" href="/quickstart">
-    Run the executor and execute a complete workflow.
-  </Card>
-  <Card title="Workflow Anatomy" icon="diagram-project" href="/core-concepts/workflows">
-    Understand each top-level declaration.
-  </Card>
-  <Card title="Providers" icon="plug" href="/core-concepts/providers">
-    Configure OpenAI-compatible endpoints and model aliases.
-  </Card>
-  <Card title="MCP & Tools" icon="wrench" href="/mcp/tools">
-    Import tools, resources, and prompts from MCP servers.
-  </Card>
-</CardGroup>
+```bash
+curl -N http://localhost:8080/execute/stream \
+  -H 'Content-Type: application/json' \
+  -d @- <<JSON
+{
+  "input": {
+    "message": "Write a short welcome message for Superwire."
+  },
+  "secrets": {
+    "api_key": "sk-..."
+  },
+  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
+}
+JSON
+```
 
-## Important syntax choices
+A stream contains lifecycle events such as workflow start, planning, agent start, agent completion, tool/MCP events, and final workflow completion.
 
-- Use `instruction:` for the text sent to the model.
-- Use `uses:` to give an agent access to tools.
-- Agent `output:` is always an object-shaped block.
-- Put credentials in `secrets`, not in `input` or inline strings.
-- Use `schema` blocks for reusable structured data.
-- Use `dynamic` blocks when a value must be produced by a tool call before agents run.
+## What to read next
+
+- [Quickstart](/quickstart) walks through the same flow step by step.
+- [Core Concepts](/core-concepts/overview) explains workflows, providers, models, agents, schemas, and dependencies.
+- [Executor API](/api-reference/executor-api) documents the HTTP request and response contract.

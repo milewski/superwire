@@ -1,9 +1,9 @@
 ---
 title: Type Annotations
-description: Where type annotations appear and how to write readable output contracts.
+description: Where type annotations appear and how to write readable contracts.
 ---
 
-Type annotations appear after a field name:
+Type annotations appear after a field name.
 
 ```wire
 input {
@@ -15,24 +15,30 @@ input {
 
 ## Field descriptions
 
-A string after the type describes the field.
+Use triple-slash comments for schema field descriptions.
 
 ```wire
 schema task_summary {
-    title: string "Short display title"
-    summary: string "One paragraph summary"
-    priority: enum { low, medium, high } "Routing priority"
+    /// Short display title
+    title: string
+
+    /// One paragraph summary
+    summary: string
+
+    /// Routing priority
+    priority: enum { low, medium, high }
 }
 ```
 
 ## Agent outputs
 
-Agent output contracts are required and object-shaped:
+Agent output contracts are required and object-shaped.
 
 ```wire
 agent summarize {
-    model: ai("flash")
+    model: model.fast
     instruction: "Summarize {{ input.title }}."
+
     output: {
         summary: string
         action_items: [string]
@@ -49,8 +55,28 @@ schema summary_output {
 }
 
 agent summarize {
-    model: ai("flash")
+    model: model.fast
     instruction: "Summarize {{ input.title }}."
     output: schema.summary_output
 }
 ```
+
+## Tool contracts
+
+`input {}` and `output {}` on tools define schemas. They do not bind runtime values.
+
+```wire
+tool fetch_task from mcp.tasks.tool.fetch_task {
+    input {
+        task_id: number
+    }
+
+    output {
+        title: string
+        description: string
+        status: string
+    }
+}
+```
+
+Runtime values are supplied with `bindings {}` at the call site.

@@ -1,12 +1,12 @@
 ---
-title: Resources
-description: Import and read MCP resources as workflow context.
+title: MCP Resources
+description: Import and read MCP resources.
 ---
 
-Resources expose external context that can be read during execution.
+A resource import exposes an MCP resource to a workflow.
 
 ```wire
-resource project_readme from mcp.docs.resource.project_readme
+resource project_readme from mcp.tasks.resource.project_readme
 ```
 
 Read a resource in a dynamic block:
@@ -17,16 +17,16 @@ dynamic {
 }
 ```
 
-Then reference the dynamic value from an agent:
+Resources can also be made available to agents through `uses`.
 
 ```wire
-agent summarize_project {
-    model: ai("flash")
-    instruction: "Summarize this project readme: {{ dynamic.readme }}"
+agent writer {
+    model: model.fast
+    uses: [resource.project_readme]
+    instruction: "Use the project README to write a short overview."
+
     output: {
-        summary: string
+        overview: string
     }
 }
 ```
-
-Use resources for stable context. Use tools when the workflow needs parameterized execution.

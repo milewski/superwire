@@ -1,61 +1,42 @@
 ---
 title: Nested Output
-description: Build nested JSON responses from agent outputs and literals.
+description: Return nested structured data.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
     project_id: number
-    task_id: number
+    topic: string
 }
 
-agent analyze {
-    model: ai("flash")
-    instruction: "Analyze task {{ input.task_id }}."
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent plan {
+    model: model.fast
+    instruction: "Create a plan for {{ input.topic }}."
+
     output: {
-        title: string
         summary: string
-        labels: [string]
-        score: number
+        tasks: [{ title: string, priority: enum { low, medium, high } }]
     }
 }
 
 output {
     project: {
         id: input.project_id
-    }
-    task: {
-        id: input.task_id
-        title: agent.analyze.title
-        summary: agent.analyze.summary
-    }
-    metadata: {
-        labels: agent.analyze.labels
-        score: agent.analyze.score
-        generated_by: "superwire"
+        topic: input.topic
+        plan: agent.plan
     }
 }
 ```
-
-The final output block can shape the public response independently from internal agent output shapes.

@@ -1,79 +1,75 @@
 ---
-title: MCP Tools
-description: Fetch context from an MCP tool and use it in an agent.
+title: MCP Tools, Prompts, and Resources
+description: Use MCP capabilities through imports and uses.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    mcp_summarizer_endpoint: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
-    project_id: number
     task_id: number
 }
 
-mcp summarizer {
-    endpoint: secrets.mcp_summarizer_endpoint
+secrets {
+    api_key: string
+    mcp_token: string
 }
 
-tool fetch_task from mcp.summarizer.tool.fetch_task {
-    bindings {
-        project_id: input.project_id
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+mcp tasks {
+    endpoint: "http://localhost:8000/mcp/tasks"
+
+    headers {
+        Authorization: "Bearer {{ secrets.mcp_token }}"
     }
+}
+
+from mcp.tasks {
+    prompt task_writer_instructions
+    resource project_readme
+}
+
+tool fetch_task from mcp.tasks.tool.fetch_task {
     input {
         task_id: number
     }
+
     output {
         title: string
         description: string
+        status: string
     }
 }
 
-dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
+let task = call tool.fetch_task {
+    bindings {
+        task_id: input.task_id
     }
 }
 
-agent summarize_task {
-    model: ai("flash")
-    context: {
-        task: dynamic.task
-    }
-    instruction: "Summarize the task context and suggest the next action."
+agent writer {
+    model: model.fast
+
+    uses: [
+        prompt.task_writer_instructions,
+        resource.project_readme,
+        tool.fetch_task,
+    ]
+
+    instruction: "Write a concise task update for {{ task.title }}."
+
     output: {
-        summary: string
-        next_action: string
+        update: string
     }
 }
 
 output {
-    task: dynamic.task
-    summary: agent.summarize_task.summary
-    next_action: agent.summarize_task.next_action
+    update: agent.writer.update
 }
 ```
-
-This pattern is deterministic: the workflow always fetches task context before the agent runs.

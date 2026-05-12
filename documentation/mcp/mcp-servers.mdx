@@ -1,36 +1,53 @@
 ---
 title: MCP Servers
-description: Connect a workflow to external tools, resources, and prompts.
+description: Define MCP server endpoints and authenticated headers.
 ---
 
-An `mcp` declaration names an MCP server endpoint. Tool, resource, and prompt imports can then reference it.
+An `mcp` declaration names an MCP server endpoint.
+
+```wire
+mcp tasks {
+    endpoint: "http://localhost:8000/mcp/tasks"
+}
+```
+
+Imported tools, prompts, and resources reference that server through the `mcp` namespace.
+
+```wire
+tool fetch_task from mcp.tasks.tool.fetch_task
+prompt writer_instructions from mcp.tasks.prompt.writer_instructions
+resource project_readme from mcp.tasks.resource.project_readme
+```
+
+## Authenticated MCP servers
+
+Use `headers {}` when the MCP server requires authentication or request-scoped metadata.
 
 ```wire
 secrets {
-    mcp_summarizer_endpoint: string
+    mcp_token: string
 }
 
 mcp summarizer {
-    endpoint: secrets.mcp_summarizer_endpoint
+    endpoint: "http://localhost:8000/mcp/summarizer"
+
+    headers {
+        Authorization: "Bearer {{ secrets.mcp_token }}"
+    }
 }
 ```
 
-The endpoint value usually comes from the executor `secrets` object:
-
-```json
-{
-  "secrets": {
-    "mcp_summarizer_endpoint": "http://localhost:8000/mcp/summarizer"
-  }
-}
-```
-
-## Import kinds
+Headers may reference runtime values.
 
 ```wire
-tool fetch_task from mcp.summarizer.tool.fetch_task
-resource project_readme from mcp.summarizer.resource.project_readme
-prompt writer_instructions from mcp.summarizer.prompt.writer_instructions
+mcp internal_tools {
+    endpoint: "https://tools.internal.example.com/mcp"
+
+    headers {
+        Authorization: "Bearer {{ secrets.internal_tools_token }}"
+        X_Workspace_ID: "{{ input.workspace_id }}"
+    }
+}
 ```
 
-Use tools when the workflow must call a function, resources when it must read external context, and prompts when an MCP server owns reusable instruction text.
+Do not hardcode long-lived tokens in `.wire` files. Pass them through `secrets`.

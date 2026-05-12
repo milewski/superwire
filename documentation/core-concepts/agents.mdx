@@ -1,14 +1,15 @@
 ---
 title: Agents
-description: Define model calls, tool access, context, and structured outputs.
+description: Define model steps, dependencies, loops, context continuation, and structured outputs.
 ---
 
 An agent is one LLM step in the workflow graph.
 
 ```wire
 agent summarize_task {
-    model: ai("flash")
+    model: model.fast
     instruction: "Summarize task {{ input.task_id }}."
+
     output: {
         summary: string
         next_action: string
@@ -20,76 +21,90 @@ agent summarize_task {
 
 | Property | Purpose |
 | --- | --- |
-| `model` | Selects a provider model alias, for example `ai("flash")`. |
-| `instruction` | Text sent to the model. Supports interpolation. |
-| `context` | Optional structured context supplied to the model. |
-| `uses` | Tools the agent is allowed to call. |
-| `output` | Required object-shaped output schema. |
+| `model` | Selects a named model profile, such as `model.fast`. |
+| `uses` | Makes tools, prompts, and resources available to the agent. |
+| `context` | Continues from another agent's message history. |
+| `instruction` | The instruction appended for this agent step. |
+| `output` | The required structured output contract. |
 
-## Structured outputs
+## Uses
 
-Agent outputs are always object-shaped. Keep field names stable because other agents and final outputs reference them.
+`uses` declares external capabilities and context available to the agent. It can include tools, prompts, and resources.
 
 ```wire
-agent classify {
-    model: ai("flash")
-    instruction: "Classify: {{ input.message }}"
+agent writer {
+    model: model.fast
+
+    uses: [
+        prompt.writer_instructions,
+        resource.project_readme,
+        tool.create_draft,
+    ]
+
+    instruction: "Create a draft for {{ input.topic }}."
+
     output: {
-        category: enum { bug, feature, question }
-        confidence: number
+        draft: string
     }
 }
 ```
 
-Downstream references use dot paths:
+## Agent loops
+
+Use `for ... in` when each item in a collection should be processed with the same agent.
 
 ```wire
-agent route {
-    model: ai("flash")
-    instruction: "Route category {{ agent.classify.category }} with confidence {{ agent.classify.confidence }}."
+agent summarize_each for task in input.tasks {
+    model: model.fast
+    instruction: "Summarize {{ task.title }}."
+
     output: {
-        assignee: string
-        reason: string
-    }
-}
-```
-
-## Tool access
-
-Tools must be imported and explicitly listed in `uses:`.
-
-```wire
-tool search_tasks from mcp.tasks.tool.search_tasks
-
-agent researcher {
-    model: ai("pro")
-    uses: [tool.search_tasks]
-    instruction: "Research task {{ input.task_id }} before answering."
-    output: {
-        findings: [string]
-    }
-}
-```
-
-## Looped agents
-
-Use `for ... in` to run the same agent over a collection. Iterations can run in parallel.
-
-```wire
-input {
-    task_ids: [number]
-}
-
-agent summarize_each for task_id in input.task_ids {
-    model: ai("flash")
-    instruction: "Summarize task {{ task_id }}."
-    output: {
-        task_id: number
+        title: string
         summary: string
     }
 }
+```
 
-output {
-    summaries: agent.summarize_each
+Loop headers may destructure object-shaped items:
+
+```wire
+agent summarize_each for { a, b } in input.something {
+    model: model.fast
+    instruction: "Summarize A={{ a }} and B={{ b }}."
+
+    output: {
+        summary: string
+    }
 }
 ```
+
+The output of a looped agent is an array of that agent's output objects.
+
+## Context continuation
+
+Use `context: context(agent.some_agent)` when a later agent should continue from an earlier agent's message history.
+
+```wire
+agent investigate_task {
+    model: model.fast
+    instruction: "Investigate task {{ input.task_id }} and identify the main issue."
+
+    output: {
+        issue: string
+        evidence: [string]
+    }
+}
+
+agent propose_solution {
+    model: model.fast
+    context: context(agent.investigate_task)
+    instruction: "Continue from the investigation and propose a concrete solution."
+
+    output: {
+        solution: string
+        steps: [string]
+    }
+}
+```
+
+A structured reference such as `agent.investigate_task.issue` reads an output value. `context(agent.investigate_task)` passes the prior conversation/message history so the next agent can append a new instruction and continue the work.

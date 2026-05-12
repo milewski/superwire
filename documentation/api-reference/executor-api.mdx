@@ -13,18 +13,10 @@ The Docker executor exposes two endpoints with the same request body:
 ```json
 {
   "input": {
-    "project_id": 14,
-    "task_id": 109
+    "message": "Write a short welcome message."
   },
   "secrets": {
-    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "mcp_summarizer_endpoint": "http://localhost:8000/mcp/summarizer",
-    "api_key": "YOUR_API_KEY",
-    "models": {
-      "flash": "qwen3.6-plus",
-      "pro": "qwen3.6-plus",
-      "max": "qwen3.6-plus"
-    }
+    "api_key": "sk-..."
   },
   "workflow_source_base64": "..."
 }
@@ -38,18 +30,17 @@ The Docker executor exposes two endpoints with the same request body:
 
 ## `/execute` response
 
-Successful responses return the workflow `output` block as JSON:
+Successful responses return the workflow `output` block as JSON.
 
 ```json
 {
-  "project_id": 14,
-  "task_id": 109,
-  "summary": "Prepare task dependencies before execution.",
-  "next_action": "Fetch the latest task context."
+  "result": {
+    "message": "Welcome to Superwire."
+  }
 }
 ```
 
-Errors use a structured JSON body:
+Errors use a structured JSON body.
 
 ```json
 {
@@ -68,52 +59,29 @@ Errors use a structured JSON body:
 
 ## `/execute/stream` response
 
-The streaming endpoint uses `text/event-stream`. A typical stream contains lifecycle events, agent events, token or chunk events, and a final completion event.
+The streaming endpoint uses `text/event-stream`. A typical stream contains lifecycle events, agent events, tool/MCP events, and a final completion event.
 
 ```text
-event: workflow.started
-data: {"workflow_id":"..."}
+event: workflow_started
+data: {}
 
-event: workflow.validated
-data: {"status":"ok"}
+event: workflow_planned
+data: {"nodes":[]}
 
-event: agent.started
-data: {"agent":"summarize_task"}
+event: agent_started
+data: {"agent":"reply"}
 
-event: agent.delta
-data: {"agent":"summarize_task","delta":"Prepare"}
+event: agent_completed
+data: {"output":{"message":"Welcome to Superwire."}}
 
-event: agent.completed
-data: {"agent":"summarize_task","output":{"summary":"...","next_action":"..."}}
-
-event: workflow.completed
-data: {"output":{"summary":"...","next_action":"..."}}
+event: workflow_completed
+data: {"output":{"result":{"message":"Welcome to Superwire."}}}
 ```
 
-Error streams terminate with an error event:
-
-```text
-event: workflow.error
-data: {"kind":"runtime_error","message":"Provider request failed"}
-```
-
-## Encoding workflow source
-
-Linux:
-
-```bash
-base64 -w0 workflow.wire
-```
-
-macOS:
-
-```bash
-base64 < workflow.wire | tr -d '\n'
-```
+Exact event payloads may evolve with the executor. Treat `workflow_completed` as the terminal success event and `workflow_failed` as the terminal failure event.
 
 ## Security notes
 
-- Put credentials in `secrets`, not `input`.
-- Avoid logging raw request bodies in production because `secrets` contains provider keys.
-- Prefer private networking between the executor and internal MCP servers.
-- Keep workflow sources under version control so changes can be reviewed.
+- Do not log raw request bodies in production because `secrets` contains provider and MCP credentials.
+- Prefer short-lived API keys or internal credentials when possible.
+- Keep `.wire` source free of hardcoded secrets.

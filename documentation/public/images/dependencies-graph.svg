@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="620" viewBox="0 0 1160 620" role="img" aria-labelledby="title desc">
+  <title id="title">Superwire dependency graph</title>
+  <desc id="desc">A dependency graph showing input and secrets flowing into providers, models, uses, agents, schemas, and output.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#16a34a"/></marker>
+    <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/></marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/></marker>
+    <style>
+      .title { font: 700 34px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .sub { font: 400 16px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #6b7280; }
+      .label { font: 700 19px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .small { font: 600 15px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #374151; }
+      .note { font: 400 14px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4b5563; }
+      .box { stroke-width: 2; rx: 18; }
+      .line-blue { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrow-blue); }
+      .line-green { stroke: #16a34a; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .line-amber { stroke: #d97706; stroke-width: 3; fill: none; marker-end: url(#arrow-amber); }
+      .line-purple { stroke: #7c3aed; stroke-width: 3; fill: none; marker-end: url(#arrow-purple); }
+      .dotted { stroke: #9ca3af; stroke-width: 2; fill: none; stroke-dasharray: 6 6; }
+    </style>
+  </defs>
+
+  <rect width="1160" height="620" fill="#ffffff"/>
+  <text x="52" y="58" class="title">Superwire Dependencies</text>
+  <text x="52" y="86" class="sub">Declarations form a graph. The executor runs nodes when their dependencies are ready.</text>
+
+  <rect x="54" y="140" width="140" height="74" fill="#ecfdf5" stroke="#10b981" class="box"/>
+  <text x="94" y="184" class="label">input</text>
+
+  <rect x="54" y="250" width="140" height="74" fill="#f5f3ff" stroke="#8b5cf6" class="box"/>
+  <text x="86" y="294" class="label">secrets</text>
+
+  <rect x="270" y="180" width="156" height="74" fill="#eff6ff" stroke="#3b82f6" class="box"/>
+  <text x="310" y="224" class="label">provider</text>
+
+  <rect x="500" y="180" width="140" height="74" fill="#eff6ff" stroke="#3b82f6" class="box"/>
+  <text x="542" y="224" class="label">model</text>
+
+  <rect x="260" y="350" width="190" height="160" fill="#fffbeb" stroke="#f59e0b" stroke-dasharray="8 6" class="box"/>
+  <text x="332" y="382" class="label">uses</text>
+  <rect x="286" y="400" width="138" height="28" rx="12" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="339" y="419" class="small">tool</text>
+  <rect x="286" y="438" width="138" height="28" rx="12" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="330" y="457" class="small">prompt</text>
+  <rect x="286" y="476" width="138" height="28" rx="12" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="325" y="495" class="small">resource</text>
+
+  <rect x="720" y="142" width="150" height="74" fill="#ecfdf5" stroke="#22c55e" class="box"/>
+  <text x="765" y="186" class="label">agent</text>
+  <text x="781" y="205" class="note">step A</text>
+
+  <rect x="720" y="300" width="150" height="74" fill="#ecfdf5" stroke="#22c55e" class="box"/>
+  <text x="765" y="344" class="label">agent</text>
+  <text x="781" y="363" class="note">step B</text>
+
+  <rect x="970" y="300" width="140" height="74" fill="#f0fdfa" stroke="#14b8a6" class="box"/>
+  <text x="1005" y="344" class="label">output</text>
+
+  <rect x="560" y="450" width="250" height="90" fill="#f9fafb" stroke="#9ca3af" stroke-dasharray="8 6" class="box"/>
+  <text x="586" y="486" class="label">schemas</text>
+  <text x="586" y="512" class="note">Define the shapes used by</text>
+  <text x="586" y="532" class="note">input, agent results, and output.</text>
+
+  <path d="M 194 177 C 245 177 246 217 270 217" class="line-blue"/>
+  <path d="M 194 287 C 235 287 236 217 270 217" class="line-purple"/>
+  <path d="M 194 287 C 232 287 235 430 260 430" class="line-purple"/>
+  <path d="M 426 217 L 500 217" class="line-blue"/>
+  <path d="M 640 217 C 680 217 678 179 720 179" class="line-blue"/>
+  <path d="M 640 217 C 685 217 678 337 720 337" class="line-blue"/>
+  <path d="M 450 430 C 560 430 590 179 720 179" class="line-amber"/>
+  <path d="M 795 216 L 795 300" class="line-green"/>
+  <path d="M 870 337 L 970 337" class="line-green"/>
+
+  <path d="M 650 450 C 570 390 350 250 124 214" class="dotted"/>
+  <path d="M 710 450 C 720 415 742 382 760 374" class="dotted"/>
+  <path d="M 810 494 C 900 494 1010 425 1040 374" class="dotted"/>
+</svg>

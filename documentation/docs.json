@@ -109,8 +109,7 @@
             "pages": [
               "integrations/openai",
               "integrations/ollama",
-              "integrations/laravel",
-              "integrations/custom-provider-factories"
+              "integrations/laravel"
             ]
           }
         ]

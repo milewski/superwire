@@ -1,42 +1,39 @@
 ---
 title: Schemas
-description: Define reusable structured types.
+description: Define reusable structured types for input, agent outputs, tool contracts, and final output.
 ---
 
-Schemas name reusable object shapes and nested fields. Schema names should be lowercase snake_case.
+Schemas define reusable object shapes.
 
 ```wire
-schema participant {
-    name: string
-    role: string
-}
-
-schema research_summary {
+schema task {
     title: string
-    lead: schema.participant
-    contributors: [schema.participant]
+    priority: enum { low, medium, high }
+    tags: [string]
 }
 ```
 
-A schema declaration always opens a block. It does not assign a type expression with `=`.
-
-## Using schemas
+Use schemas anywhere a type is expected.
 
 ```wire
 input {
-    requester: schema.participant
+    task: schema.task
 }
 
 agent summarize {
-    model: ai("flash")
-    instruction: "Create a summary for {{ input.requester.name }}."
-    output: schema.research_summary
+    model: model.fast
+    instruction: "Summarize {{ input.task.title }}."
+
+    output: {
+        summary: string
+        priority: schema.task.priority
+    }
 }
 ```
 
-## Shared enum fields
+## Nested reusable fields
 
-Use a shared schema when multiple structures need the same enum.
+A schema field can be referenced from another schema.
 
 ```wire
 schema shared {
@@ -53,29 +50,34 @@ schema article {
 }
 ```
 
-Inline enum members use commas when written on one line:
-
-```wire
-status: enum { draft, ready, published }
-```
-
-When enum members are separated by new lines, commas are not required:
-
-```wire
-status: enum {
-    draft
-    ready
-    published
-}
-```
-
 ## Field descriptions
 
-Descriptions are preserved for schema-aware tooling and can improve structured output quality.
+Use triple-slash comments to document schema fields. These descriptions are preserved for schema-aware tooling and can improve structured output quality.
 
 ```wire
 schema release_note {
-    title: string "Short title shown to the user"
-    impact: enum { low, medium, high } "Severity bucket"
+    /// Short title shown to the user
+    title: string
+
+    /// Severity bucket
+    impact: enum { low, medium, high }
+}
+```
+
+## Enum formatting
+
+Inline enum variants use commas:
+
+```wire
+enum { draft, ready, published }
+```
+
+Multiline enum variants do not require commas:
+
+```wire
+enum {
+    draft
+    ready
+    published
 }
 ```

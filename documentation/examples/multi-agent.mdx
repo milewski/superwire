@@ -4,53 +4,43 @@ description: Chain agents through structured references.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
     topic: string
 }
 
-agent collect_facts {
-    model: ai("flash")
-    instruction: "List facts about {{ input.topic }}."
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent research {
+    model: model.fast
+    instruction: "List important facts about {{ input.topic }}."
+
     output: {
         facts: [string]
     }
 }
 
-agent write_brief {
-    model: ai("pro")
-    instruction: "Write a concise brief using these facts: {{ agent.collect_facts.facts }}."
+agent write_summary {
+    model: model.fast
+    instruction: "Write a summary using these facts: {{ agent.research.facts }}."
+
     output: {
-        title: string
-        brief: string
+        summary: string
     }
 }
 
 output {
-    title: agent.write_brief.title
-    brief: agent.write_brief.brief
-    facts: agent.collect_facts.facts
+    facts: agent.research.facts
+    summary: agent.write_summary.summary
 }
 ```
-
-`write_brief` runs after `collect_facts` because it references `agent.collect_facts.facts`.

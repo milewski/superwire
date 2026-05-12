@@ -1,52 +1,47 @@
 ---
-title: Context Sharing
-description: Share structured data between agents without duplicating instructions.
+title: Context Continuation
+description: Continue one agent from another agent's message history.
 ---
 
-Agents can read from `input`, `dynamic`, and other agent outputs. Prefer structured references over copying large strings.
+`context` is for conversation/message-history continuation.
 
 ```wire
-agent extract_context {
-    model: ai("flash")
-    instruction: "Extract facts from {{ input.notes }}."
+agent investigate_task {
+    model: model.fast
+    instruction: "Investigate task {{ input.task_id }} and identify the main issue."
+
     output: {
-        facts: [string]
+        issue: string
+        evidence: [string]
     }
 }
 
-agent write_summary {
-    model: ai("flash")
-    context: {
-        facts: agent.extract_context.facts
-    }
-    instruction: "Write a concise summary from the provided context."
+agent propose_solution {
+    model: model.fast
+    context: context(agent.investigate_task)
+    instruction: "Continue from the previous investigation and propose a solution."
+
     output: {
-        summary: string
+        solution: string
+        steps: [string]
     }
 }
 ```
 
-## Dynamic context
+`context(agent.investigate_task)` passes the whole message history of `investigate_task` into `propose_solution`. The second agent then appends its own instruction and continues the work.
+
+## Context versus structured output
+
+Use a structured reference when you need a value:
 
 ```wire
-dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
-    }
-}
-
-agent summarize_task {
-    model: ai("flash")
-    context: {
-        task: dynamic.task
-    }
-    instruction: "Summarize the task context."
-    output: {
-        summary: string
-    }
-}
+{{ agent.investigate_task.issue }}
 ```
 
-Use `context` for structured values and `instruction` for the task the model should perform.
+Use `context(agent.name)` when you want the next agent to continue the prior conversation:
+
+```wire
+context: context(agent.investigate_task)
+```
+
+These are different operations. Structured references read JSON-like output fields. Context continuation passes message history.

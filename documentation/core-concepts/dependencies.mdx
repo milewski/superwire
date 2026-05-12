@@ -1,64 +1,62 @@
 ---
 title: Dependencies
-description: Learn how references create the execution graph.
+description: How Superwire builds and executes the workflow graph.
 ---
 
-Superwire derives dependencies from references. You do not manually declare execution order.
+Superwire builds a dependency graph from references. A node can run once every value it references is available.
+
+<img src="/images/dependencies-graph.svg" alt="Dependency graph showing input and secrets flowing into providers, models, uses, agents, schemas, and output" />
+
+## Data dependencies
 
 ```wire
-agent collect_facts {
-    model: ai("flash")
-    instruction: "Collect facts about {{ input.topic }}."
+agent extract_facts {
+    model: model.fast
+    instruction: "Extract facts from {{ input.notes }}."
+
     output: {
         facts: [string]
     }
 }
 
 agent write_summary {
-    model: ai("flash")
-    instruction: "Summarize these facts: {{ agent.collect_facts.facts }}"
+    model: model.fast
+    instruction: "Write a summary from {{ agent.extract_facts.facts }}."
+
     output: {
         summary: string
     }
 }
-
-output {
-    summary: agent.write_summary.summary
-}
 ```
 
-`write_summary` depends on `collect_facts` because it references `agent.collect_facts.facts`.
+`write_summary` depends on `extract_facts` because it references `agent.extract_facts.facts`.
 
-## Parallel execution
+## Independent work
 
-Independent agents can run at the same time:
+Agents with no dependency relationship may run concurrently.
 
 ```wire
-agent extract_risks {
-    model: ai("flash")
+agent list_risks {
+    model: model.fast
     instruction: "List risks for {{ input.topic }}."
+
     output: {
         risks: [string]
     }
 }
 
-agent extract_actions {
-    model: ai("flash")
-    instruction: "List actions for {{ input.topic }}."
+agent list_actions {
+    model: model.fast
+    instruction: "List action items for {{ input.topic }}."
+
     output: {
         actions: [string]
     }
 }
 ```
 
-If a later agent references both, it waits for both to complete.
+These agents can run at the same time because neither references the other.
 
-## Validation
+## Schema dependencies
 
-Validation reports:
-
-- unknown references
-- invalid field paths
-- dependency cycles
-- schema references that do not exist
-- attempts to use tools that were not imported or not listed in `uses:`
+Schemas do not run. They define shapes used by input, tool contracts, agent outputs, and final output.

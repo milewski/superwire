@@ -1,50 +1,46 @@
 ---
-title: Testing Workflows
-description: Test workflows through the executor API or through the Rust runtime when embedding.
+title: Testing
+description: Validate workflows and test application integrations.
 ---
 
-For application-level tests, call the Docker executor with a known workflow and deterministic test secrets.
+Testing usually happens at two levels: executor-level workflow validation and application-level integration tests.
 
-## HTTP smoke test
+## Validate a workflow through Laravel
 
-```bash
-WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
+```php
+use Superwire\Laravel\Workflow;
 
-curl -s http://localhost:8080/execute \
-  -H 'Content-Type: application/json' \
-  -d @payload.json
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->secrets([
+        'api_key' => config('services.openai.key'),
+    ])
+    ->validate();
 ```
 
-A useful `payload.json` fixture contains:
+## Fake workflow execution in Laravel
 
-```json
-{
-  "input": {
-    "name": "Test User"
-  },
-  "secrets": {
-    "endpoint": "http://localhost:9000/v1",
-    "api_key": "test-key",
-    "models": {
-      "flash": "test-fast",
-      "pro": "test-pro",
-      "max": "test-max"
-    }
-  },
-  "workflow_source_base64": "..."
-}
+```php
+use Superwire\Laravel\Workflow;
+
+Workflow::fake([
+    'message' => 'Hello from a fake workflow.',
+]);
+
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => 'test-key'])
+    ->run();
+
+expect($result->output)->toBe([
+    'message' => 'Hello from a fake workflow.',
+]);
+
+Workflow::restoreFake();
 ```
 
-## What to test
+## Test data guidance
 
-- missing required `input` fields
-- missing required `secrets` fields
-- unknown model aliases
-- invalid agent references
-- invalid tool references
-- successful `/execute` output shape
-- `/execute/stream` lifecycle and final completion event
-
-## Rust-level tests
-
-Use the Rust runtime when you are contributing to Superwire internals or embedding it directly. See [Rust API](/api-reference/rust-api) for parse, validate, and runner-level interfaces.
+- Keep test workflows small.
+- Use deterministic inputs.
+- Avoid live provider calls in unit tests.
+- Reserve end-to-end tests for the executor boundary.

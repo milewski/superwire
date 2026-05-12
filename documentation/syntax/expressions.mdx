@@ -3,7 +3,7 @@ title: Expressions
 description: Values and operations used inside declarations.
 ---
 
-Expressions appear in provider settings, dynamic blocks, agent instructions, context blocks, and final outputs.
+Expressions appear in provider settings, model settings, dynamic blocks, agent instructions, bindings, and final outputs.
 
 ## Literals
 
@@ -35,27 +35,36 @@ dynamic.project_context
 }
 ```
 
-## Function-like bindings
+## Dynamic blocks
 
-Providers and models are selected with a call-like expression:
-
-```wire
-model: ai("flash")
-```
-
-Tools are called in `dynamic` blocks:
+A `dynamic` block builds an object at runtime. Each field is evaluated as a normal expression.
 
 ```wire
 dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
+    example: 123
+    readme: read resource.project_readme
+    instructions: render prompt.writer_instructions
+    another: {
+        value: 123
     }
 }
 ```
 
-Resources and prompts use dedicated expression forms:
+Dynamic fields may contain literals, object values, resource reads, prompt renders, agent outputs, tool calls, and other supported runtime expressions.
+
+## Tool calls
+
+Use `bindings {}` to assign runtime values to the tool input schema.
+
+```wire
+let task = call tool.fetch_task {
+    bindings {
+        task_id: input.task_id
+    }
+}
+```
+
+## Resources and prompts
 
 ```wire
 dynamic {
@@ -63,3 +72,11 @@ dynamic {
     instructions: render prompt.writer_instructions
 }
 ```
+
+## Context continuation
+
+```wire
+context(agent.investigate_task)
+```
+
+`context(agent.name)` returns the prior agent's message history so another agent can continue the work.

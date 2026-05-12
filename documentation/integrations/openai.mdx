@@ -1,55 +1,47 @@
 ---
 title: OpenAI-Compatible Providers
-description: Configure OpenAI-compatible endpoints such as OpenAI, DashScope compatible mode, and internal gateways.
+description: Configure an OpenAI-compatible provider and model profile.
 ---
 
-Use the `openai` driver for endpoints that expose an OpenAI-compatible chat/completions API.
+Use the `openai` driver for OpenAI-compatible HTTP APIs.
 
 ```wire
 secrets {
-    endpoint: string
     api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
 }
 
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
     api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
 }
 ```
 
-Example executor secrets:
-
-```json
-{
-  "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  "api_key": "YOUR_API_KEY",
-  "models": {
-    "flash": "qwen3.6-plus",
-    "pro": "qwen3.6-plus",
-    "max": "qwen3.6-plus"
-  }
-}
-```
-
-Agents reference aliases, not concrete model strings:
+For an OpenAI-compatible gateway, change the endpoint and model ID.
 
 ```wire
-agent answer {
-    model: ai("flash")
-    instruction: "Answer: {{ input.question }}"
+provider llm from openai {
+    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "qwen3.6-plus"
+}
+```
+
+Agents use the named model profile.
+
+```wire
+agent reply {
+    model: model.fast
+    instruction: "Reply to {{ input.message }}."
+
     output: {
-        answer: string
+        message: string
     }
 }
 ```

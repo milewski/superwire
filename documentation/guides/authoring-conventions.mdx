@@ -1,27 +1,41 @@
 ---
 title: Authoring Conventions
-description: Current language conventions for unreleased Superwire workflows.
+description: Style conventions for readable .wire files.
 ---
 
-Superwire is unreleased, so this page describes the current authoring conventions directly.
-
-## Current conventions
-
-- Use `instruction:` for the model instruction text.
-- Use `uses:` for agent tool access.
-- Use object-shaped agent outputs.
-- Use lowercase snake_case schema names.
-- Use `bindings` for workflow-supplied tool values.
-- Use `_` as the catch-all branch in `match` expressions.
-
-## Minimal agent
+## Use snake_case names
 
 ```wire
-agent summarize {
-    model: ai("flash")
-    instruction: "Summarize {{ input.topic }}."
-    output: {
-        summary: string
-    }
+schema task_summary { ... }
+agent summarize_task { ... }
+model fast from llm { ... }
+```
+
+## Prefer intent-based model names
+
+```wire
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+model smart from llm {
+    id: "gpt-4.1"
+}
+```
+
+The workflow can express why an agent uses a model without repeating provider-specific IDs everywhere.
+
+## Keep examples minimal
+
+Do not introduce multiple models, tools, prompts, resources, or MCP servers until the page is specifically explaining those features.
+
+## Use regular comments and doc comments
+
+```wire
+// This is a regular comment.
+
+schema release_note {
+    /// Field description preserved for schema-aware tooling.
+    title: string
 }
 ```

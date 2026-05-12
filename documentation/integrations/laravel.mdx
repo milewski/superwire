@@ -1,45 +1,182 @@
 ---
-title: Laravel
-description: Call the Superwire executor from a Laravel application.
+title: Laravel Integration
+description: Execute, stream, validate, format, map, and fake workflows from Laravel.
 ---
 
-Laravel applications normally call the executor over HTTP. Store provider credentials in Laravel config or environment variables, then pass them as `secrets` in the request body.
+Laravel applications use the `Superwire\Laravel\Workflow` fluent API to send workflows to the executor.
 
-## Example request
+## Run a workflow from a file
 
 ```php
-use Illuminate\Support\Facades\Http;
+use Superwire\Laravel\Workflow;
 
-$workflowSourceBase64 = base64_encode(file_get_contents(resource_path('workflows/task_summary.wire')));
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs([
+        'message' => 'Write a short welcome message.',
+    ])
+    ->secrets([
+        'api_key' => config('services.openai.key'),
+    ])
+    ->run();
 
-$response = Http::post('http://superwire-executor:8080/execute', [
-    'input' => [
-        'project_id' => 14,
-        'task_id' => 109,
-    ],
-    'secrets' => [
-        'endpoint' => config('services.ai.endpoint'),
-        'api_key' => config('services.ai.api_key'),
-        'mcp_summarizer_endpoint' => config('services.mcp.summarizer_endpoint'),
-        'models' => [
-            'flash' => config('services.ai.models.flash'),
-            'pro' => config('services.ai.models.pro'),
-            'max' => config('services.ai.models.max'),
-        ],
-    ],
-    'workflow_source_base64' => $workflowSourceBase64,
-]);
-
-$result = $response->throw()->json();
+$output = $result->output;
 ```
 
-## Streaming
+## Run a workflow from source
 
-Use `/execute/stream` when the frontend should receive workflow progress or token chunks. In Laravel, proxy the SSE stream rather than buffering the entire response.
+```php
+use Superwire\Laravel\Workflow;
 
-## Operational guidance
+$source = <<<'WIRE'
+input {
+    message: string
+}
 
-- Keep workflow files in `resources/workflows` or another reviewed path.
-- Keep secrets in `.env` or your secret manager.
-- Do not log raw executor payloads because they contain API keys.
-- Validate that the returned JSON shape matches the controller response contract.
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent reply {
+    model: model.fast
+    instruction: "Reply to {{ input.message }}"
+
+    output: {
+        message: string
+    }
+}
+
+output {
+    message: agent.reply.message
+}
+WIRE;
+
+$result = Workflow::fromSource($source)
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => config('services.openai.key')])
+    ->run();
+```
+
+## Stream workflow events
+
+`stream()` yields `ExecutorEvent` instances.
+
+```php
+use Superwire\Laravel\Workflow;
+
+foreach (
+    Workflow::fromFile(resource_path('workflows/reply.wire'))
+        ->inputs(['message' => 'Hello'])
+        ->secrets(['api_key' => config('services.openai.key')])
+        ->stream() as $event
+) {
+    if ($event->output() !== null) {
+        $partialOrFinalOutput = $event->output();
+    }
+
+    if ($event->isTerminal()) {
+        break;
+    }
+}
+```
+
+`streamToResult()` consumes the stream and returns the final `WorkflowResult`.
+
+```php
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => config('services.openai.key')])
+    ->streamToResult();
+```
+
+## Event helpers
+
+An `ExecutorEvent` exposes:
+
+```php
+$event->kind;
+$event->agentName;
+$event->event;
+$event->isTerminal();
+$event->output();
+$event->toArray();
+```
+
+Known event kinds include workflow started, workflow planned, agent started, agent completed, tool call started, tool call completed, tool call failed, MCP call started, MCP call completed, MCP call failed, workflow completed, and workflow failed.
+
+## Validate and format
+
+```php
+$validation = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->secrets(['api_key' => config('services.openai.key')])
+    ->validate();
+
+$formatted = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->format();
+```
+
+## Map output into a class
+
+`mapInto()` maps the final output into a PHP class. If the class has a static `from()` method, it is used. Otherwise, array output is passed as named constructor arguments.
+
+```php
+final readonly class ReplyOutput
+{
+    public function __construct(
+        public string $message,
+    ) {}
+}
+
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => config('services.openai.key')])
+    ->mapInto(ReplyOutput::class)
+    ->run();
+
+$output = $result->output;
+```
+
+## Testing with fakes
+
+```php
+use Superwire\Laravel\Workflow;
+
+Workflow::fake([
+    'message' => 'Fake workflow output.',
+]);
+
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => 'test-key'])
+    ->run();
+
+Workflow::restoreFake();
+```
+
+## API summary
+
+```php
+Workflow::fromFile($path);
+Workflow::fromSource($source);
+
+$workflow->inputs([...]);
+$workflow->secrets([...]);
+$workflow->mapInto(SomeOutput::class);
+
+$workflow->run();
+$workflow->stream();
+$workflow->streamToResult();
+$workflow->validate();
+$workflow->format();
+
+Workflow::fake([...]);
+Workflow::restoreFake();
+```

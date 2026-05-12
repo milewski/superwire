@@ -7,8 +7,9 @@ Use `{{ ... }}` inside strings to render values.
 
 ```wire
 agent summarize {
-    model: ai("flash")
+    model: model.fast
     instruction: "Summarize task {{ input.task_id }} in project {{ input.project_id }}."
+
     output: {
         summary: string
     }
@@ -21,14 +22,13 @@ References inside interpolation are validated the same way as references elsewhe
 
 ```wire
 agent writer {
-    model: ai("flash")
+    model: model.fast
     instruction: "Write a response using this summary: {{ agent.summarize.summary }}"
+
     output: {
         response: string
     }
 }
 ```
 
-## Keep instructions focused
-
-Prefer short instructions that reference structured context rather than very large strings.
+Prefer focused instructions that reference structured values rather than copying large payloads into one string.

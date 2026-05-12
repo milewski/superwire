@@ -1,60 +1,50 @@
 ---
-title: Context Management
-description: Pass structured context between workflow stages.
+title: Context Continuation
+description: Continue one agent from another agent's message history.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
-    notes: string
+    task_id: number
 }
 
-agent extract_context {
-    model: ai("flash")
-    instruction: "Extract facts, constraints, and open questions from these notes: {{ input.notes }}."
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent investigate {
+    model: model.fast
+    instruction: "Investigate task {{ input.task_id }} and identify the problem."
+
     output: {
-        facts: [string]
-        constraints: [string]
-        questions: [string]
+        problem: string
+        evidence: [string]
     }
 }
 
-agent write_summary {
-    model: ai("flash")
-    context: {
-        facts: agent.extract_context.facts
-        constraints: agent.extract_context.constraints
-    }
-    instruction: "Write a summary using the provided context."
+agent solve {
+    model: model.fast
+    context: context(agent.investigate)
+    instruction: "Continue from the investigation and propose a solution."
+
     output: {
-        summary: string
+        solution: string
+        steps: [string]
     }
 }
 
 output {
-    summary: agent.write_summary.summary
-    open_questions: agent.extract_context.questions
+    problem: agent.investigate.problem
+    solution: agent.solve.solution
+    steps: agent.solve.steps
 }
 ```
-
-Use `context` for structured values and keep `instruction` focused on the task.

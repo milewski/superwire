@@ -3,40 +3,39 @@ title: Tool Calling
 description: Advanced notes for controlled MCP tool access.
 ---
 
-Agents do not receive every imported tool automatically. Tool access is explicit.
+Agents do not receive every imported tool automatically. Tool access is explicit through `uses`.
 
 ```wire
 tool fetch_task from mcp.tasks.tool.fetch_task
 
 agent researcher {
-    model: ai("pro")
+    model: model.fast
     uses: [tool.fetch_task]
     instruction: "Fetch task context and summarize it."
+
     output: {
         summary: string
     }
 }
 ```
 
-## Dynamic calls versus agent calls
+## Workflow-owned calls versus agent-owned calls
 
-Use a `dynamic` block when the workflow author decides exactly which tool to call:
+Use a `call` expression when the workflow author decides exactly which tool to call:
 
 ```wire
-dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
+let task = call tool.fetch_task {
+    bindings {
+        task_id: input.task_id
     }
 }
 ```
 
-Use `uses:` when the model may decide whether and how to call the tool during the agent step.
+Use `uses` when the model may decide whether and how to call the tool during the agent step.
 
 ## Guardrails
 
 - Add `input` and `output` schemas to tool declarations when possible.
-- Use `bindings` for trusted values supplied by the workflow.
-- Use `max_calls` to avoid runaway external calls.
+- Use `bindings` for trusted runtime values supplied by the workflow.
 - Keep tool names descriptive and scoped to their purpose.
+- Include only the tools, prompts, and resources an agent needs.

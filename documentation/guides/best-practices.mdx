@@ -1,80 +1,123 @@
 ---
 title: Best Practices
-description: Patterns that keep workflows readable, safe, and easy to evolve.
+description: Patterns for maintainable, efficient Superwire workflows.
 ---
+
+## Keep the first version small
+
+Start with one provider, one model, one agent, and one output. Add schemas, tools, prompts, resources, and parallelism only when the workflow needs them.
 
 ## Keep secrets out of instructions
 
-```wire
-secrets {
-    api_key: string
-}
-```
-
-Do not interpolate secrets into model instructions unless the external provider explicitly needs that value.
-
-## Use model aliases
-
-```wire
-agent fast_draft {
-    model: ai("flash")
-    instruction: "Draft quickly."
-    output: {
-        draft: string
-    }
-}
-
-agent final_review {
-    model: ai("pro")
-    instruction: "Review: {{ agent.fast_draft.draft }}"
-    output: {
-        approved: boolean
-        notes: [string]
-    }
-}
-```
-
-Aliases let you switch concrete models through `secrets.models` without editing workflow logic.
+Do not interpolate secrets into model instructions unless the external provider explicitly needs that value. Provider keys and MCP tokens belong in provider or MCP configuration.
 
 ## Prefer structured outputs
 
 ```wire
-output: {
-    answer: string
-    confidence: number
-    citations: [string]
-}
-```
+agent classify {
+    model: model.fast
+    instruction: "Classify {{ input.message }}."
 
-Avoid one large text field when the caller needs routing, confidence, status, or IDs.
-
-## Keep agents focused
-
-Use multiple small agents instead of one broad agent when the workflow has separable stages.
-
-## Use schemas for shared fields
-
-```wire
-schema shared {
-    status: enum { draft, ready, published }
-}
-
-schema article {
-    title: string
-    status: schema.shared.status
-}
-```
-
-## Prefer dynamic blocks for deterministic tool calls
-
-When the workflow always needs a tool result, call it in `dynamic` instead of asking the model to decide.
-
-```wire
-dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
+    output: {
+        category: enum { bug, feature, question }
+        confidence: number
     }
 }
 ```
+
+Structured outputs are easier to validate, reference, and aggregate.
+
+## Split fan-out and aggregation
+
+Use separate steps when a workflow needs to process many items and then produce one final result.
+
+```wire
+input {
+    project_id: number
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+mcp tasks {
+    endpoint: "http://localhost:8000/mcp/tasks"
+}
+
+tool fetch_tasks from mcp.tasks.tool.fetch_tasks {
+    input {
+        project_id: number
+    }
+
+    output {
+        tasks: [{
+            id: number
+            title: string
+            description: string
+            status: string
+        }]
+    }
+}
+
+let task_list = call tool.fetch_tasks {
+    bindings {
+        project_id: input.project_id
+    }
+}
+
+agent analyze_task for task in task_list.tasks {
+    model: model.fast
+    context: context()
+
+    instruction: """
+        Analyze this task and identify the next useful action.
+
+        Task title: {{ task.title }}
+        Task description: {{ task.description }}
+        Task status: {{ task.status }}
+    """
+
+    output: {
+        task_id: number
+        summary: string
+        recommended_action: string
+    }
+}
+
+agent summarize_project {
+    model: model.fast
+
+    instruction: """
+        Create a project-level summary from these task analyses:
+
+        {{ agent.analyze_task }}
+    """
+
+    output: {
+        summary: string
+        next_actions: [string]
+    }
+}
+
+output {
+    task_analyses: agent.analyze_task
+    project_summary: agent.summarize_project
+}
+```
+
+`analyze_task` runs once per task, and those iterations may run in parallel. The final `summarize_project` agent aggregates the array produced by `agent.analyze_task`.
+
+When a looped agent provides `context: context()`, each parallel execution receives its own context object. That gives the runtime a stable per-iteration context for cache matching when caching is enabled.
+
+## Continue context only when needed
+
+Use `context(agent.previous)` when the next agent should continue the previous message history. Use structured references when you only need data.

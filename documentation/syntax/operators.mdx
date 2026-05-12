@@ -1,6 +1,6 @@
 ---
-title: Operators
-description: Dot access, model calls, tool calls, and trailing commas.
+title: Operators and Special Forms
+description: Dot access, model usage, tool calls, and inline separators.
 ---
 
 ## Dot access
@@ -9,30 +9,37 @@ Use dot access to read nested fields.
 
 ```wire
 input.project_id
-secrets.models.flash
 agent.summarize.summary
+schema.shared.status
+model.fast
 ```
 
-## Model call
+## Model usage
+
+Agents reference named model profiles.
 
 ```wire
-model: ai("flash")
+model: model.fast
 ```
 
-Model options can be placed in a block after the model call:
+Model inference overrides can be placed in a block after the model reference.
 
 ```wire
-model: ai("pro") {
-    temperature: 0.2
-    max_tokens: 1000
+model: model.fast {
+    inference {
+        temperature: 0.2
+        max_tokens: 1000
+    }
 }
 ```
 
-## Tool call
+## Tool calls
+
+Tool calls use `bindings {}` for runtime values.
 
 ```wire
 call tool.fetch_task {
-    input {
+    bindings {
         task_id: input.task_id
     }
 }

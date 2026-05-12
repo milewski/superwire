@@ -1,89 +1,143 @@
 ---
-title: Providers
-description: Configure model providers and model aliases.
+title: Providers and Models
+description: Configure backend access separately from model selection.
 ---
 
-Providers define how agents reach a model backend. In most deployments the workflow reads provider settings from `secrets` so the same `.wire` file can run in development, staging, and production.
+Superwire separates provider drivers, provider instances, and model profiles.
 
-## OpenAI-compatible provider
+```text
+driver -> provider instance -> model profile -> agent
+```
+
+## Provider declarations
+
+A provider declaration creates a named provider instance from a provider driver.
 
 ```wire
 secrets {
-    endpoint: string
     api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
 }
 
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
     api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
 }
 ```
 
-The executor payload supplies the actual values:
+`openai` is the driver. `llm` is the provider instance name. Provider drivers are implemented by the Superwire engine and must be supported by the executor.
 
-```json
-{
-  "secrets": {
-    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "api_key": "YOUR_API_KEY",
-    "models": {
-      "flash": "qwen3.6-plus",
-      "pro": "qwen3.6-plus",
-      "max": "qwen3.6-plus"
-    }
-  }
-}
-```
+## Model declarations
 
-## Model selection
-
-Agents choose a model alias from the provider:
+A model declaration creates a reusable model profile from a provider instance.
 
 ```wire
-agent draft {
-    model: ai("flash")
-    instruction: "Draft a short answer."
-    output: {
-        answer: string
-    }
+model fast from llm {
+    id: "gpt-4.1-mini"
 }
+```
 
-agent review {
-    model: ai("pro")
-    instruction: "Review the draft: {{ agent.draft.answer }}"
+The `id` is the provider-specific model identifier sent to the provider driver.
+
+Agents reference model profiles through the `model` namespace:
+
+```wire
+agent reply {
+    model: model.fast
+    instruction: "Reply to {{ input.message }}"
+
     output: {
-        approved: boolean
-        notes: [string]
+        message: string
     }
 }
 ```
 
-## Model options
+## Inference defaults
 
-Model-specific execution options can be attached to the model binding:
+Inference configuration belongs on the model profile when it should apply to every agent using that profile.
 
 ```wire
-agent careful_review {
-    model: ai("pro") {
+model fast from llm {
+    id: "gpt-4.1-mini"
+
+    inference {
         temperature: 0.2
-        max_tokens: 1200
-    }
-    instruction: "Review carefully and return structured notes."
-    output: {
-        notes: [string]
+        max_tokens: 4_000
     }
 }
 ```
 
-Use aliases such as `flash`, `pro`, and `max` to keep workflow intent stable while changing concrete model names through secrets.
+An agent can override inference for that specific model usage by opening a block after the model reference:
+
+```wire
+agent creative_reply {
+    model: model.fast {
+        inference {
+            temperature: 0.8
+        }
+    }
+
+    instruction: "Write a creative reply to {{ input.message }}"
+
+    output: {
+        message: string
+    }
+}
+```
+
+The usage block specializes the model for that agent. It does not create a new named model profile.
+
+## Multiple model profiles
+
+Define multiple profiles when different agents should use different model IDs or inference defaults.
+
+```wire
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+model smart from llm {
+    id: "gpt-4.1"
+}
+
+model cheap from llm {
+    id: "gpt-4.1-nano"
+}
+```
+
+Then each agent chooses the profile that matches its job:
+
+```wire
+agent quick_reply {
+    model: model.fast
+    instruction: "Reply briefly to {{ input.message }}"
+
+    output: {
+        message: string
+    }
+}
+
+agent careful_review {
+    model: model.smart
+    instruction: "Review this carefully: {{ input.message }}"
+
+    output: {
+        review: string
+    }
+}
+```
+
+## Provider-level defaults
+
+Provider-level defaults are optional and should be reserved for settings that truly apply to all model calls through that provider, such as timeout or retry configuration.
+
+```wire
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+
+    inference {
+        timeout_seconds: 60
+        retry_attempts: 2
+    }
+}
+```

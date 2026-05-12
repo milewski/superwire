@@ -1,45 +1,36 @@
 ---
 title: Basic Agent
-description: A minimal workflow with one input, one agent, and one output.
+description: A one-agent workflow.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
-    name: string
+    message: string
 }
 
-agent greeting {
-    model: ai("flash")
-    instruction: "Greet {{ input.name }} in one friendly sentence."
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent reply {
+    model: model.fast
+    instruction: "Reply to {{ input.message }}."
+
     output: {
         message: string
     }
 }
 
 output {
-    message: agent.greeting.message
+    message: agent.reply.message
 }
 ```
-
-This is the smallest useful shape: declare runtime secrets, declare typed input, configure a provider, run one agent, and expose a final JSON output.

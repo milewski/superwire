@@ -7,7 +7,7 @@ References use dot paths.
 
 ```wire
 input.project_id
-secrets.endpoint
+secrets.api_key
 agent.summarize.summary
 dynamic.context
 schema.shared.status
@@ -19,23 +19,38 @@ schema.shared.status
 | --- | --- |
 | `input` | Values from the request body. |
 | `secrets` | Sensitive values from the request body. |
-| `agent` | Outputs from agents. |
+| `agent` | Structured outputs from agents. |
 | `dynamic` | Values computed by dynamic blocks. |
 | `tool` | Imported MCP tools. |
 | `resource` | Imported MCP resources. |
 | `prompt` | Imported MCP prompts. |
 | `schema` | Schema declarations and nested reusable fields. |
+| `model` | Named model profiles. |
 
 ## Loop variables
 
 Loop variables are available only inside the looped agent.
 
 ```wire
-agent summarize_each for task_id in input.task_ids {
-    model: ai("flash")
-    instruction: "Summarize task {{ task_id }}."
+agent summarize_each for task in input.tasks {
+    model: model.fast
+    instruction: "Summarize task {{ task.title }}."
+
     output: {
-        task_id: number
+        title: string
+        summary: string
+    }
+}
+```
+
+Object-shaped items may be destructured in the loop header.
+
+```wire
+agent summarize_each for { a, b } in input.something {
+    model: model.fast
+    instruction: "Summarize A={{ a }} and B={{ b }}."
+
+    output: {
         summary: string
     }
 }

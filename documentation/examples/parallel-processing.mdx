@@ -1,74 +1,50 @@
 ---
 title: Parallel Processing
-description: Run independent agents and loop iterations concurrently.
+description: Process a list with a looped agent and aggregate the result.
 ---
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
-}
-
 input {
-    topic: string
-    task_ids: [number]
+    tasks: [{ id: number, title: string, description: string }]
 }
 
-agent risks {
-    model: ai("flash")
-    instruction: "List risks for {{ input.topic }}."
-    output: {
-        risks: [string]
-    }
+secrets {
+    api_key: string
 }
 
-agent opportunities {
-    model: ai("flash")
-    instruction: "List opportunities for {{ input.topic }}."
-    output: {
-        opportunities: [string]
-    }
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
 }
 
-agent summarize_each for task_id in input.task_ids {
-    model: ai("flash")
-    instruction: "Summarize task {{ task_id }}."
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent analyze_each for { id, title, description } in input.tasks {
+    model: model.fast
+    instruction: "Analyze task {{ id }}: {{ title }}. Details: {{ description }}."
+
     output: {
         task_id: number
         summary: string
+        risk: enum { low, medium, high }
     }
 }
 
-agent final_plan {
-    model: ai("pro")
-    instruction: "Create a plan from risks {{ agent.risks.risks }}, opportunities {{ agent.opportunities.opportunities }}, and task summaries {{ agent.summarize_each }}."
+agent aggregate {
+    model: model.fast
+    instruction: "Aggregate these task analyses: {{ agent.analyze_each }}."
+
     output: {
-        plan: string
+        overview: string
+        high_risk_task_ids: [number]
     }
 }
 
 output {
-    risks: agent.risks.risks
-    opportunities: agent.opportunities.opportunities
-    summaries: agent.summarize_each
-    plan: agent.final_plan.plan
+    analyses: agent.analyze_each
+    overview: agent.aggregate.overview
+    high_risk_task_ids: agent.aggregate.high_risk_task_ids
 }
 ```
-
-The two top-level analysis agents and each loop iteration can run before `final_plan`.

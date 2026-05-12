@@ -1,12 +1,12 @@
 ---
-title: Prompts
-description: Import reusable prompt templates from MCP servers.
+title: MCP Prompts
+description: Import, render, and provide prompts to agents.
 ---
 
-Prompts let an external MCP server own shared instructions.
+A prompt import exposes an MCP prompt to a workflow.
 
 ```wire
-prompt writer_instructions from mcp.docs.prompt.writer_instructions
+prompt writer_instructions from mcp.tasks.prompt.writer_instructions
 ```
 
 Render a prompt in a dynamic block:
@@ -17,16 +17,18 @@ dynamic {
 }
 ```
 
-Use the rendered prompt in an agent instruction:
+Prompts can also be provided to an agent through `uses`.
 
 ```wire
 agent writer {
-    model: ai("flash")
-    instruction: "{{ dynamic.instructions }}\n\nTopic: {{ input.topic }}"
+    model: model.fast
+    uses: [prompt.writer_instructions]
+    instruction: "Use the writing instructions to draft a response for {{ input.topic }}."
+
     output: {
-        article: string
+        draft: string
     }
 }
 ```
 
-Prompt rendering is useful when several workflows share the same system-level guidance.
+`uses` accepts tools, prompts, and resources.

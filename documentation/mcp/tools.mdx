@@ -1,66 +1,58 @@
 ---
-title: Tools
-description: Import external functions and make them available to agents or dynamic blocks.
+title: MCP Tools
+description: Import tools, define schemas, bind trusted values, and make tools available to agents.
 ---
 
-Tools connect workflows to external systems such as APIs, databases, task stores, and calculators.
-
-## Import one tool
+A tool import exposes an MCP tool to a workflow.
 
 ```wire
-mcp tasks {
-    endpoint: secrets.mcp_summarizer_endpoint
-}
-
 tool fetch_task from mcp.tasks.tool.fetch_task
 ```
 
-## Declare schemas and bindings
+## Tool schemas
+
+`input {}` and `output {}` describe tool contracts.
 
 ```wire
 tool fetch_task from mcp.tasks.tool.fetch_task {
     input {
         task_id: number
     }
+
     output {
         title: string
         description: string
+        status: string
     }
-    bindings {
-        project_id: input.project_id
-    }
-    max_calls: 3
 }
 ```
 
-Use `bindings` for values that should always be supplied by the workflow rather than the model.
+## Runtime bindings
 
-## Call tools in dynamic blocks
+Use `bindings {}` to assign runtime values to a tool call.
 
 ```wire
-dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
+let task = call tool.fetch_task {
+    bindings {
+        task_id: input.task_id
     }
 }
 ```
 
-## Allow agents to call tools
+## Agent tool access
 
-Agents use the `uses:` array to declare tool access.
+Agents receive tools only when listed in `uses`.
 
 ```wire
 agent researcher {
-    model: ai("pro")
+    model: model.fast
     uses: [tool.fetch_task]
-    instruction: "Fetch the task if needed, then summarize it."
+    instruction: "Fetch the task and summarize it."
+
     output: {
         summary: string
-        missing_context: boolean
     }
 }
 ```
 
-Tools not listed in `uses:` are not available to that agent.
+`uses` can also include prompts and resources.

@@ -1,26 +1,27 @@
 ---
 title: Ollama
-description: Use a local Ollama server when developing or testing locally.
+description: Configure a local Ollama provider and model profile.
 ---
 
 Ollama is useful for local development when you do not want to call a remote provider.
 
 ```wire
-provider local_ai {
-    driver: "ollama"
-    endpoint: "http://host.docker.internal:11434"
-    models: {
-        flash: "llama3.1"
-    }
+provider local_llm from ollama {
+    endpoint: "http://localhost:11434"
 }
 
-agent local_summary {
-    model: local_ai("flash")
-    instruction: "Summarize {{ input.topic }}."
+model local_fast from local_llm {
+    id: "llama3.1"
+}
+
+agent reply {
+    model: model.local_fast
+    instruction: "Reply to {{ input.message }}."
+
     output: {
-        summary: string
+        message: string
     }
 }
 ```
 
-When running the executor in Docker, make sure the container can reach the Ollama host. On Linux you may need to use host networking or an explicit Docker bridge address.
+The executor container must be able to reach the Ollama host. In Docker deployments, `localhost` refers to the container itself, not necessarily your host machine.

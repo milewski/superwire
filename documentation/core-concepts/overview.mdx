@@ -1,66 +1,69 @@
 ---
-title: Overview
-description: The core ideas behind Superwire workflows.
+title: Core Concepts
+description: The main building blocks of a Superwire workflow.
 ---
 
-A Superwire workflow is a dependency graph written as declarations. Each declaration gives the runtime enough information to validate the graph and execute only what is needed.
-
-## Top-level declarations
+A Superwire workflow is a dependency graph built from declarations.
 
 ```wire
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
-
 input {
-    topic: string
+    message: string
 }
 
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
     api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
 }
 
-agent summarize {
-    model: ai("flash")
-    instruction: "Summarize {{ input.topic }}."
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent reply {
+    model: model.fast
+    instruction: "Reply to {{ input.message }}"
+
     output: {
-        title: string
-        summary: string
+        message: string
     }
 }
 
 output {
-    title: agent.summarize.title
-    summary: agent.summarize.summary
+    result: agent.reply
 }
 ```
 
-## How execution works
+## Main declarations
 
-1. The executor decodes `workflow_source_base64`.
-2. The parser builds a workflow AST.
-3. The validator checks declarations, references, schemas, and dependency cycles.
-4. The runtime builds the dependency graph.
-5. Agents and dynamic values execute in dependency order.
-6. The final `output` block is returned as JSON.
+| Declaration | Purpose |
+| --- | --- |
+| `input` | Public values supplied by the executor request. |
+| `secrets` | Sensitive values supplied by the executor request. |
+| `provider` | Configures access to a backend driver such as `openai` or `ollama`. |
+| `model` | Defines a reusable model profile from a provider instance. |
+| `schema` | Defines reusable structured types. |
+| `mcp` | Defines an MCP server endpoint. |
+| `tool`, `prompt`, `resource` | Import external MCP capabilities. |
+| `dynamic` | Builds runtime values from expressions. |
+| `agent` | Runs one model step. |
+| `output` | Defines the final JSON response. |
 
-## Design principles
+## Runtime topology
 
-- **Explicit inputs**: callers know exactly which fields to send.
-- **Isolated secrets**: provider keys and internal endpoints are passed separately.
-- **Typed outputs**: every agent declares a structured output contract.
-- **Composable graph**: references such as `agent.plan.steps` define dependencies automatically.
-- **Tool-aware**: agents can use imported MCP tools only when declared in `uses:`.
+```text
+driver -> provider instance -> model profile -> agent
+```
+
+A provider declaration does not select a model by itself. A model profile selects the provider-specific model ID. Agents reference named model profiles.
+
+## Design goals
+
+- Keep secrets outside `.wire` files.
+- Keep provider access separate from model selection.
+- Make dependencies explicit through references.
+- Require structured outputs so downstream steps can rely on stable shapes.
+- Let the executor schedule independent work concurrently.

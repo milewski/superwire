@@ -3,99 +3,74 @@ title: Building Workflows
 description: A practical process for designing maintainable workflows.
 ---
 
-A good workflow is easiest to maintain when you design the output first and work backward.
+Start from the data boundary, then add runtime dependencies and agents.
 
-## 1. Decide the API response
-
-```wire
-output {
-    task_id: input.task_id
-    summary: agent.summarize.summary
-    next_action: agent.summarize.next_action
-}
-```
-
-## 2. Define input and secrets
+## 1. Define input
 
 ```wire
 input {
     project_id: number
     task_id: number
 }
-
-secrets {
-    endpoint: string
-    api_key: string
-    models: {
-        flash: string
-        pro: string
-        max: string
-    }
-}
 ```
 
-## 3. Add provider aliases
+## 2. Define secrets
 
 ```wire
-provider ai {
-    driver: "openai"
-    endpoint: secrets.endpoint
-    api_key: secrets.api_key
-    models: {
-        flash: secrets.models.flash
-        pro: secrets.models.pro
-        max: secrets.models.max
-    }
+secrets {
+    api_key: string
 }
 ```
 
-## 4. Use schemas for reusable shapes
+Keep secrets small and explicit. Pass provider keys and MCP tokens through the executor request.
+
+## 3. Add provider and model
+
+```wire
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+```
+
+## 4. Add schemas
 
 ```wire
 schema task_summary {
     summary: string
     next_action: string
-    priority: enum { low, medium, high }
 }
 ```
 
-## 5. Add small agents
+## 5. Add agents
 
 ```wire
-agent summarize {
-    model: ai("flash")
+agent summarize_task {
+    model: model.fast
     instruction: "Summarize task {{ input.task_id }} in project {{ input.project_id }}."
     output: schema.task_summary
 }
 ```
 
-## 6. Add tools only when needed
+## 6. Add final output
 
 ```wire
-tool fetch_task from mcp.tasks.tool.fetch_task {
-    bindings {
-        project_id: input.project_id
-    }
-    output {
-        title: string
-        description: string
-    }
-}
-
-dynamic {
-    task: call tool.fetch_task {
-        input {
-            task_id: input.task_id
-        }
-    }
+output {
+    task_id: input.task_id
+    summary: agent.summarize_task.summary
+    next_action: agent.summarize_task.next_action
 }
 ```
 
-## Checklist
+## Review checklist
 
-- The final `output` block is stable and small.
-- Credentials are declared in `secrets`.
-- Agents return object-shaped outputs.
-- Downstream agents reference structured fields, not whole paragraphs where avoidable.
-- Tools have schemas, bindings, and `max_calls` when appropriate.
-- Independent work is split into separate agents for parallel execution.
+- Inputs and secrets match the executor payload.
+- Provider and model declarations use the new `provider ... from ...` and `model ... from ...` syntax.
+- Agent outputs are object-shaped or schema references.
+- Tool runtime values use `bindings {}`.
+- `uses` includes every tool, prompt, and resource an agent needs.
+- Dependencies are clear from references.

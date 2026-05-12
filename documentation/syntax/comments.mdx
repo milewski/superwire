@@ -1,29 +1,27 @@
 ---
 title: Comments
-description: Add inline and block comments to .wire files.
+description: Add comments and schema documentation comments to .wire files.
 ---
 
-Use `//` for line comments.
+Use `//` for regular comments.
 
 ```wire
 // Runtime credentials come from the executor request.
 secrets {
-    endpoint: string
     api_key: string
 }
 ```
 
-Use block comments for longer notes.
+Use `///` for documentation comments on schema fields.
 
 ```wire
-/*
-This workflow creates a task summary and routes it to the next stage.
-*/
-agent summarize {
-    model: ai("flash")
-    instruction: "Summarize {{ input.task_id }}."
-    output: {
-        summary: string
-    }
+schema release_note {
+    /// Short title shown to the user
+    title: string
+
+    /// Severity bucket
+    impact: enum { low, medium, high }
 }
 ```
+
+Block comments are not supported.
