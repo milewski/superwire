@@ -1,99 +1,42 @@
 ---
-title: References and Identifiers
-description: Understand names, keyword roots, dot access, optional chaining, and variant projection.
+title: Variables and References
+description: Reference input, secrets, agents, tools, resources, prompts, dynamic values, and loop variables.
 ---
 
-References are how one part of a workflow reads values from another part.
-
-## Identifier rules
-
-Identifiers:
-
-- start with a letter or underscore
-- continue with letters, digits, or underscores
-
-Examples:
-
-- `openai`
-- `release_summary`
-- `_internal`
-
-## Keyword roots
-
-The language reserves these reference roots:
-
-- `agent` -- access agent outputs
-- `input` -- access input fields
-- `secrets` -- access secret values
-- `dynamic` -- access dynamic block results
-- `tool` -- reference imported tools
-- `resource` -- reference imported resources
-- `prompt` -- reference imported prompts
-
-Examples:
+References use dot paths.
 
 ```wire
-input.topic
-secrets.openai_api_key
-agent.summary
-agent.summary.title
-dynamic.config.threshold
-tool.fetch_user
-resource.user_list
-prompt.system_instructions
+input.project_id
+secrets.endpoint
+agent.summarize.summary
+dynamic.context
+schema.shared.status
 ```
 
-## Dot access
+## Root namespaces
 
-Use `.` to access a nested field.
+| Root | Meaning |
+| --- | --- |
+| `input` | Values from the request body. |
+| `secrets` | Sensitive values from the request body. |
+| `agent` | Outputs from agents. |
+| `dynamic` | Values computed by dynamic blocks. |
+| `tool` | Imported MCP tools. |
+| `resource` | Imported MCP resources. |
+| `prompt` | Imported MCP prompts. |
+| `schema` | Schema declarations and nested reusable fields. |
 
-```wire
-agent.summary.title
-input.customer.profile.name
-dynamic.result.values
-```
+## Loop variables
 
-## Optional chaining
-
-Use `?.` when a nullable object may be `null`.
-
-```wire
-agent.typed_example.nullable_object?.string_value
-```
-
-Validation allows optional chaining when the path can be followed through the declared type. At runtime, `?.` returns `null` instead of failing when the current value is `null` or the field is absent.
-
-## Variant projection
-
-Use `#` to access a specific variant case without match.
+Loop variables are available only inside the looped agent.
 
 ```wire
-agent.event_handler.event#user_created.user_id
-```
-
-This means: if `event` is `user_created`, return `user_id`. Otherwise, return null.
-
-The result is always nullable unless the compiler can prove the variant is already narrowed.
-
-```wire
-// Use fallback when a plain value is required
-agent.event_handler.event#user_created.user_id ?? "unknown"
-```
-
-## Bare identifiers
-
-The grammar allows a plain identifier as a reference root. This is mainly useful for loop variables and function-call syntax.
-
-```wire
-agent remediation_plan for finding in agent.findings.items {
-    instruction: "Create a remediation plan for {{ finding }}."
-    output: string
+agent summarize_each for task_id in input.task_ids {
+    model: ai("flash")
+    instruction: "Summarize task {{ task_id }}."
+    output: {
+        task_id: number
+        summary: string
+    }
 }
 ```
-
-<Warning>
-  The current default runtime only resolves keyword-root references such as
-  `agent.*`, `input.*`, `secrets.*`, `dynamic.*`, `tool.*`, `resource.*`, and
-  `prompt.*`. Plain identifier references are not resolved during runtime
-  execution today.
-</Warning>

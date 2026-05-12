@@ -1,182 +1,80 @@
 ---
 title: Best Practices
-description: Patterns and conventions for writing maintainable Superwire workflows.
+description: Patterns that keep workflows readable, safe, and easy to evolve.
 ---
 
-## Design from the output backward
-
-Start by defining the `output` block, then work backward to determine which agents and data sources you need.
-
-```wire
-// 1. What do I need?
-output {
-    report: agent.report_renderer
-    metadata: agent.metadata_collector
-}
-
-// 2. What agents produce those fields?
-agent report_renderer { ... }
-agent metadata_collector { ... }
-
-// 3. What inputs do they need?
-input { ... }
-```
-
-## Keep agents small and focused
-
-Each agent should do one thing well. Avoid monolithic prompts.
-
-```wire
-// Bad: one agent doing everything
-agent everything {
-    instruction: "Read the data, analyze it, format a report, and write a summary email."
-    output: { ... }
-}
-
-// Good: small, composable agents
-agent data_reader {
-    instruction: "Read and summarize the key data points."
-    output: { points: [string] }
-}
-
-agent analyzer {
-    instruction: "Analyze these data points: {{ agent.data_reader }}"
-    output: { insights: [string] }
-}
-```
-
-## Use schemas for shared types
-
-If multiple agents or the output block reference the same structure, define it once.
-
-```wire
-schema summary {
-    title: string
-    body: string
-    word_count: number
-}
-
-agent intro_writer {
-    output: schema.summary
-}
-
-agent conclusion_writer {
-    output: schema.summary
-}
-```
-
-## Protect secrets
-
-- Always use `secrets` for API keys, passwords, and tokens.
-- Never reference `secrets.*` in `instruction` or `output` -- the validator will catch it.
-- Use secret references in provider configuration:
+## Keep secrets out of instructions
 
 ```wire
 secrets {
-    openai_key: string
-}
-
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: secrets.openai_key
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
+    api_key: string
 }
 ```
 
-## Use `uses:` for tool access
+Do not interpolate secrets into model instructions unless the external provider explicitly needs that value.
 
-Prefer the `uses:` property for agent tool access. It makes dependencies explicit and enables per-agent `max_calls` limits.
-
-```wire
-tool search from mcp.local.tool.search
-
-agent researcher {
-    model: model.openai_model
-    uses: [tool.search { max_calls: 5 }]
-    instruction: "Research: {{ input.topic }}"
-    output: string
-}
-```
-
-## Use `dynamic` for complex runtime computation
-
-When you need tool calls or MCP operations that don't fit in `uses:`, use `dynamic` blocks:
+## Use model aliases
 
 ```wire
-dynamic {
-    data: call tool.fetch_data
+agent fast_draft {
+    model: ai("flash")
+    instruction: "Draft quickly."
+    output: {
+        draft: string
+    }
 }
 
-agent processor {
-    instruction: "Process: {{ dynamic.data }}"
-    output: string
-}
-```
-
-## Leverage parallel execution
-
-Structure workflows so independent agents run in parallel. Avoid unnecessary sequential chains.
-
-```wire
-// These two run concurrently:
-agent sentiment {
-    instruction: "Analyze sentiment of {{ input.text }}"
-    output: string
-}
-
-agent topics {
-    instruction: "Extract topics from {{ input.text }}"
-    output: [string]
-}
-
-// This waits for both:
-agent combine {
-    instruction: "Combine results: sentiment={{ agent.sentiment }}, topics={{ agent.topics }}"
-    output: string
-}
-```
-
-## Add field descriptions
-
-Use doc comments to document schema fields:
-
-```wire
-schema release_note {
-    /// One-line summary of the change
-    title: string
-
-    /// How impactful is this change?
-    impact: enum {
-        low
-        medium
-        high
+agent final_review {
+    model: ai("pro")
+    instruction: "Review: {{ agent.fast_draft.draft }}"
+    output: {
+        approved: boolean
+        notes: [string]
     }
 }
 ```
 
-## Use optional chaining for nullable fields
+Aliases let you switch concrete models through `secrets.models` without editing workflow logic.
 
-Prevent runtime errors with `?.` on nullable paths:
+## Prefer structured outputs
 
 ```wire
-output {
-    score: agent.data.details?.score
+output: {
+    answer: string
+    confidence: number
+    citations: [string]
 }
 ```
 
-## Use null fallback for default values
+Avoid one large text field when the caller needs routing, confidence, status, or IDs.
 
-Provide fallback values with `??`:
+## Keep agents focused
+
+Use multiple small agents instead of one broad agent when the workflow has separable stages.
+
+## Use schemas for shared fields
 
 ```wire
-output {
-    name: agent.data.user?.name ?? "Unknown user"
+schema shared {
+    status: enum { draft, ready, published }
+}
+
+schema article {
+    title: string
+    status: schema.shared.status
 }
 ```
 
-## Validate early, validate often
+## Prefer dynamic blocks for deterministic tool calls
 
-Always call `validate_workflow` in your CI pipeline and tests. Parse errors and validation issues surface before any execution happens.
+When the workflow always needs a tool result, call it in `dynamic` instead of asking the model to decide.
+
+```wire
+dynamic {
+    task: call tool.fetch_task {
+        input {
+            task_id: input.task_id
+        }
+    }
+}
+```

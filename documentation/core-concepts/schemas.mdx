@@ -1,13 +1,9 @@
 ---
 title: Schemas
-description: Define reusable output types with arrays, enums, variants, tuples, and inline descriptions.
+description: Define reusable structured types.
 ---
 
-Schemas let you name complex type expressions and reuse them in agent outputs, input fields, and other schemas.
-
-## Named schemas
-
-Schema names must be lowercase `snake_case`:
+Schemas name reusable object shapes and nested fields. Schema names should be lowercase snake_case.
 
 ```wire
 schema participant {
@@ -18,97 +14,68 @@ schema participant {
 schema research_summary {
     title: string
     lead: schema.participant
-    participants: [schema.participant]
+    contributors: [schema.participant]
 }
 ```
 
-<Warning>
-  Schema names must use `snake_case`. Invalid: `schema Participant`, `schema researchSummary`.
-</Warning>
+A schema declaration always opens a block. It does not assign a type expression with `=`.
 
-## Where schemas can be used
-
-- inside another schema
-- inside `input`
-- inside `secrets`
-- as an agent `output`
+## Using schemas
 
 ```wire
 input {
-    lead_participant: schema.participant
-    previous_summary: schema.research_summary
+    requester: schema.participant
 }
 
 agent summarize {
-    model: model.ollama_model
-    instruction: "Summarize the provided research context."
+    model: ai("flash")
+    instruction: "Create a summary for {{ input.requester.name }}."
     output: schema.research_summary
 }
 ```
 
-## Field descriptions
+## Shared enum fields
 
-Use doc comments before fields:
-
-```wire
-schema release_note {
-    /// Short human-readable title
-    title: string
-
-    /// Severity bucket
-    impact: enum {
-        low
-        medium
-        high
-    }
-}
-```
-
-The parser stores these descriptions in the AST so schema-aware tooling can use them.
-
-## Supported type forms
-
-- primitive scalars: `string`, `number`, `float`, `boolean`, `object`
-- nullable values: `maybe T`
-- schema references: `schema.name`
-- arrays: `[string]`
-- fixed-length arrays: `[string; 3]`
-- tuples: `(string, number, [string; 3])`
-- objects: `{ title: string, score: number }`
-- enums: `enum { draft, ready, published }`
-- variants: `variant tag { ... }`
-
-## Practical example
+Use a shared schema when multiple structures need the same enum.
 
 ```wire
-schema all_types {
-    /// A basic string value
-    string_value: string
-
-    /// Required but may be null
-    nullable_string: maybe string
-
-    /// Exactly three strings
-    fixed_array: [string; 3]
-
-    /// Mixed tuple
-    tuple_value: (string, number, [string; 3])
-
-    /// Nested object
-    object_value: {
-        name: string
-        score: number
-    }
-
-    /// Fixed string choices
-    enum_value: enum {
+schema shared {
+    status: enum {
         draft
         ready
         published
     }
 }
+
+schema article {
+    title: string
+    status: schema.shared.status
+}
 ```
 
-## Validation rules
+Inline enum members use commas when written on one line:
 
-Validation checks that every `schema.name` reference points to a declared schema. Unknown schema references are reported with source spans.
+```wire
+status: enum { draft, ready, published }
+```
+
+When enum members are separated by new lines, commas are not required:
+
+```wire
+status: enum {
+    draft
+    ready
+    published
+}
+```
+
+## Field descriptions
+
+Descriptions are preserved for schema-aware tooling and can improve structured output quality.
+
+```wire
+schema release_note {
+    title: string "Short title shown to the user"
+    impact: enum { low, medium, high } "Severity bucket"
+}
+```

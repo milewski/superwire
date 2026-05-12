@@ -1,73 +1,42 @@
 ---
 title: Tool Calling
-description: How agents use tools through the `uses:` property and MCP server imports.
+description: Advanced notes for controlled MCP tool access.
 ---
 
-Tools are now declared and managed through MCP server imports and the agent `uses:` property. See the [MCP Tools](/mcp/tools) page for the primary reference.
-
-## Legacy `tools:` property (deprecated)
-
-The older inline `tools:` syntax is still parsed but the recommended approach is to use `uses:` with imported tools:
+Agents do not receive every imported tool automatically. Tool access is explicit.
 
 ```wire
-// Legacy inline form (still works but not recommended)
-agent assistant_with_tools {
-    model: model.openai_model
-    tools: [
-        tool.web_search,
-        tool.search(query: input.query)
-    ]
-    instruction: "Answer the question using tools when needed: {{ input.question }}"
+tool fetch_task from mcp.tasks.tool.fetch_task
+
+agent researcher {
+    model: ai("pro")
+    uses: [tool.fetch_task]
+    instruction: "Fetch task context and summarize it."
     output: {
-        answer: string
-        sources: [string]
+        summary: string
     }
 }
 ```
 
-## Recommended: `uses:` with imported tools
+## Dynamic calls versus agent calls
+
+Use a `dynamic` block when the workflow author decides exactly which tool to call:
 
 ```wire
-mcp local {
-    endpoint: "http://localhost:3000"
-}
-
-tool web_search from mcp.local.tool.web_search
-tool knowledge_base_search from mcp.local.tool.knowledge_base_search
-
-agent assistant {
-    model: model.openai_model
-    uses: [
-        tool.web_search,
-        tool.knowledge_base_search { max_calls: 3 }
-    ]
-    instruction: "Answer the question using tools when needed: {{ input.question }}"
-    output: {
-        answer: string
-        sources: [string]
+dynamic {
+    task: call tool.fetch_task {
+        input {
+            task_id: input.task_id
+        }
     }
 }
 ```
 
-## Validation behavior
+Use `uses:` when the model may decide whether and how to call the tool during the agent step.
 
-- `tool` is a reserved keyword root in references
-- Tool expressions still participate in dependency scanning
-- Secret references are allowed in tool bindings because they are configuration data, not prompt text
-- `uses:` references must point to declared tool imports
+## Guardrails
 
-## Runtime behavior
-
-Tools listed in `uses:` are resolved, bound with their arguments, and passed to the agent executor at runtime. The `max_calls` property limits how many times each tool can be called per agent or globally.
-
-<Info>
-  For full details on tool imports, batch imports, dynamic tool calls, and MCP integration,
-  see the <a href="/mcp/tools">MCP Tools</a> page.
-</Info>
-
-## Practical guidance
-
-- Prefer `uses:` with imported tools over inline `tools:` for better scoping
-- Keep tool argument payloads small and explicit
-- Pass secrets only through tool configuration, never through instructions
-- Use `max_calls` to prevent runaway tool invocation
+- Add `input` and `output` schemas to tool declarations when possible.
+- Use `bindings` for trusted values supplied by the workflow.
+- Use `max_calls` to avoid runaway external calls.
+- Keep tool names descriptive and scoped to their purpose.

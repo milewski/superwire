@@ -1,88 +1,29 @@
 ---
 title: Comments
-description: Use `//` and `///` comments to annotate workflows and document schema fields.
+description: Add inline and block comments to .wire files.
 ---
 
-Superwire supports two types of comments.
-
-## Single-line comments
-
-Use `//` for general workflow comments:
+Use `//` for line comments.
 
 ```wire
-// Provider defines where the model comes from.
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
-}
-
-model ollama_model from ollama {
-    id: "qwen3.5:8b"
+// Runtime credentials come from the executor request.
+secrets {
+    endpoint: string
+    api_key: string
 }
 ```
 
-### Rules
-
-- comments start with `//`
-- comments run to the end of the line
-- comments can appear on their own line or after a value
+Use block comments for longer notes.
 
 ```wire
-input {
-    topic: string // Topic supplied by the caller
-}
-```
-
-## Doc comments
-
-Use `///` for field documentation. Doc comments are preserved into generated JSON Schema descriptions.
-
-```wire
-schema user {
-    /// Stable user identifier
-    id: string
-
-    /// Display name shown to other users
-    name: string
-
-    /// Optional biography. The field exists, but may be null.
-    bio: maybe string
-}
-```
-
-### Rules
-
-- doc comments start with `///`
-- doc comments run to the end of the line
-- doc comments are placed before the field they document
-- doc comments are preserved in the AST for tooling
-
-### Usage
-
-Doc comments work on:
-
-- schema fields
-- inline object fields
-- variant case fields
-
-```wire
-schema release_note {
-    /// Short human-readable title
-    title: string
-
-    /// Severity bucket
-    impact: enum {
-        low
-        medium
-        high
+/*
+This workflow creates a task summary and routes it to the next stage.
+*/
+agent summarize {
+    model: ai("flash")
+    instruction: "Summarize {{ input.task_id }}."
+    output: {
+        summary: string
     }
-
-    /// Full text of the release note
-    body: string
 }
 ```
-
-## Recommendation
-
-- Use `//` for workflow intent and business context
-- Use `///` for schema field documentation that should appear in generated JSON Schema
-- The best comments explain why a provider, prompt, or output shape exists

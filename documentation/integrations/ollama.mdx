@@ -1,55 +1,26 @@
 ---
 title: Ollama
-description: Configure Superwire to use an Ollama instance as a model provider.
+description: Use a local Ollama server when developing or testing locally.
 ---
 
-[Ollama](https://ollama.com) runs large language models locally on your machine.
-
-## Setup
-
-Install Ollama and pull a model:
-
-```bash
-ollama pull qwen3.5:8b
-```
-
-## Provider declaration
+Ollama is useful for local development when you do not want to call a remote provider.
 
 ```wire
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
+provider local_ai {
+    driver: "ollama"
+    endpoint: "http://host.docker.internal:11434"
+    models: {
+        flash: "llama3.1"
+    }
 }
 
-model ollama_model from ollama {
-    id: "qwen3.5:8b"
-}
-```
-
-## Required settings
-
-| Setting | Description |
-| --- | --- |
-| `driver` | Must be `"ollama"` |
-| `endpoint` | Host and port (e.g., `http://localhost:11434`) |
-
-## Optional settings
-
-| Setting | Description |
-| --- | --- |
-| `models` | List of allowed model names for validation |
-| `api_key` | Usually not required for local Ollama |
-
-## Agent binding
-
-```wire
-agent greeting {
-    model: model.ollama_model
-    instruction: "Write a welcome message."
-    output: string
+agent local_summary {
+    model: local_ai("flash")
+    instruction: "Summarize {{ input.topic }}."
+    output: {
+        summary: string
+    }
 }
 ```
 
-<Tip>
-  Use the `models` list in your provider declaration to catch typos at
-  validation time before sending a request to Ollama.
-</Tip>
+When running the executor in Docker, make sure the container can reach the Ollama host. On Linux you may need to use host networking or an explicit Docker bridge address.

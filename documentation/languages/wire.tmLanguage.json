@@ -59,10 +59,6 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.triple-slash.wire",
-          "match": "///.*$"
-        },
-        {
           "name": "comment.line.double-slash.wire",
           "match": "//.*$"
         }
@@ -887,7 +883,7 @@
       "patterns": [
         {
           "name": "storage.type.wire",
-          "match": "\\b(string|number|float|boolean|object)\\b"
+          "match": "\\b(string|number|float|boolean|null)\\b"
         },
         {
           "match": "\\b(agent|input|schema|tool|resource|prompt|secrets|dynamic)\\b(?=\\s*\\.)",
@@ -896,22 +892,6 @@
         {
           "name": "entity.name.type.schema-reference.wire",
           "match": "\\bschema\\.[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*\\b"
-        },
-        {
-          "name": "keyword.type.wire",
-          "match": "\\b(maybe)\\b"
-        },
-        {
-          "name": "keyword.type.wire",
-          "match": "\\b(enum)\\b(?=\\s*\\{)"
-        },
-        {
-          "name": "keyword.type.wire",
-          "match": "\\b(variant)\\b"
-        },
-        {
-          "name": "keyword.type.wire",
-          "match": "\\b(match)\\b"
         }
       ]
     },
@@ -940,14 +920,6 @@
         {
           "name": "keyword.operator.wire",
           "match": "\\?\\."
-        },
-        {
-          "name": "keyword.operator.wire",
-          "match": "\\?\\?"
-        },
-        {
-          "name": "keyword.operator.wire",
-          "match": "#"
         },
         {
           "name": "punctuation.separator.wire",

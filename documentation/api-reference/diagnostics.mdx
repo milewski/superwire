@@ -1,69 +1,41 @@
 ---
 title: Diagnostics
-description: The main parse, validation, and runtime error types exposed by the Rust API.
+description: Parse, validation, and runtime diagnostics exposed by Superwire.
 ---
+
+Diagnostics are grouped by phase.
 
 ## Parse diagnostics
 
-Parsing returns `DslParseError`.
+Parse diagnostics mean the `.wire` source could not be parsed.
 
-Important variants include:
+Examples:
 
-- `Pest` -- raw pest parse error
-- `MissingNode` -- expected AST node not found
-- `UnexpectedRule` -- unexpected grammar rule encountered
-- `InvalidIntegerLiteral` -- malformed integer literal
-
-Parse errors expose source spans through `DslParseError::span()`.
+- unclosed block
+- invalid declaration syntax
+- malformed string literal
 
 ## Validation diagnostics
 
-Validation returns a `ValidationReport` with zero or more `ValidationIssue` values.
+Validation diagnostics mean the source is syntactically valid but semantically invalid.
 
-Common issue categories include:
+Examples:
 
-- duplicate declarations (providers, schemas, agents, input, secrets, output)
-- duplicate properties within a declaration
-- unknown schema references
-- invalid model expressions (must be `provider("model")` form)
-- unknown providers or unknown models
-- invalid keyword reference roots
-- missing input or secrets declarations for referenced fields
-- secret leaks in instructions or output
-- invalid reference paths (field does not exist on the type)
-- missing agent output types for field access
-- dependency cycles between agents
-- dependency cycles between dynamic blocks
-- invalid `uses:` references or `max_calls` overrides
-- schema names not using `snake_case`
-- variant case field type mismatches
+- unknown `agent.*` reference
+- unknown `schema.*` reference
+- invalid nested field path
+- dependency cycle
+- tool used by an agent but not listed in `uses:`
 
 ## Runtime diagnostics
 
-Execution returns `WorkflowRuntimeError`.
+Runtime diagnostics happen after validation.
 
-Important variants include:
+Examples:
 
-- `ParseFailed` -- could not parse the workflow at runtime
-- `InvalidWorkflow` -- workflow failed validation
-- `ExecutionPlanInvariant` -- internal execution plan error
-- `MissingDeclaration` -- referenced declaration not found
-- `UnsupportedFeature` -- feature not yet supported by the runtime
-- `ProviderConfiguration` -- provider could not be configured
-- `ExpressionEvaluation` -- expression evaluation failed
-- `InvalidAgentProperty` -- unrecognized agent property
-- `InputTypeMismatch` -- provided input does not match declared types
-- `OutputTypeMismatch` -- agent output does not match declared type
-- `InputValueMismatch` -- wrong number or type of input values
-- `AgentExecutionFailed` -- agent call to LLM failed
-- `AgentOutputTypeMismatch` -- LLM response does not match output schema
-- `SerializationFailed` -- could not serialize/deserialize data
-- `OutputDeserializationFailed` -- could not deserialize agent output
-- `Other` -- catch-all for unexpected errors
+- provider returned an error
+- MCP server failed
+- tool result did not match its declared output schema
+- model output did not match the agent output schema
 
-## Practical advice
-
-- surface parse spans directly in editors or test failures
-- treat validation as a required preflight step
-- reserve runtime errors for provider failures, unsupported features, input/output mismatches, and agent execution failures
-- use the validation report's structured issues for IDE integration
+Executor errors are described in [Executor API](/api-reference/executor-api).

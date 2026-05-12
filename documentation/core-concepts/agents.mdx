@@ -1,137 +1,95 @@
 ---
 title: Agents
-description: Define model calls, instructions, output types, and dependency edges.
+description: Define model calls, tool access, context, and structured outputs.
 ---
 
-Agents are the center of the DSL. They describe a named unit of work that can reference input, secrets, and prior agent outputs.
-
-## Basic syntax
+An agent is one LLM step in the workflow graph.
 
 ```wire
-agent summary {
-    model: model.openai_model
-    instruction: "Summarize {{ input.notes }}."
-    output: string
-}
-```
-
-## Agent declaration form
-
-```wire
-agent <name> [for <item> in <expression>] {
-    model: <expression>
-    instruction: <expression>
-    output: <type_expression>
-    context: <expression>
-    inference: <expression>
-    tools: <expression>
-    uses: <expression>
-}
-```
-
-## Built-in properties
-
-- **`model`**: provider/model binding such as `openai("gpt-4.1-mini")`
-- **`instruction`**: string literal or interpolated string sent to the model as the primary prompt
-- **`output`**: type expression used to validate the returned JSON value
-- **`context`**: reserved property for explicit context wiring (see [Context and Compaction](/advanced/context-sharing))
-- **`inference`**: structured generation settings such as temperature and token limits
-- **`tools`**: list of tool references such as `tool.search` or `tool.search(query: input.topic)` (legacy inline form)
-- **`uses`**: list of tool references bound from MCP server imports, with optional per-agent `max_calls` overrides
-
-## A full example
-
-```wire
-agent research_brief {
-    model: model.openai_model
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 12_000
-    }
-
-    instruction: "Write a concise research brief about {{ input.topic }}."
-
+agent summarize_task {
+    model: ai("flash")
+    instruction: "Summarize task {{ input.task_id }}."
     output: {
         summary: string
-        risks: [string]
-        next_steps: [string; 3]
+        next_action: string
     }
 }
 ```
 
-## References inside agents
+## Agent properties
 
-Agent expressions can use:
+| Property | Purpose |
+| --- | --- |
+| `model` | Selects a provider model alias, for example `ai("flash")`. |
+| `instruction` | Text sent to the model. Supports interpolation. |
+| `context` | Optional structured context supplied to the model. |
+| `uses` | Tools the agent is allowed to call. |
+| `output` | Required object-shaped output schema. |
 
-- `input.field`
-- `secrets.field`
-- `agent.other_agent`
-- `agent.other_agent.field`
-- `agent.other_agent.nullable_field?.nested_field`
-- `dynamic.block_name`
-- `dynamic.block_name.field`
+## Structured outputs
 
-Referencing `agent.other_agent` creates a dependency edge automatically.
-
-## Response format
-
-The `output` property supports a response format hint:
+Agent outputs are always object-shaped. Keep field names stable because other agents and final outputs reference them.
 
 ```wire
-agent structured_writer {
-    model: model.openai_model
-    instruction: "Extract the data from this text."
+agent classify {
+    model: ai("flash")
+    instruction: "Classify: {{ input.message }}"
     output: {
-        json_schema: "auto"
-        schema: {
-            name: string
-            age: number
-        }
+        category: enum { bug, feature, question }
+        confidence: number
     }
 }
 ```
 
-Accepted values: `auto`, `json_schema`, `json_object`, `instruction_only`.
-
-## Loop form
-
-The grammar supports agent loops:
+Downstream references use dot paths:
 
 ```wire
-agent remediation_plan for finding in agent.findings.items {
-    model: model.openai_model
-    instruction: "Create a remediation plan for {{ finding }}."
-    output: string
+agent route {
+    model: ai("flash")
+    instruction: "Route category {{ agent.classify.category }} with confidence {{ agent.classify.confidence }}."
+    output: {
+        assignee: string
+        reason: string
+    }
 }
 ```
 
-Object destructuring is also supported:
+## Tool access
+
+Tools must be imported and explicitly listed in `uses:`.
 
 ```wire
-agent process_items for { id, name } in input.items {
-    model: model.openai_model
-    instruction: "Process item {{ id }}: {{ name }}"
-    output: string
+tool search_tasks from mcp.tasks.tool.search_tasks
+
+agent researcher {
+    model: ai("pro")
+    uses: [tool.search_tasks]
+    instruction: "Research task {{ input.task_id }} before answering."
+    output: {
+        findings: [string]
+    }
 }
 ```
 
-## Current runtime behavior
+## Looped agents
 
-The default runtime executes all agent properties:
+Use `for ... in` to run the same agent over a collection. Iterations can run in parallel.
 
-- `model`
-- `instruction`
-- `output`
-- `context`
-- `inference`
-- `tools`
-- `uses`
+```wire
+input {
+    task_ids: [number]
+}
 
-It also fully evaluates `for` loop iteration (with parallel execution per iteration), `context(...)`, `compact(...)`, and `template(...)` function calls.
+agent summarize_each for task_id in input.task_ids {
+    model: ai("flash")
+    instruction: "Summarize task {{ task_id }}."
+    output: {
+        task_id: number
+        summary: string
+    }
+}
 
-<Info>
-  <code>tool.*</code> references are only executed within the <code>tools:</code>
-  property or via <code>uses:</code>. Use the <code>call tool.xxx</code> expression
-  in <code>dynamic</code> blocks for tool invocation in other contexts.
-</Info>
+output {
+    summaries: agent.summarize_each
+}
+```

@@ -1,155 +1,64 @@
 ---
 title: Batch Imports
-description: Import multiple tools, resources, or prompts in a single block from an MCP server.
+description: Import several MCP tools with shared bindings.
 ---
 
-Batch imports reduce boilerplate when you need several items from the same MCP server.
-
-## Batch import syntax
+When many tools come from the same MCP namespace and share bindings, import them in one block.
 
 ```wire
-from <mcp_server>.<kind> {
-    <item>
-    <item>
-    ...
+from mcp.tasks.tool {
+    bindings {
+        project_id: input.project_id
+        workspace_id: input.workspace_id
+    }
+
+    tool fetch_task
+    tool update_task_status
+    tool create_comment
 }
 ```
 
-Where `<kind>` is `tool`, `resource`, or `prompt`.
+This is equivalent to importing each tool separately with the same `bindings` block.
 
-## Batch tool import
+## Per-tool overrides
+
+A tool can still add specific configuration:
 
 ```wire
-from mcp.local.tool {
+from mcp.tasks.tool {
     bindings {
         project_id: input.project_id
     }
 
-    tool create_sorting_task {
-        bindings {
-            task_id: input.task_id
+    tool fetch_task {
+        max_calls: 5
+    }
+
+    tool create_comment {
+        input {
+            task_id: number
+            body: string
         }
-    }
-
-    tool update_task_status {
-        bindings {
-            task_id: input.task_id
-        }
-    }
-
-    tool assign_task {
-        bindings {
-            task_id: input.task_id
-        }
+        max_calls: 1
     }
 }
 ```
 
-The shared `bindings` block at the top level provides parameters inherited by all tools. Individual tools can add or override bindings.
-
-This is equivalent to:
-
-```wire
-tool create_sorting_task from mcp.local.tool.create_sorting_task {
-    bindings {
-        project_id: input.project_id
-        task_id: input.task_id
-    }
-}
-
-tool update_task_status from mcp.local.tool.update_task_status {
-    bindings {
-        project_id: input.project_id
-        task_id: input.task_id
-    }
-}
-
-tool assign_task from mcp.local.tool.assign_task {
-    bindings {
-        project_id: input.project_id
-        task_id: input.task_id
-    }
-}
-```
-
-## Batch resource import
-
-```wire
-from mcp.local.resource {
-    bindings {
-        project_id: input.project_id
-    }
-
-    resource all_tasks
-}
-```
-
-## Batch prompt import
-
-```wire
-from mcp.local.prompt {
-    bindings {
-        project_id: input.project_id
-    }
-
-    prompt create_task_instructions {
-        bindings {
-            task_id: input.task_id
-        }
-    }
-}
-```
-
-## Mixed batch import
-
-When you need tools, resources, and prompts from the same server, use the combined form:
-
-```wire
-from mcp.local {
-    bindings {
-        project_id: input.project_id
-    }
-
-    resource all_tasks
-    prompt create_task_instructions
-    tool create_task {
-        bindings {
-            task_id: input.task_id
-        }
-    }
-}
-```
-
-This imports tools, resources, and prompts from `mcp.local` with shared top-level bindings.
-
-## Aliasing imports
-
-Items can optionally be renamed with `as`:
-
-```wire
-from mcp.local.tool {
-    tool fetch_task as get_task_data
-}
-```
-
-## Using imported items in agents
-
-Imported tools appear in the `tool.*` or resource/prompt in the `resource.*`/`prompt.*` namespace and can be listed in an agent's `uses:` array:
+## Agent usage
 
 ```wire
 agent task_manager {
-    model: model.openai_model
-    uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
-    instruction: "Manage project tasks"
-    output: string
+    model: ai("pro")
+    uses: [
+        tool.fetch_task,
+        tool.update_task_status,
+        tool.create_comment
+    ]
+    instruction: "Manage task {{ input.task_id }}."
+    output: {
+        result: string
+    }
 }
 ```
 
-## Binding scoping
-
-Top-level bindings in a batch import are inherited by all items. Item-level bindings are merged on top, with item-level values taking precedence. You can override or append to inherited bindings.
-
-<Info>
-  Batch imports are a syntactic convenience -- the runtime resolves them to individual
-  tool/resource/prompt declarations with merged bindings at parse time.
-</Info>
+Batch imports keep workflow files short without hiding which tools are available.

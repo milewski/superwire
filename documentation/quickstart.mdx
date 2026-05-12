@@ -1,166 +1,151 @@
 ---
-title: Quickstart (Rust)
-description: Build and run a small Superwire workflow using Rust code.
+title: Quickstart
+description: Start the executor, write a workflow, and call /execute or /execute/stream.
 ---
 
-This quickstart shows how to parse, validate, and execute Superwire workflows from Rust. It uses Ollama as the model provider because it is the lowest-friction way to run a real workflow locally.
+This guide gets a `.wire` file running through the Docker executor service.
 
-## 1. Start a model provider
-
-Install and start Ollama, then pull a model:
+## 1. Start the executor
 
 ```bash
-ollama pull qwen3.5:8b
+docker run --rm -p 8080:8080 rmilewski/superwire-executor
 ```
 
-## 2. Create a workflow
+The service exposes two execution endpoints:
 
-Save this as `hello.wire`:
+| Endpoint | Response style | Use when |
+| --- | --- | --- |
+| `POST /execute` | one JSON response | backend jobs, tests, synchronous API calls |
+| `POST /execute/stream` | Server-Sent Events | chat UIs, progress displays, long workflows |
+
+Both endpoints receive the same JSON payload.
+
+## 2. Create `hello.wire`
 
 ```wire
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
-}
-
-model ollama_model from ollama {
-    id: "qwen3.5:8b"
-}
-
-agent greeting {
-    model: model.ollama_model
-    instruction: "Write a one-sentence welcome message for a new user."
-    output: string
-}
-
-output {
-    greeting: agent.greeting
-}
-```
-
-Note the **`instruction:`** property -- not `prompt:`. This is the agent property that holds the text sent to the model.
-
-## 3. Execute it from Rust
-
-The `try_workflow!` macro simplifies workflow execution by combining parsing and running:
-
-```rust
-use superwire_core::runtime::try_workflow;
-use schemars::JsonSchema;
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct Output {
-    greeting: String,
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let workflow_output: Output = try_workflow!("hello.wire").await?;
-
-    println!("{}", workflow_output.greeting);
-
-    Ok(())
-}
-```
-
-## 4. Add input values
-
-Typed input makes workflows reusable:
-
-```wire
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
-}
-
-model ollama_model from ollama {
-    id: "qwen3.5:8b"
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
 input {
-    topic: string
-    audience: string
+    name: string
 }
 
-agent summary {
-    model: model.ollama_model
-    instruction: "Explain {{ input.topic }} for {{ input.audience }}."
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
+}
+
+agent greeting {
+    model: ai("flash")
+    instruction: "Greet {{ input.name }} in one friendly sentence."
     output: {
-        title: string
-        summary: string
+        message: string
     }
 }
 
 output {
-    title: agent.summary.title
-    summary: agent.summary.summary
+    message: agent.greeting.message
 }
 ```
 
-The `try_workflow!` macro also works with inputs:
+## 3. Encode the workflow
 
-```rust
-use superwire_core::runtime::try_workflow;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+Linux:
 
-#[derive(Debug, Serialize, JsonSchema)]
-struct Input {
-    topic: String,
-    audience: String,
+```bash
+WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
+```
+
+macOS:
+
+```bash
+WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
+```
+
+## 4. Execute the workflow
+
+```bash
+curl -s http://localhost:8080/execute \
+  -H 'Content-Type: application/json' \
+  -d @- <<JSON
+{
+  "input": {
+    "name": "Rafael"
+  },
+  "secrets": {
+    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "YOUR_API_KEY",
+    "models": {
+      "flash": "qwen3.6-plus",
+      "pro": "qwen3.6-plus",
+      "max": "qwen3.6-plus"
+    }
+  },
+  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
 }
+JSON
+```
 
-#[derive(Debug, Deserialize, JsonSchema)]
-struct Output {
-    title: String,
-    summary: String,
-}
+Expected response shape:
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let input = Input {
-        topic: "agent workflows".to_string(),
-        audience: "Rust developers".to_string(),
-    };
-
-    let workflow_output: Output = try_workflow!("summary.wire", input).await?;
-
-    println!("{:?}", workflow_output);
-
-    Ok(())
+```json
+{
+  "message": "Hello Rafael — welcome!"
 }
 ```
 
-<Tip>
-  If you want deterministic tests without a live model, use
-  `WorkflowRuntime::run_with_runner(...)` with a custom `AgentRunner`. The testing guide
-  shows the full pattern.
-</Tip>
+## 5. Stream the same workflow
 
-## 5. Know the current runtime boundary
+```bash
+curl -N http://localhost:8080/execute/stream \
+  -H 'Content-Type: application/json' \
+  -d @- <<JSON
+{
+  "input": {
+    "name": "Rafael"
+  },
+  "secrets": {
+    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "YOUR_API_KEY",
+    "models": {
+      "flash": "qwen3.6-plus",
+      "pro": "qwen3.6-plus",
+      "max": "qwen3.6-plus"
+    }
+  },
+  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
+}
+JSON
+```
 
-The default runtime executes `model`, `instruction`, `output`, `context`, `inference`, `tools`, `uses`, `for` loop agents, `context(...)`, `compact(...)`, and `template(...)`.
+The streaming endpoint emits progress and output events as the workflow runs. Event names are documented in [Executor API](/api-reference/executor-api).
 
-Dynamic blocks, MCP server integrations (`mcp` declarations, tool calls via `call`, resource reads via `read`, prompt renders via `render`), and batch imports are also supported.
+## 6. Add structure
 
-<Info>
-  `tool.*` references are resolved through the MCP tool system and are only available
-  within agent <code>uses:</code> arrays or <code>dynamic</code> blocks. The
-  <code>call tool.xxx</code> expression form is used in dynamic blocks.
-</Info>
+Agent outputs are structured. Add more fields when the caller needs machine-readable data:
 
-## Continue reading
+```wire
+agent classify_request {
+    model: ai("flash")
+    instruction: "Classify this request: {{ input.name }}"
+    output: {
+        label: enum { bug, feature, question }
+        confidence: number
+    }
+}
+```
 
-<CardGroup cols={2}>
-  <Card title="Providers" icon="plug" href="/core-concepts/providers">
-    Configure OpenAI and Ollama providers.
-  </Card>
-  <Card title="Agents" icon="robot" href="/core-concepts/agents">
-    Learn every built-in agent property.
-  </Card>
-  <Card title="Examples" icon="code" href="/examples/basic-agent">
-    Start from complete repository-backed examples.
-  </Card>
-  <Card title="Testing" icon="vial" href="/guides/testing">
-    Parse, validate, and execute workflows inside Rust tests.
-  </Card>
-</CardGroup>
+Continue with [Workflow Anatomy](/core-concepts/workflows) and [Building Workflows](/guides/building-workflows).

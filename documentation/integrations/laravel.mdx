@@ -1,300 +1,45 @@
 ---
 title: Laravel
-description: Execute Superwire workflows from Laravel applications with pluggable drivers, streaming, and testing fakes.
+description: Call the Superwire executor from a Laravel application.
 ---
 
-The `superwire/laravel` package provides a first-class Laravel integration for running Superwire workflows. Workflows are executed via HTTP against a running Superwire executor server.
+Laravel applications normally call the executor over HTTP. Store provider credentials in Laravel config or environment variables, then pass them as `secrets` in the request body.
 
-## Installation
-
-```bash
-composer require superwire/superwire-laravel
-```
-
-The service provider is auto-registered via Laravel's package discovery.
-
-## Configuration
-
-Publish the config file:
-
-```bash
-php artisan vendor:publish --tag=superwire-config
-```
-
-The config file at `config/superwire.php`:
+## Example request
 
 ```php
-return [
-    'executor' => [
-        'url' => env('SUPERWIRE_EXECUTOR_URL', 'http://localhost:3000'),
-        'timeout' => env('SUPERWIRE_EXECUTOR_TIMEOUT', 300),
+use Illuminate\Support\Facades\Http;
+
+$workflowSourceBase64 = base64_encode(file_get_contents(resource_path('workflows/task_summary.wire')));
+
+$response = Http::post('http://superwire-executor:8080/execute', [
+    'input' => [
+        'project_id' => 14,
+        'task_id' => 109,
     ],
-];
-```
-
-Set `SUPERWIRE_EXECUTOR_URL` to point at your running Superwire executor.
-
-## Running workflows
-
-### From a file
-
-```php
-use Superwire\Laravel\Workflow;
-
-$result = Workflow::fromFile(resource_path('workflows/hello.wire'))
-    ->run();
-```
-
-### From a string
-
-```php
-$result = Workflow::fromSource('
-    provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-        api_key: "sk-test-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
-    agent greeting {
-        model: model.openai_model
-        instruction: "Write a welcome message."
-        output: string
-    }
-
-    output {
-        greeting: agent.greeting
-    }
-')
-->run();
-```
-
-### With input and secrets
-
-```php
-$result = Workflow::fromFile('workflows/report.wire')
-    ->inputs([
-        'product_name' => 'Superwire',
-        'audience' => 'developers',
-    ])
-    ->secrets([
-        'api_key' => config('services.openai.key'),
-    ])
-    ->run();
-```
-
-### Mapping output to a class
-
-Use `mapInto()` to automatically hydrate the workflow output into a PHP class:
-
-```php
-$result = Workflow::fromFile('workflows/report.wire')
-    ->inputs(['product_name' => 'Superwire'])
-    ->mapInto(ReportSummary::class)
-    ->run();
-
-// $result->output is now a ReportSummary instance
-```
-
-The class can use a `from(array)` factory method or a constructor that accepts named arguments:
-
-```php
-class ReportSummary
-{
-    public function __construct(
-        public string $title,
-        public string $summary,
-    ) {}
-
-    public static function from(array $data): self
-    {
-        return new self(
-            title: $data['title'],
-            summary: $data['summary'],
-        );
-    }
-}
-```
-
-## Streaming execution
-
-Workflows that use tool calls or multiple agents can be streamed as Server-Sent Events:
-
-```php
-use Superwire\Laravel\Enums\ExecutorEventKind;
-
-foreach (Workflow::fromFile('workflows/complex.wire')
-    ->inputs(['query' => $request->query])
-    ->stream() as $event) {
-
-    if ($event->kind === ExecutorEventKind::AgentStarted) {
-        logger()->info("Agent {$event->agentName} started");
-    }
-
-    if ($event->kind === ExecutorEventKind::WorkflowCompleted) {
-        $output = $event->output();
-    }
-}
-```
-
-Or collect all events into a result directly:
-
-```php
-$result = Workflow::fromFile('workflows/complex.wire')
-    ->inputs(['query' => $request->query])
-    ->streamToResult();
-
-// $result->output contains the final workflow output
-// $result->history contains all events as arrays
-```
-
-## Validation
-
-Validate a workflow without executing it:
-
-```php
-$validation = Workflow::fromFile('workflows/report.wire')
-    ->secrets(['api_key' => 'test'])
-    ->validate();
-
-if ($validation->hasIssues()) {
-    foreach ($validation->issues as $issue) {
-        logger()->error($issue->message);
-    }
-}
-```
-
-## Formatting
-
-Format a workflow source to canonical form:
-
-```php
-$formatted = Workflow::fromSource($rawSource)->format();
-
-echo $formatted->formattedSource;
-```
-
-## Testing
-
-The package includes a `WorkflowFake` for testing without hitting an executor server:
-
-```php
-use Superwire\Laravel\Workflow;
-use Superwire\Laravel\Testing\Fakes\WorkflowFake;
-
-// Stub all workflow executions
-Workflow::fake([
-    'summary' => 'Test summary',
-    'status' => 'ok',
+    'secrets' => [
+        'endpoint' => config('services.ai.endpoint'),
+        'api_key' => config('services.ai.api_key'),
+        'mcp_summarizer_endpoint' => config('services.mcp.summarizer_endpoint'),
+        'models' => [
+            'flash' => config('services.ai.models.flash'),
+            'pro' => config('services.ai.models.pro'),
+            'max' => config('services.ai.models.max'),
+        ],
+    ],
+    'workflow_source_base64' => $workflowSourceBase64,
 ]);
 
-$result = Workflow::fromSource('test workflow')->run();
-
-// $result->output === ['summary' => 'Test summary', 'status' => 'ok']
+$result = $response->throw()->json();
 ```
 
-### Per-file stubs
+## Streaming
 
-```php
-Workflow::fake()
-    ->forFile(resource_path('workflows/greeting.wire'), [
-        'greeting' => 'Hello, World!',
-    ])
-    ->forFile(resource_path('workflows/report.wire'), function (array $input, array $secrets) {
-        return ['summary' => "Report for {$input['product_name']}"];
-    });
-```
+Use `/execute/stream` when the frontend should receive workflow progress or token chunks. In Laravel, proxy the SSE stream rather than buffering the entire response.
 
-### Assertions
+## Operational guidance
 
-```php
-Workflow::fake(['status' => 'ok']);
-
-Workflow::fromSource('test')->inputs(['id' => 1])->run();
-
-Workflow::fake()
-    ->assertExecuted()
-    ->assertExecutedWith(['id' => 1]);
-```
-
-Laravel's HTTP fake integrates naturally with the fake:
-
-```php
-public function test_workflow_executes(): void
-{
-    Workflow::fake(['summary' => 'Test']);
-
-    $response = $this->post('/api/generate', [
-        'topic' => 'test topic',
-    ]);
-
-    $response->assertOk();
-
-    // Verify the workflow ran with expected input
-    Workflow::fake()
-        ->assertExecuted()
-        ->assertExecutedWith(['topic' => 'test topic']);
-}
-```
-
-## Event listeners
-
-The package fires Laravel events during workflow execution:
-
-| Event | Fired when |
-| --- | --- |
-| `WorkflowStartedEvent` | Execution begins |
-| `WorkflowPlannedEvent` | Execution plan is built |
-| `AgentStartedEvent` | An agent starts executing |
-| `AgentCompletedEvent` | An agent finishes executing |
-| `ToolCallStartedEvent` | A tool call begins |
-| `ToolCallCompletedEvent` | A tool call succeeds |
-| `ToolCallFailedEvent` | A tool call fails |
-| `McpCallStartedEvent` | An MCP call begins |
-| `McpCallCompletedEvent` | An MCP call succeeds |
-| `McpCallFailedEvent` | An MCP call fails |
-| `WorkflowCompletedEvent` | Execution completes successfully |
-| `WorkflowFailedEvent` | Execution fails |
-
-Subscribe to events in your `EventServiceProvider`:
-
-```php
-use Superwire\Laravel\Data\Events\AgentCompletedEvent;
-
-class EventServiceProvider extends ServiceProvider
-{
-    public function boot(): void
-    {
-        Event::listen(AgentCompletedEvent::class, function (AgentCompletedEvent $event) {
-            logger()->info("Agent {$event->agentName} completed", [
-                'output' => $event->output,
-            ]);
-        });
-    }
-}
-```
-
-## Facade
-
-A facade is available for concise usage:
-
-```php
-use Superwire\Laravel\Facades\Workflow;
-
-$result = Workflow::fromSource('test workflow')->run();
-```
-
-## Immutability
-
-Workflow instances are immutable. Each method call returns a new instance:
-
-```php
-$workflow = Workflow::fromFile('workflow.wire');
-$withInput = $workflow->inputs(['key' => 'value']);
-$withSecrets = $withInput->secrets(['token' => 'secret']);
-
-// $workflow is unchanged
-// $withSecrets has both inputs and secrets
-```
+- Keep workflow files in `resources/workflows` or another reviewed path.
+- Keep secrets in `.env` or your secret manager.
+- Do not log raw executor payloads because they contain API keys.
+- Validate that the returned JSON shape matches the controller response contract.

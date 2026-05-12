@@ -1,18 +1,19 @@
 # Superwire documentation
 
-This directory contains the Mintlify documentation for the Superwire DSL,
-runtime, integrations, examples, and public Rust APIs.
+This directory contains the Mintlify documentation for the Superwire workflow DSL.
+
+The documentation is written for application developers who will normally execute `.wire` files through the Docker executor service. Rust APIs are documented as an advanced embedding option, not as the first path for new users.
 
 ## Structure
 
-- `introduction.mdx`, `quickstart.mdx`, `installation.mdx`: onboarding pages
-- `core-concepts/`: the mental model of workflows
+- `introduction.mdx`, `quickstart.mdx`, `installation.mdx`: first-run onboarding around the executor HTTP API
+- `core-concepts/`: workflow mental model and declaration reference
 - `syntax/`: grammar-level DSL reference
-- `advanced/`: execution, context, tools, and diagnostics notes
-- `guides/`: practical authoring, testing, and migration help
-- `integrations/`: default runtime provider setup
-- `examples/`: complete workflow examples
-- `api-reference/`: Rust runtime, LSP, and diagnostics reference
+- `mcp/`: MCP server, tool, resource, prompt, and batch import usage
+- `guides/`: practical authoring and testing workflows
+- `api-reference/executor-api.mdx`: `/execute` and `/execute/stream` request/response contract
+- `api-reference/rust-api.mdx`: Rust embedding surface
+- `examples/`: complete `.wire` examples
 - `docs.json`: Mintlify navigation and site configuration
 
 ## Run locally
@@ -29,10 +30,12 @@ cd documentation
 npx mintlify lint
 ```
 
-## Writing rules for this docs set
+## Writing rules
 
-- Prefer real syntax from `crates/core/src/dsl/grammar.pest`
-- Prefer runnable snippets from `crates/core/workflows/*.ai`
-- Call out parser, validator, and runtime differences when they matter
-- Avoid placeholder integrations or APIs that the repository does not ship
-- Keep links in `docs.json` in sync with the files on disk
+- Lead with the Docker executor and HTTP payloads.
+- Keep Rust API content in API Reference or advanced integration pages.
+- Use `instruction:` for agent prompts.
+- Use `uses:` for agent tool access.
+- Agent outputs are always object blocks, for example `output: { answer: string }`.
+- Document the current unreleased language directly; avoid historical compatibility notes.
+- Keep examples small enough to copy into a single `.wire` file.

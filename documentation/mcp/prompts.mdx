@@ -1,91 +1,32 @@
 ---
 title: Prompts
-description: Import and render prompt templates from MCP servers.
+description: Import reusable prompt templates from MCP servers.
 ---
 
-MCP prompt imports let you manage prompt templates externally and render them dynamically at runtime.
-
-## Importing a prompt
+Prompts let an external MCP server own shared instructions.
 
 ```wire
-mcp local {
-    endpoint: "http://localhost:3000"
-}
-
-prompt system_prompt from mcp.local.prompt.system_prompt
+prompt writer_instructions from mcp.docs.prompt.writer_instructions
 ```
 
-The syntax:
-
-```wire
-prompt <local_name> from <mcp_server>.prompt.<remote_name>
-```
-
-## Rendering a prompt
-
-Use the `render` expression in a `dynamic` block:
+Render a prompt in a dynamic block:
 
 ```wire
 dynamic {
-    instructions: render prompt.system_prompt {
-        bindings {
-            audience: "maintainers"
-        }
-    }
+    instructions: render prompt.writer_instructions
 }
 ```
 
-## With parameter bindings
-
-Prompts often need runtime parameters:
+Use the rendered prompt in an agent instruction:
 
 ```wire
-input {
-    workspace_id: string
-}
-
-prompt system_prompt from mcp.local.prompt.system_prompt {
-    bindings {
-        workspace_id: input.workspace_id
-    }
-}
-
-dynamic {
-    instructions: render prompt.system_prompt {
-        bindings {
-            audience: "maintainers"
-        }
+agent writer {
+    model: ai("flash")
+    instruction: "{{ dynamic.instructions }}\n\nTopic: {{ input.topic }}"
+    output: {
+        article: string
     }
 }
 ```
 
-The `bindings` on the import capture parameters at declaration time (often from `input`), while the `bindings` on the `render` call overlay additional parameters at render time.
-
-## Using rendered prompts
-
-Rendered prompt text feeds into agent instructions:
-
-```wire
-agent assistant {
-    model: model.openai_model
-    instruction: dynamic.instructions
-    output: string
-}
-```
-
-## Referencing other dynamic values in render bindings
-
-```wire
-dynamic {
-    readme: read resource.project_readme {
-        bindings { section: "setup" }
-    }
-    instructions: render prompt.system_prompt {
-        bindings {
-            readme: dynamic.readme
-        }
-    }
-}
-```
-
-This allows prompt templates to incorporate the results of resource reads or tool calls.
+Prompt rendering is useful when several workflows share the same system-level guidance.

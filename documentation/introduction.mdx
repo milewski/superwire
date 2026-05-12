@@ -1,136 +1,137 @@
 ---
 title: Introduction
-description: A practical guide to the Superwire workflow DSL, validation rules, and runtime behavior.
+description: Learn what Superwire is, how workflows run, and how to execute your first .wire file through the Docker executor.
 ---
 
-Superwire is a declarative language for describing agent workflows.
-A workflow is a plain text file (`.wire`) made from a small set of declarations:
+Superwire is a declarative DSL for building AI agent workflows. A workflow is a plain text `.wire` file that describes:
 
-- **providers**, which define where models come from and how to reach them
-- **input**, which defines typed values passed in at execution time
-- **secrets**, which define sensitive values passed in separately from normal input
-- **schemas**, which define reusable named output types
-- **agents**, which define model calls, references, and behavior
-- **output**, which shapes the final JSON object returned by the workflow
-- **dynamic** blocks, which compute values at runtime through tool calls and MCP integrations
-- **MCP** declarations, which connect to external tools, resources, and prompts
+- which model providers are available
+- what input and secrets the caller must pass
+- which agents run and what each one returns
+- which tools, resources, and prompts can be imported from MCP servers
+- what final JSON object the caller receives
 
-```wire
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
-}
+The usual runtime path is the **Superwire executor service**. You run the Docker image, send a base64-encoded workflow to `/execute`, and receive JSON. For streaming UX, send the same payload to `/execute/stream` and consume Server-Sent Events.
 
-model ollama_model from ollama {
-    id: "qwen3.5:32b"
-}
-
-agent greeting {
-    model: model.ollama_model
-    instruction: "Write a short welcome message."
-    output: string
-}
-
-output {
-    greeting: agent.greeting
-}
+```bash
+docker run --rm -p 8080:8080 rmilewski/superwire-executor
 ```
 
-<CardGroup cols={2}>
-  <Card title="Core Concepts" icon="book" href="/core-concepts/overview">
-    Learn how declarations, schemas, agents, and outputs fit together.
-  </Card>
-  <Card title="DSL Reference" icon="code" href="/syntax/overview">
-    See the exact grammar features, operators, and expression forms.
-  </Card>
-  <Card title="MCP & Tools" icon="plug" href="/mcp/mcp-servers">
-    Connect to external tools, resources, and prompts.
-  </Card>
-  <Card title="Examples" icon="lightbulb" href="/examples/basic-agent">
-    Start from practical workflows based on the repository examples.
-  </Card>
-  <Card title="Rust API" icon="terminal" href="/api-reference/rust-api">
-    Parse, validate, and execute workflows from Rust.
-  </Card>
-</CardGroup>
-
-## What the stack does today
-
-Superwire has three useful layers:
-
-1. **Parser**: converts workflow text into a typed AST.
-2. **Validator**: checks names, schema references, dependency cycles, secret leaks, and reference paths.
-3. **Runtime**: executes validated workflows with built-in OpenAI and Ollama drivers, MCP tool/resource/prompt integrations, and deterministic tool support.
-
 <Info>
-  The runtime executes all agent properties: <code>model</code>,
-  <code>instruction</code>, <code>output</code>, <code>context</code>,
-  <code>inference</code>, <code>tools</code>, and <code>uses</code>.
-  Built-in functions <code>context(...)</code>, <code>compact(...)</code>,
-  and <code>template(...)</code> are also evaluated. Agent <code>for</code>
-  loops run iterations in parallel. <code>tool.*</code> references are
-  resolved through the MCP tool and batch import system. Dynamic blocks
-  compute values at runtime through tool calls and MCP integrations.
+  The examples below assume the executor is available at <code>http://localhost:8080</code>. Change the host or port to match your deployment.
 </Info>
 
-## Why this DSL is useful
+## A minimal workflow
 
-- **Readable**: workflows stay close to the business problem.
-- **Typed**: schemas, arrays, tuples, enums, and variants are first-class.
-- **Composable**: agent references form a dependency graph automatically.
-- **Safe**: validation blocks leaked secrets and invalid reference paths early.
-- **Extensible**: MCP integrations bring in tools, resources, and prompts from external servers.
-- **Embeddable**: the Rust API supports parse-only, validate-only, and execution flows.
-
-## A more complete example
+Save this as `task_summary.wire`:
 
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
 input {
-    product_name: string
-    audience: string
+    project_id: number
+    task_id: number
 }
 
-agent release_summary {
-    model: model.openai_model
-    instruction: "Summarize {{ input.product_name }} for {{ input.audience }}."
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
+}
+
+agent summarize_task {
+    model: ai("flash")
+    instruction: "Write a concise summary for task {{ input.task_id }} in project {{ input.project_id }}."
     output: {
         summary: string
-        key_points: [string; 3]
+        next_action: string
     }
 }
 
 output {
-    product_name: input.product_name
-    summary: agent.release_summary.summary
-    key_points: agent.release_summary.key_points
+    project_id: input.project_id
+    task_id: input.task_id
+    summary: agent.summarize_task.summary
+    next_action: agent.summarize_task.next_action
 }
 ```
 
-## The `instruction` property
+Then execute it:
 
-You may notice that agents use **`instruction:`** rather than `prompt:`. This is the canonical property name in the DSL. It defines the text sent to the LLM as the primary instruction.
+```bash
+WORKFLOW_SOURCE_BASE64=$(base64 -w0 task_summary.wire)
 
-## Next steps
+curl -s http://localhost:8080/execute \
+  -H 'Content-Type: application/json' \
+  -d @- <<JSON
+{
+  "input": {
+    "project_id": 14,
+    "task_id": 109
+  },
+  "secrets": {
+    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "mcp_summarizer_endpoint": "http://localhost:8000/mcp/summarizer",
+    "api_key": "YOUR_API_KEY",
+    "models": {
+      "flash": "qwen3.6-plus",
+      "pro": "qwen3.6-plus",
+      "max": "qwen3.6-plus"
+    }
+  },
+  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
+}
+JSON
+```
+
+The response is the final workflow output as JSON:
+
+```json
+{
+  "project_id": 14,
+  "task_id": 109,
+  "summary": "...",
+  "next_action": "..."
+}
+```
+
+## Mental model
+
+Superwire runs as a dependency graph. If an agent references `input.project_id`, that value must be present in the request. If an agent references `agent.other_agent.summary`, Superwire runs `other_agent` before the dependent agent. Independent agents can run concurrently.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="play" href="/quickstart">
-    Run a minimal workflow from Rust.
+    Run the executor and execute a complete workflow.
   </Card>
   <Card title="Workflow Anatomy" icon="diagram-project" href="/core-concepts/workflows">
-    Understand every declaration in one place.
+    Understand each top-level declaration.
   </Card>
-  <Card title="Types" icon="table" href="/syntax/data-types">
-    Learn the full schema and output type system.
+  <Card title="Providers" icon="plug" href="/core-concepts/providers">
+    Configure OpenAI-compatible endpoints and model aliases.
   </Card>
-  <Card title="Diagnostics" icon="shield-check" href="/advanced/error-handling">
-    See which errors come from parsing, validation, and execution.
+  <Card title="MCP & Tools" icon="wrench" href="/mcp/tools">
+    Import tools, resources, and prompts from MCP servers.
   </Card>
 </CardGroup>
+
+## Important syntax choices
+
+- Use `instruction:` for the text sent to the model.
+- Use `uses:` to give an agent access to tools.
+- Agent `output:` is always an object-shaped block.
+- Put credentials in `secrets`, not in `input` or inline strings.
+- Use `schema` blocks for reusable structured data.
+- Use `dynamic` blocks when a value must be produced by a tool call before agents run.

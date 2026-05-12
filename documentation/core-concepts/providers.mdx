@@ -1,148 +1,89 @@
 ---
 title: Providers
-description: Declare model backends and bind agents to them with explicit model calls.
+description: Configure model providers and model aliases.
 ---
 
-Providers are named blocks that hold backend settings.
+Providers define how agents reach a model backend. In most deployments the workflow reads provider settings from `secrets` so the same `.wire` file can run in development, staging, and production.
+
+## OpenAI-compatible provider
 
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
-model openai_gpt_4_1_mini from openai {
-    id: "gpt-4.1-mini"
-}
-
-model openai_gpt_4_1 from openai {
-    id: "gpt-4.1"
-}
-```
-
-## Provider syntax
-
-```wire
-provider <provider_name> {
-    <property_name>: <expression>
-    ...
-}
-```
-
-Every provider property is a key/value expression pair in the DSL. The parser preserves all properties.
-
-## Binding an agent to a provider
-
-Agents select a provider by calling the provider name in the `model` property.
-
-```wire
-agent summarizer {
-    model: model.openai_model
-    instruction: "Summarize the release notes."
-    output: string
-}
-```
-
-The model name can be passed either positionally or as a named argument:
-
-```wire
-model: model.openai_model
-model: model.openai_model
-```
-
-## Validation behavior
-
-Validation checks these provider-related conditions:
-
-- provider names must be unique
-- an agent `model:` call must reference a declared provider
-- if a provider declares `models`, the chosen model must appear in that list
-- the `model:` property must be a provider call, not a string literal or object
-
-## Built-in runtime provider settings
-
-### OpenAI driver
-
-```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-```
-
-Required settings consumed by runtime:
-
-- `driver`
-- `endpoint`
-- `api_key`
-
-Optional setting used by validation:
-
-- `models`
-
-### Ollama driver
-
-```wire
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
-}
-
-model ollama_model from ollama {
-    id: "qwen3.5:8b"
-}
-```
-
-Required settings consumed by runtime:
-
-- `driver`
-- `endpoint` (must include host and port)
-
-Optional setting used by validation:
-
-- `models`
-
-## Practical pattern: local first, cloud second
-
-```wire
-provider ollama_local from ollama {
-endpoint: "http://localhost:11434"
-}
-
-model ollama_local_model from ollama_local {
-    id: "qwen3.5:8b"
-}
-
-provider openai_cloud from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_cloud_model from openai_cloud {
-    id: "gpt-4.1-mini"
-}
-
-agent redact_notes {
-    model: model.ollama_local_model
-    instruction: "Remove names and email addresses from {{ input.notes }}."
-    output: [string]
-}
-
-agent synthesize {
-    model: model.openai_cloud_model
-    instruction: "Summarize {{ agent.redact_notes }} into key insights."
-    output: {
-        insights: [string]
-        recommendations: [string]
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
     }
 }
 ```
 
-<Tip>
-  Provider configuration fields can use string literals or secret references
-  (e.g., <code>api_key: secrets.openai_key</code>). The runtime resolves secret
-  references in provider <code>endpoint</code> and <code>api_key</code> values.
-</Tip>
+The executor payload supplies the actual values:
+
+```json
+{
+  "secrets": {
+    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "YOUR_API_KEY",
+    "models": {
+      "flash": "qwen3.6-plus",
+      "pro": "qwen3.6-plus",
+      "max": "qwen3.6-plus"
+    }
+  }
+}
+```
+
+## Model selection
+
+Agents choose a model alias from the provider:
+
+```wire
+agent draft {
+    model: ai("flash")
+    instruction: "Draft a short answer."
+    output: {
+        answer: string
+    }
+}
+
+agent review {
+    model: ai("pro")
+    instruction: "Review the draft: {{ agent.draft.answer }}"
+    output: {
+        approved: boolean
+        notes: [string]
+    }
+}
+```
+
+## Model options
+
+Model-specific execution options can be attached to the model binding:
+
+```wire
+agent careful_review {
+    model: ai("pro") {
+        temperature: 0.2
+        max_tokens: 1200
+    }
+    instruction: "Review carefully and return structured notes."
+    output: {
+        notes: [string]
+    }
+}
+```
+
+Use aliases such as `flash`, `pro`, and `max` to keep workflow intent stable while changing concrete model names through secrets.

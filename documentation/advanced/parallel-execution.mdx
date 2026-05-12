@@ -1,92 +1,58 @@
 ---
 title: Parallel Execution
-description: Understand how dependency analysis shapes execution order and where true concurrency currently stands.
+description: How Superwire runs independent agents and loop iterations concurrently.
 ---
 
-Superwire computes execution order from agent references and dynamic block dependencies.
+Superwire builds a dependency graph from references. Nodes with no dependency relationship can run concurrently.
 
-## Automatic parallelism
-
-Two agents can run in parallel when neither depends on the other.
+## Independent agents
 
 ```wire
-agent sentiment {
-    model: model.openai_model
-    instruction: "Classify sentiment for {{ input.text }}"
-    output: string
-}
-
-agent topics {
-    model: model.openai_model
-    instruction: "Extract topics from {{ input.text }}"
-    output: [string]
-}
-```
-
-Because both agents depend only on `input.text`, they are independent in the dependency graph and run concurrently.
-
-## Serial execution by reference
-
-```wire
-agent summary {
-    model: model.openai_model
-    instruction: "Summarize {{ input.text }}"
-    output: string
-}
-
-agent review {
-    model: model.openai_model
-    instruction: "Review this summary: {{ agent.summary }}"
-    output: string
-}
-```
-
-`review` waits for `summary` because its instruction references `agent.summary`.
-
-## Loop syntax and intended behavior
-
-The grammar supports looped agents:
-
-```wire
-agent remediation_plan for finding in agent.findings.items {
-    model: model.openai_model
-    instruction: "Create a remediation plan for {{ finding }}."
+agent extract_risks {
+    model: ai("flash")
+    instruction: "List risks for {{ input.topic }}."
     output: {
-        title: string
-        steps: [string]
+        risks: [string]
+    }
+}
+
+agent extract_actions {
+    model: ai("flash")
+    instruction: "List action items for {{ input.topic }}."
+    output: {
+        actions: [string]
+    }
+}
+
+agent create_plan {
+    model: ai("pro")
+    instruction: "Create a plan from risks {{ agent.extract_risks.risks }} and actions {{ agent.extract_actions.actions }}."
+    output: {
+        plan: string
     }
 }
 ```
 
-Each iteration runs independently and the result is an array of outputs.
+`extract_risks` and `extract_actions` can run at the same time. `create_plan` waits for both.
 
-## Dynamic block dependencies
-
-Dynamic blocks also participate in dependency analysis:
+## Looped agents
 
 ```wire
-dynamic {
-    raw_data: call tool.fetch_data {
-        input { project_id: input.project_id }
+agent summarize_each for task_id in input.task_ids {
+    model: ai("flash")
+    instruction: "Summarize task {{ task_id }}."
+    output: {
+        task_id: number
+        summary: string
     }
-}
-
-agent analyze {
-    model: model.openai_model
-    instruction: "Analyze: {{ dynamic.raw_data }}"
-    output: string
 }
 ```
 
-The `analyze` agent depends on the `raw_data` dynamic block and waits for it to complete.
+Each iteration is independent unless it references shared dynamic values or upstream agents.
 
-## Current runtime behavior
+## Practical guidance
 
-The runtime executes work items in dependency order using **parallel batches**. Items with no unresolved dependencies within the same batch run concurrently via `try_join_all`. Within each batch, iterations of looped agents also execute in parallel.
-
-## Performance guidance
-
-- Keep agents independent unless downstream steps truly need upstream data.
-- Reference only the fields you need from previous agents.
-- Break wide fan-out workflows into stable, typed stages.
-- Declare `output` types so failures surface early.
+- Split unrelated work into separate agents.
+- Keep dependencies explicit through references.
+- Use looped agents for batch work.
+- Use `max_calls` on tools when parallel agents could otherwise over-call an external system.

@@ -1,28 +1,30 @@
 ---
 title: MCP Tools
-description: Use MCP tools with dynamic blocks and agent `uses:` declarations.
+description: Fetch context from an MCP tool and use it in an agent.
 ---
 
-This example mirrors `crates/executor/tests/fixtures/021_dynamic_tool_call.wire`.
-
-## Full workflow
-
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
 secrets {
-    mcp_endpoint: string
+    endpoint: string
+    api_key: string
+    mcp_summarizer_endpoint: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
-mcp local {
-    endpoint: secrets.mcp_endpoint
+
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
 }
 
 input {
@@ -30,114 +32,48 @@ input {
     task_id: number
 }
 
-tool fetch_task_data from mcp.local.tool.fetch_task_data {
+mcp summarizer {
+    endpoint: secrets.mcp_summarizer_endpoint
+}
+
+tool fetch_task from mcp.summarizer.tool.fetch_task {
     bindings {
         project_id: input.project_id
-        task_id: input.task_id
+    }
+    input {
+        task_id: number
+    }
+    output {
+        title: string
+        description: string
     }
 }
 
 dynamic {
-    data: call tool.fetch_task_data
+    task: call tool.fetch_task {
+        input {
+            task_id: input.task_id
+        }
+    }
 }
 
-agent summarizer {
-    model: model.openai_model
-    instruction: "Summarize: {{ dynamic.data }}"
-    uses: [tool.fetch_task_data]
+agent summarize_task {
+    model: ai("flash")
+    context: {
+        task: dynamic.task
+    }
+    instruction: "Summarize the task context and suggest the next action."
     output: {
         summary: string
+        next_action: string
     }
 }
 
 output {
-    data: dynamic.data
-    summary: agent.summarizer.summary
+    task: dynamic.task
+    summary: agent.summarize_task.summary
+    next_action: agent.summarize_task.next_action
 }
 ```
 
-## What it demonstrates
-
-- MCP server declaration with secrets for credentials
-- Tool import with `bindings` that reference input fields
-- `call tool.xxx` expression in a `dynamic` block to invoke the tool at runtime
-- Agent `uses:` to declare tool dependencies
-- Combining `dynamic` block results with agent output
-
-## Alternative: batch tool import
-
-Multiple tools from the same server can be imported together:
-
-```wire
-from mcp.local.tool {
-    bindings {
-        project_id: input.project_id
-    }
-
-    tool create_sorting_task {
-        bindings { task_id: input.task_id }
-    }
-
-    tool update_task_status {
-        bindings { task_id: input.task_id }
-    }
-
-    tool assign_task {
-        bindings { task_id: input.task_id }
-    }
-}
-
-agent task_manager {
-    model: model.openai_model
-    uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
-    instruction: "Manage project tasks"
-    output: string
-}
-```
-
-## Limiting tool calls
-
-Use `max_calls` to restrict how many times a tool can be invoked:
-
-```wire
-tool fetch_shared from mcp.local.tool.fetch_task_data {
-    max_calls: 2
-    bindings {
-        project_id: 1
-        task_id: 2
-    }
-}
-
-agent first_agent {
-    model: model.openai_model
-    uses: [tool.fetch_shared { max_calls: 1 }]
-    instruction: "First"
-    output: string
-}
-```
-
-Per-agent `max_calls` overrides the tool-level default.
-
-## Tool output schema override
-
-You can override the expected output type of a tool:
-
-```wire
-tool fetch_numbers from mcp.local.tool.fetch_numbers {
-    output {
-        values: [number]
-    }
-}
-
-dynamic {
-    result: call tool.fetch_numbers
-}
-
-agent number_note for number in dynamic.result.values {
-    model: model.openai_model
-    instruction: "Write a note for {{ number }}."
-    output: string
-}
-```
-
-This lets you define the shape the tool returns, enabling downstream type checking and loop iteration.
+This pattern is deterministic: the workflow always fetches task context before the agent runs.

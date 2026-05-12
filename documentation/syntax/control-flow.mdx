@@ -1,64 +1,43 @@
 ---
 title: Control Flow
-description: The current grammar-level control flow features: agent for-loops and dynamic blocks.
+description: Use looped agents and dynamic match expressions.
 ---
 
-The DSL supports explicit control flow through agent `for` loops and implicit flow through dynamic blocks.
+## Agent loops
 
-## Agent for-loop syntax
-
-```wire
-agent <name> for <item_name> in <expression> {
-    ...
-}
-```
-
-## Example
+Use `for ... in` when each item in a collection should be processed with the same agent.
 
 ```wire
 input {
-    numbers: [number]
+    task_ids: [number]
 }
 
-agent input_number_note for n in input.numbers {
-    model: model.openai_model
-    instruction: "Write a short note for input number {{ n }}."
+agent summarize_each for task_id in input.task_ids {
+    model: ai("flash")
+    instruction: "Summarize task {{ task_id }}."
     output: {
-        number: number
-        note: string
+        task_id: number
+        summary: string
+    }
+}
+
+output {
+    summaries: agent.summarize_each
+}
+```
+
+## Dynamic match
+
+Use `match` when a dynamic value depends on a variant-like result. Branches must return the same type.
+
+```wire
+dynamic {
+    selected_message: match agent.event.kind {
+        user_created: agent.event.created_message
+        user_deleted: agent.event.deleted_message
+        _: agent.event.default_message
     }
 }
 ```
 
-## Object destructuring in loops
-
-You can destructure objects in the loop pattern:
-
-```wire
-agent process_item for { id, name } in input.items {
-    model: model.openai_model
-    instruction: "Process item {{ id }}: {{ name }}"
-    output: string
-}
-```
-
-## Common iterable sources
-
-- input arrays: `input.items`
-- agent-produced arrays: `agent.findings.items`
-- dynamic block results: `dynamic.results.values`
-- inline literals: `[1, 2, 3, 4]`
-
-## Expected result shape
-
-Referencing a looped agent returns an array of outputs:
-
-```wire
-output {
-    notes: agent.input_number_note
-}
-```
-
-## Current runtime status
-
-Looped agents execute in the default runtime. Each loop iteration produces one output item, and referencing the looped agent returns the full output array. Iterations execute in parallel.
+Use `_` as the catch-all branch.

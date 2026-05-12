@@ -1,61 +1,71 @@
 ---
 title: Installation
-description: Set up the Superwire workspace, providers, and local docs tooling.
+description: Run Superwire with Docker and prepare local documentation tooling.
 ---
 
-## Rust workspace
+## Runtime installation
 
-Superwire is currently easiest to consume from source.
+The recommended runtime is the Docker executor image:
 
 ```bash
-git clone git@github.com:milewski/superwire.git
-cd superwire
-cargo test
+docker pull rmilewski/superwire-executor
+docker run --rm -p 8080:8080 rmilewski/superwire-executor
 ```
+
+The executor starts an HTTP server with:
+
+- `POST /execute` for a final JSON response
+- `POST /execute/stream` for Server-Sent Events
 
 ## Requirements
 
-- Rust stable toolchain
-- `cargo`
-- One provider backend if you want live execution
+To run workflows you need:
 
-## Provider setup
+- Docker or another container runtime
+- network access from the executor to your model provider endpoint
+- a `.wire` workflow source encoded as base64
+- an execution payload containing `input`, `secrets`, and `workflow_source_base64`
 
-### Ollama
+## Model provider setup
 
-```bash
-ollama pull qwen3.5:8b
+Superwire can call OpenAI-compatible HTTP APIs. The provider block normally reads credentials and model names from `secrets`:
+
+```wire
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
+}
+
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
+}
 ```
 
-The default Ollama integration reads these provider settings when present:
-
-- `driver: "ollama"`
-- `endpoint: "http://localhost:11434"`
-- `models: ["..."]`
-
-`endpoint` should include host and port.
-
-### OpenAI-compatible endpoints
-
-The default OpenAI integration reads:
-
-- `driver: "openai"`
-- `endpoint: "https://..."`
-- `api_key: "..."`
-- `models: ["..."]`
-
-## Documentation preview
-
-To run the Mintlify docs locally:
+## Local documentation preview
 
 ```bash
 cd documentation
 npx mintlify dev
 ```
 
-## Recommended first checks
+## Rust workspace
 
-- Open `crates/executor/tests/fixtures/001_minimum.wire`
-- Read `/quickstart`
-- Parse a workflow with `superwire_core::dsl::parse_workflow`
-- Validate it with `superwire_core::dsl::validate_workflow`
+Rust is useful when embedding Superwire or contributing to the runtime. It is not required for normal executor usage.
+
+```bash
+git clone git@github.com:milewski/superwire.git
+cd superwire
+cargo test
+```

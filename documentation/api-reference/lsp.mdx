@@ -1,66 +1,29 @@
 ---
 title: Language Server
-description: Run the Superwire language server over stdio for diagnostics, completion, and hover support.
+description: Editor-oriented diagnostics and language features for .wire files.
 ---
 
-The repository includes a language server binary in `crates/lsp`.
+The language server should help authors catch workflow issues before execution.
 
-## Run it
+## Core features
 
-```bash
-cargo run -p superwire-lsp
+- parse diagnostics with source spans
+- validation diagnostics for references and schemas
+- completion for declaration names and root namespaces
+- hover information for schema fields and agent outputs
+- go-to-definition for references
+
+## Useful completions
+
+```wire
+input.
+secrets.
+agent.
+schema.
+tool.
+resource.
+prompt.
+dynamic.
 ```
 
-## Transport
-
-The server speaks JSON-RPC over stdio and advertises:
-
-- text document sync
-- publish diagnostics notifications
-- hover support
-- completion support
-
-## Diagnostics
-
-The server publishes diagnostics from the shared DSL pipeline:
-
-- parse/syntax errors with source spans
-- semantic validation errors from `superwire-core`
-- invalid agent properties (with suggestions for typos)
-- unknown provider/model bindings
-- invalid reference paths and schema references
-- secret leaks in instructions and output
-- missing input/secrets declarations for referenced fields
-- dependency cycles between agents or dynamic blocks
-
-## Completion behavior
-
-The server offers context-aware completions for:
-
-- provider driver values (`driver: "..."`)
-- provider driver-specific properties (`endpoint`, `api_key`, `models`, etc.)
-- model names declared under provider `models`
-- named schemas after `schema.` in type positions
-- nested fields like `input.profile.name.<cursor>`
-- built-in symbols and workflow keywords
-- agent names, input fields, secrets fields, dynamic block names
-- tool, resource, and prompt names from MCP imports
-
-## Hover behavior
-
-Hover text is available for:
-
-- declared `schema.Name` references and field summaries
-- declared `agent.name` references with output type information
-- `input.field` and `secrets.field` references with type information
-- `dynamic.block_name` references with computed type information
-- provider model calls such as `openai(...)`
-- tool, resource, and prompt import references
-
-## Trigger characters
-
-The server triggers completion on:
-
-- `.`
-- `:`
-- `"`
+The LSP should follow the same semantics as executor validation so editor feedback matches runtime behavior.

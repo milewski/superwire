@@ -1,68 +1,60 @@
 ---
 title: Context Management
-description: Express full-context and compacted-context flows in the current DSL.
+description: Pass structured context between workflow stages.
 ---
 
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
 }
 
 input {
-    product_name: string
-    customer_feedback: [string]
+    notes: string
 }
 
-agent research_analysis {
-    model: model.openai_model
-    instruction: "Analyze this customer feedback for {{ input.product_name }}: {{ input.customer_feedback }}"
+agent extract_context {
+    model: ai("flash")
+    instruction: "Extract facts, constraints, and open questions from these notes: {{ input.notes }}."
     output: {
-        themes: [string]
-        risks: [string]
-        opportunities: [string]
+        facts: [string]
+        constraints: [string]
+        questions: [string]
     }
 }
 
-agent summary_from_full_context {
-    model: model.openai_model
-    context: context(agent.research_analysis)
-    instruction: "Write a short executive summary from the available context."
-    output: string
-}
-
-agent summary_from_custom_compact_context {
-    model: model.openai_model
-    context: compact(
-        agent: agent.research_analysis,
-        model: model.openai_model,
-        inference: {
-            temperature: 0.1
-            max_tokens: 1_500
-        },
-        instruction: "Keep only the highest-signal themes and risks."
-    )
-    instruction: "Write a short executive summary from the customized compacted context."
+agent write_summary {
+    model: ai("flash")
+    context: {
+        facts: agent.extract_context.facts
+        constraints: agent.extract_context.constraints
+    }
+    instruction: "Write a summary using the provided context."
     output: {
         summary: string
-        top_actions: [string; 3]
     }
+}
+
+output {
+    summary: agent.write_summary.summary
+    open_questions: agent.extract_context.questions
 }
 ```
 
-## What it demonstrates
-
-- `context(agent.x)` passes the full output of an agent as context
-- `compact(...)` with named arguments configures a custom compaction step
-- Nested object output types with multiple fields
-- Field references in the output block (`agent.summary_from_custom_compact_context.summary`)
-
-<Info>
-  <code>context(...)</code> and <code>compact(...)</code> execute at runtime when used
-  in an agent <code>context:</code> property. See the
-  <a href="/advanced/context-sharing">Context and Compaction</a> page for details.
-</Info>
+Use `context` for structured values and keep `instruction` focused on the task.

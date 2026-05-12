@@ -1,91 +1,28 @@
 ---
 title: Rust API
-description: Parse, validate, and execute Superwire workflows from Rust.
+description: Parse, validate, and execute workflows from Rust when embedding the runtime directly.
 ---
 
-The public Rust surface is centered around two modules:
+The Docker executor is the recommended path for application integration. The Rust API is useful for embedding Superwire in another Rust service, adding providers, or writing runtime-level tests.
 
-- `superwire_core::dsl`
-- `superwire_core::runtime`
+## Typical responsibilities
 
-## Parse and validate
+- parse `.wire` source into an AST
+- validate declarations, references, schemas, and dependencies
+- execute workflows with a provider runner
+- build custom runners for deterministic tests
+
+## Example shape
 
 ```rust
 use superwire_core::dsl::{parse_workflow, validate_workflow};
 
-let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
-let workflow = parse_workflow(workflow_source)?;
-let validation_report = validate_workflow(&workflow);
+let workflow = parse_workflow(source)?;
+let report = validate_workflow(&workflow);
 
-assert!(validation_report.is_valid());
-```
-
-## Execute with built-in providers
-
-```rust
-use superwire_core::dsl::parse_workflow;
-use superwire_core::runtime::execute_workflow_without_input;
-use schemars::JsonSchema;
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct Output {
-    greeting: String,
+if !report.is_valid() {
+    panic!("invalid workflow: {:?}", report.issues);
 }
-
-let workflow_source = include_str!("../../crates/core/workflows/minimum.wire");
-let workflow = parse_workflow(workflow_source)?;
-let workflow_output: Output = execute_workflow_without_input(&workflow).await?;
 ```
 
-## Execute with explicit input and secrets
-
-```rust
-use superwire_core::dsl::parse_workflow;
-use superwire_core::runtime::execute_workflow;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, JsonSchema)]
-struct Input {
-    topic: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct Output {
-    summary: String,
-}
-
-let workflow_source = include_str!("../../crates/core/workflows/structured_output.wire");
-let workflow = parse_workflow(workflow_source)?;
-
-let workflow_output: Output = execute_workflow(
-    &workflow,
-    Input {
-        topic: "agent workflows".to_string(),
-    },
-)
-.await?;
-```
-
-## Runtime types
-
-Useful runtime exports include:
-
-- `WorkflowRuntime`
-- `WorkflowRuntimeError`
-- `execute_workflow`
-- `execute_workflow_without_input`
-- `AgentRunner`
-- `AgentExecutionRequest`
-- `AgentExecutionResult`
-- `ProviderDriver`
-- `ProviderConfig`
-
-## Macro helper
-
-The crate exports `try_workflow!` for already-parsed workflows.
-
-```rust
-use superwire_core::try_workflow;
-```
+Prefer [Executor API](/api-reference/executor-api) for product integration unless you need direct runtime control.

@@ -1,53 +1,56 @@
 ---
-title: Multi-Agent Pipeline
-description: Build a small dependency chain where one agent summarizes and another reviews the result.
+title: Multi-Agent Workflow
+description: Chain agents through structured references.
 ---
 
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
-input {
-    interview_notes: [string]
-}
-
-agent summarize_notes {
-    model: model.openai_model
-    instruction: "Summarize these interview notes into three findings: {{ input.interview_notes }}"
-    output: {
-        findings: [string; 3]
-        summary: string
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
     }
 }
 
-agent review_findings {
-    model: model.openai_model
-    instruction: "Review this summary and call out the biggest research risk: {{ agent.summarize_notes.summary }}"
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
+}
+
+input {
+    topic: string
+}
+
+agent collect_facts {
+    model: ai("flash")
+    instruction: "List facts about {{ input.topic }}."
     output: {
-        biggest_risk: string
-        follow_up_questions: [string]
+        facts: [string]
+    }
+}
+
+agent write_brief {
+    model: ai("pro")
+    instruction: "Write a concise brief using these facts: {{ agent.collect_facts.facts }}."
+    output: {
+        title: string
+        brief: string
     }
 }
 
 output {
-    findings: agent.summarize_notes.findings
-    summary: agent.summarize_notes.summary
-    biggest_risk: agent.review_findings.biggest_risk
-    follow_up_questions: agent.review_findings.follow_up_questions
+    title: agent.write_brief.title
+    brief: agent.write_brief.brief
+    facts: agent.collect_facts.facts
 }
 ```
 
-## What it demonstrates
-
-- `input.*` references in the first agent
-- `agent.*` references in the second agent (creates a dependency edge)
-- automatic dependency ordering (`review_findings` waits for `summarize_notes`)
-- structured output validation on both agents
-- fixed-length array type `[string; 3]`
-- field access in the output block (`agent.summarize_notes.findings`)
+`write_brief` runs after `collect_facts` because it references `agent.collect_facts.facts`.

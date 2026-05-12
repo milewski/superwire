@@ -55,10 +55,10 @@
             "group": "Core Concepts",
             "pages": [
               "core-concepts/overview",
+              "core-concepts/workflows",
               "core-concepts/providers",
               "core-concepts/agents",
               "core-concepts/schemas",
-              "core-concepts/workflows",
               "core-concepts/dependencies"
             ]
           },
@@ -66,14 +66,14 @@
             "group": "DSL Reference",
             "pages": [
               "syntax/overview",
-              "syntax/variables",
               "syntax/data-types",
+              "syntax/type-annotations",
+              "syntax/variables",
+              "syntax/expressions",
               "syntax/operators",
               "syntax/control-flow",
               "syntax/string-interpolation",
-              "syntax/comments",
-              "syntax/expressions",
-              "syntax/type-annotations"
+              "syntax/comments"
             ]
           },
           {
@@ -87,8 +87,18 @@
             ]
           },
           {
-            "group": "Advanced",
+            "group": "Guides",
             "pages": [
+              "guides/building-workflows",
+              "guides/best-practices",
+              "guides/testing",
+              "guides/authoring-conventions"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "api-reference/executor-api",
               "advanced/parallel-execution",
               "advanced/context-sharing",
               "advanced/error-handling"
@@ -97,32 +107,10 @@
           {
             "group": "Integrations",
             "pages": [
-              "integrations/ollama",
               "integrations/openai",
+              "integrations/ollama",
               "integrations/laravel",
               "integrations/custom-provider-factories"
-            ]
-          },
-          {
-            "group": "Guides",
-            "pages": [
-              "guides/building-workflows",
-              "guides/testing",
-              "guides/best-practices",
-              "guides/migration"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "API Reference",
-        "groups": [
-          {
-            "group": "API Reference",
-            "pages": [
-              "api-reference/rust-api",
-              "api-reference/lsp",
-              "api-reference/diagnostics"
             ]
           }
         ]
@@ -134,12 +122,26 @@
             "group": "Examples",
             "pages": [
               "examples/basic-agent",
-              "examples/multi-agent",
               "examples/structured-output",
+              "examples/multi-agent",
               "examples/parallel-processing",
               "examples/context-management",
               "examples/mcp-tools",
               "examples/nested-output"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API Reference",
+            "pages": [
+              "api-reference/executor-api",
+              "api-reference/rust-api",
+              "api-reference/lsp",
+              "api-reference/diagnostics"
             ]
           }
         ]

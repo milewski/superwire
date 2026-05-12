@@ -1,98 +1,45 @@
 ---
-title: Validation and Runtime Status
-description: Understand parser diagnostics, validation problems, and which DSL features the default runtime executes today.
+title: Error Handling
+description: Understand parse, validation, and runtime errors.
 ---
 
-Superwire surfaces problems in three stages.
+The executor can fail before execution, during validation, or while running providers and tools.
 
-## 1. Parse errors
+## Error phases
 
-Parse errors come from `DslParseError` and include source spans.
+| Phase | Example |
+| --- | --- |
+| Parse | malformed block syntax |
+| Validation | unknown reference or invalid schema path |
+| Runtime | provider request failed, tool call failed, invalid model output |
 
-Common causes:
+## `/execute` error shape
 
-- invalid tokens
-- missing nodes while building the AST
-- invalid fixed array lengths
-- malformed interpolation syntax
+```json
+{
+  "error": {
+    "kind": "validation_error",
+    "message": "Unknown reference: agent.missing.summary",
+    "issues": [
+      {
+        "path": "agent.writer.instruction",
+        "message": "Unknown reference: agent.missing.summary"
+      }
+    ]
+  }
+}
+```
 
-## 2. Validation problems
+## `/execute/stream` error shape
 
-Validation runs before execution and reports all discovered issues as a `ValidationReport`.
+```text
+event: workflow.error
+data: {"kind":"runtime_error","message":"Provider request failed"}
+```
 
-Important validation checks include:
+## Common fixes
 
-- duplicate providers, schemas, agents, input blocks, secrets blocks, or output blocks
-- duplicate properties within a declaration
-- unknown schema references such as `schema.missing`
-- invalid `model:` expressions
-- unknown providers or models
-- unknown `agent.*`, `input.*`, `secrets.*`, `dynamic.*`, `tool.*`, `resource.*`, or `prompt.*` references
-- secret leaks into instructions or output
-- invalid nested reference paths
-- missing agent `output` types when field access is used
-- dependency cycles between agents or dynamic blocks
-- invalid `uses:` references or `max_calls` overrides
-- schema names not using `snake_case`
-
-## 3. Runtime errors
-
-Runtime execution can still fail after validation, for example when:
-
-- a provider cannot be constructed
-- an MCP server is unreachable
-- a live model call fails
-- agent output does not match its declared type
-- a tool call returns an unexpected result
-- the workflow uses syntax that the runtime does not support
-
-## Current support matrix
-
-| Feature | Parser | Validator | Default runtime |
-| --- | --- | --- | --- |
-| Providers | yes | yes | yes |
-| Input and secrets | yes | yes | yes |
-| Named schemas | yes | yes | yes |
-| String interpolation | yes | yes | yes |
-| Agent dependency graph | yes | yes | yes |
-| Output object construction | yes | yes | yes |
-| Optional chaining `?.` | yes | yes | yes |
-| Null fallback `??` | yes | yes | yes |
-| Agent `for` loops | yes | yes | yes |
-| `context(...)` and `compact(...)` | yes | yes | yes |
-| `template(...)` | yes | yes | yes |
-| `inference:` execution | yes | yes | yes |
-| `context:` execution | yes | yes | yes |
-| MCP server declarations | yes | yes | yes |
-| Tool imports (`tool x from mcp.y.z`) | yes | yes | yes |
-| Resource imports (`resource x from mcp.y.z`) | yes | yes | yes |
-| Prompt imports (`prompt x from mcp.y.z`) | yes | yes | yes |
-| Batch imports (`from mcp.x.{...}`) | yes | yes | yes |
-| `call tool.xxx` in dynamic blocks | yes | yes | yes |
-| `read resource.xxx` in dynamic blocks | yes | yes | yes |
-| `render prompt.xxx` in dynamic blocks | yes | yes | yes |
-| Agent-level `dynamic` blocks | yes | yes | yes |
-| `uses:` with tool references | yes | yes | yes |
-| `max_calls` on tools | yes | yes | yes |
-| `response_format_value` (`auto`, etc.) | yes | partial | depends on provider |
-| `tool.*` in general expressions | yes | partial | no |
-| `maybe` nullable values | yes | yes | yes |
-| `enum` type expressions | yes | yes | yes |
-| `variant` type expressions | yes | yes | yes |
-| Match expressions | yes | yes | yes |
-| Variant projection `#case` | yes | yes | yes |
-| Doc comments `///` | yes | yes | yes |
-
-<Info>
-  "Partial" means the validator understands the syntax enough to walk
-  references, detect dependency edges, and enforce some safety rules, but it
-  does not guarantee full semantic validation.
-</Info>
-
-## Practical workflow
-
-1. Parse with `parse_workflow`
-2. Validate with `validate_workflow`
-3. Only execute features the runtime currently supports
-4. Declare `output` types so runtime mismatches fail fast
-5. Use the `ValidationReport` to catch issues before reaching the runtime
+- Check that every referenced agent field exists in that agent's `output` block.
+- Check that `input` and `secrets` payloads match the workflow declarations.
+- Check that imported tools are listed in an agent's `uses:` array before the agent calls them.
+- Check provider endpoint, API key, and model aliases in `secrets`.

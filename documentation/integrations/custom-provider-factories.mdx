@@ -1,89 +1,21 @@
 ---
 title: Custom Provider Factories
-description: Implement your own `ProviderDriver` to connect Superwire to any LLM backend.
+description: Advanced embedding notes for custom provider implementations.
 ---
 
-Superwire's runtime is provider-agnostic. You can implement the `ProviderDriver` trait to connect any LLM backend.
+Most applications should use the Docker executor and an OpenAI-compatible endpoint. Custom provider factories are only needed when embedding the runtime directly or adding a new provider driver.
 
-## The `ProviderDriver` trait
-
-```rust
-#[async_trait::async_trait]
-pub trait ProviderDriver: Send + Sync {
-    async fn generate(
-        &self,
-        config: &ProviderConfig,
-    ) -> Result<GenerateResponse, ProviderError>;
-}
-```
-
-## Registering a custom driver
-
-Use the `register_provider_driver!` macro:
-
-```rust
-superwire_core::register_provider_driver!("my_driver", MyCustomDriver);
-```
-
-## Using it in a workflow
+A custom provider should expose the same behavior expected by workflow provider declarations:
 
 ```wire
-provider my_provider from my_driver {
-endpoint: "http://my-custom-endpoint.local"
-}
-
-model my_provider_model from my_provider {
-    id: "custom-model-v1"
-}
-
-agent my_agent {
-    model: model.my_provider_custom_model_v1
-    instruction: "Do something useful."
-    output: string
-}
-```
-
-## Configuration
-
-All properties in the provider block are available to your driver through `ProviderConfig`. Access them by key:
-
-```rust
-impl ProviderDriver for MyCustomDriver {
-    async fn generate(
-        &self,
-        config: &ProviderConfig,
-    ) -> Result<GenerateResponse, ProviderError> {
-        let endpoint = config.get_string("endpoint");
-        let api_key = config.get_string("api_key");
-        // ...
+provider ai {
+    driver: "custom"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
     }
 }
 ```
 
-## Model validation
-
-If your provider supports a known model list, add `models:` to the provider block. The framework validates that agent `model:` calls reference entries in this list.
-
-```wire
-provider my_provider from my_driver {
-endpoint: "http://my-custom-endpoint.local"
-}
-
-model my_provider_custom_model_v1 from my_provider {
-    id: "custom-model-v1"
-}
-
-model my_provider_custom_model_v2 from my_provider {
-    id: "custom-model-v2"
-}
-```
-
-## Error handling
-
-Return `ProviderError` from your driver to surface errors to the workflow runtime:
-
-```rust
-Err(ProviderError::Other("Service unavailable".into()))
-```
-
-See the [Rust API](/api-reference/rust-api) page for the full interface.
+Implementation details belong in the Rust API layer. Keep public workflows provider-agnostic by using stable model aliases such as `flash`, `pro`, and `max`.

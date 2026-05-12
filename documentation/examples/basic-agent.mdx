@@ -1,42 +1,45 @@
 ---
 title: Basic Agent
-description: "The smallest useful workflow shape: provider, agent, and output."
+description: A minimal workflow with one input, one agent, and one output.
 ---
 
-This example mirrors `crates/executor/tests/fixtures/001_minimum.wire`.
-
 ```wire
-provider openai from openai {
-endpoint: "http://localhost:1234/v1"
-    api_key: "test-api-key"
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
-model openai_model from openai {
-    id: "model-a"
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
+}
+
+input {
+    name: string
 }
 
 agent greeting {
-    model: model.openai_model
-    instruction: "Write a short welcome message."
-    output: string
+    model: ai("flash")
+    instruction: "Greet {{ input.name }} in one friendly sentence."
+    output: {
+        message: string
+    }
 }
 
 output {
-    greeting: agent.greeting
+    message: agent.greeting.message
 }
 ```
 
-## Why it is useful
-
-- it shows the minimum valid provider-to-agent-to-output path
-- it demonstrates the `model:` provider call syntax (positional argument)
-- it demonstrates the `instruction:` property (not `prompt:`)
-- it keeps the public workflow result explicit through the `output` block
-
-## Expected output shape
-
-```json
-{
-  "greeting": "Hello and welcome..."
-}
-```
+This is the smallest useful shape: declare runtime secrets, declare typed input, configure a provider, run one agent, and expose a final JSON output.

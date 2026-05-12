@@ -1,75 +1,64 @@
 ---
 title: Dependencies
-description: Superwire builds the execution graph from agent references automatically.
+description: Learn how references create the execution graph.
 ---
 
-Superwire does not require you to list edges manually. Dependencies come from references.
-
-## Dependency rule
-
-If an agent expression references another agent through `agent.<name>`, the current agent depends on that upstream agent.
+Superwire derives dependencies from references. You do not manually declare execution order.
 
 ```wire
-agent first {
-    model: model.scripted_model
-    instruction: "First prompt: {{ input.subject }}"
+agent collect_facts {
+    model: ai("flash")
+    instruction: "Collect facts about {{ input.topic }}."
+    output: {
+        facts: [string]
+    }
+}
+
+agent write_summary {
+    model: ai("flash")
+    instruction: "Summarize these facts: {{ agent.collect_facts.facts }}"
     output: {
         summary: string
     }
 }
 
-agent second {
-    model: model.scripted_model
-    instruction: "Second prompt: {{ agent.first.summary }}"
-    output: string
+output {
+    summary: agent.write_summary.summary
 }
 ```
 
-In this case, `second` runs after `first`.
+`write_summary` depends on `collect_facts` because it references `agent.collect_facts.facts`.
 
-## Where dependencies are discovered
+## Parallel execution
 
-The dependency graph is built from references found in:
-
-- `model`
-- `instruction`
-- `context`
-- `inference`
-- `tools`
-- `uses`
-- custom agent properties
-- loop iterables in `agent ... for ... in ...`
-- dynamic block expressions
-
-## What does not create dependencies
-
-- references to `input.*`
-- references to `secrets.*`
-- literal values
-
-## Cycle detection
-
-Validation rejects cycles before runtime execution.
+Independent agents can run at the same time:
 
 ```wire
-agent alpha {
-    model: model.openai_model
-    instruction: "Use {{ agent.beta }}"
-    output: string
+agent extract_risks {
+    model: ai("flash")
+    instruction: "List risks for {{ input.topic }}."
+    output: {
+        risks: [string]
+    }
 }
 
-agent beta {
-    model: model.openai_model
-    instruction: "Use {{ agent.alpha }}"
-    output: string
+agent extract_actions {
+    model: ai("flash")
+    instruction: "List actions for {{ input.topic }}."
+    output: {
+        actions: [string]
+    }
 }
 ```
 
-This produces an `AgentDependencyCycle` validation problem.
+If a later agent references both, it waits for both to complete.
 
-## Practical guidance
+## Validation
 
-- reference full upstream objects when the downstream step truly needs them
-- reference fields when the downstream step only needs a small part of the result
-- keep dependency chains shallow when you want more parallelism
-- use explicit `output` blocks to keep public results stable
+Validation reports:
+
+- unknown references
+- invalid field paths
+- dependency cycles
+- schema references that do not exist
+- attempts to use tools that were not imported or not listed in `uses:`

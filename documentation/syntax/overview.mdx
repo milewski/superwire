@@ -1,85 +1,57 @@
 ---
 title: Syntax Overview
-description: A map of the current grammar, expression forms, and declaration shapes.
+description: A compact reference for Superwire syntax.
 ---
 
-The Superwire DSL is intentionally compact. At the top level, a workflow is just a sequence of declarations.
-
-## Top-level declarations
+Superwire uses block-based declarations and expression references.
 
 ```wire
-workflow = declaration*
-declaration =
-    provider
-  | mcp
-  | secrets
-  | input
-  | schema
-  | tool
-  | resource
-  | prompt
-  | dynamic
-  | agent
-  | output
-  | from          (batch import)
+input {
+    topic: string
+}
+
+agent summarize {
+    model: ai("flash")
+    instruction: "Summarize {{ input.topic }}."
+    output: {
+        summary: string
+    }
+}
 ```
 
-## Declarations at a glance
+## Declaration blocks
 
-| Declaration | Shape | Purpose |
-| --- | --- | --- |
-| `provider` | `provider name { key: value }` | Configure a model backend |
-| `mcp` | `mcp name { key: value }` | Connect to an MCP server |
-| `secrets` | `secrets { field: type }` | Declare sensitive runtime values |
-| `input` | `input { field: type }` | Declare regular runtime values |
-| `schema` | `schema name { field: type }` | Name a reusable type |
-| `tool` | `tool name from mcp.x.y.z` | Import a tool from an MCP server |
-| `resource` | `resource name from mcp.x.y.z` | Import a resource from an MCP server |
-| `prompt` | `prompt name from mcp.x.y.z` | Import a prompt template from an MCP server |
-| `dynamic` | `dynamic { field: expression }` | Compute values at runtime |
-| `agent` | `agent name { ... }` | Define model work |
-| `output` | `output { field: expression }` | Build the final result |
+```wire
+secrets { ... }
+input { ... }
+schema name { ... }
+provider name { ... }
+mcp name { ... }
+tool local_name from mcp.server.tool.remote_name
+resource local_name from mcp.server.resource.remote_name
+prompt local_name from mcp.server.prompt.remote_name
+dynamic { ... }
+agent name { ... }
+output { ... }
+```
 
-## Expression forms
+## Expressions
 
-Values inside providers, agents, dynamic blocks, and output fields can be:
+Common expression forms:
 
-- **literals** -- strings, numbers, booleans, `null`
-- **references** -- `input.topic`, `agent.summary.title`, `dynamic.config.value`
-- **function calls** -- `template("path", { ... })`, `context(agent.x)`, `compact(agent.x)`
-- **tool calls** -- `call tool.name { input { ... } }`
-- **MCP calls** -- `read resource.name { bindings { ... } }`, `render prompt.name { bindings { ... } }`
-- **object expressions** -- `{ key: value, ... }`
-- **array expressions** -- `[1, 2, 3]`
-- **string interpolation** -- `"text {{ expression }} text"`
-- **match expressions** -- `match value { case_a.path, case_b.path, _ "fallback" }`
-- **variant projection** -- `value#case.field`
+```wire
+"text"
+123
+true
+input.topic
+secrets.api_key
+agent.summarize.summary
+schema.shared.status
+call tool.fetch_context { input { task_id: input.task_id } }
+read resource.project_readme
+render prompt.instructions
+```
 
-## Type forms
+## Naming
 
-Type positions inside `input`, `secrets`, `schema`, tool bindings, and agent `output` can be:
-
-- scalars: `string`, `number`, `float`, `boolean`, `object`
-- nullable values: `maybe T`
-- schema references: `schema.name`
-- arrays: `[T]`
-- fixed-length arrays: `[T; N]`
-- tuples: `(T1, T2, T3)`
-- objects: `{ field: Type }`
-- enums: `enum { a, b, c }`
-- variants: `variant tag { ... }`
-
-## Comments and whitespace
-
-- whitespace is ignored between tokens
-- comments use `//` and run to end of line
-- doc comments use `///` and are preserved into JSON Schema descriptions
-- multiline strings use triple quotes (`"""`)
-
-## Important distinction
-
-<Info>
-  The grammar accepts more surface area than the default runtime executes.
-  Use this reference for what the language can express, then check the runtime
-  notes on advanced pages when you need execution guarantees.
-</Info>
+Prefer lowercase snake_case for schemas, agents, tools, resources, prompts, and fields.

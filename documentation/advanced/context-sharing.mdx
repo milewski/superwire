@@ -1,90 +1,52 @@
 ---
-title: Context and Compaction
-description: Document the `context:` property and the current grammar for `context(...)` and `compact(...)`.
+title: Context Sharing
+description: Share structured data between agents without duplicating instructions.
 ---
 
-The DSL supports a `context:` property on agents and built-in functions for controlling what context reaches the model.
-
-## Full-context syntax
+Agents can read from `input`, `dynamic`, and other agent outputs. Prefer structured references over copying large strings.
 
 ```wire
-agent summary_from_full_context {
-    model: model.openai_model
-    context: context(agent.research_analysis)
-    instruction: "Write a short executive summary from the available context."
-    output: string
+agent extract_context {
+    model: ai("flash")
+    instruction: "Extract facts from {{ input.notes }}."
+    output: {
+        facts: [string]
+    }
 }
-```
 
-`context(agent.name)` passes the full output of the referenced agent as context.
-
-## Compacted-context syntax
-
-```wire
-agent summary_from_compact_context {
-    model: model.openai_model
-    context: compact(agent.research_analysis)
-    instruction: "Write a short executive summary from the compacted prior context."
-    output: string
-}
-```
-
-`compact(agent.name)` indicates that the context should be reduced before sending to the model.
-
-## Custom compaction call
-
-```wire
-agent summary_from_custom_compact_context {
-    model: model.openai_model
-    context: compact(
-        agent: agent.research_analysis,
-        model: model.openai_model,
-        inference: {
-            temperature: 0.1
-            max_tokens: 1_500
-        },
-        instruction: """
-            Compact this prior context for an executive summary step.
-            Keep only the highest-signal themes and essential quotes.
-        """
-    )
-    instruction: "Write a short executive summary from the customized compacted context."
+agent write_summary {
+    model: ai("flash")
+    context: {
+        facts: agent.extract_context.facts
+    }
+    instruction: "Write a concise summary from the provided context."
     output: {
         summary: string
-        top_actions: [string; 3]
     }
 }
 ```
 
-Named arguments on `compact(...)` -- `agent`, `model`, `inference`, `instruction` -- let you configure how compaction happens.
-
-## What the syntax expresses
-
-- `context(agent.name)` -- reuse full prior context
-- `compact(agent.name)` -- derive a reduced context view
-- Named arguments allow the DSL to describe a custom compaction step
-
-## Runtime behavior
-
-`context(...)` and `compact(...)` are fully evaluated at runtime when used in an agent's `context:` property.
-
-<Tip>
-  Named arguments on <code>compact(...)</code> (model, inference, instruction) are
-  parsed and validated. Their runtime behavior depends on the configured model provider.
-</Tip>
-
-## The `template(...)` function
-
-A third context-related function, `template(...)`, loads a prompt template from a file and evaluates it:
+## Dynamic context
 
 ```wire
-agent summary {
-    model: model.openai_model
-    instruction: template("prompts/summary.md", {
-        topic: input.topic
-    })
-    output: string
+dynamic {
+    task: call tool.fetch_task {
+        input {
+            task_id: input.task_id
+        }
+    }
+}
+
+agent summarize_task {
+    model: ai("flash")
+    context: {
+        task: dynamic.task
+    }
+    instruction: "Summarize the task context."
+    output: {
+        summary: string
+    }
 }
 ```
 
-This is useful for keeping complex prompts in separate files.
+Use `context` for structured values and `instruction` for the task the model should perform.

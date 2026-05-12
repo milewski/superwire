@@ -1,76 +1,34 @@
 ---
 title: String Interpolation
-description: Build prompts and output strings with `{{ ... }}` expressions in quoted and multiline strings.
+description: Insert workflow values into agent instructions.
 ---
 
-Strings come in two forms:
-
-- quoted strings: `"hello"`
-- multiline strings: `""" ... """`
-
-Both forms support interpolation.
-
-## Basic interpolation
+Use `{{ ... }}` inside strings to render values.
 
 ```wire
-instruction: "Write a summary for {{ input.product_name }}."
+agent summarize {
+    model: ai("flash")
+    instruction: "Summarize task {{ input.task_id }} in project {{ input.project_id }}."
+    output: {
+        summary: string
+    }
+}
 ```
 
-## Interpolating agent output
+References inside interpolation are validated the same way as references elsewhere.
+
+## Interpolating agent outputs
 
 ```wire
-instruction: "Analyze this summary: {{ agent.release_summary.summary }}"
+agent writer {
+    model: ai("flash")
+    instruction: "Write a response using this summary: {{ agent.summarize.summary }}"
+    output: {
+        response: string
+    }
+}
 ```
 
-When a prompt references another agent, that reference also creates a dependency edge.
+## Keep instructions focused
 
-## Interpolating dynamic and tool results
-
-```wire
-instruction: "Based on fetched data: {{ dynamic.fetched_data }}"
-```
-
-## Multiline interpolation
-
-```wire
-instruction: """
-    Write a launch message for {{ input.audience }}.
-
-    Product: {{ input.product_name }}
-    Title: {{ agent.release_notes.title }}
-    Body: {{ agent.release_notes.body }}
-"""
-```
-
-## Escapes
-
-Supported escapes include:
-
-- `\\`
-- `\"`
-- `\n`
-- `\r`
-- `\t`
-- `\{`
-- `\}`
-
-## Important rule
-
-Interpolation requires double braces.
-
-```wire
-{{ input.topic }}
-```
-
-<Warning>
-  Single-brace forms like `{ input.topic }` are rejected by the parser.
-</Warning>
-
-## How values are rendered
-
-During evaluation:
-
-- strings stay strings
-- numbers and booleans are stringified
-- arrays and objects are rendered as JSON text
-- `null` renders as the literal text `null`
+Prefer short instructions that reference structured context rather than very large strings.

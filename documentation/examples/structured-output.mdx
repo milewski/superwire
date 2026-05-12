@@ -1,61 +1,51 @@
 ---
 title: Structured Output
-description: Use schemas, enums, arrays, and nested objects to keep agent output predictable.
+description: Return machine-readable fields from an agent.
 ---
 
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
-schema release_summary {
-    /// Short release title
-    title: string
-
-    /// Release state
-    status: enum {
-        draft
-        ready
-        published
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
     }
+}
 
-    /// Exactly three key points
-    key_points: [string; 3]
-
-    /// Nested metadata
-    metadata: {
-        confidence: number
-        audience: string
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
     }
 }
 
 input {
-    release_notes: [string]
-    audience: string
+    request: string
 }
 
-agent summarize_release {
-    model: model.openai_model
-    instruction: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
-    output: schema.release_summary
+schema classification {
+    category: enum { bug, feature, question }
+    confidence: number
+    reason: string
+}
+
+agent classify {
+    model: ai("flash")
+    instruction: "Classify this request: {{ input.request }}."
+    output: schema.classification
 }
 
 output {
-    result: agent.summarize_release
-    status: agent.summarize_release.status
-    confidence: agent.summarize_release.metadata.confidence
+    category: agent.classify.category
+    confidence: agent.classify.confidence
+    reason: agent.classify.reason
 }
 ```
 
-## What it demonstrates
-
-- Named schema reuse through `schema.release_summary`
-- Enums inside output types (`enum { draft, ready, published }`)
-- Fixed-length arrays (`[string; 3]`)
-- Nested object access in the final output (`agent.summarize_release.metadata.confidence`)
-- Field descriptions using doc comments
+Use structured outputs when callers need to route, filter, store, or validate the result.

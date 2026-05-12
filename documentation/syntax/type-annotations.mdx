@@ -1,184 +1,56 @@
 ---
 title: Type Annotations
-description: How types are expressed in input, secrets, schemas, and agent output.
+description: Where type annotations appear and how to write readable output contracts.
 ---
 
-Type annotations appear in four places in a Superwire workflow:
-
-- `input { field: type }`
-- `secrets { field: type }`
-- `schema name { field: type }`
-- `agent name { output: type }`
-
-## Scalar types
-
-The five primitive scalar types:
-
-| Type | Description |
-| --- | --- |
-| `string` | UTF-8 text |
-| `number` | Integer or decimal number |
-| `float` | Floating-point number |
-| `boolean` | `true` or `false` |
-| `object` | Arbitrary JSON object |
-
-## Schema references
-
-Reference a named schema with `schema.name`:
+Type annotations appear after a field name:
 
 ```wire
-schema participant {
-    name: string
-    role: string
-}
-
-schema research_summary {
-    lead: schema.participant
-}
-```
-
-<Warning>
-  Schema names must use `snake_case`. Invalid: `schema Participant`, `schema researchSummary`.
-</Warning>
-
-## Arrays
-
-Dynamic arrays:
-
-```wire
-[string]
-[number]
-[schema.participant]
-```
-
-Fixed-length arrays enforce an exact count:
-
-```wire
-[string; 3]
-```
-
-## Tuples
-
-Ordered sequences with per-position types:
-
-```wire
-(string, number, [string; 3])
-```
-
-## Objects
-
-Inline object types:
-
-```wire
-{
+input {
+    project_id: number
     title: string
-    score: number
-}
-```
-
-Objects can be nested:
-
-```wire
-{
-    metadata: {
-        created_at: string
-        updated_at: string
-    }
-}
-```
-
-## Nullable values
-
-Nullable values use `maybe`:
-
-```wire
-maybe string
-maybe number
-maybe schema.participant
-```
-
-### Nullable object
-
-```wire
-maybe {
-    name: string
-    email: string
-}
-```
-
-### Nullable array
-
-```wire
-maybe [string]
-```
-
-### Array of nullable values
-
-```wire
-[maybe string]
-```
-
-## Enums
-
-Enums are type expressions for fixed string values:
-
-```wire
-enum {
-    draft
-    ready
-    published
-}
-```
-
-One-line syntax with commas:
-
-```wire
-enum { draft, ready, published }
-```
-
-## Variants
-
-Variants represent tagged polymorphic values:
-
-```wire
-variant type {
-    user_created {
-        user_id: string
-    }
-
-    user_deleted {
-        user_id: string
-    }
+    urgent: boolean
 }
 ```
 
 ## Field descriptions
 
-Add a doc comment before any typed field:
+A string after the type describes the field.
 
 ```wire
-schema release_note {
-    /// Short human-readable title
-    title: string
-
-    /// Severity bucket
-    impact: enum {
-        low
-        medium
-        high
-    }
-
-    /// Full text of the release note
-    body: string
+schema task_summary {
+    title: string "Short display title"
+    summary: string "One paragraph summary"
+    priority: enum { low, medium, high } "Routing priority"
 }
 ```
 
-Descriptions are stored in the AST and available to tooling (e.g., the LSP for hover information).
+## Agent outputs
 
-## Type checking rules
+Agent output contracts are required and object-shaped:
 
-- All referenced schemas must be declared
-- Schema names must use `snake_case`
-- Array element types must be compatible with the declared type
-- Nullable fields (`maybe T`) require safe access (`?.`) when accessed downstream
-- Agent output types determine the expected shape of the model's response
+```wire
+agent summarize {
+    model: ai("flash")
+    instruction: "Summarize {{ input.title }}."
+    output: {
+        summary: string
+        action_items: [string]
+    }
+}
+```
+
+## Reusing schemas
+
+```wire
+schema summary_output {
+    summary: string
+    action_items: [string]
+}
+
+agent summarize {
+    model: ai("flash")
+    instruction: "Summarize {{ input.title }}."
+    output: schema.summary_output
+}
+```

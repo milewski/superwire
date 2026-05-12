@@ -1,129 +1,74 @@
 ---
 title: Parallel Processing
-description: Author a looped agent over an input array and see the intended result shape.
+description: Run independent agents and loop iterations concurrently.
 ---
 
-Based on `crates/executor/tests/fixtures/005_parallel_agents.wire`.
-
-## Multiple independent agents
-
-When agents have no inter-dependencies, the runtime executes them concurrently:
-
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
-input {
-    product_name: string
-}
-
-agent changelog {
-    model: model.openai_model
-    instruction: "Write release notes for {{ input.product_name }}."
-    output: {
-        markdown: string
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
     }
 }
 
-agent social_thread {
-    model: model.openai_model
-    instruction: "Create a launch thread for {{ input.product_name }}."
-    output: {
-        posts: [string]
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
     }
 }
 
-agent customer_email {
-    model: model.openai_model
-    instruction: "Write an announcement email for {{ input.product_name }}."
-    output: {
-        subject: string
-        body: string
-    }
-}
-
-output {
-    changelog: agent.changelog.markdown
-    posts: agent.social_thread.posts
-    email_subject: agent.customer_email.subject
-    email_body: agent.customer_email.body
-}
-```
-
-All three agents -- `changelog`, `social_thread`, and `customer_email` -- run in parallel because none depends on another agent's output.
-
-## Looped agents
-
-For processing each element of an array, use the `for ... in` syntax:
-
-```wire
-input {
-    numbers: [number]
-}
-
-agent input_number_note for n in input.numbers {
-    model: model.openai_model
-    instruction: "Write a short note for input number {{ n }}."
-    output: {
-        number: number
-        note: string
-    }
-}
-
-output {
-    input_numbers: agent.input_number_note
-}
-```
-
-Intended output shape:
-
-```json
-{
-  "input_numbers": [
-    { "number": 1, "note": "..." },
-    { "number": 2, "note": "..." }
-  ]
-}
-```
-
-Looped agents execute in parallel -- each iteration is independent.
-
-## Diamond dependencies
-
-When two branches converge on a third agent, the runtime respects the full dependency graph:
-
-```wire
 input {
     topic: string
+    task_ids: [number]
 }
 
-agent branch_a {
-    model: model.openai_model
-    instruction: "Analyze {{ input.topic }} from perspective A."
-    output: string
+agent risks {
+    model: ai("flash")
+    instruction: "List risks for {{ input.topic }}."
+    output: {
+        risks: [string]
+    }
 }
 
-agent branch_b {
-    model: model.openai_model
-    instruction: "Analyze {{ input.topic }} from perspective B."
-    output: string
+agent opportunities {
+    model: ai("flash")
+    instruction: "List opportunities for {{ input.topic }}."
+    output: {
+        opportunities: [string]
+    }
 }
 
-agent merger {
-    model: model.openai_model
-    instruction: "Merge these analyses: A={{ agent.branch_a }}, B={{ agent.branch_b }}"
-    output: string
+agent summarize_each for task_id in input.task_ids {
+    model: ai("flash")
+    instruction: "Summarize task {{ task_id }}."
+    output: {
+        task_id: number
+        summary: string
+    }
+}
+
+agent final_plan {
+    model: ai("pro")
+    instruction: "Create a plan from risks {{ agent.risks.risks }}, opportunities {{ agent.opportunities.opportunities }}, and task summaries {{ agent.summarize_each }}."
+    output: {
+        plan: string
+    }
 }
 
 output {
-    merged: agent.merger
+    risks: agent.risks.risks
+    opportunities: agent.opportunities.opportunities
+    summaries: agent.summarize_each
+    plan: agent.final_plan.plan
 }
 ```
 
-`branch_a` and `branch_b` run in parallel. `merger` waits for both to complete.
+The two top-level analysis agents and each loop iteration can run before `final_plan`.

@@ -1,100 +1,66 @@
 ---
-title: Core Concepts
-description: Understand the declarations that make up a Superwire workflow.
+title: Overview
+description: The core ideas behind Superwire workflows.
 ---
 
-A workflow is a sequence of declarations. The grammar currently supports these top-level declaration kinds:
+A Superwire workflow is a dependency graph written as declarations. Each declaration gives the runtime enough information to validate the graph and execute only what is needed.
 
-- `provider` -- model backend configuration
-- `mcp` -- MCP server connection settings
-- `secrets` -- sensitive runtime values
-- `input` -- regular runtime values
-- `schema` -- reusable named types
-- `tool` -- tool definitions (inline or imported from MCP)
-- `resource` -- resource imports from MCP servers
-- `prompt` -- prompt imports from MCP servers
-- `dynamic` -- runtime-computed values via tool calls and MCP
-- `agent` -- model calls with instructions and output types
-- `output` -- the final JSON object returned by the workflow
+## Top-level declarations
 
 ```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
 secrets {
-    openai_api_key: string
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
 input {
     topic: string
 }
 
-schema brief {
-    title: string
-    bullets: [string; 3]
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
 }
 
-agent write_brief {
-    model: model.openai_model
-    instruction: "Write a short brief about {{ input.topic }}."
-    output: schema.brief
+agent summarize {
+    model: ai("flash")
+    instruction: "Summarize {{ input.topic }}."
+    output: {
+        title: string
+        summary: string
+    }
 }
 
 output {
-    brief: agent.write_brief
+    title: agent.summarize.title
+    summary: agent.summarize.summary
 }
 ```
 
-## Mental model
+## How execution works
 
-- **Providers** describe model backends and backend-specific settings.
-- **MCP servers** describe connections to external tool/resource/prompt providers.
-- **Input** describes non-secret values passed in at execution time.
-- **Secrets** describes sensitive values passed in separately from normal input.
-- **Schemas** define reusable named types.
-- **Tools** define function-like operations that agents can call.
-- **Agents** define model calls and references to prior state.
-- **Dynamic blocks** compute values at runtime through tool calls or MCP operations.
-- **Output** shapes the final JSON document returned by the workflow.
+1. The executor decodes `workflow_source_base64`.
+2. The parser builds a workflow AST.
+3. The validator checks declarations, references, schemas, and dependency cycles.
+4. The runtime builds the dependency graph.
+5. Agents and dynamic values execute in dependency order.
+6. The final `output` block is returned as JSON.
 
-## Declaration ordering
+## Design principles
 
-The parser accepts declarations in any order, and validation resolves references by name.
-
-<Tip>
-  Even though the language does not require a strict order, most teams keep
-  providers, secrets, input, schemas, and MCP declarations near the top, then tools, dynamic blocks, and agents, then the final <code>output</code> block.
-</Tip>
-
-## What creates dependencies
-
-Agent dependencies are inferred from references such as `agent.summary` or `agent.summary.title`.
-
-- Referencing `input.*` does **not** create an agent dependency.
-- Referencing `agent.*` **does** create an agent dependency.
-- Referencing `dynamic.*` **does** create a dependency on the dynamic block.
-- Referencing `tool.*` creates a dependency when used in `uses:` or dynamic blocks.
-- Validation detects circular dependencies before execution.
-
-## Where to go next
-
-<CardGroup cols={2}>
-  <Card title="Providers" icon="plug" href="/core-concepts/providers">
-    Learn how model backends are declared and validated.
-  </Card>
-  <Card title="Agents" icon="robot" href="/core-concepts/agents">
-    Learn agent properties, references, and loops.
-  </Card>
-  <Card title="Schemas" icon="table" href="/core-concepts/schemas">
-    Learn named types, enums, variants, and field descriptions.
-  </Card>
-  <Card title="Workflow Anatomy" icon="diagram-project" href="/core-concepts/workflows">
-    See how declarations combine into a complete file.
-  </Card>
-</CardGroup>
+- **Explicit inputs**: callers know exactly which fields to send.
+- **Isolated secrets**: provider keys and internal endpoints are passed separately.
+- **Typed outputs**: every agent declares a structured output contract.
+- **Composable graph**: references such as `agent.plan.steps` define dependencies automatically.
+- **Tool-aware**: agents can use imported MCP tools only when declared in `uses:`.

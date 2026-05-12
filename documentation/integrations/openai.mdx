@@ -1,74 +1,55 @@
 ---
-title: OpenAI
-description: Configure Superwire to use the OpenAI API as a model provider.
+title: OpenAI-Compatible Providers
+description: Configure OpenAI-compatible endpoints such as OpenAI, DashScope compatible mode, and internal gateways.
 ---
 
-## Provider declaration
-
-```wire
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: "test-api-key"
-}
-
-model openai_gpt_4_1_mini from openai {
-    id: "gpt-4.1-mini"
-}
-
-model openai_gpt_4_1 from openai {
-    id: "gpt-4.1"
-}
-```
-
-## Required settings
-
-| Setting | Description |
-| --- | --- |
-| `driver` | Must be `"openai"` |
-| `endpoint` | API endpoint URL |
-| `api_key` | OpenAI API key (use `secrets` in production) |
-
-## Optional settings
-
-| Setting | Description |
-| --- | --- |
-| `models` | List of allowed model names for validation |
-
-## Agent binding
-
-```wire
-agent summarizer {
-    model: model.openai_model
-    instruction: "Summarize the following: {{ input.text }}"
-    output: string
-}
-```
-
-## Using secrets for the API key
-
-In production, store your key in `secrets`:
+Use the `openai` driver for endpoints that expose an OpenAI-compatible chat/completions API.
 
 ```wire
 secrets {
-    openai_api_key: string
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
-provider openai from openai {
-endpoint: "https://api.openai.com/v1"
-    api_key: secrets.openai_api_key
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
 }
 ```
 
-## Named model arguments
+Example executor secrets:
 
-The `model` call supports named arguments:
+```json
+{
+  "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "api_key": "YOUR_API_KEY",
+  "models": {
+    "flash": "qwen3.6-plus",
+    "pro": "qwen3.6-plus",
+    "max": "qwen3.6-plus"
+  }
+}
+```
+
+Agents reference aliases, not concrete model strings:
 
 ```wire
-model: model.openai_model
+agent answer {
+    model: ai("flash")
+    instruction: "Answer: {{ input.question }}"
+    output: {
+        answer: string
+    }
+}
 ```
-
-This is equivalent to the positional form `openai("gpt-4.1-mini")`.

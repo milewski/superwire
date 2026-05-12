@@ -1,131 +1,52 @@
 ---
-title: Operators and Delimiters
-description: The punctuation that gives structure to references, calls, unions, arrays, and objects.
+title: Operators
+description: Dot access, model calls, tool calls, and trailing commas.
 ---
 
-The DSL is small enough that punctuation matters a lot. This page collects the key operators and delimiters in one place.
+## Dot access
 
-## `:` property and field separator
-
-`:` separates names from values in both object expressions and typed fields.
+Use dot access to read nested fields.
 
 ```wire
-driver: "openai"
-instruction: "Write a summary"
-title: string
+input.project_id
+secrets.models.flash
+agent.summarize.summary
 ```
 
-## `.` dot access
-
-Use `.` for normal field access.
+## Model call
 
 ```wire
-agent.summary.title
-input.topic
-dynamic.config.threshold
+model: ai("flash")
 ```
 
-## `?.` optional field access
-
-Use `?.` when a nullable object may not be present.
+Model options can be placed in a block after the model call:
 
 ```wire
-agent.summary.optional_section?.title
+model: ai("pro") {
+    temperature: 0.2
+    max_tokens: 1000
+}
 ```
 
-At runtime, `?.` returns `null` instead of failing when the current value is `null` or the field is absent.
-
-## `??` null fallback
-
-Use `??` to provide a fallback value when an expression is null.
+## Tool call
 
 ```wire
-output.user?.name ?? "Unknown user"
+call tool.fetch_task {
+    input {
+        task_id: input.task_id
+    }
+}
 ```
 
-The left side must be `maybe T`. The right side must be assignable to `T`. Result type is `T`.
+## Inline separators
+
+Use commas for inline arrays, tuples, objects, and enums:
 
 ```wire
-// Valid: maybe string ?? string => string
-name: output.user?.name ?? "Unknown"
-
-// Invalid: maybe number ?? string => type mismatch
-name: output.user?.name ?? "Unknown"
+["a", "b", "c"]
+(string, number)
+{ title: string, score: number }
+enum { draft, ready, published }
 ```
 
-## `#` variant projection
-
-Use `#` to access a specific variant case without match.
-
-```wire
-agent.event_handler.event#user_created.user_id
-```
-
-This means: if `event` is `user_created`, return `user_id`. Otherwise, return null.
-
-The result is always nullable unless the compiler can prove the variant is already narrowed.
-
-```wire
-// Use fallback when a plain value is required
-agent.event_handler.event#user_created.user_id ?? "unknown"
-```
-
-## `;` fixed array length
-
-Use `;` inside an array type to enforce exact length.
-
-```wire
-[string; 3]
-```
-
-## `()` tuples and calls
-
-Parentheses are used in two places.
-
-### Tuple types
-
-```wire
-(string, number, [string; 3])
-```
-
-### Function and provider calls
-
-```wire
-openai("gpt-4.1-mini")
-openai(model: "gpt-4.1-mini")
-template("prompts/research_brief.md", {
-    study_name: input.study_name
-})
-```
-
-## `{}` objects and blocks
-
-Braces are used for:
-
-- provider bodies
-- mcp server bodies
-- input/secrets/schema blocks
-- agent blocks
-- tool bindings
-- object expressions
-- inline object type expressions
-- enum definitions
-- variant definitions
-
-## `[]` arrays
-
-Brackets are used for:
-
-- array expressions: `[1, 2, 3]`
-- array types: `[string]`
-
-## `,` commas
-
-Commas are used in:
-
-- array expressions
-- tuples
-- call arguments
-- one-line enum definitions
-
-Array expressions and call argument lists accept an optional trailing comma.
+When object or enum entries are on separate lines, commas are not required.

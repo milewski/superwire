@@ -1,82 +1,61 @@
 ---
 title: Nested Output
-description: Build deeply nested JSON output from agent results, hardcoded values, and mixed expressions.
+description: Build nested JSON responses from agent outputs and literals.
 ---
 
-Based on `crates/executor/tests/fixtures/012_nested_output.wire`.
-
-## Nested output object
-
 ```wire
-provider openai from openai {
-endpoint: "http://localhost:1234/v1"
-    api_key: "test-api-key"
+secrets {
+    endpoint: string
+    api_key: string
+    models: {
+        flash: string
+        pro: string
+        max: string
+    }
 }
 
-model openai_model from openai {
-    id: "model-a"
+provider ai {
+    driver: "openai"
+    endpoint: secrets.endpoint
+    api_key: secrets.api_key
+    models: {
+        flash: secrets.models.flash
+        pro: secrets.models.pro
+        max: secrets.models.max
+    }
 }
 
-agent summary {
-    model: model.openai_model
-    instruction: "Write a project status summary with a confidence score."
+input {
+    project_id: number
+    task_id: number
+}
+
+agent analyze {
+    model: ai("flash")
+    instruction: "Analyze task {{ input.task_id }}."
     output: {
-        text: string
-        confidence: float
+        title: string
+        summary: string
+        labels: [string]
+        score: number
     }
 }
 
 output {
-    version: 2
-    generated_by: "status_workflow"
-    report: {
-        source: "workflow"
-        overview: { text: agent.summary.text }
-        metrics: {
-            confidence: agent.summary.confidence
-            status: "ok"
-        }
+    project: {
+        id: input.project_id
+    }
+    task: {
+        id: input.task_id
+        title: agent.analyze.title
+        summary: agent.analyze.summary
+    }
+    metadata: {
+        labels: agent.analyze.labels
+        score: agent.analyze.score
+        generated_by: "superwire"
     }
 }
 ```
 
-## What it demonstrates
-
-- **Agent references with field access**: `agent.summary.text` and `agent.summary.confidence`
-- **Hardcoded values in output**: `version: 2`, `generated_by: "status_workflow"`, `status: "ok"`
-- **Nested objects in output**: `report.overview` and `report.metrics`
-- **Mixed types**: `float` from agent output alongside `number` literals and `string` literals
-- **No input or secrets required**: this workflow is fully self-contained
-
-The output would look like:
-
-```json
-{
-  "version": 2,
-  "generated_by": "status_workflow",
-  "report": {
-    "source": "workflow",
-    "overview": { "text": "The project is on track..." },
-    "metrics": {
-      "confidence": 0.87,
-      "status": "ok"
-    }
-  }
-}
-```
-
-## Literal values in output
-
-The `output` block supports all literal expression types:
-
-```wire
-output {
-    hardcoded_string: "fixed-value"
-    hardcoded_number: 42
-    hardcoded_boolean: true
-    hardcoded_null: null
-    agent_value: agent.assistant
-}
-```
-
-This is useful for metadata, versioning, or any static fields alongside dynamic agent results.
+The final output block can shape the public response independently from internal agent output shapes.

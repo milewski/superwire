@@ -1,84 +1,66 @@
 ---
 title: Tools
-description: Import and call external tools through MCP servers.
+description: Import external functions and make them available to agents or dynamic blocks.
 ---
 
-Tools let your agents call external functions -- calculators, APIs, database queries, file operations, and more.
+Tools connect workflows to external systems such as APIs, databases, task stores, and calculators.
 
-## Importing a single tool
+## Import one tool
 
 ```wire
-mcp local {
-    endpoint: "http://localhost:3000"
+mcp tasks {
+    endpoint: secrets.mcp_summarizer_endpoint
 }
 
-tool fetch_user from mcp.local.tool.fetch_user
+tool fetch_task from mcp.tasks.tool.fetch_task
 ```
 
-The syntax is:
+## Declare schemas and bindings
 
 ```wire
-tool <local_name> from <mcp_server>.<kind>.<remote_name>
-```
-
-Where `<kind>` is one of `tool`, `resource`, or `prompt`.
-
-## Tool input schema
-
-You can declare the expected input schema for a tool:
-
-```wire
-tool fetch_user from mcp.local.tool.fetch_user {
+tool fetch_task from mcp.tasks.tool.fetch_task {
     input {
-        user_id: number
-        include_details: boolean
+        task_id: number
     }
-}
-```
-
-## Tool `max_calls`
-
-Limit how many times a tool can be called within its scope:
-
-```wire
-tool fetch_user from mcp.local.tool.fetch_user {
+    output {
+        title: string
+        description: string
+    }
+    bindings {
+        project_id: input.project_id
+    }
     max_calls: 3
 }
 ```
 
-## Calling tools with `call`
+Use `bindings` for values that should always be supplied by the workflow rather than the model.
 
-Use the `call` expression in a `dynamic` block to invoke a tool at runtime:
+## Call tools in dynamic blocks
 
 ```wire
 dynamic {
-    user: call tool.fetch_user {
+    task: call tool.fetch_task {
         input {
-            user_id: 42
+            task_id: input.task_id
         }
     }
 }
 ```
 
-## Agent `uses` property
+## Allow agents to call tools
 
-Agents declare which tools they use with the `uses:` property:
+Agents use the `uses:` array to declare tool access.
 
 ```wire
-agent assistant {
-    model: model.openai_model
-    uses: [
-        tool.fetch_user,
-        tool.search { max_calls: 5 }
-    ]
-    instruction: "Look up user {{ input.user_id }} and summarize their profile."
-    output: string
+agent researcher {
+    model: ai("pro")
+    uses: [tool.fetch_task]
+    instruction: "Fetch the task if needed, then summarize it."
+    output: {
+        summary: string
+        missing_context: boolean
+    }
 }
 ```
 
-The `uses:` array lists tool references. You can optionally override `max_calls` per tool at the agent level.
-
-<Info>
-  Tools listed in <code>uses:</code> are available to the agent at runtime.
-  The agent must list every tool it intends to call -- undeclared tools are not accessible.
-</Info>
+Tools not listed in `uses:` are not available to that agent.

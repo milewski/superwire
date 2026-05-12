@@ -1,137 +1,18 @@
 ---
 title: Data Types
-description: The complete type system used by input, secrets, schemas, and agent output declarations.
+description: Primitive, object, array, tuple, enum, and schema reference types.
 ---
 
-Superwire uses the same type expression grammar in four places:
+Superwire types describe `input`, `secrets`, schema fields, and agent outputs.
 
-- `input { ... }`
-- `secrets { ... }`
-- `schema name { ... }`
-- `agent name { output: ... }`
-
-## Primitive types
+## Primitives
 
 ```wire
 string
 number
 float
 boolean
-object
 ```
-
-## Nullable values
-
-Nullable values use `maybe`:
-
-```wire
-bio: maybe string
-```
-
-This means:
-
-- the field must exist
-- the value may be either `string` or `null`
-
-<Info>
-  `maybe` is preferred over union syntax for nullability. The field is nullable, not optional.
-</Info>
-
-### Nullable object
-
-```wire
-profile: maybe {
-    name: string
-    email: string
-}
-```
-
-Valid JSON:
-
-```json
-{
-  "profile": null
-}
-```
-
-Valid JSON:
-
-```json
-{
-  "profile": {
-    "name": "Rafael",
-    "email": "rafael@example.com"
-  }
-}
-```
-
-### Nullable array
-
-```wire
-tags: maybe [string]
-```
-
-This means the whole array may be null.
-
-### Array of nullable values
-
-```wire
-tags: [maybe string]
-```
-
-This means the array itself must exist, but each item may be null.
-
-### Nullable array of nullable values
-
-```wire
-tags: maybe [maybe string]
-```
-
-This allows both `null` at the array level and `null` at the item level.
-
-## Schema references
-
-Schema names must be lowercase `snake_case`:
-
-```wire
-schema participant {
-    name: string
-    role: string
-}
-
-schema research_summary {
-    lead: schema.participant
-    participants: [schema.participant]
-}
-```
-
-<Warning>
-  Schema names must use `snake_case`. Invalid: `schema Participant`, `schema researchSummary`.
-</Warning>
-
-## Arrays
-
-```wire
-[string]
-[number]
-[{ id: string, score: number }]
-```
-
-### Fixed-length arrays
-
-```wire
-[string; 3]
-```
-
-Validation enforces the exact array length.
-
-## Tuples
-
-```wire
-(string, number, [string; 3])
-```
-
-Tuples validate both order and length.
 
 ## Objects
 
@@ -142,198 +23,74 @@ Tuples validate both order and length.
 }
 ```
 
+Inline object fields use commas:
+
+```wire
+{ title: string, score: number }
+```
+
+## Arrays
+
+```wire
+[string]
+[number]
+[schema.participant]
+```
+
+Fixed-length arrays use a semicolon:
+
+```wire
+[string; 3]
+```
+
+## Tuples
+
+```wire
+(string, number)
+(string, number, [string; 3])
+```
+
 ## Enums
 
-Enums are type expressions for fixed string values:
+```wire
+enum { draft, ready, published }
+```
+
+Or multiline:
 
 ```wire
-status: enum {
+enum {
     draft
     ready
     published
 }
 ```
 
-### One-line enum syntax
-
-When enum values are defined on one line, commas are required:
+## Schema references
 
 ```wire
-status: enum { draft, ready, published }
-```
-
-### Multiline enum syntax
-
-When enum values are defined on separate lines, commas are not required:
-
-```wire
-status: enum {
-    draft
-    ready
-    published
-}
-```
-
-### Nullable enum
-
-```wire
-status: maybe enum {
-    draft
-    ready
-    published
-}
-```
-
-## Variants
-
-Variants represent tagged polymorphic values:
-
-```wire
-payload: variant type {
-    user_created {
-        user_id: string
-        email: string
-    }
-
-    user_deleted {
-        user_id: string
-        reason: maybe string
-    }
-}
-```
-
-The word after `variant` is the discriminator field. Runtime JSON:
-
-```json
-{
-  "payload": {
-    "type": "user_created",
-    "user_id": "user_123",
-    "email": "rafael@example.com"
-  }
-}
-```
-
-### Variant case names
-
-Variant case names may be identifiers:
-
-```wire
-user_created {
-    user_id: string
-}
-```
-
-For external API values that are not valid identifiers, string literals may be used:
-
-```wire
-event: variant type {
-    "user.created" {
-        user_id: string
-        email: string
-    }
-
-    "user.deleted" {
-        user_id: string
-    }
-}
-```
-
-### Variant discriminator injection
-
-The discriminator field is implicit in each case. The user should not manually declare the discriminator field inside each case.
-
-Invalid:
-
-```wire
-event: variant type {
-    user_created {
-        type: string
-        user_id: string
-    }
-}
-```
-
-### Nullable variants
-
-```wire
-event: maybe variant type {
-    user_created {
-        user_id: string
-    }
-
-    user_deleted {
-        user_id: string
-    }
-}
-```
-
-## Object-level variants
-
-Sometimes the whole schema is a variant object:
-
-```wire
-schema api_event {
-    variant type {
-        user_created {
-            user_id: string
-            email: string
-        }
-
-        user_deleted {
-            user_id: string
-            reason: maybe string
-        }
-    }
-}
-```
-
-## Field descriptions
-
-Use doc comments before fields:
-
-```wire
-schema user {
-    /// Stable user identifier
-    id: string
-
-    /// Display name shown to other users
+schema participant {
     name: string
+    role: string
+}
 
-    /// Optional biography. The field exists, but may be null.
-    bio: maybe string
+schema article {
+    title: string
+    author: schema.participant
 }
 ```
 
-Doc comments are preserved into generated JSON Schema descriptions.
-
-## Practical example
+## Practical schema
 
 ```wire
-schema all_types {
-    /// A basic string value
-    string_value: string
-
-    /// Required but may be null
-    nullable_number: maybe number
-
-    /// Exactly three strings
-    fixed_array: [string; 3]
-
-    /// Mixed tuple
-    tuple_value: (string, number, [string; 3])
-
-    /// Nested object
-    object_value: {
-        string_value: string
-        number_value: number
-    }
-
-    /// Fixed string choices
-    enum_value: enum {
-        draft
-        ready
-        published
+schema task_result {
+    task_id: number
+    status: enum { todo, doing, done }
+    labels: [string]
+    confidence: number
+    owner: {
+        name: string
+        role: string
     }
 }
 ```
