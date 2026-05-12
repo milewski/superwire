@@ -33,13 +33,41 @@ Use `?.` when a nullable object may not be present.
 agent.summary.optional_section?.title
 ```
 
-## `|` union separator
+At runtime, `?.` returns `null` instead of failing when the current value is `null` or the field is absent.
 
-Use `|` to join type alternatives.
+## `??` null fallback
+
+Use `??` to provide a fallback value when an expression is null.
 
 ```wire
-string | null
-"draft" | "ready" | "published"
+output.user?.name ?? "Unknown user"
+```
+
+The left side must be `maybe T`. The right side must be assignable to `T`. Result type is `T`.
+
+```wire
+// Valid: maybe string ?? string => string
+name: output.user?.name ?? "Unknown"
+
+// Invalid: maybe number ?? string => type mismatch
+name: output.user?.name ?? "Unknown"
+```
+
+## `#` variant projection
+
+Use `#` to access a specific variant case without match.
+
+```wire
+agent.event_handler.event#user_created.user_id
+```
+
+This means: if `event` is `user_created`, return `user_id`. Otherwise, return null.
+
+The result is always nullable unless the compiler can prove the variant is already narrowed.
+
+```wire
+// Use fallback when a plain value is required
+agent.event_handler.event#user_created.user_id ?? "unknown"
 ```
 
 ## `;` fixed array length
@@ -81,6 +109,8 @@ Braces are used for:
 - tool bindings
 - object expressions
 - inline object type expressions
+- enum definitions
+- variant definitions
 
 ## `[]` arrays
 
@@ -96,5 +126,6 @@ Commas are used in:
 - array expressions
 - tuples
 - call arguments
+- one-line enum definitions
 
 Array expressions and call argument lists accept an optional trailing comma.

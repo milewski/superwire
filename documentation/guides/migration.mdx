@@ -156,6 +156,126 @@ agent process for item in input.items { ... }
 agent process for { id, name } in input.items { ... }
 ```
 
+## Type system changes
+
+### Schema names are now snake_case
+
+Schema names must use `snake_case`:
+
+**Before:**
+```wire
+schema Participant {
+    name: string
+}
+```
+
+**After:**
+```wire
+schema participant {
+    name: string
+}
+```
+
+### Nullable values use `maybe`
+
+Nullable values now use `maybe` instead of `| null`:
+
+**Before:**
+```wire
+schema user {
+    name: string
+    bio: string | null
+}
+```
+
+**After:**
+```wire
+schema user {
+    name: string
+    bio: maybe string
+}
+```
+
+### Enums use `enum` keyword
+
+String enums now use the `enum` keyword instead of string literal unions:
+
+**Before:**
+```wire
+schema release {
+    status: "draft" | "ready" | "published"
+}
+```
+
+**After:**
+```wire
+schema release {
+    status: enum {
+        draft
+        ready
+        published
+    }
+}
+```
+
+### Doc comments for field descriptions
+
+Field descriptions now use doc comments instead of trailing strings:
+
+**Before:**
+```wire
+schema release {
+    title: string "Short human-readable title"
+}
+```
+
+**After:**
+```wire
+schema release {
+    /// Short human-readable title
+    title: string
+}
+```
+
+### New variant syntax
+
+Variants are now supported for tagged polymorphic objects:
+
+```wire
+event: variant type {
+    user_created {
+        user_id: string
+        email: string
+    }
+
+    user_deleted {
+        user_id: string
+        reason: maybe string
+    }
+}
+```
+
+### New match expressions
+
+Match expressions are now supported for variant narrowing:
+
+```wire
+user_name: match agent.event_handler.event {
+    user_created.user_name
+    user_deleted.user_name
+}
+```
+
+### New null fallback operator
+
+The `??` operator provides fallback values for nullable expressions:
+
+```wire
+output {
+    name: agent.data.user?.name ?? "Unknown user"
+}
+```
+
 ## Summary of changes
 
 | What changed | Old syntax | New syntax |
@@ -165,3 +285,10 @@ agent process for { id, name } in input.items { ... }
 | MCP connection | embedded in tool refs | `mcp` declaration blocks |
 | Runtime computation | limited | `dynamic` blocks with `call`, `read`, `render` |
 | Reference roots | `agent`, `input`, `secrets`, `tool` | + `dynamic`, `resource`, `prompt` |
+| Schema names | `PascalCase` | `snake_case` |
+| Nullable values | `Type \| null` | `maybe Type` |
+| String enums | `"a" \| "b" \| "c"` | `enum { a, b, c }` |
+| Field descriptions | `field: type "desc"` | `/// desc` doc comments |
+| Variants | not supported | `variant tag { ... }` |
+| Match expressions | not supported | `match value { ... }` |
+| Null fallback | not supported | `??` operator |

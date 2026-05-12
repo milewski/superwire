@@ -50,18 +50,18 @@ agent analyzer {
 If multiple agents or the output block reference the same structure, define it once.
 
 ```wire
-schema Summary {
+schema summary {
     title: string
     body: string
     word_count: number
 }
 
 agent intro_writer {
-    output: schema.Summary
+    output: schema.summary
 }
 
 agent conclusion_writer {
-    output: schema.Summary
+    output: schema.summary
 }
 ```
 
@@ -139,12 +139,19 @@ agent combine {
 
 ## Add field descriptions
 
-Descriptions help tooling and collaborators understand your schema:
+Use doc comments to document schema fields:
 
 ```wire
-schema ReleaseNote {
-    title: string "One-line summary of the change"
-    impact: "low" | "medium" | "high" "How impactful is this change?"
+schema release_note {
+    /// One-line summary of the change
+    title: string
+
+    /// How impactful is this change?
+    impact: enum {
+        low
+        medium
+        high
+    }
 }
 ```
 
@@ -155,6 +162,16 @@ Prevent runtime errors with `?.` on nullable paths:
 ```wire
 output {
     score: agent.data.details?.score
+}
+```
+
+## Use null fallback for default values
+
+Provide fallback values with `??`:
+
+```wire
+output {
+    name: agent.data.user?.name ?? "Unknown user"
 }
 ```
 

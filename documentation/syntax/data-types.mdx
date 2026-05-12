@@ -7,7 +7,7 @@ Superwire uses the same type expression grammar in four places:
 
 - `input { ... }`
 - `secrets { ... }`
-- `schema Name { ... }`
+- `schema name { ... }`
 - `agent name { output: ... }`
 
 ## Primitive types
@@ -17,22 +17,97 @@ string
 number
 float
 boolean
-null
+object
 ```
+
+## Nullable values
+
+Nullable values use `maybe`:
+
+```wire
+bio: maybe string
+```
+
+This means:
+
+- the field must exist
+- the value may be either `string` or `null`
+
+<Info>
+  `maybe` is preferred over union syntax for nullability. The field is nullable, not optional.
+</Info>
+
+### Nullable object
+
+```wire
+profile: maybe {
+    name: string
+    email: string
+}
+```
+
+Valid JSON:
+
+```json
+{
+  "profile": null
+}
+```
+
+Valid JSON:
+
+```json
+{
+  "profile": {
+    "name": "Rafael",
+    "email": "rafael@example.com"
+  }
+}
+```
+
+### Nullable array
+
+```wire
+tags: maybe [string]
+```
+
+This means the whole array may be null.
+
+### Array of nullable values
+
+```wire
+tags: [maybe string]
+```
+
+This means the array itself must exist, but each item may be null.
+
+### Nullable array of nullable values
+
+```wire
+tags: maybe [maybe string]
+```
+
+This allows both `null` at the array level and `null` at the item level.
 
 ## Schema references
 
+Schema names must be lowercase `snake_case`:
+
 ```wire
-schema Participant {
+schema participant {
     name: string
     role: string
 }
 
-schema ResearchSummary {
-    lead: schema.Participant
-    participants: [schema.Participant]
+schema research_summary {
+    lead: schema.participant
+    participants: [schema.participant]
 }
 ```
+
+<Warning>
+  Schema names must use `snake_case`. Invalid: `schema Participant`, `schema researchSummary`.
+</Warning>
 
 ## Arrays
 
@@ -67,45 +142,198 @@ Tuples validate both order and length.
 }
 ```
 
-## Unions
+## Enums
+
+Enums are type expressions for fixed string values:
 
 ```wire
-string | null
-schema.Participant | null
-"draft" | "ready" | "published"
+status: enum {
+    draft
+    ready
+    published
+}
 ```
 
-## String enums
+### One-line enum syntax
 
-String literals inside type expressions create exact string enum members.
+When enum values are defined on one line, commas are required:
 
 ```wire
-status: "draft" | "ready" | "published"
+status: enum { draft, ready, published }
+```
+
+### Multiline enum syntax
+
+When enum values are defined on separate lines, commas are not required:
+
+```wire
+status: enum {
+    draft
+    ready
+    published
+}
+```
+
+### Nullable enum
+
+```wire
+status: maybe enum {
+    draft
+    ready
+    published
+}
+```
+
+## Variants
+
+Variants represent tagged polymorphic values:
+
+```wire
+payload: variant type {
+    user_created {
+        user_id: string
+        email: string
+    }
+
+    user_deleted {
+        user_id: string
+        reason: maybe string
+    }
+}
+```
+
+The word after `variant` is the discriminator field. Runtime JSON:
+
+```json
+{
+  "payload": {
+    "type": "user_created",
+    "user_id": "user_123",
+    "email": "rafael@example.com"
+  }
+}
+```
+
+### Variant case names
+
+Variant case names may be identifiers:
+
+```wire
+user_created {
+    user_id: string
+}
+```
+
+For external API values that are not valid identifiers, string literals may be used:
+
+```wire
+event: variant type {
+    "user.created" {
+        user_id: string
+        email: string
+    }
+
+    "user.deleted" {
+        user_id: string
+    }
+}
+```
+
+### Variant discriminator injection
+
+The discriminator field is implicit in each case. The user should not manually declare the discriminator field inside each case.
+
+Invalid:
+
+```wire
+event: variant type {
+    user_created {
+        type: string
+        user_id: string
+    }
+}
+```
+
+### Nullable variants
+
+```wire
+event: maybe variant type {
+    user_created {
+        user_id: string
+    }
+
+    user_deleted {
+        user_id: string
+    }
+}
+```
+
+## Object-level variants
+
+Sometimes the whole schema is a variant object:
+
+```wire
+schema api_event {
+    variant type {
+        user_created {
+            user_id: string
+            email: string
+        }
+
+        user_deleted {
+            user_id: string
+            reason: maybe string
+        }
+    }
+}
 ```
 
 ## Field descriptions
 
-You can add a trailing string description to any typed field.
+Use doc comments before fields:
 
 ```wire
-output: {
-    title: string "Short title shown to the reader"
-    score: number "Confidence score from 0 to 100"
+schema user {
+    /// Stable user identifier
+    id: string
+
+    /// Display name shown to other users
+    name: string
+
+    /// Optional biography. The field exists, but may be null.
+    bio: maybe string
 }
 ```
+
+Doc comments are preserved into generated JSON Schema descriptions.
 
 ## Practical example
 
 ```wire
-schema AllTypes {
-    string_value: string "A basic string value"
-    nullable_number: number | null "Required but may be null"
-    fixed_array: [string; 3] "Exactly three strings"
-    tuple_value: (string, number, [string; 3]) "Mixed tuple"
+schema all_types {
+    /// A basic string value
+    string_value: string
+
+    /// Required but may be null
+    nullable_number: maybe number
+
+    /// Exactly three strings
+    fixed_array: [string; 3]
+
+    /// Mixed tuple
+    tuple_value: (string, number, [string; 3])
+
+    /// Nested object
     object_value: {
         string_value: string
         number_value: number
-    } "Nested object"
-    enum_value: "draft" | "ready" | "published" "Fixed string choices"
+    }
+
+    /// Fixed string choices
+    enum_value: enum {
+        draft
+        ready
+        published
+    }
 }
 ```

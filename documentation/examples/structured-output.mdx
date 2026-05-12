@@ -11,14 +11,25 @@ provider openai {
     models: ["gpt-4.1-mini"]
 }
 
-schema ReleaseSummary {
-    title: string "Short release title"
-    status: "draft" | "ready" | "published" "Release state"
-    key_points: [string; 3] "Exactly three key points"
+schema release_summary {
+    /// Short release title
+    title: string
+
+    /// Release state
+    status: enum {
+        draft
+        ready
+        published
+    }
+
+    /// Exactly three key points
+    key_points: [string; 3]
+
+    /// Nested metadata
     metadata: {
         confidence: number
         audience: string
-    } "Nested metadata"
+    }
 }
 
 input {
@@ -29,7 +40,7 @@ input {
 agent summarize_release {
     model: openai("gpt-4.1-mini")
     instruction: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
-    output: schema.ReleaseSummary
+    output: schema.release_summary
 }
 
 output {
@@ -41,8 +52,8 @@ output {
 
 ## What it demonstrates
 
-- Named schema reuse through `schema.ReleaseSummary`
-- String enums inside output types (`"draft" | "ready" | "published"`)
+- Named schema reuse through `schema.release_summary`
+- Enums inside output types (`enum { draft, ready, published }`)
 - Fixed-length arrays (`[string; 3]`)
 - Nested object access in the final output (`agent.summarize_release.metadata.confidence`)
-- Field descriptions on schema fields
+- Field descriptions using doc comments

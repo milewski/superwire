@@ -22,7 +22,7 @@ output {
 When multiple agents or outputs share a structure, give it a name.
 
 ```wire
-schema ReleaseSummary {
+schema release_summary {
     title: string
     summary: string
     key_points: [string; 3]
@@ -63,7 +63,7 @@ Downstream stages should read from upstream stages through `agent.*` references.
 ```wire
 agent create_brief {
     model: openai("gpt-4.1-mini")
-    instruction: "Create a brief from these findings: {{ agent.summarize_notes.summary }}"
+    instruction: "Create a brief from these findings: {{ agent.summarize_notes.findings }}"
     output: {
         brief: string
         action_items: [string; 3]
@@ -187,4 +187,4 @@ output {
 - [ ] Use `dynamic` for tool calls and MCP operations
 - [ ] Use `uses:` for agent tool access
 - [ ] Validate before executing
-- [ ] Add field descriptions for schema clarity
+- [ ] Add doc comments for schema clarity

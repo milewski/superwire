@@ -24,7 +24,7 @@ input {
     interview_notes: [string]
 }
 
-schema Brief {
+schema brief {
     summary: string
     recommendations: [string]
 }
@@ -32,7 +32,7 @@ schema Brief {
 agent summarize_notes {
     model: openai("gpt-4.1-mini")
     instruction: "Summarize {{ input.interview_notes }} for {{ input.study_name }}."
-    output: schema.Brief
+    output: schema.brief
 }
 
 output {

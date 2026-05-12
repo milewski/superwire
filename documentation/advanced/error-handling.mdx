@@ -24,7 +24,7 @@ Important validation checks include:
 
 - duplicate providers, schemas, agents, input blocks, secrets blocks, or output blocks
 - duplicate properties within a declaration
-- unknown schema references such as `schema.Missing`
+- unknown schema references such as `schema.missing`
 - invalid `model:` expressions
 - unknown providers or models
 - unknown `agent.*`, `input.*`, `secrets.*`, `dynamic.*`, `tool.*`, `resource.*`, or `prompt.*` references
@@ -33,6 +33,7 @@ Important validation checks include:
 - missing agent `output` types when field access is used
 - dependency cycles between agents or dynamic blocks
 - invalid `uses:` references or `max_calls` overrides
+- schema names not using `snake_case`
 
 ## 3. Runtime errors
 
@@ -56,6 +57,7 @@ Runtime execution can still fail after validation, for example when:
 | Agent dependency graph | yes | yes | yes |
 | Output object construction | yes | yes | yes |
 | Optional chaining `?.` | yes | yes | yes |
+| Null fallback `??` | yes | yes | yes |
 | Agent `for` loops | yes | yes | yes |
 | `context(...)` and `compact(...)` | yes | yes | yes |
 | `template(...)` | yes | yes | yes |
@@ -74,6 +76,12 @@ Runtime execution can still fail after validation, for example when:
 | `max_calls` on tools | yes | yes | yes |
 | `response_format_value` (`auto`, etc.) | yes | partial | depends on provider |
 | `tool.*` in general expressions | yes | partial | no |
+| `maybe` nullable values | yes | yes | yes |
+| `enum` type expressions | yes | yes | yes |
+| `variant` type expressions | yes | yes | yes |
+| Match expressions | yes | yes | yes |
+| Variant projection `#case` | yes | yes | yes |
+| Doc comments `///` | yes | yes | yes |
 
 <Info>
   "Partial" means the validator understands the syntax enough to walk

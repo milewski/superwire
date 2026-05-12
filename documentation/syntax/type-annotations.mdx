@@ -7,7 +7,7 @@ Type annotations appear in four places in a Superwire workflow:
 
 - `input { field: type }`
 - `secrets { field: type }`
-- `schema Name { field: type }`
+- `schema name { field: type }`
 - `agent name { output: type }`
 
 ## Scalar types
@@ -20,22 +20,26 @@ The five primitive scalar types:
 | `number` | Integer or decimal number |
 | `float` | Floating-point number |
 | `boolean` | `true` or `false` |
-| `null` | Absence of value |
+| `object` | Arbitrary JSON object |
 
 ## Schema references
 
-Reference a named schema with `schema.Name`:
+Reference a named schema with `schema.name`:
 
 ```wire
-schema Participant {
+schema participant {
     name: string
     role: string
 }
 
-schema ResearchSummary {
-    lead: schema.Participant
+schema research_summary {
+    lead: schema.participant
 }
 ```
+
+<Warning>
+  Schema names must use `snake_case`. Invalid: `schema Participant`, `schema researchSummary`.
+</Warning>
 
 ## Arrays
 
@@ -44,7 +48,7 @@ Dynamic arrays:
 ```wire
 [string]
 [number]
-[schema.Participant]
+[schema.participant]
 ```
 
 Fixed-length arrays enforce an exact count:
@@ -83,35 +87,89 @@ Objects can be nested:
 }
 ```
 
-## Unions
+## Nullable values
 
-Combine types with `|`:
-
-```wire
-string | null
-schema.Participant | schema.Organization
-"draft" | "ready" | "published"
-```
-
-## String enums
-
-String literals in a union create an exact set of allowed values:
+Nullable values use `maybe`:
 
 ```wire
-status: "draft" | "ready" | "published"
+maybe string
+maybe number
+maybe schema.participant
 ```
 
-At runtime, the model must produce one of the exact string values listed.
+### Nullable object
+
+```wire
+maybe {
+    name: string
+    email: string
+}
+```
+
+### Nullable array
+
+```wire
+maybe [string]
+```
+
+### Array of nullable values
+
+```wire
+[maybe string]
+```
+
+## Enums
+
+Enums are type expressions for fixed string values:
+
+```wire
+enum {
+    draft
+    ready
+    published
+}
+```
+
+One-line syntax with commas:
+
+```wire
+enum { draft, ready, published }
+```
+
+## Variants
+
+Variants represent tagged polymorphic values:
+
+```wire
+variant type {
+    user_created {
+        user_id: string
+    }
+
+    user_deleted {
+        user_id: string
+    }
+}
+```
 
 ## Field descriptions
 
-Add a human-readable description after any typed field:
+Add a doc comment before any typed field:
 
 ```wire
-schema ReleaseNote {
-    title: string "Short human-readable title"
-    impact: "low" | "medium" | "high" "Severity bucket"
-    body: string "Full text of the release note"
+schema release_note {
+    /// Short human-readable title
+    title: string
+
+    /// Severity bucket
+    impact: enum {
+        low
+        medium
+        high
+    }
+
+    /// Full text of the release note
+    body: string
 }
 ```
 
@@ -120,7 +178,7 @@ Descriptions are stored in the AST and available to tooling (e.g., the LSP for h
 ## Type checking rules
 
 - All referenced schemas must be declared
+- Schema names must use `snake_case`
 - Array element types must be compatible with the declared type
-- Union members must be compatible with at least one branch
-- Nullable fields (`| null`) require optional chaining (`?.`) when accessed downstream
+- Nullable fields (`maybe T`) require safe access (`?.`) when accessed downstream
 - Agent output types determine the expected shape of the model's response

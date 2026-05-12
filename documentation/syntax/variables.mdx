@@ -1,6 +1,6 @@
 ---
 title: References and Identifiers
-description: Understand names, keyword roots, dot access, and optional chaining.
+description: Understand names, keyword roots, dot access, optional chaining, and variant projection.
 ---
 
 References are how one part of a workflow reads values from another part.
@@ -62,6 +62,23 @@ agent.typed_example.nullable_object?.string_value
 ```
 
 Validation allows optional chaining when the path can be followed through the declared type. At runtime, `?.` returns `null` instead of failing when the current value is `null` or the field is absent.
+
+## Variant projection
+
+Use `#` to access a specific variant case without match.
+
+```wire
+agent.event_handler.event#user_created.user_id
+```
+
+This means: if `event` is `user_created`, return `user_id`. Otherwise, return null.
+
+The result is always nullable unless the compiler can prove the variant is already narrowed.
+
+```wire
+// Use fallback when a plain value is required
+agent.event_handler.event#user_created.user_id ?? "unknown"
+```
 
 ## Bare identifiers
 

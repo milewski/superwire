@@ -32,7 +32,7 @@ declaration =
 | `mcp` | `mcp name { key: value }` | Connect to an MCP server |
 | `secrets` | `secrets { field: type }` | Declare sensitive runtime values |
 | `input` | `input { field: type }` | Declare regular runtime values |
-| `schema` | `schema Name { field: type }` | Name a reusable type |
+| `schema` | `schema name { field: type }` | Name a reusable type |
 | `tool` | `tool name from mcp.x.y.z` | Import a tool from an MCP server |
 | `resource` | `resource name from mcp.x.y.z` | Import a resource from an MCP server |
 | `prompt` | `prompt name from mcp.x.y.z` | Import a prompt template from an MCP server |
@@ -52,23 +52,28 @@ Values inside providers, agents, dynamic blocks, and output fields can be:
 - **object expressions** -- `{ key: value, ... }`
 - **array expressions** -- `[1, 2, 3]`
 - **string interpolation** -- `"text {{ expression }} text"`
+- **match expressions** -- `match value { case_a.path, case_b.path, _ "fallback" }`
+- **variant projection** -- `value#case.field`
 
 ## Type forms
 
 Type positions inside `input`, `secrets`, `schema`, tool bindings, and agent `output` can be:
 
-- scalars
-- schema references
-- arrays and fixed-length arrays
-- tuples
-- objects
-- unions
-- string enums
+- scalars: `string`, `number`, `float`, `boolean`, `object`
+- nullable values: `maybe T`
+- schema references: `schema.name`
+- arrays: `[T]`
+- fixed-length arrays: `[T; N]`
+- tuples: `(T1, T2, T3)`
+- objects: `{ field: Type }`
+- enums: `enum { a, b, c }`
+- variants: `variant tag { ... }`
 
 ## Comments and whitespace
 
 - whitespace is ignored between tokens
-- comments use `//` and run to the end of the line
+- comments use `//` and run to end of line
+- doc comments use `///` and are preserved into JSON Schema descriptions
 - multiline strings use triple quotes (`"""`)
 
 ## Important distinction

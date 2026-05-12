@@ -33,7 +33,7 @@ input {
     topic: string
 }
 
-schema Brief {
+schema brief {
     title: string
     bullets: [string; 3]
 }
@@ -41,7 +41,7 @@ schema Brief {
 agent write_brief {
     model: openai("gpt-4.1-mini")
     instruction: "Write a short brief about {{ input.topic }}."
-    output: schema.Brief
+    output: schema.brief
 }
 
 output {
@@ -90,7 +90,7 @@ Agent dependencies are inferred from references such as `agent.summary` or `agen
     Learn agent properties, references, and loops.
   </Card>
   <Card title="Schemas" icon="table" href="/core-concepts/schemas">
-    Learn named types, unions, tuples, and field descriptions.
+    Learn named types, enums, variants, and field descriptions.
   </Card>
   <Card title="Workflow Anatomy" icon="diagram-project" href="/core-concepts/workflows">
     See how declarations combine into a complete file.

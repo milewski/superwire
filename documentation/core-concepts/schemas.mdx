@@ -1,24 +1,30 @@
 ---
 title: Schemas
-description: Define reusable output types with arrays, unions, tuples, enums, and inline descriptions.
+description: Define reusable output types with arrays, enums, variants, tuples, and inline descriptions.
 ---
 
 Schemas let you name complex type expressions and reuse them in agent outputs, input fields, and other schemas.
 
 ## Named schemas
 
+Schema names must be lowercase `snake_case`:
+
 ```wire
-schema Participant {
+schema participant {
     name: string
     role: string
 }
 
-schema ResearchSummary {
+schema research_summary {
     title: string
-    lead: schema.Participant
-    participants: [schema.Participant]
+    lead: schema.participant
+    participants: [schema.participant]
 }
 ```
+
+<Warning>
+  Schema names must use `snake_case`. Invalid: `schema Participant`, `schema researchSummary`.
+</Warning>
 
 ## Where schemas can be used
 
@@ -29,25 +35,32 @@ schema ResearchSummary {
 
 ```wire
 input {
-    lead_participant: schema.Participant
-    previous_summary: schema.ResearchSummary
+    lead_participant: schema.participant
+    previous_summary: schema.research_summary
 }
 
 agent summarize {
     model: ollama("qwen3.5:32b")
     instruction: "Summarize the provided research context."
-    output: schema.ResearchSummary
+    output: schema.research_summary
 }
 ```
 
 ## Field descriptions
 
-A typed field may optionally include a trailing string description.
+Use doc comments before fields:
 
 ```wire
-schema ReleaseNote {
-    title: string "Short human-readable title"
-    impact: "low" | "medium" | "high" "Severity bucket"
+schema release_note {
+    /// Short human-readable title
+    title: string
+
+    /// Severity bucket
+    impact: enum {
+        low
+        medium
+        high
+    }
 }
 ```
 
@@ -55,31 +68,47 @@ The parser stores these descriptions in the AST so schema-aware tooling can use 
 
 ## Supported type forms
 
-- primitive scalars: `string`, `number`, `float`, `boolean`, `null`
-- schema references: `schema.Name`
+- primitive scalars: `string`, `number`, `float`, `boolean`, `object`
+- nullable values: `maybe T`
+- schema references: `schema.name`
 - arrays: `[string]`
 - fixed-length arrays: `[string; 3]`
 - tuples: `(string, number, [string; 3])`
 - objects: `{ title: string, score: number }`
-- unions: `string | null`
-- string enums: `"draft" | "ready" | "published"`
+- enums: `enum { draft, ready, published }`
+- variants: `variant tag { ... }`
 
 ## Practical example
 
 ```wire
-schema AllTypes {
+schema all_types {
+    /// A basic string value
     string_value: string
-    nullable_string: string | null
+
+    /// Required but may be null
+    nullable_string: maybe string
+
+    /// Exactly three strings
     fixed_array: [string; 3]
+
+    /// Mixed tuple
     tuple_value: (string, number, [string; 3])
+
+    /// Nested object
     object_value: {
         name: string
         score: number
     }
-    enum_value: "draft" | "ready" | "published"
+
+    /// Fixed string choices
+    enum_value: enum {
+        draft
+        ready
+        published
+    }
 }
 ```
 
 ## Validation rules
 
-Validation checks that every `schema.Name` reference points to a declared schema. Unknown schema references are reported with source spans.
+Validation checks that every `schema.name` reference points to a declared schema. Unknown schema references are reported with source spans.

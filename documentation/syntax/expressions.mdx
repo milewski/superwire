@@ -1,6 +1,6 @@
 ---
 title: Expressions
-description: The full expression language: references, calls, tool calls, MCP calls, objects, and arrays.
+description: The full expression language: references, calls, tool calls, MCP calls, objects, arrays, and match expressions.
 ---
 
 Expressions are the building blocks of values in Superwire. They appear in agent properties, dynamic blocks, output fields, and provider configuration.
@@ -23,6 +23,18 @@ Use `?.` for optional chaining on nullable paths:
 
 ```wire
 agent.data.details?.score
+```
+
+Use `#` for variant projection:
+
+```wire
+agent.event_handler.event#user_created.user_id
+```
+
+Use `??` for null fallback:
+
+```wire
+output.user?.name ?? "Unknown user"
 ```
 
 ## Literal expressions
@@ -129,6 +141,63 @@ Score: {{ agent.summary.confidence }}
 """
 ```
 
+## Match expressions
+
+Use `match` to handle variant cases and extract values.
+
+### Basic match
+
+```wire
+event_type: match agent.event_handler.event {
+    user_created.user_name
+    user_deleted.user_name
+}
+```
+
+Each entry starts with a variant case name, followed by a path into that case.
+
+### Match with fallback
+
+A fallback case may use `_`:
+
+```wire
+event_type: match agent.event_handler.event {
+    user_created.user_name
+    user_deleted.user_name
+    _ "unknown"
+}
+```
+
+### Match result type
+
+All match branches must return the same type:
+
+```wire
+// Valid: both return string
+user_name: match agent.event_handler.event {
+    user_created.user_name
+    user_deleted.user_name
+}
+
+// Invalid: returns different types
+result: match agent.event_handler.event {
+    user_created.created_at
+    user_deleted.retry_count
+}
+```
+
+### Match over nullable variants
+
+If the matched expression is nullable, the match must handle the nullable case using `_`:
+
+```wire
+event_type: match agent.event_handler.event {
+    user_created.user_name
+    user_deleted.user_name
+    _ "no event"
+}
+```
+
 ## Expression precedence
 
 Expressions are evaluated in this order (highest to lowest):
@@ -137,5 +206,6 @@ Expressions are evaluated in this order (highest to lowest):
 2. Function calls, tool calls, MCP calls
 3. Object and array expressions
 4. String interpolation
+5. Match expressions
 
 Use parentheses to clarify intent when mixing complex expressions.

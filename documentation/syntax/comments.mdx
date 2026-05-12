@@ -1,9 +1,13 @@
 ---
 title: Comments
-description: Use `//` comments to annotate workflows without affecting parsing.
+description: Use `//` and `///` comments to annotate workflows and document schema fields.
 ---
 
-Superwire supports single-line comments.
+Superwire supports two types of comments.
+
+## Single-line comments
+
+Use `//` for general workflow comments:
 
 ```wire
 // Provider defines where the model comes from.
@@ -14,7 +18,7 @@ provider ollama {
 }
 ```
 
-## Rules
+### Rules
 
 - comments start with `//`
 - comments run to the end of the line
@@ -26,6 +30,57 @@ input {
 }
 ```
 
+## Doc comments
+
+Use `///` for field documentation. Doc comments are preserved into generated JSON Schema descriptions.
+
+```wire
+schema user {
+    /// Stable user identifier
+    id: string
+
+    /// Display name shown to other users
+    name: string
+
+    /// Optional biography. The field exists, but may be null.
+    bio: maybe string
+}
+```
+
+### Rules
+
+- doc comments start with `///`
+- doc comments run to the end of the line
+- doc comments are placed before the field they document
+- doc comments are preserved in the AST for tooling
+
+### Usage
+
+Doc comments work on:
+
+- schema fields
+- inline object fields
+- variant case fields
+
+```wire
+schema release_note {
+    /// Short human-readable title
+    title: string
+
+    /// Severity bucket
+    impact: enum {
+        low
+        medium
+        high
+    }
+
+    /// Full text of the release note
+    body: string
+}
+```
+
 ## Recommendation
 
-Use comments for workflow intent and business context, not to restate obvious syntax. The best comments explain why a provider, prompt, or output shape exists.
+- Use `//` for workflow intent and business context
+- Use `///` for schema field documentation that should appear in generated JSON Schema
+- The best comments explain why a provider, prompt, or output shape exists
