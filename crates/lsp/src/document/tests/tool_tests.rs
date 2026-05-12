@@ -691,16 +691,8 @@ fn inserts_mcp_output_schema_with_nullable_fields_using_maybe_syntax() {
     let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "output");
 
     assert!(completion_suggestion.insert_text.contains("/// Answer"));
-    assert!(
-        completion_suggestion
-            .insert_text
-            .contains("/// The text content of the answer")
-    );
-    assert!(
-        completion_suggestion
-            .insert_text
-            .contains("/// The ID of the participant")
-    );
+    assert!(completion_suggestion.insert_text.contains("/// The text content of the answer"));
+    assert!(completion_suggestion.insert_text.contains("/// The ID of the participant"));
     assert!(completion_suggestion.insert_text.contains("/// The ID of the task"));
     assert!(completion_suggestion.insert_text.contains("text: maybe string"));
     assert!(!completion_suggestion.insert_text.contains("| null"));

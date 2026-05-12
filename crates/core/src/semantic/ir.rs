@@ -277,11 +277,7 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
                     collect_agent_dependencies(&field.value, &mut dependencies);
                 }
             }
-            AgentProperty::Output {
-                output_type_expression: _,
-                description: _,
-            }
-            | AgentProperty::Unknown { name: _, span: _ } => {}
+            AgentProperty::Output { output_type_expression: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
         }
     }
 
@@ -506,10 +502,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             AgentProperty::Instruction(expression) if property_name == AgentPropertyName::Instruction => return Some(expression),
             AgentProperty::Model(_)
             | AgentProperty::Instruction(_)
-            | AgentProperty::Output {
-                output_type_expression: _,
-                description: _,
-            }
+            | AgentProperty::Output { output_type_expression: _ }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Uses(_)

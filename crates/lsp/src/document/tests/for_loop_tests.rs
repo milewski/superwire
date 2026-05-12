@@ -145,8 +145,10 @@ fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
     let completion_suggestions = inline_completion_suggestions! {
         agent number_note for number in [1, 2, 3, 4] {
             output: {
-                number: number "numeric message index"
-                note: string "generated note text"
+                /// numeric message index
+                number: number
+                /// generated note text
+                note: string
             }
         }
 

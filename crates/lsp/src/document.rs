@@ -655,9 +655,7 @@ impl RenderTypeExpression for TypeExpression {
                             return rendered_field;
                         }
 
-                        format!(
-                            "{rendered_description}\n{rendered_field}"
-                        )
+                        format!("{rendered_description}\n{rendered_field}")
                     })
                     .collect::<Vec<_>>()
                     .join("\n");

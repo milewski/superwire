@@ -11,9 +11,7 @@ secrets {
 
 mcp local {
     endpoint: secrets.mcp_endpoint
-    headers: {
-        Authorization: "Bearer test-token"
-    }
+    headers: { Authorization: "Bearer test-token" }
 }
 
 input {
@@ -29,7 +27,8 @@ tool fetch_task_data from mcp.local.tool.fetch_task_data {
 }
 
 dynamic {
-    data: call tool.fetch_task_data
+    data: call tool.fetch_task_data {
+    }
 }
 
 agent summarizer {

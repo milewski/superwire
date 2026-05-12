@@ -673,7 +673,11 @@ impl SemanticIndex {
             .filter(|prompt_argument| prompt_argument.name.starts_with(binding_prefix))
             .filter(|prompt_argument| !existing_binding_names.contains(&prompt_argument.name))
             .map(|prompt_argument| {
-                let requirement_detail = if prompt_argument.required { "Required prompt argument" } else { "Optional prompt argument" };
+                let requirement_detail = if prompt_argument.required {
+                    "Required prompt argument"
+                } else {
+                    "Optional prompt argument"
+                };
                 let documentation = prompt_argument.description.clone().unwrap_or_else(|| {
                     format!(
                         "{} argument `{}` from MCP prompt `{}`.",
@@ -1059,10 +1063,7 @@ impl SemanticIndex {
         }
 
         let output_type_expression = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
-            AgentProperty::Output {
-                output_type_expression,
-                description: _,
-            } => Some(output_type_expression),
+            AgentProperty::Output { output_type_expression } => Some(output_type_expression),
             AgentProperty::Model(_)
             | AgentProperty::Instruction(_)
             | AgentProperty::Context(_)

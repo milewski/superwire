@@ -1679,7 +1679,8 @@ fn completes_schema_enum_fields_in_type_context() {
 fn uses_schema_field_description_in_reference_completion_documentation() {
     let completion_suggestions = inline_completion_suggestions! {
         schema person {
-            first_name: string "first name from schema"
+            /// first name from schema
+            first_name: string
             age: number
         }
 
@@ -1802,17 +1803,6 @@ fn suggests_array_type_for_agent_output_property_value() {
     };
 
     assert_completion_contains!(&completion_suggestions, "[string]");
-}
-
-#[test]
-fn suppresses_suggestions_inside_agent_output_type_description_string() {
-    let completion_suggestions = inline_completion_suggestions! {
-        agent findings {
-            output: boolean "<cursor>"
-        }
-    };
-
-    assert!(completion_suggestions.is_empty());
 }
 
 #[test]

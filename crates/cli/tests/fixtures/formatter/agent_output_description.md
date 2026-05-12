@@ -2,7 +2,7 @@
 agent greeting {
     model: ollama("qwen3.5:8b")
     instruction: "test"
-    output: string "example"
+    output: string
 }
 ```
 ---
@@ -10,6 +10,6 @@ agent greeting {
 agent greeting {
     model: ollama("qwen3.5:8b")
     instruction: "test"
-    output: string "example"
+    output: string
 }
 ```

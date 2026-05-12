@@ -10,17 +10,14 @@ schema event_result {
         created {
             id: string
         }
-
         deleted {
             id: string
         }
     }
-
     maybe_event: maybe variant type {
         created {
             id: string
         }
-
         deleted {
             id: string
         }

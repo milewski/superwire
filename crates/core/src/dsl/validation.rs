@@ -1638,10 +1638,7 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                                 Some(*span),
                             );
                         }
-                        AgentProperty::Output {
-                            output_type_expression,
-                            description: _,
-                        } => {
+                        AgentProperty::Output { output_type_expression } => {
                             report_duplicate_type_expression_fields(output_type_expression, agent_context.clone(), validation_report);
                         }
                     }
@@ -2030,11 +2027,7 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
                 for agent_property in &agent_declaration.properties {
-                    if let AgentProperty::Output {
-                        output_type_expression,
-                        description: _,
-                    } = agent_property
-                    {
+                    if let AgentProperty::Output { output_type_expression } = agent_property {
                         validate_type_expression_for_schemas(
                             output_type_expression,
                             agent_context.clone(),
@@ -2659,11 +2652,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                 &agent_dynamic_field_types,
                             );
                         }
-                        AgentProperty::Output {
-                            output_type_expression: _,
-                            description: _,
-                        }
-                        | AgentProperty::Unknown { name: _, span: _ } => {}
+                        AgentProperty::Output { output_type_expression: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
                     }
                 }
             }
@@ -4013,11 +4002,7 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                 | AgentProperty::Uses(model_expression) => {
                     collect_agent_dependencies_from_expression(model_expression, &mut referenced_agents);
                 }
-                AgentProperty::Output {
-                    output_type_expression: _,
-                    description: _,
-                }
-                | AgentProperty::Unknown { name: _, span: _ } => {}
+                AgentProperty::Output { output_type_expression: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }
 
@@ -5413,10 +5398,10 @@ mod tests {
                 input {
                     name: [{
                         language: schema.main.language
-                        value: string "localized project name"
+                        value: string
                     }]
-                    primary_language: schema.main.language "primary locale language code"
-                    languages: [schema.main.language] "supported locale language code"
+                    primary_language: schema.main.language
+                    languages: [schema.main.language]
                 }
                 bindings {
                     workspace_id: input.workspace_id

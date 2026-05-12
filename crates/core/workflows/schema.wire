@@ -11,10 +11,14 @@ provider ollama {
 
 // Named schema: define once, reuse across agents.
 schema person {
-    name: string "Participant full name"
-    age: number "Participant age in years"
-    role: string "Participant role in the study"
-    hobbies: [string; 3] "Exactly three hobbies for the participant"
+    /// Participant full name
+    name: string
+    /// Participant age in years
+    age: number
+    /// Participant role in the study
+    role: string
+    /// Exactly three hobbies for the participant
+    hobbies: [string; 3]
 }
 
 // Agent A uses the named schema.
@@ -35,10 +39,14 @@ agent inline_profile {
 
     // Inline schema is local to this agent only.
     output: {
-        name: string "Participant full name"
-        age: number "Participant age in years"
-        role: string "Participant role in the study"
-        hobbies: [string; 3] "Exactly three hobbies for the participant"
+        /// Participant full name
+        name: string
+        /// Participant age in years
+        age: number
+        /// Participant role in the study
+        role: string
+        /// Exactly three hobbies for the participant
+        hobbies: [string; 3]
     }
 }
 

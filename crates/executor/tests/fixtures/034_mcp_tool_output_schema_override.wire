@@ -20,7 +20,8 @@ tool fetch_numbers from mcp.local.tool.fetch_numbers {
 }
 
 dynamic {
-    result: call tool.fetch_numbers
+    result: call tool.fetch_numbers {
+    }
 }
 
 agent number_note for number in dynamic.result.values {

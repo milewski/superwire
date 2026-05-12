@@ -29,7 +29,10 @@ agent writer {
     model: openai("gpt-4.1-mini")
 
     dynamic {
-        rendered_prompt: "{{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to {{ dynamic.max_bullets }} bullets."
+        rendered_prompt: """
+            {{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to
+            {{ dynamic.max_bullets }} bullets.
+        """
     }
 
     instruction: dynamic.rendered_prompt

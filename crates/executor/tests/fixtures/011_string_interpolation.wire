@@ -21,13 +21,15 @@ agent release_notes {
 
 agent launch_message {
     model: openai("model-a")
+
     instruction: """
         Write a launch message for {{ input.audience }}.
-
+        
         Product: {{ input.product_name }}
         Title: {{ agent.release_notes.title }}
         Body: {{ agent.release_notes.body }}
     """
+
     output: {
         message: string
     }

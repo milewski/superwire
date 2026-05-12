@@ -32,8 +32,10 @@ agent release_summary {
     model: openai("gpt-4.1-mini")
     instruction: "Write a short release summary for {{ input.product_name }} based on these highlights: {{ input.release_highlights }}"
     output: {
-        summary: string "Short release summary"
-        key_points: [string; 3] "Exactly three key points from the release"
+        /// Short release summary
+        summary: string
+        /// Exactly three key points from the release
+        key_points: [string; 3]
     }
 }
 
@@ -55,8 +57,10 @@ agent launch_message {
     """
 
     output: {
-        title: string "Short title for the launch message"
-        body: string "Final message body"
+        /// Short title for the launch message
+        title: string
+        /// Final message body
+        body: string
     }
 }
 
@@ -75,8 +79,10 @@ agent qa_check {
     """
 
     output: {
-        approved: boolean "Whether the content is ready to use"
-        issues: [string] "List of issues to fix before sending"
+        /// Whether the content is ready to use
+        approved: boolean
+        /// List of issues to fix before sending
+        issues: [string]
     }
 }
 

@@ -11,7 +11,7 @@ input {
     task_id: number
 }
 
-prompt from mcp.local.prompt.summarize_task_prompt {
+prompt summarize_task_prompt from mcp.local.prompt.summarize_task_prompt {
     bindings {
         project_id: input.project_id
         type_id: input.task_id

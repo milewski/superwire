@@ -28,13 +28,11 @@ from mcp.local.tool {
             task_id: input.task_id
         }
     }
-
     tool update_task_status {
         bindings {
             task_id: input.task_id
         }
     }
-
     tool assign_task {
         bindings {
             task_id: input.task_id

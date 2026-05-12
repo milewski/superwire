@@ -197,7 +197,8 @@ fn uses_agent_output_field_description_for_interpolation_completion() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greetings {
             output: {
-                message: string "some description of the message"
+                /// some description of the message
+                message: string
             }
         }
 

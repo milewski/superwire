@@ -105,22 +105,11 @@ impl DslFormatter {
         self.push_newline();
     }
 
-    fn push_agent_property_type_with_description(
-        &mut self,
-        property_name: &str,
-        type_expression: &TypeExpression,
-        description: Option<&str>,
-    ) {
+    fn push_agent_property_type(&mut self, property_name: &str, type_expression: &TypeExpression) {
         self.push_indent();
         self.output.push_str(property_name);
         self.output.push_str(": ");
         type_expression.push_to_formatter(self);
-
-        if let Some(property_description) = description {
-            self.output.push(' ');
-            self.output.push_str(&render_plain_string_literal(property_description));
-        }
-
         self.push_newline();
     }
 
@@ -910,14 +899,9 @@ impl AgentProperty {
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
             Self::Instruction(expression) => formatter.push_agent_property_expression(AgentPropertyName::Instruction.as_str(), expression),
-            Self::Output {
-                output_type_expression,
-                description,
-            } => formatter.push_agent_property_type_with_description(
-                AgentPropertyName::Output.as_str(),
-                output_type_expression,
-                description.as_deref(),
-            ),
+            Self::Output { output_type_expression } => {
+                formatter.push_agent_property_type(AgentPropertyName::Output.as_str(), output_type_expression);
+            }
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
             Self::Uses(expression) => self.push_agent_binding_list_property(formatter, AgentPropertyName::Uses, expression),
@@ -1014,13 +998,7 @@ impl AgentProperty {
         RenderedAgentProperty {
             text: property_formatter.output,
             is_multiline: property_is_multiline,
-            is_output_property: matches!(
-                self,
-                Self::Output {
-                    output_type_expression: _,
-                    description: _,
-                }
-            ),
+            is_output_property: matches!(self, Self::Output { output_type_expression: _ }),
         }
     }
 }
@@ -2150,6 +2128,18 @@ impl<'source> SourceLineAnalyzer<'source> {
             let (code_text, comment) = if let Some(comment_start) = comment_start_byte_index {
                 let code_text = source_line[..comment_start].to_owned();
                 let comment_text = source_line[comment_start..].to_owned();
+
+                if comment_text.trim_start().starts_with("///") {
+                    source_line_analyses.push(SourceLineAnalysis {
+                        line_number: line_index + 1,
+                        code_text,
+                        comment: None,
+                        is_within_multiline_string: starts_inside_multiline_string,
+                    });
+
+                    continue;
+                }
+
                 let comment_kind = if code_text.trim().is_empty() {
                     CommentKind::Standalone
                 } else {

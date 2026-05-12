@@ -77,7 +77,7 @@ object_destructuring_pattern = { "{" ~ identifier ~ ("," ~ identifier)* ~ ","? ~
 agent_block = { "{" ~ agent_property* ~ "}" }
 agent_property = _{ named_object_property | named_agent_value_property }
 named_agent_value_property = { identifier ~ ":" ~ agent_property_value }
-agent_property_value = _{ tools_expression | response_format_value | expression ~ plain_string_literal? | type_expression ~ plain_string_literal? }
+agent_property_value = _{ tools_expression | response_format_value | expression | type_expression }
 response_format_value = { "auto" | "json_schema" | "json_object" | "instruction_only" }
 
 tools_expression = { "[" ~ (agent_tool_binding ~ ("," ~ agent_tool_binding)* ~ ","?)? ~ "]" }
@@ -88,10 +88,10 @@ agent_tool_binding_property = _{ named_object_property | named_unsigned_integer_
 output_declaration = { "output" ~ object_expression }
 
 typed_block = { "{" ~ typed_field* ~ "}" }
-typed_field = { doc_comment* ~ identifier ~ ":" ~ type_expression ~ plain_string_literal? ~ ","? }
+typed_field = { doc_comment* ~ identifier ~ ":" ~ type_expression ~ ","? }
 
 tool_bindings_block = { "{" ~ tool_binding_field* ~ "}" }
-tool_binding_field = { doc_comment* ~ identifier ~ ":" ~ (tool_binding_type_expression | expression) ~ plain_string_literal? ~ ","? }
+tool_binding_field = { doc_comment* ~ identifier ~ ":" ~ (tool_binding_type_expression | expression) ~ ","? }
 tool_binding_type_expression = { tool_binding_type_term ~ ("|" ~ tool_binding_type_term)* }
 tool_binding_type_object = { "{" ~ typed_field* ~ "}" }
 tool_binding_type_term = _{

@@ -6,13 +6,20 @@ provider openai {
 }
 
 schema all_types {
-    string_value: string "A string"
-    number_value: number "A number"
-    boolean_value: boolean "A boolean"
-    nullable_string: maybe string "A nullable string"
-    array: [string] "An array of strings"
-    fixed_array: [string; 3] "Exactly three strings"
-    enum_value: enum { draft, ready, published } "A status enum"
+    /// A string
+    string_value: string
+    /// A number
+    number_value: number
+    /// A boolean
+    boolean_value: boolean
+    /// A nullable string
+    nullable_string: maybe string
+    /// An array of strings
+    array: [string]
+    /// Exactly three strings
+    fixed_array: [string; 3]
+    /// A status enum
+    enum_value: enum { draft, ready, published }
 }
 
 agent typed_example {

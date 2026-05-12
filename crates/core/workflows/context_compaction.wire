@@ -37,10 +37,14 @@ agent research_analysis {
     """
 
     output: {
-        themes: [string] "Key themes found across the feedback"
-        risks: [string] "Main risks or pain points mentioned by customers"
-        opportunities: [string] "Product opportunities suggested by the feedback"
-        notable_quotes: [string] "Short quotes worth preserving for later synthesis"
+        /// Key themes found across the feedback
+        themes: [string]
+        /// Main risks or pain points mentioned by customers
+        risks: [string]
+        /// Product opportunities suggested by the feedback
+        opportunities: [string]
+        /// Short quotes worth preserving for later synthesis
+        notable_quotes: [string]
     }
 }
 
@@ -125,8 +129,10 @@ agent summary_from_custom_compact_context {
 
     instruction: "Write a short executive summary from the customized compacted context."
     output: {
-        summary: string "Executive-ready summary of the research"
-        top_actions: [string; 3] "Exactly three recommended next actions"
+        /// Executive-ready summary of the research
+        summary: string
+        /// Exactly three recommended next actions
+        top_actions: [string; 3]
     }
 }
 

@@ -15,6 +15,7 @@ mcp local {
 
 tool fetch_shared from mcp.local.tool.fetch_task_data {
     max_calls: 2
+
     bindings {
         project_id: 1
         task_id: 2
@@ -23,22 +24,26 @@ tool fetch_shared from mcp.local.tool.fetch_task_data {
 
 agent first_agent {
     model: openai("model-a")
+
     uses: [
         tool.fetch_shared {
             max_calls: 1
         },
     ]
+
     instruction: "First"
     output: string
 }
 
 agent second_agent {
     model: openai("model-a")
+
     uses: [
         tool.fetch_shared {
             max_calls: 1
         },
     ]
+
     instruction: "Second"
     output: string
 }

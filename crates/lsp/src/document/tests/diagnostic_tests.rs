@@ -560,10 +560,10 @@ fn accepts_nested_schema_enum_field_reference_diagnostics() {
             input {
                 name: [{
                     language: schema.main.language
-                    value: string "localized project name"
+                    value: string
                 }]
-                primary_language: schema.main.language "primary locale language code"
-                languages: [schema.main.language] "supported locale language code"
+                primary_language: schema.main.language
+                languages: [schema.main.language]
             }
             bindings {
                 workspace_id: input.workspace_id

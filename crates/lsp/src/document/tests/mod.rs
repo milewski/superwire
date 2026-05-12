@@ -304,7 +304,8 @@ fn source_with_cursor(source_template: &str) -> (String, Position) {
 }
 
 fn completion_suggestions_from_template(source_template: &str) -> Vec<CompletionSuggestion> {
-    let (source, cursor_position) = source_with_cursor(source_template);
+    let source_template = normalize_rust_doc_comment_tokens(source_template);
+    let (source, cursor_position) = source_with_cursor(&source_template);
 
     completion_suggestions_from_source(source, cursor_position)
 }
@@ -326,10 +327,36 @@ fn completion_suggestion_by_label<'completion>(
 }
 
 fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
-    let source = normalize_inline_cursor_layout(source_template);
+    let source_template = normalize_rust_doc_comment_tokens(source_template);
+    let source = normalize_inline_cursor_layout(&source_template);
     let document_state = DocumentState::new(source, None);
 
     document_state.diagnostics()
+}
+
+fn normalize_rust_doc_comment_tokens(source_template: &str) -> String {
+    let mut normalized_source = String::new();
+    let mut remaining_source = source_template;
+
+    while let Some(doc_attribute_start) = remaining_source.find("#[doc = r\"") {
+        normalized_source.push_str(&remaining_source[..doc_attribute_start]);
+        remaining_source = &remaining_source[doc_attribute_start + "#[doc = r\"".len()..];
+
+        let Some(doc_attribute_end) = remaining_source.find("\"]") else {
+            normalized_source.push_str("#[doc = r\"");
+            normalized_source.push_str(remaining_source);
+
+            return normalized_source;
+        };
+
+        normalized_source.push_str("///");
+        normalized_source.push_str(&remaining_source[..doc_attribute_end]);
+        normalized_source.push('\n');
+        remaining_source = &remaining_source[doc_attribute_end + "\"]".len()..];
+    }
+
+    normalized_source.push_str(remaining_source);
+    normalized_source
 }
 
 fn normalize_inline_cursor_layout(source_template: &str) -> String {

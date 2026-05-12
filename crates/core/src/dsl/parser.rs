@@ -1331,45 +1331,14 @@ mod tests {
     }
 
     #[test]
-    fn parses_agent_output_type_with_description() {
-        let workflow = parse_inline_workflow! {
-            agent greeting {
-                model: ollama("qwen3.5:8b")
-                instruction: "test"
-                output: string "example"
+    fn rejects_postfix_field_description() {
+        let workflow_source = workflow_source! {
+            input {
+                greeting: string "example"
             }
         };
 
-        let greeting_agent = workflow.find_agent("greeting").expect("missing agent declaration: greeting");
-        let output_type = greeting_agent.output_type().expect("greeting output type should exist");
-
-        assert!(matches!(output_type, TypeExpression::String));
-        assert_eq!(greeting_agent.output_description(), Some("example"));
-
-        let output_property = greeting_agent
-            .properties
-            .iter()
-            .find(|agent_property| {
-                matches!(
-                    agent_property,
-                    AgentProperty::Output {
-                        output_type_expression: _,
-                        description: _,
-                    }
-                )
-            })
-            .expect("output property should exist");
-
-        let AgentProperty::Output {
-            output_type_expression,
-            description,
-        } = output_property
-        else {
-            unreachable!("output property matcher should guarantee variant");
-        };
-
-        assert!(matches!(output_type_expression, TypeExpression::String));
-        assert_eq!(description.as_deref(), Some("example"));
+        assert!(parse_workflow(workflow_source).is_err());
     }
 
     fn discover_workflow_examples() -> Vec<(String, String)> {

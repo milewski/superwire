@@ -1016,15 +1016,10 @@ impl AstVisitor {
                         continue;
                     }
 
-                    let description = inner_pairs
-                        .next()
-                        .map(|description_pair| self.parse_string_literal(description_pair))
-                        .transpose()?;
-
                     typed_fields.push(TypedField {
                         name: field_name,
                         field_type,
-                        description,
+                        description: None,
                         span: binding_field_span,
                     });
                 }
@@ -1095,16 +1090,10 @@ impl AstVisitor {
                 ));
             }
 
-            let postfix_description = inner_pairs
-                .next()
-                .map(|description_pair| self.parse_string_literal(description_pair))
-                .transpose()?;
-            let description = Self::merge_doc_comments_with_postfix_description(doc_comments, postfix_description);
-
             typed_fields.push(TypedField {
                 name: field_name,
                 field_type: self.visit_tool_binding_type_expression(field_value_pair)?,
-                description,
+                description: Self::description_from_doc_comments(doc_comments),
                 span: field_span,
             });
         }
@@ -1327,10 +1316,7 @@ impl AstVisitor {
                     ));
                 };
 
-                Ok(AgentProperty::Output {
-                    output_type_expression,
-                    description: None,
-                })
+                Ok(AgentProperty::Output { output_type_expression })
             }
             Some(_) => Err(DslParseError::unexpected_with_span(
                 Rule::named_object_property,
@@ -1358,7 +1344,7 @@ impl AstVisitor {
         match agent_property_name {
             AgentPropertyName::Model => Ok(AgentProperty::Model(self.visit_expression(value_pair)?)),
             AgentPropertyName::Instruction => Ok(AgentProperty::Instruction(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Output => self.visit_agent_output_property(value_pair, inner_pairs, property_span),
+            AgentPropertyName::Output => self.visit_agent_output_property(value_pair, property_span),
             AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
             AgentPropertyName::Inference => Ok(AgentProperty::Inference(self.visit_expression(value_pair)?)),
             AgentPropertyName::Uses => Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?)),
@@ -1370,22 +1356,10 @@ impl AstVisitor {
         }
     }
 
-    fn visit_agent_output_property(
-        &self,
-        value_pair: Pair<'_, Rule>,
-        mut remaining_pairs: Pairs<'_, Rule>,
-        property_span: SourceSpan,
-    ) -> Result<AgentProperty, DslParseError> {
+    fn visit_agent_output_property(&self, value_pair: Pair<'_, Rule>, property_span: SourceSpan) -> Result<AgentProperty, DslParseError> {
         let output_type_expression = self.visit_agent_output_property_type(value_pair, property_span)?;
-        let description = remaining_pairs
-            .next()
-            .map(|description_pair| self.parse_string_literal(description_pair))
-            .transpose()?;
 
-        Ok(AgentProperty::Output {
-            output_type_expression,
-            description,
-        })
+        Ok(AgentProperty::Output { output_type_expression })
     }
 
     fn visit_agent_output_property_type(
@@ -1530,16 +1504,10 @@ impl AstVisitor {
         let field_type_pair = self.next_pair(&mut inner_pairs, "field type", "typed field")?;
         let field_type = self.visit_type_expression(field_type_pair)?;
 
-        let postfix_description = inner_pairs
-            .next()
-            .map(|description_pair| self.parse_string_literal(description_pair))
-            .transpose()?;
-        let description = Self::merge_doc_comments_with_postfix_description(doc_comments, postfix_description);
-
         Ok(TypedField {
             name: field_name,
             field_type,
-            description,
+            description: Self::description_from_doc_comments(doc_comments),
             span: typed_field_span,
         })
     }
@@ -1548,12 +1516,8 @@ impl AstVisitor {
         comment_text.trim_start_matches("///").trim_start().to_string()
     }
 
-    fn merge_doc_comments_with_postfix_description(doc_comments: Vec<String>, postfix_description: Option<String>) -> Option<String> {
-        if doc_comments.is_empty() {
-            return postfix_description;
-        }
-
-        Some(doc_comments.join("\n"))
+    fn description_from_doc_comments(doc_comments: Vec<String>) -> Option<String> {
+        (!doc_comments.is_empty()).then(|| doc_comments.join("\n"))
     }
 
     fn visit_type_expression(&self, type_expression_pair: Pair<'_, Rule>) -> Result<TypeExpression, DslParseError> {

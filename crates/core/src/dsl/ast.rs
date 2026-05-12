@@ -1003,10 +1003,7 @@ impl AgentDeclaration {
             AgentProperty::Dynamic(dynamic_block) => Some(dynamic_block),
             AgentProperty::Model(_)
             | AgentProperty::Instruction(_)
-            | AgentProperty::Output {
-                output_type_expression: _,
-                description: _,
-            }
+            | AgentProperty::Output { output_type_expression: _ }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Uses(_)
@@ -1028,10 +1025,7 @@ impl AgentDeclaration {
                 AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
                 | AgentProperty::Instruction(_)
-                | AgentProperty::Output {
-                    output_type_expression: _,
-                    description: _,
-                }
+                | AgentProperty::Output { output_type_expression: _ }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
                 | AgentProperty::Uses(_)
@@ -1052,11 +1046,7 @@ impl AgentDeclaration {
     #[must_use]
     pub fn output_type(&self) -> Option<&TypeExpression> {
         for agent_property in &self.properties {
-            if let AgentProperty::Output {
-                output_type_expression,
-                description: _,
-            } = agent_property
-            {
+            if let AgentProperty::Output { output_type_expression } = agent_property {
                 return Some(output_type_expression);
             }
         }
@@ -1081,21 +1071,6 @@ impl AgentDeclaration {
         }
 
         iteration_output_type_expression
-    }
-
-    #[must_use]
-    pub fn output_description(&self) -> Option<&str> {
-        for agent_property in &self.properties {
-            if let AgentProperty::Output {
-                output_type_expression: _,
-                description: Some(output_description),
-            } = agent_property
-            {
-                return Some(output_description.as_str());
-            }
-        }
-
-        None
     }
 }
 
@@ -1133,17 +1108,11 @@ pub enum AgentProperty {
     Dynamic(DynamicBlock),
     Model(Expression),
     Instruction(Expression),
-    Output {
-        output_type_expression: TypeExpression,
-        description: Option<String>,
-    },
+    Output { output_type_expression: TypeExpression },
     Context(Expression),
     Inference(Expression),
     Uses(Expression),
-    Unknown {
-        name: String,
-        span: SourceSpan,
-    },
+    Unknown { name: String, span: SourceSpan },
 }
 
 impl AgentProperty {
@@ -1153,10 +1122,7 @@ impl AgentProperty {
             Self::Dynamic(_) => AgentPropertyName::Dynamic,
             Self::Model(_) => AgentPropertyName::Model,
             Self::Instruction(_) => AgentPropertyName::Instruction,
-            Self::Output {
-                output_type_expression: _,
-                description: _,
-            } => AgentPropertyName::Output,
+            Self::Output { output_type_expression: _ } => AgentPropertyName::Output,
             Self::Context(_) => AgentPropertyName::Context,
             Self::Inference(_) => AgentPropertyName::Inference,
             Self::Uses(_) => AgentPropertyName::Uses,

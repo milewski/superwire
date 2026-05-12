@@ -6,9 +6,12 @@ provider openai {
 }
 
 schema person {
-    name: string "Full name"
-    age: number "Age in years"
-    role: string "Job role"
+    /// Full name
+    name: string
+    /// Age in years
+    age: number
+    /// Job role
+    role: string
 }
 
 agent profile {
