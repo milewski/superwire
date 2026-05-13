@@ -19,6 +19,7 @@ impl McpServerConfig {
             .filter_map(|declaration| match declaration {
                 Declaration::McpServer(mcp_server_declaration) => Self::from_declaration(mcp_server_declaration),
                 Declaration::Provider(_)
+                | Declaration::Model(_)
                 | Declaration::Secrets(_)
                 | Declaration::Input(_)
                 | Declaration::Schema(_)

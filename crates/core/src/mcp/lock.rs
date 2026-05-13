@@ -237,6 +237,7 @@ impl McpLock {
                     self.apply_to_prompt_import_declaration(prompt_import_declaration);
                 }
                 Declaration::Provider(_)
+                | Declaration::Model(_)
                 | Declaration::McpServer(_)
                 | Declaration::Secrets(_)
                 | Declaration::Input(_)
