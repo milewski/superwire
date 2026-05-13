@@ -360,7 +360,7 @@ mod tests {
             model openai_model from openai {
                 id: "model-a"
             }
-            
+
             provider ollama from ollama {
                 endpoint: "http://127.0.0.1:11434"
             }

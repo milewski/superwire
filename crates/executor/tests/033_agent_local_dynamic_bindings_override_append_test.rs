@@ -11,7 +11,10 @@ async fn agent_local_dynamic_tool_call_overrides_and_appends_bindings() {
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("Process fetched values").respond_json(json!({ "value": "ok" }));
+                model
+                    .turn()
+                    .expect_prompt("Process fetched values")
+                    .respond_json(json!({ "value": "ok" }));
             });
         })
         .mcp("local", |mcp| {

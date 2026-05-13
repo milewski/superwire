@@ -11,7 +11,10 @@ async fn combines_hardcoded_and_agent_output_values() {
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("Say hello.").respond_json(json!({ "value": "agent value" }));
+                model
+                    .turn()
+                    .expect_prompt("Say hello.")
+                    .respond_json(json!({ "value": "agent value" }));
             });
         })
         .run()

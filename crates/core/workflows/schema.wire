@@ -29,8 +29,17 @@ agent named_profile {
     model: model.ollama_model
     instruction: "Generate a fictional user research participant profile."
 
-    // Reference a previously defined schema.
-    output: schema.person
+    // Agent output blocks define the structured fields directly.
+    output {
+        /// Participant full name
+        name: string
+        /// Participant age in years
+        age: number
+        /// Participant role in the study
+        role: string
+        /// Exactly three hobbies for the participant
+        hobbies: [string; 3]
+    }
 }
 
 // Agent B uses an inline schema.

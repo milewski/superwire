@@ -1,6 +1,6 @@
 use superwire_core::dsl::{
-    parse_workflow, AgentExpressionPropertyName, AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword,
-    ToolCallKeyword, ToolPropertyName, TypeExpression,
+    parse_workflow, AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword, ToolCallKeyword,
+    ToolPropertyName, TypeExpression,
 };
 use superwire_core::mcp::McpServerLock;
 
@@ -175,11 +175,11 @@ impl DocumentState {
     fn is_typed_description_string_literal_context(
         line_prefix: &str,
         completion_scope: CompletionScope,
-        semantic_index: &SemanticIndex,
-        position: Position,
+        _semantic_index: &SemanticIndex,
+        _position: Position,
     ) -> bool {
         let trimmed_line_prefix = line_prefix.trim_start();
-        let Some((line_before_value, value_prefix)) = trimmed_line_prefix.rsplit_once(':') else {
+        let Some((_line_before_value, value_prefix)) = trimmed_line_prefix.rsplit_once(':') else {
             return false;
         };
 
@@ -189,11 +189,7 @@ impl DocumentState {
             return false;
         }
 
-        let property_name_identifier = trailing_identifier(line_before_value).unwrap_or_default();
-        let inside_agent_output_type = semantic_index.agent_name_at_position(position).is_some()
-            && AgentPropertyName::from_identifier(property_name_identifier) == Some(AgentPropertyName::Output);
-
-        if completion_scope != CompletionScope::TypedDeclarations && !inside_agent_output_type {
+        if completion_scope != CompletionScope::TypedDeclarations {
             return false;
         }
 

@@ -34,5 +34,8 @@ async fn exposes_agent_scoped_tool_call_limits() {
         .await
         .expect("fixture runner should execute tool max calls scopes workflow");
 
-    assert_eq!(output.output, json!({ "first": { "value": "first" }, "second": { "value": "second" } }));
+    assert_eq!(
+        output.output,
+        json!({ "first": { "value": "first" }, "second": { "value": "second" } })
+    );
 }

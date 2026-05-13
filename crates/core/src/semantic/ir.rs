@@ -588,10 +588,9 @@ mod tests {
         assert_eq!(
             scorer_agent.final_output_type,
             WorkflowType::Array {
-                item_type: Box::new(WorkflowType::Object(BTreeMap::from([(
-                    "value".to_string(),
-                    WorkflowType::Integer,
-                )]))),
+                item_type: Box::new(WorkflowType::Object(BTreeMap::from([
+                    ("value".to_string(), WorkflowType::Integer,)
+                ]))),
                 fixed_length: None,
             }
             .normalize()
@@ -601,10 +600,7 @@ mod tests {
         expected_output_fields.insert(
             "values".to_string(),
             WorkflowType::Array {
-                item_type: Box::new(WorkflowType::Object(BTreeMap::from([(
-                    "value".to_string(),
-                    WorkflowType::Integer,
-                )]))),
+                item_type: Box::new(WorkflowType::Object(BTreeMap::from([("value".to_string(), WorkflowType::Integer)]))),
                 fixed_length: None,
             }
             .normalize(),

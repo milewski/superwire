@@ -46,9 +46,18 @@ async fn executes_for_loop_over_iterable_mcp_tool_output_schema() {
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("Write a note for 1.").respond_json(json!({ "value": "one" }));
-                model.turn().expect_prompt("Write a note for 2.").respond_json(json!({ "value": "two" }));
-                model.turn().expect_prompt("Write a note for 3.").respond_json(json!({ "value": "three" }));
+                model
+                    .turn()
+                    .expect_prompt("Write a note for 1.")
+                    .respond_json(json!({ "value": "one" }));
+                model
+                    .turn()
+                    .expect_prompt("Write a note for 2.")
+                    .respond_json(json!({ "value": "two" }));
+                model
+                    .turn()
+                    .expect_prompt("Write a note for 3.")
+                    .respond_json(json!({ "value": "three" }));
             });
         })
         .run()
@@ -57,7 +66,10 @@ async fn executes_for_loop_over_iterable_mcp_tool_output_schema() {
 
     let mcp_requests = &output.mcp_requests["local"];
 
-    assert_eq!(output.output, json!({ "notes": [{ "value": "one" }, { "value": "two" }, { "value": "three" }] }));
+    assert_eq!(
+        output.output,
+        json!({ "notes": [{ "value": "one" }, { "value": "two" }, { "value": "three" }] })
+    );
     assert!(mcp_requests
         .iter()
         .any(|request| request.get("method") == Some(&json!("tools/list"))));

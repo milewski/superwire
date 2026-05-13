@@ -602,7 +602,7 @@ fn suppresses_suggestions_after_named_declaration_keyword_header() {
         agent <cursor>
     };
 
-    assert!(!completion_suggestions.is_empty());
+    assert!(completion_suggestions.is_empty());
 }
 
 #[test]
@@ -1276,7 +1276,7 @@ fn suggests_global_and_local_dynamic_fields_inside_agent() {
 }
 
 #[test]
-fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
+fn suggests_value_producing_expressions_for_dynamic_field_values() {
     let completion_suggestions = inline_completion_suggestions! {
         input {
             topic: string
@@ -1307,7 +1307,6 @@ fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
         BuiltinFunctionName::Compact,
         BuiltinFunctionName::Template
     );
-    assert!(completion_suggestions.is_empty());
 }
 
 #[test]
@@ -1566,7 +1565,9 @@ fn completion_text_edit_range_for_output_reference_after_separator_keeps_root_an
 fn completion_text_edit_range_for_array_item_type_does_not_replace_opening_bracket() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
-            output: [<cursor>]
+            output {
+                values: [<cursor>]
+            }
         }
     });
 
@@ -1616,7 +1617,11 @@ fn suppresses_fallback_suggestions_after_terminal_agent_output_reference() {
         }
     };
 
-    assert_completion_excludes_labels!(&completion_suggestions, AgentExpressionPropertyName::Instruction, DeclarationKeyword::Provider);
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        AgentExpressionPropertyName::Instruction,
+        DeclarationKeyword::Provider
+    );
 }
 
 #[test]
@@ -1663,7 +1668,11 @@ fn suppresses_field_completion_after_dot_access_on_nullable_reference_path() {
         }
     };
 
-    assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider, AgentExpressionPropertyName::Instruction);
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        AgentExpressionPropertyName::Instruction
+    );
 }
 
 #[test]
@@ -1810,7 +1819,7 @@ fn suppresses_key_suggestions_inside_output_object_literal() {
         }
     };
 
-    assert!(!completion_suggestions.is_empty());
+    assert!(completion_suggestions.is_empty());
 }
 
 #[test]
@@ -1844,7 +1853,9 @@ fn suggests_only_types_inside_agent_output_object_field_value() {
 fn suggests_array_type_for_agent_output_property_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings {
-            output: <cursor>
+            output {
+                values: <cursor>
+            }
         }
     };
 

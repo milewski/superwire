@@ -180,7 +180,7 @@ fn uses_mcp_lock_for_imported_tool_schema() {
             }
         }
     };
-    
+
     let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
 
     assert!(document_state.diagnostics().is_empty());

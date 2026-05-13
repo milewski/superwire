@@ -29,7 +29,7 @@ async fn for_loop_over_literal_array() {
             notes: agent.note
         }
     };
-    
+
     let model_provider = ScriptedModelProvider::new(
         [(
             "note".to_string(),
@@ -41,7 +41,7 @@ async fn for_loop_over_literal_array() {
         )]
         .into(),
     );
-    
+
     let service = ExecutorService::new(model_provider);
 
     let output = service
@@ -90,9 +90,13 @@ async fn for_loop_over_input_array() {
             results: agent.processor
         }
     };
-    
+
     let model_provider = ScriptedModelProvider::new(
-        [("processor".to_string(), vec![json!({ "value": "processed-a" }), json!({ "value": "processed-b" })])].into(),
+        [(
+            "processor".to_string(),
+            vec![json!({ "value": "processed-a" }), json!({ "value": "processed-b" })],
+        )]
+        .into(),
     );
     let service = ExecutorService::new(model_provider);
 
@@ -102,7 +106,10 @@ async fn for_loop_over_input_array() {
         .expect("for-loop over input array should execute")
         .output;
 
-    assert_eq!(output, json!({ "results": [{ "value": "processed-a" }, { "value": "processed-b" }] }));
+    assert_eq!(
+        output,
+        json!({ "results": [{ "value": "processed-a" }, { "value": "processed-b" }] })
+    );
 }
 
 #[tokio::test]
@@ -136,9 +143,14 @@ async fn for_loop_with_object_destructuring() {
             summaries: agent.summarizer
         }
     };
-    
-    let model_provider =
-        ScriptedModelProvider::new([("summarizer".to_string(), vec![json!({ "value": "summary for Alice" }), json!({ "value": "summary for Bob" })])].into());
+
+    let model_provider = ScriptedModelProvider::new(
+        [(
+            "summarizer".to_string(),
+            vec![json!({ "value": "summary for Alice" }), json!({ "value": "summary for Bob" })],
+        )]
+        .into(),
+    );
     let service = ExecutorService::new(model_provider);
 
     let output = service
@@ -153,7 +165,10 @@ async fn for_loop_with_object_destructuring() {
         .expect("for-loop with object destructuring should execute")
         .output;
 
-    assert_eq!(output, json!({ "summaries": [{ "value": "summary for Alice" }, { "value": "summary for Bob" }] }));
+    assert_eq!(
+        output,
+        json!({ "summaries": [{ "value": "summary for Alice" }, { "value": "summary for Bob" }] })
+    );
 }
 
 #[tokio::test]
@@ -184,7 +199,7 @@ async fn for_loop_empty_array_produces_empty_output() {
             results: agent.processor
         }
     };
-    
+
     let model_provider = TestModelProvider::new(vec![]);
     let service = ExecutorService::new(model_provider);
 
@@ -221,15 +236,21 @@ async fn for_loop_respects_max_concurrency() {
             values: agent.writer
         }
     };
-    
+
     let model_provider = ScriptedModelProvider::new(
         [(
             "writer".to_string(),
-            vec![json!({ "value": "a" }), json!({ "value": "b" }), json!({ "value": "c" }), json!({ "value": "d" }), json!({ "value": "e" })],
+            vec![
+                json!({ "value": "a" }),
+                json!({ "value": "b" }),
+                json!({ "value": "c" }),
+                json!({ "value": "d" }),
+                json!({ "value": "e" }),
+            ],
         )]
         .into(),
     );
-    
+
     let service = ExecutorService::new(model_provider);
 
     let mut request = crate::tests::support::request(workflow_source);
@@ -244,7 +265,10 @@ async fn for_loop_respects_max_concurrency() {
         .expect("for-loop with max_concurrency=1 should execute sequentially")
         .output;
 
-    assert_eq!(output, json!({ "values": [{ "value": "a" }, { "value": "b" }, { "value": "c" }, { "value": "d" }, { "value": "e" }] }));
+    assert_eq!(
+        output,
+        json!({ "values": [{ "value": "a" }, { "value": "b" }, { "value": "c" }, { "value": "d" }, { "value": "e" }] })
+    );
 }
 
 #[tokio::test]
@@ -280,15 +304,18 @@ async fn for_loop_can_reference_output_in_later_agent() {
             aggregated: agent.aggregator.value
         }
     };
-    
+
     let model_provider = ScriptedModelProvider::new(
         [
-            ("scorer".to_string(), vec![json!({ "value": 10 }), json!({ "value": 20 }), json!({ "value": 30 })]),
+            (
+                "scorer".to_string(),
+                vec![json!({ "value": 10 }), json!({ "value": 20 }), json!({ "value": 30 })],
+            ),
             ("aggregator".to_string(), vec![json!({ "value": "aggregated-60" })]),
         ]
         .into(),
     );
-    
+
     let service = ExecutorService::new(model_provider);
 
     let output = service

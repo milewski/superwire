@@ -108,8 +108,56 @@ agent typed_example {
         - previous_title={{ input.previous_summary.title }}
     """
 
-    // Reference the named schema explicitly.
-    output: schema.all_types
+    // Agent output blocks define the structured fields directly.
+    output {
+        /// A basic string value
+        string_value: string
+        /// A numeric value
+        number_value: number
+        /// A floating-point value
+        float_value: float
+        /// A true/false value
+        boolean_value: boolean
+        /// A nullable field that may be null
+        nullable_value: maybe string
+        /// A nullable string; the field must exist, but may be null
+        nullable_string: maybe string
+        /// A nullable number; the field must exist, but may be null
+        nullable_number: maybe number
+        /// An array of strings
+        array: [string]
+        /// Exactly three strings
+        fixed_array: [string; 3]
+        /// An array of inline objects
+        array_of_objects: [{
+            /// Stable identifier for the item
+            id: string
+            /// Numeric score for the item
+            score: number
+        }]
+        /// A fixed set of string values
+        enum_value: enum { draft, ready, published }
+        /// A nullable enum value
+        nullable_enum: maybe enum { draft, ready, published }
+        /// A tuple with mixed item types
+        tuple_value: (string, number, [string; 3])
+        /// A nullable tuple
+        nullable_tuple: maybe (string, number, [string; 3])
+        /// A nested object value
+        object_value: {
+            /// Nested string field
+            string_value: string
+            /// Nested number field
+            number_value: number
+        }
+        /// A nullable nested object value
+        nullable_object: maybe {
+            /// Nested string field
+            string_value: string
+            /// Nested number field
+            number_value: number
+        }
+    }
 }
 
 output {

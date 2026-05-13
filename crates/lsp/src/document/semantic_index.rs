@@ -1617,16 +1617,7 @@ impl SemanticIndex {
             return true;
         }
 
-        let inside_agent = self
-            .agent_locations
-            .iter()
-            .any(|agent_location| source_span_contains_position(agent_location.span, position));
-
-        if !inside_agent {
-            return false;
-        }
-
-        trimmed_line_prefix.contains("output:")
+        false
     }
 
     pub fn is_inside_agent_output_declaration(&self, position: Position) -> bool {

@@ -443,7 +443,9 @@ async fn supports_definition_symbols_folding_formatting_and_code_lens_requests()
         agent writer {
             model: model.openai_model
             instruction: "Write report"
-            output: schema.Report
+            output {
+                title: string
+            }
         }
 
         output {

@@ -11,9 +11,15 @@ async fn agent_local_dynamic_tool_call_waits_for_agent_dependency() {
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("Prepare dependency value").respond_json(json!({ "value": "ready" }));
+                model
+                    .turn()
+                    .expect_prompt("Prepare dependency value")
+                    .respond_json(json!({ "value": "ready" }));
 
-                model.turn().expect_prompt("Use dependency from agent_a").respond_json(json!({ "value": "done" }));
+                model
+                    .turn()
+                    .expect_prompt("Use dependency from agent_a")
+                    .respond_json(json!({ "value": "done" }));
             });
         })
         .mcp("local", |mcp| {
@@ -30,7 +36,10 @@ async fn agent_local_dynamic_tool_call_waits_for_agent_dependency() {
     let tool_call_arguments = find_mcp_tool_call_arguments(&output.mcp_requests["local"], "fetch_task_data");
 
     assert_eq!(tool_call_arguments, json!({ "project_id": 7, "depends_on": "ready" }));
-    assert_eq!(output.output, json!({ "first": { "value": "ready" }, "second": { "value": "done" } }));
+    assert_eq!(
+        output.output,
+        json!({ "first": { "value": "ready" }, "second": { "value": "done" } })
+    );
 }
 
 fn find_mcp_tool_call_arguments(requests: &[Value], tool_name: &str) -> Value {

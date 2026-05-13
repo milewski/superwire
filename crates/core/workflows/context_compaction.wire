@@ -136,7 +136,7 @@ agent summary_from_custom_compact_context {
     )
 
     instruction: "Write a short executive summary from the customized compacted context."
-    output: {
+    output {
         /// Executive-ready summary of the research
         summary: string
         /// Exactly three recommended next actions
