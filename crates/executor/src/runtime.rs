@@ -586,7 +586,7 @@ impl WorkflowExecutor {
                 message: "executor only supports provider driver `openai`".to_string(),
             });
         };
-        let model_name = evaluate_agent_model_name(&planned_agent.model_expression, &planned_agent.name, &evaluation_context)?;
+        let model_name = evaluate_agent_model_name(&planned_agent.model_id_expression, &planned_agent.name, &evaluation_context)?;
         let instruction_expression = planned_agent
             .declaration
             .required_expression_property(AgentExpressionPropertyName::Instruction)
@@ -1305,6 +1305,7 @@ impl WorkflowExecutor {
             | ReferenceKeyword::Agent
             | ReferenceKeyword::Dynamic
             | ReferenceKeyword::Input
+            | ReferenceKeyword::Model
             | ReferenceKeyword::Secrets => {
                 return Err(ExecutorError::Other {
                     message: format!("unsupported MCP import reference `{}`", reference_keyword.as_str()),
@@ -1331,6 +1332,7 @@ impl WorkflowExecutor {
             | ReferenceKeyword::Agent
             | ReferenceKeyword::Dynamic
             | ReferenceKeyword::Input
+            | ReferenceKeyword::Model
             | ReferenceKeyword::Secrets => {
                 unreachable!("unsupported MCP import reference should return earlier")
             }
@@ -1342,6 +1344,7 @@ impl WorkflowExecutor {
             | ReferenceKeyword::Agent
             | ReferenceKeyword::Dynamic
             | ReferenceKeyword::Input
+            | ReferenceKeyword::Model
             | ReferenceKeyword::Secrets => {
                 unreachable!("unsupported MCP import reference should return earlier")
             }

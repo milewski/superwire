@@ -430,17 +430,19 @@ async fn supports_definition_symbols_folding_formatting_and_code_lens_requests()
     assert_eq!(initialize_response["result"]["capabilities"]["documentFormattingProvider"], true);
 
     let document_text = dsl! {
-        provider openai {
-        driver: "openai"
-        models: ["gpt-4o"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4o"
+}
 
         schema Report {
         title: string
         }
 
         agent writer {
-        model: openai("gpt-4o")
+        model: model.openai_model
         instruction: "Write report"
         output: schema.Report
         }

@@ -3,8 +3,9 @@ use super::ast::{
     Expression, FunctionCall, InputDeclaration, MatchBranch, MatchExpression, McpBatchImportDeclaration, McpCall, McpCallOperation,
     McpImportKind, McpImportPropertyName, McpImportSource, McpPromptBatchImportDeclaration, McpPromptBatchImportItem,
     McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceBatchImportItem, McpResourceImportDeclaration,
-    McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, NamedArgument,
-    NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
+    McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, ModelDeclaration,
+    ModelUsage, NamedArgument, NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
+    ReferenceRoot,
     SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName,
     ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase, VariantProjectionExpression, Workflow,
 };
@@ -79,6 +80,7 @@ impl AstVisitor {
                 self.visit_declaration(inner_declaration_pair)
             }
             Rule::provider_declaration => self.visit_provider_declaration(declaration_pair),
+            Rule::model_declaration => self.visit_model_declaration(declaration_pair),
             Rule::mcp_declaration => self.visit_mcp_declaration(declaration_pair),
             Rule::secrets_declaration => self.visit_secrets_declaration(declaration_pair),
             Rule::input_declaration => self.visit_input_declaration(declaration_pair),
@@ -107,14 +109,69 @@ impl AstVisitor {
         let mut inner_pairs = provider_pair.into_inner();
 
         let provider_name = self.next_identifier(&mut inner_pairs, "provider name", "provider declaration")?;
-        let object_expression_pair = self.next_pair(&mut inner_pairs, "provider body", "provider declaration")?;
-        let properties = self.visit_object_expression(object_expression_pair)?;
+        let driver_name = self.next_identifier(&mut inner_pairs, "provider driver", "provider declaration")?;
+        let config_block_pair = self.next_pair(&mut inner_pairs, "provider body", "provider declaration")?;
+        let properties = self.visit_config_block(config_block_pair)?;
 
         Ok(Declaration::Provider(ProviderDeclaration {
             name: provider_name,
+            driver_name,
             properties,
             span: declaration_span,
         }))
+    }
+
+    fn visit_model_declaration(&self, model_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
+        let declaration_span = source_span_from_pair(&model_pair);
+        let mut inner_pairs = model_pair.into_inner();
+
+        let model_name = self.next_identifier(&mut inner_pairs, "model name", "model declaration")?;
+        let provider_name = self.next_identifier(&mut inner_pairs, "model provider", "model declaration")?;
+        let config_block_pair = self.next_pair(&mut inner_pairs, "model body", "model declaration")?;
+        let properties = self.visit_config_block(config_block_pair)?;
+
+        Ok(Declaration::Model(ModelDeclaration {
+            name: model_name,
+            provider_name,
+            properties,
+            span: declaration_span,
+        }))
+    }
+
+    fn visit_config_block(&self, config_block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {
+        let mut fields = Vec::new();
+
+        for property_pair in config_block_pair.into_inner() {
+            fields.push(self.visit_config_property(property_pair)?);
+        }
+
+        Ok(fields)
+    }
+
+    fn visit_config_property(&self, property_pair: Pair<'_, Rule>) -> Result<ObjectField, DslParseError> {
+        match property_pair.as_rule() {
+            Rule::object_field => self.visit_object_field(property_pair),
+            Rule::named_object_property => self.visit_named_object_property_as_field(property_pair),
+            _ => Err(DslParseError::unexpected_with_span(
+                property_pair.as_rule(),
+                "config property",
+                source_span_from_pair(&property_pair),
+            )),
+        }
+    }
+
+    fn visit_named_object_property_as_field(&self, property_pair: Pair<'_, Rule>) -> Result<ObjectField, DslParseError> {
+        let property_span = source_span_from_pair(&property_pair);
+        let mut inner_pairs = property_pair.into_inner();
+        let property_name = self.next_identifier(&mut inner_pairs, "property name", "object block property")?;
+        let object_expression_pair = self.next_pair(&mut inner_pairs, "property body", "object block property")?;
+        let fields = self.visit_object_expression(object_expression_pair)?;
+
+        Ok(ObjectField {
+            name: property_name,
+            value: Expression::ObjectLiteral(fields),
+            span: property_span,
+        })
     }
 
     fn visit_secrets_declaration(&self, secrets_pair: Pair<'_, Rule>) -> Result<Declaration, DslParseError> {
@@ -1284,10 +1341,38 @@ impl AstVisitor {
         let property_span = source_span_from_pair(&property_pair);
 
         match property_pair.as_rule() {
+            Rule::model_agent_property => self.visit_agent_model_property(property_pair),
             Rule::named_object_property => self.visit_agent_object_property(property_pair, property_span),
             Rule::named_agent_value_property => self.visit_agent_value_property(property_pair, property_span),
             _ => unreachable!("agent block should contain only valid agent property rules"),
         }
+    }
+
+    fn visit_agent_model_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
+        let mut inner_pairs = property_pair.into_inner();
+        let model_usage_pair = self.next_pair(&mut inner_pairs, "agent model value", "agent model property")?;
+        let model_usage = self.visit_model_usage(model_usage_pair)?;
+
+        Ok(AgentProperty::Model(model_usage))
+    }
+
+    fn visit_model_usage(&self, model_usage_pair: Pair<'_, Rule>) -> Result<ModelUsage, DslParseError> {
+        let model_usage_span = source_span_from_pair(&model_usage_pair);
+        let mut inner_pairs = model_usage_pair.into_inner();
+        let reference_pair = self.next_pair(&mut inner_pairs, "model reference", "model usage")?;
+        let reference = self.visit_reference(reference_pair)?;
+
+        let properties = if let Some(block_pair) = inner_pairs.next() {
+            self.visit_config_block(block_pair)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(ModelUsage {
+            reference,
+            properties,
+            span: model_usage_span,
+        })
     }
 
     fn visit_agent_object_property(
@@ -1342,7 +1427,7 @@ impl AstVisitor {
         let value_pair = self.next_pair(&mut inner_pairs, "agent property value", "agent value property")?;
 
         match agent_property_name {
-            AgentPropertyName::Model => Ok(AgentProperty::Model(self.visit_expression(value_pair)?)),
+            AgentPropertyName::Model => Ok(AgentProperty::InvalidModel(self.visit_expression(value_pair)?)),
             AgentPropertyName::Instruction => Ok(AgentProperty::Instruction(self.visit_expression(value_pair)?)),
             AgentPropertyName::Output => self.visit_agent_output_property(value_pair, property_span),
             AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),

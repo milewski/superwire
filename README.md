@@ -34,10 +34,12 @@ cargo build --release
 Create a `example.wire` file:
 
 ```wire
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["llama2"]
+provider ollama from ollama {
+endpoint: "http://localhost:11434"
+}
+
+model ollama_model from ollama {
+    id: "llama2"
 }
 
 schema Summary {
@@ -50,7 +52,7 @@ input {
 }
 
 agent summarizer {
-    model: ollama("llama2")
+    model: model.ollama_model
     
     prompt: """
         Summarize the following text in one sentence:
@@ -82,10 +84,16 @@ cargo run --bin superwire-core --example minimum
 Define AI model providers (Ollama, OpenAI, etc.):
 
 ```wire
-provider openai {
-    driver: "openai"
-    api_key: secrets.OPENAI_KEY
-    models: ["gpt-4", "gpt-3.5-turbo"]
+provider openai from openai {
+api_key: secrets.OPENAI_KEY
+}
+
+model openai_gpt_4 from openai {
+    id: "gpt-4"
+}
+
+model openai_gpt_3_5_turbo from openai {
+    id: "gpt-3.5-turbo"
 }
 ```
 
@@ -107,7 +115,7 @@ Define AI agents with prompts and outputs:
 
 ```wire
 agent greet_user {
-    model: openai("gpt-4")
+    model: model.openai_gpt_4
     
     prompt: "Say hello to {{ input.name }}"
     
@@ -121,7 +129,7 @@ Agents can share context:
 
 ```wire
 agent second_agent {
-    model: openai("gpt-4")
+    model: model.openai_gpt_4
     context: context(agent.first_agent)
     
     prompt: "Continue from previous response"
