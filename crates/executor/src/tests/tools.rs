@@ -15,12 +15,14 @@ use superwire_core::workflow_source;
 async fn agent_tool_definitions_are_passed_to_model_provider() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer test-token".to_string())]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -40,7 +42,7 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [tool.local_update_user]
             instruction: "Rename the user"
             output: string
@@ -518,12 +520,14 @@ fn fixture_with_mcp_endpoint(workflow_source: &str, endpoint: &str) -> String {
 async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -546,7 +550,7 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "Rename the user"
             output: string
         }
@@ -721,12 +725,14 @@ async fn mcp_read_render_dependency_fixture_executes() {
 async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -745,7 +751,7 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [tool.list_participants]
             instruction: "List participants"
             output: string
@@ -769,12 +775,14 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
 fn validation_does_not_execute_workflow_dynamic_tool_calls() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -797,7 +805,7 @@ fn validation_does_not_execute_workflow_dynamic_tool_calls() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "List participants"
             output: string
         }
@@ -825,12 +833,14 @@ fn validation_does_not_execute_workflow_dynamic_tool_calls() {
 fn validation_does_not_execute_agent_dynamic_tool_calls() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -849,7 +859,7 @@ fn validation_does_not_execute_agent_dynamic_tool_calls() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
 
             dynamic {
                 data: call tool.list_participants
@@ -882,12 +892,14 @@ fn validation_does_not_execute_agent_dynamic_tool_calls() {
 fn validation_does_not_fetch_mcp_prompt_imports() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -907,7 +919,7 @@ fn validation_does_not_fetch_mcp_prompt_imports() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "Summarize task"
             output: string
         }
@@ -936,12 +948,14 @@ fn validation_does_not_fetch_mcp_prompt_imports() {
 fn validation_does_not_read_mcp_resource_imports() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -958,7 +972,7 @@ fn validation_does_not_read_mcp_resource_imports() {
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "Summarize project"
             output: string
         }
@@ -987,12 +1001,14 @@ fn validation_does_not_read_mcp_resource_imports() {
 fn validation_rejects_dynamic_tool_call_missing_required_input() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -1031,12 +1047,14 @@ fn validation_rejects_dynamic_tool_call_missing_required_input() {
 async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_request() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         secrets {
             mcp_endpoint: string
@@ -1061,7 +1079,7 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
         }
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [tool.local_update_user]
             instruction: "Rename the user"
             output: string
@@ -1113,12 +1131,14 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
 async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -1135,7 +1155,7 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
         }
 
         agent project_editor {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [tool.edit_project]
             instruction: "Edit project"
             output: string

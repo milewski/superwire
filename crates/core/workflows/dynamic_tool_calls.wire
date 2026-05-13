@@ -5,11 +5,13 @@ secrets {
     api_key: string
 }
 
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost"
+provider openai from openai {
+endpoint: "http://localhost"
     api_key: "123"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -75,7 +77,7 @@ dynamic {
 }
 
 agent research_agent {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     dynamic {
         agent_ready_result: call tool.format_response {

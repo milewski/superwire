@@ -1,15 +1,23 @@
-provider primary {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+provider primary from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-primary-key"
-    models: ["model-a", "model-c"]
 }
 
-provider backup {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+model primary_model_a from primary {
+    id: "model-a"
+}
+
+model primary_model_c from primary {
+    id: "model-c"
+}
+
+provider backup from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-backup-key"
-    models: ["model-b"]
+}
+
+model backup_model from backup {
+    id: "model-b"
 }
 
 input {
@@ -17,19 +25,19 @@ input {
 }
 
 agent draft {
-    model: primary("model-a")
+    model: model.primary_model_a
     instruction: "Draft summary for {{ input.topic }}"
     output: string
 }
 
 agent review {
-    model: backup("model-b")
+    model: model.backup_model
     instruction: "Review this draft: {{ agent.draft }}"
     output: string
 }
 
 agent finalize {
-    model: primary("model-c")
+    model: model.primary_model_c
     instruction: "Finalize using review: {{ agent.review }}"
     output: string
 }

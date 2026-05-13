@@ -63,12 +63,14 @@ async fn failure_emits_workflow_failed_event() {
 async fn deterministic_tool_call_emits_started_and_completed_events() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -94,7 +96,7 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
         }
 
         agent summarizer {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Summarize {{ dynamic.data }}"
             output: {
                 summary: string

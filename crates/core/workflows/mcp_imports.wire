@@ -28,11 +28,13 @@ tool create_sorting_task_for_task_group from mcp.local.tool.create_sorting_task_
     }
 }
 
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 dynamic {
@@ -49,7 +51,7 @@ dynamic {
 }
 
 agent project_creator {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     instruction: """
         Create a project from imported MCP context.
@@ -63,7 +65,7 @@ agent project_creator {
 }
 
 agent task_sorter {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Create sorting tasks for the generated project."
     uses: [tool.create_sorting_task_for_task_group]
     output: string

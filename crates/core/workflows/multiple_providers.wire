@@ -4,15 +4,19 @@
 // 2) Generate polished insights with a cloud model.
 
 // Local provider for privacy-sensitive preprocessing.
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 
 // Cloud provider for higher quality synthesis.
-provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -22,7 +26,7 @@ input {
 
 // Agent 1 uses the local provider to remove personal identifiers.
 agent redact_notes {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Redact names, emails, and phone numbers from these interview notes: {{ input.interview_notes }}"
     output: {
         redacted_notes: [string]
@@ -33,7 +37,7 @@ agent redact_notes {
 // Agent 2 uses the cloud provider for final analysis.
 // This agent runs after `redact_notes` because it references its output.
 agent synthesize_insights {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     instruction: """
         Study={{ input.study_name }}.

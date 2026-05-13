@@ -1,8 +1,10 @@
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+provider openai from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-api-key"
-    models: ["model-a"]
+}
+
+model openai_model from openai {
+    id: "model-a"
 }
 
 schema participant {
@@ -112,7 +114,7 @@ input {
 }
 
 agent typed_example {
-    model: openai("model-a")
+    model: model.openai_model
 
     instruction: """
         Generate a JSON object that matches the all_schema_types schema exactly for {{ input.lead_participant.name }}

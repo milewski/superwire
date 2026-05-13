@@ -1,8 +1,10 @@
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+provider openai from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-api-key"
-    models: ["model-a"]
+}
+
+model openai_model from openai {
+    id: "model-a"
 }
 
 schema all_types {
@@ -23,7 +25,7 @@ schema all_types {
 }
 
 agent typed_example {
-    model: openai("model-a")
+    model: model.openai_model
     instruction: "Generate a typed object."
     output: schema.all_types
 }

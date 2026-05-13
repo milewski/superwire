@@ -3,13 +3,15 @@
 // Indentation inside the triple-quoted block is neutralized.
 // This workflow stays minimal while demonstrating the syntax.
 
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
 
     // Leading indentation in this multiline string is neutralized.
     instruction: """

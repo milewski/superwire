@@ -15,9 +15,11 @@
 // 1) single-line strings
 // 2) multiline strings
 
-provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -29,7 +31,7 @@ input {
 // Step 1: single-line string interpolation.
 // This prompt reads directly from `input`.
 agent release_summary {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Write a short release summary for {{ input.product_name }} based on these highlights: {{ input.release_highlights }}"
     output: {
         /// Short release summary
@@ -44,7 +46,7 @@ agent release_summary {
 // Because it references `agent.release_summary...`, this agent depends on
 // `release_summary` and starts only after that agent finishes.
 agent launch_message {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     instruction: """
         Write a launch message for {{ input.audience }}.
@@ -69,7 +71,7 @@ agent launch_message {
 // Because this prompt references both `agent.release_summary` and
 // `agent.launch_message.body`, `qa_check` waits for both agents to complete.
 agent qa_check {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     instruction: """
         Review this generated launch content for clarity and consistency.

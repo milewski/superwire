@@ -1,11 +1,13 @@
 // This example demonstrates `dynamic { ... }` blocks for reusable workflow values.
 // Multiple dynamic blocks merge, and values are referenced with `dynamic.<field>`.
 
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost"
+provider openai from openai {
+endpoint: "http://localhost"
     api_key: "123"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -26,7 +28,7 @@ dynamic {
 }
 
 agent writer {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     dynamic {
         rendered_prompt: """

@@ -1,8 +1,10 @@
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+provider openai from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-api-key"
-    models: ["model-a"]
+}
+
+model openai_model from openai {
+    id: "model-a"
 }
 
 input {
@@ -19,7 +21,7 @@ dynamic {
 }
 
 agent writer {
-    model: openai("model-a")
+    model: model.openai_model
     instruction: "{{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to {{ dynamic.max_bullets }} bullets."
     output: {
         summary: string
