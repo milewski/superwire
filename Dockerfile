@@ -1,3 +1,13 @@
+FROM node:25-alpine3.23 AS playground-builder
+
+WORKDIR /workspace/playground
+
+COPY playground/package.json playground/package-lock.json ./
+RUN npm ci
+
+COPY playground/ ./
+RUN npm run build
+
 FROM rust:1.94-alpine3.23 AS builder
 
 RUN apk add --no-cache musl-dev pkgconfig
@@ -35,10 +45,14 @@ RUN apk add --no-cache ca-certificates \
 
 COPY --from=builder /workspace/target/release/superwire-executor /usr/local/bin/superwire-executor
 COPY --from=builder /workspace/target/release/superwire-cli /usr/local/bin/superwire-cli
+COPY --from=playground-builder /workspace/playground/dist /usr/local/share/superwire/playground
+
+ENV SUPERWIRE_PLAYGROUND_DIST=/usr/local/share/superwire/playground
 
 USER superwire
 
 EXPOSE 3000
+EXPOSE 3001
 
 ENTRYPOINT ["/usr/local/bin/superwire-executor"]
 

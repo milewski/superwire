@@ -6,13 +6,15 @@ use crate::service::ExecutorService;
 use axum::extract::State;
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get_service, post};
 use axum::{Json, Router};
 use futures::{Stream, StreamExt};
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
+use tower_http::services::{ServeDir, ServeFile};
 
 pub fn executor_router() -> Router {
     executor_router_with_service(ExecutorService::new(OpenAiModelProvider))
@@ -27,6 +29,7 @@ where
         .route("/execute/stream", post(execute_stream_handler::<ModelProviderType>))
         .route("/validate", post(validate_handler::<ModelProviderType>))
         .route("/format", post(format_handler::<ModelProviderType>))
+        .nest_service("/playground", get_service(playground_static_service()))
         .with_state(service)
 }
 
@@ -79,4 +82,19 @@ where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
     Ok(Json(service.format(request)?).into_response())
+}
+
+fn playground_static_service() -> ServeDir<ServeFile> {
+    let playground_dist_directory = playground_dist_directory();
+    let playground_index_path = playground_dist_directory.join("index.html");
+
+    ServeDir::new(playground_dist_directory).fallback(ServeFile::new(playground_index_path))
+}
+
+fn playground_dist_directory() -> PathBuf {
+    if let Ok(playground_dist_directory) = std::env::var("SUPERWIRE_PLAYGROUND_DIST") {
+        return PathBuf::from(playground_dist_directory);
+    }
+
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../playground/dist")
 }

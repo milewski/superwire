@@ -1,4 +1,6 @@
 /target
+/playground/dist
+/playground/node_modules
 .idea
 .claude/settings.local.json
 .claude/worktrees
