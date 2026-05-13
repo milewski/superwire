@@ -1,9 +1,11 @@
 // This file demonstrates schema field types, inline property descriptions,
 // nullable fields (`maybe`), and named schema references.
 
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3.5:32b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:32b"
 }
 
 // Schema and field descriptions are preserved into JSON Schema
@@ -97,7 +99,7 @@ input {
 }
 
 agent typed_example {
-    model: ollama("qwen3.5:32b")
+    model: model.ollama_model
 
     instruction: """
         Generate a JSON object that matches the all_types schema exactly.

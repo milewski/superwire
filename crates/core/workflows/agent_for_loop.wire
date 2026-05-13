@@ -6,9 +6,11 @@
 // 3) a manual inline list like [1,2,3,4]
 
 // Shared provider for all agents in this tutorial.
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3:8b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3:8b"
 }
 
 // Input source used to build a dynamic list.
@@ -19,7 +21,7 @@ input {
 
 // Step 1: convert raw text into a structured list.
 agent findings {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
     instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
     output: {
         items: [string]
@@ -29,7 +31,7 @@ agent findings {
 // Step 2: run one agent per finding.
 // Iterations of this `for` run in parallel.
 agent remediation_plan for finding in agent.findings.items {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
     instruction: "Create a remediation plan for finding: {{ finding }}"
     output: {
         title: string
@@ -42,7 +44,7 @@ agent remediation_plan for finding in agent.findings.items {
 // You can also provide a manual inline list directly.
 // This creates 4 parallel runs with number=1, number=2, number=3, number=4.
 agent number_note for number in [1, 2, 3, 4] {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
     instruction: "Write a short note for number {{ number }}"
     output: {
         number: number
@@ -53,7 +55,7 @@ agent number_note for number in [1, 2, 3, 4] {
 // `for` can iterate over input lists too.
 // This creates one run per value in `input.numbers`.
 agent input_number_note for n in input.numbers {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
     instruction: "Write a short note for input number {{ n }}"
     output: {
         number: number

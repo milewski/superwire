@@ -1,9 +1,11 @@
 // This example shows object destructuring with input-driven iteration.
 // The loop binds `id` and `profile`, where `profile` remains a nested object.
 
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3:8b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3:8b"
 }
 
 input {
@@ -17,7 +19,7 @@ input {
 }
 
 agent participant_note for { id, profile } in input.participants {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
     instruction: "Participant #{{ id }} belongs to {{ profile.team }} in {{ profile.city }}."
     output: {
         id: number

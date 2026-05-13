@@ -4,9 +4,11 @@
 // Note: these two agents run in parallel because they do not depend on each other.
 
 // Provider defines where models come from.
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3.5:32b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:32b"
 }
 
 // Named schema: define once, reuse across agents.
@@ -24,7 +26,7 @@ schema person {
 // Agent A uses the named schema.
 // Use this style when the shape is shared or important enough to name.
 agent named_profile {
-    model: ollama("qwen3.5:32b")
+    model: model.ollama_model
     instruction: "Generate a fictional user research participant profile."
 
     // Reference a previously defined schema.
@@ -34,7 +36,7 @@ agent named_profile {
 // Agent B uses an inline schema.
 // Use this style for one-off shapes that are not reused elsewhere.
 agent inline_profile {
-    model: ollama("qwen3.5:32b")
+    model: model.ollama_model
     instruction: "Generate a fictional user research participant profile."
 
     // Inline schema is local to this agent only.

@@ -3,9 +3,11 @@
 // Every binding key must exist in the template.
 // If a template variable is missing (or an extra binding is provided), build fails.
 
-provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -15,7 +17,7 @@ input {
 }
 
 agent research_brief {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     instruction: template("prompts/research_brief.md", {
         study_name: input.study_name

@@ -7,15 +7,17 @@ use superwire_core::workflow_source;
 #[tokio::test]
 async fn for_loop_over_literal_array() {
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         agent note for number in [1, 2, 3] {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Write note for {{ number }}"
             output: {
                 number: number
@@ -61,19 +63,21 @@ async fn for_loop_over_literal_array() {
 #[tokio::test]
 async fn for_loop_over_input_array() {
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         input {
             items: [string]
         }
 
         agent processor for item in input.items {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Process {{ item }}"
             output: string
         }
@@ -97,12 +101,14 @@ async fn for_loop_over_input_array() {
 #[tokio::test]
 async fn for_loop_with_object_destructuring() {
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         input {
             participants: [{
@@ -112,7 +118,7 @@ async fn for_loop_with_object_destructuring() {
         }
 
         agent summarizer for { id, name } in input.participants {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Summarize {{ id }} {{ name }}"
             output: string
         }
@@ -143,19 +149,21 @@ async fn for_loop_with_object_destructuring() {
 #[tokio::test]
 async fn for_loop_empty_array_produces_empty_output() {
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         input {
             items: [string]
         }
 
         agent processor for item in input.items {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Process {{ item }}"
             output: string
         }
@@ -179,15 +187,17 @@ async fn for_loop_empty_array_produces_empty_output() {
 #[tokio::test]
 async fn for_loop_respects_max_concurrency() {
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         agent writer for number in [1, 2, 3, 4, 5] {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Write {{ number }}"
             output: string
         }
@@ -223,21 +233,23 @@ async fn for_loop_respects_max_concurrency() {
 #[tokio::test]
 async fn for_loop_can_reference_output_in_later_agent() {
     let workflow_source = workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "http://localhost:1234/v1"
+        provider openai from openai {
+endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-            models: ["model-a"]
-        }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
         agent scorer for item in [10, 20, 30] {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Score {{ item }}"
             output: number
         }
 
         agent aggregator {
-            model: openai("model-a")
+            model: model.openai_model
             instruction: "Aggregate {{ agent.scorer }}"
             output: string
         }

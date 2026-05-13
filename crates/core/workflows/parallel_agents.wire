@@ -3,9 +3,11 @@
 // because they only depend on `input` and not on each other.
 
 // Shared provider for all agents in this workflow.
-provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -15,7 +17,7 @@ input {
 
 // Parallel agent 1: changelog entry.
 agent changelog {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Write release notes for {{ input.product_name }} based on highlights: {{ input.release_highlights }}"
     output: {
         markdown: string
@@ -24,7 +26,7 @@ agent changelog {
 
 // Parallel agent 2: social post thread.
 agent social_thread {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Create a 5-post launch thread for {{ input.product_name }} with: {{ input.release_highlights }}"
     output: {
         posts: [string; 5]
@@ -33,7 +35,7 @@ agent social_thread {
 
 // Parallel agent 3: customer email.
 agent customer_email {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Write a customer announcement email for {{ input.product_name }} with these highlights: {{ input.release_highlights }}"
     output: {
         subject: string
@@ -45,7 +47,7 @@ agent customer_email {
 // This agent runs after `changelog`, `social_thread`, and `customer_email`
 // because its prompt reads values produced by those agents.
 agent consistency_review {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     instruction: """
         Ensure these assets are consistent in claims, tone, and terminology.

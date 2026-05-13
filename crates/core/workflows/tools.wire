@@ -6,11 +6,13 @@ secrets {
     issue_tracker_token: string
 }
 
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost"
+provider openai from openai {
+endpoint: "http://localhost"
     api_key: "123"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -52,7 +54,7 @@ tool issue_tracker_lookup {
 }
 
 agent assistant_with_tools {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     // The agent can decide when to call these tools.
     // Bound tool overrides can use literals, references, and secrets.

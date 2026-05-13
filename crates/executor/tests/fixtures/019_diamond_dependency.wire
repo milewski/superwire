@@ -1,8 +1,10 @@
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+provider openai from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-api-key"
-    models: ["model-a"]
+}
+
+model openai_model from openai {
+    id: "model-a"
 }
 
 input {
@@ -10,19 +12,19 @@ input {
 }
 
 agent branch_a {
-    model: openai("model-a")
+    model: model.openai_model
     instruction: "Analyze {{ input.topic }} from perspective A."
     output: string
 }
 
 agent branch_b {
-    model: openai("model-a")
+    model: model.openai_model
     instruction: "Analyze {{ input.topic }} from perspective B."
     output: string
 }
 
 agent merger {
-    model: openai("model-a")
+    model: model.openai_model
     instruction: "Merge these analyses: A={{ agent.branch_a }}, B={{ agent.branch_b }}"
     output: string
 }

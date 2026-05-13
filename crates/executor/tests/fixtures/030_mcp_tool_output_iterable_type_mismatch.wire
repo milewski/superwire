@@ -1,8 +1,10 @@
-provider openai {
-    driver: "openai"
-    endpoint: "http://localhost:1234/v1"
+provider openai from openai {
+endpoint: "http://localhost:1234/v1"
     api_key: "test-api-key"
-    models: ["model-a"]
+}
+
+model openai_model from openai {
+    id: "model-a"
 }
 
 secrets {
@@ -21,7 +23,7 @@ dynamic {
 }
 
 agent number_note for number in dynamic.result.values {
-    model: openai("model-a")
+    model: model.openai_model
     instruction: "Write a note for {{ number }}."
     output: string
 }

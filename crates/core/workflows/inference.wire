@@ -1,13 +1,15 @@
 // This example demonstrates the `inference` attribute on an agent.
 // Use `inference` to control generation settings like temperature and max tokens.
 
-provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 agent release_analyst {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     inference: {
         temperature: 0.2

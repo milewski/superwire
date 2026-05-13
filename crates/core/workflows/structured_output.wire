@@ -2,13 +2,15 @@
 // You can build nested objects in `output`, reference agent values,
 // and assign hardcoded values like `workflow_version: "v2"`.
 
-provider ollama {
-    driver: "ollama"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 
 agent summary {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Write a short project status summary and a confidence score."
     output: {
         text: string

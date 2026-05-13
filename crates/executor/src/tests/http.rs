@@ -183,12 +183,14 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
     let router = executor_router_with_service(support::service(vec![]));
     let workflow_source = superwire_core::workflow_source! {
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         secrets {
             mcp_endpoint: string
@@ -205,7 +207,7 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
         tool local_update_user from mcp.local.tool.update_user_name
 
         agent updater {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [tool.local_update_user]
             instruction: "Rename the user"
             output: string

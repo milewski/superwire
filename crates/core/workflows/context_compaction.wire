@@ -11,9 +11,11 @@
 // If `model:` is omitted inside `compact(...)`, the compaction step uses
 // the same model as the agent being compacted.
 
-provider openai {
-    driver: "openai"
-    models: ["gpt-4.1-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -23,7 +25,7 @@ input {
 
 // Step 1: run a detailed analysis pass.
 agent research_analysis {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     inference: {
         temperature: 0.7
@@ -52,7 +54,7 @@ agent research_analysis {
 // Wrapping the agent reference in `context(...)` makes it obvious that
 // this agent starts with the complete context from `research_analysis`.
 agent summary_from_full_context {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     context: context(agent.research_analysis)
 
     inference: {
@@ -68,7 +70,7 @@ agent summary_from_full_context {
 // Here `model:` is omitted inside `compact(...)`, so the compaction step
 // uses the same model as `research_analysis`.
 agent summary_from_default_compact_context {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     context: compact(agent.research_analysis)
 
     inference: {
@@ -85,8 +87,8 @@ agent summary_from_default_compact_context {
 // previous context, and you want to choose a different model for the
 // compaction step itself.
 agent summary_from_compact_context_with_model {
-    model: openai("gpt-4.1-mini")
-    context: compact(agent.research_analysis, model: openai("gpt-4.1-mini"))
+    model: model.openai_model
+    context: compact(agent.research_analysis, model: model.openai_model)
 
     inference: {
         temperature: 0.2
@@ -106,11 +108,11 @@ agent summary_from_compact_context_with_model {
 // - `inference:` controls that compaction call
 // - `instruction:` overrides the default compaction prompt
 agent summary_from_custom_compact_context {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     context: compact(
         agent: agent.research_analysis,
-        model: openai("gpt-4.1-mini"),
+        model: model.openai_model,
         inference: {
             temperature: 0.1
             max_tokens: 1_500
