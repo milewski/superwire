@@ -11,7 +11,7 @@ If an agent expression references another agent through `agent.<name>`, the curr
 
 ```wire
 agent first {
-    model: scripted("mock-model")
+    model: model.scripted_model
     instruction: "First prompt: {{ input.subject }}"
     output: {
         summary: string
@@ -19,7 +19,7 @@ agent first {
 }
 
 agent second {
-    model: scripted("mock-model")
+    model: model.scripted_model
     instruction: "Second prompt: {{ agent.first.summary }}"
     output: string
 }
@@ -53,13 +53,13 @@ Validation rejects cycles before runtime execution.
 
 ```wire
 agent alpha {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Use {{ agent.beta }}"
     output: string
 }
 
 agent beta {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Use {{ agent.alpha }}"
     output: string
 }

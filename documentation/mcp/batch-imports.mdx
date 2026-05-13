@@ -138,7 +138,7 @@ Imported tools appear in the `tool.*` or resource/prompt in the `resource.*`/`pr
 
 ```wire
 agent task_manager {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
     instruction: "Manage project tasks"
     output: string

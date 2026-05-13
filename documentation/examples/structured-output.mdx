@@ -4,11 +4,13 @@ description: Use schemas, enums, arrays, and nested objects to keep agent output
 ---
 
 ```wire
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 schema release_summary {
@@ -38,7 +40,7 @@ input {
 }
 
 agent summarize_release {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize these release notes for {{ input.audience }}: {{ input.release_notes }}"
     output: schema.release_summary
 }

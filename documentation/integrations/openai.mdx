@@ -6,11 +6,17 @@ description: Configure Superwire to use the OpenAI API as a model provider.
 ## Provider declaration
 
 ```wire
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini", "gpt-4.1"]
+}
+
+model openai_gpt_4_1_mini from openai {
+    id: "gpt-4.1-mini"
+}
+
+model openai_gpt_4_1 from openai {
+    id: "gpt-4.1"
 }
 ```
 
@@ -32,7 +38,7 @@ provider openai {
 
 ```wire
 agent summarizer {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize the following: {{ input.text }}"
     output: string
 }
@@ -47,11 +53,13 @@ secrets {
     openai_api_key: string
 }
 
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: secrets.openai_api_key
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 ```
 
@@ -60,7 +68,7 @@ provider openai {
 The `model` call supports named arguments:
 
 ```wire
-model: openai(model: "gpt-4.1-mini")
+model: model.openai_model
 ```
 
 This is equivalent to the positional form `openai("gpt-4.1-mini")`.

@@ -15,14 +15,16 @@ use superwire_core::dsl::{parse_workflow, validate_workflow};
 #[test]
 fn valid_workflow_parses() {
     let source = r#"
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         agent greeting {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "Say hello."
             output: string
         }
@@ -50,15 +52,17 @@ fn secret_leak_detected() {
             api_key: string
         }
 
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: secrets.api_key
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         agent greeting {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "The secret is {{ secrets.api_key }}"
             output: string
         }
@@ -101,14 +105,16 @@ impl AgentRunner for MockRunner {
 #[tokio::test]
 async fn execute_with_mock() {
     let source = r#"
-        provider mock {
-            driver: "openai"
-            endpoint: "http://localhost:1234"
-            models: ["model-a"]
-        }
+        provider mock from openai {
+endpoint: "http://localhost:1234"
+}
+
+model mock_model from mock {
+    id: "model-a"
+}
 
         agent greeting {
-            model: mock("model-a")
+            model: model.mock_model
             instruction: "Say hello."
             output: string
         }

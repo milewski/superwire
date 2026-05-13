@@ -67,7 +67,7 @@ Rendered prompt text feeds into agent instructions:
 
 ```wire
 agent assistant {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: dynamic.instructions
     output: string
 }

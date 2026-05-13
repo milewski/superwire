@@ -21,7 +21,7 @@ input {
 }
 
 agent input_number_note for n in input.numbers {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Write a short note for input number {{ n }}."
     output: {
         number: number
@@ -36,7 +36,7 @@ You can destructure objects in the loop pattern:
 
 ```wire
 agent process_item for { id, name } in input.items {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Process item {{ id }}: {{ name }}"
     output: string
 }

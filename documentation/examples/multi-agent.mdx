@@ -4,11 +4,13 @@ description: Build a small dependency chain where one agent summarizes and anoth
 ---
 
 ```wire
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -16,7 +18,7 @@ input {
 }
 
 agent summarize_notes {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize these interview notes into three findings: {{ input.interview_notes }}"
     output: {
         findings: [string; 3]
@@ -25,7 +27,7 @@ agent summarize_notes {
 }
 
 agent review_findings {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Review this summary and call out the biggest research risk: {{ agent.summarize_notes.summary }}"
     output: {
         biggest_risk: string

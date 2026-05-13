@@ -40,7 +40,7 @@ input {
 }
 
 agent summarize {
-    model: ollama("qwen3.5:32b")
+    model: model.ollama_model
     instruction: "Summarize the provided research context."
     output: schema.research_summary
 }

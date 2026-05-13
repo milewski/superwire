@@ -34,11 +34,13 @@ schema release_summary {
 Declare model backends up front and list allowed models so validation can catch mistakes.
 
 ```wire
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 ```
 
@@ -48,7 +50,7 @@ Prefer small, typed stages over one huge instruction.
 
 ```wire
 agent summarize_notes {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize these notes into three findings: {{ input.notes }}"
     output: {
         findings: [string; 3]
@@ -62,7 +64,7 @@ Downstream stages should read from upstream stages through `agent.*` references.
 
 ```wire
 agent create_brief {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Create a brief from these findings: {{ agent.summarize_notes.findings }}"
     output: {
         brief: string
@@ -91,7 +93,7 @@ dynamic {
 }
 
 agent analyze {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Analyze with context: {{ dynamic.context }}"
     output: string
 }
@@ -106,11 +108,13 @@ secrets {
     database_url: string
 }
 
-provider postgres_agent {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider postgres_agent from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model postgres_agent_model from postgres_agent {
+    id: "gpt-4.1-mini"
 }
 ```
 
@@ -125,7 +129,7 @@ from mcp.local.tool {
 }
 
 agent researcher {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [tool.search_database]
     instruction: "Research the topic: {{ input.topic }}"
     output: {
@@ -134,7 +138,7 @@ agent researcher {
 }
 
 agent writer {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [tool.write_report]
     instruction: "Write a report from these findings: {{ agent.researcher }}"
     output: string
@@ -163,7 +167,7 @@ input {
 }
 
 agent process_item for item in input.items {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Process: {{ item }}"
     output: {
         original: string

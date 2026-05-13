@@ -16,14 +16,16 @@ A workflow is a plain text file (`.wire`) made from a small set of declarations:
 - **MCP** declarations, which connect to external tools, resources, and prompts
 
 ```wire
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["qwen3.5:32b"]
+provider ollama from ollama {
+endpoint: "http://localhost:11434"
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:32b"
 }
 
 agent greeting {
-    model: ollama("qwen3.5:32b")
+    model: model.ollama_model
     instruction: "Write a short welcome message."
     output: string
 }
@@ -82,11 +84,13 @@ Superwire has three useful layers:
 ## A more complete example
 
 ```wire
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 input {
@@ -95,7 +99,7 @@ input {
 }
 
 agent release_summary {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize {{ input.product_name }} for {{ input.audience }}."
     output: {
         summary: string

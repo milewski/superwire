@@ -12,7 +12,7 @@ The older inline `tools:` syntax is still parsed but the recommended approach is
 ```wire
 // Legacy inline form (still works but not recommended)
 agent assistant_with_tools {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     tools: [
         tool.web_search,
         tool.search(query: input.query)
@@ -36,7 +36,7 @@ tool web_search from mcp.local.tool.web_search
 tool knowledge_base_search from mcp.local.tool.knowledge_base_search
 
 agent assistant {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [
         tool.web_search,
         tool.knowledge_base_search { max_calls: 3 }
