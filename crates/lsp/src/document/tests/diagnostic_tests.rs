@@ -45,19 +45,17 @@ fn reports_mcp_prompt_import_names_must_be_snake_case() {
 #[test]
 fn reports_unknown_model_for_provider_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
 
         agent writer {
-            model: openai("gpt-4.1")
+            model: model.missing_model
             instruction: "hello"
             output: string
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownModelForProvider);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnknownModelProfile);
 }
 
 #[test]
@@ -67,32 +65,36 @@ fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
             openai_model: string
         }
 
-        provider openai {
-            driver: "openai"
-            models: [secrets.openai_model]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: secrets.openai_model
+}
 
         agent writer {
-            model: openai(secrets.openai_model)
+            model: model.openai_model
             instruction: "hello"
             output: string
         }
     };
 
     assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::InvalidModelExpression));
-    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::UnknownModelForProvider));
+    assert!(!diagnostic_has_code(&diagnostics, DiagnosticCode::UnknownModelProfile));
 }
 
 #[test]
 fn reports_unknown_agent_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         agent writer {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "hello"
             retries: 3
             output: string
@@ -188,10 +190,12 @@ fn allows_block_style_tool_binding_overrides() {
             task_id: string
         }
 
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         tool fetch_participant_answer {
             bindings {
@@ -201,7 +205,7 @@ fn allows_block_style_tool_binding_overrides() {
         }
 
         agent participant_answer_analyzer {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [
                 tool.fetch_participant_answer {
                     bindings {
@@ -225,10 +229,12 @@ fn reports_missing_tool_binding_overrides_diagnostic() {
             task_id: number
         }
 
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         dynamic {
             data: {
@@ -248,7 +254,7 @@ fn reports_missing_tool_binding_overrides_diagnostic() {
         }
 
         agent participant_answer_analyzer for participant in dynamic.data.participants {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [
                 tool.fetch_participant_answer
             ]
@@ -265,10 +271,12 @@ fn allows_fixed_tool_bindings_without_overrides() {
             project_id: number
         }
 
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         dynamic {
             data: {
@@ -288,7 +296,7 @@ fn allows_fixed_tool_bindings_without_overrides() {
         }
 
         agent participant_answer_analyzer for participant in dynamic.data.participants {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [
                 tool.fetch_participant_answer
             ]
@@ -306,10 +314,12 @@ fn reports_invalid_tool_binding_override_type_diagnostic() {
             task_id: number
         }
 
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         tool fetch_participant_answer {
             input {
@@ -323,7 +333,7 @@ fn reports_invalid_tool_binding_override_type_diagnostic() {
         }
 
         agent participant_answer_analyzer {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [
                 tool.fetch_participant_answer {
                     bindings {
@@ -390,10 +400,12 @@ fn allows_dynamic_references_to_later_dynamic_blocks() {
 #[test]
 fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         schema payload {
             value: string
@@ -408,13 +420,13 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
         }
 
         agent context_agent {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "hello"
             output: string
         }
 
         agent worker {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: "example {{ agent.context_agent }} {{ input.query }} {{ schema.payload }} {{ secrets.api_key }}"
             output: string
         }
@@ -426,10 +438,12 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
 #[test]
 fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai {
-            driver: "openai"
-            models: ["gpt-4.1-mini"]
-        }
+        provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         input {
             query: string
@@ -440,7 +454,7 @@ fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic(
         }
 
         agent worker {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             instruction: """
                 example {{ input.query }}
                 forbidden {{ secrets.api_key }}
@@ -522,7 +536,7 @@ fn reports_invalid_for_loop_iterable_type_diagnostic_for_object_reference() {
 fn reports_duplicate_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent greeting {
-            model: ollama("qwen3.5:8b")
+            model: model.ollama_model
             instruction: "Write a short welcome message."
             instruction: "Write a short welcome message."
             output: string

@@ -422,6 +422,7 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Prompt) => {
                 self.mcp_import_reference_suggestions(reference_completion_path, &self.prompt_names, "Imported MCP prompt")
             }
+            Some(ReferenceKeyword::Model) => Vec::new(),
             None => Vec::new(),
         }
     }

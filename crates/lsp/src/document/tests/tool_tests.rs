@@ -160,17 +160,19 @@ fn uses_mcp_lock_for_imported_tool_schema() {
             endpoint: "http://docker.localhost/mcp/project"
         }
 
-        provider openai {
-            driver: "openai"
-            endpoint: "https://api.openai.com/v1"
+        provider openai from openai {
+endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-            models: ["gpt-4.1-mini"]
-        }
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
+}
 
         tool update_user_name from mcp.local.tool.update_user_name
 
         agent tooling {
-            model: openai("gpt-4.1-mini")
+            model: model.openai_model
             uses: [tool.update_user_name]
             instruction: "Rename the user"
             output: string

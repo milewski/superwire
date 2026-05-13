@@ -67,6 +67,18 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     children: Vec::new(),
                 }
             }
+            Self::Model(model_declaration) => {
+                let declaration_range = source_span_to_range(source_text, model_declaration.span);
+
+                DocumentSymbolNode {
+                    name: model_declaration.name.clone(),
+                    detail: Some("model declaration".to_string()),
+                    kind: SymbolKind::Module,
+                    range: declaration_range,
+                    selection_range: declaration_range,
+                    children: Vec::new(),
+                }
+            }
             Self::McpServer(mcp_server_declaration) => {
                 let declaration_range = source_span_to_range(source_text, mcp_server_declaration.span);
 

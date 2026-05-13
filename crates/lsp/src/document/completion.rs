@@ -1210,7 +1210,7 @@ impl DocumentState {
                 Some(semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix))
             }
             AgentExpressionPropertyName::Model => {
-                Some(semantic_index.provider_call_suggestions(&agent_property_value_completion_context.value_prefix))
+                Some(semantic_index.model_profile_suggestions(&agent_property_value_completion_context.value_prefix))
             }
             AgentExpressionPropertyName::Instruction => {
                 if inside_interpolation_expression || ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
@@ -1357,7 +1357,8 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt)
+            | None => {
                 if can_suggest_inference_roots {
                     return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -1417,7 +1418,7 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
+            Some(ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
                 if for_loop_iterator_reference_root {
                     return Some(reference_suggestions.to_vec());
                 }
@@ -1460,7 +1461,7 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
+            Some(ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
                 if can_suggest_output_roots {
                     return Some(semantic_index.output_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -1498,7 +1499,8 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) | None => {
+            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt)
+            | None => {
                 if can_suggest_prompt_roots {
                     return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));
                 }
@@ -1534,7 +1536,7 @@ impl DocumentState {
 
                 Some(Vec::new())
             }
-            Some(ReferenceKeyword::Resource | ReferenceKeyword::Prompt) => {
+            Some(ReferenceKeyword::Model | ReferenceKeyword::Resource | ReferenceKeyword::Prompt) => {
                 if Self::is_mcp_call_callee_context(line_prefix, reference_completion_path) {
                     return Some(reference_suggestions.to_vec());
                 }
