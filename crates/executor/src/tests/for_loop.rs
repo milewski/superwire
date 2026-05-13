@@ -8,13 +8,13 @@ use superwire_core::workflow_source;
 async fn for_loop_over_literal_array() {
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         agent note for number in [1, 2, 3] {
             model: model.openai_model
@@ -29,6 +29,7 @@ model openai_model from openai {
             notes: agent.note
         }
     };
+    
     let model_provider = ScriptedModelProvider::new(
         [(
             "note".to_string(),
@@ -40,6 +41,7 @@ model openai_model from openai {
         )]
         .into(),
     );
+    
     let service = ExecutorService::new(model_provider);
 
     let output = service
@@ -64,13 +66,13 @@ model openai_model from openai {
 async fn for_loop_over_input_array() {
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         input {
             items: [string]
@@ -86,6 +88,7 @@ model openai_model from openai {
             results: agent.processor
         }
     };
+    
     let model_provider = ScriptedModelProvider::new([("processor".to_string(), vec![json!("processed-a"), json!("processed-b")])].into());
     let service = ExecutorService::new(model_provider);
 
@@ -102,13 +105,13 @@ model openai_model from openai {
 async fn for_loop_with_object_destructuring() {
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         input {
             participants: [{
@@ -127,6 +130,7 @@ model openai_model from openai {
             summaries: agent.summarizer
         }
     };
+    
     let model_provider =
         ScriptedModelProvider::new([("summarizer".to_string(), vec![json!("summary for Alice"), json!("summary for Bob")])].into());
     let service = ExecutorService::new(model_provider);
@@ -150,13 +154,13 @@ model openai_model from openai {
 async fn for_loop_empty_array_produces_empty_output() {
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         input {
             items: [string]
@@ -172,6 +176,7 @@ model openai_model from openai {
             results: agent.processor
         }
     };
+    
     let model_provider = TestModelProvider::new(vec![]);
     let service = ExecutorService::new(model_provider);
 
@@ -188,13 +193,13 @@ model openai_model from openai {
 async fn for_loop_respects_max_concurrency() {
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         agent writer for number in [1, 2, 3, 4, 5] {
             model: model.openai_model
@@ -206,6 +211,7 @@ model openai_model from openai {
             values: agent.writer
         }
     };
+    
     let model_provider = ScriptedModelProvider::new(
         [(
             "writer".to_string(),
@@ -213,6 +219,7 @@ model openai_model from openai {
         )]
         .into(),
     );
+    
     let service = ExecutorService::new(model_provider);
 
     let mut request = crate::tests::support::request(workflow_source);
@@ -234,13 +241,13 @@ model openai_model from openai {
 async fn for_loop_can_reference_output_in_later_agent() {
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         agent scorer for item in [10, 20, 30] {
             model: model.openai_model
@@ -259,6 +266,7 @@ model openai_model from openai {
             aggregated: agent.aggregator
         }
     };
+    
     let model_provider = ScriptedModelProvider::new(
         [
             ("scorer".to_string(), vec![json!(10), json!(20), json!(30)]),
@@ -266,6 +274,7 @@ model openai_model from openai {
         ]
         .into(),
     );
+    
     let service = ExecutorService::new(model_provider);
 
     let output = service

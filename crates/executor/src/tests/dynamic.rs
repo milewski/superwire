@@ -49,13 +49,13 @@ async fn deterministic_tool_call_in_dynamic_block_executes_via_mcp() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -113,13 +113,13 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -210,13 +210,13 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"

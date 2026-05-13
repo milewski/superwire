@@ -1,4 +1,4 @@
-use crate::dsl::{AgentDeclaration, Expression, OutputDeclaration, Workflow};
+use crate::dsl::{AgentDeclaration, Expression, ObjectField, OutputDeclaration, Workflow};
 use crate::semantic::ir::{TypedToolIr, TypedWorkflowIr};
 use crate::semantic::support::provider::{build_provider_index, ProviderConfigTemplate};
 use crate::semantic::support::types::WorkflowType;
@@ -11,6 +11,7 @@ pub struct PlannedAgent {
     pub declaration: AgentDeclaration,
     pub provider_name: String,
     pub model_id_expression: Expression,
+    pub inference_fields: Vec<ObjectField>,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
@@ -59,6 +60,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
                 declaration: typed_agent.declaration.clone(),
                 provider_name: typed_agent.provider_name.clone(),
                 model_id_expression: typed_agent.model_id_expression.clone(),
+                inference_fields: typed_agent.inference_fields.clone(),
                 iteration_output_type: typed_agent.iteration_output_type.clone(),
                 final_output_type: typed_agent.final_output_type.clone(),
                 dependencies: typed_agent.dependencies.clone(),
@@ -222,13 +224,13 @@ mod tests {
     fn build_linear_workflow() -> crate::dsl::Workflow {
         parse_inline_workflow! {
             provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+                endpoint: "https://api.openai.com/v1"
                 api_key: "test-api-key"
-}
+            }
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
 
             input {
                 topic: string

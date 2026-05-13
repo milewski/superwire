@@ -3,12 +3,11 @@ use super::*;
 #[test]
 fn completes_agent_references_inside_prompt_string_interpolation() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         agent context_agent {
             model: model.openai_model
@@ -133,12 +132,11 @@ fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() 
 #[test]
 fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         agent context_agent {
             model: model.openai_model
@@ -161,12 +159,11 @@ model openai_model from openai {
 #[test]
 fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         agent worker {
             model: model.openai_model
@@ -183,12 +180,11 @@ model openai_model from openai {
 #[test]
 fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         agent worker {
             model: model.openai_model

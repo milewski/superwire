@@ -184,13 +184,13 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
     let router = executor_router_with_service(support::service(vec![]));
     let workflow_source = superwire_core::workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         secrets {
             mcp_endpoint: string
@@ -217,6 +217,7 @@ model openai_model from openai {
             value: agent.updater
         }
     };
+    
     let request_body = json!({
         "workflow_source": workflow_source,
         "secrets": {
@@ -224,6 +225,7 @@ model openai_model from openai {
             "mcp_token": "Bearer secret-token"
         }
     });
+    
     let request = axum::http::Request::builder()
         .method("POST")
         .uri("/validate")
@@ -237,7 +239,9 @@ model openai_model from openai {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body should read");
+    
     let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+    
     assert_eq!(response_json, json!({ "valid": true }));
 }
 

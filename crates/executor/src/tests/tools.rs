@@ -16,13 +16,13 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer test-token".to_string())]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -53,11 +53,12 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
-    let model_provider = TrackingModelProvider::new(vec![serde_json::json!("renamed")]);
+
+    let model_provider = TrackingModelProvider::new(vec![json!("renamed")]);
     let service = ExecutorService::new(model_provider.clone());
 
     service
-        .execute(request_with_input(&workflow_source, serde_json::json!({ "user_id": 123 })))
+        .execute(request_with_input(&workflow_source, json!({ "user_id": 123 })))
         .await
         .expect("execution should pass tool metadata to provider");
 
@@ -65,6 +66,7 @@ model openai_model from openai {
         .recorded_requests
         .lock()
         .expect("tracking lock should not be poisoned");
+
     let request = recorded_requests.first().expect("model request should be recorded");
     let tool_definition = request.tools.first().expect("tool definition should be present");
 
@@ -79,10 +81,11 @@ model openai_model from openai {
             headers: [("Authorization".to_string(), "Bearer test-token".to_string())].into(),
         }
     );
-    assert_eq!(tool_definition.bindings, serde_json::json!({ "user_id": 123 }));
-    assert_eq!(tool_definition.input_schema["required"], serde_json::json!(["user_name"]));
+
+    assert_eq!(tool_definition.bindings, json!({ "user_id": 123 }));
+    assert_eq!(tool_definition.input_schema["required"], json!(["user_name"]));
     assert_eq!(tool_definition.input_schema.pointer("/properties/user_id"), None);
-    assert_eq!(tool_definition.output_schema["required"], serde_json::json!(["success"]));
+    assert_eq!(tool_definition.output_schema["required"], json!(["success"]));
 }
 
 pub(crate) struct TestMcpHttpServer {
@@ -521,13 +524,13 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -560,6 +563,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let model_provider = TrackingModelProvider::new(vec![json!("done")]);
     let service = ExecutorService::new(model_provider.clone());
 
@@ -572,6 +576,7 @@ model openai_model from openai {
         .recorded_requests
         .lock()
         .expect("tracking lock should not be poisoned");
+
     let request = recorded_requests.first().expect("model request should be recorded");
 
     assert!(request.prompt.contains("MCP prompt `system_prompt`"));
@@ -726,13 +731,13 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -762,6 +767,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let model_provider = TrackingModelProvider::new(vec![serde_json::json!("done")]);
     let service = ExecutorService::new(model_provider.clone());
 
@@ -776,13 +782,13 @@ fn validation_does_not_execute_workflow_dynamic_tool_calls() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -815,6 +821,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
 
     service
@@ -834,13 +841,13 @@ fn validation_does_not_execute_agent_dynamic_tool_calls() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -874,6 +881,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
 
     service
@@ -893,13 +901,13 @@ fn validation_does_not_fetch_mcp_prompt_imports() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -929,6 +937,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
 
     service
@@ -949,13 +958,13 @@ fn validation_does_not_read_mcp_resource_imports() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -982,6 +991,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
 
     service
@@ -1002,13 +1012,13 @@ fn validation_rejects_dynamic_tool_call_missing_required_input() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -1025,6 +1035,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let service = ExecutorService::new(TrackingModelProvider::new(Vec::new()));
     let error = service
         .validate(ValidationRequest {
@@ -1033,12 +1044,14 @@ model openai_model from openai {
             secrets: Value::Null,
         })
         .expect_err("validation should reject the missing required tool input statically");
+
     let error_message = error.to_string();
 
     assert!(
         error_message.contains("Missing `dynamic` declaration") || error_message.contains("missing required `input` field `project_id`"),
         "unexpected validation error: {error_message}"
     );
+
     assert_eq!(server.method_count(TestMcpMethod::ToolsList), 1);
     assert_eq!(server.method_count(TestMcpMethod::ToolsCall), 0);
 }
@@ -1048,13 +1061,13 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         secrets {
             mcp_endpoint: string
@@ -1132,13 +1145,13 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -1166,6 +1179,7 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let model_provider = TrackingModelProvider::new(vec![json!("done")]);
     let service = ExecutorService::new(model_provider.clone());
 

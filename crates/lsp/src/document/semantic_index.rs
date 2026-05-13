@@ -1125,12 +1125,7 @@ impl SemanticIndex {
         let providers = tooling_snapshot
             .declaration_index()
             .symbols_by_category(ToolingSymbolCategory::Provider)
-            .map(|named_symbol_span| {
-                (
-                    named_symbol_span.name.clone(),
-                    ProviderSummary { driver: None },
-                )
-            })
+            .map(|named_symbol_span| (named_symbol_span.name.clone(), ProviderSummary { driver: None }))
             .collect::<HashMap<_, _>>();
 
         let provider_locations = tooling_snapshot
@@ -1420,12 +1415,8 @@ impl SemanticIndex {
     fn insert_provider(&mut self, provider_declaration: &ProviderDeclaration) {
         let provider_driver = ProviderDriver::parse(&provider_declaration.driver_name);
 
-        self.providers.insert(
-            provider_declaration.name.clone(),
-            ProviderSummary {
-                driver: provider_driver,
-            },
-        );
+        self.providers
+            .insert(provider_declaration.name.clone(), ProviderSummary { driver: provider_driver });
 
         self.provider_locations.push(NamedSpan {
             name: provider_declaration.name.clone(),
@@ -2624,7 +2615,6 @@ impl SemanticIndex {
         }
     }
 }
-
 
 fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpression> {
     typed_fields

@@ -9,11 +9,11 @@ model openai_model from openai {
 }
 
 agent release_analyst {
-    model: model.openai_model
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 12_000
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 12_000
+        }
     }
 
     instruction: "Write a short release readiness note."

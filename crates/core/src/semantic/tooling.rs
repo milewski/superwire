@@ -1065,12 +1065,11 @@ mod tests {
     #[test]
     fn snapshot_indexes_declaration_spans_and_position_lookups() {
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4o"
-}
+            model openai_model from openai {
+                id: "gpt-4o"
+            }
 
             schema Report {
                 title: string
@@ -1148,8 +1147,7 @@ model openai_model from openai {
     #[test]
     fn tolerant_source_snapshot_recovers_symbols_and_singleton_fields_after_parse_failure() {
         let broken_source = workflow_source! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
             input {
                 topic: string

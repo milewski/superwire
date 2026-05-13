@@ -407,6 +407,25 @@ pub struct ProviderDeclaration {
     pub span: SourceSpan,
 }
 
+impl ProviderDeclaration {
+    #[must_use]
+    pub fn property(&self, property_name: ModelDeclarationPropertyName) -> Option<&ObjectField> {
+        self.properties
+            .iter()
+            .find(|property| ModelDeclarationPropertyName::from_identifier(property.name.as_str()) == Some(property_name))
+    }
+
+    #[must_use]
+    pub fn inference_fields(&self) -> Option<&[ObjectField]> {
+        let property = self.property(ModelDeclarationPropertyName::Inference)?;
+        let Expression::ObjectLiteral(fields) = &property.value else {
+            return None;
+        };
+
+        Some(fields.as_slice())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelDeclaration {
     pub name: String,
@@ -425,8 +444,7 @@ impl ModelDeclaration {
 
     #[must_use]
     pub fn id_expression(&self) -> Option<&Expression> {
-        self.property(ModelDeclarationPropertyName::Id)
-            .map(|property| &property.value)
+        self.property(ModelDeclarationPropertyName::Id).map(|property| &property.value)
     }
 
     #[must_use]
@@ -1143,6 +1161,31 @@ impl AgentDeclaration {
         None
     }
 
+    #[must_use]
+    pub fn effective_inference_fields(
+        &self,
+        provider_declaration: Option<&ProviderDeclaration>,
+        model_declaration: &ModelDeclaration,
+    ) -> Vec<ObjectField> {
+        let mut inference_fields = Vec::new();
+
+        if let Some(provider_declaration) = provider_declaration {
+            if let Some(provider_inference_fields) = provider_declaration.inference_fields() {
+                merge_inference_fields(&mut inference_fields, provider_inference_fields);
+            }
+        }
+
+        if let Some(model_inference_fields) = model_declaration.inference_fields() {
+            merge_inference_fields(&mut inference_fields, model_inference_fields);
+        }
+
+        if let Some(model_usage_inference_fields) = self.model_usage().and_then(ModelUsage::inference_fields) {
+            merge_inference_fields(&mut inference_fields, model_usage_inference_fields);
+        }
+
+        inference_fields
+    }
+
     pub fn required_expression_property(
         &self,
         property_name: AgentExpressionPropertyName,
@@ -1178,6 +1221,21 @@ impl AgentDeclaration {
         }
 
         iteration_output_type_expression
+    }
+}
+
+fn merge_inference_fields(inference_fields: &mut Vec<ObjectField>, override_fields: &[ObjectField]) {
+    for override_field in override_fields {
+        if let Some(existing_field) = inference_fields
+            .iter_mut()
+            .find(|inference_field| inference_field.name == override_field.name)
+        {
+            *existing_field = override_field.clone();
+
+            continue;
+        }
+
+        inference_fields.push(override_field.clone());
     }
 }
 

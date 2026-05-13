@@ -522,6 +522,7 @@ fn model_request(model_endpoint: String, mcp_endpoint: String) -> ModelRequest {
             api_key: "test-api-key".to_string(),
         },
         model_name: "deepseek-reasoner".to_string(),
+        inference: BTreeMap::new(),
         prompt: "Rename the user".to_string(),
         output_schema: serde_json::json!({ "type": "object" }),
         tools: vec![

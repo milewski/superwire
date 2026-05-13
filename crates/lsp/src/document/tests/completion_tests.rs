@@ -231,12 +231,11 @@ fn interpolation_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             context: CompletionMatrixContext::Interpolation,
             expectation_kind: CompletionExpectationKind::Positive,
             source_template: inline_document_template! {
-                provider openai from openai {
-}
+                provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+                model openai_model from openai {
+                    id: "gpt-4.1-mini"
+                }
 
                 agent context_agent {
                     model: model.openai_model
@@ -259,12 +258,11 @@ model openai_model from openai {
             context: CompletionMatrixContext::Interpolation,
             expectation_kind: CompletionExpectationKind::Negative,
             source_template: inline_document_template! {
-                provider openai from openai {
-}
+                provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+                model openai_model from openai {
+                    id: "gpt-4.1-mini"
+                }
 
                 agent context_agent {
                     model: model.openai_model
@@ -480,7 +478,7 @@ fn completes_nested_input_field_attributes() {
 fn completes_provider_driver_specific_properties() {
     let completion_suggestions = inline_completion_suggestions! {
         provider openai from openai {
-<cursor>
+            <cursor>
         }
     };
 
@@ -490,12 +488,11 @@ fn completes_provider_driver_specific_properties() {
 #[test]
 fn suppresses_suggestions_inside_model_id_string_literal() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider ollama from ollama {
-}
+        provider ollama from ollama {}
 
-model ollama_model from ollama {
-    id: "<cursor>"
-}
+        model ollama_model from ollama {
+            id: "<cursor>"
+        }
     };
 
     assert_completion_excludes_labels!(&completion_suggestions, "[]", "[\"\"]");
@@ -533,12 +530,11 @@ fn suppresses_existing_singleton_keywords_in_top_level_scope() {
     let completion_suggestions = inline_completion_suggestions! {
         <cursor>
 
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         input {
             instruction: string
@@ -574,12 +570,11 @@ model openai_model from openai {
 #[test]
 fn suppresses_suggestions_after_singleton_declaration_keyword_header() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         input <cursor>
     };
@@ -590,12 +585,11 @@ model openai_model from openai {
 #[test]
 fn suppresses_suggestions_after_named_declaration_keyword_header() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         agent <cursor>
     };
@@ -1000,16 +994,15 @@ fn includes_descriptive_details_for_agent_and_inference_completions() {
 #[test]
 fn completes_registered_provider_models_inside_model_call() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_gpt_4_1_mini from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_gpt_4_1_mini from openai {
+            id: "gpt-4.1-mini"
+        }
 
-model openai_gpt_4o_mini from openai {
-    id: "gpt-4o-mini"
-}
+        model openai_gpt_4o_mini from openai {
+            id: "gpt-4o-mini"
+        }
 
         agent writer {
             model: <cursor>
@@ -1028,12 +1021,11 @@ model openai_gpt_4o_mini from openai {
 #[test]
 fn completes_dynamic_provider_models_inside_empty_string_model_call() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: secrets.models.pro
-}
+        model openai_model from openai {
+            id: secrets.models.pro
+        }
 
         agent writer {
             model: <cursor>
@@ -1050,19 +1042,17 @@ model openai_model from openai {
 #[test]
 fn suggests_only_declared_providers_for_model_property_value() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
-        provider anthropic from anthropic {
-}
+        provider anthropic from anthropic {}
 
-model anthropic_model from anthropic {
-    id: "claude-3-7-sonnet-latest"
-}
+        model anthropic_model from anthropic {
+            id: "claude-3-7-sonnet-latest"
+        }
 
         agent writer {
             model: <cursor>
@@ -1098,16 +1088,15 @@ model anthropic_model from anthropic {
 #[test]
 fn suggests_reference_roots_inside_model_call_expression() {
     let completion_suggestions = inline_completion_suggestions! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_gpt_4_1_mini from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_gpt_4_1_mini from openai {
+            id: "gpt-4.1-mini"
+        }
 
-model openai_gpt_4o_mini from openai {
-    id: "gpt-4o-mini"
-}
+        model openai_gpt_4o_mini from openai {
+            id: "gpt-4o-mini"
+        }
 
         agent writer {
             model: <cursor>
@@ -1126,16 +1115,15 @@ model openai_gpt_4o_mini from openai {
 #[test]
 fn completion_text_edit_range_replaces_model_provider_prefix() {
     let source = inline_document_template! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_gpt_4_1_mini from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_gpt_4_1_mini from openai {
+            id: "gpt-4.1-mini"
+        }
 
-model openai_gpt_4o_mini from openai {
-    id: "gpt-4o-mini"
-}
+        model openai_gpt_4o_mini from openai {
+            id: "gpt-4o-mini"
+        }
 
         agent writer {
             model: op
@@ -1425,16 +1413,15 @@ fn suggests_dynamic_fields_from_later_blocks() {
 #[test]
 fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_gpt_4_1_mini from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_gpt_4_1_mini from openai {
+            id: "gpt-4.1-mini"
+        }
 
-model openai_gpt_4o_mini from openai {
-    id: "gpt-4o-mini"
-}
+        model openai_gpt_4o_mini from openai {
+            id: "gpt-4o-mini"
+        }
 
         agent writer {
             model: <cursor>
@@ -1457,12 +1444,11 @@ model openai_gpt_4o_mini from openai {
 #[test]
 fn completion_text_edit_range_replaces_empty_model_string_for_dynamic_model() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: secrets.models.pro
-}
+        model openai_model from openai {
+            id: secrets.models.pro
+        }
 
         agent writer {
             model: <cursor>
