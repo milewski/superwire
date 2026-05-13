@@ -3,7 +3,7 @@
 
 // Provider defines where models come from.
 provider ollama from ollama {
-endpoint: "test"
+    endpoint: "test"
 }
 
 model ollama_model from ollama {

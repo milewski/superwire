@@ -1,5 +1,5 @@
 provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+    endpoint: "http://localhost:1234/v1"
     api_key: "test-api-key"
 }
 

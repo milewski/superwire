@@ -1,5 +1,5 @@
 provider primary from openai {
-endpoint: "http://localhost:1234/v1"
+    endpoint: "http://localhost:1234/v1"
     api_key: "test-primary-key"
 }
 
@@ -12,7 +12,7 @@ model primary_model_c from primary {
 }
 
 provider backup from openai {
-endpoint: "http://localhost:1234/v1"
+    endpoint: "http://localhost:1234/v1"
     api_key: "test-backup-key"
 }
 

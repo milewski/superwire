@@ -2,7 +2,7 @@
 // Multiple dynamic blocks merge, and values are referenced with `dynamic.<field>`.
 
 provider openai from openai {
-endpoint: "http://localhost"
+    endpoint: "http://localhost"
     api_key: "123"
 }
 
