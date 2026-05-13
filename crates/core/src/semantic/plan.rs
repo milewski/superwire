@@ -10,7 +10,7 @@ pub struct PlannedAgent {
     pub name: String,
     pub declaration: AgentDeclaration,
     pub provider_name: String,
-    pub model_expression: Expression,
+    pub model_id_expression: Expression,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
@@ -58,7 +58,7 @@ pub fn build_execution_plan(workflow: &Workflow, typed_workflow_ir: &TypedWorkfl
                 name: typed_agent.name.clone(),
                 declaration: typed_agent.declaration.clone(),
                 provider_name: typed_agent.provider_name.clone(),
-                model_expression: typed_agent.model_expression.clone(),
+                model_id_expression: typed_agent.model_id_expression.clone(),
                 iteration_output_type: typed_agent.iteration_output_type.clone(),
                 final_output_type: typed_agent.final_output_type.clone(),
                 dependencies: typed_agent.dependencies.clone(),
@@ -221,25 +221,27 @@ mod tests {
 
     fn build_linear_workflow() -> crate::dsl::Workflow {
         parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                endpoint: "https://api.openai.com/v1"
+            provider openai from openai {
+endpoint: "https://api.openai.com/v1"
                 api_key: "test-api-key"
-                models: ["model-a"]
-            }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
             input {
                 topic: string
             }
 
             agent first {
-                model: openai("model-a")
+                model: model.openai_model
                 instruction: input.topic
                 output: string
             }
 
             agent second {
-                model: openai("model-a")
+                model: model.openai_model
                 instruction: agent.first
                 output: string
             }

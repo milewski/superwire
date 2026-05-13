@@ -280,25 +280,27 @@ mod tests {
 
     static VALID_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
         parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                endpoint: "https://api.openai.com/v1"
+            provider openai from openai {
+endpoint: "https://api.openai.com/v1"
                 api_key: "test-api-key"
-                models: ["model-a"]
-            }
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
             input {
                 topic: string
             }
 
             agent first {
-                model: openai("model-a")
+                model: model.openai_model
                 instruction: input.topic
                 output: string
             }
 
             agent second {
-                model: openai("model-a")
+                model: model.openai_model
                 instruction: agent.first
                 output: string
             }

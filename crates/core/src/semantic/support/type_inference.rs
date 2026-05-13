@@ -428,6 +428,11 @@ fn infer_reference_type(
                 feature: "`prompt.*` references are not supported outside `render prompt.*`".to_string(),
             });
         }
+        ReferenceRoot::Keyword(ReferenceKeyword::Model) => {
+            return Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`model.*` references are only supported in agent model properties".to_string(),
+            });
+        }
         ReferenceRoot::Identifier(identifier) => {
             let Some(local_binding_type) = type_inference_context.local_binding_types.get(identifier) else {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {
