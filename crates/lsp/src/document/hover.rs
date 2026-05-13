@@ -26,17 +26,14 @@ impl SemanticIndex {
             let provider_driver_name = provider_summary.driver.map_or("unknown", ProviderDriver::as_str);
 
             return Some(format!(
-                "**provider {hovered_symbol}**\n\nDriver: `{provider_driver_name}`\n\nDeclared models: {}",
-                if provider_summary.models.is_empty() {
-                    "none".to_string()
-                } else {
-                    provider_summary
-                        .models
-                        .iter()
-                        .map(super::semantic_index::ProviderModelValue::label)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                }
+                "**provider {hovered_symbol}**\n\nDriver: `{provider_driver_name}`"
+            ));
+        }
+
+        if let Some(model_summary) = self.models.get(hovered_symbol) {
+            return Some(format!(
+                "**model {hovered_symbol}**\n\nProvider: `{}`",
+                model_summary.provider_name
             ));
         }
 
@@ -96,7 +93,7 @@ impl SemanticIndex {
             }
             Some(ReferenceKeyword::Resource) => Some(format!("**{hovered_symbol}**\n\nMCP resource reference.")),
             Some(ReferenceKeyword::Prompt) => Some(format!("**{hovered_symbol}**\n\nMCP prompt reference.")),
-            Some(ReferenceKeyword::Tool) | None => None,
+            Some(ReferenceKeyword::Model) | Some(ReferenceKeyword::Tool) | None => None,
         }
     }
 }
@@ -194,6 +191,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
     fn completion_detail(self) -> &'static str {
         match self {
             DeclarationKeyword::Provider => "Provider declaration",
+            DeclarationKeyword::Model => "Model declaration",
             DeclarationKeyword::Mcp => "MCP server declaration",
             DeclarationKeyword::Secrets => "Secrets declaration",
             DeclarationKeyword::Input => "Input declaration",
@@ -210,6 +208,7 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
     fn completion_documentation(self) -> &'static str {
         match self {
             DeclarationKeyword::Provider => "Declares a provider configuration block.",
+            DeclarationKeyword::Model => "Declares a reusable model profile.",
             DeclarationKeyword::Mcp => "Declares an MCP server used for tool discovery and execution.",
             DeclarationKeyword::Secrets => "Declares workflow secret fields.",
             DeclarationKeyword::Input => "Declares workflow input fields.",

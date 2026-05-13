@@ -41,6 +41,7 @@ impl DeclarationHeaderCompletionContext {
 
         match declaration_keyword {
             DeclarationKeyword::Provider
+            | DeclarationKeyword::Model
             | DeclarationKeyword::Mcp
             | DeclarationKeyword::Schema
             | DeclarationKeyword::Tool

@@ -128,7 +128,7 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
         }
 
         agent input_number_note for n in input.numbers {
-            model: ollama("qwen3:8b")
+            model: model.ollama_model
             instruction: "Write a short note for input number {{ <cursor> }}"
             output: {
                 number: number
@@ -279,7 +279,7 @@ fn suggests_destructuring_field_names_from_agent_iterable_output() {
         }
 
         agent findings {
-            model: ollama("qwen3:8b")
+            model: model.ollama_model
             instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
             output: {
                 items: [{
@@ -306,7 +306,7 @@ fn excludes_existing_destructured_field_names_from_suggestions() {
         }
 
         agent findings {
-            model: ollama("qwen3:8b")
+            model: model.ollama_model
             instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
             output: {
                 items: [{

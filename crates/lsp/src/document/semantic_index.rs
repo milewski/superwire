@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
     AgentForLoopPattern, AgentProperty, BuiltinFunctionName, Declaration, DeclarationKeyword, Expression, ImportKeyword, McpCallOperation,
-    ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, ToolPropertyName, TypeExpression,
-    TypedField, Workflow,
+    ModelDeclaration, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolCallKeyword, ToolPropertyName,
+    TypeExpression, TypedField, Workflow,
 };
 use superwire_core::mcp::McpLock;
 use superwire_core::mcp::McpServerLock;
@@ -23,6 +23,8 @@ use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind
 pub struct SemanticIndex {
     pub providers: HashMap<String, ProviderSummary>,
     pub provider_locations: Vec<NamedSpan>,
+    pub models: HashMap<String, ModelSummary>,
+    pub model_locations: Vec<NamedSpan>,
     pub schemas: HashMap<String, SchemaSummary>,
     pub schema_names: Vec<String>,
     pub schema_locations: Vec<NamedSpan>,
@@ -64,34 +66,11 @@ pub struct SemanticIndex {
 #[derive(Debug, Clone)]
 pub struct ProviderSummary {
     pub driver: Option<ProviderDriver>,
-    pub models: Vec<ProviderModelValue>,
 }
 
 #[derive(Debug, Clone)]
-pub enum ProviderModelValue {
-    StringLiteral(String),
-    Reference(String),
-}
-
-impl ProviderModelValue {
-    pub fn label(&self) -> &str {
-        match self {
-            Self::StringLiteral(model_name) | Self::Reference(model_name) => model_name,
-        }
-    }
-
-    fn insert_text(&self, model_call_context: &ModelCallCompletionContext) -> String {
-        match self {
-            Self::StringLiteral(model_name) => {
-                if model_call_context.replaces_empty_string_literal || !model_call_context.inside_string_literal {
-                    return format!("\"{model_name}\"");
-                }
-
-                model_name.clone()
-            }
-            Self::Reference(reference_path) => reference_path.clone(),
-        }
-    }
+pub struct ModelSummary {
+    pub provider_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -128,17 +107,17 @@ pub struct NamedSpan {
 }
 
 impl SemanticIndex {
-    pub fn provider_call_suggestions(&self, provider_prefix: &str) -> Vec<CompletionSuggestion> {
+    pub fn model_profile_suggestions(&self, model_prefix: &str) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self
-            .providers
+            .models
             .keys()
-            .filter(|provider_name| provider_name.starts_with(provider_prefix))
-            .map(|provider_name| CompletionSuggestion {
-                label: provider_name.clone(),
-                kind: CompletionKind::Function,
-                detail: "Declared provider".to_string(),
-                documentation: "Provider call used in `model` properties.".to_string(),
-                insert_text: format!("{provider_name}(\"$1\")"),
+            .filter(|model_name| model_name.starts_with(model_prefix))
+            .map(|model_name| CompletionSuggestion {
+                label: model_name.clone(),
+                kind: CompletionKind::Value,
+                detail: "Declared model profile".to_string(),
+                documentation: "Model profile used in `model` properties.".to_string(),
+                insert_text: format!("model.{model_name}"),
             })
             .collect::<Vec<_>>();
 
@@ -833,6 +812,8 @@ impl SemanticIndex {
         let mut semantic_index = Self {
             providers: HashMap::new(),
             provider_locations: Vec::new(),
+            models: HashMap::new(),
+            model_locations: Vec::new(),
             schemas: HashMap::new(),
             schema_names: Vec::new(),
             schema_locations: Vec::new(),
@@ -897,6 +878,9 @@ impl SemanticIndex {
         match declaration {
             Declaration::Provider(provider_declaration) => {
                 self.insert_provider(provider_declaration);
+            }
+            Declaration::Model(model_declaration) => {
+                self.insert_model(model_declaration);
             }
             Declaration::McpServer(_) => {}
             Declaration::Schema(schema_declaration) => {
@@ -1065,6 +1049,7 @@ impl SemanticIndex {
         let output_type_expression = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
             AgentProperty::Output { output_type_expression } => Some(output_type_expression),
             AgentProperty::Model(_)
+            | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
@@ -1143,10 +1128,7 @@ impl SemanticIndex {
             .map(|named_symbol_span| {
                 (
                     named_symbol_span.name.clone(),
-                    ProviderSummary {
-                        driver: None,
-                        models: Vec::new(),
-                    },
+                    ProviderSummary { driver: None },
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -1218,6 +1200,8 @@ impl SemanticIndex {
         Self {
             providers,
             provider_locations,
+            models: HashMap::new(),
+            model_locations: Vec::new(),
             schemas,
             schema_names,
             schema_locations,
@@ -1434,39 +1418,12 @@ impl SemanticIndex {
     }
 
     fn insert_provider(&mut self, provider_declaration: &ProviderDeclaration) {
-        let provider_driver = provider_declaration
-            .properties
-            .iter()
-            .find(|provider_property| provider_property.name == "driver")
-            .and_then(|provider_property| match &provider_property.value {
-                Expression::StringLiteral(driver_name) => ProviderDriver::parse(driver_name),
-                Expression::StringTemplate(_)
-                | Expression::NumberLiteral(_)
-                | Expression::BooleanLiteral(_)
-                | Expression::NullLiteral
-                | Expression::Reference(_)
-                | Expression::FunctionCall(_)
-                | Expression::ToolCall(_)
-                | Expression::McpCall(_)
-                | Expression::NullFallback(_)
-                | Expression::VariantProjection(_)
-                | Expression::Match(_)
-                | Expression::ArrayLiteral(_)
-                | Expression::ObjectLiteral(_) => None,
-            });
-
-        let provider_models = provider_declaration
-            .properties
-            .iter()
-            .find(|provider_property| provider_property.name == "models")
-            .and_then(|provider_property| extract_models(&provider_property.value))
-            .unwrap_or_default();
+        let provider_driver = ProviderDriver::parse(&provider_declaration.driver_name);
 
         self.providers.insert(
             provider_declaration.name.clone(),
             ProviderSummary {
                 driver: provider_driver,
-                models: provider_models,
             },
         );
 
@@ -1476,21 +1433,33 @@ impl SemanticIndex {
         });
     }
 
-    pub fn model_call_suggestions(&self, model_call_context: &ModelCallCompletionContext) -> Vec<CompletionSuggestion> {
-        let Some(provider_summary) = self.providers.get(&model_call_context.provider_name) else {
-            return Vec::new();
-        };
+    fn insert_model(&mut self, model_declaration: &ModelDeclaration) {
+        self.models.insert(
+            model_declaration.name.clone(),
+            ModelSummary {
+                provider_name: model_declaration.provider_name.clone(),
+            },
+        );
 
-        let mut completion_suggestions = provider_summary
+        self.model_locations.push(NamedSpan {
+            name: model_declaration.name.clone(),
+            span: model_declaration.span,
+        });
+    }
+
+    pub fn model_call_suggestions(&self, model_call_context: &ModelCallCompletionContext) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = self
             .models
             .iter()
-            .filter(|model_value| model_value.label().starts_with(&model_call_context.model_prefix))
-            .map(|model_value| CompletionSuggestion {
-                label: model_value.label().to_string(),
+            .filter(|(model_name, model_summary)| {
+                model_summary.provider_name == model_call_context.provider_name && model_name.starts_with(&model_call_context.model_prefix)
+            })
+            .map(|(model_name, _)| CompletionSuggestion {
+                label: model_name.clone(),
                 kind: CompletionKind::Value,
                 detail: format!("Model from `{}` provider", model_call_context.provider_name),
-                documentation: "Model declared in provider `models` list.".to_string(),
-                insert_text: model_value.insert_text(model_call_context),
+                documentation: "Declared model profile using this provider.".to_string(),
+                insert_text: model_name.clone(),
             })
             .collect::<Vec<_>>();
 
@@ -2348,6 +2317,7 @@ impl SemanticIndex {
             ),
             ReferenceKeyword::Agent => self.agent_reference_definition_span(reference_completion_path, selected_segment_index),
             ReferenceKeyword::Tool => self.tool_reference_definition_span(reference_completion_path, selected_segment_index),
+            ReferenceKeyword::Model => None,
             ReferenceKeyword::Resource => self.resource_reference_definition_span(reference_completion_path, selected_segment_index),
             ReferenceKeyword::Prompt => self.prompt_reference_definition_span(reference_completion_path, selected_segment_index),
         }
@@ -2650,43 +2620,11 @@ impl SemanticIndex {
 
                 candidate_types.first().cloned()
             }
-            ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt => None,
+            ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt => None,
         }
     }
 }
 
-fn extract_models(model_expression: &Expression) -> Option<Vec<ProviderModelValue>> {
-    let Expression::ArrayLiteral(model_values) = model_expression else {
-        return None;
-    };
-
-    let mut model_values_from_expression = Vec::<ProviderModelValue>::new();
-
-    for model_value in model_values {
-        match model_value {
-            Expression::StringLiteral(model_name) => {
-                model_values_from_expression.push(ProviderModelValue::StringLiteral(model_name.clone()));
-            }
-            Expression::Reference(reference) => {
-                model_values_from_expression.push(ProviderModelValue::Reference(reference.render_path()));
-            }
-            Expression::StringTemplate(_)
-            | Expression::NumberLiteral(_)
-            | Expression::BooleanLiteral(_)
-            | Expression::NullLiteral
-            | Expression::FunctionCall(_)
-            | Expression::ToolCall(_)
-            | Expression::McpCall(_)
-            | Expression::NullFallback(_)
-            | Expression::VariantProjection(_)
-            | Expression::Match(_)
-            | Expression::ArrayLiteral(_)
-            | Expression::ObjectLiteral(_) => return None,
-        }
-    }
-
-    Some(model_values_from_expression)
-}
 
 fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpression> {
     typed_fields

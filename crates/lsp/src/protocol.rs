@@ -136,6 +136,22 @@ pub enum DiagnosticCode {
     InvalidIntegerLiteral,
     #[serde(rename = "duplicate_provider")]
     DuplicateProvider,
+    #[serde(rename = "invalid_provider_name")]
+    InvalidProviderName,
+    #[serde(rename = "unknown_provider_driver")]
+    UnknownProviderDriver,
+    #[serde(rename = "duplicate_model")]
+    DuplicateModel,
+    #[serde(rename = "invalid_model_name")]
+    InvalidModelName,
+    #[serde(rename = "unknown_provider_in_model_declaration")]
+    UnknownProviderInModelDeclaration,
+    #[serde(rename = "missing_model_id")]
+    MissingModelId,
+    #[serde(rename = "unknown_model_profile")]
+    UnknownModelProfile,
+    #[serde(rename = "invalid_model_usage_property")]
+    InvalidModelUsageProperty,
     #[serde(rename = "duplicate_schema")]
     DuplicateSchema,
     #[serde(rename = "invalid_schema_name")]
