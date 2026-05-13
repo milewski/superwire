@@ -29,12 +29,14 @@ tool fetch_task from mcp.tasks.tool.fetch_task {
 
 ## Runtime bindings
 
-Use `bindings {}` to assign runtime values to a tool call.
+Use `bindings {}` to override the native inputs of an MCP tool. When an agent calls a tool, it naturally provides values for the tool's inputs through the agent's context. Bindings let you explicitly override those inputs with specific values that take precedence over what the agent would provide.
 
 ```wire
-let task = call tool.fetch_task {
-    bindings {
-        task_id: input.task_id
+dynamic {
+    task: call tool.fetch_task {
+        bindings {
+            task_id: input.task_id
+        }
     }
 }
 ```

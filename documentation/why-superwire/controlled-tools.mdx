@@ -55,9 +55,11 @@ tool fetch_task from mcp.tasks.tool.fetch-task {
     }
 }
 
-let task = call tool.fetch_task {
-    bindings {
-        task_id: input.task_id
+dynamic {
+    task: call tool.fetch_task {
+        bindings {
+            task_id: input.task_id
+        }
     }
 }
 

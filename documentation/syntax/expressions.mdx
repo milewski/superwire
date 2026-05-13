@@ -57,9 +57,11 @@ Dynamic fields may contain literals, object values, resource reads, prompt rende
 Use `bindings {}` to assign runtime values to the tool input schema.
 
 ```wire
-let task = call tool.fetch_task {
-    bindings {
-        task_id: input.task_id
+dynamic {
+    task: call tool.fetch_task {
+        bindings {
+            task_id: input.task_id
+        }
     }
 }
 ```

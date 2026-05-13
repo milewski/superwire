@@ -24,9 +24,11 @@ agent researcher {
 Use a `call` expression when the workflow author decides exactly which tool to call:
 
 ```wire
-let task = call tool.fetch_task {
-    bindings {
-        task_id: input.task_id
+dynamic {
+    task: call tool.fetch_task {
+        bindings {
+            task_id: input.task_id
+        }
     }
 }
 ```
