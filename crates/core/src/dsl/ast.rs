@@ -101,6 +101,14 @@ impl Workflow {
     }
 
     #[must_use]
+    pub fn find_model(&self, model_name: &str) -> Option<&ModelDeclaration> {
+        self.declarations.iter().find_map(|declaration| match declaration {
+            Declaration::Model(model_declaration) if model_declaration.name == model_name => Some(model_declaration),
+            _ => None,
+        })
+    }
+
+    #[must_use]
     pub fn find_mcp_server(&self, server_name: &str) -> Option<&McpServerDeclaration> {
         self.declarations.iter().find_map(|declaration| match declaration {
             Declaration::McpServer(mcp_server_declaration) if mcp_server_declaration.name == server_name => Some(mcp_server_declaration),
@@ -215,6 +223,7 @@ impl Workflow {
         self.declarations.iter().filter_map(|declaration| match declaration {
             Declaration::Dynamic(dynamic_block) => Some(dynamic_block),
             Declaration::Provider(_)
+            | Declaration::Model(_)
             | Declaration::McpServer(_)
             | Declaration::Secrets(_)
             | Declaration::Input(_)
@@ -235,6 +244,7 @@ impl Workflow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Declaration {
     Provider(ProviderDeclaration),
+    Model(ModelDeclaration),
     McpServer(McpServerDeclaration),
     Secrets(SecretsDeclaration),
     Input(InputDeclaration),
@@ -259,6 +269,7 @@ impl Declaration {
             Self::McpBatch(batch_import_declaration) => ToolDeclarationIter::Batch(batch_import_declaration.tools.iter()),
             Self::McpToolBatch(tool_batch_import_declaration) => ToolDeclarationIter::Batch(tool_batch_import_declaration.tools.iter()),
             Self::Provider(_)
+            | Self::Model(_)
             | Self::McpServer(_)
             | Self::Secrets(_)
             | Self::Input(_)
@@ -295,6 +306,7 @@ impl<'declaration> Iterator for ToolDeclarationIter<'declaration> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DeclarationKeyword {
     Provider,
+    Model,
     Mcp,
     Secrets,
     Input,
@@ -353,6 +365,7 @@ impl DeclarationKeyword {
     pub fn from_identifier(identifier: &str) -> Option<Self> {
         match identifier {
             "provider" => Some(Self::Provider),
+            "model" => Some(Self::Model),
             "mcp" => Some(Self::Mcp),
             "secrets" => Some(Self::Secrets),
             "input" => Some(Self::Input),
@@ -371,6 +384,7 @@ impl DeclarationKeyword {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Provider => "provider",
+            Self::Model => "model",
             Self::Mcp => "mcp",
             Self::Secrets => "secrets",
             Self::Input => "input",
@@ -388,8 +402,89 @@ impl DeclarationKeyword {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderDeclaration {
     pub name: String,
+    pub driver_name: String,
     pub properties: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelDeclaration {
+    pub name: String,
+    pub provider_name: String,
+    pub properties: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+impl ModelDeclaration {
+    #[must_use]
+    pub fn property(&self, property_name: ModelDeclarationPropertyName) -> Option<&ObjectField> {
+        self.properties
+            .iter()
+            .find(|property| ModelDeclarationPropertyName::from_identifier(property.name.as_str()) == Some(property_name))
+    }
+
+    #[must_use]
+    pub fn id_expression(&self) -> Option<&Expression> {
+        self.property(ModelDeclarationPropertyName::Id)
+            .map(|property| &property.value)
+    }
+
+    #[must_use]
+    pub fn inference_fields(&self) -> Option<&[ObjectField]> {
+        let property = self.property(ModelDeclarationPropertyName::Inference)?;
+        let Expression::ObjectLiteral(fields) = &property.value else {
+            return None;
+        };
+
+        Some(fields.as_slice())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelDeclarationPropertyName {
+    Id,
+    Inference,
+}
+
+impl ModelDeclarationPropertyName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "id" => Some(Self::Id),
+            "inference" => Some(Self::Inference),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Inference => "inference",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelUsagePropertyName {
+    Inference,
+}
+
+impl ModelUsagePropertyName {
+    #[must_use]
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "inference" => Some(Self::Inference),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Inference => "inference",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1002,6 +1097,7 @@ impl AgentDeclaration {
         self.properties.iter().filter_map(|property| match property {
             AgentProperty::Dynamic(dynamic_block) => Some(dynamic_block),
             AgentProperty::Model(_)
+            | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
             | AgentProperty::Output { output_type_expression: _ }
             | AgentProperty::Context(_)
@@ -1015,7 +1111,6 @@ impl AgentDeclaration {
     pub fn expression_property(&self, property_name: AgentExpressionPropertyName) -> Option<&Expression> {
         for agent_property in &self.properties {
             match agent_property {
-                AgentProperty::Model(expression) if property_name == AgentExpressionPropertyName::Model => return Some(expression),
                 AgentProperty::Instruction(expression) if property_name == AgentExpressionPropertyName::Instruction => {
                     return Some(expression)
                 }
@@ -1024,12 +1119,24 @@ impl AgentDeclaration {
                 AgentProperty::Uses(expression) if property_name == AgentExpressionPropertyName::Uses => return Some(expression),
                 AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
+                | AgentProperty::InvalidModel(_)
                 | AgentProperty::Instruction(_)
                 | AgentProperty::Output { output_type_expression: _ }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
                 | AgentProperty::Uses(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
+            }
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn model_usage(&self) -> Option<&ModelUsage> {
+        for agent_property in &self.properties {
+            if let AgentProperty::Model(model_usage) = agent_property {
+                return Some(model_usage);
             }
         }
 
@@ -1106,7 +1213,8 @@ impl AgentForLoopPattern {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentProperty {
     Dynamic(DynamicBlock),
-    Model(Expression),
+    Model(ModelUsage),
+    InvalidModel(Expression),
     Instruction(Expression),
     Output { output_type_expression: TypeExpression },
     Context(Expression),
@@ -1115,12 +1223,54 @@ pub enum AgentProperty {
     Unknown { name: String, span: SourceSpan },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelUsage {
+    pub reference: Reference,
+    pub properties: Vec<ObjectField>,
+    pub span: SourceSpan,
+}
+
+impl ModelUsage {
+    #[must_use]
+    pub fn model_name(&self) -> Option<&str> {
+        if self.reference.root_keyword() != Some(ReferenceKeyword::Model) || self.reference.accesses.len() != 1 {
+            return None;
+        }
+
+        let access = self.reference.first_access()?;
+
+        if access.optional {
+            return None;
+        }
+
+        Some(access.field.as_str())
+    }
+
+    #[must_use]
+    pub fn inference_fields(&self) -> Option<&[ObjectField]> {
+        for property in &self.properties {
+            if ModelUsagePropertyName::from_identifier(property.name.as_str()) != Some(ModelUsagePropertyName::Inference) {
+                continue;
+            }
+
+            let Expression::ObjectLiteral(inference_fields) = &property.value else {
+                return None;
+            };
+
+            return Some(inference_fields.as_slice());
+        }
+
+        None
+    }
+}
+
 impl AgentProperty {
     #[must_use]
     pub fn name(&self) -> AgentPropertyName {
         match self {
             Self::Dynamic(_) => AgentPropertyName::Dynamic,
             Self::Model(_) => AgentPropertyName::Model,
+            Self::InvalidModel(_) => AgentPropertyName::Model,
             Self::Instruction(_) => AgentPropertyName::Instruction,
             Self::Output { output_type_expression: _ } => AgentPropertyName::Output,
             Self::Context(_) => AgentPropertyName::Context,
@@ -2021,6 +2171,7 @@ pub enum ReferenceKeyword {
     Agent,
     Dynamic,
     Input,
+    Model,
     Secrets,
     Tool,
     Resource,
@@ -2034,6 +2185,7 @@ impl ReferenceKeyword {
             "agent" => Some(Self::Agent),
             "dynamic" => Some(Self::Dynamic),
             "input" => Some(Self::Input),
+            "model" => Some(Self::Model),
             "secrets" => Some(Self::Secrets),
             "tool" => Some(Self::Tool),
             "resource" => Some(Self::Resource),
@@ -2048,6 +2200,7 @@ impl ReferenceKeyword {
             Self::Agent => "agent",
             Self::Dynamic => "dynamic",
             Self::Input => "input",
+            Self::Model => "model",
             Self::Secrets => "secrets",
             Self::Tool => "tool",
             Self::Resource => "resource",

@@ -305,13 +305,15 @@ mod tests {
     #[test]
     fn parses_minimum_workflow_structure() {
         let minimum_workflow = parse_inline_workflow! {
-            provider ollama {
-                driver: "ollama"
-                models: ["qwen3.5:32b"]
-            }
+            provider ollama from ollama {
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:32b"
+}
 
             agent greeting {
-                model: ollama("qwen3.5:32b")
+                model: model.ollama_model
                 instruction: "Write a short welcome message."
                 output: string
             }
@@ -321,31 +323,40 @@ mod tests {
             }
         };
 
-        assert_eq!(minimum_workflow.declarations.len(), 3);
+        assert_eq!(minimum_workflow.declarations.len(), 4);
 
         match &minimum_workflow.declarations[0] {
             Declaration::Provider(provider_declaration) => {
                 assert_eq!(provider_declaration.name, "ollama");
-                assert_eq!(provider_declaration.properties.len(), 2);
+                assert_eq!(provider_declaration.driver_name, "ollama");
+                assert_eq!(provider_declaration.properties.len(), 0);
             }
             _ => panic!("first declaration should be provider"),
         }
 
         match &minimum_workflow.declarations[1] {
+            Declaration::Model(model_declaration) => {
+                assert_eq!(model_declaration.name, "ollama_model");
+                assert_eq!(model_declaration.provider_name, "ollama");
+            }
+            _ => panic!("second declaration should be model"),
+        }
+
+        match &minimum_workflow.declarations[2] {
             Declaration::Agent(agent_declaration) => {
                 assert_eq!(agent_declaration.name, "greeting");
                 assert_eq!(agent_declaration.for_loop, None);
                 assert_eq!(agent_declaration.properties.len(), 3);
             }
-            _ => panic!("second declaration should be agent"),
+            _ => panic!("third declaration should be agent"),
         }
 
-        match &minimum_workflow.declarations[2] {
+        match &minimum_workflow.declarations[3] {
             Declaration::Output(output_declaration) => {
                 assert_eq!(output_declaration.fields.len(), 1);
                 assert_eq!(output_declaration.fields[0].name, "greeting");
             }
-            _ => panic!("third declaration should be output"),
+            _ => panic!("fourth declaration should be output"),
         }
     }
 
@@ -353,7 +364,7 @@ mod tests {
     fn parses_for_loop_agent_structure() {
         let workflow = parse_inline_workflow! {
             agent remediation_plan for finding in agent.findings.items {
-                model: ollama("qwen3:8b")
+                model: model.ollama_model
                 instruction: "Create a remediation plan for finding: {{ finding }}"
                 output: string
             }
@@ -790,7 +801,7 @@ mod tests {
             tool create_task from mcp.local.tool.create_task
 
             agent task_manager {
-                model: openai("gpt-4.1-mini")
+                model: model.openai_model
                 instruction: "Create a task"
                 uses: [tool.create_task, prompt.create_task_instructions, resource.all_tasks]
                 output: string
