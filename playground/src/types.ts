@@ -1,6 +1,5 @@
 export type ValidationState = 'idle' | 'valid' | 'invalid' | 'running';
 export type RunState = 'idle' | 'running' | 'failed' | 'completed';
-export type RuntimeFieldKind = 'string' | 'number' | 'boolean' | 'json';
 
 export interface ExecutorEvent {
   kind: string;
@@ -9,19 +8,12 @@ export interface ExecutorEvent {
   data?: unknown;
 }
 
-export interface RuntimeField {
-  id: string;
-  name: string;
-  value: string;
-  kind: RuntimeFieldKind;
-}
-
 export interface WorkflowTab {
   id: string;
   name: string;
   source: string;
-  inputFields: RuntimeField[];
-  secretFields: RuntimeField[];
+  inputJson: string;
+  secretsJson: string;
   validationState: ValidationState;
   runState: RunState;
   message: string;

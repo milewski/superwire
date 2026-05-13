@@ -3,15 +3,17 @@ use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
 use crate::service::ExecutorService;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get_service, post};
 use axum::{Json, Router};
-use futures::{Stream, StreamExt};
+use futures::{SinkExt, Stream, StreamExt};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use superwire_lsp::server::LanguageServer;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::services::{ServeDir, ServeFile};
@@ -29,6 +31,7 @@ where
         .route("/execute/stream", post(execute_stream_handler::<ModelProviderType>))
         .route("/validate", post(validate_handler::<ModelProviderType>))
         .route("/format", post(format_handler::<ModelProviderType>))
+        .route("/lsp", axum::routing::get(lsp_websocket_handler))
         .nest_service("/playground", get_service(playground_static_service()))
         .with_state(service)
 }
@@ -82,6 +85,49 @@ where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
     Ok(Json(service.format(request)?).into_response())
+}
+
+async fn lsp_websocket_handler(websocket_upgrade: WebSocketUpgrade) -> Response {
+    websocket_upgrade.on_upgrade(handle_lsp_websocket)
+}
+
+async fn handle_lsp_websocket(websocket: WebSocket) {
+    let (mut websocket_sender, mut websocket_receiver) = websocket.split();
+    let mut language_server = LanguageServer::default();
+
+    while let Some(message_result) = websocket_receiver.next().await {
+        let Ok(message) = message_result else {
+            break;
+        };
+
+        let raw_message = match message {
+            Message::Text(text) => text.to_string().into_bytes(),
+            Message::Binary(bytes) => bytes.to_vec(),
+            Message::Close(_) => break,
+            Message::Ping(_) | Message::Pong(_) => continue,
+        };
+
+        let server_messages = match language_server.handle_json_rpc_message(&raw_message) {
+            Ok(server_messages) => server_messages,
+            Err(error) => {
+                log::warn!("failed to handle websocket LSP message: {error}");
+
+                continue;
+            }
+        };
+
+        for server_message in server_messages.messages {
+            let response_text = server_message.to_string();
+
+            if websocket_sender.send(Message::Text(response_text.into())).await.is_err() {
+                return;
+            }
+        }
+
+        if server_messages.should_exit {
+            break;
+        }
+    }
 }
 
 fn playground_static_service() -> ServeDir<ServeFile> {

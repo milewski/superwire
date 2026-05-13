@@ -32,12 +32,35 @@ struct RequestOutcome {
     should_exit: bool,
 }
 
+#[derive(Debug)]
+pub struct ServerMessages {
+    pub messages: Vec<Value>,
+    pub should_exit: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct LanguageServer {
     documents: HashMap<String, DocumentState>,
 }
 
 impl LanguageServer {
+    pub fn handle_json_rpc_message(&mut self, raw_message: &[u8]) -> Result<ServerMessages, ServerError> {
+        let request: JsonRpcRequest = serde_json::from_slice(raw_message)?;
+        let outcome = self.handle_request(request)?;
+        let mut messages = Vec::new();
+
+        if let Some(response) = outcome.response {
+            messages.push(response);
+        }
+
+        messages.extend(outcome.notifications);
+
+        Ok(ServerMessages {
+            messages,
+            should_exit: outcome.should_exit,
+        })
+    }
+
     pub async fn run_stdio() -> Result<(), ServerError> {
         let input_reader = BufReader::new(stdin());
         let output_writer = BufWriter::new(stdout());
@@ -46,18 +69,13 @@ impl LanguageServer {
         let mut language_server = Self::default();
 
         while let Some(raw_message) = message_reader.read_message().await? {
-            let request: JsonRpcRequest = serde_json::from_slice(&raw_message)?;
-            let outcome = language_server.handle_request(request)?;
+            let server_messages = language_server.handle_json_rpc_message(&raw_message)?;
 
-            if let Some(response) = outcome.response {
-                message_writer.write_message(&response).await?;
+            for message in server_messages.messages {
+                message_writer.write_message(&message).await?;
             }
 
-            for notification in outcome.notifications {
-                message_writer.write_message(&notification).await?;
-            }
-
-            if outcome.should_exit {
+            if server_messages.should_exit {
                 break;
             }
         }

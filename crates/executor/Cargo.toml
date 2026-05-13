@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 async-openai = { workspace = true }
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 clap = { workspace = true }
 colog = { workspace = true }
@@ -20,6 +20,7 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 superwire-core = { path = "../core" }
+superwire-lsp = { path = "../lsp" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = "0.1"

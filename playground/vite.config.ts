@@ -1,16 +1,26 @@
 import tailwindcss from '@tailwindcss/vite';
-import vue from '@vitejs/plugin-vue';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: '/playground/',
   publicDir: '../documentation/public',
-  plugins: [vue(), tailwindcss()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   server: {
     proxy: {
       '/execute': 'http://127.0.0.1:3000',
       '/validate': 'http://127.0.0.1:3000',
       '/format': 'http://127.0.0.1:3000',
+      '/lsp': {
+        target: 'ws://127.0.0.1:3000',
+        ws: true,
+      },
     },
   },
 });
