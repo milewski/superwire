@@ -1,6 +1,6 @@
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     // Leading indentation in this multiline string is neutralized.
     instruction: """
         You are a friendly assistant.
@@ -14,7 +14,7 @@ agent greeting {
 ---
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
 
     // Leading indentation in this multiline string is neutralized.
     instruction: """

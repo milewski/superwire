@@ -1,6 +1,6 @@
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "test"
     output: string
 }
@@ -8,7 +8,7 @@ agent greeting {
 ---
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "test"
     output: string
 }

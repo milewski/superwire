@@ -1,12 +1,15 @@
 ```wire
-provider  openai   {driver :  "openai" models:["gpt-4o-mini",]}
+provider  openai   from openai {}
+model openai_model from openai {id:"gpt-4o-mini"}
    output {   result:"ok" }
 ```
 ---
 ```wire
-provider openai {
-    driver: "openai"
-    models: ["gpt-4o-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4o-mini"
 }
 
 output {
