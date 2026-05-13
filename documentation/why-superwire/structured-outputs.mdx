@@ -1,76 +1,69 @@
 ---
 title: Structured Outputs and Data Flow
-description: Use schemas, output blocks, references, and selective context to make AI results usable by backend code.
+description: Why object-shaped outputs and explicit references make AI workflows easier to compose.
 ---
 
-A major source of fragility in LLM integrations is unstructured text.
+A backend usually cannot build reliable product behavior on arbitrary prose. The application may need a list of IDs, a severity enum, a title, a normalized category, a set of generated questions, or a final report object. If a model returns freeform text and the application has to parse it later, the integration becomes fragile.
 
-If backend code expects categories, IDs, action items, confidence scores, or UI-ready fields, prose is not enough. Superwire workflows require agent outputs to be structured so later workflow steps and application code can rely on stable shapes.
+Superwire makes structured output part of the workflow. Agents declare object-shaped outputs. The final workflow `output` block maps selected values into the JSON returned to the application. Later steps can reference specific fields from earlier steps through dot paths, which makes data flow visible and composable.
 
-## Agent outputs are contracts
+## Output as a contract
+
+An agent output describes what the step must produce. It is not only documentation for the developer; it is also the shape that later steps and the application are allowed to depend on.
 
 ```wire
-agent classify_ticket {
+agent classify_request {
     model: model.fast
-    instruction: "Classify this ticket: {{ input.message }}."
+    instruction: "Classify this support request: {{ input.message }}."
 
     output {
-        category: enum { bug, feature, question }
-        confidence: number
-        reason: string
+        category: enum { billing, technical, account, other }
+        priority: enum { low, medium, high }
+        needs_human: boolean
     }
 }
-
-output {
-    category: agent.classify_ticket.category
-    confidence: agent.classify_ticket.confidence
-    reason: agent.classify_ticket.reason
-}
 ```
 
-The application receives fields it can route, store, display, or test. It does not need to scrape the model's prose.
-
-## Schemas make shapes reusable
+The application does not need to parse a paragraph to discover the category or priority. A later step can reference `agent.classify_request.priority`. The final output can expose only the fields that matter to the caller.
 
 ```wire
-schema evidence_item {
-    source_id: string
-    quote: string
-    relevance: number
-}
-
-schema report_result {
-    summary: string
-    evidence: [schema.evidence_item]
-    confidence: number
-}
-
-agent write_report {
-    model: model.smart
-    instruction: "Write a report from the selected evidence."
-    output: schema.report_result
+output {
+    category: agent.classify_request.category
+    priority: agent.classify_request.priority
+    needs_human: agent.classify_request.needs_human
 }
 ```
 
-Schemas are useful when multiple agents or final outputs need the same shape.
+This is a small pattern, but it scales to larger workflows. A planning agent can produce sections. A fan-out agent can process each section. A synthesis agent can aggregate the results. The final output can return the exact object the UI expects.
 
-## Dot-path references make data flow explicit
+## Explicit references instead of hidden context
 
-References show exactly which values move from one step to another.
+Many agent systems accumulate context in a conversation. That can be convenient, but it also makes dependencies less obvious. A later model call may depend on something said several turns earlier, and a maintainer has to inspect the prompt history to understand what data was available.
+
+Superwire uses explicit references. If an agent needs a previous value, the workflow references that value by path. If a dynamic value depends on a tool call, the dependency is visible. If two agents do not reference each other, the executor can treat them as independent work.
 
 ```wire
 agent extract_facts {
     model: model.fast
-    instruction: "Extract facts from {{ input.document }}."
+    instruction: "Extract factual claims from {{ input.document }}."
 
     output {
         facts: [string]
     }
 }
 
+agent extract_risks {
+    model: model.fast
+    instruction: "Extract operational risks from {{ input.document }}."
+
+    output {
+        risks: [string]
+    }
+}
+
 agent write_summary {
     model: model.smart
-    instruction: "Write a summary from these facts: {{ agent.extract_facts.facts }}."
+    instruction: "Write a concise summary from facts {{ agent.extract_facts.facts }} and risks {{ agent.extract_risks.risks }}."
 
     output {
         summary: string
@@ -78,64 +71,41 @@ agent write_summary {
 }
 ```
 
-The second agent depends on `agent.extract_facts.facts`. It does not implicitly inherit every previous message or every runtime value.
+The dependency graph is clear. The final summary depends on facts and risks. The facts and risks steps can run independently because neither references the other.
 
-This reduces accidental context leakage and makes the dependency graph easier to review.
+## Better token discipline
 
-## Structured references versus context continuation
+Explicit data flow also improves token usage. A workflow does not need to pass every previous message, every database record, or every tool result into every later step. It can pass only the fields that matter.
 
-Use a structured reference when the next step needs a value:
+This is especially useful for product data with expensive details. A survey workflow can start with lightweight answer metadata, select relevant answer IDs, fetch full details only for those selected answers, and then summarize curated evidence. A research workflow can search approved sources, filter the result set, fetch selected pages, and then synthesize a report.
+
+The model gets less irrelevant context, the workflow uses fewer tokens, and the author can see exactly where additional context enters the process.
+
+## Reusable schemas
+
+When multiple agents or outputs share a shape, schemas let the workflow define that structure once and reuse it. This keeps domain objects consistent across the workflow and makes larger outputs easier to maintain.
 
 ```wire
-{{ agent.extract_facts.facts }}
-```
+schema evidence_item {
+    source_id: string
+    quote: string
+    relevance: enum { low, medium, high }
+}
 
-Use `context(agent.name)` when the next step should continue the prior message history:
-
-```wire
-agent propose_next_steps {
+agent collect_evidence {
     model: model.smart
-    context: context(agent.investigate_issue)
-    instruction: "Continue from the investigation and propose next steps."
+    instruction: "Collect evidence for {{ input.question }}."
 
     output {
-        next_steps: [string]
+        items: [schema.evidence_item]
     }
 }
 ```
 
-These are different operations. Structured references read output fields. Context continuation passes message history.
+Schemas are useful because they turn model output into a domain contract. The workflow can describe a generated survey question, a support classification, an evidence item, or a report section as structured data rather than hoping that every prompt produces compatible prose.
 
-## Selective context improves cost and attention
+## Why this matters for maintainability
 
-Backend AI features become expensive when every request sends every possible record, transcript, image description, or attachment to the model.
+Structured outputs and explicit references make the workflow easier to change. If the UI needs a new field, the workflow author can add it deliberately. If a later step should stop seeing some data, the reference can be removed. If two steps can run in parallel, that falls out of the dependency graph rather than being hidden in custom async code.
 
-A better pattern is progressive context loading:
-
-1. fetch a lightweight index with IDs and metadata;
-2. ask an agent which records are relevant;
-3. fetch details only for selected IDs;
-4. summarize or synthesize from the curated evidence;
-5. return a structured result.
-
-This reduces token usage and keeps the model focused on relevant data.
-
-## Multi-model and parallel workflows
-
-Different steps often need different model profiles. Classification may use a fast model. Final synthesis may use a stronger model. Extraction may use a lower temperature than drafting.
-
-Because model profiles are named, the choice is visible:
-
-```wire
-model fast from llm {
-    id: "gpt-4.1-mini"
-}
-
-model smart from llm {
-    id: "gpt-4.1"
-}
-```
-
-Independent steps can run concurrently when they do not reference each other. A final aggregation agent can then reference both outputs.
-
-This keeps concurrency tied to workflow structure instead of hiding it inside scattered async orchestration code.
+This is the difference between an AI feature that behaves like a prompt and an AI feature that behaves like part of a backend system.

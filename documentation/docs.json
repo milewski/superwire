@@ -41,6 +41,34 @@
   "navigation": {
     "tabs": [
       {
+        "tab": "Why Superwire",
+        "groups": [
+          {
+            "group": "Start Here",
+            "pages": [
+              "why-superwire/overview",
+              "why-superwire/why-it-exists",
+              "why-superwire/workflow-contract"
+            ]
+          },
+          {
+            "group": "Design Principles",
+            "pages": [
+              "why-superwire/controlled-tools",
+              "why-superwire/structured-outputs"
+            ]
+          },
+          {
+            "group": "Evaluate",
+            "pages": [
+              "why-superwire/use-cases",
+              "why-superwire/comparison",
+              "why-superwire/adoption-checklist"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Documentation",
         "groups": [
           {
@@ -49,19 +77,6 @@
               "introduction",
               "quickstart",
               "installation"
-            ]
-          },
-          {
-            "group": "Why Superwire",
-            "pages": [
-              "why-superwire/overview",
-              "why-superwire/why-it-exists",
-              "why-superwire/workflow-contract",
-              "why-superwire/controlled-tools",
-              "why-superwire/structured-outputs",
-              "why-superwire/use-cases",
-              "why-superwire/comparison",
-              "why-superwire/adoption-checklist"
             ]
           },
           {

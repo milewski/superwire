@@ -1,89 +1,55 @@
 ---
 title: Adoption Checklist
-description: Decide whether Superwire is the right fit for a feature and how to design the first workflow.
+description: Decide whether Superwire is the right boundary for a specific AI feature.
 ---
 
-Superwire is not necessary for every LLM feature. It is strongest when AI behavior becomes durable product infrastructure.
-
-Use this checklist before introducing a `.wire` workflow.
+Superwire is most useful when an AI feature has durable backend behavior. It is not intended to make every prompt more complicated. Before introducing a `.wire` workflow, look at the shape of the feature and decide whether the extra structure will pay for itself.
 
 ## Strong fit
 
-Superwire is usually a strong fit when one or more of these are true:
+Superwire is a strong fit when the AI feature is part of a product backend rather than a one-off interaction. The feature probably receives typed request data, uses provider credentials, calls internal tools, produces output consumed by the UI, and needs to behave consistently across many executions.
 
-- the feature runs inside a backend or product system;
-- the application consumes structured JSON from the result;
-- the workflow uses MCP tools, prompts, or resources;
-- there are multiple model steps;
-- different steps need different model profiles;
-- tool access should be scoped per step;
-- the process has an order that should not be invented at runtime;
-- the workflow benefits from selective context fetching;
-- independent steps or loop iterations can run concurrently;
-- the team needs validation, diagnostics, or fake execution in tests;
-- the workflow should be reviewed and versioned with application code;
-- behavior needs to be consistent across many requests.
+It is also a strong fit when the workflow has stages. If the feature first classifies a request, then fetches selected context, then runs deeper analysis, then returns a structured result, a `.wire` file makes that process explicit. The same applies when the feature creates records in a required order or when capabilities should only become available after earlier results exist.
+
+Structured output is another strong signal. If downstream code needs fields such as IDs, categories, priorities, generated questions, evidence items, confidence scores, or report sections, the workflow should declare those shapes directly instead of asking the application to parse prose.
+
+Tool access is also a major signal. If the model needs MCP tools, prompts, or resources, Superwire gives the workflow author a place to scope those capabilities. A read-only analysis step does not need write tools. A creation step does not need every retrieval tool. A workflow-owned tool call can run deterministically when the model should not choose.
 
 ## A simpler approach may be enough
 
-A direct provider call or small service method may be enough when:
+A direct provider call is often enough when the feature is a single prompt, has no tools, does not require strict structured output, and is not yet part of a stable product workflow. If the result is displayed as text and no downstream system depends on specific fields, adding a DSL may be unnecessary.
 
-- the feature is one simple prompt;
-- there are no tools;
-- the output is not consumed by strict backend logic;
-- the feature is experimental;
-- there is no meaningful data flow between steps;
-- there is no need for scoped capabilities, validation, or fake workflow execution.
+A simpler approach may also be better during very early exploration. If the team is still discovering whether a prompt is useful at all, start small. Superwire becomes more valuable once the feature needs repeatability, tool boundaries, validation, and a maintainable contract.
 
-This distinction matters. Superwire should make structured AI features easier to maintain, not add ceremony to trivial calls.
-
-## First workflow design questions
-
-Before writing the file, answer these questions:
+## Questions to ask before adopting
 
 | Question | Why it matters |
 | --- | --- |
-| What public input does the request provide? | Defines the `input` block and API boundary. |
-| What secrets are required at runtime? | Defines the `secrets` block and keeps credentials out of source. |
-| Which provider and model profiles are needed? | Separates provider configuration from per-agent model choice. |
-| Which MCP capabilities are needed? | Makes tools, prompts, and resources explicit. |
-| Which steps should the workflow own? | Use `call tool.*` when the operation should be deterministic. |
-| Which steps should the model own? | Use `uses` when model judgment is useful. |
-| What shape should each agent return? | Defines structured `output` contracts. |
-| Which values flow forward? | Makes dependencies visible through references. |
-| What final JSON should the application receive? | Defines the top-level `output` block. |
+| Does the feature run inside a backend or product system? | Backend workflows need clearer boundaries than supervised local agents. |
+| Does the application consume the result as structured data? | Structured outputs reduce prose parsing and integration fragility. |
+| Does the feature use tools, MCP servers, prompts, or resources? | Tool scope should be visible and least-privilege. |
+| Does the process have multiple stages? | Staged workflows are easier to review when declared explicitly. |
+| Should some operations be deterministic? | Workflow-owned tool calls keep fixed backend operations outside model discretion. |
+| Can some steps run independently? | Explicit dependencies let the executor schedule independent work. |
+| Will this workflow be reviewed or changed by other developers? | A `.wire` file creates a durable artifact for review and version control. |
+| Do tests need to avoid live provider calls? | A workflow boundary makes fakes and validation easier to introduce. |
 
-## Recommended first pass
+A “yes” to several of these questions is a good sign that Superwire belongs in the design.
 
-Start small:
+## Architectural boundary
 
-1. write `input` and `secrets`;
-2. configure one provider and one model profile;
-3. define one agent with an object-shaped `output` block;
-4. return a narrow final `output` object;
-5. execute through the Docker executor;
-6. add tools and additional agents only after the base flow works.
+Superwire should not replace your application's domain safeguards. Authorization should still happen in the backend. Destructive actions should still be protected by product logic. Database transactions, rate limits, audit logs, and human approval flows still matter.
 
-## Production safeguards
+The right mental model is that Superwire controls AI orchestration, not the entire product. MCP tools expose controlled capabilities. The application enforces domain rules. The `.wire` file describes how AI steps, model profiles, tool scopes, dependencies, and outputs fit together.
 
-Superwire makes the orchestration layer clearer, but it does not replace application safety controls.
+## How to introduce it gradually
 
-Keep these responsibilities in the application or MCP server:
+A practical adoption path is to start with one feature that already has structure. Choose a workflow where the current implementation has prompt glue, output parsing, tool calls, or multi-step logic spread across backend code. Move the AI orchestration into a `.wire` file while keeping existing domain services and MCP tools behind stable interfaces.
 
-- user authentication;
-- authorization checks;
-- tenant isolation;
-- rate limits and quotas;
-- transaction boundaries;
-- validation of destructive operations;
-- audit logging;
-- human approval for high-risk actions;
-- provider budget controls.
+After that, validate the workflow source in development, add tests around executor integration, and compare the resulting artifact with the old implementation. The goal is not merely fewer lines of code. The goal is a workflow that another developer can open and understand without reconstructing the AI process from scattered implementation details.
 
-The right model is layered safety: application permissions and domain rules outside the workflow, scoped orchestration inside the workflow, and structured outputs at the boundary.
+## Final decision rule
 
-## Decision rule
+Use Superwire when the AI behavior is important enough to deserve a contract.
 
-Use Superwire when the AI feature has enough structure that you would otherwise write custom orchestration code around prompts, tools, schemas, dependencies, validation, and tests.
-
-Use a direct call when the feature is genuinely just one prompt and one response.
+If the feature is a small prompt, keep it simple. If the feature coordinates models, tools, schemas, dependencies, secrets, and backend outputs, put that behavior in a `.wire` workflow so the product can own it deliberately.

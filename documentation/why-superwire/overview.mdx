@@ -1,13 +1,13 @@
 ---
 title: Why Superwire
-description: Understand the role of Superwire before reading the syntax reference.
+description: Understand what Superwire is, why it exists, and when it belongs in a backend product.
 ---
 
-Superwire is a declarative DSL for controlled server-side AI workflows.
+Superwire is a declarative DSL for controlled server-side AI workflows. It is designed for developers who are adding AI behavior to a real backend, not only experimenting with a prompt in a chat window or wiring a single LLM call into a controller.
 
-A `.wire` file describes the contract around an AI feature: the public inputs it accepts, the secrets it requires, the providers and model profiles it may use, the MCP capabilities it can access, the agents that run, the dependencies between those agents, and the final structured JSON returned to the application.
+The easiest way to understand Superwire is to think of a `.wire` file as the contract for an AI feature. The file describes what the workflow accepts, which secrets it needs, which providers and model profiles are available, which MCP capabilities can be imported, which agents run, what each agent is allowed to use, how values move between steps, and what final JSON the application receives.
 
-The core value is not that Superwire can call an LLM. The core value is that it gives product backends a controlled execution layer around probabilistic model behavior.
+That contract matters because backend AI features usually need more than model intelligence. They need boundaries. They need predictable control flow. They need typed outputs that the application can consume without parsing prose. They need scoped tool access so a model does not receive every backend capability at once. They need enough structure that another developer can review the workflow later and understand what the AI feature actually does.
 
 ```text
 application request
@@ -18,51 +18,22 @@ application request
   -> structured JSON output
 ```
 
-## The short version
+Superwire does not try to make language model reasoning perfectly deterministic. The text or structured content produced by a model can still vary depending on provider behavior and model settings. The value of Superwire is that the workflow boundary becomes deterministic. The same declared graph, the same dependencies, the same tool scopes, the same schema contracts, and the same final output shape are applied every time the workflow runs.
 
-Use Superwire when an AI feature should behave like backend infrastructure:
+## The core idea
 
-- the workflow should be reviewable in source control;
-- the model should not own the entire process;
-- tool access should be scoped to specific steps;
-- intermediate and final outputs should be typed;
-- independent work should be schedulable from explicit dependencies;
-- tests should not require live provider calls every time;
-- the application should receive stable JSON, not arbitrary prose.
+Most agent systems begin with the model at the center. The developer gives the model a goal, a large prompt, and a set of tools, then asks it to decide what to do. That can be useful when the user is supervising the agent directly. It is less comfortable when the agent is part of a production application and may be operating on user data, creating records, calling internal services, or consuming tokens at scale.
 
-A one-step prompt may not need Superwire. A durable product feature with agents, tools, staged decisions, or structured outputs usually benefits from it.
+Superwire inverts that relationship. The application keeps control of the process, and the model reasons inside declared steps. A step can still use an LLM for judgment, summarization, classification, extraction, drafting, or planning, but the workflow author decides where that step sits, what data it sees, which tools it can call, and what shape it must return.
 
-## What a `.wire` file gives you
+This makes Superwire closer to backend infrastructure than to a prompt playground. A workflow can be versioned, reviewed, validated, tested, and executed through a runtime contract. The `.wire` file becomes a durable artifact that explains the AI behavior of the feature.
 
-A workflow file makes the AI feature visible:
+## Why this belongs before the syntax reference
 
-| Contract area | What the workflow declares |
-| --- | --- |
-| Runtime boundary | `input` and `secrets` blocks |
-| Provider boundary | `provider` and `model` declarations |
-| Capability boundary | imported MCP tools, prompts, and resources |
-| Agent boundary | each model step, its model profile, and its `uses` list |
-| Data boundary | structured `output` blocks and explicit references |
-| Application boundary | the final JSON shape returned by the workflow `output` block |
+The syntax reference explains how to write valid Superwire. This section explains why the language exists and what kind of problem it is meant to solve. That distinction is important because Superwire is not primarily about replacing a few lines of provider SDK code. It is about giving backend teams a clearer way to express AI orchestration when the workflow has structure.
 
-This lets a developer open one file and understand the workflow as a graph of typed steps instead of reconstructing it from controllers, service classes, prompt strings, DTOs, tool wrappers, and tests.
+A simple one-step prompt may not need Superwire. A feature that performs staged reasoning, calls tools, fetches context selectively, uses multiple agents, fans out work in parallel, or returns structured JSON usually benefits from a workflow contract. In those cases, the hard part is no longer calling an LLM. The hard part is making the AI behavior safe enough, explicit enough, and maintainable enough to live inside a product.
 
-## What Superwire is not
+## What to read next
 
-Superwire is not a replacement for LLM providers. It configures provider access through explicit provider and model declarations.
-
-Superwire is not a replacement for MCP. MCP exposes tools, prompts, and resources. Superwire decides how those capabilities are imported, scoped, sequenced, referenced, and composed inside a workflow.
-
-Superwire is not a general-purpose backend language. Your application still owns authentication, authorization, persistence, queues, billing, transactions, rate limits, and user interfaces. Superwire describes the AI workflow that runs inside that application boundary.
-
-Superwire does not make model reasoning mathematically deterministic. It makes the workflow boundary deterministic: declared steps, dependencies, schemas, scoped tool access, and final response shape are applied every time.
-
-## Suggested reading path
-
-1. [Why it exists](/why-superwire/why-it-exists) explains the product-backend problem Superwire is built for.
-2. [Workflow contract](/why-superwire/workflow-contract) explains the control-plane mental model.
-3. [Controlled tool access](/why-superwire/controlled-tools) explains scoped `uses`, workflow-owned calls, and staged capability unlocking.
-4. [Structured outputs](/why-superwire/structured-outputs) explains why schemas and dot-path references matter.
-5. [Use cases](/why-superwire/use-cases) shows practical backend scenarios where Superwire fits well.
-6. [Comparison](/why-superwire/comparison) compares Superwire with direct LLM calls, prompt-only agents, MCP alone, frameworks, and custom orchestration.
-7. [Adoption checklist](/why-superwire/adoption-checklist) helps decide whether Superwire is the right tool for a specific feature.
+Start with [Why it exists](/why-superwire/why-it-exists) if you want the product-backend motivation. Read [Workflow contract](/why-superwire/workflow-contract) for the main mental model. Read [Controlled tool access](/why-superwire/controlled-tools) and [Structured outputs and data flow](/why-superwire/structured-outputs) to understand the two most important design boundaries. Use [Use cases](/why-superwire/use-cases), [Comparison](/why-superwire/comparison), and [Adoption checklist](/why-superwire/adoption-checklist) when deciding whether Superwire is a good fit for a specific feature.

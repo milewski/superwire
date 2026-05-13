@@ -1,61 +1,34 @@
 ---
 title: Controlled Tool Access
-description: Scope MCP capabilities, choose who owns tool calls, and unlock powerful actions in stages.
+description: How Superwire scopes MCP capabilities and separates model-owned tool use from workflow-owned tool calls.
 ---
 
-Product backends often expose powerful capabilities: read user data, create records, update state, send notifications, query internal systems, or call paid services.
+Tool access is one of the most important differences between a demo agent and a backend AI feature.
 
-A model should not receive every capability simply because the backend has those capabilities somewhere in the system.
+In a demo, it may be acceptable to give a model a broad toolbox and ask it to figure out what to use. In a product backend, that same pattern can be risky. Some tools may read sensitive data. Some may create records. Some may be expensive. Some may only make sense after another step has produced a required ID. Even read-only tools can create cost and latency problems if the model calls them unnecessarily.
 
-Superwire makes tool access explicit.
+Superwire treats tool access as part of the workflow contract. The workflow can import MCP capabilities, but each agent only receives the capabilities it declares through `uses`. This creates a least-privilege model for AI steps.
 
-## Agents only receive what they declare
+## Scoped capabilities
 
-An imported tool is not automatically available to every agent. An agent receives a tool, prompt, or resource only when it appears in `uses`.
+An agent does not need access to every tool just because the workflow knows those tools exist. A classification agent may only need the user request and lightweight metadata. A research agent may need a read-only fetch tool. A creation agent may need a write tool, but only after earlier steps have produced validated inputs.
 
 ```wire
-tool fetch_task from mcp.tasks.tool.fetch_task {
-    input {
-        task_id: number
-    }
+tool fetch_answer_detail from mcp.surveys.tool.fetch-answer-detail
 
-    output {
-        title: string
-        description: string
-        status: string
-    }
-}
-
-agent summarize_task {
+agent select_answers {
     model: model.fast
-    uses: [tool.fetch_task]
-    instruction: "Fetch the task and summarize the current status."
+    instruction: "Select the survey answers that are relevant to {{ input.question }}."
 
     output {
-        summary: string
+        answer_ids: [number]
     }
 }
-```
 
-This creates a least-privilege pattern for agent steps.
-
-An early classification agent may need no tools. A research agent may need a read-only fetch tool. A later creation agent may receive a write tool only after previous steps have produced validated inputs.
-
-## Workflow-owned calls versus agent-owned calls
-
-Superwire supports two different tool-call ownership models.
-
-### Agent-owned calls
-
-Use `uses` when the model should decide whether and how to call a tool during an agent step.
-
-This is useful when the model needs judgment. For example, a research agent may decide which survey answers require deeper inspection.
-
-```wire
 agent inspect_answers {
     model: model.smart
     uses: [tool.fetch_answer_detail]
-    instruction: "Inspect only the answers that are relevant to {{ input.question }}."
+    instruction: "Inspect only the selected answers: {{ agent.select_answers.answer_ids }}."
 
     output {
         findings: [string]
@@ -63,70 +36,54 @@ agent inspect_answers {
 }
 ```
 
-### Workflow-owned calls
+The first agent has no tool access. It can decide which answer IDs matter based on lightweight context. The second agent receives a specific read tool because its job is to inspect selected details. That separation makes the workflow easier to reason about and safer to evolve.
 
-Use a `call` expression when the workflow author decides exactly which tool runs and which trusted values are bound.
+## Model-owned tool use
+
+When a tool appears in an agent's `uses` list, the model can decide whether and how to call it during that agent step. This is useful when the model needs judgment. For example, the model may inspect a set of search results and decide which records need more detail, or it may call a retrieval tool only when the prompt requires evidence.
+
+Model-owned tool use is powerful, but it should be scoped narrowly. The agent should only receive tools that are appropriate for its stage. The prompt should describe the purpose of the step, and the output schema should force the result into a shape the workflow can use later.
+
+## Workflow-owned tool calls
+
+Some tool calls should not be left to model discretion. If the workflow always needs to fetch a task by ID, create a project before creating child tasks, or load a known resource before an agent runs, the workflow can call the tool directly.
 
 ```wire
+tool fetch_task from mcp.tasks.tool.fetch-task {
+    bindings {
+        workspace_id: input.workspace_id
+    }
+}
+
 let task = call tool.fetch_task {
     bindings {
         task_id: input.task_id
     }
 }
+
+agent summarize_task {
+    model: model.fast
+    instruction: "Summarize this task for a project manager: {{ task }}."
+
+    output {
+        summary: string
+        risk_level: enum { low, medium, high }
+    }
+}
 ```
 
-This is useful when a backend operation must happen deterministically, such as fetching a known record by ID, loading a survey index, or creating a parent record before creating child records.
+In this design, the model does not decide whether the task is fetched. The workflow does. The model receives the result and performs the reasoning step. This is the right boundary when the application requires a fixed operation.
 
 ## Staged capability unlocking
 
-Many backend workflows have a natural order:
+Many backend operations have a natural order. A project must exist before tasks can be attached to it. A task group must exist before questions can be assigned to the group. A selected answer list should exist before transcript details are loaded. A reviewer step should run before a write tool receives the final payload.
 
-1. create or select a project;
-2. create task groups inside that project;
-3. generate candidate questions;
-4. create question records;
-5. reorder or revise the records;
-6. return created IDs and labels.
+Superwire lets the workflow author express that order directly. Earlier steps produce IDs or structured decisions. Later steps can reference those values and receive additional capabilities only when they are relevant.
 
-A freeform agent with all tools at once may attempt operations out of order. It may create child records before a parent exists, skip a required step, or call an editing tool before there is anything to edit.
+This staged model avoids giving the model too much power too early. It also mirrors how backend domains usually work. Capabilities are unlocked by earlier results, not exposed all at once.
 
-A Superwire workflow can unlock capabilities through earlier outputs:
+## What this gives reviewers
 
-```wire
-let project = call tool.create_project {
-    bindings {
-        workspace_id: input.workspace_id
-        title: input.title
-    }
-}
+Controlled tool access makes the workflow auditable. A reviewer can open the `.wire` file and answer practical questions: which model step can read user data, which step can create records, which tool calls are deterministic, and which tool calls are left to model judgment.
 
-agent plan_sections {
-    model: model.fast
-    instruction: "Plan survey sections for project {{ project.id }}."
-
-    output {
-        sections: [{ title: string, goal: string }]
-    }
-}
-
-agent write_questions for section in agent.plan_sections.sections {
-    model: model.fast
-    instruction: "Write survey questions for {{ section.title }}: {{ section.goal }}."
-
-    output {
-        questions: [{ label: string, answer_type: string }]
-    }
-}
-```
-
-Later steps can reference `project.id` only after the workflow-owned project creation call has completed.
-
-## Practical guidance
-
-- Import capabilities explicitly.
-- Use `uses` for model discretion.
-- Use `call tool.*` for deterministic backend operations.
-- Bind trusted runtime values with `bindings {}`.
-- Avoid giving write tools to early exploratory agents.
-- Split read, plan, create, and revise steps when the order matters.
-- Keep application-level authorization in the application or MCP server; Superwire scopes orchestration, but it does not replace domain permissions.
+That does not replace application-level authorization, rate limits, transactions, or human review where needed. It does make the AI orchestration layer much easier to inspect.
