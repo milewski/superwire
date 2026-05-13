@@ -1,6 +1,6 @@
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ObjectField, OutputDeclaration, ProviderDeclaration,
-    SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
+    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration, ModelUsage, ObjectField, OutputDeclaration,
+    ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::expression::collect_agent_dependencies;
 use crate::semantic::support::type_inference::TypeInferenceContext;
@@ -35,7 +35,7 @@ pub struct TypedAgentIr {
     pub name: String,
     pub declaration: AgentDeclaration,
     pub provider_name: String,
-    pub model_expression: Expression,
+    pub model_id_expression: Expression,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
@@ -228,17 +228,38 @@ fn collect_typed_agents(
         let iteration_output_type = workflow_type_from_dsl(&iteration_output_type_expression, named_schema_types)?;
         let final_output_type = workflow_type_from_dsl(&final_output_type_expression, named_schema_types)?;
 
-        let (provider_name, model_expression) = parse_agent_model_binding(agent_declaration)?;
+        let model_usage = required_agent_model_usage(agent_declaration)?;
+        let model_name = model_usage.model_name().ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
+            agent_name: agent_declaration.name.clone(),
+            property: AgentPropertyName::Model.as_str().to_string(),
+            message: "model must reference a model profile like model.fast".to_string(),
+        })?;
+        let model_declaration = workflow
+            .find_model(model_name)
+            .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentPropertyName::Model.as_str().to_string(),
+                message: format!("model profile `{model_name}` is not declared"),
+            })?;
+        let model_id_expression = model_declaration
+            .id_expression()
+            .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentPropertyName::Model.as_str().to_string(),
+                message: format!("model profile `{model_name}` is missing `id`"),
+            })?
+            .clone();
+        let provider_name = model_declaration.provider_name.clone();
         required_agent_property_expression(agent_declaration, AgentPropertyName::Instruction)?;
 
         let provider_declaration = workflow.find_provider(&provider_name);
-        let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration);
+        let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration, model_declaration);
 
         agents.push(TypedAgentIr {
             name: agent_declaration.name.clone(),
             declaration: agent_declaration.clone(),
             provider_name,
-            model_expression,
+            model_id_expression,
             iteration_output_type,
             final_output_type: final_output_type.clone(),
             dependencies,
@@ -250,7 +271,11 @@ fn collect_typed_agents(
     Ok((agents, agent_output_types))
 }
 
-fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider_declaration: Option<&ProviderDeclaration>) -> Vec<String> {
+fn collect_dependencies_for_agent(
+    agent_declaration: &AgentDeclaration,
+    provider_declaration: Option<&ProviderDeclaration>,
+    model_declaration: &ModelDeclaration,
+) -> Vec<String> {
     let mut dependencies = HashSet::new();
 
     if let Some(provider_declaration) = provider_declaration {
@@ -259,18 +284,27 @@ fn collect_dependencies_for_agent(agent_declaration: &AgentDeclaration, provider
         }
     }
 
+    for model_property in &model_declaration.properties {
+        collect_agent_dependencies(&model_property.value, &mut dependencies);
+    }
+
     if let Some(for_loop) = &agent_declaration.for_loop {
         collect_agent_dependencies(&for_loop.iterable, &mut dependencies);
     }
 
     for agent_property in &agent_declaration.properties {
         match agent_property {
-            AgentProperty::Model(expression)
+            AgentProperty::InvalidModel(expression)
             | AgentProperty::Instruction(expression)
             | AgentProperty::Context(expression)
             | AgentProperty::Inference(expression)
             | AgentProperty::Uses(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
+            }
+            AgentProperty::Model(model_usage) => {
+                for model_property in &model_usage.properties {
+                    collect_agent_dependencies(&model_property.value, &mut dependencies);
+                }
             }
             AgentProperty::Dynamic(dynamic_block) => {
                 for field in &dynamic_block.fields {
@@ -437,51 +471,14 @@ fn is_no_input_type(workflow_type: &WorkflowType) -> bool {
     }
 }
 
-fn parse_agent_model_binding(agent_declaration: &AgentDeclaration) -> Result<(String, Expression), WorkflowSemanticError> {
-    let model_expression = required_agent_property_expression(agent_declaration, AgentPropertyName::Model)?;
-    let Expression::FunctionCall(model_call) = model_expression else {
-        return Err(WorkflowSemanticError::InvalidAgentProperty {
-            agent_name: agent_declaration.name.clone(),
-            property: AgentPropertyName::Model.as_str().to_string(),
-            message: "model must be a provider call like provider_name(\"model\")".to_string(),
-        });
-    };
-
-    if !model_call.callee.accesses.is_empty() {
-        return Err(WorkflowSemanticError::InvalidAgentProperty {
-            agent_name: agent_declaration.name.clone(),
-            property: AgentPropertyName::Model.as_str().to_string(),
-            message: "model function callee must be a direct provider name".to_string(),
-        });
-    }
-
-    let provider_name = model_call
-        .identifier_name()
+fn required_agent_model_usage(agent_declaration: &AgentDeclaration) -> Result<&ModelUsage, WorkflowSemanticError> {
+    agent_declaration
+        .model_usage()
         .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
             property: AgentPropertyName::Model.as_str().to_string(),
-            message: "model provider name must be an identifier".to_string(),
-        })?;
-
-    let model_argument_expressions = model_call.model_argument_expressions();
-
-    if model_argument_expressions.is_empty() {
-        return Err(WorkflowSemanticError::InvalidAgentProperty {
-            agent_name: agent_declaration.name.clone(),
-            property: AgentPropertyName::Model.as_str().to_string(),
-            message: "missing model name argument".to_string(),
-        });
-    }
-
-    if model_argument_expressions.len() > 1 {
-        return Err(WorkflowSemanticError::InvalidAgentProperty {
-            agent_name: agent_declaration.name.clone(),
-            property: AgentPropertyName::Model.as_str().to_string(),
-            message: "ambiguous model name arguments".to_string(),
-        });
-    }
-
-    Ok((provider_name.to_string(), model_argument_expressions[0].clone()))
+            message: "property is required".to_string(),
+        })
 }
 
 fn required_agent_property_expression(
@@ -498,9 +495,9 @@ fn required_agent_property_expression(
 fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, property_name: AgentPropertyName) -> Option<&Expression> {
     for agent_property in &agent_declaration.properties {
         match agent_property {
-            AgentProperty::Model(expression) if property_name == AgentPropertyName::Model => return Some(expression),
             AgentProperty::Instruction(expression) if property_name == AgentPropertyName::Instruction => return Some(expression),
             AgentProperty::Model(_)
+            | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
             | AgentProperty::Output { output_type_expression: _ }
             | AgentProperty::Context(_)
@@ -538,23 +535,25 @@ mod tests {
     #[test]
     fn builds_typed_ir_with_dependencies_and_loop_output_types() {
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["model-a"]
-            }
+            provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
             input {
                 topic: string
             }
 
             agent researcher {
-                model: openai("model-a")
+                model: model.openai_model
                 instruction: input.topic
                 output: string
             }
 
             agent scorer for item in [agent.researcher] {
-                model: openai("model-a")
+                model: model.openai_model
                 instruction: "score {{ item }}"
                 output: number
             }
@@ -606,22 +605,26 @@ mod tests {
         }
 
         let workflow = parse_inline_workflow! {
-            provider base_provider {
-                driver: "openai"
-                endpoint: "http://localhost:1234/v1"
+            provider base_provider from openai {
+endpoint: "http://localhost:1234/v1"
                 api_key: "test-api-key"
-                models: ["model-a"]
-            }
+}
 
-            provider dynamic_provider {
-                driver: "openai"
-                endpoint: agent.base.endpoint
+model base_provider_model from base_provider {
+    id: "model-a"
+}
+
+            provider dynamic_provider from openai {
+endpoint: agent.base.endpoint
                 api_key: "test-api-key"
-                models: ["model-a"]
-            }
+}
+
+model dynamic_provider_model from dynamic_provider {
+    id: "model-a"
+}
 
             agent base {
-                model: base_provider("model-a")
+                model: model.base_provider_model
                 instruction: "base"
                 output: {
                     endpoint: string
@@ -629,7 +632,7 @@ mod tests {
             }
 
             agent dependent {
-                model: dynamic_provider("model-a")
+                model: model.dynamic_provider_model
                 instruction: "dependent"
                 output: string
             }
@@ -685,13 +688,15 @@ mod tests {
         }
 
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["model-a"]
-            }
+            provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
 
             agent missing_instruction {
-                model: openai("model-a")
+                model: model.openai_model
                 output: string
             }
 

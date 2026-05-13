@@ -289,6 +289,9 @@ fn resolve_reference_root(
         ReferenceRoot::Keyword(ReferenceKeyword::Prompt) => Err(WorkflowSemanticError::UnsupportedFeature {
             feature: "`prompt.*` runtime references are not supported outside `render prompt.*`".to_string(),
         }),
+        ReferenceRoot::Keyword(ReferenceKeyword::Model) => Err(WorkflowSemanticError::UnsupportedFeature {
+            feature: "`model.*` references are only supported in agent model properties".to_string(),
+        }),
         ReferenceRoot::Identifier(identifier) => {
             let Some(local_binding_value) = evaluation_context.local_bindings.get(identifier) else {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {

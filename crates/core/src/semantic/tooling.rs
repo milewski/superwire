@@ -212,6 +212,13 @@ impl SemanticToolingSnapshot {
                         provider_declaration.span,
                     );
                 }
+                Declaration::Model(model_declaration) => {
+                    declaration_index.push_symbol(
+                        ToolingSymbolCategory::Provider,
+                        model_declaration.name.clone(),
+                        model_declaration.span,
+                    );
+                }
                 Declaration::McpServer(_) => {}
                 Declaration::Schema(schema_declaration) => {
                     declaration_index.push_symbol(
@@ -1058,17 +1065,19 @@ mod tests {
     #[test]
     fn snapshot_indexes_declaration_spans_and_position_lookups() {
         let workflow = parse_inline_workflow! {
-            provider openai {
-                driver: "openai"
-                models: ["gpt-4o"]
-            }
+            provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4o"
+}
 
             schema Report {
                 title: string
             }
 
             agent writer {
-                model: openai("gpt-4o")
+                model: model.openai_model
                 instruction: "Write"
                 output: schema.Report
             }
@@ -1106,7 +1115,7 @@ mod tests {
             }
 
             agent writer {
-                model: openai("gpt-4o")
+                model: model.openai_model
                 instruction: input.topic
                 output: schema.Report
             }
@@ -1139,9 +1148,8 @@ mod tests {
     #[test]
     fn tolerant_source_snapshot_recovers_symbols_and_singleton_fields_after_parse_failure() {
         let broken_source = workflow_source! {
-            provider openai {
-                driver: "openai"
-            }
+            provider openai from openai {
+}
 
             input {
                 topic: string
@@ -1152,7 +1160,7 @@ mod tests {
             }
 
             agent writer {
-                model: openai("gpt-4o")
+                model: model.openai_model
                 instruction: input.topic
             }
 
