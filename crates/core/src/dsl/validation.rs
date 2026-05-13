@@ -1,7 +1,7 @@
 use super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, MatchBranch,
-    ModelUsagePropertyName, ObjectField, Reference, ReferenceKeyword, SourcePosition, SourceSpan,
-    StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
+    ModelUsagePropertyName, ObjectField, Reference, ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall,
+    TypeExpression, TypedField, Workflow,
 };
 use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
@@ -364,7 +364,10 @@ impl ValidationIssue {
             Self::InvalidProviderName { provider_name } => {
                 format!("Provider `{provider_name}` must use lowercase snake_case.")
             }
-            Self::UnknownProviderDriver { provider_name, driver_name } => {
+            Self::UnknownProviderDriver {
+                provider_name,
+                driver_name,
+            } => {
                 format!("Provider `{provider_name}` references unknown driver `{driver_name}`.")
             }
             Self::DuplicateModel { model_name } => {
@@ -562,9 +565,7 @@ impl ValidationIssue {
                 agent_name: _,
                 property_name,
             } => Some(Self::unknown_agent_property_help(property_name)),
-            Self::InvalidProviderName { .. } => {
-                Some("Rename the provider using lowercase snake_case, such as `openai_cloud`.".to_string())
-            }
+            Self::InvalidProviderName { .. } => Some("Rename the provider using lowercase snake_case, such as `openai_cloud`.".to_string()),
             Self::InvalidModelName { .. } => Some("Rename the model using lowercase snake_case, such as `fast`.".to_string()),
             Self::UnknownProviderDriver { .. }
             | Self::UnknownProviderInModelDeclaration { .. }
@@ -699,11 +700,19 @@ impl ValidationIssue {
             Self::InvalidModelExpression { agent_name: _ } => {
                 "Use `model: model.<profile_name>` with a declared model profile.".to_string()
             }
-            Self::UnknownProviderDriver { provider_name: _, driver_name } => {
-                format!("Use a registered provider driver such as `{}` or `{}`.", ProviderDriver::OpenAI.as_str(), ProviderDriver::Ollama.as_str())
-                    .replace(driver_name, driver_name)
-            }
-            Self::UnknownProviderInModelDeclaration { model_name: _, provider_name } => {
+            Self::UnknownProviderDriver {
+                provider_name: _,
+                driver_name,
+            } => format!(
+                "Use a registered provider driver such as `{}` or `{}`.",
+                ProviderDriver::OpenAI.as_str(),
+                ProviderDriver::Ollama.as_str()
+            )
+            .replace(driver_name, driver_name),
+            Self::UnknownProviderInModelDeclaration {
+                model_name: _,
+                provider_name,
+            } => {
                 format!("Declare `provider {provider_name} from <driver> {{ ... }}` before models that use it.")
             }
             Self::MissingModelId { model_name } => {
@@ -712,9 +721,10 @@ impl ValidationIssue {
             Self::UnknownModelProfile { agent_name: _, model_name } => {
                 format!("Declare `model {model_name} from <provider> {{ id: \"...\" }}` or update the agent reference.")
             }
-            Self::InvalidModelUsageProperty { agent_name: _, property_name: _ } => {
-                "Only `inference { ... }` is allowed inside an agent model usage block.".to_string()
-            }
+            Self::InvalidModelUsageProperty {
+                agent_name: _,
+                property_name: _,
+            } => "Only `inference { ... }` is allowed inside an agent model usage block.".to_string(),
             Self::UnknownProviderInModel {
                 agent_name: _,
                 provider_name,
@@ -860,6 +870,7 @@ impl ValidationIssue {
 }
 
 impl From<&ValidationIssue> for DiagnosticCode {
+    #[allow(clippy::too_many_lines)]
     fn from(validation_issue: &ValidationIssue) -> Self {
         match validation_issue {
             ValidationIssue::DuplicateProvider { provider_name: _ } => Self::DuplicateProvider,
@@ -979,16 +990,10 @@ impl From<&ValidationIssue> for DiagnosticCode {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ProviderInfo;
-
-#[derive(Debug, Clone)]
-struct ModelInfo;
-
 #[derive(Debug, Clone, Default)]
 struct ValidationIndex {
-    provider_infos: HashMap<String, ProviderInfo>,
-    model_infos: HashMap<String, ModelInfo>,
+    provider_names: HashSet<String>,
+    model_names: HashSet<String>,
     agent_names: HashSet<String>,
     tool_names: HashSet<String>,
     resource_names: HashSet<String>,
@@ -1149,7 +1154,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
 
-                if validation_index.provider_infos.contains_key(&provider_name) {
+                if validation_index.provider_names.contains(&provider_name) {
                     validation_report.push_issue_with_span(
                         ValidationIssue::DuplicateProvider { provider_name },
                         Some(provider_declaration.span),
@@ -1170,7 +1175,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
 
-                validation_index.provider_infos.insert(provider_name, ProviderInfo);
+                validation_index.provider_names.insert(provider_name);
             }
             Declaration::Model(model_declaration) => {
                 let model_name = model_declaration.name.clone();
@@ -1184,16 +1189,13 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
 
-                if validation_index.model_infos.contains_key(&model_name) {
-                    validation_report.push_issue_with_span(
-                        ValidationIssue::DuplicateModel { model_name },
-                        Some(model_declaration.span),
-                    );
+                if validation_index.model_names.contains(&model_name) {
+                    validation_report.push_issue_with_span(ValidationIssue::DuplicateModel { model_name }, Some(model_declaration.span));
 
                     continue;
                 }
 
-                if !validation_index.provider_infos.contains_key(&model_declaration.provider_name) {
+                if !validation_index.provider_names.contains(&model_declaration.provider_name) {
                     validation_report.push_issue_with_span(
                         ValidationIssue::UnknownProviderInModelDeclaration {
                             model_name: model_name.clone(),
@@ -1212,7 +1214,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     );
                 }
 
-                validation_index.model_infos.insert(model_name, ModelInfo);
+                validation_index.model_names.insert(model_name);
             }
             Declaration::McpServer(_) => {}
             Declaration::Schema(schema_declaration) => {
@@ -2111,6 +2113,17 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
 
     for declaration in workflow.declarations() {
         match declaration {
+            Declaration::Provider(provider_declaration) => {
+                if let Some(inference_fields) = provider_declaration.inference_fields() {
+                    validate_inference_fields(
+                        &provider_declaration.name,
+                        inference_fields,
+                        Some(provider_declaration.span),
+                        &mut invalid_inference_setting_values,
+                        validation_report,
+                    );
+                }
+            }
             Declaration::Model(model_declaration) => {
                 if let Some(inference_fields) = model_declaration.inference_fields() {
                     validate_inference_fields(
@@ -2159,8 +2172,7 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
                     }
                 }
             }
-            Declaration::Provider(_)
-            | Declaration::McpServer(_)
+            Declaration::McpServer(_)
             | Declaration::Secrets(_)
             | Declaration::Input(_)
             | Declaration::Schema(_)
@@ -2476,17 +2488,16 @@ fn validate_agent_model_bindings(workflow: &Workflow, validation_index: &Validat
             continue;
         };
 
+        let mut has_model_property = false;
+
         for agent_property in &agent_declaration.properties {
             match agent_property {
                 AgentProperty::Model(model_usage) => {
-                    validate_model_usage(
-                        &agent_declaration.name,
-                        model_usage,
-                        validation_index,
-                        validation_report,
-                    );
+                    has_model_property = true;
+                    validate_model_usage(&agent_declaration.name, model_usage, validation_index, validation_report);
                 }
                 AgentProperty::InvalidModel(_) => {
+                    has_model_property = true;
                     validation_report.push_issue_with_span(
                         ValidationIssue::InvalidModelExpression {
                             agent_name: agent_declaration.name.clone(),
@@ -2502,6 +2513,15 @@ fn validate_agent_model_bindings(workflow: &Workflow, validation_index: &Validat
                 | AgentProperty::Uses(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
             }
+        }
+
+        if !has_model_property {
+            validation_report.push_issue_with_span(
+                ValidationIssue::InvalidModelExpression {
+                    agent_name: agent_declaration.name.clone(),
+                },
+                Some(agent_declaration.span),
+            );
         }
     }
 }
@@ -2523,7 +2543,7 @@ fn validate_model_usage(
         return;
     };
 
-    if !validation_index.model_infos.contains_key(model_name) {
+    if !validation_index.model_names.contains(model_name) {
         validation_report.push_issue_with_span(
             ValidationIssue::UnknownModelProfile {
                 agent_name: agent_name.to_owned(),
@@ -4387,11 +4407,18 @@ mod tests {
     #[test]
     fn reports_no_issues_for_valid_workflow() {
         let workflow = parse_inline_workflow! {
+            provider openai from openai {}
+
+            model openai_model from openai {
+                id: "gpt-4.1-mini"
+            }
+
             input {
                 title: string
             }
 
             agent researcher {
+                model: model.openai_model
                 instruction: input.title
                 output: string
             }
@@ -4808,9 +4835,9 @@ mod tests {
                 endpoint: "http://localhost:11435"
             }
 
-model ollama_model from ollama {
-    id: "qwen3.5:8b"
-}
+            model ollama_model from ollama {
+                id: "qwen3.5:8b"
+            }
 
             schema greeting {
                 message: string
@@ -4904,12 +4931,11 @@ model ollama_model from ollama {
     #[test]
     fn reports_unknown_agent_properties() {
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+            model openai_model from openai {
+                id: "gpt-4.1-mini"
+            }
 
             agent researcher {
                 model: model.openai_model
@@ -5131,12 +5157,12 @@ model openai_model from openai {
             }
 
             provider openai from openai {
-api_key: secrets.api_key
-}
+                api_key: secrets.api_key
+            }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+            model openai_model from openai {
+                id: "gpt-4.1-mini"
+            }
         };
 
         assert_workflow_issues_do_not_contain!(workflow, ValidationIssue::SecretReferenceInLlmContext { .. });
@@ -5375,8 +5401,7 @@ model openai_model from openai {
     #[test]
     fn reports_unknown_model_for_provider() {
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
             agent researcher {
                 model: model.missing_model
@@ -5395,12 +5420,11 @@ model openai_model from openai {
     #[test]
     fn allows_dynamic_model_expression_without_literal_lookup() {
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+            model openai_model from openai {
+                id: "gpt-4.1-mini"
+            }
 
             secrets {
                 selected_model: string

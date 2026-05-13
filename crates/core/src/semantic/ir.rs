@@ -1,6 +1,6 @@
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration, ModelUsage, ObjectField, OutputDeclaration,
-    ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
+    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration, ModelUsage, ObjectField,
+    OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::expression::collect_agent_dependencies;
 use crate::semantic::support::type_inference::TypeInferenceContext;
@@ -36,6 +36,7 @@ pub struct TypedAgentIr {
     pub declaration: AgentDeclaration,
     pub provider_name: String,
     pub model_id_expression: Expression,
+    pub inference_fields: Vec<ObjectField>,
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
@@ -229,11 +230,13 @@ fn collect_typed_agents(
         let final_output_type = workflow_type_from_dsl(&final_output_type_expression, named_schema_types)?;
 
         let model_usage = required_agent_model_usage(agent_declaration)?;
-        let model_name = model_usage.model_name().ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
-            agent_name: agent_declaration.name.clone(),
-            property: AgentPropertyName::Model.as_str().to_string(),
-            message: "model must reference a model profile like model.fast".to_string(),
-        })?;
+        let model_name = model_usage
+            .model_name()
+            .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
+                agent_name: agent_declaration.name.clone(),
+                property: AgentPropertyName::Model.as_str().to_string(),
+                message: "model must reference a model profile like model.fast".to_string(),
+            })?;
         let model_declaration = workflow
             .find_model(model_name)
             .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
@@ -253,6 +256,7 @@ fn collect_typed_agents(
         required_agent_property_expression(agent_declaration, AgentPropertyName::Instruction)?;
 
         let provider_declaration = workflow.find_provider(&provider_name);
+        let inference_fields = agent_declaration.effective_inference_fields(provider_declaration, model_declaration);
         let dependencies = collect_dependencies_for_agent(agent_declaration, provider_declaration, model_declaration);
 
         agents.push(TypedAgentIr {
@@ -260,6 +264,7 @@ fn collect_typed_agents(
             declaration: agent_declaration.clone(),
             provider_name,
             model_id_expression,
+            inference_fields,
             iteration_output_type,
             final_output_type: final_output_type.clone(),
             dependencies,
@@ -535,12 +540,11 @@ mod tests {
     #[test]
     fn builds_typed_ir_with_dependencies_and_loop_output_types() {
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
 
             input {
                 topic: string
@@ -606,22 +610,22 @@ model openai_model from openai {
 
         let workflow = parse_inline_workflow! {
             provider base_provider from openai {
-endpoint: "http://localhost:1234/v1"
+                endpoint: "http://localhost:1234/v1"
                 api_key: "test-api-key"
-}
+            }
 
-model base_provider_model from base_provider {
-    id: "model-a"
-}
+            model base_provider_model from base_provider {
+                id: "model-a"
+            }
 
             provider dynamic_provider from openai {
-endpoint: agent.base.endpoint
+                endpoint: agent.base.endpoint
                 api_key: "test-api-key"
-}
+            }
 
-model dynamic_provider_model from dynamic_provider {
-    id: "model-a"
-}
+            model dynamic_provider_model from dynamic_provider {
+                id: "model-a"
+            }
 
             agent base {
                 model: model.base_provider_model
@@ -650,6 +654,66 @@ model dynamic_provider_model from dynamic_provider {
             .expect("dependent agent should be present");
 
         assert_eq!(dependent_agent.dependencies, vec!["base".to_string()]);
+    }
+
+    #[test]
+    fn merges_provider_model_and_agent_inference_by_precedence() {
+        #[derive(Debug, Deserialize, JsonSchema)]
+        #[allow(dead_code)]
+        struct Output {
+            value: String,
+        }
+
+        let workflow = parse_inline_workflow! {
+            provider openai from openai {
+                endpoint: "http://localhost:1234/v1"
+                api_key: "test-api-key"
+
+                inference {
+                    timeout_seconds: 60
+                    temperature: 0.1
+                }
+            }
+
+            model fast from openai {
+                id: "model-a"
+
+                inference {
+                    temperature: 0.2
+                    max_tokens: 4_000
+                }
+            }
+
+            agent writer {
+                model: model.fast {
+                    inference {
+                        temperature: 0.8
+                    }
+                }
+
+                instruction: "write"
+                output: string
+            }
+
+            output {
+                value: agent.writer
+            }
+        };
+
+        let typed_workflow_ir = build_typed_workflow_ir::<(), Output>(&workflow).expect("typecheck should succeed");
+        let writer_agent = typed_workflow_ir
+            .agents
+            .iter()
+            .find(|typed_agent| typed_agent.name == "writer")
+            .expect("writer agent should be present");
+        let inference_field_names = writer_agent
+            .inference_fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(inference_field_names, vec!["timeout_seconds", "temperature", "max_tokens"]);
+        assert!(matches!(writer_agent.inference_fields[1].value, crate::dsl::Expression::NumberLiteral(ref value) if value == "0.8"));
     }
 
     #[test]
@@ -688,12 +752,11 @@ model dynamic_provider_model from dynamic_provider {
         }
 
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-}
+            provider openai from openai {}
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
 
             agent missing_instruction {
                 model: model.openai_model

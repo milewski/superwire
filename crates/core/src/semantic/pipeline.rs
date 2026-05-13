@@ -281,13 +281,13 @@ mod tests {
     static VALID_WORKFLOW: LazyLock<crate::dsl::Workflow> = LazyLock::new(|| {
         parse_inline_workflow! {
             provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+                endpoint: "https://api.openai.com/v1"
                 api_key: "test-api-key"
-}
+            }
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
 
             input {
                 topic: string
@@ -442,7 +442,14 @@ model openai_model from openai {
     #[test]
     fn typecheck_stage_reports_missing_output_block_as_formatted_diagnostic() {
         let workflow = parse_inline_workflow! {
+            provider openai from openai {}
+
+            model openai_model from openai {
+                id: "gpt-4.1-mini"
+            }
+
             agent greeting {
+                model: model.openai_model
                 instruction: "Write a short welcome message."
                 output: string
             }
@@ -467,8 +474,14 @@ model openai_model from openai {
     #[test]
     fn typecheck_stage_wraps_invalid_agent_property_as_formatted_diagnostic() {
         let workflow = parse_inline_workflow! {
+            provider openai from openai {}
+
+            model openai_model from openai {
+                id: "gpt-4.1-mini"
+            }
+
             agent greeting {
-                instruction: "Write a short welcome message."
+                model: model.openai_model
                 output: string
             }
 
@@ -488,8 +501,8 @@ model openai_model from openai {
             typecheck_result,
             Err(WorkflowSemanticError::InvalidWorkflow { issues })
                 if issues.contains("workflow_compilation_error")
-                    && issues.contains("invalid `model` property")
-                    && issues.contains("Set `model` on `agent greeting`")
+                    && issues.contains("invalid `instruction` property")
+                    && issues.contains("Set `instruction` on `agent greeting`")
         ));
     }
 

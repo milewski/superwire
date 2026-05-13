@@ -45,8 +45,7 @@ fn reports_mcp_prompt_import_names_must_be_snake_case() {
 #[test]
 fn reports_unknown_model_for_provider_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
         agent writer {
             model: model.missing_model
@@ -65,12 +64,11 @@ fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
             openai_model: string
         }
 
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: secrets.openai_model
-}
+        model openai_model from openai {
+            id: secrets.openai_model
+        }
 
         agent writer {
             model: model.openai_model
@@ -86,12 +84,11 @@ model openai_model from openai {
 #[test]
 fn reports_unknown_agent_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         agent writer {
             model: model.openai_model
@@ -190,12 +187,11 @@ fn allows_block_style_tool_binding_overrides() {
             task_id: string
         }
 
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         tool fetch_participant_answer {
             bindings {
@@ -229,12 +225,11 @@ fn reports_missing_tool_binding_overrides_diagnostic() {
             task_id: number
         }
 
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         dynamic {
             data: {
@@ -271,12 +266,11 @@ fn allows_fixed_tool_bindings_without_overrides() {
             project_id: number
         }
 
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         dynamic {
             data: {
@@ -314,12 +308,11 @@ fn reports_invalid_tool_binding_override_type_diagnostic() {
             task_id: number
         }
 
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         tool fetch_participant_answer {
             input {
@@ -400,12 +393,11 @@ fn allows_dynamic_references_to_later_dynamic_blocks() {
 #[test]
 fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         schema payload {
             value: string
@@ -438,12 +430,11 @@ model openai_model from openai {
 #[test]
 fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic() {
     let diagnostics = inline_diagnostics! {
-        provider openai from openai {
-}
+        provider openai from openai {}
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         input {
             query: string
@@ -488,6 +479,12 @@ fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
 #[test]
 fn reports_workflow_compilation_diagnostic_for_non_exhaustive_variant_match() {
     let diagnostics = inline_diagnostics! {
+        provider openai from openai {}
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
         schema event_result {
             event: variant type {
                 created {
@@ -501,6 +498,7 @@ fn reports_workflow_compilation_diagnostic_for_non_exhaustive_variant_match() {
         }
 
         agent worker {
+            model: model.openai_model
             output: schema.event_result
         }
 

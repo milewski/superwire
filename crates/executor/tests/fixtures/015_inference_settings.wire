@@ -8,11 +8,11 @@ model openai_model from openai {
 }
 
 agent analyst {
-    model: model.openai_model
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 4000
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 4000
+        }
     }
 
     instruction: "Analyze the current release readiness."

@@ -25,16 +25,11 @@ impl SemanticIndex {
         if let Some(provider_summary) = self.providers.get(hovered_symbol) {
             let provider_driver_name = provider_summary.driver.map_or("unknown", ProviderDriver::as_str);
 
-            return Some(format!(
-                "**provider {hovered_symbol}**\n\nDriver: `{provider_driver_name}`"
-            ));
+            return Some(format!("**provider {hovered_symbol}**\n\nDriver: `{provider_driver_name}`"));
         }
 
         if let Some(model_summary) = self.models.get(hovered_symbol) {
-            return Some(format!(
-                "**model {hovered_symbol}**\n\nProvider: `{}`",
-                model_summary.provider_name
-            ));
+            return Some(format!("**model {hovered_symbol}**\n\nProvider: `{}`", model_summary.provider_name));
         }
 
         let reference_completion_path = ReferenceCompletionPath::from_token(hovered_symbol)?;
@@ -93,7 +88,7 @@ impl SemanticIndex {
             }
             Some(ReferenceKeyword::Resource) => Some(format!("**{hovered_symbol}**\n\nMCP resource reference.")),
             Some(ReferenceKeyword::Prompt) => Some(format!("**{hovered_symbol}**\n\nMCP prompt reference.")),
-            Some(ReferenceKeyword::Model) | Some(ReferenceKeyword::Tool) | None => None,
+            Some(ReferenceKeyword::Model | ReferenceKeyword::Tool) | None => None,
         }
     }
 }

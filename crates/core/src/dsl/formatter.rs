@@ -2692,7 +2692,8 @@ mod tests {
 
     #[test]
     fn formatter_matches_expected_output_for_representative_source() {
-        let source_text = "provider openai from openai{}\nmodel openai_model from openai{id:\"gpt-4o-mini\"}\n\noutput { result: \"ok\" }\n";
+        let source_text =
+            "provider openai from openai{}\nmodel openai_model from openai{id:\"gpt-4o-mini\"}\n\noutput { result: \"ok\" }\n";
 
         let expected_output =
             "provider openai from openai {\n}\n\nmodel openai_model from openai {\n    id: \"gpt-4o-mini\"\n}\n\noutput {\n    result: \"ok\"\n}\n";

@@ -209,13 +209,13 @@ mod tests {
     fn parses_openai_provider_with_required_endpoint_and_api_key() {
         let workflow = crate::parse_inline_workflow! {
             provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+                endpoint: "https://api.openai.com/v1"
                 api_key: "test-api-key"
-}
+            }
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
         };
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
@@ -243,13 +243,13 @@ model openai_model from openai {
             }
 
             provider openai from openai {
-endpoint: secrets.endpoint
+                endpoint: secrets.endpoint
                 api_key: secrets.api_key
-}
+            }
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
         };
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
@@ -280,12 +280,12 @@ model openai_model from openai {
     fn rejects_openai_provider_when_endpoint_is_missing() {
         let workflow = crate::parse_inline_workflow! {
             provider openai from openai {
-api_key: "test-api-key"
-}
+                api_key: "test-api-key"
+            }
 
-model openai_model from openai {
-    id: "model-a"
-}
+            model openai_model from openai {
+                id: "model-a"
+            }
         };
 
         let provider_index_result = build_provider_index(&workflow);
@@ -301,12 +301,12 @@ model openai_model from openai {
     fn parses_ollama_provider_with_explicit_endpoint() {
         let workflow = crate::parse_inline_workflow! {
             provider ollama from ollama {
-endpoint: "http://127.0.0.1:11434"
-}
+                endpoint: "http://127.0.0.1:11434"
+            }
 
-model ollama_model from ollama {
-    id: "model-a"
-}
+            model ollama_model from ollama {
+                id: "model-a"
+            }
         };
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
@@ -330,12 +330,12 @@ model ollama_model from ollama {
     fn rejects_ollama_provider_when_endpoint_port_is_missing() {
         let workflow = crate::parse_inline_workflow! {
             provider ollama from ollama {
-endpoint: "http://127.0.0.1"
-}
+                endpoint: "http://127.0.0.1"
+            }
 
-model ollama_model from ollama {
-    id: "model-a"
-}
+            model ollama_model from ollama {
+                id: "model-a"
+            }
         };
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
@@ -353,21 +353,21 @@ model ollama_model from ollama {
     fn builds_provider_templates() {
         let workflow = crate::parse_inline_workflow! {
             provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+                endpoint: "https://api.openai.com/v1"
                 api_key: "test-api-key"
-}
+            }
 
-model openai_model from openai {
-    id: "model-a"
-}
-
+            model openai_model from openai {
+                id: "model-a"
+            }
+            
             provider ollama from ollama {
-endpoint: "http://127.0.0.1:11434"
-}
+                endpoint: "http://127.0.0.1:11434"
+            }
 
-model ollama_model from ollama {
-    id: "model-b"
-}
+            model ollama_model from ollama {
+                id: "model-b"
+            }
         };
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");

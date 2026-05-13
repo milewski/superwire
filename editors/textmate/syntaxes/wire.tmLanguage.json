@@ -13,6 +13,9 @@
       "include": "#provider"
     },
     {
+      "include": "#model"
+    },
+    {
       "include": "#mcp"
     },
     {
@@ -56,12 +59,44 @@
       ]
     },
     "provider": {
-      "begin": "\\b(provider)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "begin": "\\b(provider)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(from)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.wire"
         },
         "2": {
+          "name": "entity.name.type.provider.wire"
+        },
+        "3": {
+          "name": "keyword.control.wire"
+        },
+        "4": {
+          "name": "entity.name.function.driver.wire"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#property-assignment"
+        },
+        {
+          "include": "#expressions"
+        }
+      ]
+    },
+    "model": {
+      "begin": "\\b(model)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(from)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.wire"
+        },
+        "2": {
+          "name": "entity.name.type.model.wire"
+        },
+        "3": {
+          "name": "keyword.control.wire"
+        },
+        "4": {
           "name": "entity.name.type.provider.wire"
         }
       },
@@ -357,11 +392,11 @@
     "property-assignment": {
       "patterns": [
         {
-          "match": "\\b(driver|endpoint|headers|api_key|models|model|instruction|uses|context|output|inference|description)\\b(?=\\s*:)",
+          "match": "\\b(driver|endpoint|headers|api_key|organization|project|id|models|model|instruction|uses|context|output|inference|description)\\b(?=\\s*:)",
           "name": "variable.parameter.wire"
         },
         {
-          "match": "(?<![.-])\\b(provider|schema|tool|resource|prompt|agent|dynamic|input|bindings|output|secrets|for|in|from|call|read|render|mcp)\\b(?![.-])",
+          "match": "(?<![.-])\\b(provider|model|schema|tool|resource|prompt|agent|dynamic|input|bindings|output|secrets|for|in|from|call|read|render|mcp)\\b(?![.-])",
           "name": "keyword.control.wire"
         },
         {

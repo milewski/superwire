@@ -2,10 +2,13 @@ use crate::model::types::ModelRequest;
 use async_openai::types::{ChatCompletionTool, ChatCompletionToolChoiceOption};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize)]
 pub(super) struct OpenAiChatCompletionRequest {
     pub(super) model: String,
+    #[serde(flatten)]
+    pub(super) inference: BTreeMap<String, Value>,
     pub(super) messages: Vec<Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) tools: Vec<ChatCompletionTool>,

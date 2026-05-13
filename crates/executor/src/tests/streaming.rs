@@ -64,13 +64,13 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
         provider openai from openai {
-endpoint: "http://localhost:1234/v1"
+            endpoint: "http://localhost:1234/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "model-a"
-}
+        model openai_model from openai {
+            id: "model-a"
+        }
 
         mcp local {
             endpoint: "__ENDPOINT__"
@@ -109,10 +109,13 @@ model openai_model from openai {
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
+
     let model_provider = TestModelProvider::new(vec![json!({ "summary": "done" })]);
     let service = ExecutorService::new(model_provider);
+
     let mut request = request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 }));
     request.options.include_events = true;
+
     let mut receiver = service.execute_stream(request);
     let mut tool_call_events = Vec::new();
 
@@ -131,6 +134,7 @@ model openai_model from openai {
             .any(|event| event.kind == ExecutorEventKind::ToolCallStarted),
         "expected tool_call_started event"
     );
+
     assert!(
         tool_call_events
             .iter()
@@ -148,7 +152,9 @@ model openai_model from openai {
         .iter()
         .find(|event| event.kind == ExecutorEventKind::ToolCallCompleted)
         .unwrap();
+
     assert_eq!(completed.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+
     assert_eq!(
         completed.data.as_ref().unwrap()["result"],
         json!({ "task_title": "Survey", "participants": 10 })

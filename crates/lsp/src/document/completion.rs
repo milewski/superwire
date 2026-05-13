@@ -1357,7 +1357,13 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt)
+            Some(
+                ReferenceKeyword::Secrets
+                | ReferenceKeyword::Model
+                | ReferenceKeyword::Tool
+                | ReferenceKeyword::Resource
+                | ReferenceKeyword::Prompt,
+            )
             | None => {
                 if can_suggest_inference_roots {
                     return Some(semantic_index.inference_value_root_suggestions(reference_completion_path.root_identifier()));
@@ -1499,7 +1505,13 @@ impl DocumentState {
 
                 Some(reference_suggestions.to_vec())
             }
-            Some(ReferenceKeyword::Secrets | ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt)
+            Some(
+                ReferenceKeyword::Secrets
+                | ReferenceKeyword::Model
+                | ReferenceKeyword::Tool
+                | ReferenceKeyword::Resource
+                | ReferenceKeyword::Prompt,
+            )
             | None => {
                 if can_suggest_prompt_roots {
                     return Some(semantic_index.prompt_value_root_suggestions(reference_completion_path.root_identifier()));

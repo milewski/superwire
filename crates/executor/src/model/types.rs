@@ -12,6 +12,7 @@ pub struct ModelRequest {
     pub agent_name: String,
     pub provider_config: OpenAIProviderConfig,
     pub model_name: String,
+    pub inference: BTreeMap<String, Value>,
     pub prompt: String,
     pub output_schema: Value,
     pub tools: Vec<ModelToolDefinition>,

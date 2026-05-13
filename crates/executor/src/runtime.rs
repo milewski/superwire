@@ -11,7 +11,7 @@ use crate::runtime::state::RuntimeState;
 use futures::future::try_join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use superwire_core::dsl::{
     parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
@@ -587,6 +587,7 @@ impl WorkflowExecutor {
             });
         };
         let model_name = evaluate_agent_model_name(&planned_agent.model_id_expression, &planned_agent.name, &evaluation_context)?;
+        let inference = self.evaluate_inference_fields(planned_agent, &evaluation_context)?;
         let instruction_expression = planned_agent
             .declaration
             .required_expression_property(AgentExpressionPropertyName::Instruction)
@@ -638,6 +639,7 @@ impl WorkflowExecutor {
                 agent_name: planned_agent.name.clone(),
                 provider_config: openai_provider_config,
                 model_name,
+                inference,
                 prompt,
                 output_schema,
                 tools: tool_definitions,
@@ -864,6 +866,22 @@ impl WorkflowExecutor {
                 ),
             }),
         }
+    }
+
+    fn evaluate_inference_fields(
+        &self,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<BTreeMap<String, Value>, ExecutorError> {
+        let mut inference = BTreeMap::new();
+
+        for inference_field in &planned_agent.inference_fields {
+            let context = format!("inference setting `{}` for agent `{}`", inference_field.name, planned_agent.name);
+            let value = evaluate_expression(&inference_field.value, evaluation_context, &context)?;
+            inference.insert(inference_field.name.clone(), value);
+        }
+
+        Ok(inference)
     }
 
     fn evaluate_runtime_expression(

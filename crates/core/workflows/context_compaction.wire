@@ -25,11 +25,11 @@ input {
 
 // Step 1: run a detailed analysis pass.
 agent research_analysis {
-    model: model.openai_model
-
-    inference: {
-        temperature: 0.7
-        max_tokens: 8_000
+    model: model.openai_model {
+        inference {
+            temperature: 0.7
+            max_tokens: 8_000
+        }
     }
 
     instruction: """
@@ -54,13 +54,13 @@ agent research_analysis {
 // Wrapping the agent reference in `context(...)` makes it obvious that
 // this agent starts with the complete context from `research_analysis`.
 agent summary_from_full_context {
-    model: model.openai_model
-    context: context(agent.research_analysis)
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 2_000
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 2_000
+        }
     }
+    context: context(agent.research_analysis)
 
     instruction: "Write a short executive summary from the available context."
     output: string
@@ -70,13 +70,13 @@ agent summary_from_full_context {
 // Here `model:` is omitted inside `compact(...)`, so the compaction step
 // uses the same model as `research_analysis`.
 agent summary_from_default_compact_context {
-    model: model.openai_model
-    context: compact(agent.research_analysis)
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 2_000
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 2_000
+        }
     }
+    context: compact(agent.research_analysis)
 
     instruction: "Write a short executive summary from the compacted prior context."
     output: string
@@ -87,13 +87,13 @@ agent summary_from_default_compact_context {
 // previous context, and you want to choose a different model for the
 // compaction step itself.
 agent summary_from_compact_context_with_model {
-    model: model.openai_model
-    context: compact(agent.research_analysis, model: model.openai_model)
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 2_000
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 2_000
+        }
     }
+    context: compact(agent.research_analysis, model: model.openai_model)
 
     instruction: "Write a short executive summary from the compacted prior context."
     output: string
@@ -108,7 +108,12 @@ agent summary_from_compact_context_with_model {
 // - `inference:` controls that compaction call
 // - `instruction:` overrides the default compaction prompt
 agent summary_from_custom_compact_context {
-    model: model.openai_model
+    model: model.openai_model {
+        inference {
+            temperature: 0.2
+            max_tokens: 2_000
+        }
+    }
 
     context: compact(
         agent: agent.research_analysis,
@@ -123,11 +128,6 @@ agent summary_from_custom_compact_context {
             and essential quotes. Remove repetition and low-value details.
         """,
     )
-
-    inference: {
-        temperature: 0.2
-        max_tokens: 2_000
-    }
 
     instruction: "Write a short executive summary from the customized compacted context."
     output: {

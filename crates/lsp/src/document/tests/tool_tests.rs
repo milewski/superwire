@@ -161,13 +161,13 @@ fn uses_mcp_lock_for_imported_tool_schema() {
         }
 
         provider openai from openai {
-endpoint: "https://api.openai.com/v1"
+            endpoint: "https://api.openai.com/v1"
             api_key: "test-api-key"
-}
+        }
 
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
 
         tool update_user_name from mcp.local.tool.update_user_name
 
@@ -178,6 +178,7 @@ model openai_model from openai {
             output: string
         }
     };
+    
     let document_state = DocumentState::new(source.to_string(), Some(test_mcp_lock()));
 
     assert!(document_state.diagnostics().is_empty());

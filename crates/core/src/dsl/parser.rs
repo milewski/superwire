@@ -305,12 +305,11 @@ mod tests {
     #[test]
     fn parses_minimum_workflow_structure() {
         let minimum_workflow = parse_inline_workflow! {
-            provider ollama from ollama {
-}
+            provider ollama from ollama {}
 
-model ollama_model from ollama {
-    id: "qwen3.5:32b"
-}
+            model ollama_model from ollama {
+                id: "qwen3.5:32b"
+            }
 
             agent greeting {
                 model: model.ollama_model

@@ -74,6 +74,7 @@ impl super::OpenAiModelProvider {
 
         Ok(OpenAiChatCompletionRequest {
             model: request.model_name.clone(),
+            inference: request.inference.clone(),
             messages,
             tools,
             tool_choice: (!request.tools.is_empty()).then_some(ChatCompletionToolChoiceOption::Auto),
