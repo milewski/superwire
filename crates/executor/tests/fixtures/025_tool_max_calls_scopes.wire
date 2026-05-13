@@ -34,7 +34,9 @@ agent first_agent {
     ]
 
     instruction: "First"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent second_agent {
@@ -47,7 +49,9 @@ agent second_agent {
     ]
 
     instruction: "Second"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

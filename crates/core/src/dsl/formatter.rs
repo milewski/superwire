@@ -105,11 +105,20 @@ impl DslFormatter {
         self.push_newline();
     }
 
-    fn push_agent_property_type(&mut self, property_name: &str, type_expression: &TypeExpression) {
+    fn push_agent_property_type_block(&mut self, property_name: &str, fields: &[TypedField]) {
         self.push_indent();
         self.output.push_str(property_name);
-        self.output.push_str(": ");
-        type_expression.push_to_formatter(self);
+        self.output.push_str(" {");
+        self.push_newline();
+        self.indentation_depth += 1;
+
+        for field in fields {
+            field.push_to_formatter(self);
+        }
+
+        self.indentation_depth -= 1;
+        self.push_indent();
+        self.output.push('}');
         self.push_newline();
     }
 
@@ -919,8 +928,8 @@ impl AgentProperty {
             Self::Model(model_usage) => model_usage.push_to_formatter(formatter),
             Self::InvalidModel(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
             Self::Instruction(expression) => formatter.push_agent_property_expression(AgentPropertyName::Instruction.as_str(), expression),
-            Self::Output { output_type_expression } => {
-                formatter.push_agent_property_type(AgentPropertyName::Output.as_str(), output_type_expression);
+            Self::Output { fields, span: _ } => {
+                formatter.push_agent_property_type_block(AgentPropertyName::Output.as_str(), fields);
             }
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
             Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
@@ -1018,7 +1027,7 @@ impl AgentProperty {
         RenderedAgentProperty {
             text: property_formatter.output,
             is_multiline: property_is_multiline,
-            is_output_property: matches!(self, Self::Output { output_type_expression: _ }),
+            is_output_property: matches!(self, Self::Output { fields: _, span: _ }),
         }
     }
 }
@@ -2718,9 +2727,9 @@ mod tests {
 
     #[test]
     fn formatter_renders_object_destructuring_for_loop_pattern() {
-        let source_text = "agent analyzer for {id,name,} in agent.alpha.participants {instruction:\"hello\" output:string}\n";
+        let source_text = "agent analyzer for {id,name,} in agent.alpha.participants {instruction:\"hello\" output{value:string}}\n";
         let expected_output =
-            "agent analyzer for { id, name } in agent.alpha.participants {\n    instruction: \"hello\"\n    output: string\n}\n";
+            "agent analyzer for { id, name } in agent.alpha.participants {\n    instruction: \"hello\"\n    output {\n        value: string\n    }\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("workflow should format successfully");
 

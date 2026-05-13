@@ -10,7 +10,7 @@ model openai_model from openai {
 agent profile {
     model: model.openai_model
     instruction: "Generate a user profile with name, age, and role."
-    output: {
+    output {
         name: string
         age: number
         role: string

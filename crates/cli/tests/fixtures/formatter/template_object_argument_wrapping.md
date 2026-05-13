@@ -8,13 +8,17 @@ input {
 agent research_single_entry {
     model: model.openai_model
     instruction: template( "prompts/research_brief.md", { study_name: input.study_name } )
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent research_multi_entry {
     model: model.openai_model
     instruction: template("prompts/research_brief.md", { study_name: input.study_name audience: input.audience findings: input.findings })
-    output: string
+    output {
+        value: string
+    }
 }
 ```
 ---
@@ -28,7 +32,9 @@ input {
 agent research_single_entry {
     model: model.openai_model
     instruction: template("prompts/research_brief.md", { study_name: input.study_name })
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent research_multi_entry {
@@ -40,6 +46,8 @@ agent research_multi_entry {
         findings: input.findings
     })
 
-    output: string
+    output {
+        value: string
+    }
 }
 ```

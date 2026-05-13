@@ -6,7 +6,7 @@ async fn string_input_is_passed_to_agent_prompt() {
     let output = execute!(
         fixtures::INPUT_STRING,
         input: { "topic": "quantum computing" },
-        output: "written content",
+        output: { "value": "written content" },
     )
     .await;
     assert_eq!(output, json!({ "content": "written content" }));

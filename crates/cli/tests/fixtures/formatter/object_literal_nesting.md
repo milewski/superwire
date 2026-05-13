@@ -2,9 +2,9 @@
 provider openai from openai {}
 model openai_model from openai {id:"gpt-4o-mini"}
 
-agent planner {model: model.openai_model context:{project:"engine-ai" details:{owner:"core" active:true} ids:[1,2,3,]} instruction:"Plan" output:string}
+agent planner {model: model.openai_model context:{project:"engine-ai" details:{owner:"core" active:true} ids:[1,2,3,]} instruction:"Plan" output{value:string}}
 
-output { plan:agent.planner }
+output { plan:agent.planner.value }
 ```
 ---
 ```wire
@@ -28,10 +28,12 @@ agent planner {
     }
 
     instruction: "Plan"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    plan: agent.planner
+    plan: agent.planner.value
 }
 ```

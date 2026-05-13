@@ -38,7 +38,7 @@ agent writer {
     }
 
     instruction: dynamic.rendered_prompt
-    output: {
+    output {
         summary: string
     }
 }

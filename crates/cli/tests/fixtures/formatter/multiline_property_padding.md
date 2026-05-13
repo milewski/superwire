@@ -2,7 +2,9 @@
 agent greeting_single {
     model: model.ollama_model
     instruction: "aaa"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_prompt_multiline {
@@ -10,14 +12,18 @@ agent greeting_prompt_multiline {
     instruction: """
         test
     """
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_inference_multiline {
     model: model.ollama_model
     inference: {        temperature: 0.7}
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_tools_then_inference {
@@ -25,7 +31,9 @@ agent greeting_tools_then_inference {
     uses: [tool.calculator]
     inference: {temperature: 0.7}
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_multiline_tools_then_inference {
@@ -33,7 +41,9 @@ agent greeting_multiline_tools_then_inference {
     uses: [tool.calculator1,tool.calculator2,tool.calculator3,tool.calculator4,tool.calculator5,tool.calculator1,tool.calculator2,tool.calculator3,tool.calculator4,tool.calculator5]
     inference: {temperature: 0.7}
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 ```
 ---
@@ -41,7 +51,9 @@ agent greeting_multiline_tools_then_inference {
 agent greeting_single {
     model: model.ollama_model
     instruction: "aaa"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_prompt_multiline {
@@ -51,14 +63,18 @@ agent greeting_prompt_multiline {
         test
     """
 
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_inference_multiline {
     model: model.ollama_model
     inference: { temperature: 0.7 }
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_tools_then_inference {
@@ -66,7 +82,9 @@ agent greeting_tools_then_inference {
     uses: [tool.calculator]
     inference: { temperature: 0.7 }
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent greeting_multiline_tools_then_inference {
@@ -87,6 +105,8 @@ agent greeting_multiline_tools_then_inference {
 
     inference: { temperature: 0.7 }
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 ```

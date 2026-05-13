@@ -27,9 +27,9 @@ async fn diamond_dependency_resolves_correctly() {
     let output = execute!(
         fixtures::DIAMOND_DEPENDENCY,
         input: { "topic": "performance" },
-        output: "analysis from A",
-        output: "analysis from B",
-        output: "merged result",
+        output: { "value": "analysis from A" },
+        output: { "value": "analysis from B" },
+        output: { "value": "merged result" },
     )
     .await;
     assert_eq!(output, json!({ "merged": "merged result" }));

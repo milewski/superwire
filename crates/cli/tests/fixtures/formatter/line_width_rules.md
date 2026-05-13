@@ -4,10 +4,12 @@ agent formatter_checks {
     instruction: "This is a very long prompt sentence that should exceed the formatter line width limit and therefore be wrapped into a multiline string block automatically by the formatter."
     context: [1,2,3]
     uses: [tool.one,tool.two,tool.three,tool.four,tool.five,tool.six,tool.seven,tool.eight,tool.nine,tool.ten,tool.eleven,tool.twelve,tool.thirteen,tool.fourteen,tool.fifteen]
-    output: string
+    output {
+        value: string
+    }
 }
 
-output { value: agent.formatter_checks }
+output { value: agent.formatter_checks.value }
 ```
 ---
 ```wire
@@ -39,10 +41,12 @@ agent formatter_checks {
         tool.fifteen,
     ]
 
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    value: agent.formatter_checks
+    value: agent.formatter_checks.value
 }
 ```

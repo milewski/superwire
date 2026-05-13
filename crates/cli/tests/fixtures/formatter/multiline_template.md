@@ -4,7 +4,7 @@ model openai_model from openai {id:"gpt-4o-mini"}
 input { topic:string }
 
 agent writer {model: model.openai_model instruction:"""Write about {{input.topic}}
-Keep it short and clear.""" output:string}
+Keep it short and clear.""" output{value:string}}
 
 agent writer2 {
     model: model.openai_model
@@ -12,10 +12,12 @@ agent writer2 {
     Write about {{ input.topic }}
     Keep it short and clear.
     """
-    output: string
+    output {
+        value: string
+    }
 }
 
-output { text:agent.writer }
+output { text:agent.writer.value }
 ```
 ---
 ```wire
@@ -38,7 +40,9 @@ agent writer {
         Keep it short and clear.
     """
 
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent writer2 {
@@ -49,10 +53,12 @@ agent writer2 {
         Keep it short and clear.
     """
 
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    text: agent.writer
+    text: agent.writer.value
 }
 ```

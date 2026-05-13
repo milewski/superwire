@@ -27,19 +27,25 @@ input {
 agent draft {
     model: model.primary_model_a
     instruction: "Draft summary for {{ input.topic }}"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent review {
     model: model.backup_model
     instruction: "Review this draft: {{ agent.draft }}"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent finalize {
     model: model.primary_model_c
     instruction: "Finalize using review: {{ agent.review }}"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

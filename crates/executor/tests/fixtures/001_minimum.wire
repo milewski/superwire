@@ -10,9 +10,11 @@ model openai_model from openai {
 agent greeting {
     model: model.openai_model
     instruction: "Write a short welcome message."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    greeting: agent.greeting
+    greeting: agent.greeting.value
 }

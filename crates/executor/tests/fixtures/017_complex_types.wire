@@ -27,14 +27,16 @@ schema all_types {
 agent typed_example {
     model: model.openai_model
     instruction: "Generate a typed object."
-    output: schema.all_types
+    output {
+        value: schema.all_types
+    }
 }
 
 output {
-    result: agent.typed_example
-    string_value: agent.typed_example.string_value
-    number_value: agent.typed_example.number_value
-    boolean_value: agent.typed_example.boolean_value
-    array: agent.typed_example.array
-    enum_value: agent.typed_example.enum_value
+    result: agent.typed_example.value
+    string_value: agent.typed_example.value.string_value
+    number_value: agent.typed_example.value.number_value
+    boolean_value: agent.typed_example.value.boolean_value
+    array: agent.typed_example.value.array
+    enum_value: agent.typed_example.value.enum_value
 }

@@ -7,7 +7,7 @@ async fn secrets_are_accepted() {
         fixtures::SECRETS,
         input: null,
         secrets: { "api_key": "sk-test-123" },
-        output: "hello",
+        output: { "value": "hello" },
     )
     .await;
     assert_eq!(output, json!({ "greeting": "hello" }));

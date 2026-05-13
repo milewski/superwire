@@ -10,12 +10,14 @@ model openai_model from openai {
 agent assistant {
     model: model.openai_model
     instruction: "Say hello."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
     hardcoded_string: "fixed-value"
     hardcoded_number: 42
     hardcoded_boolean: true
-    agent_value: agent.assistant
+    agent_value: agent.assistant.value
 }

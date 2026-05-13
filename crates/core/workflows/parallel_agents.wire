@@ -19,7 +19,7 @@ input {
 agent changelog {
     model: model.openai_model
     instruction: "Write release notes for {{ input.product_name }} based on highlights: {{ input.release_highlights }}"
-    output: {
+    output {
         markdown: string
     }
 }
@@ -28,7 +28,7 @@ agent changelog {
 agent social_thread {
     model: model.openai_model
     instruction: "Create a 5-post launch thread for {{ input.product_name }} with: {{ input.release_highlights }}"
-    output: {
+    output {
         posts: [string; 5]
     }
 }
@@ -37,7 +37,7 @@ agent social_thread {
 agent customer_email {
     model: model.openai_model
     instruction: "Write a customer announcement email for {{ input.product_name }} with these highlights: {{ input.release_highlights }}"
-    output: {
+    output {
         subject: string
         body: string
     }
@@ -57,7 +57,7 @@ agent consistency_review {
         email_body={{ agent.customer_email.body }}
     """
 
-    output: {
+    output {
         approved: boolean
         issues: [string]
     }

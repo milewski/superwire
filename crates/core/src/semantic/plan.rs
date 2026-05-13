@@ -239,17 +239,21 @@ mod tests {
             agent first {
                 model: model.openai_model
                 instruction: input.topic
-                output: string
+                output {
+                    value: string
+                }
             }
 
             agent second {
                 model: model.openai_model
-                instruction: agent.first
-                output: string
+                instruction: agent.first.value
+                output {
+                    value: string
+                }
             }
 
             output {
-                value: agent.second
+                value: agent.second.value
             }
         }
     }

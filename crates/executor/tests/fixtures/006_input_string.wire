@@ -14,9 +14,11 @@ input {
 agent writer {
     model: model.openai_model
     instruction: "Write about {{ input.topic }}."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    content: agent.writer
+    content: agent.writer.value
 }

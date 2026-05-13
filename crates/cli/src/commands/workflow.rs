@@ -1371,7 +1371,7 @@ impl CliWorkflowTypeInference {
             };
 
             let iteration_output_type = if let Some(agent_output_type_expression) = agent_declaration.output_type() {
-                workflow_type_from_dsl(agent_output_type_expression, named_schema_types)
+                workflow_type_from_dsl(&agent_output_type_expression, named_schema_types)
                     .map_err(|runtime_error| CommandError::internal(runtime_error.to_string()))?
             } else {
                 WorkflowType::String

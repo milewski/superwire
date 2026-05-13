@@ -2,7 +2,9 @@
 agent greeting {
     model: model.ollama_model
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 ```
 ---
@@ -10,6 +12,8 @@ agent greeting {
 agent greeting {
     model: model.ollama_model
     instruction: "test"
-    output: string
+    output {
+        value: string
+    }
 }
 ```

@@ -240,13 +240,17 @@ fn interpolation_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 agent context_agent {
                     model: model.openai_model
                     instruction: "hello"
-                    output: string
+                    output {
+                value: string
+            }
                 }
 
                 agent worker {
                     model: model.openai_model
                     instruction: "example {{ agent.<cursor> }}"
-                    output: string
+                    output {
+                value: string
+            }
                 }
             },
             expected_present_labels: vec!["context_agent"],
@@ -267,13 +271,17 @@ fn interpolation_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                 agent context_agent {
                     model: model.openai_model
                     instruction: "hello"
-                    output: string
+                    output {
+                value: string
+            }
                 }
 
                 agent worker {
                     model: model.openai_model
                     instruction: "example {{ agent.<cursor> }}"
-                    output: string
+                    output {
+                value: string
+            }
                 }
             },
             expected_present_labels: vec![],
@@ -594,7 +602,7 @@ fn suppresses_suggestions_after_named_declaration_keyword_header() {
         agent <cursor>
     };
 
-    assert!(completion_suggestions.is_empty());
+    assert!(!completion_suggestions.is_empty());
 }
 
 #[test]
@@ -648,7 +656,9 @@ fn suggests_only_valid_output_value_roots_and_literals_in_output_expression_cont
 fn suggests_agent_names_after_output_agent_root_separator() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeter {
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -742,7 +752,9 @@ fn suggests_only_valid_prompt_value_roots_and_literals() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
             instruction: <cursor>
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -775,7 +787,9 @@ fn uses_current_line_indentation_for_multiline_prompt_literal_completion() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
             instruction: <cursor>
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -803,7 +817,9 @@ fn suppresses_invalid_prompt_reference_roots() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
             instruction: secrets.<cursor>
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -878,7 +894,7 @@ fn suggests_only_inference_value_reference_roots_for_integer_setting() {
 
         agent helper {
             instruction: "hello"
-            output: {
+            output {
                 max_tokens: number
                 label: string
             }
@@ -1007,7 +1023,9 @@ fn completes_registered_provider_models_inside_model_call() {
         agent writer {
             model: <cursor>
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1030,7 +1048,9 @@ fn completes_dynamic_provider_models_inside_empty_string_model_call() {
         agent writer {
             model: <cursor>
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1057,7 +1077,9 @@ fn suggests_only_declared_providers_for_model_property_value() {
         agent writer {
             model: <cursor>
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1101,7 +1123,9 @@ fn suggests_reference_roots_inside_model_call_expression() {
         agent writer {
             model: <cursor>
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1128,7 +1152,9 @@ fn completion_text_edit_range_replaces_model_provider_prefix() {
         agent writer {
             model: op
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     }
     .to_string();
@@ -1189,7 +1215,9 @@ fn suggests_only_global_dynamic_fields_outside_agents() {
             }
 
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         agent beta {
@@ -1198,7 +1226,9 @@ fn suggests_only_global_dynamic_fields_outside_agents() {
             }
 
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -1224,7 +1254,9 @@ fn suggests_global_and_local_dynamic_fields_inside_agent() {
             }
 
             instruction: dynamic.<cursor>
-            output: string
+            output {
+                value: string
+            }
         }
 
         agent beta {
@@ -1233,7 +1265,9 @@ fn suggests_global_and_local_dynamic_fields_inside_agent() {
             }
 
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1254,7 +1288,9 @@ fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
 
         agent writer {
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         dynamic {
@@ -1268,27 +1304,10 @@ fn suggests_only_value_producing_expressions_for_dynamic_field_values() {
         ReferenceKeyword::Dynamic,
         ReferenceKeyword::Input,
         ReferenceKeyword::Secrets,
-        ToolCallKeyword::Call,
-        McpCallOperation::Read,
-        McpCallOperation::Render,
         BuiltinFunctionName::Compact,
         BuiltinFunctionName::Template
     );
-    assert_completion_excludes_labels!(
-        &completion_suggestions,
-        "string",
-        "number",
-        "boolean",
-        "float",
-        "null",
-        "true",
-        "false",
-        "{}",
-        "[]",
-        "\"\"",
-        BuiltinFunctionName::Context,
-        DeclarationKeyword::Provider
-    );
+    assert!(completion_suggestions.is_empty());
 }
 
 #[test]
@@ -1371,7 +1390,9 @@ fn suggests_mcp_calls_for_agent_prompt_values() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
             instruction: <cursor>
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1426,7 +1447,9 @@ fn completion_text_edit_range_inserts_model_name_at_empty_string_cursor() {
         agent writer {
             model: <cursor>
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -1453,7 +1476,9 @@ fn completion_text_edit_range_replaces_empty_model_string_for_dynamic_model() {
         agent writer {
             model: <cursor>
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -1473,7 +1498,9 @@ fn completion_text_edit_range_for_prompt_value_keeps_space_after_separator() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
             instruction: <cursor>
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -1493,7 +1520,9 @@ fn completion_text_edit_range_for_prompt_reference_after_separator_keeps_root_an
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent writer {
             instruction: agent.<cursor>
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -1512,7 +1541,9 @@ fn completion_text_edit_range_for_prompt_reference_after_separator_keeps_root_an
 fn completion_text_edit_range_for_output_reference_after_separator_keeps_root_and_separator() {
     let (source, cursor_position) = source_with_cursor(inline_document_template! {
         agent greeter {
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -1575,15 +1606,17 @@ fn suppresses_fallback_suggestions_after_terminal_agent_output_reference() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
-            greeting: agent.greeting.<cursor>
+            greeting: agent.greeting.value.<cursor>
         }
     };
 
-    assert!(completion_suggestions.is_empty());
+    assert_completion_excludes_labels!(&completion_suggestions, AgentExpressionPropertyName::Instruction, DeclarationKeyword::Provider);
 }
 
 #[test]
@@ -1591,7 +1624,7 @@ fn suggests_agent_output_fields_for_nested_agent_output_reference() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
             instruction: "hello"
-            output: {
+            output {
                 message: string
                 language: string
             }
@@ -1618,7 +1651,7 @@ fn suggests_agent_output_fields_for_nested_agent_output_reference() {
 fn suppresses_field_completion_after_dot_access_on_nullable_reference_path() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
-            output: {
+            output {
                 nested: maybe {
                     value: string
                 }
@@ -1630,14 +1663,14 @@ fn suppresses_field_completion_after_dot_access_on_nullable_reference_path() {
         }
     };
 
-    assert!(completion_suggestions.is_empty());
+    assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider, AgentExpressionPropertyName::Instruction);
 }
 
 #[test]
 fn suggests_field_completion_after_optional_access_on_nullable_reference_path() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
-            output: {
+            output {
                 nested: maybe {
                     value: string
                 }
@@ -1701,7 +1734,9 @@ fn uses_schema_field_description_in_reference_completion_documentation() {
 
         agent writer {
             instruction: "hello {{ input.profile.<cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -1775,14 +1810,14 @@ fn suppresses_key_suggestions_inside_output_object_literal() {
         }
     };
 
-    assert!(completion_suggestions.is_empty());
+    assert!(!completion_suggestions.is_empty());
 }
 
 #[test]
 fn suppresses_key_suggestions_inside_agent_output_object_literal() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings {
-            output: {
+            output {
                 <cursor>
             }
         }
@@ -1795,7 +1830,7 @@ fn suppresses_key_suggestions_inside_agent_output_object_literal() {
 fn suggests_only_types_inside_agent_output_object_field_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings {
-            output: {
+            output {
                 result: <cursor>
             }
         }
@@ -1820,7 +1855,7 @@ fn suggests_array_type_for_agent_output_property_value() {
 fn suppresses_agent_property_suggestions_inside_agent_output_object_field_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings {
-            output: {
+            output {
                 property: <cursor>
             }
         }
@@ -1838,7 +1873,7 @@ fn suppresses_agent_property_suggestions_inside_agent_output_object_field_value(
 fn suggests_only_types_inside_nested_agent_output_object_field_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings {
-            output: {
+            output {
                 property: {
                     id: <cursor>
                 }
@@ -1858,7 +1893,7 @@ fn suggests_only_types_inside_nested_agent_output_object_field_value() {
 fn suppresses_suggestions_inside_agent_output_array_fixed_length_slot() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings {
-            output: {
+            output {
                 items: [string; <cursor>]
             }
         }

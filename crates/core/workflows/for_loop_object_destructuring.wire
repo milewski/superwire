@@ -11,7 +11,7 @@ model ollama_model from ollama {
 agent alpha {
     model: model.ollama_model
     instruction: "Generate participants and tasks for a sprint planning note."
-    output: {
+    output {
         tasks: [{
             /// the unique identifier of the task
             id: number
@@ -28,7 +28,7 @@ agent alpha {
 agent analyzer for { id, name } in agent.alpha.participants {
     model: model.ollama_model
     instruction: "Write a short workload summary for participant #{{ id }} ({{ name }})."
-    output: {
+    output {
         participant_id: number
         participant_name: string
         summary: string

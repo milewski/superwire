@@ -50,7 +50,9 @@ fn reports_unknown_model_for_provider_diagnostic() {
         agent writer {
             model: model.missing_model
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -73,7 +75,9 @@ fn allows_dynamic_model_reference_without_literal_model_diagnostic() {
         agent writer {
             model: model.openai_model
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -94,7 +98,9 @@ fn reports_unknown_agent_property_diagnostic() {
             model: model.openai_model
             instruction: "hello"
             retries: 3
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -414,13 +420,17 @@ fn reports_secret_reference_in_prompt_string_interpolation_diagnostic() {
         agent context_agent {
             model: model.openai_model
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         agent worker {
             model: model.openai_model
             instruction: "example {{ agent.context_agent }} {{ input.query }} {{ schema.payload }} {{ secrets.api_key }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -450,7 +460,9 @@ fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic(
                 example {{ input.query }}
                 forbidden {{ secrets.api_key }}
             """
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -461,7 +473,7 @@ fn reports_secret_reference_in_multiline_prompt_string_interpolation_diagnostic(
 fn reports_missing_optional_reference_access_diagnostic_for_nullable_path() {
     let diagnostics = inline_diagnostics! {
         agent greeting {
-            output: {
+            output {
                 nested: maybe {
                     value: string
                 }
@@ -499,11 +511,13 @@ fn reports_workflow_compilation_diagnostic_for_non_exhaustive_variant_match() {
 
         agent worker {
             model: model.openai_model
-            output: schema.event_result
+            output {
+                value: schema.event_result
+            }
         }
 
         output {
-            event_id: match agent.worker.event {
+            event_id: match agent.worker.value.event {
                 created.id
             }
         }
@@ -516,14 +530,16 @@ fn reports_workflow_compilation_diagnostic_for_non_exhaustive_variant_match() {
 fn reports_invalid_for_loop_iterable_type_diagnostic_for_object_reference() {
     let diagnostics = inline_diagnostics! {
         agent summarizer {
-            output: {
+            output {
                 tasks: [{ id: number }]
                 participants: [{ id: number }]
             }
         }
 
         agent analyzer for participant in agent.summarizer {
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -537,7 +553,9 @@ fn reports_duplicate_property_diagnostic() {
             model: model.ollama_model
             instruction: "Write a short welcome message."
             instruction: "Write a short welcome message."
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -548,7 +566,9 @@ fn reports_duplicate_property_diagnostic() {
 fn reports_invalid_type_expression_reference_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent greeting {
-            output: test
+            output {
+                value: test
+            }
         }
     };
 

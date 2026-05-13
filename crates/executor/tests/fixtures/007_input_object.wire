@@ -15,7 +15,7 @@ input {
 agent summarizer {
     model: model.openai_model
     instruction: "Summarize {{ input.product_name }} highlights: {{ input.release_highlights }}"
-    output: {
+    output {
         summary: string
         key_points: [string]
     }

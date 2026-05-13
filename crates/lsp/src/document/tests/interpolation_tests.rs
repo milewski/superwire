@@ -12,13 +12,17 @@ fn completes_agent_references_inside_prompt_string_interpolation() {
         agent context_agent {
             model: model.openai_model
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         agent worker {
             model: model.openai_model
             instruction: "example {{ agent.<cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -88,7 +92,9 @@ fn suggests_only_agent_and_input_roots_inside_interpolation_expression() {
 
         agent writer {
             instruction: "Write a short welcome message. {{ <cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -117,7 +123,9 @@ fn suppresses_invalid_schema_root_suggestions_inside_interpolation_expression() 
 
         agent writer {
             instruction: "Write a short welcome message. {{ schema.<cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -141,7 +149,9 @@ fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
         agent context_agent {
             model: model.openai_model
             instruction: "hello"
-            output: string
+            output {
+                value: string
+            }
         }
 
         agent worker {
@@ -149,7 +159,9 @@ fn completes_agent_references_inside_multiline_prompt_string_interpolation() {
             instruction: """
                 example {{ agent.<cursor> }}
             """
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -170,7 +182,9 @@ fn suppresses_suggestions_inside_plain_multiline_prompt_string_text() {
             instruction: """
                 Like this <cursor>
             """
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -189,7 +203,9 @@ fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
         agent worker {
             model: model.openai_model
             instruction: "hello <cursor>world"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -200,7 +216,7 @@ fn suppresses_suggestions_inside_plain_single_line_prompt_string_text() {
 fn uses_agent_output_field_description_for_interpolation_completion() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greetings {
-            output: {
+            output {
                 /// some description of the message
                 message: string
             }
@@ -208,7 +224,9 @@ fn uses_agent_output_field_description_for_interpolation_completion() {
 
         agent greetings2 {
             instruction: "Explain: {{ agent.greetings.<cursor> }}."
-            output: string
+            output {
+                value: string
+            }
         }
     };
 

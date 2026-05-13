@@ -38,7 +38,7 @@ agent research_analysis {
         Feedback={{ input.customer_feedback }}
     """
 
-    output: {
+    output {
         /// Key themes found across the feedback
         themes: [string]
         /// Main risks or pain points mentioned by customers

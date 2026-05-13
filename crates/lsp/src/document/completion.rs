@@ -165,6 +165,10 @@ impl DocumentState {
             }
         }
 
+        if semantic_index.is_inside_agent_output_declaration(position) {
+            return Vec::new();
+        }
+
         semantic_index.default_suggestions(should_include_builtin_function_suggestions)
     }
 

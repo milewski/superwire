@@ -175,7 +175,9 @@ fn uses_mcp_lock_for_imported_tool_schema() {
             model: model.openai_model
             uses: [tool.update_user_name]
             instruction: "Rename the user"
-            output: string
+            output {
+                value: string
+            }
         }
     };
     

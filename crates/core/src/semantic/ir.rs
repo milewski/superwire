@@ -316,7 +316,7 @@ fn collect_dependencies_for_agent(
                     collect_agent_dependencies(&field.value, &mut dependencies);
                 }
             }
-            AgentProperty::Output { output_type_expression: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
+            AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
         }
     }
 
@@ -504,7 +504,7 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             AgentProperty::Model(_)
             | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
-            | AgentProperty::Output { output_type_expression: _ }
+            | AgentProperty::Output { fields: _, span: _ }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Uses(_)
@@ -533,8 +533,14 @@ mod tests {
 
     #[derive(Debug, Deserialize, JsonSchema)]
     #[allow(dead_code)]
+    struct ScoreOutput {
+        value: i64,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    #[allow(dead_code)]
     struct TestOutput {
-        values: Vec<i64>,
+        values: Vec<ScoreOutput>,
     }
 
     #[test]
@@ -553,13 +559,17 @@ mod tests {
             agent researcher {
                 model: model.openai_model
                 instruction: input.topic
-                output: string
+                output {
+                    value: string
+                }
             }
 
             agent scorer for item in [agent.researcher] {
                 model: model.openai_model
                 instruction: "score {{ item }}"
-                output: number
+                output {
+                    value: number
+                }
             }
 
             output {
@@ -578,7 +588,10 @@ mod tests {
         assert_eq!(
             scorer_agent.final_output_type,
             WorkflowType::Array {
-                item_type: Box::new(WorkflowType::Integer),
+                item_type: Box::new(WorkflowType::Object(BTreeMap::from([(
+                    "value".to_string(),
+                    WorkflowType::Integer,
+                )]))),
                 fixed_length: None,
             }
             .normalize()
@@ -588,7 +601,10 @@ mod tests {
         expected_output_fields.insert(
             "values".to_string(),
             WorkflowType::Array {
-                item_type: Box::new(WorkflowType::Integer),
+                item_type: Box::new(WorkflowType::Object(BTreeMap::from([(
+                    "value".to_string(),
+                    WorkflowType::Integer,
+                )]))),
                 fixed_length: None,
             }
             .normalize(),
@@ -630,7 +646,7 @@ mod tests {
             agent base {
                 model: model.base_provider_model
                 instruction: "base"
-                output: {
+                output {
                     endpoint: string
                 }
             }
@@ -638,11 +654,13 @@ mod tests {
             agent dependent {
                 model: model.dynamic_provider_model
                 instruction: "dependent"
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                value: agent.dependent
+                value: agent.dependent.value
             }
         };
 
@@ -692,11 +710,13 @@ mod tests {
                 }
 
                 instruction: "write"
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                value: agent.writer
+                value: agent.writer.value
             }
         };
 
@@ -727,11 +747,13 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent missing_model {
                 instruction: "hello"
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                value: agent.missing_model
+                value: agent.missing_model.value
             }
         };
 
@@ -760,11 +782,13 @@ mod tests {
 
             agent missing_instruction {
                 model: model.openai_model
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                value: agent.missing_instruction
+                value: agent.missing_instruction.value
             }
         };
 

@@ -21,7 +21,7 @@ input {
 agent participant_note for { id, profile } in input.participants {
     model: model.ollama_model
     instruction: "Participant #{{ id }} belongs to {{ profile.team }} in {{ profile.city }}."
-    output: {
+    output {
         id: number
         note: string
     }

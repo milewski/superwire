@@ -38,7 +38,9 @@ agent task_manager {
     model: model.openai_model
     uses: [tool.create_task, prompt.create_task_instructions, resource.all_tasks]
     instruction: "Create a task"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

@@ -16,9 +16,11 @@ agent writer {
         Keep it to one sentence.
     """
 
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    message: agent.writer
+    message: agent.writer.value
 }

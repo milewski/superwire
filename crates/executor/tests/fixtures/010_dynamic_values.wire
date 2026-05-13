@@ -23,7 +23,7 @@ dynamic {
 agent writer {
     model: model.openai_model
     instruction: "{{ dynamic.prompt_prefix }} for {{ dynamic.audience }} about {{ input.topic }}. Limit to {{ dynamic.max_bullets }} bullets."
-    output: {
+    output {
         summary: string
     }
 }

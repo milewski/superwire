@@ -29,7 +29,9 @@ dynamic {
 agent number_note for number in dynamic.result.values {
     model: model.openai_model
     instruction: "Write a note for {{ number }}."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

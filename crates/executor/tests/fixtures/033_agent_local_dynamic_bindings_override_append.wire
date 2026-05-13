@@ -31,7 +31,9 @@ agent analyzer {
     }
 
     instruction: "Process fetched values"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

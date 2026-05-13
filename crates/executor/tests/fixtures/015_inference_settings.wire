@@ -16,9 +16,11 @@ agent analyst {
     }
 
     instruction: "Analyze the current release readiness."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    analysis: agent.analyst
+    analysis: agent.analyst.value
 }

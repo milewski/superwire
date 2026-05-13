@@ -45,16 +45,18 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
             model: model.openai_model
             uses: [tool.local_update_user]
             instruction: "Rename the user"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
-            value: agent.updater
+            value: agent.updater.value
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let model_provider = TrackingModelProvider::new(vec![json!("renamed")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "renamed" })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service
@@ -555,7 +557,9 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
         agent updater {
             model: model.openai_model
             instruction: "Rename the user"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -564,7 +568,7 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service
@@ -590,7 +594,7 @@ async fn mcp_resource_and_prompt_imports_are_added_to_agent_prompt() {
 async fn fixture_exposes_root_and_agent_level_max_calls_configuration() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::TOOL_MAX_CALLS_SCOPES, &server.endpoint());
-    let model_provider = TrackingModelProvider::new(vec![json!("first"), json!("second")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service
@@ -759,7 +763,9 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
             model: model.openai_model
             uses: [tool.list_participants]
             instruction: "List participants"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -768,7 +774,7 @@ async fn accepts_null_input_when_all_input_fields_are_consumed_by_bindings() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let model_provider = TrackingModelProvider::new(vec![serde_json::json!("done")]);
+    let model_provider = TrackingModelProvider::new(vec![serde_json::json!({ "value": "done" })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service
@@ -813,7 +819,9 @@ fn validation_does_not_execute_workflow_dynamic_tool_calls() {
         agent updater {
             model: model.openai_model
             instruction: "List participants"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -873,7 +881,9 @@ fn validation_does_not_execute_agent_dynamic_tool_calls() {
             }
 
             instruction: "List participants"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -929,7 +939,9 @@ fn validation_does_not_fetch_mcp_prompt_imports() {
         agent updater {
             model: model.openai_model
             instruction: "Summarize task"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -983,7 +995,9 @@ fn validation_does_not_read_mcp_resource_imports() {
         agent updater {
             model: model.openai_model
             instruction: "Summarize project"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -1095,7 +1109,9 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
             model: model.openai_model
             uses: [tool.local_update_user]
             instruction: "Rename the user"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -1108,7 +1124,7 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
         "mcp_token": "Bearer secret-token",
     });
 
-    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
     let service = ExecutorService::new(model_provider.clone());
     let mut request = request_with_input(workflow_source, json!({ "user_id": 123 }));
 
@@ -1171,7 +1187,9 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
             model: model.openai_model
             uses: [tool.edit_project]
             instruction: "Edit project"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -1180,7 +1198,7 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service
@@ -1217,7 +1235,7 @@ async fn mcp_nullable_array_input_schema_is_preserved_for_model_validation() {
 async fn mcp_tool_batch_imports_apply_shared_bindings_to_all_tools() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_TOOL_BATCH_IMPORTS, &server.endpoint());
-    let model_provider = TrackingModelProvider::new(vec![json!("done")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "done" })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service

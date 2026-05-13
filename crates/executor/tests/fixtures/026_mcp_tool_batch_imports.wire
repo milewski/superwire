@@ -46,7 +46,9 @@ agent task_manager {
     model: model.openai_model
     uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
     instruction: "Manage project tasks"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

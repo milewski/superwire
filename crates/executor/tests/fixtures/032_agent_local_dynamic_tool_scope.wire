@@ -20,7 +20,9 @@ tool fetch_task_data from mcp.local.tool.fetch_task_data
 agent agent_a {
     model: model.openai_model
     instruction: "Prepare dependency value"
-    output: string
+    output {
+        value: string
+    }
 }
 
 agent agent_b {
@@ -36,7 +38,9 @@ agent agent_b {
     }
 
     instruction: "Use dependency from agent_a"
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

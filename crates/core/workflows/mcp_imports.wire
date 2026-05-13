@@ -59,7 +59,7 @@ agent project_creator {
         {{ dynamic.readme }}
     """
 
-    output: {
+    output {
         project_id: string
     }
 }

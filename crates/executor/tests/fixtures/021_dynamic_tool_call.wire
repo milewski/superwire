@@ -36,7 +36,7 @@ dynamic {
 agent summarizer {
     model: model.openai_model
     instruction: "Summarize: {{ dynamic.data }}"
-    output: {
+    output {
         summary: string
     }
 }

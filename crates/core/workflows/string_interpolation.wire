@@ -33,7 +33,7 @@ input {
 agent release_summary {
     model: model.openai_model
     instruction: "Write a short release summary for {{ input.product_name }} based on these highlights: {{ input.release_highlights }}"
-    output: {
+    output {
         /// Short release summary
         summary: string
         /// Exactly three key points from the release
@@ -58,7 +58,7 @@ agent launch_message {
         Keep the tone clear, confident, and concise.
     """
 
-    output: {
+    output {
         /// Short title for the launch message
         title: string
         /// Final message body
@@ -80,7 +80,7 @@ agent qa_check {
         Launch message body: {{ agent.launch_message.body }}
     """
 
-    output: {
+    output {
         /// Whether the content is ready to use
         approved: boolean
         /// List of issues to fix before sending

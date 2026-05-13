@@ -21,7 +21,7 @@ async fn string_interpolation_in_prompt() {
 
 #[tokio::test]
 async fn hardcoded_output_values() {
-    let output = execute!(fixtures::HARDCODED_OUTPUT, output: "agent value").await;
+    let output = execute!(fixtures::HARDCODED_OUTPUT, output: { "value": "agent value" }).await;
     assert_eq!(
         output,
         json!({
@@ -77,7 +77,7 @@ async fn mixed_output_with_agent_and_literals() {
 async fn schema_output_with_field_access() {
     let output = execute!(
         fixtures::SCHEMA_OUTPUT,
-        output: { "name": "Alice", "age": 30, "role": "engineer" },
+        output: { "value": { "name": "Alice", "age": 30, "role": "engineer" } },
     )
     .await;
     assert_eq!(
@@ -94,7 +94,7 @@ async fn schema_output_with_field_access() {
 async fn complex_types_output() {
     let output = execute!(
         fixtures::COMPLEX_TYPES,
-        output: {
+        output: { "value": {
             "string_value": "hello",
             "number_value": 42,
             "boolean_value": true,
@@ -102,7 +102,7 @@ async fn complex_types_output() {
             "array": ["a", "b", "c"],
             "fixed_array": ["x", "y", "z"],
             "enum_value": "ready"
-        },
+        } },
     )
     .await;
     assert_eq!(

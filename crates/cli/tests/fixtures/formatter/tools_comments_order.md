@@ -26,7 +26,7 @@ agent assistant_with_tools {
     ]
 
     instruction: "Answer the question using tools when needed: {{ input.question }}"
-    output: {
+    output {
         answer: string
         sources: [string]
     }
@@ -61,7 +61,7 @@ agent assistant_with_tools {
     ]
 
     instruction: "Answer the question using tools when needed: {{ input.question }}"
-    output: {
+    output {
         answer: string
         sources: [string]
     }

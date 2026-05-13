@@ -314,11 +314,13 @@ mod tests {
             agent greeting {
                 model: model.ollama_model
                 instruction: "Write a short welcome message."
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                greeting: agent.greeting
+                greeting: agent.greeting.value
             }
         };
 
@@ -365,7 +367,9 @@ mod tests {
             agent remediation_plan for finding in agent.findings.items {
                 model: model.ollama_model
                 instruction: "Create a remediation plan for finding: {{ finding }}"
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -398,7 +402,9 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent participant_analyzer for { id, name } in agent.alpha.participants {
                 instruction: "Analyze participant {{ id }} and {{ name }}"
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -803,7 +809,9 @@ mod tests {
                 model: model.openai_model
                 instruction: "Create a task"
                 uses: [tool.create_task, prompt.create_task_instructions, resource.all_tasks]
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -956,7 +964,9 @@ mod tests {
                 }
 
                 instruction: "{{ dynamic.local_issue.title }}"
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -1174,7 +1184,7 @@ mod tests {
             }
 
             agent router {
-                output: {
+                output {
                     model: input.models.large | input.models.small
                 }
             }
@@ -1244,7 +1254,9 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent interpolation_test {
                 instruction: "A {{ agent.alpha.summary }} B {{ input.topic }} C"
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -1301,7 +1313,9 @@ mod tests {
         let workflow_source = workflow_source! {
             agent interpolation_test {
                 instruction: "A { agent.alpha.summary }"
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 

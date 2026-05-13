@@ -6,7 +6,7 @@ use serde_json::json;
 #[tokio::test]
 async fn minimum_workflow_produces_output() {
     assert_eq!(
-        execute!(fixtures::MINIMUM, output: "hello world").await,
+        execute!(fixtures::MINIMUM, output: { "value": "hello world" }).await,
         json!({ "greeting": "hello world" })
     );
 }
@@ -14,7 +14,7 @@ async fn minimum_workflow_produces_output() {
 #[tokio::test]
 async fn string_output_workflow() {
     assert_eq!(
-        execute!(fixtures::STRING_OUTPUT, output: "This is a summary.").await,
+        execute!(fixtures::STRING_OUTPUT, output: { "value": "This is a summary." }).await,
         json!({ "summary": "This is a summary." })
     );
 }
@@ -48,8 +48,8 @@ async fn linear_chain_executes_in_order() {
     let output = execute!(
         fixtures::LINEAR_CHAIN,
         input: { "topic": "testing" },
-        output: "first",
-        output: "second",
+        output: { "value": "first" },
+        output: { "value": "second" },
     )
     .await;
     assert_eq!(output, json!({ "result": "second" }));
@@ -57,19 +57,19 @@ async fn linear_chain_executes_in_order() {
 
 #[tokio::test]
 async fn multiline_prompt_workflow() {
-    let output = execute!(fixtures::MULTILINE_PROMPT, output: "Welcome!").await;
+    let output = execute!(fixtures::MULTILINE_PROMPT, output: { "value": "Welcome!" }).await;
     assert_eq!(output, json!({ "message": "Welcome!" }));
 }
 
 #[tokio::test]
 async fn inference_settings_workflow() {
-    let output = execute!(fixtures::INFERENCE_SETTINGS, output: "All systems go.").await;
+    let output = execute!(fixtures::INFERENCE_SETTINGS, output: { "value": "All systems go." }).await;
     assert_eq!(output, json!({ "analysis": "All systems go." }));
 }
 
 #[tokio::test]
 async fn inference_settings_are_sent_with_model_request() {
-    let model_provider = TrackingModelProvider::new(vec![json!("All systems go.")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "All systems go." })]);
     let service = ExecutorService::new(model_provider.clone());
 
     service

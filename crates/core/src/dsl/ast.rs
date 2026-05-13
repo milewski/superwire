@@ -1117,7 +1117,7 @@ impl AgentDeclaration {
             AgentProperty::Model(_)
             | AgentProperty::InvalidModel(_)
             | AgentProperty::Instruction(_)
-            | AgentProperty::Output { output_type_expression: _ }
+            | AgentProperty::Output { fields: _, span: _ }
             | AgentProperty::Context(_)
             | AgentProperty::Inference(_)
             | AgentProperty::Uses(_)
@@ -1139,7 +1139,7 @@ impl AgentDeclaration {
                 AgentProperty::Model(_)
                 | AgentProperty::InvalidModel(_)
                 | AgentProperty::Instruction(_)
-                | AgentProperty::Output { output_type_expression: _ }
+                | AgentProperty::Output { fields: _, span: _ }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
                 | AgentProperty::Uses(_)
@@ -1194,9 +1194,9 @@ impl AgentDeclaration {
     }
 
     #[must_use]
-    pub fn output_type(&self) -> Option<&TypeExpression> {
+    pub fn output_type(&self) -> Option<TypeExpression> {
         for agent_property in &self.properties {
-            if let AgentProperty::Output { output_type_expression } = agent_property {
+            if let Some(output_type_expression) = agent_property.output_type_expression() {
                 return Some(output_type_expression);
             }
         }
@@ -1206,7 +1206,7 @@ impl AgentDeclaration {
 
     #[must_use]
     pub fn inferred_iteration_output_type_expression(&self) -> TypeExpression {
-        self.output_type().cloned().unwrap_or(TypeExpression::String)
+        self.output_type().unwrap_or(TypeExpression::String)
     }
 
     #[must_use]
@@ -1274,7 +1274,7 @@ pub enum AgentProperty {
     Model(ModelUsage),
     InvalidModel(Expression),
     Instruction(Expression),
-    Output { output_type_expression: TypeExpression },
+    Output { fields: Vec<TypedField>, span: SourceSpan },
     Context(Expression),
     Inference(Expression),
     Uses(Expression),
@@ -1324,13 +1324,28 @@ impl ModelUsage {
 
 impl AgentProperty {
     #[must_use]
+    pub fn output_type_expression(&self) -> Option<TypeExpression> {
+        match self {
+            Self::Output { fields, span: _ } => Some(TypeExpression::Object(fields.clone())),
+            Self::Dynamic(_)
+            | Self::Model(_)
+            | Self::InvalidModel(_)
+            | Self::Instruction(_)
+            | Self::Context(_)
+            | Self::Inference(_)
+            | Self::Uses(_)
+            | Self::Unknown { name: _, span: _ } => None,
+        }
+    }
+
+    #[must_use]
     pub fn name(&self) -> AgentPropertyName {
         match self {
             Self::Dynamic(_) => AgentPropertyName::Dynamic,
             Self::Model(_) => AgentPropertyName::Model,
             Self::InvalidModel(_) => AgentPropertyName::Model,
             Self::Instruction(_) => AgentPropertyName::Instruction,
-            Self::Output { output_type_expression: _ } => AgentPropertyName::Output,
+            Self::Output { fields: _, span: _ } => AgentPropertyName::Output,
             Self::Context(_) => AgentPropertyName::Context,
             Self::Inference(_) => AgentPropertyName::Inference,
             Self::Uses(_) => AgentPropertyName::Uses,

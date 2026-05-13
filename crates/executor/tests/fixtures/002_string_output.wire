@@ -10,9 +10,11 @@ model openai_model from openai {
 agent summarizer {
     model: model.openai_model
     instruction: "Write a one-sentence project summary."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {
-    summary: agent.summarizer
+    summary: agent.summarizer.value
 }

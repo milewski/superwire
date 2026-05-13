@@ -14,7 +14,7 @@ input {
 agent processor {
     model: model.openai_model
     instruction: "Process these items: {{ input.items }}"
-    output: {
+    output {
         processed: [string]
         count: number
     }

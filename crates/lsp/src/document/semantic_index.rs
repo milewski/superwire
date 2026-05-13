@@ -55,6 +55,7 @@ pub struct SemanticIndex {
     pub agent_names: Vec<String>,
     pub output_locations: Vec<SourceSpan>,
     pub typed_declaration_locations: Vec<SourceSpan>,
+    pub agent_output_locations: Vec<SourceSpan>,
     pub agent_locations: Vec<NamedSpan>,
     has_input_declaration: bool,
     has_secrets_declaration: bool,
@@ -844,6 +845,7 @@ impl SemanticIndex {
             agent_names: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
+            agent_output_locations: Vec::new(),
             agent_locations: Vec::new(),
             has_input_declaration: false,
             has_secrets_declaration: false,
@@ -1046,23 +1048,20 @@ impl SemanticIndex {
             );
         }
 
-        let output_type_expression = agent_declaration.properties.iter().find_map(|agent_property| match agent_property {
-            AgentProperty::Output { output_type_expression } => Some(output_type_expression),
-            AgentProperty::Model(_)
-            | AgentProperty::InvalidModel(_)
-            | AgentProperty::Instruction(_)
-            | AgentProperty::Context(_)
-            | AgentProperty::Inference(_)
-            | AgentProperty::Uses(_)
-            | AgentProperty::Dynamic(_)
-            | AgentProperty::Unknown { name: _, span: _ } => None,
-        });
+        for agent_property in &agent_declaration.properties {
+            if let AgentProperty::Output { fields: _, span } = agent_property {
+                self.typed_declaration_locations.push(*span);
+                self.agent_output_locations.push(*span);
+            }
+        }
 
-        if let Some(output_type_expression) = output_type_expression {
+        let output_type_expression = agent_declaration.output_type();
+
+        if let Some(output_type_expression) = &output_type_expression {
             self.insert_agent_output_field_locations(agent_declaration.name.as_str(), output_type_expression);
         }
 
-        let output_type = output_type_expression.cloned();
+        let output_type = output_type_expression;
 
         self.agents.insert(
             agent_declaration.name.clone(),
@@ -1227,6 +1226,7 @@ impl SemanticIndex {
             agent_names,
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
+            agent_output_locations: Vec::new(),
             agent_locations,
             has_input_declaration: !tooling_snapshot.input_fields().is_empty(),
             has_secrets_declaration: !tooling_snapshot.secrets_fields().is_empty(),
@@ -1627,6 +1627,13 @@ impl SemanticIndex {
         }
 
         trimmed_line_prefix.contains("output:")
+    }
+
+    pub fn is_inside_agent_output_declaration(&self, position: Position) -> bool {
+        self.agent_output_locations
+            .iter()
+            .copied()
+            .any(|typed_declaration_span| source_span_contains_position(typed_declaration_span, position))
     }
 
     pub fn type_suggestions(&self, line_prefix: &str, current_schema_name: Option<&str>) -> Vec<CompletionSuggestion> {

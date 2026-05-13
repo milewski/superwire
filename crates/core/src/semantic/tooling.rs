@@ -240,7 +240,7 @@ impl SemanticToolingSnapshot {
                 }
                 Declaration::Agent(agent_declaration) => {
                     declaration_index.push_symbol(ToolingSymbolCategory::Agent, agent_declaration.name.clone(), agent_declaration.span);
-                    agents.insert(agent_declaration.name.clone(), agent_declaration.output_type().cloned());
+                    agents.insert(agent_declaration.name.clone(), agent_declaration.output_type());
                 }
                 Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
                     for tool_declaration in declaration.tool_declarations() {
@@ -1078,7 +1078,9 @@ mod tests {
             agent writer {
                 model: model.openai_model
                 instruction: "Write"
-                output: schema.Report
+                output {
+                    title: string
+                }
             }
 
             output {
@@ -1116,7 +1118,9 @@ mod tests {
             agent writer {
                 model: model.openai_model
                 instruction: input.topic
-                output: schema.Report
+                output {
+                    title: string
+                }
             }
 
             output {

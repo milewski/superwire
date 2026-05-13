@@ -121,45 +121,47 @@ agent typed_example {
         and {{ input.previous_summary.title }}.
     """
 
-    output: schema.all_schema_types
+    output {
+        value: schema.all_schema_types
+    }
 }
 
 output {
-    result: agent.typed_example
-    string_value: agent.typed_example.string_value
-    number_value: agent.typed_example.number_value
-    float_value: agent.typed_example.float_value
-    boolean_value: agent.typed_example.boolean_value
-    nullable_value: agent.typed_example.nullable_value
-    nullable_string: agent.typed_example.nullable_string
-    nullable_number: agent.typed_example.nullable_number
-    array: agent.typed_example.array
-    fixed_array: agent.typed_example.fixed_array
-    array_of_objects: agent.typed_example.array_of_objects
-    enum_value: agent.typed_example.enum_value
-    nullable_enum: agent.typed_example.nullable_enum
-    tuple_value: agent.typed_example.tuple_value
-    nullable_tuple: agent.typed_example.nullable_tuple
-    object_value: agent.typed_example.object_value
-    nested_string: agent.typed_example.object_value.string_value
-    nested_number: agent.typed_example.object_value.number_value
-    nullable_object: agent.typed_example.nullable_object
-    nullable_object_string: agent.typed_example.nullable_object?.string_value
-    lead: agent.typed_example.lead
-    lead_name: agent.typed_example.lead.name
-    participants: agent.typed_example.participants
-    summary_title: agent.typed_example.summary.title
-    summary_lead_role: agent.typed_example.summary.lead.role
-    event_id: match agent.typed_example.event {
+    result: agent.typed_example.value
+    string_value: agent.typed_example.value.string_value
+    number_value: agent.typed_example.value.number_value
+    float_value: agent.typed_example.value.float_value
+    boolean_value: agent.typed_example.value.boolean_value
+    nullable_value: agent.typed_example.value.nullable_value
+    nullable_string: agent.typed_example.value.nullable_string
+    nullable_number: agent.typed_example.value.nullable_number
+    array: agent.typed_example.value.array
+    fixed_array: agent.typed_example.value.fixed_array
+    array_of_objects: agent.typed_example.value.array_of_objects
+    enum_value: agent.typed_example.value.enum_value
+    nullable_enum: agent.typed_example.value.nullable_enum
+    tuple_value: agent.typed_example.value.tuple_value
+    nullable_tuple: agent.typed_example.value.nullable_tuple
+    object_value: agent.typed_example.value.object_value
+    nested_string: agent.typed_example.value.object_value.string_value
+    nested_number: agent.typed_example.value.object_value.number_value
+    nullable_object: agent.typed_example.value.nullable_object
+    nullable_object_string: agent.typed_example.value.nullable_object?.string_value
+    lead: agent.typed_example.value.lead
+    lead_name: agent.typed_example.value.lead.name
+    participants: agent.typed_example.value.participants
+    summary_title: agent.typed_example.value.summary.title
+    summary_lead_role: agent.typed_example.value.summary.lead.role
+    event_id: match agent.typed_example.value.event {
         created.id
         deleted.id
     }
-    created_actor_name: agent.typed_example.event#created.actor.name ?? "not-created"
-    deleted_reason: agent.typed_example.event#deleted.reason ?? "not-deleted"
-    nullable_event_id: match agent.typed_example.nullable_event {
+    created_actor_name: agent.typed_example.value.event#created.actor.name ?? "not-created"
+    deleted_reason: agent.typed_example.value.event#deleted.reason ?? "not-deleted"
+    nullable_event_id: match agent.typed_example.value.nullable_event {
         created.id
         deleted.id
         _ "none"
     }
-    nullable_deleted_reason: agent.typed_example.nullable_event#deleted.reason ?? "none"
+    nullable_deleted_reason: agent.typed_example.value.nullable_event#deleted.reason ?? "none"
 }

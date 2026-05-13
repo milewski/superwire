@@ -29,16 +29,18 @@ schema event_result {
 agent event_agent {
     model: model.openai_model
     instruction: "Generate an event result."
-    output: schema.event_result
+    output {
+        value: schema.event_result
+    }
 }
 
 output {
-    event_id: match agent.event_agent.event {
+    event_id: match agent.event_agent.value.event {
         created.id
         deleted.id
     }
-    created_id: agent.event_agent.event#created.id ?? "not-created"
-    nullable_event_id: match agent.event_agent.maybe_event {
+    created_id: agent.event_agent.value.event#created.id ?? "not-created"
+    nullable_event_id: match agent.event_agent.value.maybe_event {
         created.id
         deleted.id
         _ "none"

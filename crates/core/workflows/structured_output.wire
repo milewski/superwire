@@ -12,7 +12,7 @@ model ollama_model from ollama {
 agent summary {
     model: model.ollama_model
     instruction: "Write a short project status summary and a confidence score."
-    output: {
+    output {
         text: string
         confidence: number
     }

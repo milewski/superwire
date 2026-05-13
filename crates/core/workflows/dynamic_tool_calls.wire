@@ -88,7 +88,7 @@ agent research_agent {
     }
 
     instruction: "Summarize this result: {{ dynamic.agent_ready_result.markdown }}"
-    output: {
+    output {
         answer: string
     }
 }

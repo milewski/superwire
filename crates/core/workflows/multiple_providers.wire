@@ -28,7 +28,7 @@ input {
 agent redact_notes {
     model: model.ollama_model
     instruction: "Redact names, emails, and phone numbers from these interview notes: {{ input.interview_notes }}"
-    output: {
+    output {
         redacted_notes: [string]
         redaction_summary: string
     }
@@ -45,7 +45,7 @@ agent synthesize_insights {
         insights and top recommendations: {{ agent.redact_notes.redacted_notes }}
     """
 
-    output: {
+    output {
         insights: [string]
         recommendations: [string]
     }

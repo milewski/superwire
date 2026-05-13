@@ -5,7 +5,7 @@ topic:string
 /// How many outputs
 count:number }
 
-agent writer {instruction:"Write" output:{
+agent writer {instruction:"Write" output{
 /// One-line summary
 summary:string
 /// Status flag
@@ -24,7 +24,7 @@ input {
 
 agent writer {
     instruction: "Write"
-    output: {
+    output {
         /// One-line summary
         summary: string
         /// Status flag

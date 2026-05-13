@@ -23,7 +23,7 @@ input {
 agent findings {
     model: model.ollama_model
     instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
-    output: {
+    output {
         items: [string]
     }
 }
@@ -33,7 +33,7 @@ agent findings {
 agent remediation_plan for finding in agent.findings.items {
     model: model.ollama_model
     instruction: "Create a remediation plan for finding: {{ finding }}"
-    output: {
+    output {
         title: string
         steps: [string]
         owner_team: string
@@ -46,7 +46,7 @@ agent remediation_plan for finding in agent.findings.items {
 agent number_note for number in [1, 2, 3, 4] {
     model: model.ollama_model
     instruction: "Write a short note for number {{ number }}"
-    output: {
+    output {
         number: number
         note: string
     }
@@ -57,7 +57,7 @@ agent number_note for number in [1, 2, 3, 4] {
 agent input_number_note for n in input.numbers {
     model: model.ollama_model
     instruction: "Write a short note for input number {{ n }}"
-    output: {
+    output {
         number: number
         note: string
     }

@@ -1342,6 +1342,7 @@ impl AstVisitor {
 
         match property_pair.as_rule() {
             Rule::model_agent_property => self.visit_agent_model_property(property_pair),
+            Rule::agent_output_property => self.visit_agent_output_property(property_pair),
             Rule::named_object_property => self.visit_agent_object_property(property_pair, property_span),
             Rule::named_agent_value_property => self.visit_agent_value_property(property_pair, property_span),
             _ => unreachable!("agent block should contain only valid agent property rules"),
@@ -1389,20 +1390,11 @@ impl AstVisitor {
                 fields: self.visit_object_expression(object_expression_pair)?,
                 span: property_span,
             })),
-            Some(AgentPropertyName::Output) => {
-                let expression = self
-                    .visit_object_expression(object_expression_pair)
-                    .map(Expression::ObjectLiteral)?;
-                let Some(output_type_expression) = expression.to_type_expression() else {
-                    return Err(DslParseError::unexpected_with_span(
-                        Rule::named_object_property,
-                        "agent output property",
-                        property_span,
-                    ));
-                };
-
-                Ok(AgentProperty::Output { output_type_expression })
-            }
+            Some(AgentPropertyName::Output) => Err(DslParseError::unexpected_with_span(
+                Rule::named_object_property,
+                "agent output property",
+                property_span,
+            )),
             Some(_) => Err(DslParseError::unexpected_with_span(
                 Rule::named_object_property,
                 "agent object property",
@@ -1429,7 +1421,11 @@ impl AstVisitor {
         match agent_property_name {
             AgentPropertyName::Model => Ok(AgentProperty::InvalidModel(self.visit_expression(value_pair)?)),
             AgentPropertyName::Instruction => Ok(AgentProperty::Instruction(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Output => self.visit_agent_output_property(value_pair, property_span),
+            AgentPropertyName::Output => Err(DslParseError::unexpected_with_span(
+                Rule::named_agent_value_property,
+                "agent output property",
+                property_span,
+            )),
             AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
             AgentPropertyName::Inference => Ok(AgentProperty::Inference(self.visit_expression(value_pair)?)),
             AgentPropertyName::Uses => Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?)),
@@ -1441,36 +1437,13 @@ impl AstVisitor {
         }
     }
 
-    fn visit_agent_output_property(&self, value_pair: Pair<'_, Rule>, property_span: SourceSpan) -> Result<AgentProperty, DslParseError> {
-        let output_type_expression = self.visit_agent_output_property_type(value_pair, property_span)?;
+    fn visit_agent_output_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {
+        let span = source_span_from_pair(&property_pair);
+        let mut inner_pairs = property_pair.into_inner();
+        let typed_block_pair = self.next_pair(&mut inner_pairs, "agent output body", "agent output property")?;
+        let fields = self.visit_typed_block(typed_block_pair)?;
 
-        Ok(AgentProperty::Output { output_type_expression })
-    }
-
-    fn visit_agent_output_property_type(
-        &self,
-        value_pair: Pair<'_, Rule>,
-        property_span: SourceSpan,
-    ) -> Result<TypeExpression, DslParseError> {
-        if value_pair.as_rule() == Rule::type_expression {
-            return self.visit_type_expression(value_pair);
-        }
-
-        let output_expression = if value_pair.as_rule() == Rule::tools_expression {
-            self.visit_tools_expression(value_pair)?
-        } else {
-            self.visit_expression(value_pair)?
-        };
-
-        let Some(output_type_expression) = output_expression.to_type_expression() else {
-            return Err(DslParseError::unexpected_with_span(
-                Rule::named_agent_value_property,
-                "agent output property",
-                property_span,
-            ));
-        };
-
-        Ok(output_type_expression)
+        Ok(AgentProperty::Output { fields, span })
     }
 
     fn visit_tools_expression(&self, tools_expression_pair: Pair<'_, Rule>) -> Result<Expression, DslParseError> {

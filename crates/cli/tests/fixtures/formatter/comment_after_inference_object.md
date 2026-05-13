@@ -10,7 +10,9 @@ agent greeting {
         Keep it to one sentence.
     """
 
-    output: string
+    output {
+        value: string
+    }
 }
 ```
 ---
@@ -26,6 +28,8 @@ agent greeting {
         Keep it to one sentence.
     """
 
-    output: string
+    output {
+        value: string
+    }
 }
 ```

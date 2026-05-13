@@ -19,11 +19,13 @@ schema person {
 agent profile {
     model: model.openai_model
     instruction: "Generate a person profile."
-    output: schema.person
+    output {
+        value: schema.person
+    }
 }
 
 output {
-    profile: agent.profile
-    name: agent.profile.name
-    age: agent.profile.age
+    profile: agent.profile.value
+    name: agent.profile.value.name
+    age: agent.profile.value.age
 }

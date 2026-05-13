@@ -19,7 +19,9 @@ fn completes_input_fields_in_for_loop_iterable_reference() {
 fn completes_agent_names_in_for_loop_iterable_reference() {
     let completion_suggestions = inline_completion_suggestions! {
         agent findings_source {
-            output: [string]
+            output {
+                value: [string]
+            }
         }
 
         agent remediation_plan for finding in agent.<cursor> {
@@ -130,7 +132,7 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
         agent input_number_note for n in input.numbers {
             model: model.ollama_model
             instruction: "Write a short note for input number {{ <cursor> }}"
-            output: {
+            output {
                 number: number
                 note: string
             }
@@ -144,7 +146,7 @@ fn suggests_for_loop_iterator_inside_prompt_interpolation_expression() {
 fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
     let completion_suggestions = inline_completion_suggestions! {
         agent number_note for number in [1, 2, 3, 4] {
-            output: {
+            output {
                 /// numeric message index
                 number: number
                 /// generated note text
@@ -154,7 +156,7 @@ fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
 
         agent input_number_note for n in agent.number_note {
             instruction: "Write a short note for input number {{ n.<cursor> }}"
-            output: {
+            output {
                 number: number
                 note: string
             }
@@ -181,7 +183,7 @@ fn completes_iterator_object_fields_from_agent_for_loop_iterable() {
 fn suggests_iterator_name_for_agent_iterable_for_loop() {
     let completion_suggestions = inline_completion_suggestions! {
         agent number_note for number in [1, 2, 3, 4] {
-            output: {
+            output {
                 number: number
                 note: string
             }
@@ -189,7 +191,9 @@ fn suggests_iterator_name_for_agent_iterable_for_loop() {
 
         agent input_number_note for n in agent.number_note {
             instruction: "Write a short note {{ <cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -281,7 +285,7 @@ fn suggests_destructuring_field_names_from_agent_iterable_output() {
         agent findings {
             model: model.ollama_model
             instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
-            output: {
+            output {
                 items: [{
                     id: string
                     name: number
@@ -291,7 +295,9 @@ fn suggests_destructuring_field_names_from_agent_iterable_output() {
 
         agent remediation_plan for { <cursor> } in agent.findings.items {
             instruction: "{{ id }}"
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -308,7 +314,7 @@ fn excludes_existing_destructured_field_names_from_suggestions() {
         agent findings {
             model: model.ollama_model
             instruction: "Parse this text into a short list of findings: {{ input.findings_text }}"
-            output: {
+            output {
                 items: [{
                     id: string
                     name: number
@@ -318,7 +324,9 @@ fn excludes_existing_destructured_field_names_from_suggestions() {
 
         agent remediation_plan for { id, <cursor> } in agent.findings.items {
             instruction: "{{ id }}"
-            output: string
+            output {
+                value: string
+            }
         }
     });
 
@@ -354,7 +362,7 @@ fn completion_suggestions_from_source_without_cursor_normalization(source_templa
 fn suggests_object_destructuring_bindings_inside_prompt_interpolation_expression() {
     let completion_suggestions = inline_completion_suggestions! {
         agent alpha {
-            output: {
+            output {
                 participants: [{
                     id: number
                     name: string
@@ -367,7 +375,9 @@ fn suggests_object_destructuring_bindings_inside_prompt_interpolation_expression
 
         agent analyzer for { id, profile } in agent.alpha.participants {
             instruction: "Analyze participant {{ <cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -379,7 +389,7 @@ fn suggests_object_destructuring_bindings_inside_prompt_interpolation_expression
 fn completes_object_destructuring_binding_fields_from_for_loop_iterable() {
     let completion_suggestions = inline_completion_suggestions! {
         agent alpha {
-            output: {
+            output {
                 participants: [{
                     id: number
                     name: string
@@ -392,7 +402,9 @@ fn completes_object_destructuring_binding_fields_from_for_loop_iterable() {
 
         agent analyzer for { id, profile } in agent.alpha.participants {
             instruction: "Analyze participant {{ profile.<cursor> }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -412,7 +424,9 @@ fn completes_iterable_references_for_object_destructuring_for_clause() {
 
         agent analyzer for { id, name } in input.<cursor> {
             instruction: "Analyze participant {{ id }} {{ name }}"
-            output: string
+            output {
+                value: string
+            }
         }
     };
 

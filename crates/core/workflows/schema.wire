@@ -40,7 +40,7 @@ agent inline_profile {
     instruction: "Generate a fictional user research participant profile."
 
     // Inline schema is local to this agent only.
-    output: {
+    output {
         /// Participant full name
         name: string
         /// Participant age in years

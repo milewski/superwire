@@ -10,7 +10,7 @@ model openai_model from openai {
 agent summary {
     model: model.openai_model
     instruction: "Write a project status summary with a confidence score."
-    output: {
+    output {
         text: string
         confidence: float
     }

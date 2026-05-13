@@ -48,7 +48,7 @@ async fn rejects_invalid_base64_source() {
 
 #[tokio::test]
 async fn base64_source_executes_successfully() {
-    let output = execute!(fixtures::MINIMUM, output: "ok").await;
+    let output = execute!(fixtures::MINIMUM, output: { "value": "ok" }).await;
     assert_eq!(output, json!({ "greeting": "ok" }));
 }
 
@@ -62,7 +62,7 @@ async fn model_provider_error_propagates() {
 
 #[tokio::test]
 async fn tracking_provider_records_all_calls() {
-    let provider = TrackingModelProvider::new(vec![json!("first"), json!("second")]);
+    let provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
     let service = ExecutorService::new(provider.clone());
     let request = support::request_with_input(fixtures::LINEAR_CHAIN, json!({ "topic": "testing" }));
 
@@ -76,7 +76,7 @@ async fn tracking_provider_records_all_calls() {
 
 #[tokio::test]
 async fn http_returns_final_output() {
-    let router = executor_router_with_service(support::service(vec![json!("ok")]));
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]));
     let request_body = json!({ "workflow_source": fixtures::MINIMUM });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -112,7 +112,7 @@ async fn http_maps_bad_input_to_bad_request() {
 
 #[tokio::test]
 async fn http_accepts_base64_workflow_source() {
-    let router = executor_router_with_service(support::service(vec![json!("ok")]));
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]));
     let request_body = json!({ "workflow_source_base64": BASE64_STANDARD.encode(fixtures::MINIMUM) });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -210,11 +210,13 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
             model: model.openai_model
             uses: [tool.local_update_user]
             instruction: "Rename the user"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
-            value: agent.updater
+            value: agent.updater.value
         }
     };
     

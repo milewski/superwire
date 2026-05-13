@@ -10,7 +10,7 @@ model openai_model from openai {
 agent data {
     model: model.openai_model
     instruction: "Generate data with a nullable nested object."
-    output: {
+    output {
         label: string
         details: maybe {
             score: number

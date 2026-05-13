@@ -83,7 +83,7 @@ async fn deterministic_tool_call_in_dynamic_block_executes_via_mcp() {
         agent summarizer {
             model: model.openai_model
             instruction: "Summarize: {{ dynamic.data }}"
-            output: {
+            output {
                 summary: string
             }
         }
@@ -144,16 +144,18 @@ async fn deterministic_tool_call_result_is_available_in_agent_prompt() {
         agent processor {
             model: model.openai_model
             instruction: "Process {{ dynamic.result }}"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
             result: dynamic.result
-            processed: agent.processor
+            processed: agent.processor.value
         }
     }
     .replace("__ENDPOINT__", &server.endpoint());
-    let model_provider = TestModelProvider::new(vec![json!("processed")]);
+    let model_provider = TestModelProvider::new(vec![json!({ "value": "processed" })]);
     let service = ExecutorService::new(model_provider);
 
     let output = service
@@ -236,7 +238,9 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
             }
 
             instruction: "Context: ready"
-            output: string
+            output {
+                value: string
+            }
         }
 
         output {
@@ -245,7 +249,7 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
     }
     .replace("__ENDPOINT__", &server.endpoint());
 
-    let model_provider = TrackingModelProvider::new(vec![json!("first"), json!("second")]);
+    let model_provider = TrackingModelProvider::new(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
     let service = ExecutorService::new(model_provider.clone());
     let mut request = request_with_input(&workflow_source, Value::Null);
 
@@ -260,7 +264,7 @@ async fn agent_dynamic_tool_call_executes_inside_for_loop_agent() {
         .expect("agent dynamic tool call should execute inside for-loop agent")
         .output;
 
-    assert_eq!(output["values"], json!(["first", "second"]));
+    assert_eq!(output["values"], json!([{ "value": "first" }, { "value": "second" }]));
     assert_eq!(
         model_provider.recorded_prompts(),
         vec!["Context: ready".to_string(), "Context: ready".to_string()]

@@ -6,7 +6,7 @@ fn definition_resolves_agent_output_field_in_output_reference() {
         agent task_summary_aggregator {
             model: model.openai_model
             instruction: "aggregate summaries"
-            output: {
+            output {
                 summary: string
                 themes: [{
                     theme: string
@@ -42,7 +42,7 @@ fn definition_resolves_for_loop_binding_field_to_iterable_item_field_declaration
         agent participants_fetcher {
             model: model.openai_model
             instruction: "fetch participants"
-            output: {
+            output {
                 participants: [
                     {
                         id: number
@@ -222,7 +222,9 @@ fn definition_resolves_prompt_reference_inside_multiline_instruction_mcp_call() 
             instruction: """
                 Prompt: {{ render prompt.<cursor>dynamic_summary_prompt }}
             """
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -250,7 +252,9 @@ fn definition_resolves_resource_reference_inside_multiline_instruction_mcp_call(
             instruction: """
                 Resource: {{ read resource.<cursor>project_readme }}
             """
-            output: string
+            output {
+                value: string
+            }
         }
     };
 
@@ -282,7 +286,9 @@ fn definition_resolves_tool_reference_inside_multiline_instruction_tool_call() {
             instruction: """
                 Tool: {{ call tool.<cursor>format_response }}
             """
-            output: string
+            output {
+                value: string
+            }
         }
     };
 

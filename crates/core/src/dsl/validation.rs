@@ -760,7 +760,7 @@ impl ValidationIssue {
                 )
             }
             Self::MissingAgentOutputTypeForFieldReference { agent_name, context: _ } => {
-                format!("Add `output: <type>` to `agent {agent_name}` before referencing `agent.{agent_name}` or its fields.")
+                format!("Add `output {{ ... }}` to `agent {agent_name}` before referencing `agent.{agent_name}` or its fields.")
             }
             Self::MissingOptionalReferenceAccess {
                 reference_path: _,
@@ -1459,7 +1459,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     continue;
                 }
 
-                let agent_output_type = agent_declaration.output_type().cloned();
+                let agent_output_type = agent_declaration.output_type();
                 validation_index
                     .agent_output_types
                     .insert(agent_declaration.name.clone(), agent_output_type);
@@ -1849,8 +1849,12 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                                 Some(*span),
                             );
                         }
-                        AgentProperty::Output { output_type_expression } => {
-                            report_duplicate_type_expression_fields(output_type_expression, agent_context.clone(), validation_report);
+                        AgentProperty::Output { fields, span: _ } => {
+                            report_duplicate_typed_field_names(fields.as_slice(), agent_context.clone(), validation_report);
+
+                            for output_field in fields {
+                                report_duplicate_type_expression_fields(&output_field.field_type, agent_context.clone(), validation_report);
+                            }
                         }
                     }
                 }
@@ -2165,7 +2169,7 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
                         AgentProperty::Dynamic(_)
                         | AgentProperty::InvalidModel(_)
                         | AgentProperty::Instruction(_)
-                        | AgentProperty::Output { output_type_expression: _ }
+                        | AgentProperty::Output { fields: _, span: _ }
                         | AgentProperty::Context(_)
                         | AgentProperty::Uses(_)
                         | AgentProperty::Unknown { name: _, span: _ } => {}
@@ -2285,16 +2289,18 @@ fn validate_schema_references(workflow: &Workflow, validation_index: &Validation
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
                 for agent_property in &agent_declaration.properties {
-                    if let AgentProperty::Output { output_type_expression } = agent_property {
-                        validate_type_expression_for_schemas(
-                            output_type_expression,
-                            agent_context.clone(),
-                            Some(agent_declaration.span),
-                            validation_index,
-                            validation_report,
-                            &mut unknown_schema_references,
-                            &mut invalid_type_expression_references,
-                        );
+                    if let AgentProperty::Output { fields, span: _ } = agent_property {
+                        for output_field in fields {
+                            validate_type_expression_for_schemas(
+                                &output_field.field_type,
+                                agent_context.clone(),
+                                Some(output_field.span),
+                                validation_index,
+                                validation_report,
+                                &mut unknown_schema_references,
+                                &mut invalid_type_expression_references,
+                            );
+                        }
                     }
                 }
             }
@@ -2507,7 +2513,7 @@ fn validate_agent_model_bindings(workflow: &Workflow, validation_index: &Validat
                 }
                 AgentProperty::Dynamic(_)
                 | AgentProperty::Instruction(_)
-                | AgentProperty::Output { output_type_expression: _ }
+                | AgentProperty::Output { fields: _, span: _ }
                 | AgentProperty::Context(_)
                 | AgentProperty::Inference(_)
                 | AgentProperty::Uses(_)
@@ -2885,7 +2891,7 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                 &agent_dynamic_field_types,
                             );
                         }
-                        AgentProperty::Output { output_type_expression: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
+                        AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
                     }
                 }
             }
@@ -4240,7 +4246,7 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                         collect_agent_dependencies_from_expression(&model_property.value, &mut referenced_agents);
                     }
                 }
-                AgentProperty::Output { output_type_expression: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
+                AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
             }
         }
 
@@ -4420,11 +4426,13 @@ mod tests {
             agent researcher {
                 model: model.openai_model
                 instruction: input.title
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                note: agent.researcher
+                note: agent.researcher.value
             }
         };
 
@@ -4687,7 +4695,7 @@ mod tests {
 
             agent project_creator {
                 uses: [tool.create_task_group_for_project]
-                output: {
+                output {
                     project_id: number
                 }
             }
@@ -4859,7 +4867,9 @@ mod tests {
                     temperature: 0.2
                     temperature: 0.4
                 }
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
@@ -5339,14 +5349,16 @@ mod tests {
     fn reports_invalid_for_loop_iterable_type_for_object_reference() {
         let workflow = parse_inline_workflow! {
             agent summarizer {
-                output: {
+                output {
                     tasks: [{ id: number }]
                     participants: [{ id: number }]
                 }
             }
 
             agent analyzer for participant in agent.summarizer {
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -5363,14 +5375,16 @@ mod tests {
     fn allows_for_loop_iterable_type_for_array_reference() {
         let workflow = parse_inline_workflow! {
             agent summarizer {
-                output: {
+                output {
                     tasks: [{ id: number }]
                     participants: [{ id: number }]
                 }
             }
 
             agent analyzer for participant in agent.summarizer.participants {
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -5502,7 +5516,7 @@ mod tests {
     fn reports_invalid_nested_agent_output_reference_path() {
         let workflow = parse_inline_workflow! {
             agent producer {
-                output: {
+                output {
                     summary: string
                 }
             }
@@ -5528,7 +5542,7 @@ mod tests {
     fn reports_missing_optional_reference_access_for_nullable_agent_output_path() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                output: {
+                output {
                     nested: maybe {
                         value: string
                     }
@@ -5556,7 +5570,7 @@ mod tests {
     fn accepts_optional_reference_access_for_nullable_agent_output_path() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                output: {
+                output {
                     nested: maybe {
                         value: string
                     }
@@ -5581,7 +5595,11 @@ mod tests {
             }
 
             agent producer {
-                output: schema.report
+                output {
+                    payload: {
+                        score: number
+                    }
+                }
             }
 
             output {
@@ -5693,7 +5711,9 @@ mod tests {
     fn reports_invalid_type_expression_reference_root() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                output: test
+                output {
+                    value: test
+                }
             }
         };
 
@@ -5710,7 +5730,9 @@ mod tests {
     fn reports_invalid_keyword_root_in_type_expression_reference() {
         let workflow = parse_inline_workflow! {
             agent greeting {
-                output: secrets.api_key
+                output {
+                    value: secrets.api_key
+                }
             }
         };
 
@@ -5789,7 +5811,9 @@ mod tests {
         let workflow = parse_inline_workflow! {
             agent researcher {
                 instruction: dynamic.topic
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 

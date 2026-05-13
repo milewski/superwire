@@ -11,7 +11,7 @@ use superwire_core::workflow_source;
 
 #[tokio::test]
 async fn lifecycle_events_are_emitted_in_order() {
-    let service = support::service(vec![json!("first"), json!("second")]);
+    let service = support::service(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
     let request = support::request_with_input(fixtures::LINEAR_CHAIN, json!({ "topic": "testing" }));
     let mut receiver = service.execute_stream(request);
     let mut kinds = Vec::new();
@@ -29,7 +29,7 @@ async fn lifecycle_events_are_emitted_in_order() {
 
 #[tokio::test]
 async fn agent_names_are_included_in_events() {
-    let service = support::service(vec![json!("first"), json!("second")]);
+    let service = support::service(vec![json!({ "value": "first" }), json!({ "value": "second" })]);
     let request = support::request_with_input(fixtures::LINEAR_CHAIN, json!({ "topic": "testing" }));
     let mut receiver = service.execute_stream(request);
     let mut agent_names = Vec::new();
@@ -98,7 +98,7 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
         agent summarizer {
             model: model.openai_model
             instruction: "Summarize {{ dynamic.data }}"
-            output: {
+            output {
                 summary: string
             }
         }

@@ -296,17 +296,21 @@ mod tests {
             agent first {
                 model: model.openai_model
                 instruction: input.topic
-                output: string
+                output {
+                    value: string
+                }
             }
 
             agent second {
                 model: model.openai_model
-                instruction: agent.first
-                output: string
+                instruction: agent.first.value
+                output {
+                    value: string
+                }
             }
 
             output {
-                final_text: agent.second
+                final_text: agent.second.value
             }
         }
     });
@@ -406,7 +410,7 @@ mod tests {
                 if issues.contains("missing_agent_output_type_for_field_reference")
                     && issues.contains("Agent `greeting` must declare `output`")
                     && issues.contains("output declaration")
-                    && issues.contains("Add `output: <type>`")
+                    && issues.contains("Add `output { ... }`")
         ));
     }
 
@@ -414,14 +418,16 @@ mod tests {
     fn validation_stage_rejects_non_array_for_loop_iterable_reference() {
         let workflow = parse_inline_workflow! {
             agent summarizer {
-                output: {
+                output {
                     tasks: [{ id: number }]
                     participants: [{ id: number }]
                 }
             }
 
             agent analyzer for participant in agent.summarizer {
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -451,7 +457,9 @@ mod tests {
             agent greeting {
                 model: model.openai_model
                 instruction: "Write a short welcome message."
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
@@ -482,11 +490,13 @@ mod tests {
 
             agent greeting {
                 model: model.openai_model
-                output: string
+                output {
+                    value: string
+                }
             }
 
             output {
-                final_text: agent.greeting
+                final_text: agent.greeting.value
             }
         };
 
@@ -567,7 +577,9 @@ mod tests {
         let broken_workflow_source = workflow_source! {
             agent greeting {
                 prompt "hello"
-                output: string
+                output {
+                    value: string
+                }
             }
         };
 
