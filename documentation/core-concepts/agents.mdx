@@ -9,7 +9,7 @@ Agents are the center of the DSL. They describe a named unit of work that can re
 
 ```wire
 agent summary {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize {{ input.notes }}."
     output: string
 }
@@ -43,7 +43,7 @@ agent <name> [for <item> in <expression>] {
 
 ```wire
 agent research_brief {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     inference: {
         temperature: 0.2
@@ -80,7 +80,7 @@ The `output` property supports a response format hint:
 
 ```wire
 agent structured_writer {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Extract the data from this text."
     output: {
         json_schema: "auto"
@@ -100,7 +100,7 @@ The grammar supports agent loops:
 
 ```wire
 agent remediation_plan for finding in agent.findings.items {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Create a remediation plan for {{ finding }}."
     output: string
 }
@@ -110,7 +110,7 @@ Object destructuring is also supported:
 
 ```wire
 agent process_items for { id, name } in input.items {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Process item {{ id }}: {{ name }}"
     output: string
 }

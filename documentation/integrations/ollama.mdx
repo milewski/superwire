@@ -16,10 +16,12 @@ ollama pull qwen3.5:8b
 ## Provider declaration
 
 ```wire
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+endpoint: "http://localhost:11434"
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 ```
 
@@ -41,7 +43,7 @@ provider ollama {
 
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Write a welcome message."
     output: string
 }

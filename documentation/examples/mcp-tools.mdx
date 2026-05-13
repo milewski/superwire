@@ -8,11 +8,13 @@ This example mirrors `crates/executor/tests/fixtures/021_dynamic_tool_call.wire`
 ## Full workflow
 
 ```wire
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: "test-api-key"
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 
 secrets {
@@ -40,7 +42,7 @@ dynamic {
 }
 
 agent summarizer {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize: {{ dynamic.data }}"
     uses: [tool.fetch_task_data]
     output: {
@@ -86,7 +88,7 @@ from mcp.local.tool {
 }
 
 agent task_manager {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [tool.create_sorting_task, tool.update_task_status, tool.assign_task]
     instruction: "Manage project tasks"
     output: string
@@ -107,7 +109,7 @@ tool fetch_shared from mcp.local.tool.fetch_task_data {
 }
 
 agent first_agent {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [tool.fetch_shared { max_calls: 1 }]
     instruction: "First"
     output: string
@@ -132,7 +134,7 @@ dynamic {
 }
 
 agent number_note for number in dynamic.result.values {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Write a note for {{ number }}."
     output: string
 }

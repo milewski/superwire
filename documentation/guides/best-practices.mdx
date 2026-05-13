@@ -76,11 +76,13 @@ secrets {
     openai_key: string
 }
 
-provider openai {
-    driver: "openai"
-    endpoint: "https://api.openai.com/v1"
+provider openai from openai {
+endpoint: "https://api.openai.com/v1"
     api_key: secrets.openai_key
-    models: ["gpt-4.1-mini"]
+}
+
+model openai_model from openai {
+    id: "gpt-4.1-mini"
 }
 ```
 
@@ -92,7 +94,7 @@ Prefer the `uses:` property for agent tool access. It makes dependencies explici
 tool search from mcp.local.tool.search
 
 agent researcher {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     uses: [tool.search { max_calls: 5 }]
     instruction: "Research: {{ input.topic }}"
     output: string

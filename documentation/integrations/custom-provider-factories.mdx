@@ -28,14 +28,16 @@ superwire_core::register_provider_driver!("my_driver", MyCustomDriver);
 ## Using it in a workflow
 
 ```wire
-provider my_provider {
-    driver: "my_driver"
-    endpoint: "http://my-custom-endpoint.local"
-    models: ["custom-model-v1"]
+provider my_provider from my_driver {
+endpoint: "http://my-custom-endpoint.local"
+}
+
+model my_provider_model from my_provider {
+    id: "custom-model-v1"
 }
 
 agent my_agent {
-    model: my_provider("custom-model-v1")
+    model: model.my_provider_custom_model_v1
     instruction: "Do something useful."
     output: string
 }
@@ -63,10 +65,16 @@ impl ProviderDriver for MyCustomDriver {
 If your provider supports a known model list, add `models:` to the provider block. The framework validates that agent `model:` calls reference entries in this list.
 
 ```wire
-provider my_provider {
-    driver: "my_driver"
-    endpoint: "http://my-custom-endpoint.local"
-    models: ["custom-model-v1", "custom-model-v2"]
+provider my_provider from my_driver {
+endpoint: "http://my-custom-endpoint.local"
+}
+
+model my_provider_custom_model_v1 from my_provider {
+    id: "custom-model-v1"
+}
+
+model my_provider_custom_model_v2 from my_provider {
+    id: "custom-model-v2"
 }
 ```
 

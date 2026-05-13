@@ -11,13 +11,13 @@ Two agents can run in parallel when neither depends on the other.
 
 ```wire
 agent sentiment {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Classify sentiment for {{ input.text }}"
     output: string
 }
 
 agent topics {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Extract topics from {{ input.text }}"
     output: [string]
 }
@@ -29,13 +29,13 @@ Because both agents depend only on `input.text`, they are independent in the dep
 
 ```wire
 agent summary {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Summarize {{ input.text }}"
     output: string
 }
 
 agent review {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Review this summary: {{ agent.summary }}"
     output: string
 }
@@ -49,7 +49,7 @@ The grammar supports looped agents:
 
 ```wire
 agent remediation_plan for finding in agent.findings.items {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Create a remediation plan for {{ finding }}."
     output: {
         title: string
@@ -72,7 +72,7 @@ dynamic {
 }
 
 agent analyze {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: "Analyze: {{ dynamic.raw_data }}"
     output: string
 }

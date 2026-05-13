@@ -18,14 +18,16 @@ ollama pull qwen3.5:8b
 Save this as `hello.wire`:
 
 ```wire
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+endpoint: "http://localhost:11434"
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Write a one-sentence welcome message for a new user."
     output: string
 }
@@ -66,10 +68,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Typed input makes workflows reusable:
 
 ```wire
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+endpoint: "http://localhost:11434"
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 
 input {
@@ -78,7 +82,7 @@ input {
 }
 
 agent summary {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Explain {{ input.topic }} for {{ input.audience }}."
     output: {
         title: string

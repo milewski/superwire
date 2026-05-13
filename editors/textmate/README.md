@@ -59,10 +59,12 @@ The grammar uses standard TextMate scope names, so it will work with any color t
 ## Example
 
 ```wire
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://127.0.0.1:11434"
-    models: ["qwen3:8b"]
+provider ollama from ollama {
+endpoint: "http://127.0.0.1:11434"
+}
+
+model ollama_model from ollama {
+    id: "qwen3:8b"
 }
 
 schema Brief {
@@ -77,7 +79,7 @@ input {
 }
 
 agent release_summary {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
 
     prompt: "Write a short release summary for {{ input.product_name }} using {{ input.release_highlights }}"
 
@@ -85,7 +87,7 @@ agent release_summary {
 }
 
 agent audience_message {
-    model: ollama("qwen3:8b")
+    model: model.ollama_model
     context: context(agent.release_summary)
 
     inference: {

@@ -9,7 +9,7 @@ The DSL supports a `context:` property on agents and built-in functions for cont
 
 ```wire
 agent summary_from_full_context {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     context: context(agent.research_analysis)
     instruction: "Write a short executive summary from the available context."
     output: string
@@ -22,7 +22,7 @@ agent summary_from_full_context {
 
 ```wire
 agent summary_from_compact_context {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     context: compact(agent.research_analysis)
     instruction: "Write a short executive summary from the compacted prior context."
     output: string
@@ -35,10 +35,10 @@ agent summary_from_compact_context {
 
 ```wire
 agent summary_from_custom_compact_context {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     context: compact(
         agent: agent.research_analysis,
-        model: openai("gpt-4.1-mini"),
+        model: model.openai_model,
         inference: {
             temperature: 0.1
             max_tokens: 1_500
@@ -79,7 +79,7 @@ A third context-related function, `template(...)`, loads a prompt template from 
 
 ```wire
 agent summary {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
     instruction: template("prompts/summary.md", {
         topic: input.topic
     })

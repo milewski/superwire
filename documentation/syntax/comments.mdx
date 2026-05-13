@@ -11,10 +11,12 @@ Use `//` for general workflow comments:
 
 ```wire
 // Provider defines where the model comes from.
-provider ollama {
-    driver: "ollama"
-    endpoint: "http://localhost:11434"
-    models: ["qwen3.5:8b"]
+provider ollama from ollama {
+endpoint: "http://localhost:11434"
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:8b"
 }
 ```
 
