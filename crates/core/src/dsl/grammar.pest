@@ -2,6 +2,7 @@ workflow = { SOI ~ declaration* ~ EOI }
 
 declaration = _{
     provider_declaration
+    | model_declaration
     | mcp_declaration
     | secrets_declaration
     | input_declaration
@@ -19,7 +20,10 @@ declaration = _{
     | output_declaration
 }
 
-provider_declaration = { "provider" ~ identifier ~ object_expression }
+provider_declaration = { "provider" ~ identifier ~ "from" ~ identifier ~ config_block }
+model_declaration = { "model" ~ identifier ~ "from" ~ identifier ~ config_block }
+config_block = { "{" ~ config_property* ~ "}" }
+config_property = _{ named_object_property | object_field }
 mcp_declaration = { "mcp" ~ identifier ~ object_expression }
 secrets_declaration = { "secrets" ~ typed_block }
 input_declaration = { "input" ~ typed_block }
@@ -75,7 +79,8 @@ for_clause = { "for" ~ for_loop_pattern ~ "in" ~ expression }
 for_loop_pattern = { identifier | object_destructuring_pattern }
 object_destructuring_pattern = { "{" ~ identifier ~ ("," ~ identifier)* ~ ","? ~ "}" }
 agent_block = { "{" ~ agent_property* ~ "}" }
-agent_property = _{ named_object_property | named_agent_value_property }
+agent_property = _{ model_agent_property | named_object_property | named_agent_value_property }
+model_agent_property = { "model" ~ ":" ~ model_usage }
 named_agent_value_property = { identifier ~ ":" ~ agent_property_value }
 agent_property_value = _{ tools_expression | response_format_value | expression | type_expression }
 response_format_value = { "auto" | "json_schema" | "json_object" | "instruction_only" }
@@ -84,6 +89,10 @@ tools_expression = { "[" ~ (agent_tool_binding ~ ("," ~ agent_tool_binding)* ~ "
 agent_tool_binding = { reference ~ agent_tool_binding_block? }
 agent_tool_binding_block = { "{" ~ agent_tool_binding_property* ~ "}" }
 agent_tool_binding_property = _{ named_object_property | named_unsigned_integer_property }
+
+model_usage = { reference ~ model_usage_block? }
+model_usage_block = { "{" ~ model_usage_property* ~ "}" }
+model_usage_property = _{ named_object_property | object_field }
 
 output_declaration = { "output" ~ object_expression }
 
