@@ -1,11 +1,9 @@
 ```wire
-provider openai {
-  driver: "openai"
+provider openai from openai {
 }
 ```
 ---
 ```wire
-provider openai {
-    driver: "openai"
+provider openai from openai {
 }
 ```

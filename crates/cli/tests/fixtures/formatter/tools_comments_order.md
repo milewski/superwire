@@ -1,6 +1,6 @@
 ```wire
 agent assistant_with_tools {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     // The agent can decide when to call these tools.
     // Tool binding overrides can use literals, references, and secrets.
@@ -35,7 +35,7 @@ agent assistant_with_tools {
 ---
 ```wire
 agent assistant_with_tools {
-    model: openai("gpt-4.1-mini")
+    model: model.openai_model
 
     // The agent can decide when to call these tools.
     // Tool binding overrides can use literals, references, and secrets.

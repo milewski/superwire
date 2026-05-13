@@ -1,16 +1,19 @@
 ```wire
-provider openai {driver:"openai" models:[ "gpt-4o-mini"]}
+provider openai from openai {}
+model openai_model from openai {id:"gpt-4o-mini"}
 input { items:[string] }
 agent reviewer for item 
-in input.items {model:openai("gpt-4o-mini") instruction:"Review {{item}}" output:{score:number tags:[  
+in input.items {model: model.openai_model instruction:"Review {{item}}" output:{score:number tags:[  
 string]}}
 output { reviews:agent.reviewer }
 ```
 ---
 ```wire
-provider openai {
-    driver: "openai"
-    models: ["gpt-4o-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4o-mini"
 }
 
 input {
@@ -18,7 +21,7 @@ input {
 }
 
 agent reviewer for item in input.items {
-    model: openai("gpt-4o-mini")
+    model: model.openai_model
     instruction: "Review {{ item }}"
     output: {
         score: number

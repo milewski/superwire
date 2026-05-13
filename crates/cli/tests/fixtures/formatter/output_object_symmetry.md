@@ -1,6 +1,6 @@
 ```wire
 agent redact_notes {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Redact names, emails, and phone numbers from these interview notes: {{ input.interview_notes }}"
     output: {
         redacted_notes: [string]
@@ -11,7 +11,7 @@ agent redact_notes {
 ---
 ```wire
 agent redact_notes {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     instruction: "Redact names, emails, and phone numbers from these interview notes: {{ input.interview_notes }}"
     output: {
         redacted_notes: [string]

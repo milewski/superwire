@@ -1,6 +1,6 @@
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     inference: {        temperature: 0.7}
 
     // Leading indentation in this multiline string is neutralized.
@@ -16,7 +16,7 @@ agent greeting {
 ---
 ```wire
 agent greeting {
-    model: ollama("qwen3.5:8b")
+    model: model.ollama_model
     inference: { temperature: 0.7 }
 
     // Leading indentation in this multiline string is neutralized.

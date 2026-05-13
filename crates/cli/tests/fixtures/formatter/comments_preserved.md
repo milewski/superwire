@@ -1,8 +1,7 @@
 ```wire
 // provider declaration
-provider openai {
+provider openai from openai {
 // provider driver
-    driver:"openai" // inline driver comment
 }
 
 
@@ -13,14 +12,12 @@ provider openai {
 
 
 // Provider defines where models come from.
-provider ollama {
+provider ollama from ollama {
     // inline models comment
-    driver: "ollama"
-    
-    // inline models comment
-    models: ["qwen3.5:32b"]
-    // inline models comment
-    output: string
+}
+
+model ollama_model from ollama {
+    id: "qwen3.5:32b"
 }
 
 // output heading
@@ -29,24 +26,20 @@ output { value: "ok" }
 ---
 ```wire
 // provider declaration
-provider openai {
-    // provider driver
-    driver: "openai" // inline driver comment
+provider openai from openai {
+// provider driver
 }
 
 // This file shows the smallest useful workflow shape:
 // provider -> agent -> output
 
 // Provider defines where models come from.
-provider ollama {
-    // inline models comment
-    driver: "ollama"
+provider ollama from ollama {
+// inline models comment
+}
 
-    // inline models comment
-    models: ["qwen3.5:32b"]
-
-    // inline models comment
-    output: string
+model ollama_model from ollama {
+    id: "qwen3.5:32b"
 }
 
 // output heading

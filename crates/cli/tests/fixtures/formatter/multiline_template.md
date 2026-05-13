@@ -1,12 +1,13 @@
 ```wire
-provider openai {driver:"openai" models:["gpt-4o-mini"]}
+provider openai from openai {}
+model openai_model from openai {id:"gpt-4o-mini"}
 input { topic:string }
 
-agent writer {model:openai("gpt-4o-mini") instruction:"""Write about {{input.topic}}
+agent writer {model: model.openai_model instruction:"""Write about {{input.topic}}
 Keep it short and clear.""" output:string}
 
 agent writer2 {
-    model: openai("gpt-4o-mini")
+    model: model.openai_model
     instruction: """
     Write about {{ input.topic }}
     Keep it short and clear.
@@ -18,9 +19,11 @@ output { text:agent.writer }
 ```
 ---
 ```wire
-provider openai {
-    driver: "openai"
-    models: ["gpt-4o-mini"]
+provider openai from openai {
+}
+
+model openai_model from openai {
+    id: "gpt-4o-mini"
 }
 
 input {
@@ -28,7 +31,7 @@ input {
 }
 
 agent writer {
-    model: openai("gpt-4o-mini")
+    model: model.openai_model
 
     instruction: """
         Write about {{ input.topic }}
@@ -39,7 +42,7 @@ agent writer {
 }
 
 agent writer2 {
-    model: openai("gpt-4o-mini")
+    model: model.openai_model
 
     instruction: """
         Write about {{ input.topic }}

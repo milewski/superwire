@@ -7,8 +7,8 @@ use super::ast::{
     AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
     Expression, ForClauseKeyword, FunctionCall, ImportKeyword, MatchBranch, McpBatchImportDeclaration, McpCall, McpImportKind,
     McpPromptBatchImportDeclaration, McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceImportDeclaration,
-    McpToolBatchImportDeclaration, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration, ToolPropertyName,
-    TypeExpression, TypedField, Workflow,
+    McpToolBatchImportDeclaration, ModelUsage, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
+    ToolPropertyName, TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
@@ -222,10 +222,29 @@ impl Declaration {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
             Self::Provider(provider_declaration) => {
-                formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Provider.as_str(), provider_declaration.name));
+                formatter.push_declaration_block_start(&format!(
+                    "{} {} from {}",
+                    DeclarationKeyword::Provider.as_str(),
+                    provider_declaration.name,
+                    provider_declaration.driver_name
+                ));
 
                 for object_field in &provider_declaration.properties {
-                    object_field.push_to_formatter(formatter);
+                    object_field.push_config_property_to_formatter(formatter);
+                }
+
+                formatter.push_declaration_block_end();
+            }
+            Self::Model(model_declaration) => {
+                formatter.push_declaration_block_start(&format!(
+                    "{} {} from {}",
+                    DeclarationKeyword::Model.as_str(),
+                    model_declaration.name,
+                    model_declaration.provider_name
+                ));
+
+                for object_field in &model_declaration.properties {
+                    object_field.push_config_property_to_formatter(formatter);
                 }
 
                 formatter.push_declaration_block_end();
@@ -897,7 +916,8 @@ impl AgentProperty {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         match self {
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
-            Self::Model(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
+            Self::Model(model_usage) => model_usage.push_to_formatter(formatter),
+            Self::InvalidModel(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
             Self::Instruction(expression) => formatter.push_agent_property_expression(AgentPropertyName::Instruction.as_str(), expression),
             Self::Output { output_type_expression } => {
                 formatter.push_agent_property_type(AgentPropertyName::Output.as_str(), output_type_expression);
@@ -1013,6 +1033,34 @@ impl DynamicBlock {
 
         for field in &self.fields {
             field.push_to_formatter(formatter);
+        }
+
+        formatter.indentation_depth -= 1;
+        formatter.push_indent();
+        formatter.output.push('}');
+        formatter.push_newline();
+    }
+}
+
+impl ModelUsage {
+    fn push_to_formatter(&self, formatter: &mut DslFormatter) {
+        formatter.push_indent();
+        formatter.output.push_str(AgentPropertyName::Model.as_str());
+        formatter.output.push_str(": ");
+        self.reference.push_to_formatter(formatter);
+
+        if self.properties.is_empty() {
+            formatter.push_newline();
+
+            return;
+        }
+
+        formatter.output.push_str(" {");
+        formatter.push_newline();
+        formatter.indentation_depth += 1;
+
+        for property in &self.properties {
+            property.push_config_property_to_formatter(formatter);
         }
 
         formatter.indentation_depth -= 1;
@@ -1223,6 +1271,22 @@ impl ObjectField {
         formatter.output.push_str(": ");
         self.value.push_to_formatter(formatter, ExpressionFormat::Canonical);
         formatter.push_newline();
+    }
+
+    fn push_config_property_to_formatter(&self, formatter: &mut DslFormatter) {
+        let Expression::ObjectLiteral(fields) = &self.value else {
+            self.push_to_formatter(formatter);
+
+            return;
+        };
+
+        formatter.push_declaration_block_start(&render_object_field_name(&self.name));
+
+        for field in fields {
+            field.push_to_formatter(formatter);
+        }
+
+        formatter.push_declaration_block_end();
     }
 }
 
@@ -2628,10 +2692,10 @@ mod tests {
 
     #[test]
     fn formatter_matches_expected_output_for_representative_source() {
-        let source_text = "provider openai   {driver:\"openai\" models:[\"gpt-4o-mini\",]}\n\noutput { result: \"ok\" }\n";
+        let source_text = "provider openai from openai{}\nmodel openai_model from openai{id:\"gpt-4o-mini\"}\n\noutput { result: \"ok\" }\n";
 
         let expected_output =
-            "provider openai {\n    driver: \"openai\"\n    models: [\"gpt-4o-mini\"]\n}\n\noutput {\n    result: \"ok\"\n}\n";
+            "provider openai from openai {\n}\n\nmodel openai_model from openai {\n    id: \"gpt-4o-mini\"\n}\n\noutput {\n    result: \"ok\"\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("representative workflow should format successfully");
 
@@ -2641,10 +2705,10 @@ mod tests {
     #[test]
     fn formatter_places_standalone_comment_before_next_declaration_when_source_is_single_line_block() {
         let source_text =
-            "// provider declaration\nprovider openai {\n// provider driver\n    driver:\"openai\" // inline driver comment\n}\n\n// output heading\noutput { value: \"ok\" }\n";
+            "// provider declaration\nprovider openai from openai {\n// provider driver\n}\n\n// output heading\noutput { value: \"ok\" }\n";
 
         let expected_output =
-            "// provider declaration\nprovider openai {\n    // provider driver\n    driver: \"openai\" // inline driver comment\n}\n\n// output heading\noutput {\n    value: \"ok\"\n}\n";
+            "// provider declaration\nprovider openai from openai {\n// provider driver\n}\n\n// output heading\noutput {\n    value: \"ok\"\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("workflow with standalone comment should format successfully");
 
