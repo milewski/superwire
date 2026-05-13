@@ -1,0 +1,67 @@
+---
+title: Why It Exists
+description: Why product-backend agents need a different control model than local autonomous agents.
+---
+
+Most agent tooling is easy to understand when the agent is helping one person on one machine. The user gives a goal, the agent decides a plan, the agent chooses tools, and the user supervises the result.
+
+That model is useful for local work. It is harder to trust inside a product backend.
+
+## Local agents and product agents are different
+
+A product-backend agent may be triggered by API requests, background jobs, user submissions, admin actions, or scheduled processes. It may operate without a human watching each intermediate decision. It may read user data, create records, call internal services, consume tokens, and perform actions on behalf of another user.
+
+That raises practical engineering questions:
+
+- How do you make sure the model only sees the tools it needs?
+- How do you prevent a tool from being used at the wrong stage?
+- How do you make the workflow repeatable across many requests?
+- How do you enforce the output shape expected by backend code?
+- How do you avoid sending every possible record into one large prompt?
+- How do you test the integration without calling a live provider in every unit test?
+- How do you keep secrets, credentials, and backend capabilities out of prompt text?
+- How do you make the workflow readable enough for future maintainers?
+
+Superwire exists to answer those questions with a workflow specification instead of a freeform prompt or scattered orchestration code.
+
+## The cost of custom orchestration
+
+Without a workflow DSL, teams often rebuild the same AI orchestration infrastructure by hand:
+
+- input DTOs and output DTOs;
+- provider clients and model configuration;
+- prompt template loading;
+- tool wrappers and tool schemas;
+- model-output validation;
+- sequencing and dependency handling;
+- parallel fan-out and aggregation;
+- intermediate state management;
+- secret handling;
+- runtime diagnostics;
+- stream events;
+- fake execution for tests.
+
+That is all possible in application code, but the intent of the AI workflow becomes distributed across many files. A future maintainer has to reconstruct the behavior from implementation details.
+
+A `.wire` file concentrates the workflow intent into one readable artifact. Backend code still owns product logic and infrastructure, but the AI workflow itself becomes explicit.
+
+## The risk of oversized prompts
+
+A common alternative is to give a model a long instruction and a large set of tools, then rely on instruction following.
+
+That works for demos, but it becomes fragile in production. If the model receives too much power too early, it can call tools that are irrelevant, expensive, destructive, or out of order. If every rule and exception must live in one prompt, the prompt becomes hard to review, test, and maintain. If every possible record is sent up front, token usage grows and the model spends attention on irrelevant context.
+
+Superwire encourages a different shape:
+
+1. declare the workflow stages;
+2. pass only the data each stage needs;
+3. expose only the tools each agent needs;
+4. use schemas for intermediate and final outputs;
+5. move selected values forward through explicit references;
+6. use workflow-owned tool calls when the workflow, not the model, should decide exactly what runs.
+
+## The goal
+
+Superwire lets the model reason inside declared steps while the application keeps control over process, permissions, data flow, and output shape.
+
+That is the main distinction: Superwire is not trying to make the model less useful. It is trying to make the surrounding workflow explicit enough to run inside a real product.

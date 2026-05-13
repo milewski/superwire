@@ -3,9 +3,11 @@ title: Introduction
 description: Learn what Superwire is and run a tiny workflow through the Docker executor.
 ---
 
-Superwire is a declarative DSL for building AI-agent workflows. A `.wire` file describes the inputs a workflow accepts, the secrets it needs, the model provider it uses, the agents that should run, and the final structured output.
+Superwire is a declarative DSL for controlled server-side AI workflows. A `.wire` file describes the inputs a workflow accepts, the secrets it needs, the providers and model profiles it may use, the MCP capabilities it can access, the agents that should run, the dependencies between those agents, and the final structured output.
 
 Most applications do not embed the runtime directly. They send a `.wire` workflow to the Superwire executor server and receive either one JSON response or a stream of Server-Sent Events.
+
+Superwire is most useful when an AI feature needs to behave like product infrastructure: scoped tools, explicit data flow, structured outputs, validation, streaming, and testable execution. For the product-level rationale, start with [Why Superwire](/why-superwire/overview).
 
 ```text
 .wire source + input + secrets -> Superwire executor -> structured output
@@ -132,6 +134,7 @@ A stream contains lifecycle events such as workflow start, planning, agent start
 
 ## What to read next
 
+- [Why Superwire](/why-superwire/overview) explains the backend-agent problem, use cases, and decision criteria.
 - [Quickstart](/quickstart) walks through the same flow step by step.
 - [Core Concepts](/core-concepts/overview) explains workflows, providers, models, agents, schemas, and dependencies.
 - [Executor API](/api-reference/executor-api) documents the HTTP request and response contract.

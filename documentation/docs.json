@@ -52,6 +52,19 @@
             ]
           },
           {
+            "group": "Why Superwire",
+            "pages": [
+              "why-superwire/overview",
+              "why-superwire/why-it-exists",
+              "why-superwire/workflow-contract",
+              "why-superwire/controlled-tools",
+              "why-superwire/structured-outputs",
+              "why-superwire/use-cases",
+              "why-superwire/comparison",
+              "why-superwire/adoption-checklist"
+            ]
+          },
+          {
             "group": "Core Concepts",
             "pages": [
               "core-concepts/overview",

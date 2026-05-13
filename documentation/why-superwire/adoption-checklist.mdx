@@ -1,0 +1,89 @@
+---
+title: Adoption Checklist
+description: Decide whether Superwire is the right fit for a feature and how to design the first workflow.
+---
+
+Superwire is not necessary for every LLM feature. It is strongest when AI behavior becomes durable product infrastructure.
+
+Use this checklist before introducing a `.wire` workflow.
+
+## Strong fit
+
+Superwire is usually a strong fit when one or more of these are true:
+
+- the feature runs inside a backend or product system;
+- the application consumes structured JSON from the result;
+- the workflow uses MCP tools, prompts, or resources;
+- there are multiple model steps;
+- different steps need different model profiles;
+- tool access should be scoped per step;
+- the process has an order that should not be invented at runtime;
+- the workflow benefits from selective context fetching;
+- independent steps or loop iterations can run concurrently;
+- the team needs validation, diagnostics, or fake execution in tests;
+- the workflow should be reviewed and versioned with application code;
+- behavior needs to be consistent across many requests.
+
+## A simpler approach may be enough
+
+A direct provider call or small service method may be enough when:
+
+- the feature is one simple prompt;
+- there are no tools;
+- the output is not consumed by strict backend logic;
+- the feature is experimental;
+- there is no meaningful data flow between steps;
+- there is no need for scoped capabilities, validation, or fake workflow execution.
+
+This distinction matters. Superwire should make structured AI features easier to maintain, not add ceremony to trivial calls.
+
+## First workflow design questions
+
+Before writing the file, answer these questions:
+
+| Question | Why it matters |
+| --- | --- |
+| What public input does the request provide? | Defines the `input` block and API boundary. |
+| What secrets are required at runtime? | Defines the `secrets` block and keeps credentials out of source. |
+| Which provider and model profiles are needed? | Separates provider configuration from per-agent model choice. |
+| Which MCP capabilities are needed? | Makes tools, prompts, and resources explicit. |
+| Which steps should the workflow own? | Use `call tool.*` when the operation should be deterministic. |
+| Which steps should the model own? | Use `uses` when model judgment is useful. |
+| What shape should each agent return? | Defines structured `output` contracts. |
+| Which values flow forward? | Makes dependencies visible through references. |
+| What final JSON should the application receive? | Defines the top-level `output` block. |
+
+## Recommended first pass
+
+Start small:
+
+1. write `input` and `secrets`;
+2. configure one provider and one model profile;
+3. define one agent with an object-shaped `output` block;
+4. return a narrow final `output` object;
+5. execute through the Docker executor;
+6. add tools and additional agents only after the base flow works.
+
+## Production safeguards
+
+Superwire makes the orchestration layer clearer, but it does not replace application safety controls.
+
+Keep these responsibilities in the application or MCP server:
+
+- user authentication;
+- authorization checks;
+- tenant isolation;
+- rate limits and quotas;
+- transaction boundaries;
+- validation of destructive operations;
+- audit logging;
+- human approval for high-risk actions;
+- provider budget controls.
+
+The right model is layered safety: application permissions and domain rules outside the workflow, scoped orchestration inside the workflow, and structured outputs at the boundary.
+
+## Decision rule
+
+Use Superwire when the AI feature has enough structure that you would otherwise write custom orchestration code around prompts, tools, schemas, dependencies, validation, and tests.
+
+Use a direct call when the feature is genuinely just one prompt and one response.

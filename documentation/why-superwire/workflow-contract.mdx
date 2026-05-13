@@ -1,0 +1,136 @@
+---
+title: Workflow Contract
+description: The mental model behind .wire files as a deterministic control layer around model reasoning.
+---
+
+A `.wire` file is a workflow contract.
+
+It does not just contain prompt text. It declares the runtime boundary, provider boundary, agent steps, capability scope, data dependencies, intermediate output shapes, and final application response.
+
+## Control layer and reasoning layer
+
+AI workflows have two layers:
+
+| Layer | Responsibility |
+| --- | --- |
+| Reasoning layer | The model interprets instructions, summarizes, classifies, extracts, generates, or makes judgments. |
+| Control layer | The system decides what runs, in what order, with which input, with which tools, and what output shape must be produced. |
+
+Freeform autonomous agents give the model a large share of both layers.
+
+Superwire keeps the control layer in the workflow specification. The model still performs reasoning inside an agent step, but the workflow author defines the process around that step.
+
+## Minimal contract example
+
+```wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent summarize {
+    model: model.fast
+    instruction: "Summarize {{ input.topic }} for a product engineer."
+
+    output {
+        summary: string
+    }
+}
+
+output {
+    summary: agent.summarize.summary
+}
+```
+
+This file declares:
+
+- the public input shape;
+- the secret required at runtime;
+- the provider instance;
+- the reusable model profile;
+- the agent that runs;
+- the structured output expected from that agent;
+- the final JSON shape returned to the caller.
+
+The model may generate different wording depending on provider behavior and inference settings. The workflow boundary remains stable.
+
+## Dependencies are visible
+
+Superwire builds dependencies from references.
+
+```wire
+agent extract_facts {
+    model: model.fast
+    instruction: "Extract facts from {{ input.report }}."
+
+    output {
+        facts: [string]
+    }
+}
+
+agent extract_risks {
+    model: model.fast
+    instruction: "Extract risks from {{ input.report }}."
+
+    output {
+        risks: [string]
+    }
+}
+
+agent create_briefing {
+    model: model.smart
+    instruction: "Create a briefing from facts {{ agent.extract_facts.facts }} and risks {{ agent.extract_risks.risks }}."
+
+    output {
+        briefing: string
+    }
+}
+
+output {
+    briefing: agent.create_briefing.briefing
+}
+```
+
+`extract_facts` and `extract_risks` can run independently. `create_briefing` waits for both because it references both outputs.
+
+The workflow author describes logical dependencies. The executor can derive a graph from those references.
+
+## Why this matters to backend code
+
+Backend code should not have to parse arbitrary prose to know what happened. It should receive stable fields that match the product surface.
+
+A workflow contract gives backend code a predictable response boundary:
+
+```json
+{
+  "briefing": "..."
+}
+```
+
+The application can store it, display it, validate it, stream progress around it, or test against fake results.
+
+## Durable workflow artifact
+
+Because `.wire` files are text, they fit naturally into normal engineering workflows:
+
+- code review;
+- pull requests;
+- version control;
+- CI validation;
+- environment-specific executor payloads;
+- test fixtures;
+- documentation.
+
+This matters because AI behavior should not live only inside a prompt editor or as an implicit convention inside service code.

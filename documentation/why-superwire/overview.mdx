@@ -1,0 +1,68 @@
+---
+title: Why Superwire
+description: Understand the role of Superwire before reading the syntax reference.
+---
+
+Superwire is a declarative DSL for controlled server-side AI workflows.
+
+A `.wire` file describes the contract around an AI feature: the public inputs it accepts, the secrets it requires, the providers and model profiles it may use, the MCP capabilities it can access, the agents that run, the dependencies between those agents, and the final structured JSON returned to the application.
+
+The core value is not that Superwire can call an LLM. The core value is that it gives product backends a controlled execution layer around probabilistic model behavior.
+
+```text
+application request
+  -> input + secrets + .wire workflow
+  -> Superwire executor
+  -> validated workflow graph
+  -> scoped model and tool execution
+  -> structured JSON output
+```
+
+## The short version
+
+Use Superwire when an AI feature should behave like backend infrastructure:
+
+- the workflow should be reviewable in source control;
+- the model should not own the entire process;
+- tool access should be scoped to specific steps;
+- intermediate and final outputs should be typed;
+- independent work should be schedulable from explicit dependencies;
+- tests should not require live provider calls every time;
+- the application should receive stable JSON, not arbitrary prose.
+
+A one-step prompt may not need Superwire. A durable product feature with agents, tools, staged decisions, or structured outputs usually benefits from it.
+
+## What a `.wire` file gives you
+
+A workflow file makes the AI feature visible:
+
+| Contract area | What the workflow declares |
+| --- | --- |
+| Runtime boundary | `input` and `secrets` blocks |
+| Provider boundary | `provider` and `model` declarations |
+| Capability boundary | imported MCP tools, prompts, and resources |
+| Agent boundary | each model step, its model profile, and its `uses` list |
+| Data boundary | structured `output` blocks and explicit references |
+| Application boundary | the final JSON shape returned by the workflow `output` block |
+
+This lets a developer open one file and understand the workflow as a graph of typed steps instead of reconstructing it from controllers, service classes, prompt strings, DTOs, tool wrappers, and tests.
+
+## What Superwire is not
+
+Superwire is not a replacement for LLM providers. It configures provider access through explicit provider and model declarations.
+
+Superwire is not a replacement for MCP. MCP exposes tools, prompts, and resources. Superwire decides how those capabilities are imported, scoped, sequenced, referenced, and composed inside a workflow.
+
+Superwire is not a general-purpose backend language. Your application still owns authentication, authorization, persistence, queues, billing, transactions, rate limits, and user interfaces. Superwire describes the AI workflow that runs inside that application boundary.
+
+Superwire does not make model reasoning mathematically deterministic. It makes the workflow boundary deterministic: declared steps, dependencies, schemas, scoped tool access, and final response shape are applied every time.
+
+## Suggested reading path
+
+1. [Why it exists](/why-superwire/why-it-exists) explains the product-backend problem Superwire is built for.
+2. [Workflow contract](/why-superwire/workflow-contract) explains the control-plane mental model.
+3. [Controlled tool access](/why-superwire/controlled-tools) explains scoped `uses`, workflow-owned calls, and staged capability unlocking.
+4. [Structured outputs](/why-superwire/structured-outputs) explains why schemas and dot-path references matter.
+5. [Use cases](/why-superwire/use-cases) shows practical backend scenarios where Superwire fits well.
+6. [Comparison](/why-superwire/comparison) compares Superwire with direct LLM calls, prompt-only agents, MCP alone, frameworks, and custom orchestration.
+7. [Adoption checklist](/why-superwire/adoption-checklist) helps decide whether Superwire is the right tool for a specific feature.

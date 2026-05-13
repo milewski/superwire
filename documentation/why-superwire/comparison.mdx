@@ -1,0 +1,76 @@
+---
+title: Comparison
+description: How Superwire relates to direct LLM calls, prompt-only agents, MCP, frameworks, and custom orchestration.
+---
+
+Superwire does not claim other approaches cannot solve the same problems. A developer can always build orchestration manually.
+
+The value of Superwire is making that orchestration explicit, readable, validated, scoped, and reusable.
+
+## Common alternatives
+
+| Approach | Strength | Limitation Superwire addresses |
+| --- | --- | --- |
+| Direct LLM API calls | Simple for one-step generation or extraction | Hard to compose into multi-step, tool-aware, typed workflows without custom orchestration |
+| Prompt-only agents | Flexible and fast to prototype | Tool usage, ordering, and output shape depend heavily on prompt adherence |
+| Local coding agents | Useful for supervised developer productivity | Not designed as controlled product-backend execution contracts |
+| MCP alone | Excellent interface for tools, prompts, and resources | MCP exposes capabilities; it does not by itself define the application workflow contract |
+| General agent frameworks | Powerful orchestration primitives | Workflow intent may be spread across framework code and abstractions |
+| Custom backend orchestration | Maximum control | Expensive to build and maintain; workflow intent can fragment across code, prompts, schemas, and services |
+| Superwire | Declarative workflow contract for server-side AI features | Best when the AI process has structure, typed outputs, scoped tool access, or backend integration requirements |
+
+## Direct provider calls
+
+Direct LLM calls are a good fit when the feature is simple:
+
+- one prompt;
+- no tools;
+- no staged data dependencies;
+- no strict intermediate outputs;
+- little need for workflow validation or fakes.
+
+Superwire becomes useful when direct calls start accumulating surrounding infrastructure: DTOs, provider settings, tool wrappers, output validators, sequencing code, stream events, and test fakes.
+
+## Prompt-only agents
+
+Prompt-only agents are useful for exploratory or user-supervised work. The model has freedom to decide the plan.
+
+Product backends often need the opposite: the application should own the plan, and the model should reason within controlled steps.
+
+Superwire keeps agent intelligence but removes unnecessary freedom from the execution path.
+
+## MCP alone
+
+MCP is the capability layer. It exposes tools, prompts, and resources.
+
+Superwire is the orchestration layer. It decides how those capabilities are imported, scoped, referenced, sequenced, and composed into a final JSON response.
+
+Use MCP to describe what the backend can do. Use Superwire to describe when and how an AI workflow may use those capabilities.
+
+## General agent frameworks
+
+Frameworks often provide orchestration primitives, memory abstractions, tool routing, and provider integrations. They can be powerful, especially when the application is built around that framework.
+
+Superwire takes a language-first approach. The workflow intent lives in a `.wire` file that can be reviewed and validated as a product artifact.
+
+That is useful when the AI workflow should remain visible to backend engineers, product teams, prompt authors, and domain experts.
+
+## Custom orchestration
+
+Custom orchestration gives maximum control. It can also become expensive because every AI feature needs similar supporting code.
+
+Superwire is intended for the repeated parts of server-side AI workflows:
+
+- typed inputs;
+- secret boundaries;
+- provider and model profiles;
+- MCP imports;
+- scoped agent capabilities;
+- structured outputs;
+- explicit references;
+- dependency graphs;
+- streaming events;
+- validation;
+- test fakes.
+
+The application still owns domain logic and persistence. Superwire owns the AI workflow contract.

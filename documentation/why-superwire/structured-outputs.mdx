@@ -1,0 +1,141 @@
+---
+title: Structured Outputs and Data Flow
+description: Use schemas, output blocks, references, and selective context to make AI results usable by backend code.
+---
+
+A major source of fragility in LLM integrations is unstructured text.
+
+If backend code expects categories, IDs, action items, confidence scores, or UI-ready fields, prose is not enough. Superwire workflows require agent outputs to be structured so later workflow steps and application code can rely on stable shapes.
+
+## Agent outputs are contracts
+
+```wire
+agent classify_ticket {
+    model: model.fast
+    instruction: "Classify this ticket: {{ input.message }}."
+
+    output {
+        category: enum { bug, feature, question }
+        confidence: number
+        reason: string
+    }
+}
+
+output {
+    category: agent.classify_ticket.category
+    confidence: agent.classify_ticket.confidence
+    reason: agent.classify_ticket.reason
+}
+```
+
+The application receives fields it can route, store, display, or test. It does not need to scrape the model's prose.
+
+## Schemas make shapes reusable
+
+```wire
+schema evidence_item {
+    source_id: string
+    quote: string
+    relevance: number
+}
+
+schema report_result {
+    summary: string
+    evidence: [schema.evidence_item]
+    confidence: number
+}
+
+agent write_report {
+    model: model.smart
+    instruction: "Write a report from the selected evidence."
+    output: schema.report_result
+}
+```
+
+Schemas are useful when multiple agents or final outputs need the same shape.
+
+## Dot-path references make data flow explicit
+
+References show exactly which values move from one step to another.
+
+```wire
+agent extract_facts {
+    model: model.fast
+    instruction: "Extract facts from {{ input.document }}."
+
+    output {
+        facts: [string]
+    }
+}
+
+agent write_summary {
+    model: model.smart
+    instruction: "Write a summary from these facts: {{ agent.extract_facts.facts }}."
+
+    output {
+        summary: string
+    }
+}
+```
+
+The second agent depends on `agent.extract_facts.facts`. It does not implicitly inherit every previous message or every runtime value.
+
+This reduces accidental context leakage and makes the dependency graph easier to review.
+
+## Structured references versus context continuation
+
+Use a structured reference when the next step needs a value:
+
+```wire
+{{ agent.extract_facts.facts }}
+```
+
+Use `context(agent.name)` when the next step should continue the prior message history:
+
+```wire
+agent propose_next_steps {
+    model: model.smart
+    context: context(agent.investigate_issue)
+    instruction: "Continue from the investigation and propose next steps."
+
+    output {
+        next_steps: [string]
+    }
+}
+```
+
+These are different operations. Structured references read output fields. Context continuation passes message history.
+
+## Selective context improves cost and attention
+
+Backend AI features become expensive when every request sends every possible record, transcript, image description, or attachment to the model.
+
+A better pattern is progressive context loading:
+
+1. fetch a lightweight index with IDs and metadata;
+2. ask an agent which records are relevant;
+3. fetch details only for selected IDs;
+4. summarize or synthesize from the curated evidence;
+5. return a structured result.
+
+This reduces token usage and keeps the model focused on relevant data.
+
+## Multi-model and parallel workflows
+
+Different steps often need different model profiles. Classification may use a fast model. Final synthesis may use a stronger model. Extraction may use a lower temperature than drafting.
+
+Because model profiles are named, the choice is visible:
+
+```wire
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+model smart from llm {
+    id: "gpt-4.1"
+}
+```
+
+Independent steps can run concurrently when they do not reference each other. A final aggregation agent can then reference both outputs.
+
+This keeps concurrency tied to workflow structure instead of hiding it inside scattered async orchestration code.

@@ -1,0 +1,132 @@
+---
+title: Controlled Tool Access
+description: Scope MCP capabilities, choose who owns tool calls, and unlock powerful actions in stages.
+---
+
+Product backends often expose powerful capabilities: read user data, create records, update state, send notifications, query internal systems, or call paid services.
+
+A model should not receive every capability simply because the backend has those capabilities somewhere in the system.
+
+Superwire makes tool access explicit.
+
+## Agents only receive what they declare
+
+An imported tool is not automatically available to every agent. An agent receives a tool, prompt, or resource only when it appears in `uses`.
+
+```wire
+tool fetch_task from mcp.tasks.tool.fetch_task {
+    input {
+        task_id: number
+    }
+
+    output {
+        title: string
+        description: string
+        status: string
+    }
+}
+
+agent summarize_task {
+    model: model.fast
+    uses: [tool.fetch_task]
+    instruction: "Fetch the task and summarize the current status."
+
+    output {
+        summary: string
+    }
+}
+```
+
+This creates a least-privilege pattern for agent steps.
+
+An early classification agent may need no tools. A research agent may need a read-only fetch tool. A later creation agent may receive a write tool only after previous steps have produced validated inputs.
+
+## Workflow-owned calls versus agent-owned calls
+
+Superwire supports two different tool-call ownership models.
+
+### Agent-owned calls
+
+Use `uses` when the model should decide whether and how to call a tool during an agent step.
+
+This is useful when the model needs judgment. For example, a research agent may decide which survey answers require deeper inspection.
+
+```wire
+agent inspect_answers {
+    model: model.smart
+    uses: [tool.fetch_answer_detail]
+    instruction: "Inspect only the answers that are relevant to {{ input.question }}."
+
+    output {
+        findings: [string]
+    }
+}
+```
+
+### Workflow-owned calls
+
+Use a `call` expression when the workflow author decides exactly which tool runs and which trusted values are bound.
+
+```wire
+let task = call tool.fetch_task {
+    bindings {
+        task_id: input.task_id
+    }
+}
+```
+
+This is useful when a backend operation must happen deterministically, such as fetching a known record by ID, loading a survey index, or creating a parent record before creating child records.
+
+## Staged capability unlocking
+
+Many backend workflows have a natural order:
+
+1. create or select a project;
+2. create task groups inside that project;
+3. generate candidate questions;
+4. create question records;
+5. reorder or revise the records;
+6. return created IDs and labels.
+
+A freeform agent with all tools at once may attempt operations out of order. It may create child records before a parent exists, skip a required step, or call an editing tool before there is anything to edit.
+
+A Superwire workflow can unlock capabilities through earlier outputs:
+
+```wire
+let project = call tool.create_project {
+    bindings {
+        workspace_id: input.workspace_id
+        title: input.title
+    }
+}
+
+agent plan_sections {
+    model: model.fast
+    instruction: "Plan survey sections for project {{ project.id }}."
+
+    output {
+        sections: [{ title: string, goal: string }]
+    }
+}
+
+agent write_questions for section in agent.plan_sections.sections {
+    model: model.fast
+    instruction: "Write survey questions for {{ section.title }}: {{ section.goal }}."
+
+    output {
+        questions: [{ label: string, answer_type: string }]
+    }
+}
+```
+
+Later steps can reference `project.id` only after the workflow-owned project creation call has completed.
+
+## Practical guidance
+
+- Import capabilities explicitly.
+- Use `uses` for model discretion.
+- Use `call tool.*` for deterministic backend operations.
+- Bind trusted runtime values with `bindings {}`.
+- Avoid giving write tools to early exploratory agents.
+- Split read, plan, create, and revise steps when the order matters.
+- Keep application-level authorization in the application or MCP server; Superwire scopes orchestration, but it does not replace domain permissions.

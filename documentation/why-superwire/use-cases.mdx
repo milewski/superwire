@@ -1,0 +1,136 @@
+---
+title: Use Cases
+description: Practical backend AI features where Superwire is a strong fit.
+---
+
+Superwire is strongest when AI behavior is part of a product backend rather than a one-off prompt.
+
+The common pattern is staged work: read or create data in a controlled order, let models reason inside narrow steps, and return structured JSON to the application.
+
+## Survey analysis
+
+A product may store many survey responses per user or project. Responses may include short text, long text, yes/no answers, images, video transcripts, and file attachments.
+
+A user might ask:
+
+> Summarize what this user has said across their recent survey responses and highlight the most important themes.
+
+A naive implementation sends all answers and transcripts to one model call. That is expensive, slow, and noisy.
+
+A Superwire workflow can stage the process:
+
+1. accept a typed `user_id`, `project_id`, or filter object;
+2. call a tool to fetch a lightweight answer index;
+3. run an agent that selects relevant answers;
+4. expose transcript or media-detail tools only to the inspection step;
+5. fetch full details only for selected answers;
+6. summarize the curated evidence;
+7. return themes, evidence, confidence, and follow-up questions.
+
+Why this fits Superwire:
+
+- selected context avoids unnecessary tokens;
+- tool access is scoped by stage;
+- the final response has a stable UI shape;
+- the selection step is explicit and reviewable;
+- the backend can test the integration with fake outputs.
+
+## Survey generation
+
+A user describes the survey they want to create. The backend must create a project, create task groups or sections, generate questions, assign answer types, create records, reorder them, and return a summary.
+
+A single huge tool can make the model produce one large perfect payload, but that is brittle. A freeform agent with many small tools may call them out of order.
+
+A Superwire workflow can use a staged middle path:
+
+1. interpret the user's goal into a structured plan;
+2. call a project-creation tool first;
+3. pass the project ID into the next step;
+4. generate sections from the plan;
+5. generate questions for each section;
+6. create records with trusted bindings;
+7. reorder or revise the generated items;
+8. return created IDs and display labels.
+
+Why this fits Superwire:
+
+- parent IDs exist before child creation;
+- write tools can be introduced only after planning;
+- looped agents can generate section-level questions;
+- the result can map directly to application records.
+
+## Research-backed content generation
+
+A blog, documentation, or knowledge-base product may need research-backed drafts.
+
+A freeform agent could receive search tools, drafting tools, image tools, and publishing tools at once. A backend product should usually keep those concerns separate.
+
+A Superwire workflow can stage the content pipeline:
+
+1. interpret the user's topic;
+2. search approved sources;
+3. summarize evidence;
+4. draft an outline;
+5. write the content;
+6. optionally generate image prompts;
+7. return title, summary, sections, citations, and next actions.
+
+Why this fits Superwire:
+
+- the publishing tool does not need to be available to the research step;
+- a stronger model can be reserved for final synthesis;
+- evidence and draft fields can be typed separately;
+- the UI can show progress and intermediate states.
+
+## Task and project automation
+
+A project-management backend may use AI to inspect tasks, identify blockers, suggest next actions, or create follow-up work.
+
+A Superwire workflow can:
+
+1. fetch task metadata through a workflow-owned tool call;
+2. run looped agents over selected tasks;
+3. aggregate risk and action-item outputs;
+4. optionally create follow-up tasks through a scoped write tool;
+5. return a structured project briefing.
+
+Why this fits Superwire:
+
+- task analysis can fan out in parallel;
+- aggregation waits on explicit references;
+- write actions can be separated from read-only analysis;
+- tests can fake the workflow output instead of calling providers.
+
+## Customer support triage
+
+A support system may need to classify tickets, extract entities, check account context, and recommend a route.
+
+A Superwire workflow can:
+
+1. classify the ticket without tools;
+2. fetch account context only when needed;
+3. run a policy or knowledge-base lookup through an MCP resource or tool;
+4. produce a structured routing decision;
+5. return fields such as `category`, `priority`, `team`, `confidence`, and `reason`.
+
+Why this fits Superwire:
+
+- simple tickets can avoid expensive context;
+- sensitive lookup tools are scoped to the right step;
+- routing logic consumes fields, not prose;
+- validation catches output-shape mistakes before they reach application code.
+
+## The general pattern
+
+Superwire is useful when the hard part is not calling a model, but building a reliable backend feature around model behavior.
+
+Look for workflows with:
+
+- multiple steps;
+- tools or MCP capabilities;
+- structured outputs;
+- staged permissions;
+- explicit data dependencies;
+- selective context loading;
+- fan-out and aggregation;
+- testability requirements.

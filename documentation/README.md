@@ -7,6 +7,7 @@ The documentation is written for application developers who will normally execut
 ## Structure
 
 - `introduction.mdx`, `quickstart.mdx`, `installation.mdx`: first-run onboarding around the executor HTTP API
+- `why-superwire/`: product positioning, benefits, use cases, comparison, and adoption guidance
 - `core-concepts/`: workflow mental model and declaration reference
 - `syntax/`: grammar-level DSL reference
 - `mcp/`: MCP server, tool, resource, prompt, and batch import usage

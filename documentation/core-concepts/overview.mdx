@@ -26,7 +26,6 @@ model fast from llm {
 agent reply {
     model: model.fast
     instruction: "Reply to {{ input.message }}"
-
     output {
         message: string
     }
