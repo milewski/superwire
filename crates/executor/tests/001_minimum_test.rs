@@ -17,7 +17,7 @@ async fn executes_fixture_through_scripted_provider_server() {
                         assert_eq!(messages.last().and_then(|message| message.get("role")), Some(&json!("user")));
                     })
                     .expect_prompt("Write a short welcome message.")
-                    .respond_string("hello from fixture runner");
+                    .respond_json(json!({ "value": "hello from fixture runner" }));
             });
         })
         .run()

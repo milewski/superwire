@@ -25,7 +25,7 @@ async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
                     .turn()
                     .expect_prompt("Manage project tasks")
                     .expect_tools(["assign_task", "create_sorting_task", "update_task_status"])
-                    .respond_json(json!("created"));
+                    .respond_json(json!({ "value": "created" }));
             });
         })
         .mcp("local", |mcp| {
@@ -48,7 +48,7 @@ async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
         .await
         .expect("fixture runner should execute workflow with tools");
 
-    assert_eq!(output.output, json!({ "value": "created" }));
+    assert_eq!(output.output, json!({ "value": { "value": "created" } }));
     assert_mcp_tool_was_called_with(
         &output.mcp_requests["local"],
         "create-sorting-task",
@@ -117,7 +117,7 @@ async fn sends_model_tool_call_argument_errors_back_to_model() {
                     .expect_tool_with_schema("create_sorting_task", provider_tool_schema(schema! { title: String }))
                     .respond_tool_calls([call!("create_sorting_task", { "title": 123 })]);
 
-                model.turn().respond_json(json!("recovered"));
+                model.turn().respond_json(json!({ "value": "recovered" }));
             });
         })
         .mcp("local", |mcp| {
@@ -138,7 +138,7 @@ async fn sends_model_tool_call_argument_errors_back_to_model() {
         .await
         .expect("execution should let model recover from invalid tool arguments");
 
-    assert_eq!(output.output, json!({ "value": "recovered" }));
+    assert_eq!(output.output, json!({ "value": { "value": "recovered" } }));
 }
 
 #[tokio::test]
@@ -201,7 +201,7 @@ async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
                     .expect_tool_with_schema("create_sorting_task", provider_tool_schema(schema! { title: i64 }))
                     .respond_tool_calls([call!("create_sorting_task", { "title": "not a number" })]);
 
-                model.turn().respond_json(json!("recovered from bad schema"));
+                model.turn().respond_json(json!({ "value": "recovered from bad schema" }));
             });
         })
         .mcp("local", |mcp| {
@@ -222,7 +222,7 @@ async fn sends_error_back_when_model_receives_incorrect_tool_schema() {
         .await
         .expect("execution should let model recover from incorrect tool schema");
 
-    assert_eq!(output.output, json!({ "value": "recovered from bad schema" }));
+    assert_eq!(output.output, json!({ "value": { "value": "recovered from bad schema" } }));
 }
 
 #[tokio::test]
@@ -251,7 +251,7 @@ async fn sends_incorrect_mcp_tool_output_back_to_model() {
 
                         assert!(tool_content.contains("wrong"), "{tool_content}");
                     })
-                    .respond_json(json!("recovered from bad tool output"));
+                    .respond_json(json!({ "value": "recovered from bad tool output" }));
             });
         })
         .mcp("local", |mcp| {
@@ -274,5 +274,5 @@ async fn sends_incorrect_mcp_tool_output_back_to_model() {
         .await
         .expect("execution should let model recover from incorrect MCP output");
 
-    assert_eq!(output.output, json!({ "value": "recovered from bad tool output" }));
+    assert_eq!(output.output, json!({ "value": { "value": "recovered from bad tool output" } }));
 }

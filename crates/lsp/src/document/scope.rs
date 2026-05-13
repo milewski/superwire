@@ -153,6 +153,14 @@ impl ScopeScannerTokenState {
             }
         }
 
+        if parent_block == Some(ScopeBlock::Agent) {
+            if let Some(agent_property_name) = AgentPropertyName::from_identifier(last_identifier) {
+                if agent_property_name == AgentPropertyName::Output {
+                    return ScopeBlock::TypedDeclaration;
+                }
+            }
+        }
+
         if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
             return ScopeBlock::TypedDeclaration;
         }

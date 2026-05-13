@@ -14,7 +14,7 @@ async fn executes_fixture_with_inference_settings() {
                 model
                     .turn()
                     .expect_prompt("Analyze the current release readiness.")
-                    .respond_string("All systems go.");
+                    .respond_json(json!({ "value": "All systems go." }));
             });
         })
         .run()

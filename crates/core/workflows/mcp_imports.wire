@@ -68,7 +68,9 @@ agent task_sorter {
     model: model.openai_model
     instruction: "Create sorting tasks for the generated project."
     uses: [tool.create_sorting_task_for_task_group]
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

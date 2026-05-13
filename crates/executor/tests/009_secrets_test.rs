@@ -12,7 +12,7 @@ async fn passes_secret_api_key_to_provider() {
         .provider("openai", |provider| {
             provider.api_key("sk-test-123");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("Say hello.").respond_string("hello");
+                model.turn().expect_prompt("Say hello.").respond_json(json!({ "value": "hello" }));
             });
         })
         .run()

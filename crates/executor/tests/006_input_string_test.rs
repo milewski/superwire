@@ -15,7 +15,7 @@ async fn passes_string_input_into_prompt() {
                 model
                     .turn()
                     .expect_prompt("Write about quantum computing.")
-                    .respond_string("written content");
+                    .respond_json(json!({ "value": "written content" }));
             });
         })
         .run()

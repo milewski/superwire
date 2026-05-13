@@ -15,14 +15,14 @@ async fn executes_workflow_with_multiple_providers_and_models() {
                 model
                     .turn()
                     .expect_prompt("Draft summary for incident response")
-                    .respond_string("draft from primary");
+                    .respond_json(json!({ "value": "draft from primary" }));
             });
 
             provider.model("model-c", |model| {
                 model
                     .turn()
-                    .expect_prompt("Finalize using review: reviewed by backup")
-                    .respond_string("final from primary");
+                    .expect_prompt("Finalize using review: {\"value\":\"reviewed by backup\"}")
+                    .respond_json(json!({ "value": "final from primary" }));
             });
         })
         .provider("backup", |provider| {
@@ -30,8 +30,8 @@ async fn executes_workflow_with_multiple_providers_and_models() {
             provider.model("model-b", |model| {
                 model
                     .turn()
-                    .expect_prompt("Review this draft: draft from primary")
-                    .respond_string("reviewed by backup");
+                    .expect_prompt("Review this draft: {\"value\":\"draft from primary\"}")
+                    .respond_json(json!({ "value": "reviewed by backup" }));
             });
         })
         .run()
@@ -41,9 +41,9 @@ async fn executes_workflow_with_multiple_providers_and_models() {
     assert_eq!(
         output.output,
         json!({
-            "draft": "draft from primary",
-            "review": "reviewed by backup",
-            "final": "final from primary",
+            "draft": { "value": "draft from primary" },
+            "review": { "value": "reviewed by backup" },
+            "final": { "value": "final from primary" },
         })
     );
 

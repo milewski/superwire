@@ -32,7 +32,7 @@ agent agent_b {
         fetched: call tool.fetch_task_data {
             input {
                 project_id: 7
-                depends_on: agent.agent_a
+                depends_on: agent.agent_a.value
             }
         }
     }

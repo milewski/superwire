@@ -12,9 +12,11 @@ async fn supports_schema_output_and_field_access() {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
                 model.turn().expect_prompt("Generate a person profile.").respond_json(json!({
-                    "name": "Alice",
-                    "age": 30,
-                    "role": "engineer",
+                    "value": {
+                        "name": "Alice",
+                        "age": 30,
+                        "role": "engineer",
+                    }
                 }));
             });
         })

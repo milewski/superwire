@@ -15,13 +15,13 @@ async fn exposes_agent_scoped_tool_call_limits() {
                     .turn()
                     .expect_prompt("First")
                     .expect_tools(["fetch_shared"])
-                    .respond_string("first");
+                    .respond_json(json!({ "value": "first" }));
 
                 model
                     .turn()
                     .expect_prompt("Second")
                     .expect_tools(["fetch_shared"])
-                    .respond_string("second");
+                    .respond_json(json!({ "value": "second" }));
             });
         })
         .mcp("local", |mcp| {
@@ -34,5 +34,5 @@ async fn exposes_agent_scoped_tool_call_limits() {
         .await
         .expect("fixture runner should execute tool max calls scopes workflow");
 
-    assert_eq!(output.output, json!({ "first": "first", "second": "second" }));
+    assert_eq!(output.output, json!({ "first": { "value": "first" }, "second": { "value": "second" } }));
 }

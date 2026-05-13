@@ -14,7 +14,7 @@ async fn executes_string_output_fixture() {
                 model
                     .turn()
                     .expect_prompt("Write a one-sentence project summary.")
-                    .respond_string("This is a summary.");
+                    .respond_json(json!({ "value": "This is a summary." }));
             });
         })
         .run()

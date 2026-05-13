@@ -12,8 +12,8 @@ async fn executes_linear_chain_fixture_in_order() {
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("testing").respond_string("first");
-                model.turn().expect_prompt("first").respond_string("second");
+                model.turn().expect_prompt("testing").respond_json(json!({ "value": "first" }));
+                model.turn().expect_prompt("first").respond_json(json!({ "value": "second" }));
             });
         })
         .run()

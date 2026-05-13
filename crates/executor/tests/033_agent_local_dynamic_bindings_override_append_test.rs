@@ -11,7 +11,7 @@ async fn agent_local_dynamic_tool_call_overrides_and_appends_bindings() {
         .provider("openai", |provider| {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
-                model.turn().expect_prompt("Process fetched values").respond_string("ok");
+                model.turn().expect_prompt("Process fetched values").respond_json(json!({ "value": "ok" }));
             });
         })
         .mcp("local", |mcp| {
@@ -28,7 +28,7 @@ async fn agent_local_dynamic_tool_call_overrides_and_appends_bindings() {
     let tool_call_arguments = find_mcp_tool_call_arguments(&output.mcp_requests["local"], "fetch_numbers");
 
     assert_eq!(tool_call_arguments, json!({ "override": 123, "base": "keep", "append": "xyz" }));
-    assert_eq!(output.output, json!({ "result": "ok" }));
+    assert_eq!(output.output, json!({ "result": { "value": "ok" } }));
 }
 
 fn find_mcp_tool_call_arguments(requests: &[Value], tool_name: &str) -> Value {

@@ -31,7 +31,7 @@ async fn batches_mixed_mcp_imports_with_bindings() {
                     .turn()
                     .expect_prompt("Create a task")
                     .expect_tools(["create_task", "read_all_tasks", "render_create_task_instructions"])
-                    .respond_json(json!("created"));
+                    .respond_json(json!({ "value": "created" }));
             });
         })
         .mcp("local", |mcp| {
@@ -60,7 +60,7 @@ async fn batches_mixed_mcp_imports_with_bindings() {
         .await
         .expect("fixture runner should execute mixed MCP batch imports");
 
-    assert_eq!(output.output, json!({ "value": "created" }));
+    assert_eq!(output.output, json!({ "value": { "value": "created" } }));
 
     let tool_call = output.mcp_requests["local"]
         .iter()

@@ -84,7 +84,7 @@ async fn supports_all_schema_types_and_variants() {
                 model
                     .turn()
                     .expect_prompt("Generate a JSON object that matches the all_schema_types schema exactly for Ada")
-                    .respond_json(typed_output.clone());
+                    .respond_json(json!({ "value": typed_output.clone() }));
             });
         })
         .run()

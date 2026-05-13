@@ -12,8 +12,10 @@ async fn supports_variant_match_projection_fixture() {
             provider.api_key("test-api-key");
             provider.model("model-a", |model| {
                 model.turn().expect_prompt("Generate an event result.").respond_json(json!({
-                    "event": { "type": "created", "id": "event-1" },
-                    "maybe_event": null
+                    "value": {
+                        "event": { "type": "created", "id": "event-1" },
+                        "maybe_event": null
+                    }
                 }));
             });
         })

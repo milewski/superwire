@@ -17,7 +17,7 @@ async fn injects_finalize_tool_without_response_format() {
                     .with_messages(|messages| {
                         assert_eq!(messages.len(), 2);
                     })
-                    .respond_string("hello");
+                    .respond_json(json!({ "value": "hello" }));
             });
         })
         .run()
@@ -34,7 +34,7 @@ async fn injects_finalize_tool_without_response_format() {
     assert!(request.get("response_format").is_none());
     assert_eq!(finalize_tool.pointer("/function/strict"), Some(&json!(true)));
     assert_eq!(finalize_tool.pointer("/function/parameters/type"), Some(&json!("object")));
-    assert_eq!(output.output, json!({ "greeting": "hello" }));
+    assert_eq!(output.output, json!({ "greeting": { "value": "hello" } }));
 }
 
 #[tokio::test]
@@ -62,14 +62,14 @@ async fn returns_finalize_schema_error_to_model_and_recovers() {
                         assert!(content.contains("tool_argument_schema_mismatch"));
                         assert!(content.contains("Correct the arguments and call the tool again"));
                     })
-                    .respond_string("recovered");
+                    .respond_json(json!({ "value": "recovered" }));
             });
         })
         .run()
         .await
         .expect("workflow should recover after invalid finalize arguments");
 
-    assert_eq!(output.output, json!({ "greeting": "recovered" }));
+    assert_eq!(output.output, json!({ "greeting": { "value": "recovered" } }));
     assert_eq!(output.provider_requests["openai"].len(), 2);
 }
 
@@ -92,14 +92,14 @@ async fn nudges_model_when_it_stops_with_text() {
 
                         assert!(nudge_text.contains("must call the internal `finalize` tool"));
                     })
-                    .respond_string("hello after nudge");
+                    .respond_json(json!({ "value": "hello after nudge" }));
             });
         })
         .run()
         .await
         .expect("workflow should recover after nudge");
 
-    assert_eq!(output.output, json!({ "greeting": "hello after nudge" }));
+    assert_eq!(output.output, json!({ "greeting": { "value": "hello after nudge" } }));
     assert_eq!(output.provider_requests["openai"].len(), 2);
 }
 

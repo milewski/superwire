@@ -17,7 +17,9 @@ agent release_analyst {
     }
 
     instruction: "Write a short release readiness note."
-    output: string
+    output {
+        value: string
+    }
 }
 
 output {

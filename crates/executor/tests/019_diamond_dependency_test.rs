@@ -15,17 +15,17 @@ async fn resolves_diamond_dependency_order() {
                 model
                     .turn()
                     .expect_prompt("Analyze performance from perspective A.")
-                    .respond_string("analysis from A");
+                    .respond_json(json!({ "value": "analysis from A" }));
 
                 model
                     .turn()
                     .expect_prompt("Analyze performance from perspective B.")
-                    .respond_string("analysis from B");
+                    .respond_json(json!({ "value": "analysis from B" }));
 
                 model
                     .turn()
                     .expect_prompt("A=analysis from A, B=analysis from B")
-                    .respond_string("merged result");
+                    .respond_json(json!({ "value": "merged result" }));
             });
         })
         .run()

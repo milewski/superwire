@@ -16,7 +16,7 @@ async fn sends_multiline_prompt_to_provider() {
                     .expect_prompt("You are a friendly assistant.")
                     .expect_prompt("Write a short welcome message.")
                     .expect_prompt("Keep it to one sentence.")
-                    .respond_string("Welcome!");
+                    .respond_json(json!({ "value": "Welcome!" }));
             });
         })
         .run()

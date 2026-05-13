@@ -19,7 +19,9 @@ agent greeting {
     instruction: "Write a short welcome message."
 
     // Define the expected output type for this agent.
-    output: string
+    output {
+        value: string
+    }
 }
 
 // Define the workflow's final output object.

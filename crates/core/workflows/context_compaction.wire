@@ -63,7 +63,9 @@ agent summary_from_full_context {
     context: context(agent.research_analysis)
 
     instruction: "Write a short executive summary from the available context."
-    output: string
+    output {
+        value: string
+    }
 }
 
 // Step 2b: use compacted context with the default compaction behavior.
@@ -79,7 +81,9 @@ agent summary_from_default_compact_context {
     context: compact(agent.research_analysis)
 
     instruction: "Write a short executive summary from the compacted prior context."
-    output: string
+    output {
+        value: string
+    }
 }
 
 // Step 2c: use compacted context with an explicit compaction model.
@@ -96,7 +100,9 @@ agent summary_from_compact_context_with_model {
     context: compact(agent.research_analysis, model: model.openai_model)
 
     instruction: "Write a short executive summary from the compacted prior context."
-    output: string
+    output {
+        value: string
+    }
 }
 
 // Step 2d: use compacted context with custom compaction settings.

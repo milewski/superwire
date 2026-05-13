@@ -24,7 +24,7 @@ async fn supports_complex_output_types() {
                 model
                     .turn()
                     .expect_prompt("Generate a typed object.")
-                    .respond_json(typed_output.clone());
+                    .respond_json(json!({ "value": typed_output.clone() }));
             });
         })
         .run()
