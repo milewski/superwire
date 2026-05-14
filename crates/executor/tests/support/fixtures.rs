@@ -36,6 +36,7 @@ pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE: &str = include_str!("../fixtures/034_
 pub const MCP_PROMPT_REQUIRED_BINDING_VALIDATION: &str = include_str!("../fixtures/035_mcp_prompt_required_binding_validation.wire");
 pub const VARIANT_MATCH_PROJECTION: &str = include_str!("../fixtures/036_variant_match_projection.wire");
 pub const SCHEMA_TYPES: &str = include_str!("../fixtures/037_schema_types.wire");
+pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_variant_types.wire");
 
 // Negative Tests
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =

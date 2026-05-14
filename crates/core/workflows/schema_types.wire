@@ -157,6 +157,34 @@ agent typed_example {
             /// Nested number field
             number_value: number
         }
+        /// A discriminated variant object
+        event: variant type {
+            created {
+                /// Created event identifier
+                id: string
+                /// Participant that created the event
+                actor: schema.participant
+            }
+            deleted {
+                /// Deleted event identifier
+                id: string
+                /// Optional deletion reason
+                reason: maybe string
+            }
+        }
+        /// A nullable discriminated variant object
+        nullable_event: maybe variant type {
+            created {
+                /// Created nullable event identifier
+                id: string
+            }
+            deleted {
+                /// Deleted nullable event identifier
+                id: string
+                /// Optional nullable deletion reason
+                reason: maybe string
+            }
+        }
     }
 }
 
@@ -196,4 +224,20 @@ output {
 
     // Accessing a nullable property requires `?.`.
     nullable_object_string: agent.typed_example.nullable_object?.string_value
+
+    // Variant fields support match projection.
+    event_id: match agent.typed_example.event {
+        created.id
+        deleted.id
+    }
+    created_actor_name: agent.typed_example.event#created.actor.name ?? "not-created"
+    deleted_reason: agent.typed_example.event#deleted.reason ?? "not-deleted"
+
+    // Nullable variants support match with a default branch.
+    nullable_event_id: match agent.typed_example.nullable_event {
+        created.id
+        deleted.id
+        _ "none"
+    }
+    nullable_deleted_reason: agent.typed_example.nullable_event#deleted.reason ?? "none"
 }
