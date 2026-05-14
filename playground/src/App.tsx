@@ -1,15 +1,15 @@
-import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, ScrollText, Square, Sun, Trash2, Workflow } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import PanelCard from '@/components/panel-card';
 import { eventTone, formatEventData } from './eventFormatting';
 import type { ExecutorEvent, PlaygroundView, RunState, ValidationState, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
@@ -21,6 +21,156 @@ const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const legacyActiveTabStorageKey = 'superwire.playground.activeTab.v2';
 const themeStorageKey = 'superwire.playground.theme';
 const logoSource = `${import.meta.env.BASE_URL}logo.svg`;
+
+type WorkflowTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  source: string;
+};
+
+const workflowTemplates: WorkflowTemplate[] = [
+  {
+    id: 'minimum',
+    name: 'Minimum workflow',
+    description: 'Smallest valid provider-model-agent-output flow.',
+    source: `provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent greeting {
+    model: model.openai_model
+    instruction: "Write a short welcome message."
+    output {
+        value: string
+    }
+}
+
+output {
+    greeting: agent.greeting.value
+}`,
+  },
+  {
+    id: 'linear-chain',
+    name: 'Linear chain',
+    description: 'One agent feeds the next agent output.',
+    source: `provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+input {
+    topic: string
+}
+
+agent first {
+    model: model.openai_model
+    instruction: input.topic
+    output {
+        value: string
+    }
+}
+
+agent second {
+    model: model.openai_model
+    instruction: agent.first.value
+    output {
+        value: string
+    }
+}
+
+output {
+    result: agent.second.value
+}`,
+  },
+  {
+    id: 'parallel-agents',
+    name: 'Parallel agents',
+    description: 'Run independent agents and merge output fields.',
+    source: `provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+input {
+    product_name: string
+}
+
+agent changelog {
+    model: model.openai_model
+    instruction: "Write release notes for {{ input.product_name }}."
+    output {
+        markdown: string
+    }
+}
+
+agent social_thread {
+    model: model.openai_model
+    instruction: "Create a launch thread for {{ input.product_name }}."
+    output {
+        posts: [string]
+    }
+}
+
+agent customer_email {
+    model: model.openai_model
+    instruction: "Write an announcement email for {{ input.product_name }}."
+    output {
+        subject: string
+        body: string
+    }
+}
+
+output {
+    changelog: agent.changelog.markdown
+    posts: agent.social_thread.posts
+    email_subject: agent.customer_email.subject
+    email_body: agent.customer_email.body
+}`,
+  },
+  {
+    id: 'secrets',
+    name: 'Secrets setup',
+    description: 'Bind provider api_key from secrets object.',
+    source: `secrets {
+    api_key: string
+}
+
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: secrets.api_key
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent assistant {
+    model: model.openai_model
+    instruction: "Say hello."
+    output {
+        value: string
+    }
+}
+
+output {
+    greeting: agent.assistant.value
+}`,
+  },
+];
 
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
@@ -37,6 +187,7 @@ export default function App() {
   const canRun = activeTab?.runState !== 'running';
   const hasEditorMessageError = activeTab?.validationState === 'invalid' || activeTab?.runState === 'failed';
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
+  const shouldShowTemplatePicker = activeView === 'workflow' && (activeTab?.source.trim() ?? '') === '';
 
   useEffect(() => {
     restoreFromStorage(setTabs, setActiveTabId, setDarkMode);
@@ -324,6 +475,19 @@ export default function App() {
     }
   }
 
+  function applyWorkflowTemplate(template: WorkflowTemplate) {
+    updateActiveTab((tab) => ({
+      ...tab,
+      source: template.source,
+      message: `Loaded template: ${template.name}.`,
+      validationState: 'idle',
+      runState: 'idle',
+      outputJson: '',
+      eventLog: [],
+      updatedAt: Date.now(),
+    }));
+  }
+
   function acceptSseChunk(chunk: string, tabId: string) {
     const event = parseSseChunk(chunk);
 
@@ -393,8 +557,7 @@ export default function App() {
                     <div className="tab-controls-row">
                       <nav className="mode-tabs" aria-label="Playground mode">
                         <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
-                        <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('runtime')}><Braces /> Runtime</Button>
-                        <Button variant={activeView === 'logs' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('logs')}><ScrollText /> Logs</Button>
+                        <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('runtime')}><Braces /> Variables</Button>
                       </nav>
 
                       <div className="tab-actions-bar">
@@ -410,46 +573,58 @@ export default function App() {
                     </div>
 
                     {activeView === 'workflow' ? (
-                      <Card className="editor-card">
-                        <CardHeader className="editor-card-header">
-                          <CardTitle>{activeTab.name}</CardTitle>
-                        </CardHeader>
-                        <WireEditor
-                          key={activeTab.id}
-                          value={activeTab.source}
-                          documentId={activeTab.id}
-                          darkMode={darkMode}
-                          onChange={(source) => updateActiveTab((tab) => ({ ...tab, source, updatedAt: Date.now() }))}
-                        />
-                        <div className={`editor-message-bar ${hasEditorMessageError ? 'error' : 'neutral'}`}>
-                          <span className="message-line message-line-full">{activeTab.message ?? 'Ready.'}</span>
+                      <section className="workflow-dashboard">
+                        {shouldShowTemplatePicker ? (
+                          <PanelCard title="Start from a template" description="Pick a fixture to quickly explore the DSL." className="template-picker-card" bodyClassName="template-picker-grid">
+                              {workflowTemplates.map((template) => (
+                                <Button key={template.id} variant="outline" className="template-picker-button" onClick={() => applyWorkflowTemplate(template)}>
+                                  <span className="template-picker-name">{template.name}</span>
+                                  <span className="template-picker-description">{template.description}</span>
+                                </Button>
+                              ))}
+                          </PanelCard>
+                        ) : null}
+
+                        <div className="workflow-top-grid workflow-top-grid-single">
+                          <Card className="editor-card">
+                            <div className="editor-card-header panel-card-header">
+                              <div className="panel-card-title-block">
+                                <strong>{activeTab.name}</strong>
+                              </div>
+                            </div>
+                            <WireEditor
+                              key={activeTab.id}
+                              value={activeTab.source}
+                              documentId={activeTab.id}
+                              darkMode={darkMode}
+                              onChange={(source) => updateActiveTab((tab) => ({ ...tab, source, updatedAt: Date.now() }))}
+                            />
+                            <div className={`editor-message-bar ${hasEditorMessageError ? 'error' : 'neutral'}`}>
+                              <span className="message-line message-line-full">{activeTab.message ?? 'Ready.'}</span>
+                            </div>
+                          </Card>
                         </div>
-                      </Card>
+
+                        <div className="workflow-bottom-grid">
+                          <PanelCard collapsible open={outputOpen} title="Output" description="Final workflow output payload." className="log-panel" bodyClassName="log-panel-body" onToggle={() => setOutputOpen((currentValue) => !currentValue)}>
+                            <OutputBox runState={activeTab.runState} outputJson={activeTab.outputJson} />
+                          </PanelCard>
+                          <PanelCard collapsible open={eventsOpen} title="Server events" description={`${activeTab.eventLog.length} streamed events.`} className="log-panel" bodyClassName="log-panel-body" onToggle={() => setEventsOpen((currentValue) => !currentValue)}>
+                            <EventLog events={activeTab.eventLog} />
+                          </PanelCard>
+                        </div>
+                      </section>
                     ) : null}
 
                     {activeView === 'runtime' ? (
                       <section className="view-stack">
-                        <ViewHeader title="Runtime data" description="Edit workflow input and secrets as JSON objects. This view is intentionally wide so nested payloads stay readable." />
-                        <CollapsiblePanel open={runtimeOpen} title="Runtime JSON" description="Input and secrets are sent with every validation and run request." onToggle={() => setRuntimeOpen((currentValue) => !currentValue)}>
+                        <ViewHeader title="Variables" description="Edit workflow input and secrets as JSON objects. This view is intentionally wide so nested payloads stay readable." />
+                        <PanelCard collapsible open={runtimeOpen} title="Input and secrets" description="Variables are sent with every validation and run request." onToggle={() => setRuntimeOpen((currentValue) => !currentValue)}>
                           <div className="runtime-json-grid runtime-json-grid-wide">
                             <JsonRuntimeEditor title="Input" value={activeTab.inputJson} onFormat={() => formatRuntimeJson('inputJson')} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
                             <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({ ...tab, secretsJson, updatedAt: Date.now() }))} />
                           </div>
-                        </CollapsiblePanel>
-                      </section>
-                    ) : null}
-
-                    {activeView === 'logs' ? (
-                      <section className="view-stack">
-                        <ViewHeader title="Logs and output" description="Inspect the final workflow output and the streamed server event timeline." />
-                      <div className="bottom-grid">
-                        <CollapsiblePanel open={outputOpen} title="Output" description="Final workflow output payload." onToggle={() => setOutputOpen((currentValue) => !currentValue)}>
-                          <OutputBox runState={activeTab.runState} outputJson={activeTab.outputJson} />
-                        </CollapsiblePanel>
-                        <CollapsiblePanel open={eventsOpen} title="Server events" description={`${activeTab.eventLog.length} streamed events.`} onToggle={() => setEventsOpen((currentValue) => !currentValue)}>
-                          <EventLog events={activeTab.eventLog} />
-                        </CollapsiblePanel>
-                      </div>
+                        </PanelCard>
                       </section>
                     ) : null}
                   </section>
@@ -511,27 +686,6 @@ function ViewHeader({ title, description }: { title: string; description: string
   );
 }
 
-function CollapsiblePanel({ open, title, description, children, onToggle }: { open: boolean; title: string; description: string; children: ReactNode; onToggle: () => void }) {
-  return (
-    <Collapsible open={open} onOpenChange={onToggle} asChild>
-      <Card className="side-panel">
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="panel-toggle">
-            <span>
-              <strong>{title}</strong>
-              <small>{description}</small>
-            </span>
-            <span>{open ? 'Collapse' : 'Expand'}</span>
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="panel-body">{children}</CardContent>
-        </CollapsibleContent>
-      </Card>
-    </Collapsible>
-  );
-}
-
 function JsonRuntimeEditor({ title, value, secret, onChange, onFormat }: { title: string; value: string; secret?: boolean; onChange: (value: string) => void; onFormat: () => void }) {
   const validationError = jsonObjectValidationError(value);
 
@@ -565,17 +719,26 @@ function EventLog({ events }: { events: ExecutorEvent[] }) {
 
   return (
     <ScrollArea className="event-list">
-      <div className="space-y-3 pr-3">
+      <div className="space-y-2 pr-2">
         {events.map((event, eventIndex) => (
-          <Card key={`${event.kind}-${eventIndex}`} size="sm" className="event-card">
-            <CardHeader className="event-card-header">
-              <Badge variant="outline" className={eventTone(event.kind)}>{event.kind}</Badge>
-              {event.agent_name ? <Badge variant="secondary">{event.agent_name}</Badge> : null}
-            </CardHeader>
-            <CardContent>
-              <pre className="event-data">{formatEventData(event)}</pre>
-            </CardContent>
-          </Card>
+          <Collapsible key={`${event.kind}-${eventIndex}`} defaultOpen={false} className="event-item">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="event-item-trigger">
+                <span className="event-item-meta">
+                  <span className="event-item-index">#{eventIndex + 1}</span>
+                  <Badge variant="outline" className={eventTone(event.kind)}>{event.kind}</Badge>
+                  {event.agent_name ? <Badge variant="secondary">{event.agent_name}</Badge> : null}
+                </span>
+                <span className="event-item-summary">{event.message ?? 'View payload'}</span>
+                <span className="event-item-expand">Expand</span>
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="event-item-content">
+                <pre className="event-data">{formatEventData(event)}</pre>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         ))}
       </div>
     </ScrollArea>

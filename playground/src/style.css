@@ -364,7 +364,7 @@ textarea {
 }
 
 .editor-card,
-.side-panel,
+.panel-card,
 .event-card {
   background: color-mix(in srgb, var(--card) 86%, #000 14%);
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
@@ -373,12 +373,11 @@ textarea {
 }
 
 .editor-card {
-  @apply flex min-h-[720px] flex-col overflow-hidden py-0;
+  @apply flex min-h-0 flex-col overflow-hidden py-0;
 }
 
 .editor-card-header {
-  @apply grid gap-3 px-5 py-5 sm:grid-cols-[220px_minmax(0,1fr)_auto] sm:items-center xl:px-6;
-  border-bottom: 1px solid var(--border);
+  @apply px-3 py-2;
 }
 
 .tab-actions-bar {
@@ -408,37 +407,50 @@ textarea {
   height: 18px !important;
 }
 
-.editor-card-header [data-slot="card-title"] {
-  @apply text-xl font-semibold tracking-tight;
-}
-
 .editor-card-header [data-slot="card-description"],
-.panel-toggle small,
+.panel-card-trigger small,
+.panel-card-header small,
 .json-editor-card small {
   @apply mt-1 block text-xs;
   color: var(--muted-foreground);
 }
 
-.panel-toggle {
-  @apply flex h-auto min-h-20 w-full items-center justify-between gap-6 rounded-none px-5 py-4 text-left text-sm;
+.panel-card-trigger,
+.panel-card-header {
+  @apply flex h-auto min-h-0 w-full items-center justify-between gap-4 px-3 py-2 text-left;
   white-space: normal;
+  border-bottom: 1px solid var(--border);
 }
 
-.panel-toggle > span:first-child {
+.panel-card-trigger > span:first-child,
+.panel-card-header > div {
   @apply min-w-0 flex-1;
 }
 
-.panel-toggle > span:last-child {
-  @apply shrink-0 text-sm text-muted-foreground;
+.panel-card-title-block {
+  @apply flex min-h-10 flex-col justify-center;
 }
 
-.panel-toggle:hover {
+.panel-card-trigger strong,
+.panel-card-header strong {
+  @apply block text-base font-semibold tracking-tight;
+}
+
+.panel-card-trigger > span:last-child {
+  @apply shrink-0 self-center text-xs;
+  color: var(--muted-foreground);
+}
+
+.panel-card-trigger:hover {
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
-.panel-body {
-  @apply p-4;
-  border-top: 1px solid var(--border);
+.panel-card-body {
+  @apply p-3;
+}
+
+[data-slot="collapsible-content"][data-state="closed"] {
+  display: none;
 }
 
 .runtime-json-grid {
@@ -451,6 +463,63 @@ textarea {
 
 .bottom-grid {
   @apply grid gap-5;
+}
+
+.workflow-dashboard {
+  @apply grid gap-5;
+}
+
+.template-picker-card {
+  border-radius: 18px;
+}
+
+.template-picker-grid {
+  @apply grid gap-2 p-3 lg:grid-cols-2;
+}
+
+.template-picker-button {
+  @apply flex h-auto flex-col items-start gap-1.5 px-3 py-2.5 text-left;
+}
+
+.template-picker-name {
+  @apply text-sm font-semibold;
+}
+
+.template-picker-description {
+  @apply text-xs;
+  color: var(--muted-foreground);
+}
+
+.workflow-top-grid {
+  @apply grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)];
+}
+
+.workflow-top-grid-single {
+  @apply xl:grid-cols-1;
+}
+
+.workflow-side-stack {
+  @apply grid gap-5;
+}
+
+.workflow-side-stack .panel-card {
+  @apply h-full;
+}
+
+.workflow-side-stack .json-editor-card textarea {
+  @apply min-h-52;
+}
+
+.workflow-bottom-grid {
+  @apply grid gap-5 xl:grid-cols-2;
+}
+
+.log-panel {
+  border-radius: 16px;
+}
+
+.log-panel-body {
+  @apply px-3 pb-2.5 pt-1.5;
 }
 
 .json-editor-card {
@@ -515,7 +584,45 @@ textarea {
 }
 
 .event-list {
-  @apply h-[520px];
+  @apply h-[360px] xl:h-[420px];
+}
+
+.event-item {
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 76%, var(--card));
+}
+
+.event-item-trigger {
+  @apply flex h-auto w-full items-center justify-between gap-3 rounded-none px-3 py-2 text-left;
+}
+
+.event-item-meta {
+  @apply flex min-w-0 items-center gap-2;
+}
+
+.event-item-index {
+  @apply font-mono text-xs;
+  color: var(--muted-foreground);
+}
+
+.event-item-summary {
+  @apply min-w-0 flex-1 truncate text-xs;
+  color: var(--muted-foreground);
+}
+
+.event-item-expand {
+  @apply shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em];
+  color: var(--muted-foreground);
+}
+
+.event-item-content {
+  border-top: 1px solid var(--border);
+  padding: 0.6rem 0.7rem 0.75rem;
+}
+
+.wire-editor-shell {
+  transition: height 180ms ease;
 }
 
 .view-stack {
@@ -532,15 +639,6 @@ textarea {
 
 .view-header p {
   @apply mt-2 max-w-3xl text-sm leading-6 text-muted-foreground;
-}
-
-.event-card {
-  @apply py-3;
-  background: color-mix(in srgb, var(--background) 70%, var(--card));
-}
-
-.event-card-header {
-  @apply flex flex-row flex-wrap gap-2 px-3;
 }
 
 .event-chip,
