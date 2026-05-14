@@ -266,10 +266,6 @@ export default function App() {
               <header className="topbar">
                 <div className="brand-group">
                   <img src={logoSource} alt="Superwire" className="brand-logo" />
-                  <div>
-                    <p className="eyebrow">Playground</p>
-                    <h1>Build, validate, and run wire workflows</h1>
-                  </div>
                 </div>
 
                 <nav className="mode-tabs" aria-label="Playground mode">
