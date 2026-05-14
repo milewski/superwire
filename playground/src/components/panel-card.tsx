@@ -29,13 +29,13 @@ export default function PanelCard({
   if (!collapsible) {
     return (
       <Card className={cn('panel-card', className)}>
-        <div className="panel-card-header">
-          <div className="panel-card-title-block">
+        <div className="panel-card__header">
+          <div className="panel-card__title-block">
             <strong>{title}</strong>
             {description ? <small>{description}</small> : null}
           </div>
         </div>
-        <CardContent className={cn('panel-card-body', bodyClassName)}>{children}</CardContent>
+        <CardContent className={cn('panel-card__body', bodyClassName)}>{children}</CardContent>
       </Card>
     );
   }
@@ -44,19 +44,19 @@ export default function PanelCard({
     <Collapsible open={open} onOpenChange={onToggle} asChild>
       <Card className={cn('panel-card', className)}>
         <CollapsibleTrigger asChild>
-          <Button type="button" variant="ghost" className="panel-card-trigger" size="default">
-            <span className="panel-card-title-block">
+          <Button type="button" variant="ghost" className="panel-card__trigger" size="default">
+            <span className="panel-card__title-block">
               <strong>{title}</strong>
               {description ? <small>{description}</small> : null}
             </span>
-            <span className="panel-card-action" aria-hidden="true">
+            <span className="panel-card__action" aria-hidden="true">
               <span>{open ? 'Collapse' : 'Expand'}</span>
               <ChevronDown />
             </span>
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <CardContent className={cn('panel-card-body', bodyClassName)}>{children}</CardContent>
+          <CardContent className={cn('panel-card__body', bodyClassName)}>{children}</CardContent>
         </CollapsibleContent>
       </Card>
     </Collapsible>

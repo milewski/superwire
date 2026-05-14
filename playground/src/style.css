@@ -140,7 +140,7 @@ textarea {
   font: inherit;
 }
 
-.playground-shell {
+.playground {
   @apply min-h-screen p-3 transition-colors sm:p-5 xl:p-8;
   background:
     radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--superwire-accent) 16%, transparent), transparent 24rem),
@@ -148,28 +148,28 @@ textarea {
   color: var(--foreground);
 }
 
-.workspace-frame {
+.playground__frame {
   @apply mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1840px] overflow-hidden shadow-2xl shadow-black/40 sm:min-h-[calc(100vh-2.5rem)];
   background: color-mix(in srgb, var(--background) 92%, #000 8%);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 28px;
 }
 
-.workspace-main {
+.playground__main {
   @apply flex min-w-0 flex-1 flex-col;
 }
 
-.topbar {
+.playground__topbar {
   @apply grid gap-4 px-4 py-4 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-center lg:px-6 xl:px-8;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 78%, transparent);
 }
 
-.brand-group {
+.playground__brand {
   @apply flex min-w-0 items-center gap-4;
 }
 
-.brand-logo {
+.playground__logo {
   @apply h-8 w-36 shrink-0 object-contain object-left invert dark:invert-0;
 }
 
@@ -178,87 +178,87 @@ textarea {
   color: var(--superwire-accent);
 }
 
-.topbar h1 {
+.playground__topbar h1 {
   @apply mt-1 text-lg font-semibold tracking-tight sm:text-xl;
 }
 
-.mode-tabs {
+.playground-mode-switch {
   @apply flex w-fit items-center gap-1 rounded-2xl p-1;
   border: 1px solid var(--toggle-border);
   background: var(--toggle-surface);
   box-shadow: var(--toggle-shadow);
 }
 
-.mode-tab {
+.playground-mode-switch__button {
   @apply h-11 rounded-xl px-4 text-base font-semibold;
   color: var(--toggle-text);
 }
 
-.mode-tab[data-state="active"] {
+.playground-mode-switch__button[data-state="active"] {
   background: var(--toggle-active-surface) !important;
   color: var(--toggle-active-text) !important;
 }
 
-.mode-tab svg {
+.playground-mode-switch__button svg {
   width: 20px !important;
   height: 20px !important;
 }
 
-.topbar-actions {
+.playground__topbar-actions {
   @apply flex flex-wrap items-center justify-start gap-2 lg:justify-end;
 }
 
-.theme-toggle {
+.playground__theme-toggle {
   @apply rounded-full border-0 bg-transparent shadow-none;
 }
 
-.theme-toggle:hover {
+.playground__theme-toggle:hover {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
-.topbar-actions button {
+.playground__topbar-actions button {
   @apply h-10 rounded-xl text-sm;
 }
 
-.topbar-actions svg {
+.playground__topbar-actions svg {
   width: 18px !important;
   height: 18px !important;
 }
 
-.message-line {
+.workflow-editor__message-line {
   @apply text-sm;
   color: var(--muted-foreground);
 }
 
-.message-line-full {
+.workflow-editor__message-line--full {
   @apply block w-full whitespace-pre-wrap break-words leading-6;
 }
 
-.editor-message-bar {
+.workflow-editor__message {
   @apply px-5 py-3 xl:px-6;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 82%, #000 18%);
 }
 
-.editor-message-bar.neutral {
+.workflow-editor__message--neutral {
   color: var(--muted-foreground);
 }
 
-.editor-message-bar.error {
+.workflow-editor__message--error {
   background: color-mix(in srgb, var(--danger) 12%, var(--card));
 }
 
-.editor-message-bar.error .message-line {
+.workflow-editor__message--error .workflow-editor__message-line {
   color: var(--danger);
 }
 
-.tabbar {
+.playground__tabs {
   @apply gap-0 overflow-x-auto px-4 py-4 lg:px-6 xl:px-8;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--card) 64%, transparent);
 }
 
-.workflow-tab-shell {
+.playground-tabs__item {
   @apply flex h-11 w-auto shrink-0 items-center gap-1 overflow-visible px-1.5 py-1 transition-[border-color,background-color] duration-200 ease-out;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -266,50 +266,50 @@ textarea {
   color: var(--muted);
 }
 
-.tab-inline-actions {
+.playground-tabs__actions {
   @apply flex items-center gap-1 overflow-hidden opacity-0;
   max-width: 0;
   pointer-events: none;
   transition: max-width 180ms ease, opacity 120ms ease;
 }
 
-.tab-inline-action {
+.playground-tabs__action {
   @apply opacity-0 transition-opacity;
 }
 
-.workflow-tab-shell:hover .tab-inline-actions,
-.workflow-tab-shell:focus-within .tab-inline-actions,
-.workflow-tab-shell:has([data-active]) .tab-inline-actions {
+.playground-tabs__item:hover .playground-tabs__actions,
+.playground-tabs__item:focus-within .playground-tabs__actions,
+.playground-tabs__item:has([data-active]) .playground-tabs__actions {
   max-width: 7rem;
   opacity: 1;
   pointer-events: auto;
 }
 
-.workflow-tab-shell:hover .tab-inline-action,
-.workflow-tab-shell:focus-within .tab-inline-action,
-.workflow-tab-shell:has([data-active]) .tab-inline-action {
+.playground-tabs__item:hover .playground-tabs__action,
+.playground-tabs__item:focus-within .playground-tabs__action,
+.playground-tabs__item:has([data-active]) .playground-tabs__action {
   @apply opacity-100;
 }
 
-.workflow-tab-shell:has([data-active]) {
+.playground-tabs__item:has([data-active]) {
   border-color: var(--superwire-accent);
   background: var(--accent-soft);
 }
 
-.workflow-tab-trigger {
+.playground-tabs__trigger {
   @apply h-9 w-auto min-w-0 flex-none justify-start gap-2 bg-transparent px-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent;
 }
 
-.tab-title {
+.playground-tabs__title {
   @apply whitespace-nowrap;
 }
 
-.workflow-tab-shell button svg {
+.playground-tabs__item button svg {
   width: 17px !important;
   height: 17px !important;
 }
 
-.tab-dot {
+.playground-tabs__dot {
   @apply h-2.5 w-2.5 shrink-0 rounded-full;
   background: var(--superwire-accent);
 }
@@ -357,11 +357,11 @@ textarea {
   color: var(--danger);
 }
 
-.content-stack {
+.playground__content {
   @apply flex min-h-0 flex-1 flex-col gap-5;
 }
 
-.tab-controls-row {
+.playground__controls {
   @apply flex flex-wrap items-center justify-between gap-3;
 }
 
@@ -386,7 +386,7 @@ textarea {
   @apply mt-2 text-sm leading-6 text-muted-foreground;
 }
 
-.workflow-canvas {
+.playground__canvas {
   @apply min-w-0 flex-1 p-4 lg:p-6 xl:p-8;
   background-image:
     radial-gradient(circle, color-mix(in srgb, var(--foreground) 14%, transparent) 1px, transparent 1px),
@@ -394,7 +394,7 @@ textarea {
   background-size: 18px 18px, 100% 100%;
 }
 
-.editor-card,
+.workflow-editor,
 .panel-card,
 .event-card {
   background: color-mix(in srgb, var(--card) 86%, #000 14%);
@@ -403,95 +403,95 @@ textarea {
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
 }
 
-.editor-card,
+.workflow-editor,
 .panel-card {
   @apply flex min-h-0 flex-col gap-0 overflow-hidden py-0;
 }
 
-.editor-card-header {
+.workflow-editor__header {
   @apply px-4 py-3;
 }
 
-.tab-actions-bar {
+.playground-actions {
   @apply flex flex-wrap items-center justify-end gap-2;
 }
 
-.tab-actions-bar .status-pill {
+.playground-actions .status-pill {
   @apply mr-1;
 }
 
-.run-primary {
+.playground-actions__run {
   @apply border-0 font-semibold text-white;
   background: linear-gradient(135deg, #22c55e, #16a34a);
   box-shadow: 0 10px 26px rgba(34, 197, 94, 0.35);
 }
 
-.run-primary:hover:not(:disabled) {
+.playground-actions__run:hover:not(:disabled) {
   background: linear-gradient(135deg, #16a34a, #15803d);
 }
 
-.run-primary:focus-visible {
+.playground-actions__run:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 35%, transparent), 0 10px 26px rgba(34, 197, 94, 0.35);
 }
 
-.run-primary svg {
+.playground-actions__run svg {
   width: 18px !important;
   height: 18px !important;
 }
 
-.editor-card-header [data-slot="card-description"],
-.panel-card-trigger small,
-.panel-card-header small,
-.json-editor-card small {
+.workflow-editor__header [data-slot="card-description"],
+.panel-card__trigger small,
+.panel-card__header small,
+.runtime-json-editor small {
   @apply mt-0.5 block text-xs leading-5;
   color: var(--muted-foreground);
 }
 
-.panel-card-trigger,
-.panel-card-header {
+.panel-card__trigger,
+.panel-card__header {
   @apply flex h-auto min-h-[4rem] w-full items-center justify-between gap-4 rounded-none px-4 py-3 text-left;
   white-space: normal;
   border-bottom: 1px solid var(--border);
 }
 
-.panel-card-trigger > span:first-child,
-.panel-card-header > div {
+.panel-card__trigger > span:first-child,
+.panel-card__header > div {
   @apply min-w-0 flex-1;
 }
 
-.panel-card-title-block {
+.panel-card__title-block {
   @apply flex min-h-10 flex-col justify-center;
 }
 
-.panel-card-trigger strong,
-.panel-card-header strong {
+.panel-card__trigger strong,
+.panel-card__header strong {
   @apply block truncate text-sm font-semibold tracking-tight sm:text-base;
 }
 
-.panel-card-action {
+.panel-card__action {
   @apply inline-flex shrink-0 items-center gap-2 self-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em];
   border-color: color-mix(in srgb, var(--border) 86%, transparent);
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
   color: var(--muted-foreground);
 }
 
-.panel-card-action svg {
+.panel-card__action svg {
   @apply size-3.5 transition-transform;
 }
 
-.panel-card[data-state="open"] .panel-card-action svg {
+.panel-card[data-state="open"] .panel-card__action svg {
   transform: rotate(180deg);
 }
 
-.panel-card[data-state="closed"] .panel-card-trigger {
+.panel-card[data-state="closed"] .panel-card__trigger {
   border-bottom-color: transparent;
 }
 
-.panel-card-trigger:hover {
+.panel-card__trigger:hover {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
-.panel-card-body {
+.panel-card__body {
   @apply p-4 pt-3;
 }
 
@@ -499,11 +499,11 @@ textarea {
   display: none;
 }
 
-.runtime-json-grid {
+.runtime-variables {
   @apply grid gap-4;
 }
 
-.runtime-json-grid-wide {
+.runtime-variables--wide {
   @apply lg:grid-cols-2;
 }
 
@@ -511,72 +511,60 @@ textarea {
   @apply grid gap-5;
 }
 
-.workflow-dashboard {
+.workflow-layout {
   @apply grid gap-5;
 }
 
-.template-picker-card {
+.template-picker {
   border-radius: 16px;
 }
 
-.template-picker-grid {
+.template-picker__grid {
   @apply grid gap-2 p-3 lg:grid-cols-2;
 }
 
-.template-picker-button {
+.template-picker__button {
   @apply flex h-auto flex-col items-start gap-1.5 px-3 py-2.5 text-left;
 }
 
-.template-picker-name {
+.template-picker__name {
   @apply text-sm font-semibold;
 }
 
-.template-picker-description {
+.template-picker__description {
   @apply text-xs;
   color: var(--muted-foreground);
 }
 
-.workflow-top-grid {
+.workflow-layout__top {
   @apply grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)];
 }
 
-.workflow-top-grid-single {
+.workflow-layout__top--single {
   @apply xl:grid-cols-1;
 }
 
-.workflow-side-stack {
-  @apply grid gap-5;
-}
-
-.workflow-side-stack .panel-card {
-  @apply h-full;
-}
-
-.workflow-side-stack .json-editor-card textarea {
-  @apply min-h-52;
-}
-
-.workflow-bottom-grid {
+.workflow-layout__bottom {
   @apply grid gap-5 xl:grid-cols-2;
 }
 
-.log-panel {
+.workflow-log-panel {
   border-radius: 16px;
 }
 
-.log-panel-body {
+.workflow-log-panel__body {
   @apply px-4 pb-3 pt-2;
 }
 
-.json-editor-card {
+.runtime-json-editor {
   @apply flex min-w-0 flex-col gap-3;
 }
 
-.json-editor-header-row {
+.runtime-json-editor__header {
   @apply flex items-center justify-between gap-3;
 }
 
-.json-editor-header-row > span {
+.runtime-json-editor__header > span {
   @apply min-w-0;
 }
 
@@ -601,124 +589,123 @@ textarea {
   min-height: auto;
 }
 
-.rename-dialog-form {
+.rename-dialog__form {
   @apply grid gap-4;
 }
 
-.rename-dialog-input {
+.rename-dialog__input {
   @apply h-10 w-full rounded-lg border px-3 text-sm outline-none transition;
   border-color: var(--border);
   background: color-mix(in srgb, var(--background) 92%, #000 8%);
   color: var(--foreground);
 }
 
-.rename-dialog-input:focus {
+.rename-dialog__input:focus {
   border-color: var(--superwire-accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.json-ok,
-.json-error {
+.runtime-json-editor__status {
   @apply text-xs not-italic;
 }
 
-.json-ok {
+.runtime-json-editor__status--ok {
   color: var(--superwire-accent);
 }
 
-.json-error {
+.runtime-json-editor__status--error {
   color: var(--danger);
 }
 
-.output-box {
+.workflow-output__json {
   @apply min-h-20;
   background: #070707;
   border-radius: 16px;
   color: #f2f2f2;
 }
 
-.output-box .cm-content {
+.workflow-output__json .cm-content {
   padding: 1rem 1.1rem;
   line-height: 1.65;
 }
 
-.event-list {
+.events-log {
   @apply min-h-0 space-y-3;
 }
 
-.event-grouping-toolbar {
+.events-log__toolbar {
   @apply flex flex-wrap items-center justify-between gap-2;
 }
 
-.event-grouping-label {
+.events-log__toolbar-label {
   @apply text-xs font-semibold uppercase tracking-[0.08em];
   color: var(--muted-foreground);
 }
 
-.event-grouping-toggle {
+.events-log__toolbar-toggle {
   @apply inline-flex items-center gap-1 rounded-lg border p-1;
   border-color: var(--border);
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
-.event-grouping-toggle-button {
+.events-log__toolbar-toggle-button {
   @apply h-7 px-2.5 text-xs;
 }
 
-.event-agent-group {
+.events-log__group {
   @apply space-y-2 rounded-xl border p-2;
   border-color: color-mix(in srgb, var(--border) 86%, transparent);
   background: color-mix(in srgb, var(--foreground) 2%, transparent);
 }
 
-.event-agent-group-header {
+.events-log__group-header {
   @apply flex items-center justify-between gap-2 px-1;
 }
 
-.event-agent-label {
+.events-log__group-label {
   @apply inline-flex items-center gap-1.5;
 }
 
-.event-agent-label svg {
+.events-log__group-label svg {
   @apply size-3.5;
   color: var(--muted-foreground);
 }
 
-.event-agent-group-header span {
+.events-log__group-header span {
   @apply text-[11px] font-medium;
   color: var(--muted-foreground);
 }
 
-.event-item {
+.events-log__item {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--background) 76%, var(--card));
 }
 
-.event-item-trigger {
+.events-log__item-trigger {
   @apply flex h-auto w-full items-center justify-between gap-3 rounded-none px-3 py-2 text-left;
 }
 
-.event-item-meta {
+.events-log__item-meta {
   @apply flex min-w-0 items-center gap-2;
 }
 
-.event-item-index {
+.events-log__item-index {
   @apply font-mono text-xs;
   color: var(--muted-foreground);
 }
 
-.event-item-summary {
+.events-log__item-summary {
   @apply min-w-0 flex-1 truncate text-xs;
   color: var(--muted-foreground);
 }
 
-.event-item-expand {
+.events-log__item-expand {
   @apply shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em];
   color: var(--muted-foreground);
 }
 
-.event-item-content {
+.events-log__item-content {
   border-top: 1px solid var(--border);
   padding: 0.6rem 0.7rem 0.75rem;
 }
@@ -727,19 +714,19 @@ textarea {
   transition: height 180ms ease;
 }
 
-.view-stack {
+.runtime-view {
   @apply flex min-h-0 flex-col gap-5;
 }
 
-.view-header {
+.playground-view-header {
   @apply flex items-center justify-between gap-4 rounded-2xl border border-border bg-card/80 px-4 py-3 shadow-xl shadow-black/15;
 }
 
-.view-header h2 {
+.playground-view-header h2 {
   @apply text-xl font-semibold tracking-tight;
 }
 
-.view-header p {
+.playground-view-header p {
   @apply mt-1 max-w-3xl text-sm leading-6 text-muted-foreground;
 }
 
@@ -777,12 +764,12 @@ textarea {
   color: #fbbf24;
 }
 
-.event-data {
+.events-log__item-data {
   min-height: auto;
   color: var(--foreground);
 }
 
-.event-data .cm-content {
+.events-log__item-data .cm-content {
   padding: 0.25rem 0.2rem 0.1rem;
 }
 

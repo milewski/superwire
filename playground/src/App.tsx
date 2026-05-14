@@ -1,23 +1,21 @@
-import { Bot, Braces, Copy, Loader2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import JsonCodeEditor from '@/components/json-code-editor';
 import PanelCard from '@/components/panel-card';
-import { eventTone, formatEventData } from './eventFormatting';
-import type { ExecutorEvent, PlaygroundView, RunState, ValidationState, WorkflowTab } from './types';
+import EventLog, { EventGroupingMode } from '@/components/playground/event-log';
+import JsonRuntimeEditor from '@/components/playground/json-runtime-editor';
+import OutputBox from '@/components/playground/output-box';
+import RunStateBadge from '@/components/playground/run-state-badge';
+import StatusPill from '@/components/playground/status-pill';
+import ViewHeader from '@/components/playground/view-header';
+import type { ExecutorEvent, PlaygroundView, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
+import { workflowTemplates, type WorkflowTemplate } from './workflowTemplates';
 import { createWorkflowTab, normalizeWorkflowTab, parseJsonObject, uniqueId } from './workflowState';
-
-enum EventGroupingMode {
-  Chronological = 'chronological',
-  Agent = 'agent',
-}
 
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const legacyTabsStorageKey = 'superwire.playground.tabs.v2';
@@ -25,172 +23,6 @@ const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const legacyActiveTabStorageKey = 'superwire.playground.activeTab.v2';
 const themeStorageKey = 'superwire.playground.theme';
 const logoSource = `${import.meta.env.BASE_URL}logo.svg`;
-
-type WorkflowTemplate = {
-  id: string;
-  name: string;
-  description: string;
-  source: string;
-  inputJson: string;
-  secretsJson: string;
-};
-
-const workflowTemplates: WorkflowTemplate[] = [
-  {
-    id: 'minimum',
-    name: 'Minimum workflow',
-    description: 'Smallest valid provider-model-agent-output flow.',
-    source: `provider openai from openai {
-    endpoint: "http://localhost:1234/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "model-a"
-}
-
-agent greeting {
-    model: model.openai_model
-    instruction: "Write a short welcome message."
-    output {
-        value: string
-    }
-}
-
-output {
-    greeting: agent.greeting.value
-}`,
-    inputJson: '{}',
-    secretsJson: '{}',
-  },
-  {
-    id: 'linear-chain',
-    name: 'Linear chain',
-    description: 'One agent feeds the next agent output.',
-    source: `provider openai from openai {
-    endpoint: "http://localhost:1234/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "model-a"
-}
-
-input {
-    topic: string
-}
-
-agent first {
-    model: model.openai_model
-    instruction: input.topic
-    output {
-        value: string
-    }
-}
-
-agent second {
-    model: model.openai_model
-    instruction: agent.first.value
-    output {
-        value: string
-    }
-}
-
-output {
-    result: agent.second.value
-}`,
-    inputJson: `{
-  "topic": "Summarize this week in AI tooling"
-}`,
-    secretsJson: '{}',
-  },
-  {
-    id: 'parallel-agents',
-    name: 'Parallel agents',
-    description: 'Run independent agents and merge output fields.',
-    source: `provider openai from openai {
-    endpoint: "http://localhost:1234/v1"
-    api_key: "test-api-key"
-}
-
-model openai_model from openai {
-    id: "model-a"
-}
-
-input {
-    product_name: string
-}
-
-agent changelog {
-    model: model.openai_model
-    instruction: "Write release notes for {{ input.product_name }}."
-    output {
-        markdown: string
-    }
-}
-
-agent social_thread {
-    model: model.openai_model
-    instruction: "Create a launch thread for {{ input.product_name }}."
-    output {
-        posts: [string]
-    }
-}
-
-agent customer_email {
-    model: model.openai_model
-    instruction: "Write an announcement email for {{ input.product_name }}."
-    output {
-        subject: string
-        body: string
-    }
-}
-
-output {
-    changelog: agent.changelog.markdown
-    posts: agent.social_thread.posts
-    email_subject: agent.customer_email.subject
-    email_body: agent.customer_email.body
-}`,
-    inputJson: `{
-  "product_name": "Superwire Playground"
-}`,
-    secretsJson: '{}',
-  },
-  {
-    id: 'secrets',
-    name: 'Secrets setup',
-    description: 'Bind provider api_key from secrets object.',
-    source: `secrets {
-    api_key: string
-}
-
-provider openai from openai {
-    endpoint: "http://localhost:1234/v1"
-    api_key: secrets.api_key
-}
-
-model openai_model from openai {
-    id: "model-a"
-}
-
-agent assistant {
-    model: model.openai_model
-    instruction: "Say hello."
-    output {
-        value: string
-    }
-}
-
-output {
-    greeting: agent.assistant.value
-}`,
-    inputJson: '{}',
-    secretsJson: `{
-  "api_key": "test-api-key"
-}`,
-  },
-];
 
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
@@ -500,8 +332,8 @@ export default function App() {
     updateActiveTab((tab) => ({
       ...tab,
       source: template.source,
-      inputJson: template.inputJson,
-      secretsJson: template.secretsJson,
+      inputJson: JSON.stringify(template.input, null, 2),
+      secretsJson: JSON.stringify(template.secrets, null, 2),
       message: `Loaded template: ${template.name}.`,
       validationState: 'idle',
       runState: 'idle',
@@ -530,88 +362,88 @@ export default function App() {
   return (
     <TooltipProvider>
       <main className={darkMode ? 'dark' : ''}>
-        <div className="playground-shell">
-          <section className="workspace-frame">
-            <div className="workspace-main">
-              <header className="topbar">
-                <div className="brand-group">
-                  <img src={logoSource} alt="Superwire" className="brand-logo" />
+        <div className="playground">
+          <section className="playground__frame">
+            <div className="playground__main">
+              <header className="playground__topbar">
+                <div className="playground__brand">
+                  <img src={logoSource} alt="Superwire" className="playground__logo" />
                 </div>
 
-                <div className="topbar-actions">
-                  <Button className="theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={() => setDarkMode((currentValue) => !currentValue)}>
+                <div className="playground__topbar-actions">
+                  <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={() => setDarkMode((currentValue) => !currentValue)}>
                     {darkMode ? <Sun /> : <Moon />}
                   </Button>
                 </div>
               </header>
 
-              <Tabs value={activeTab?.id ?? ''} onValueChange={setActiveTabId} className="tabbar">
+              <Tabs value={activeTab?.id ?? ''} onValueChange={setActiveTabId} className="playground__tabs">
                 <TabsList variant="line" className="h-auto flex-wrap justify-start gap-3 bg-transparent p-0">
                   {tabs.map((tab) => (
-                    <div key={tab.id} className="workflow-tab-shell">
-                      <TabsTrigger value={tab.id} className="workflow-tab-trigger">
-                        <span className="tab-dot" />
-                        <span className="tab-title">{tab.name}</span>
+                    <div key={tab.id} className="playground-tabs__item">
+                      <TabsTrigger value={tab.id} className="playground-tabs__trigger">
+                        <span className="playground-tabs__dot" />
+                        <span className="playground-tabs__title">{tab.name}</span>
                         <RunStateBadge state={tab.runState} />
                       </TabsTrigger>
 
-                      <div className="tab-inline-actions">
-                        <Button className="tab-inline-action" variant="ghost" size="icon-sm" aria-label={`Rename ${tab.name}`} onClick={() => openRenameDialog(tab.id)}>
+                      <div className="playground-tabs__actions">
+                        <Button className="playground-tabs__action" variant="ghost" size="icon-sm" aria-label={`Rename ${tab.name}`} onClick={() => openRenameDialog(tab.id)}>
                           <Pencil />
                         </Button>
 
-                        <Button className="tab-inline-action" variant="ghost" size="icon-sm" aria-label={`Duplicate ${tab.name}`} onClick={() => duplicateTabById(tab.id)}>
+                        <Button className="playground-tabs__action" variant="ghost" size="icon-sm" aria-label={`Duplicate ${tab.name}`} onClick={() => duplicateTabById(tab.id)}>
                           <Copy />
                         </Button>
 
-                        <Button className="tab-inline-action" variant="ghost" size="icon-sm" aria-label={`Close ${tab.name}`} onClick={() => closeTab(tab.id)}>
+                        <Button className="playground-tabs__action" variant="ghost" size="icon-sm" aria-label={`Close ${tab.name}`} onClick={() => closeTab(tab.id)}>
                           <Trash2 />
                         </Button>
                       </div>
                     </div>
                   ))}
-                  <Button variant="outline" size="lg" className="new-tab" onClick={addTab}><Plus /> Workflow</Button>
+                  <Button variant="outline" size="lg" className="playground-tabs__new" onClick={addTab}><Plus /> Workflow</Button>
                 </TabsList>
               </Tabs>
 
-              <div className="workflow-canvas">
+              <div className="playground__canvas">
                 {activeTab ? (
-                  <section className="content-stack">
-                    <div className="tab-controls-row">
-                      <nav className="mode-tabs" aria-label="Playground mode">
-                        <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
-                        <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('runtime')}><Braces /> Variables</Button>
+                  <section className="playground__content">
+                    <div className="playground__controls">
+                      <nav className="playground-mode-switch" aria-label="Playground mode">
+                        <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
+                        <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('runtime')}><Braces /> Variables</Button>
                       </nav>
 
-                      <div className="tab-actions-bar">
+                      <div className="playground-actions">
                         <StatusPill state={activeTab.validationState} />
                         <Button variant="ghost" size="lg" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
                         <Button variant="ghost" size="lg" onClick={validateWorkflow}>Validate</Button>
                         {activeTab.runState === 'running' ? (
                           <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
                         ) : (
-                          <Button className="run-primary" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
+                          <Button className="playground-actions__run" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
                         )}
                       </div>
                     </div>
 
                     {activeView === 'workflow' ? (
-                      <section className="workflow-dashboard">
+                      <section className="workflow-layout">
                         {shouldShowTemplatePicker ? (
-                          <PanelCard title="Start from a template" description="Pick a fixture to quickly explore the DSL." className="template-picker-card" bodyClassName="template-picker-grid">
+                          <PanelCard title="Start from a template" description="Pick a fixture to quickly explore the DSL." className="template-picker" bodyClassName="template-picker__grid">
                               {workflowTemplates.map((template) => (
-                                <Button key={template.id} variant="outline" className="template-picker-button" onClick={() => applyWorkflowTemplate(template)}>
-                                  <span className="template-picker-name">{template.name}</span>
-                                  <span className="template-picker-description">{template.description}</span>
+                                <Button key={template.id} variant="outline" className="template-picker__button" onClick={() => applyWorkflowTemplate(template)}>
+                                  <span className="template-picker__name">{template.name}</span>
+                                  <span className="template-picker__description">{template.description}</span>
                                 </Button>
                               ))}
                           </PanelCard>
                         ) : null}
 
-                        <div className="workflow-top-grid workflow-top-grid-single">
-                          <Card className="editor-card">
-                            <div className="editor-card-header panel-card-header">
-                              <div className="panel-card-title-block">
+                        <div className="workflow-layout__top workflow-layout__top--single">
+                          <Card className="workflow-editor">
+                            <div className="workflow-editor__header panel-card__header">
+                              <div className="panel-card__title-block">
                                 <strong>{activeTab.name}</strong>
                               </div>
                             </div>
@@ -622,17 +454,17 @@ export default function App() {
                               darkMode={darkMode}
                               onChange={(source) => updateActiveTab((tab) => ({ ...tab, source, updatedAt: Date.now() }))}
                             />
-                            <div className={`editor-message-bar ${hasEditorMessageError ? 'error' : 'neutral'}`}>
-                              <span className="message-line message-line-full">{activeTab.message ?? 'Ready.'}</span>
+                            <div className={hasEditorMessageError ? 'workflow-editor__message workflow-editor__message--error' : 'workflow-editor__message workflow-editor__message--neutral'}>
+                              <span className="workflow-editor__message-line workflow-editor__message-line--full">{activeTab.message ?? 'Ready.'}</span>
                             </div>
                           </Card>
                         </div>
 
-                        <div className="workflow-bottom-grid">
-                          <PanelCard collapsible open={outputOpen} title="Output" description="Final workflow output payload." className="log-panel" bodyClassName="log-panel-body" onToggle={() => setOutputOpen((currentValue) => !currentValue)}>
+                        <div className="workflow-layout__bottom">
+                          <PanelCard collapsible open={outputOpen} title="Output" description="Final workflow output payload." className="workflow-log-panel" bodyClassName="workflow-log-panel__body" onToggle={() => setOutputOpen((currentValue) => !currentValue)}>
                             <OutputBox runState={activeTab.runState} outputJson={activeTab.outputJson} />
                           </PanelCard>
-                          <PanelCard collapsible open={eventsOpen} title="Server events" description={`${activeTab.eventLog.length} streamed events.`} className="log-panel" bodyClassName="log-panel-body" onToggle={() => setEventsOpen((currentValue) => !currentValue)}>
+                          <PanelCard collapsible open={eventsOpen} title="Server events" description={`${activeTab.eventLog.length} streamed events.`} className="workflow-log-panel" bodyClassName="workflow-log-panel__body" onToggle={() => setEventsOpen((currentValue) => !currentValue)}>
                             <EventLog events={activeTab.eventLog} eventGroupingMode={eventGroupingMode} onEventGroupingModeChange={setEventGroupingMode} />
                           </PanelCard>
                         </div>
@@ -640,12 +472,12 @@ export default function App() {
                     ) : null}
 
                     {activeView === 'runtime' ? (
-                      <section className="view-stack">
+                      <section className="runtime-view">
                         <ViewHeader title="Variables" description="Edit workflow input and secrets as JSON objects. This view is intentionally wide so nested payloads stay readable." />
                         <PanelCard collapsible open={runtimeOpen} title="Input and secrets" description="Variables are sent with every validation and run request." onToggle={() => setRuntimeOpen((currentValue) => !currentValue)}>
-                          <div className="runtime-json-grid runtime-json-grid-wide">
-                            <JsonRuntimeEditor title="Input" value={activeTab.inputJson} onFormat={() => formatRuntimeJson('inputJson')} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
-                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({ ...tab, secretsJson, updatedAt: Date.now() }))} />
+                          <div className="runtime-variables runtime-variables--wide">
+                            <JsonRuntimeEditor title="Input" value={activeTab.inputJson} validationError={jsonObjectValidationError(activeTab.inputJson)} onFormat={() => formatRuntimeJson('inputJson')} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
+                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} validationError={jsonObjectValidationError(activeTab.secretsJson)} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({ ...tab, secretsJson, updatedAt: Date.now() }))} />
                           </div>
                         </PanelCard>
                       </section>
@@ -670,7 +502,7 @@ export default function App() {
           </DialogHeader>
 
           <form
-            className="rename-dialog-form"
+            className="rename-dialog__form"
             onSubmit={(event) => {
               event.preventDefault();
               submitRenameDialog();
@@ -680,7 +512,7 @@ export default function App() {
               autoFocus
               value={renameDraft}
               onChange={(event) => setRenameDraft(event.target.value)}
-              className="rename-dialog-input"
+              className="rename-dialog__input"
               placeholder="Workflow tab name"
             />
 
@@ -695,224 +527,6 @@ export default function App() {
       </Dialog>
 
     </TooltipProvider>
-  );
-}
-
-function ViewHeader({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="view-header">
-      <div>
-        <h2>{title}</h2>
-        <p>{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function JsonRuntimeEditor({ title, value, secret, onChange, onFormat }: { title: string; value: string; secret?: boolean; onChange: (value: string) => void; onFormat: () => void }) {
-  const validationError = jsonObjectValidationError(value);
-
-  return (
-    <label className="json-editor-card">
-      <span className="json-editor-header-row">
-        <span>
-          <strong>{title}</strong>
-          <small>{secret ? 'Sent as secrets.' : 'Sent as workflow input.'}</small>
-        </span>
-        <Button variant="outline" size="sm" onClick={onFormat}>Format JSON</Button>
-      </span>
-      <JsonCodeEditor value={value} onChange={onChange} />
-      <em className={validationError ? 'json-error' : 'json-ok'}>{validationError ?? 'Valid JSON object'}</em>
-    </label>
-  );
-}
-
-function OutputBox({ runState, outputJson }: { runState: RunState; outputJson: string }) {
-  if (!outputJson) {
-    return <div className="empty-state compact">{runState === 'running' ? 'Waiting for workflow output...' : 'Run a workflow to see output.'}</div>;
-  }
-
-  return <JsonCodeEditor value={outputJson} readOnly className="output-box" />;
-}
-
-function EventLog({
-  events,
-  eventGroupingMode,
-  onEventGroupingModeChange,
-}: {
-  events: ExecutorEvent[];
-  eventGroupingMode: EventGroupingMode;
-  onEventGroupingModeChange: (eventGroupingMode: EventGroupingMode) => void;
-}) {
-  if (events.length === 0) {
-    return <div className="empty-state compact">Run a workflow to stream server events.</div>;
-  }
-
-  const groupedEventBlocks = groupEventsForAgentView(events);
-
-  return (
-    <div className="event-list">
-      <div className="event-grouping-toolbar">
-        <span className="event-grouping-label">Group by</span>
-        <div className="event-grouping-toggle" role="tablist" aria-label="Event grouping mode">
-          <Button
-            type="button"
-            size="sm"
-            variant={eventGroupingMode === EventGroupingMode.Chronological ? 'secondary' : 'ghost'}
-            className="event-grouping-toggle-button"
-            onClick={() => onEventGroupingModeChange(EventGroupingMode.Chronological)}
-          >
-            Chronological
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={eventGroupingMode === EventGroupingMode.Agent ? 'secondary' : 'ghost'}
-            className="event-grouping-toggle-button"
-            onClick={() => onEventGroupingModeChange(EventGroupingMode.Agent)}
-          >
-            By agent
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-2 pr-2">
-        {eventGroupingMode === EventGroupingMode.Chronological
-          ? events.map((event, eventIndex) => renderEventItem(event, eventIndex))
-          : groupedEventBlocks.map((groupedEventBlock) => {
-              if (groupedEventBlock.kind === 'agent') {
-                return (
-                  <section key={`agent-${groupedEventBlock.agentName}`} className="event-agent-group">
-                    <div className="event-agent-group-header">
-                      <span className="event-agent-label">
-                        <Bot />
-                        <Badge variant="secondary">{groupedEventBlock.agentName}</Badge>
-                      </span>
-                      <span>{groupedEventBlock.events.length} events</span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {groupedEventBlock.events.map((eventWithIndex) => renderEventItem(eventWithIndex.event, eventWithIndex.eventIndex, false))}
-                    </div>
-                  </section>
-                );
-              }
-
-              return (
-                <section key={`workflow-${groupedEventBlock.blockIndex}`} className="event-agent-group workflow-event-group">
-                  <div className="event-agent-group-header">
-                    <span className="event-agent-label">
-                      <Workflow />
-                      <Badge variant="secondary">workflow</Badge>
-                    </span>
-                    <span>{groupedEventBlock.events.length} events</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {groupedEventBlock.events.map((eventWithIndex) => renderEventItem(eventWithIndex.event, eventWithIndex.eventIndex, false))}
-                  </div>
-                </section>
-              );
-            })}
-      </div>
-    </div>
-  );
-}
-
-function renderEventItem(event: ExecutorEvent, eventIndex: number, showAgentBadge = true) {
-  return (
-    <Collapsible key={`${event.kind}-${eventIndex}-${event.agent_name ?? 'workflow'}`} defaultOpen={false} className="event-item">
-      <CollapsibleTrigger asChild>
-        <Button variant="ghost" className="event-item-trigger">
-          <span className="event-item-meta">
-            <span className="event-item-index">#{eventIndex + 1}</span>
-            <Badge variant="outline" className={eventTone(event.kind)}>{event.kind}</Badge>
-            {showAgentBadge && event.agent_name ? <Badge variant="secondary">{event.agent_name}</Badge> : null}
-          </span>
-          <span className="event-item-summary">{event.message ?? 'View payload'}</span>
-          <span className="event-item-expand">Expand</span>
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="event-item-content">
-          <JsonCodeEditor value={formatEventData(event)} readOnly className="event-data" />
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-type EventWithIndex = {
-  event: ExecutorEvent;
-  eventIndex: number;
-};
-
-type AgentEventGroup = {
-  kind: 'agent';
-  agentName: string;
-  events: EventWithIndex[];
-};
-
-type WorkflowEventGroup = {
-  kind: 'workflow';
-  blockIndex: number;
-  events: EventWithIndex[];
-};
-
-type GroupedEventBlock = AgentEventGroup | WorkflowEventGroup;
-
-function groupEventsForAgentView(events: ExecutorEvent[]): GroupedEventBlock[] {
-  const eventsByAgentName = new Map<string, EventWithIndex[]>();
-  const displayedAgentNames = new Set<string>();
-  const groupedEventBlocks: GroupedEventBlock[] = [];
-
-  for (const [eventIndex, event] of events.entries()) {
-    if (event.agent_name) {
-      const agentName = event.agent_name;
-      const existingAgentEvents = eventsByAgentName.get(agentName) ?? [];
-      existingAgentEvents.push({ event, eventIndex });
-      eventsByAgentName.set(agentName, existingAgentEvents);
-
-      if (!displayedAgentNames.has(agentName)) {
-        displayedAgentNames.add(agentName);
-        groupedEventBlocks.push({
-          kind: 'agent',
-          agentName,
-          events: existingAgentEvents,
-        });
-      }
-
-      continue;
-    }
-
-    const lastGroupedEventBlock = groupedEventBlocks[groupedEventBlocks.length - 1];
-
-    if (lastGroupedEventBlock?.kind === 'workflow') {
-      lastGroupedEventBlock.events.push({ event, eventIndex });
-
-      continue;
-    }
-
-    groupedEventBlocks.push({
-      kind: 'workflow',
-      blockIndex: groupedEventBlocks.length,
-      events: [{ event, eventIndex }],
-    });
-  }
-
-  return groupedEventBlocks;
-}
-
-function StatusPill({ state }: { state: ValidationState }) {
-  return <Badge variant="outline" className={`status-pill ${state}`}>{state}</Badge>;
-}
-
-function RunStateBadge({ state }: { state: RunState }) {
-  return (
-    <Badge variant="outline" className={`mini-status ${state}`}>
-      {state === 'running' ? <Loader2 className="mini-status-spinner" /> : null}
-      <span>{state}</span>
-    </Badge>
   );
 }
 
