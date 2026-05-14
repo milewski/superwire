@@ -1,4 +1,4 @@
-import { Braces, Copy, Loader2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Bot, Braces, Copy, Loader2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,11 @@ import { eventTone, formatEventData } from './eventFormatting';
 import type { ExecutorEvent, PlaygroundView, RunState, ValidationState, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
 import { createWorkflowTab, normalizeWorkflowTab, parseJsonObject, uniqueId } from './workflowState';
+
+enum EventGroupingMode {
+  Chronological = 'chronological',
+  Agent = 'agent',
+}
 
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const legacyTabsStorageKey = 'superwire.playground.tabs.v2';
@@ -194,6 +199,7 @@ export default function App() {
   const [runtimeOpen, setRuntimeOpen] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
   const [eventsOpen, setEventsOpen] = useState(true);
+  const [eventGroupingMode, setEventGroupingMode] = useState<EventGroupingMode>(EventGroupingMode.Chronological);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [renameDialogTabId, setRenameDialogTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -627,7 +633,7 @@ export default function App() {
                             <OutputBox runState={activeTab.runState} outputJson={activeTab.outputJson} />
                           </PanelCard>
                           <PanelCard collapsible open={eventsOpen} title="Server events" description={`${activeTab.eventLog.length} streamed events.`} className="log-panel" bodyClassName="log-panel-body" onToggle={() => setEventsOpen((currentValue) => !currentValue)}>
-                            <EventLog events={activeTab.eventLog} />
+                            <EventLog events={activeTab.eventLog} eventGroupingMode={eventGroupingMode} onEventGroupingModeChange={setEventGroupingMode} />
                           </PanelCard>
                         </div>
                       </section>
@@ -729,37 +735,172 @@ function OutputBox({ runState, outputJson }: { runState: RunState; outputJson: s
   return <JsonCodeEditor value={outputJson} readOnly className="output-box" />;
 }
 
-function EventLog({ events }: { events: ExecutorEvent[] }) {
+function EventLog({
+  events,
+  eventGroupingMode,
+  onEventGroupingModeChange,
+}: {
+  events: ExecutorEvent[];
+  eventGroupingMode: EventGroupingMode;
+  onEventGroupingModeChange: (eventGroupingMode: EventGroupingMode) => void;
+}) {
   if (events.length === 0) {
     return <div className="empty-state compact">Run a workflow to stream server events.</div>;
   }
 
+  const groupedEventBlocks = groupEventsForAgentView(events);
+
   return (
     <div className="event-list">
+      <div className="event-grouping-toolbar">
+        <span className="event-grouping-label">Group by</span>
+        <div className="event-grouping-toggle" role="tablist" aria-label="Event grouping mode">
+          <Button
+            type="button"
+            size="sm"
+            variant={eventGroupingMode === EventGroupingMode.Chronological ? 'secondary' : 'ghost'}
+            className="event-grouping-toggle-button"
+            onClick={() => onEventGroupingModeChange(EventGroupingMode.Chronological)}
+          >
+            Chronological
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={eventGroupingMode === EventGroupingMode.Agent ? 'secondary' : 'ghost'}
+            className="event-grouping-toggle-button"
+            onClick={() => onEventGroupingModeChange(EventGroupingMode.Agent)}
+          >
+            By agent
+          </Button>
+        </div>
+      </div>
+
       <div className="space-y-2 pr-2">
-        {events.map((event, eventIndex) => (
-          <Collapsible key={`${event.kind}-${eventIndex}`} defaultOpen={false} className="event-item">
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" className="event-item-trigger">
-                <span className="event-item-meta">
-                  <span className="event-item-index">#{eventIndex + 1}</span>
-                  <Badge variant="outline" className={eventTone(event.kind)}>{event.kind}</Badge>
-                  {event.agent_name ? <Badge variant="secondary">{event.agent_name}</Badge> : null}
-                </span>
-                <span className="event-item-summary">{event.message ?? 'View payload'}</span>
-                <span className="event-item-expand">Expand</span>
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="event-item-content">
-                <JsonCodeEditor value={formatEventData(event)} readOnly className="event-data" />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        ))}
+        {eventGroupingMode === EventGroupingMode.Chronological
+          ? events.map((event, eventIndex) => renderEventItem(event, eventIndex))
+          : groupedEventBlocks.map((groupedEventBlock) => {
+              if (groupedEventBlock.kind === 'agent') {
+                return (
+                  <section key={`agent-${groupedEventBlock.agentName}`} className="event-agent-group">
+                    <div className="event-agent-group-header">
+                      <span className="event-agent-label">
+                        <Bot />
+                        <Badge variant="secondary">{groupedEventBlock.agentName}</Badge>
+                      </span>
+                      <span>{groupedEventBlock.events.length} events</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {groupedEventBlock.events.map((eventWithIndex) => renderEventItem(eventWithIndex.event, eventWithIndex.eventIndex, false))}
+                    </div>
+                  </section>
+                );
+              }
+
+              return (
+                <section key={`workflow-${groupedEventBlock.blockIndex}`} className="event-agent-group workflow-event-group">
+                  <div className="event-agent-group-header">
+                    <span className="event-agent-label">
+                      <Workflow />
+                      <Badge variant="secondary">workflow</Badge>
+                    </span>
+                    <span>{groupedEventBlock.events.length} events</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {groupedEventBlock.events.map((eventWithIndex) => renderEventItem(eventWithIndex.event, eventWithIndex.eventIndex, false))}
+                  </div>
+                </section>
+              );
+            })}
       </div>
     </div>
   );
+}
+
+function renderEventItem(event: ExecutorEvent, eventIndex: number, showAgentBadge = true) {
+  return (
+    <Collapsible key={`${event.kind}-${eventIndex}-${event.agent_name ?? 'workflow'}`} defaultOpen={false} className="event-item">
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" className="event-item-trigger">
+          <span className="event-item-meta">
+            <span className="event-item-index">#{eventIndex + 1}</span>
+            <Badge variant="outline" className={eventTone(event.kind)}>{event.kind}</Badge>
+            {showAgentBadge && event.agent_name ? <Badge variant="secondary">{event.agent_name}</Badge> : null}
+          </span>
+          <span className="event-item-summary">{event.message ?? 'View payload'}</span>
+          <span className="event-item-expand">Expand</span>
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="event-item-content">
+          <JsonCodeEditor value={formatEventData(event)} readOnly className="event-data" />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+type EventWithIndex = {
+  event: ExecutorEvent;
+  eventIndex: number;
+};
+
+type AgentEventGroup = {
+  kind: 'agent';
+  agentName: string;
+  events: EventWithIndex[];
+};
+
+type WorkflowEventGroup = {
+  kind: 'workflow';
+  blockIndex: number;
+  events: EventWithIndex[];
+};
+
+type GroupedEventBlock = AgentEventGroup | WorkflowEventGroup;
+
+function groupEventsForAgentView(events: ExecutorEvent[]): GroupedEventBlock[] {
+  const eventsByAgentName = new Map<string, EventWithIndex[]>();
+  const displayedAgentNames = new Set<string>();
+  const groupedEventBlocks: GroupedEventBlock[] = [];
+
+  for (const [eventIndex, event] of events.entries()) {
+    if (event.agent_name) {
+      const agentName = event.agent_name;
+      const existingAgentEvents = eventsByAgentName.get(agentName) ?? [];
+      existingAgentEvents.push({ event, eventIndex });
+      eventsByAgentName.set(agentName, existingAgentEvents);
+
+      if (!displayedAgentNames.has(agentName)) {
+        displayedAgentNames.add(agentName);
+        groupedEventBlocks.push({
+          kind: 'agent',
+          agentName,
+          events: existingAgentEvents,
+        });
+      }
+
+      continue;
+    }
+
+    const lastGroupedEventBlock = groupedEventBlocks[groupedEventBlocks.length - 1];
+
+    if (lastGroupedEventBlock?.kind === 'workflow') {
+      lastGroupedEventBlock.events.push({ event, eventIndex });
+
+      continue;
+    }
+
+    groupedEventBlocks.push({
+      kind: 'workflow',
+      blockIndex: groupedEventBlocks.length,
+      events: [{ event, eventIndex }],
+    });
+  }
+
+  return groupedEventBlocks;
 }
 
 function StatusPill({ state }: { state: ValidationState }) {
