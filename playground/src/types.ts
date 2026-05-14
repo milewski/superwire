@@ -1,6 +1,6 @@
 export type ValidationState = 'idle' | 'valid' | 'invalid' | 'running';
 export type RunState = 'idle' | 'running' | 'failed' | 'completed';
-export type PlaygroundView = 'workflow' | 'runtime' | 'logs';
+export type PlaygroundView = 'workflow' | 'runtime';
 
 export interface ExecutorEvent {
   kind: string;

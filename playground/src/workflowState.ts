@@ -98,10 +98,19 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
   return {
     ...fallbackTab,
     ...tab,
+    activeView: normalizePlaygroundView(tab.activeView),
     inputJson: typeof tab.inputJson === 'string' ? tab.inputJson : JSON.stringify(fieldsToObject(tab.inputFields), null, 2),
     secretsJson: typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2),
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
   };
+}
+
+function normalizePlaygroundView(value: unknown): WorkflowTab['activeView'] {
+  if (value === 'runtime') {
+    return 'runtime';
+  }
+
+  return 'workflow';
 }
 
 function fieldsToObject(value: unknown): Record<string, unknown> {

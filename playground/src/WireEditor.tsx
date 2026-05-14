@@ -5,7 +5,7 @@ import { type Diagnostic, linter, setDiagnostics } from '@codemirror/lint';
 import { searchKeymap } from '@codemirror/search';
 import { EditorState } from '@codemirror/state';
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, hoverTooltip, keymap, lineNumbers, tooltips } from '@codemirror/view';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { wireLanguage } from './wireLanguage';
 
 interface WireEditorProps {
@@ -190,7 +190,7 @@ const baseTheme = EditorView.theme({
   '.cm-content': {
     caretColor: 'var(--editor-caret)',
     fontFamily: 'var(--font-mono)',
-    minHeight: '620px',
+    minHeight: '0',
     padding: '22px 0',
   },
   '.cm-gutters': {
@@ -231,6 +231,7 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
   const onChangeRef = useRef(onChange);
   const didSaveDebounceTimeoutRef = useRef<number | null>(null);
   const diagnosticsRef = useRef<LspDiagnostic[]>([]);
+  const [editorHeight, setEditorHeight] = useState(260);
   const documentUri = `file:///playground/${documentId}.wire`;
 
   onChangeRef.current = onChange;
@@ -258,10 +259,11 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
     });
 
     const editorView = new EditorView({
-      state: createEditorState(value, documentUri, languageClient, onChangeRef, didSaveDebounceTimeoutRef, diagnosticsRef),
+      state: createEditorState(value, documentUri, languageClient, onChangeRef, didSaveDebounceTimeoutRef, diagnosticsRef, setEditorHeight),
       parent: parentElement,
     });
     editorViewRef.current = editorView;
+    updateEditorHeight(editorView, setEditorHeight);
 
     languageClient
       .open()
@@ -310,9 +312,11 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
         insert: value,
       },
     });
+
+    updateEditorHeight(editorView, setEditorHeight);
   }, [value]);
 
-  return <div ref={editorElementRef} className="min-h-[620px] flex-1 overflow-hidden bg-transparent" />;
+  return <div ref={editorElementRef} className="wire-editor-shell flex-1 overflow-hidden bg-transparent" style={{ height: `${editorHeight}px` }} />;
 }
 
 function createEditorState(
@@ -322,6 +326,7 @@ function createEditorState(
   onChangeRef: React.MutableRefObject<(value: string) => void>,
   didSaveDebounceTimeoutRef: React.MutableRefObject<number | null>,
   diagnosticsRef: React.MutableRefObject<LspDiagnostic[]>,
+  setEditorHeight: (height: number) => void,
 ) {
   return EditorState.create({
     doc: value,
@@ -349,6 +354,7 @@ function createEditorState(
 
         const nextValue = update.state.doc.toString();
         onChangeRef.current(nextValue);
+        updateEditorHeight(update.view, setEditorHeight);
 
         void languageClient.notify('textDocument/didChange', {
           textDocument: { uri: documentUri, version: Date.now() },
@@ -367,6 +373,13 @@ function createEditorState(
       }),
     ],
   });
+}
+
+function updateEditorHeight(editorView: EditorView, setEditorHeight: (height: number) => void) {
+  const contentHeight = editorView.contentHeight;
+  const gutterPadding = 56;
+  const nextHeight = Math.max(220, Math.min(740, contentHeight + gutterPadding));
+  setEditorHeight(nextHeight);
 }
 
 function lspCompletionSource(documentUri: string, languageClient: WebSocketLanguageClient) {
