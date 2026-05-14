@@ -1,5 +1,5 @@
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
-import { indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, defaultHighlightStyle, foldGutter, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { type Diagnostic, linter, setDiagnostics } from '@codemirror/lint';
 import { searchKeymap } from '@codemirror/search';
@@ -229,6 +229,8 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
   const editorViewRef = useRef<EditorView | null>(null);
   const languageClientRef = useRef<WebSocketLanguageClient | null>(null);
   const onChangeRef = useRef(onChange);
+  const didSaveDebounceTimeoutRef = useRef<number | null>(null);
+  const diagnosticsRef = useRef<LspDiagnostic[]>([]);
   const documentUri = `file:///playground/${documentId}.wire`;
 
   onChangeRef.current = onChange;
@@ -244,6 +246,8 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
 
     languageClientRef.current = languageClient;
     languageClient.setDiagnosticListener((diagnostics) => {
+      diagnosticsRef.current = diagnostics;
+
       const editorView = editorViewRef.current;
 
       if (!editorView) {
@@ -254,7 +258,7 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
     });
 
     const editorView = new EditorView({
-      state: createEditorState(value, documentUri, languageClient, onChangeRef),
+      state: createEditorState(value, documentUri, languageClient, onChangeRef, didSaveDebounceTimeoutRef, diagnosticsRef),
       parent: parentElement,
     });
     editorViewRef.current = editorView;
@@ -274,6 +278,10 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
       .catch(() => undefined);
 
     return () => {
+      if (didSaveDebounceTimeoutRef.current !== null) {
+        window.clearTimeout(didSaveDebounceTimeoutRef.current);
+      }
+
       void languageClient.notify('textDocument/didClose', { textDocument: { uri: documentUri } }).catch(() => undefined);
       languageClient.close();
       editorView.destroy();
@@ -312,6 +320,8 @@ function createEditorState(
   documentUri: string,
   languageClient: WebSocketLanguageClient,
   onChangeRef: React.MutableRefObject<(value: string) => void>,
+  didSaveDebounceTimeoutRef: React.MutableRefObject<number | null>,
+  diagnosticsRef: React.MutableRefObject<LspDiagnostic[]>,
 ) {
   return EditorState.create({
     doc: value,
@@ -324,10 +334,11 @@ function createEditorState(
       indentOnInput(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       wireLanguage(),
-      linter(() => []),
+      history(),
+      linter((editorView) => diagnosticsRef.current.map((diagnostic) => lspDiagnosticToCodeMirror(editorView.state, diagnostic))),
       autocompletion({ override: [lspCompletionSource(documentUri, languageClient)] }),
       hoverTooltip((editorView: EditorView, position: number) => lspHoverTooltip(editorView, position, documentUri, languageClient)),
-      keymap.of([indentWithTab, ...searchKeymap]),
+      keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       tooltips({ parent: document.body }),
       baseTheme,
       EditorView.lineWrapping,
@@ -338,10 +349,21 @@ function createEditorState(
 
         const nextValue = update.state.doc.toString();
         onChangeRef.current(nextValue);
+
         void languageClient.notify('textDocument/didChange', {
           textDocument: { uri: documentUri, version: Date.now() },
           contentChanges: [{ text: nextValue }],
         });
+
+        if (didSaveDebounceTimeoutRef.current !== null) {
+          window.clearTimeout(didSaveDebounceTimeoutRef.current);
+        }
+
+        didSaveDebounceTimeoutRef.current = window.setTimeout(() => {
+          void languageClient.notify('textDocument/didSave', {
+            textDocument: { uri: documentUri },
+          });
+        }, 700);
       }),
     ],
   });
