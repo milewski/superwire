@@ -1,39 +1,5 @@
 import type { WorkflowTab } from './types';
 
-export const exampleWorkflow = `provider openai from openai {
-    endpoint: "https://api.openai.com/v1"
-    api_key: secrets.openai_api_key
-}
-
-model openai_model from openai {
-    id: "gpt-4.1-mini"
-}
-
-secrets {
-    openai_api_key: string
-}
-
-input {
-    topic: string
-    audience: string
-}
-
-agent writer {
-    model: model.openai_model
-    instruction: "Write a concise product update about {{ input.topic }} for {{ input.audience }}."
-    output {
-        title: string
-        summary: string
-        bullets: [string; 3]
-    }
-}
-
-output {
-    title: agent.writer.title
-    summary: agent.writer.summary
-    bullets: agent.writer.bullets
-}`;
-
 export function uniqueId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -47,22 +13,9 @@ export function createWorkflowTab(name: string): WorkflowTab {
     id: uniqueId(),
     name,
     activeView: 'workflow',
-    source: exampleWorkflow,
-    inputJson: JSON.stringify(
-      {
-        topic: 'agent workflow observability',
-        audience: 'product engineers',
-      },
-      null,
-      2,
-    ),
-    secretsJson: JSON.stringify(
-      {
-        openai_api_key: 'sk-...',
-      },
-      null,
-      2,
-    ),
+    source: '',
+    inputJson: '{}',
+    secretsJson: '{}',
     validationState: 'idle',
     runState: 'idle',
     message: 'Ready.',
