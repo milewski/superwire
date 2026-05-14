@@ -1,6 +1,6 @@
 import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, ScrollText, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +32,7 @@ export default function App() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [renameDialogTabId, setRenameDialogTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const validationDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
   const hasEditorMessageError = activeTab?.validationState === 'invalid' || activeTab?.runState === 'failed';
@@ -54,6 +55,30 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!activeTab) {
+      return;
+    }
+
+    if (activeTab.runState === 'running') {
+      return;
+    }
+
+    if (validationDebounceTimeoutRef.current !== null) {
+      window.clearTimeout(validationDebounceTimeoutRef.current);
+    }
+
+    validationDebounceTimeoutRef.current = window.setTimeout(() => {
+      void validateWorkflowByTabId(activeTab.id);
+    }, 700);
+
+    return () => {
+      if (validationDebounceTimeoutRef.current !== null) {
+        window.clearTimeout(validationDebounceTimeoutRef.current);
+      }
+    };
+  }, [activeTab?.id, activeTab?.source]);
 
   function updateActiveTab(updater: (tab: WorkflowTab) => WorkflowTab) {
     setTabs((currentTabs) => currentTabs.map((tab) => (tab.id === activeTab?.id ? updater(tab) : tab)));
@@ -141,8 +166,7 @@ export default function App() {
     closeRenameDialog();
   }
 
-  function requestBody(includeInput: boolean) {
-    const currentTab = requireActiveTab(activeTab);
+  function requestBody(currentTab: WorkflowTab, includeInput: boolean) {
     const body: Record<string, unknown> = {
       workflow_source: currentTab.source,
       secrets: parseJsonObject(currentTab.secretsJson, 'secrets'),
@@ -158,13 +182,23 @@ export default function App() {
 
   async function validateWorkflow() {
     const currentTab = requireActiveTab(activeTab);
-    updateActiveTab((tab) => ({ ...tab, validationState: 'running', message: 'Validating workflow...' }));
+    await validateWorkflowByTabId(currentTab.id);
+  }
+
+  async function validateWorkflowByTabId(tabId: string) {
+    const currentTab = tabs.find((tab) => tab.id === tabId);
+
+    if (!currentTab) {
+      return;
+    }
+
+    updateTab(currentTab.id, (tab) => ({ ...tab, validationState: 'running', message: 'Validating workflow...' }));
 
     try {
       const response = await fetch('/validate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(requestBody(false)),
+        body: JSON.stringify(requestBody(currentTab, false)),
       });
       const payload = await response.json();
 
@@ -232,7 +266,7 @@ export default function App() {
       const response = await fetch('/execute/stream', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(requestBody(true)),
+        body: JSON.stringify(requestBody(currentTab, true)),
         signal: nextAbortController.signal,
       });
 
