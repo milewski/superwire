@@ -187,8 +187,30 @@ textarea {
 }
 
 .message-line {
-  @apply max-w-56 truncate text-sm;
+  @apply text-sm;
   color: var(--muted-foreground);
+}
+
+.message-line-full {
+  @apply block w-full whitespace-pre-wrap break-words leading-6;
+}
+
+.editor-message-bar {
+  @apply px-5 py-3 xl:px-6;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 82%, #000 18%);
+}
+
+.editor-message-bar.neutral {
+  color: var(--muted-foreground);
+}
+
+.editor-message-bar.error {
+  background: color-mix(in srgb, var(--danger) 12%, var(--card));
+}
+
+.editor-message-bar.error .message-line {
+  color: var(--danger);
 }
 
 .tabbar {

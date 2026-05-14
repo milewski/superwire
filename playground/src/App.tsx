@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,6 +33,7 @@ export default function App() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
+  const hasEditorMessageError = activeTab?.validationState === 'invalid' || activeTab?.runState === 'failed';
 
   useEffect(() => {
     restoreFromStorage(setTabs, setActiveTabId, setDarkMode);
@@ -276,7 +277,6 @@ export default function App() {
 
                 <div className="topbar-actions">
                   <StatusPill state={activeTab?.validationState ?? 'idle'} />
-                  <span className="message-line">{activeTab?.message ?? 'Ready.'}</span>
                   <Button variant="ghost" size="lg" onClick={duplicateTab}><Copy /> Duplicate</Button>
                   <Button variant="ghost" size="lg" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
                   <Button variant="ghost" size="lg" onClick={validateWorkflow}>Validate</Button>
@@ -316,7 +316,6 @@ export default function App() {
                       <Card className="editor-card">
                         <CardHeader className="editor-card-header">
                           <CardTitle>{activeTab.name}</CardTitle>
-                          <CardDescription>Write Superwire DSL with syntax highlighting, LSP completions, hovers, and diagnostics.</CardDescription>
                           <CardAction>
                             <Button variant="ghost" size="lg" onClick={renameActiveTab}>Rename</Button>
                           </CardAction>
@@ -328,6 +327,9 @@ export default function App() {
                           darkMode={darkMode}
                           onChange={(source) => updateActiveTab((tab) => ({ ...tab, source, updatedAt: Date.now() }))}
                         />
+                        <div className={`editor-message-bar ${hasEditorMessageError ? 'error' : 'neutral'}`}>
+                          <span className="message-line message-line-full">{activeTab.message ?? 'Ready.'}</span>
+                        </div>
                       </Card>
                     ) : null}
 
