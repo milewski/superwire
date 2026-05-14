@@ -1,14 +1,13 @@
-import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Braces, Copy, Loader2, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import JsonCodeEditor from '@/components/json-code-editor';
 import PanelCard from '@/components/panel-card';
 import { eventTone, formatEventData } from './eventFormatting';
 import type { ExecutorEvent, PlaygroundView, RunState, ValidationState, WorkflowTab } from './types';
@@ -27,6 +26,8 @@ type WorkflowTemplate = {
   name: string;
   description: string;
   source: string;
+  inputJson: string;
+  secretsJson: string;
 };
 
 const workflowTemplates: WorkflowTemplate[] = [
@@ -54,6 +55,8 @@ agent greeting {
 output {
     greeting: agent.greeting.value
 }`,
+    inputJson: '{}',
+    secretsJson: '{}',
   },
   {
     id: 'linear-chain',
@@ -91,6 +94,10 @@ agent second {
 output {
     result: agent.second.value
 }`,
+    inputJson: `{
+  "topic": "Summarize this week in AI tooling"
+}`,
+    secretsJson: '{}',
   },
   {
     id: 'parallel-agents',
@@ -140,6 +147,10 @@ output {
     email_subject: agent.customer_email.subject
     email_body: agent.customer_email.body
 }`,
+    inputJson: `{
+  "product_name": "Superwire Playground"
+}`,
+    secretsJson: '{}',
   },
   {
     id: 'secrets',
@@ -168,6 +179,10 @@ agent assistant {
 
 output {
     greeting: agent.assistant.value
+}`,
+    inputJson: '{}',
+    secretsJson: `{
+  "api_key": "test-api-key"
 }`,
   },
 ];
@@ -479,6 +494,8 @@ export default function App() {
     updateActiveTab((tab) => ({
       ...tab,
       source: template.source,
+      inputJson: template.inputJson,
+      secretsJson: template.secretsJson,
       message: `Loaded template: ${template.name}.`,
       validationState: 'idle',
       runState: 'idle',
@@ -698,7 +715,7 @@ function JsonRuntimeEditor({ title, value, secret, onChange, onFormat }: { title
         </span>
         <Button variant="outline" size="sm" onClick={onFormat}>Format JSON</Button>
       </span>
-      <Textarea value={value} spellCheck={false} onChange={(event) => onChange(event.target.value)} />
+      <JsonCodeEditor value={value} onChange={onChange} />
       <em className={validationError ? 'json-error' : 'json-ok'}>{validationError ?? 'Valid JSON object'}</em>
     </label>
   );
@@ -709,7 +726,7 @@ function OutputBox({ runState, outputJson }: { runState: RunState; outputJson: s
     return <div className="empty-state compact">{runState === 'running' ? 'Waiting for workflow output...' : 'Run a workflow to see output.'}</div>;
   }
 
-  return <pre className="output-box">{outputJson}</pre>;
+  return <JsonCodeEditor value={outputJson} readOnly className="output-box" />;
 }
 
 function EventLog({ events }: { events: ExecutorEvent[] }) {
@@ -718,7 +735,7 @@ function EventLog({ events }: { events: ExecutorEvent[] }) {
   }
 
   return (
-    <ScrollArea className="event-list">
+    <div className="event-list">
       <div className="space-y-2 pr-2">
         {events.map((event, eventIndex) => (
           <Collapsible key={`${event.kind}-${eventIndex}`} defaultOpen={false} className="event-item">
@@ -735,13 +752,13 @@ function EventLog({ events }: { events: ExecutorEvent[] }) {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="event-item-content">
-                <pre className="event-data">{formatEventData(event)}</pre>
+                <JsonCodeEditor value={formatEventData(event)} readOnly className="event-data" />
               </div>
             </CollapsibleContent>
           </Collapsible>
         ))}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
 
@@ -750,7 +767,12 @@ function StatusPill({ state }: { state: ValidationState }) {
 }
 
 function RunStateBadge({ state }: { state: RunState }) {
-  return <Badge variant="outline" className={`mini-status ${state}`}>{state}</Badge>;
+  return (
+    <Badge variant="outline" className={`mini-status ${state}`}>
+      {state === 'running' ? <Loader2 className="mini-status-spinner" /> : null}
+      <span>{state}</span>
+    </Badge>
+  );
 }
 
 function restoreFromStorage(setTabs: (tabs: WorkflowTab[]) => void, setActiveTabId: (tabId: string) => void, setDarkMode: (darkMode: boolean) => void) {

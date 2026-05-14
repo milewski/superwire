@@ -37,6 +37,11 @@
   --syntax-comment: #707070;
   --syntax-operator: #555555;
   --syntax-punctuation: #777777;
+  --json-key-color: #0f4f9e;
+  --json-string-color: #0f8a5f;
+  --json-number-color: #9a5a00;
+  --json-literal-color: #7b3fe4;
+  --json-punctuation-color: #6e6e6e;
   --card-foreground: oklch(0.145 0 0);
   --popover-foreground: oklch(0.145 0 0);
   --primary: #ff7f00;
@@ -92,6 +97,11 @@
   --syntax-comment: #858585;
   --syntax-operator: #cfcfcf;
   --syntax-punctuation: #8c8c8c;
+  --json-key-color: #78b7ff;
+  --json-string-color: #9de8c2;
+  --json-number-color: #ffd08a;
+  --json-literal-color: #d6b7ff;
+  --json-punctuation-color: #a0a0a0;
   --card-foreground: oklch(0.985 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: #ff9b32;
@@ -306,17 +316,38 @@ textarea {
 
 .mini-status,
 .status-pill {
-  @apply border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em];
+  @apply inline-flex items-center gap-1.5 border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em];
   border-color: var(--border);
   border-radius: 999px;
   color: var(--muted);
 }
 
+.mini-status-spinner {
+  @apply size-3 animate-spin;
+}
+
 .status-pill.valid,
 .status-pill.completed,
 .mini-status.completed {
-  border-color: color-mix(in srgb, var(--superwire-accent) 45%, transparent);
-  color: var(--superwire-accent);
+  border-color: color-mix(in srgb, #22c55e 42%, transparent);
+  background: color-mix(in srgb, #22c55e 14%, transparent);
+  color: #16a34a;
+}
+
+.mini-status.running {
+  border-color: color-mix(in srgb, #3b82f6 45%, transparent);
+  background: color-mix(in srgb, #3b82f6 14%, transparent);
+  color: #2563eb;
+}
+
+.dark .mini-status.completed,
+.dark .status-pill.completed,
+.dark .status-pill.valid {
+  color: #4ade80;
+}
+
+.dark .mini-status.running {
+  color: #60a5fa;
 }
 
 .status-pill.invalid,
@@ -368,16 +399,17 @@ textarea {
 .event-card {
   background: color-mix(in srgb, var(--card) 86%, #000 14%);
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
-  border-radius: 22px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  border-radius: 16px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
 }
 
-.editor-card {
-  @apply flex min-h-0 flex-col overflow-hidden py-0;
+.editor-card,
+.panel-card {
+  @apply flex min-h-0 flex-col gap-0 overflow-hidden py-0;
 }
 
 .editor-card-header {
-  @apply px-3 py-2;
+  @apply px-4 py-3;
 }
 
 .tab-actions-bar {
@@ -411,13 +443,13 @@ textarea {
 .panel-card-trigger small,
 .panel-card-header small,
 .json-editor-card small {
-  @apply mt-1 block text-xs;
+  @apply mt-0.5 block text-xs leading-5;
   color: var(--muted-foreground);
 }
 
 .panel-card-trigger,
 .panel-card-header {
-  @apply flex h-auto min-h-0 w-full items-center justify-between gap-4 px-3 py-2 text-left;
+  @apply flex h-auto min-h-[4rem] w-full items-center justify-between gap-4 rounded-none px-4 py-3 text-left;
   white-space: normal;
   border-bottom: 1px solid var(--border);
 }
@@ -433,20 +465,34 @@ textarea {
 
 .panel-card-trigger strong,
 .panel-card-header strong {
-  @apply block text-base font-semibold tracking-tight;
+  @apply block truncate text-sm font-semibold tracking-tight sm:text-base;
 }
 
-.panel-card-trigger > span:last-child {
-  @apply shrink-0 self-center text-xs;
+.panel-card-action {
+  @apply inline-flex shrink-0 items-center gap-2 self-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em];
+  border-color: color-mix(in srgb, var(--border) 86%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
   color: var(--muted-foreground);
 }
 
+.panel-card-action svg {
+  @apply size-3.5 transition-transform;
+}
+
+.panel-card[data-state="open"] .panel-card-action svg {
+  transform: rotate(180deg);
+}
+
+.panel-card[data-state="closed"] .panel-card-trigger {
+  border-bottom-color: transparent;
+}
+
 .panel-card-trigger:hover {
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
 .panel-card-body {
-  @apply p-3;
+  @apply p-4 pt-3;
 }
 
 [data-slot="collapsible-content"][data-state="closed"] {
@@ -470,7 +516,7 @@ textarea {
 }
 
 .template-picker-card {
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .template-picker-grid {
@@ -519,7 +565,7 @@ textarea {
 }
 
 .log-panel-body {
-  @apply px-3 pb-2.5 pt-1.5;
+  @apply px-4 pb-3 pt-2;
 }
 
 .json-editor-card {
@@ -534,17 +580,25 @@ textarea {
   @apply min-w-0;
 }
 
-.json-editor-card textarea {
-  @apply min-h-80 resize-y p-4 font-mono text-sm leading-6 outline-none transition;
+.json-code-editor {
+  @apply min-h-80 text-sm leading-6 transition;
   background: color-mix(in srgb, var(--background) 82%, #000 18%);
   border: 1px solid var(--border);
   border-radius: 16px;
   color: var(--foreground);
 }
 
-.json-editor-card textarea:focus {
+.json-code-editor .cm-content {
+  line-height: 1.55;
+}
+
+.json-code-editor:has(.cm-focused) {
   border-color: var(--superwire-accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.json-code-editor-readonly {
+  min-height: auto;
 }
 
 .rename-dialog-form {
@@ -577,14 +631,19 @@ textarea {
 }
 
 .output-box {
-  @apply max-h-[520px] overflow-auto whitespace-pre-wrap break-words p-5 font-mono text-sm leading-7;
+  @apply min-h-20;
   background: #070707;
   border-radius: 16px;
   color: #f2f2f2;
 }
 
+.output-box .cm-content {
+  padding: 1rem 1.1rem;
+  line-height: 1.65;
+}
+
 .event-list {
-  @apply h-[360px] xl:h-[420px];
+  @apply min-h-0;
 }
 
 .event-item {
@@ -630,15 +689,15 @@ textarea {
 }
 
 .view-header {
-  @apply flex items-start justify-between gap-4 rounded-3xl border border-border bg-card/80 px-6 py-5 shadow-2xl shadow-black/20;
+  @apply flex items-center justify-between gap-4 rounded-2xl border border-border bg-card/80 px-4 py-3 shadow-xl shadow-black/15;
 }
 
 .view-header h2 {
-  @apply text-2xl font-semibold tracking-tight;
+  @apply text-xl font-semibold tracking-tight;
 }
 
 .view-header p {
-  @apply mt-2 max-w-3xl text-sm leading-6 text-muted-foreground;
+  @apply mt-1 max-w-3xl text-sm leading-6 text-muted-foreground;
 }
 
 .event-chip,
@@ -670,8 +729,12 @@ textarea {
 }
 
 .event-data {
-  @apply whitespace-pre-wrap break-words font-mono text-sm leading-6;
+  min-height: auto;
   color: var(--foreground);
+}
+
+.event-data .cm-content {
+  padding: 0.25rem 0.2rem 0.1rem;
 }
 
 .empty-state {

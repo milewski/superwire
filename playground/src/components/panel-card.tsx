@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -43,12 +44,15 @@ export default function PanelCard({
     <Collapsible open={open} onOpenChange={onToggle} asChild>
       <Card className={cn('panel-card', className)}>
         <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="panel-card-trigger" size="default">
+          <Button type="button" variant="ghost" className="panel-card-trigger" size="default">
             <span className="panel-card-title-block">
               <strong>{title}</strong>
               {description ? <small>{description}</small> : null}
             </span>
-            <span>{open ? 'Collapse' : 'Expand'}</span>
+            <span className="panel-card-action" aria-hidden="true">
+              <span>{open ? 'Collapse' : 'Expand'}</span>
+              <ChevronDown />
+            </span>
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
