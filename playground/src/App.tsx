@@ -1,16 +1,17 @@
-import { Braces, Copy, Moon, Play, Plus, RefreshCcw, ScrollText, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, ScrollText, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { eventTone, formatEventData } from './eventFormatting';
-import type { ExecutorEvent, RunState, ValidationState, WorkflowTab } from './types';
+import type { ExecutorEvent, PlaygroundView, RunState, ValidationState, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
 import { createWorkflowTab, normalizeWorkflowTab, parseJsonObject, uniqueId } from './workflowState';
 
@@ -20,7 +21,6 @@ const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const legacyActiveTabStorageKey = 'superwire.playground.activeTab.v2';
 const themeStorageKey = 'superwire.playground.theme';
 const logoSource = `${import.meta.env.BASE_URL}logo.svg`;
-type PlaygroundView = 'workflow' | 'runtime' | 'logs';
 
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
@@ -29,11 +29,13 @@ export default function App() {
   const [runtimeOpen, setRuntimeOpen] = useState(true);
   const [outputOpen, setOutputOpen] = useState(true);
   const [eventsOpen, setEventsOpen] = useState(true);
-  const [activeView, setActiveView] = useState<PlaygroundView>('workflow');
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [renameDialogTabId, setRenameDialogTabId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
   const hasEditorMessageError = activeTab?.validationState === 'invalid' || activeTab?.runState === 'failed';
+  const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
 
   useEffect(() => {
     restoreFromStorage(setTabs, setActiveTabId, setDarkMode);
@@ -49,6 +51,10 @@ export default function App() {
     localStorage.setItem(themeStorageKey, darkMode ? 'dark' : 'light');
   }, [tabs, activeTabId, darkMode]);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
+
   function updateActiveTab(updater: (tab: WorkflowTab) => WorkflowTab) {
     setTabs((currentTabs) => currentTabs.map((tab) => (tab.id === activeTab?.id ? updater(tab) : tab)));
   }
@@ -57,21 +63,27 @@ export default function App() {
     setTabs((currentTabs) => currentTabs.map((tab) => (tab.id === tabId ? updater(tab) : tab)));
   }
 
+  function setTabView(nextView: PlaygroundView) {
+    updateActiveTab((tab) => ({ ...tab, activeView: nextView }));
+  }
+
   function addTab() {
     const tab = createWorkflowTab(`Workflow ${tabs.length + 1}`);
     setTabs((currentTabs) => [...currentTabs, tab]);
     setActiveTabId(tab.id);
   }
 
-  function duplicateTab() {
-    if (!activeTab) {
+  function duplicateTabById(tabId: string) {
+    const sourceTab = tabs.find((tab) => tab.id === tabId);
+
+    if (!sourceTab) {
       return;
     }
 
     const tab: WorkflowTab = {
-      ...structuredClone(activeTab),
+      ...structuredClone(sourceTab),
       id: uniqueId(),
-      name: `${activeTab.name} copy`,
+      name: `${sourceTab.name} copy`,
       runState: 'idle',
       validationState: 'idle',
       message: 'Duplicated workflow.',
@@ -79,6 +91,7 @@ export default function App() {
       eventLog: [],
       updatedAt: Date.now(),
     };
+
     setTabs((currentTabs) => [...currentTabs, tab]);
     setActiveTabId(tab.id);
   }
@@ -101,18 +114,31 @@ export default function App() {
     }
   }
 
-  function renameActiveTab() {
-    if (!activeTab) {
+  function openRenameDialog(tabId: string) {
+    const sourceTab = tabs.find((tab) => tab.id === tabId);
+
+    if (!sourceTab) {
       return;
     }
 
-    const nextName = window.prompt('Workflow tab name', activeTab.name)?.trim();
+    setRenameDraft(sourceTab.name);
+    setRenameDialogTabId(tabId);
+  }
 
-    if (!nextName) {
+  function closeRenameDialog() {
+    setRenameDialogTabId(null);
+    setRenameDraft('');
+  }
+
+  function submitRenameDialog() {
+    const nextName = renameDraft.trim();
+
+    if (!renameDialogTabId || !nextName) {
       return;
     }
 
-    updateActiveTab((tab) => ({ ...tab, name: nextName, updatedAt: Date.now() }));
+    updateTab(renameDialogTabId, (tab) => ({ ...tab, name: nextName, updatedAt: Date.now() }));
+    closeRenameDialog();
   }
 
   function requestBody(includeInput: boolean) {
@@ -242,6 +268,28 @@ export default function App() {
     abortController?.abort();
   }
 
+  function formatRuntimeJson(fieldName: 'inputJson' | 'secretsJson') {
+    const currentTab = requireActiveTab(activeTab);
+
+    try {
+      const parsedValue = parseJsonObject(currentTab[fieldName], fieldName === 'inputJson' ? 'input' : 'secrets');
+      const formattedJson = JSON.stringify(parsedValue, null, 2);
+
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        [fieldName]: formattedJson,
+        message: `${fieldName === 'inputJson' ? 'Input' : 'Secrets'} JSON formatted.`,
+        updatedAt: Date.now(),
+      }));
+    } catch (error) {
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        validationState: 'invalid',
+        message: errorMessage(error),
+      }));
+    }
+  }
+
   function acceptSseChunk(chunk: string, tabId: string) {
     const event = parseSseChunk(chunk);
 
@@ -269,23 +317,8 @@ export default function App() {
                   <img src={logoSource} alt="Superwire" className="brand-logo" />
                 </div>
 
-                <nav className="mode-tabs" aria-label="Playground mode">
-                  <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setActiveView('workflow')}><Workflow /> Workflow</Button>
-                  <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setActiveView('runtime')}><Braces /> Runtime</Button>
-                  <Button variant={activeView === 'logs' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setActiveView('logs')}><ScrollText /> Logs</Button>
-                </nav>
-
                 <div className="topbar-actions">
-                  <StatusPill state={activeTab?.validationState ?? 'idle'} />
-                  <Button variant="ghost" size="lg" onClick={duplicateTab}><Copy /> Duplicate</Button>
-                  <Button variant="ghost" size="lg" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
-                  <Button variant="ghost" size="lg" onClick={validateWorkflow}>Validate</Button>
-                  {activeTab?.runState === 'running' ? (
-                    <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
-                  ) : (
-                    <Button disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run</Button>
-                  )}
-                  <Button variant="outline" size="icon-lg" aria-label="Toggle theme" onClick={() => setDarkMode((currentValue) => !currentValue)}>
+                  <Button className="theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={() => setDarkMode((currentValue) => !currentValue)}>
                     {darkMode ? <Sun /> : <Moon />}
                   </Button>
                 </div>
@@ -297,12 +330,23 @@ export default function App() {
                     <div key={tab.id} className="workflow-tab-shell">
                       <TabsTrigger value={tab.id} className="workflow-tab-trigger">
                         <span className="tab-dot" />
-                        <span className="truncate">{tab.name}</span>
+                        <span className="tab-title">{tab.name}</span>
                         <RunStateBadge state={tab.runState} />
                       </TabsTrigger>
-                      <Button variant="ghost" size="icon-sm" aria-label={`Close ${tab.name}`} onClick={() => closeTab(tab.id)}>
-                        <Trash2 />
-                      </Button>
+
+                      <div className="tab-inline-actions">
+                        <Button className="tab-inline-action" variant="ghost" size="icon-sm" aria-label={`Rename ${tab.name}`} onClick={() => openRenameDialog(tab.id)}>
+                          <Pencil />
+                        </Button>
+
+                        <Button className="tab-inline-action" variant="ghost" size="icon-sm" aria-label={`Duplicate ${tab.name}`} onClick={() => duplicateTabById(tab.id)}>
+                          <Copy />
+                        </Button>
+
+                        <Button className="tab-inline-action" variant="ghost" size="icon-sm" aria-label={`Close ${tab.name}`} onClick={() => closeTab(tab.id)}>
+                          <Trash2 />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                   <Button variant="outline" size="lg" className="new-tab" onClick={addTab}><Plus /> Workflow</Button>
@@ -312,13 +356,29 @@ export default function App() {
               <div className="workflow-canvas">
                 {activeTab ? (
                   <section className="content-stack">
+                    <div className="tab-controls-row">
+                      <nav className="mode-tabs" aria-label="Playground mode">
+                        <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
+                        <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('runtime')}><Braces /> Runtime</Button>
+                        <Button variant={activeView === 'logs' ? 'secondary' : 'ghost'} size="lg" className="mode-tab" onClick={() => setTabView('logs')}><ScrollText /> Logs</Button>
+                      </nav>
+
+                      <div className="tab-actions-bar">
+                        <StatusPill state={activeTab.validationState} />
+                        <Button variant="ghost" size="lg" onClick={formatWorkflow}><RefreshCcw /> Format</Button>
+                        <Button variant="ghost" size="lg" onClick={validateWorkflow}>Validate</Button>
+                        {activeTab.runState === 'running' ? (
+                          <Button variant="destructive" size="lg" onClick={stopRun}><Square /> Stop</Button>
+                        ) : (
+                          <Button className="run-primary" disabled={!canRun} size="lg" onClick={runWorkflow}><Play /> Run workflow</Button>
+                        )}
+                      </div>
+                    </div>
+
                     {activeView === 'workflow' ? (
                       <Card className="editor-card">
                         <CardHeader className="editor-card-header">
                           <CardTitle>{activeTab.name}</CardTitle>
-                          <CardAction>
-                            <Button variant="ghost" size="lg" onClick={renameActiveTab}>Rename</Button>
-                          </CardAction>
                         </CardHeader>
                         <WireEditor
                           key={activeTab.id}
@@ -338,8 +398,8 @@ export default function App() {
                         <ViewHeader title="Runtime data" description="Edit workflow input and secrets as JSON objects. This view is intentionally wide so nested payloads stay readable." />
                         <CollapsiblePanel open={runtimeOpen} title="Runtime JSON" description="Input and secrets are sent with every validation and run request." onToggle={() => setRuntimeOpen((currentValue) => !currentValue)}>
                           <div className="runtime-json-grid runtime-json-grid-wide">
-                            <JsonRuntimeEditor title="Input" value={activeTab.inputJson} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
-                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} onChange={(secretsJson) => updateActiveTab((tab) => ({ ...tab, secretsJson, updatedAt: Date.now() }))} />
+                            <JsonRuntimeEditor title="Input" value={activeTab.inputJson} onFormat={() => formatRuntimeJson('inputJson')} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
+                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({ ...tab, secretsJson, updatedAt: Date.now() }))} />
                           </div>
                         </CollapsiblePanel>
                       </section>
@@ -365,6 +425,43 @@ export default function App() {
         </section>
       </div>
     </main>
+
+      <Dialog open={renameDialogTabId !== null} onOpenChange={(open) => {
+        if (!open) {
+          closeRenameDialog();
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename workflow tab</DialogTitle>
+            <DialogDescription>Use a short, clear name for this workflow tab.</DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="rename-dialog-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitRenameDialog();
+            }}
+          >
+            <input
+              autoFocus
+              value={renameDraft}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              className="rename-dialog-input"
+              placeholder="Workflow tab name"
+            />
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline" type="button">Cancel</Button>
+              </DialogClose>
+              <Button type="submit" disabled={!renameDraft.trim()}>Save name</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
     </TooltipProvider>
   );
 }
@@ -401,14 +498,17 @@ function CollapsiblePanel({ open, title, description, children, onToggle }: { op
   );
 }
 
-function JsonRuntimeEditor({ title, value, secret, onChange }: { title: string; value: string; secret?: boolean; onChange: (value: string) => void }) {
+function JsonRuntimeEditor({ title, value, secret, onChange, onFormat }: { title: string; value: string; secret?: boolean; onChange: (value: string) => void; onFormat: () => void }) {
   const validationError = jsonObjectValidationError(value);
 
   return (
     <label className="json-editor-card">
-      <span>
-        <strong>{title}</strong>
-        <small>{secret ? 'Sent as secrets.' : 'Sent as workflow input.'}</small>
+      <span className="json-editor-header-row">
+        <span>
+          <strong>{title}</strong>
+          <small>{secret ? 'Sent as secrets.' : 'Sent as workflow input.'}</small>
+        </span>
+        <Button variant="outline" size="sm" onClick={onFormat}>Format JSON</Button>
       </span>
       <Textarea value={value} spellCheck={false} onChange={(event) => onChange(event.target.value)} />
       <em className={validationError ? 'json-error' : 'json-ok'}>{validationError ?? 'Valid JSON object'}</em>

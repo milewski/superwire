@@ -46,6 +46,7 @@ export function createWorkflowTab(name: string): WorkflowTab {
   return {
     id: uniqueId(),
     name,
+    activeView: 'workflow',
     source: exampleWorkflow,
     inputJson: JSON.stringify(
       {

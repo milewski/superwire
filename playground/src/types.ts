@@ -1,5 +1,6 @@
 export type ValidationState = 'idle' | 'valid' | 'invalid' | 'running';
 export type RunState = 'idle' | 'running' | 'failed' | 'completed';
+export type PlaygroundView = 'workflow' | 'runtime' | 'logs';
 
 export interface ExecutorEvent {
   kind: string;
@@ -11,6 +12,7 @@ export interface ExecutorEvent {
 export interface WorkflowTab {
   id: string;
   name: string;
+  activeView: PlaygroundView;
   source: string;
   inputJson: string;
   secretsJson: string;
