@@ -6,6 +6,7 @@ COPY playground/package.json playground/package-lock.json ./
 RUN npm ci
 
 COPY playground/ ./
+COPY editors/textmate/syntaxes/wire.tmLanguage.json /workspace/editors/textmate/syntaxes/wire.tmLanguage.json
 RUN npm run build
 
 FROM rust:1.94-alpine3.23 AS builder

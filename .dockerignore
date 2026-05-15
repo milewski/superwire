@@ -5,6 +5,9 @@ target
 **/target
 
 editors
+!editors/textmate/
+!editors/textmate/syntaxes/
+!editors/textmate/syntaxes/wire.tmLanguage.json
 integration
 documentation
 
