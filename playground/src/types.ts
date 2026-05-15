@@ -4,6 +4,7 @@ export type PlaygroundView = 'workflow' | 'runtime';
 
 export interface ExecutorEvent {
   kind: string;
+  timestamp_ms?: number;
   agent_name?: string;
   message?: string;
   data?: unknown;

@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import JsonCodeEditor from '@/components/json-code-editor';
-import { eventTone, formatEventData } from '../../eventFormatting';
+import { eventTone, formatEventData, formatEventDuration, formatEventTimestamp } from '../../eventFormatting';
 import type { ExecutorEvent } from '../../types';
 
 export enum EventGroupingMode {
@@ -113,6 +113,9 @@ export default function EventLog({ events, eventGroupingMode, onEventGroupingMod
 }
 
 function renderEventItem(event: ExecutorEvent, eventIndex: number, showAgentBadge = true) {
+  const eventTimestamp = formatEventTimestamp(event);
+  const eventDuration = formatEventDuration(event);
+
   return (
     <Collapsible key={`${event.kind}-${eventIndex}-${event.agent_name ?? 'workflow'}`} defaultOpen={false} className="events-log__item">
       <CollapsibleTrigger asChild>
@@ -121,6 +124,8 @@ function renderEventItem(event: ExecutorEvent, eventIndex: number, showAgentBadg
             <span className="events-log__item-index">#{eventIndex + 1}</span>
             <Badge variant="outline" className={eventTone(event.kind)}>{event.kind}</Badge>
             {showAgentBadge && event.agent_name ? <Badge variant="secondary">{event.agent_name}</Badge> : null}
+            {eventTimestamp ? <span className="events-log__item-time">{eventTimestamp}</span> : null}
+            {eventDuration ? <Badge variant="outline" className="event-duration">{eventDuration}</Badge> : null}
           </span>
           <span className="events-log__item-summary">{event.message ?? 'View payload'}</span>
           <span className="events-log__item-expand">Expand</span>

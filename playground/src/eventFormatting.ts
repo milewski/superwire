@@ -17,13 +17,46 @@ export function eventTone(kind: string) {
 }
 
 export function formatEventData(event: ExecutorEvent) {
-  if (event.message) {
-    return event.message;
+  return JSON.stringify(event, null, 2);
+}
+
+export function formatEventTimestamp(event: ExecutorEvent) {
+  if (typeof event.timestamp_ms !== 'number') {
+    return null;
   }
 
-  if (event.data === undefined) {
-    return 'No payload.';
+  return new Date(event.timestamp_ms).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+}
+
+export function formatEventDuration(event: ExecutorEvent) {
+  const durationMs = eventDurationMs(event);
+
+  if (durationMs === null) {
+    return null;
   }
 
-  return JSON.stringify(event.data, null, 2);
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+
+  return `${(durationMs / 1000).toFixed(2)}s`;
+}
+
+function eventDurationMs(event: ExecutorEvent) {
+  if (!isRecord(event.data)) {
+    return null;
+  }
+
+  const durationMs = event.data.duration_ms;
+
+  return typeof durationMs === 'number' ? durationMs : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
