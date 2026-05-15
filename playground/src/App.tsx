@@ -40,9 +40,9 @@ export default function App() {
   const validationDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
-  const hasEditorMessageError = activeTab?.validationState === 'invalid' || activeTab?.runState === 'failed';
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
   const shouldShowTemplatePicker = activeView === 'workflow' && (activeTab?.source.trim() ?? '') === '';
+  const editorMessageTone = resolveEditorMessageTone(activeTab);
 
   useEffect(() => {
     restoreFromStorage(setTabs, setActiveTabId, setDarkMode);
@@ -536,7 +536,7 @@ export default function App() {
                               darkMode={darkMode}
                               onChange={(source) => updateActiveTab((tab) => ({ ...tab, source, updatedAt: Date.now() }))}
                             />
-                            <div className={hasEditorMessageError ? 'workflow-editor__message workflow-editor__message--error' : 'workflow-editor__message workflow-editor__message--neutral'}>
+                            <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
                               <span className="workflow-editor__message-line workflow-editor__message-line--full">{activeTab.message ?? 'Ready.'}</span>
                             </div>
                           </Card>
@@ -695,6 +695,30 @@ function requireActiveTab(activeTab: WorkflowTab | undefined) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function resolveEditorMessageTone(activeTab: WorkflowTab | undefined): 'neutral' | 'success' | 'error' {
+  if (!activeTab) {
+    return 'neutral';
+  }
+
+  if (activeTab.validationState === 'valid') {
+    return 'success';
+  }
+
+  if (activeTab.validationState === 'invalid') {
+    return 'error';
+  }
+
+  if (activeTab.runState === 'failed') {
+    return 'error';
+  }
+
+  if (activeTab.runState === 'completed') {
+    return 'success';
+  }
+
+  return 'neutral';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
