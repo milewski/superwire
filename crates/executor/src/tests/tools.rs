@@ -712,6 +712,58 @@ async fn mcp_render_prompt_fixture_executes() {
 }
 
 #[tokio::test]
+async fn mcp_render_prompt_executes_inside_null_fallback() {
+    let server = TestMcpHttpServer::spawn([]);
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        prompt system_prompt from mcp.local.prompt.system_prompt
+
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        agent analyzer {
+            model: model.openai_model
+            instruction: "Prompt: {{ render prompt.system_prompt ?? "" }}"
+
+            output {
+                summary: string
+            }
+        }
+
+        output {
+            summary: agent.analyzer.summary
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TrackingModelProvider::new(vec![json!({ "summary": "done" })]);
+    let service = ExecutorService::new(model_provider.clone());
+
+    let output = service
+        .execute(request_with_input(&workflow_source, Value::Null))
+        .await
+        .expect("MCP prompt render inside null fallback should execute successfully")
+        .output;
+
+    let prompt = model_provider
+        .recorded_prompts()
+        .into_iter()
+        .next()
+        .expect("model prompt should be recorded");
+
+    assert_eq!(output["summary"], "done");
+    assert!(prompt.contains("Follow project conventions."));
+}
+
+#[tokio::test]
 async fn mcp_read_render_dependency_fixture_executes() {
     let server = TestMcpHttpServer::spawn([]);
     let workflow_source = fixture_with_mcp_endpoint(fixtures::MCP_READ_RENDER_DEPENDENCIES, &server.endpoint());

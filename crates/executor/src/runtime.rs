@@ -925,9 +925,24 @@ impl WorkflowExecutor {
             | Expression::NullLiteral
             | Expression::Reference(_)
             | Expression::FunctionCall(_)
-            | Expression::NullFallback(_)
             | Expression::VariantProjection(_)
             | Expression::Match(_) => Ok(evaluate_expression(expression, evaluation_context, context)?),
+            Expression::NullFallback(null_fallback) => {
+                let value =
+                    self.evaluate_runtime_expression(&null_fallback.value, evaluation_context, context, event_sender, tool_call_tracker)?;
+
+                if value.is_null() {
+                    return self.evaluate_runtime_expression(
+                        &null_fallback.fallback,
+                        evaluation_context,
+                        context,
+                        event_sender,
+                        tool_call_tracker,
+                    );
+                }
+
+                Ok(value)
+            }
             Expression::ToolCall(tool_call) => {
                 self.execute_deterministic_tool_call(tool_call, evaluation_context, event_sender, tool_call_tracker)
             }
