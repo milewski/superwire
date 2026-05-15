@@ -2,14 +2,15 @@ mod ast;
 mod formatter;
 pub mod macros;
 mod parser;
+pub mod structure;
 mod validation;
 mod visitor;
 
 pub use ast::{
-    AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName,
-    BuiltinFunctionArgumentName, BuiltinFunctionName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock, Expression,
-    ForClauseKeyword, FunctionCall, ImportKeyword, InputDeclaration, MatchBranch, MatchExpression, McpCall, McpCallOperation,
-    McpImportKind, McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpServerPropertyName,
+    AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, BuiltinFunctionArgumentName,
+    BuiltinFunctionName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock, Expression, ForClauseKeyword, FunctionCall,
+    ImportKeyword, InputDeclaration, MatchBranch, MatchExpression, McpCall, McpCallOperation, McpImportKind, McpImportPropertyName,
+    McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, McpServerPropertyName,
     McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolSource, ModelCallArgumentName, ModelDeclaration,
     ModelDeclarationPropertyName, ModelUsage, ModelUsagePropertyName, NamedArgument, NullFallbackExpression, ObjectField,
     OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SchemaDeclaration,
@@ -18,4 +19,5 @@ pub use ast::{
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};
+pub use structure::{DslProperty, PropertyDefinition, PropertyValueKind};
 pub use validation::{validate_workflow, SingletonDeclarationKind, ValidationContext, ValidationIssue, ValidationReport};

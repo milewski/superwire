@@ -1,6 +1,7 @@
+use crate::dsl::DslProperty;
 use crate::dsl::{
-    AgentDeclaration, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration, ModelUsage, ObjectField,
-    OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
+    structure, AgentDeclaration, AgentExpressionPropertyName, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration,
+    ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::expression::collect_agent_dependencies;
 use crate::semantic::support::type_inference::TypeInferenceContext;
@@ -40,22 +41,6 @@ pub struct TypedAgentIr {
     pub iteration_output_type: WorkflowType,
     pub final_output_type: WorkflowType,
     pub dependencies: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AgentPropertyName {
-    Model,
-    Instruction,
-}
-
-impl AgentPropertyName {
-    #[must_use]
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Model => "model",
-            Self::Instruction => "instruction",
-        }
-    }
 }
 
 pub fn build_typed_workflow_ir<Input, Output>(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowSemanticError>
@@ -234,26 +219,26 @@ fn collect_typed_agents(
             .model_name()
             .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
-                property: AgentPropertyName::Model.as_str().to_string(),
+                property: structure::Agent::new().model.definition().name.to_string(),
                 message: "model must reference a model profile like model.fast".to_string(),
             })?;
         let model_declaration = workflow
             .find_model(model_name)
             .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
-                property: AgentPropertyName::Model.as_str().to_string(),
+                property: structure::Agent::new().model.definition().name.to_string(),
                 message: format!("model profile `{model_name}` is not declared"),
             })?;
         let model_id_expression = model_declaration
             .id_expression()
             .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
                 agent_name: agent_declaration.name.clone(),
-                property: AgentPropertyName::Model.as_str().to_string(),
+                property: structure::Agent::new().model.definition().name.to_string(),
                 message: format!("model profile `{model_name}` is missing `id`"),
             })?
             .clone();
         let provider_name = model_declaration.provider_name.clone();
-        required_agent_property_expression(agent_declaration, AgentPropertyName::Instruction)?;
+        required_agent_property_expression(agent_declaration, AgentExpressionPropertyName::Instruction)?;
 
         let provider_declaration = workflow.find_provider(&provider_name);
         let inference_fields = agent_declaration.effective_inference_fields(provider_declaration, model_declaration);
@@ -480,14 +465,14 @@ fn required_agent_model_usage(agent_declaration: &AgentDeclaration) -> Result<&M
         .model_usage()
         .ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
             agent_name: agent_declaration.name.clone(),
-            property: AgentPropertyName::Model.as_str().to_string(),
+            property: structure::Agent::new().model.definition().name.to_string(),
             message: "property is required".to_string(),
         })
 }
 
 fn required_agent_property_expression(
     agent_declaration: &AgentDeclaration,
-    property_name: AgentPropertyName,
+    property_name: AgentExpressionPropertyName,
 ) -> Result<&Expression, WorkflowSemanticError> {
     optional_agent_property_expression(agent_declaration, property_name).ok_or_else(|| WorkflowSemanticError::InvalidAgentProperty {
         agent_name: agent_declaration.name.clone(),
@@ -496,22 +481,11 @@ fn required_agent_property_expression(
     })
 }
 
-fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, property_name: AgentPropertyName) -> Option<&Expression> {
-    for agent_property in &agent_declaration.properties {
-        match agent_property {
-            AgentProperty::Instruction(expression) if property_name == AgentPropertyName::Instruction => return Some(expression),
-            AgentProperty::Model(_)
-            | AgentProperty::InvalidModel(_)
-            | AgentProperty::Instruction(_)
-            | AgentProperty::Output { fields: _, span: _ }
-            | AgentProperty::Context(_)
-            | AgentProperty::Uses(_)
-            | AgentProperty::Dynamic(_)
-            | AgentProperty::Unknown { name: _, span: _ } => {}
-        }
-    }
-
-    None
+fn optional_agent_property_expression(
+    agent_declaration: &AgentDeclaration,
+    property_name: AgentExpressionPropertyName,
+) -> Option<&Expression> {
+    agent_declaration.expression_property(property_name)
 }
 
 #[cfg(test)]

@@ -1,8 +1,8 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentProperty, AgentPropertyName, Declaration, Expression, FunctionCall, MatchBranch,
-    ModelUsagePropertyName, ObjectField, Reference, ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall,
-    TypeExpression, TypedField, Workflow,
+    AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, FunctionCall, MatchBranch, ModelUsagePropertyName, ObjectField,
+    Reference, ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, TypedField, Workflow,
 };
+use super::structure;
 use crate::diagnostic::should_render_rich_diagnostics;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
@@ -857,15 +857,17 @@ impl ValidationIssue {
     }
 
     fn unknown_agent_property_help(property_name: &str) -> String {
-        if let Some(suggested_property_name) = AgentPropertyName::suggested_from_identifier(property_name) {
+        let agent = structure::Agent::new();
+
+        if let Some(suggested_property_definition) = agent.suggested_property_definition(property_name) {
             return format!(
                 "Did you mean `{}`? Supported properties: {}.",
-                suggested_property_name.as_str(),
-                AgentPropertyName::rendered_values()
+                suggested_property_definition.name,
+                agent.rendered_property_values()
             );
         }
 
-        format!("Supported properties: {}.", AgentPropertyName::rendered_values())
+        format!("Supported properties: {}.", agent.rendered_property_values())
     }
 }
 
@@ -1765,22 +1767,20 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
             Declaration::Agent(agent_declaration) => {
                 let agent_context = ValidationContext::Agent(agent_declaration.name.clone());
 
-                let mut seen_agent_properties = HashSet::<AgentPropertyName>::new();
+                let mut seen_agent_properties = HashSet::<String>::new();
                 let mut seen_agent_dynamic_field_names = HashSet::<String>::new();
 
                 for agent_property in &agent_declaration.properties {
-                    let agent_property_name = agent_property.name();
-
-                    if !matches!(agent_property_name, AgentPropertyName::Dynamic | AgentPropertyName::Unknown)
-                        && !seen_agent_properties.insert(agent_property_name)
-                    {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::DuplicateProperty {
-                                property_name: agent_property_name.as_str().to_string(),
-                                context: agent_context.clone(),
-                            },
-                            Some(agent_declaration.span),
-                        );
+                    if let Some(agent_property_name) = agent_property.name() {
+                        if !agent_property.repeatable() && !seen_agent_properties.insert(agent_property_name.to_string()) {
+                            validation_report.push_issue_with_span(
+                                ValidationIssue::DuplicateProperty {
+                                    property_name: agent_property_name.to_string(),
+                                    context: agent_context.clone(),
+                                },
+                                Some(agent_declaration.span),
+                            );
+                        }
                     }
 
                     match agent_property {

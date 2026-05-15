@@ -1,15 +1,15 @@
 use super::ast::{
-    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DynamicBlock,
-    Expression, FunctionCall, InputDeclaration, MatchBranch, MatchExpression, McpBatchImportDeclaration, McpCall, McpCallOperation,
-    McpImportKind, McpImportPropertyName, McpImportSource, McpPromptBatchImportDeclaration, McpPromptBatchImportItem,
-    McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceBatchImportItem, McpResourceImportDeclaration,
-    McpServerDeclaration, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, ModelDeclaration,
-    ModelUsage, NamedArgument, NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
-    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
-    ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase,
-    VariantProjectionExpression, Workflow,
+    AgentDeclaration, AgentForLoop, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DynamicBlock, Expression, FunctionCall,
+    InputDeclaration, MatchBranch, MatchExpression, McpBatchImportDeclaration, McpCall, McpCallOperation, McpImportKind,
+    McpImportPropertyName, McpImportSource, McpPromptBatchImportDeclaration, McpPromptBatchImportItem, McpPromptImportDeclaration,
+    McpResourceBatchImportDeclaration, McpResourceBatchImportItem, McpResourceImportDeclaration, McpServerDeclaration,
+    McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, ModelDeclaration, ModelUsage, NamedArgument,
+    NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
+    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName,
+    ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase, VariantProjectionExpression, Workflow,
 };
 use super::parser::{DslParseError, Rule};
+use super::structure;
 use pest::iterators::{Pair, Pairs};
 
 #[derive(Debug, Default)]
@@ -1385,55 +1385,80 @@ impl AstVisitor {
         let property_name = self.next_identifier(&mut inner_pairs, "agent property name", "agent object property")?;
         let object_expression_pair = self.next_pair(&mut inner_pairs, "agent object property value", "agent object property")?;
 
-        match AgentPropertyName::from_identifier(property_name.as_str()) {
-            Some(AgentPropertyName::Dynamic) => Ok(AgentProperty::Dynamic(DynamicBlock {
+        let agent = structure::Agent::new();
+
+        if agent.property_is_dynamic(property_name.as_str()) {
+            return Ok(AgentProperty::Dynamic(DynamicBlock {
                 fields: self.visit_object_expression(object_expression_pair)?,
                 span: property_span,
-            })),
-            Some(AgentPropertyName::Output) => Err(DslParseError::unexpected_with_span(
+            }));
+        }
+
+        if agent.property_is_output(property_name.as_str()) {
+            return Err(DslParseError::unexpected_with_span(
                 Rule::named_object_property,
                 "agent output property",
                 property_span,
-            )),
-            Some(_) => Err(DslParseError::unexpected_with_span(
+            ));
+        }
+
+        if agent.property_definition(property_name.as_str()).is_some() {
+            return Err(DslParseError::unexpected_with_span(
                 Rule::named_object_property,
                 "agent object property",
                 property_span,
-            )),
-            None => Ok(AgentProperty::Unknown {
-                name: property_name,
-                span: property_span,
-            }),
+            ));
         }
+
+        Ok(AgentProperty::Unknown {
+            name: property_name,
+            span: property_span,
+        })
     }
 
     fn visit_agent_value_property(&self, property_pair: Pair<'_, Rule>, property_span: SourceSpan) -> Result<AgentProperty, DslParseError> {
         let mut inner_pairs = property_pair.into_inner();
         let property_name = self.next_identifier(&mut inner_pairs, "agent property name", "agent value property")?;
-        let Some(agent_property_name) = AgentPropertyName::from_identifier(property_name.as_str()) else {
+        let agent = structure::Agent::new();
+
+        if agent.property_definition(property_name.as_str()).is_none() {
             return Ok(AgentProperty::Unknown {
                 name: property_name,
                 span: property_span,
             });
-        };
+        }
+
         let value_pair = self.next_pair(&mut inner_pairs, "agent property value", "agent value property")?;
 
-        match agent_property_name {
-            AgentPropertyName::Model => Ok(AgentProperty::InvalidModel(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Instruction => Ok(AgentProperty::Instruction(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Output => Err(DslParseError::unexpected_with_span(
+        if agent.property_is_model(property_name.as_str()) {
+            return Ok(AgentProperty::InvalidModel(self.visit_expression(value_pair)?));
+        }
+
+        if agent.property_is_instruction(property_name.as_str()) {
+            return Ok(AgentProperty::Instruction(self.visit_expression(value_pair)?));
+        }
+
+        if agent.property_is_output(property_name.as_str()) {
+            return Err(DslParseError::unexpected_with_span(
                 Rule::named_agent_value_property,
                 "agent output property",
                 property_span,
-            )),
-            AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Uses => Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?)),
-            AgentPropertyName::Dynamic | AgentPropertyName::Unknown => Err(DslParseError::unexpected_with_span(
-                Rule::named_agent_value_property,
-                "agent value property",
-                property_span,
-            )),
+            ));
         }
+
+        if agent.property_is_context(property_name.as_str()) {
+            return Ok(AgentProperty::Context(self.visit_expression(value_pair)?));
+        }
+
+        if agent.property_is_uses(property_name.as_str()) {
+            return Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?));
+        }
+
+        Err(DslParseError::unexpected_with_span(
+            Rule::named_agent_value_property,
+            "agent value property",
+            property_span,
+        ))
     }
 
     fn visit_agent_output_property(&self, property_pair: Pair<'_, Rule>) -> Result<AgentProperty, DslParseError> {

@@ -1,5 +1,5 @@
 use superwire_core::dsl::{
-    AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpServerPropertyName, ModelDeclarationPropertyName,
+    structure, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, ModelDeclarationPropertyName,
     ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
 };
 use superwire_core::semantic::InferenceSetting;
@@ -250,31 +250,27 @@ impl ScopeScannerTokenState {
     }
 
     fn agent_property_block_for_open_brace(&self, parent_block: Option<ScopeBlock>, last_identifier: &str) -> Option<ScopeBlock> {
+        let agent = structure::Agent::new();
+
         if parent_block == Some(ScopeBlock::Agent) {
             if let Some(pending_property) = &self.pending_property {
-                if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
-                    match agent_property_name {
-                        AgentPropertyName::Output => return Some(ScopeBlock::TypedDeclaration),
-                        AgentPropertyName::Model => return Some(ScopeBlock::ModelUsage),
-                        _ => {}
-                    }
+                if agent.property_is_output(pending_property) {
+                    return Some(ScopeBlock::TypedDeclaration);
+                }
+
+                if agent.property_is_model(pending_property) {
+                    return Some(ScopeBlock::ModelUsage);
                 }
             }
         }
 
-        if parent_block == Some(ScopeBlock::Agent) {
-            if let Some(agent_property_name) = AgentPropertyName::from_identifier(last_identifier) {
-                if agent_property_name == AgentPropertyName::Output {
-                    return Some(ScopeBlock::TypedDeclaration);
-                }
-            }
+        if parent_block == Some(ScopeBlock::Agent) && agent.property_is_output(last_identifier) {
+            return Some(ScopeBlock::TypedDeclaration);
         }
 
         if let Some(pending_property) = &self.pending_property {
-            if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
-                if agent_property_name == AgentPropertyName::Model {
-                    return Some(ScopeBlock::ModelUsage);
-                }
+            if agent.property_is_model(pending_property) {
+                return Some(ScopeBlock::ModelUsage);
             }
         }
 
@@ -424,38 +420,6 @@ impl ScopeScannerStringState {
     }
 }
 
-trait AgentPropertyCompletionDoc {
-    fn completion_detail(self) -> &'static str;
-
-    fn completion_documentation(self) -> &'static str;
-}
-
-impl AgentPropertyCompletionDoc for AgentPropertyName {
-    fn completion_detail(self) -> &'static str {
-        match self {
-            Self::Dynamic => "Dynamic block",
-            Self::Model => "Model binding (required)",
-            Self::Instruction => "Instruction expression (required)",
-            Self::Output => "Output type",
-            Self::Context => "Context expression",
-            Self::Uses => "Usable capabilities expression",
-            Self::Unknown => "Unknown property",
-        }
-    }
-
-    fn completion_documentation(self) -> &'static str {
-        match self {
-            Self::Dynamic => "Declares one or more dynamic values available as `dynamic.<field>`.",
-            Self::Model => "Selects provider and model call used by this agent.",
-            Self::Instruction => "Defines the instruction sent to the provider.",
-            Self::Output => "Declares the expected structured output type.",
-            Self::Context => "Prepends evaluated context to the rendered prompt.",
-            Self::Uses => "Declares tool, MCP prompt, and MCP resource references available to this agent.",
-            Self::Unknown => "Unsupported agent property.",
-        }
-    }
-}
-
 trait InferenceSettingCompletionDoc {
     fn completion_detail(self) -> &'static str;
 
@@ -499,65 +463,25 @@ impl InferenceSettingCompletionDoc for InferenceSetting {
 pub fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    AgentPropertyName::all()
-        .into_iter()
-        .filter(|agent_property_name| agent_property_name.as_str().starts_with(property_prefix))
-        .map(|agent_property_name| CompletionSuggestion {
-            label: agent_property_name.as_str().to_string(),
-            kind: CompletionKind::Property,
-            detail: agent_property_name.completion_detail().to_string(),
-            documentation: agent_property_name.completion_documentation().to_string(),
-            insert_text: agent_property_name.as_str().to_string(),
-        })
-        .collect()
+    property_definition_suggestions(property_prefix, &structure::Agent::new().properties())
 }
 
 pub fn model_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    [ModelDeclarationPropertyName::Id, ModelDeclarationPropertyName::Inference]
-        .into_iter()
-        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
-        .map(|property_name| CompletionSuggestion {
-            label: property_name.as_str().to_string(),
-            kind: CompletionKind::Property,
-            detail: "Model declaration property".to_string(),
-            documentation: "Property available inside a `model` declaration.".to_string(),
-            insert_text: property_name.as_str().to_string(),
-        })
-        .collect()
+    property_definition_suggestions(property_prefix, &structure::Model::new().properties())
 }
 
 pub fn model_usage_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    [ModelUsagePropertyName::Inference]
-        .into_iter()
-        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
-        .map(|property_name| CompletionSuggestion {
-            label: property_name.as_str().to_string(),
-            kind: CompletionKind::Property,
-            detail: "Model override property".to_string(),
-            documentation: "Property available inside an agent `model` override block.".to_string(),
-            insert_text: property_name.as_str().to_string(),
-        })
-        .collect()
+    property_definition_suggestions(property_prefix, &structure::ModelUsage::new().properties())
 }
 
 pub fn mcp_server_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    McpServerPropertyName::all()
-        .into_iter()
-        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
-        .map(|property_name| CompletionSuggestion {
-            label: property_name.as_str().to_string(),
-            kind: CompletionKind::Property,
-            detail: "MCP server property".to_string(),
-            documentation: "Property available inside an `mcp` declaration.".to_string(),
-            insert_text: property_name.as_str().to_string(),
-        })
-        .collect()
+    property_definition_suggestions(property_prefix, &structure::McpServer::new().properties())
 }
 
 pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
@@ -579,15 +503,22 @@ pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionS
 pub fn tool_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    ToolPropertyName::all()
-        .into_iter()
-        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
-        .map(|property_name| CompletionSuggestion {
-            label: property_name.as_str().to_string(),
+    property_definition_suggestions(property_prefix, &structure::Tool::new().properties())
+}
+
+fn property_definition_suggestions(
+    property_prefix: &str,
+    property_definitions: &[structure::PropertyDefinition],
+) -> Vec<CompletionSuggestion> {
+    property_definitions
+        .iter()
+        .filter(|property_definition| property_definition.name.starts_with(property_prefix))
+        .map(|property_definition| CompletionSuggestion {
+            label: property_definition.name.to_string(),
             kind: CompletionKind::Property,
-            detail: "Tool declaration property".to_string(),
-            documentation: "Property available inside a `tool` declaration.".to_string(),
-            insert_text: property_name.as_str().to_string(),
+            detail: property_definition.detail.to_string(),
+            documentation: property_definition.documentation.to_string(),
+            insert_text: property_definition.name.to_string(),
         })
         .collect()
 }
@@ -614,17 +545,17 @@ pub fn mcp_tool_batch_import_scope_suggestions(
 
 pub fn mcp_prompt_import_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
-    let bindings_property_name = ToolPropertyName::Bindings.as_str();
+    let property_definition = McpImportPropertyName::Bindings.definition();
 
-    if !bindings_property_name.starts_with(property_prefix) {
+    if !property_definition.name.starts_with(property_prefix) {
         return Vec::new();
     }
 
     vec![CompletionSuggestion {
-        label: bindings_property_name.to_string(),
+        label: property_definition.name.to_string(),
         kind: CompletionKind::Property,
-        detail: "MCP prompt import property".to_string(),
-        documentation: "Bindings block for MCP prompt arguments.".to_string(),
-        insert_text: bindings_property_name.to_string(),
+        detail: property_definition.detail.to_string(),
+        documentation: property_definition.documentation.to_string(),
+        insert_text: property_definition.name.to_string(),
     }]
 }

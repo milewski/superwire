@@ -1,7 +1,7 @@
+use super::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::ops::Range;
-use strsim::levenshtein;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourcePosition {
@@ -465,12 +465,13 @@ pub enum ModelDeclarationPropertyName {
 
 impl ModelDeclarationPropertyName {
     #[must_use]
+    pub fn all() -> [Self; 2] {
+        [Self::Id, Self::Inference]
+    }
+
+    #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
-        match identifier {
-            "id" => Some(Self::Id),
-            "inference" => Some(Self::Inference),
-            _ => None,
-        }
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
     }
 
     #[must_use]
@@ -478,6 +479,17 @@ impl ModelDeclarationPropertyName {
         match self {
             Self::Id => "id",
             Self::Inference => "inference",
+        }
+    }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Id => structure::Model::new().id.definition(),
+            Self::Inference => structure::Model::new()
+                .inference
+                .expect("model structure should include inference")
+                .definition(),
         }
     }
 }
@@ -489,17 +501,29 @@ pub enum ModelUsagePropertyName {
 
 impl ModelUsagePropertyName {
     #[must_use]
+    pub fn all() -> [Self; 1] {
+        [Self::Inference]
+    }
+
+    #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
-        match identifier {
-            "inference" => Some(Self::Inference),
-            _ => None,
-        }
+        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
     }
 
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Inference => "inference",
+        }
+    }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Inference => structure::ModelUsage::new()
+                .inference
+                .expect("model usage structure should include inference")
+                .definition(),
         }
     }
 }
@@ -535,6 +559,17 @@ impl McpServerPropertyName {
         match self {
             Self::Endpoint => "endpoint",
             Self::Headers => "headers",
+        }
+    }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Endpoint => structure::McpServer::new().endpoint.definition(),
+            Self::Headers => structure::McpServer::new()
+                .headers
+                .expect("mcp server structure should include headers")
+                .definition(),
         }
     }
 }
@@ -1008,6 +1043,32 @@ impl ToolPropertyName {
             Self::Output => "output",
         }
     }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Description => structure::Tool::new()
+                .description
+                .expect("tool structure should include description")
+                .definition(),
+            Self::MaxCalls => structure::Tool::new()
+                .max_calls
+                .expect("tool structure should include max_calls")
+                .definition(),
+            Self::Input => structure::Tool::new()
+                .input
+                .expect("tool structure should include input")
+                .definition(),
+            Self::Bindings => structure::Tool::new()
+                .bindings
+                .expect("tool structure should include bindings")
+                .definition(),
+            Self::Output => structure::Tool::new()
+                .output
+                .expect("tool structure should include output")
+                .definition(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1030,6 +1091,16 @@ impl McpImportPropertyName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Bindings => "bindings",
+        }
+    }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Bindings => structure::McpImport::new()
+                .bindings
+                .expect("mcp import structure should include bindings")
+                .definition(),
         }
     }
 }
@@ -1060,6 +1131,24 @@ impl ToolCallPropertyName {
             Self::MaxCalls => "max_calls",
         }
     }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Input => structure::ToolCall::new()
+                .input
+                .expect("tool call structure should include input")
+                .definition(),
+            Self::Bindings => structure::ToolCall::new()
+                .bindings
+                .expect("tool call structure should include bindings")
+                .definition(),
+            Self::MaxCalls => structure::ToolCall::new()
+                .max_calls
+                .expect("tool call structure should include max_calls")
+                .definition(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1084,6 +1173,20 @@ impl McpToolBatchImportPropertyName {
         match self {
             Self::Bindings => ToolPropertyName::Bindings.as_str(),
             Self::MaxCalls => ToolPropertyName::MaxCalls.as_str(),
+        }
+    }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        match self {
+            Self::Bindings => structure::McpToolBatchImport::new()
+                .bindings
+                .expect("mcp tool batch import structure should include bindings")
+                .definition(),
+            Self::MaxCalls => structure::McpToolBatchImport::new()
+                .max_calls
+                .expect("mcp tool batch import structure should include max_calls")
+                .definition(),
         }
     }
 }
@@ -1328,113 +1431,55 @@ impl AgentProperty {
     }
 
     #[must_use]
-    pub fn name(&self) -> AgentPropertyName {
-        match self {
-            Self::Dynamic(_) => AgentPropertyName::Dynamic,
-            Self::Model(_) => AgentPropertyName::Model,
-            Self::InvalidModel(_) => AgentPropertyName::Model,
-            Self::Instruction(_) => AgentPropertyName::Instruction,
-            Self::Output { fields: _, span: _ } => AgentPropertyName::Output,
-            Self::Context(_) => AgentPropertyName::Context,
-            Self::Uses(_) => AgentPropertyName::Uses,
-            Self::Unknown { name: _, span: _ } => AgentPropertyName::Unknown,
-        }
+    pub fn definition(&self) -> Option<DslPropertyDefinition> {
+        let agent = structure::Agent::new();
+
+        let property_definition = match self {
+            Self::Dynamic(_) => agent.dynamic[0].definition(),
+            Self::Model(_) | Self::InvalidModel(_) => agent.model.definition(),
+            Self::Instruction(_) => agent.instruction.definition(),
+            Self::Output { fields: _, span: _ } => agent.output.expect("agent structure should include output").definition(),
+            Self::Context(_) => agent.context.expect("agent structure should include context").definition(),
+            Self::Uses(_) => agent.uses[0].definition(),
+            Self::Unknown { name: _, span: _ } => return None,
+        };
+
+        Some(property_definition)
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&'static str> {
+        self.definition().map(|property_definition| property_definition.name)
+    }
+
+    #[must_use]
+    pub fn repeatable(&self) -> bool {
+        self.definition().is_some_and(|property_definition| property_definition.repeatable)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AgentPropertyName {
-    Dynamic,
-    Model,
-    Instruction,
-    Output,
-    Context,
-    Uses,
-    Unknown,
-}
-
-impl AgentPropertyName {
+impl AgentExpressionPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 6] {
-        [
-            Self::Dynamic,
-            Self::Model,
-            Self::Instruction,
-            Self::Output,
-            Self::Context,
-            Self::Uses,
-        ]
-    }
+    pub fn from_agent_property_identifier(identifier: &str) -> Option<Self> {
+        let agent = structure::Agent::new();
 
-    #[must_use]
-    pub fn from_identifier(identifier: &str) -> Option<Self> {
-        Self::all().into_iter().find(|property_name| property_name.as_str() == identifier)
-    }
-
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Model => "model",
-            Self::Dynamic => "dynamic",
-            Self::Instruction => "instruction",
-            Self::Output => "output",
-            Self::Context => "context",
-            Self::Uses => "uses",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    #[must_use]
-    pub fn suggested_from_identifier(identifier: &str) -> Option<Self> {
-        if identifier.is_empty() {
-            return None;
+        if agent.property_is_model(identifier) {
+            return Some(Self::Model);
         }
 
-        let mut closest_property_name = None;
-        let mut closest_distance = usize::MAX;
-
-        for property_name in Self::all() {
-            let candidate_distance = levenshtein(identifier, property_name.as_str());
-
-            if candidate_distance < closest_distance {
-                closest_property_name = Some(property_name);
-                closest_distance = candidate_distance;
-            }
+        if agent.property_is_instruction(identifier) {
+            return Some(Self::Instruction);
         }
 
-        if closest_distance > Self::max_typo_distance(identifier) {
-            return None;
+        if agent.property_is_context(identifier) {
+            return Some(Self::Context);
         }
 
-        closest_property_name
-    }
-
-    #[must_use]
-    pub fn rendered_values() -> String {
-        let mut rendered_property_names = Self::all()
-            .into_iter()
-            .map(|property_name| format!("`{}`", property_name.as_str()))
-            .collect::<Vec<_>>();
-
-        let last_property_name = rendered_property_names
-            .pop()
-            .expect("agent property names should include a last value");
-
-        format!("{} or {last_property_name}", rendered_property_names.join(", "))
-    }
-
-    fn max_typo_distance(identifier: &str) -> usize {
-        let identifier_length = identifier.chars().count();
-
-        if identifier_length <= 4 {
-            return 1;
+        if agent.property_is_uses(identifier) {
+            return Some(Self::Uses);
         }
 
-        if identifier_length <= 8 {
-            return 2;
-        }
-
-        3
+        None
     }
 }
 
@@ -1448,14 +1493,13 @@ pub enum AgentExpressionPropertyName {
 
 impl AgentExpressionPropertyName {
     #[must_use]
+    pub fn all() -> [Self; 4] {
+        [Self::Model, Self::Instruction, Self::Context, Self::Uses]
+    }
+
+    #[must_use]
     pub fn from_identifier(identifier: &str) -> Option<Self> {
-        match identifier {
-            "model" => Some(Self::Model),
-            "instruction" => Some(Self::Instruction),
-            "context" => Some(Self::Context),
-            "uses" => Some(Self::Uses),
-            _ => None,
-        }
+        Self::from_agent_property_identifier(identifier)
     }
 
     #[must_use]
@@ -1465,6 +1509,18 @@ impl AgentExpressionPropertyName {
             Self::Instruction => "instruction",
             Self::Context => "context",
             Self::Uses => "uses",
+        }
+    }
+
+    #[must_use]
+    pub fn definition(self) -> DslPropertyDefinition {
+        let agent = structure::Agent::new();
+
+        match self {
+            Self::Model => agent.model.definition(),
+            Self::Instruction => agent.instruction.definition(),
+            Self::Context => agent.context.expect("agent structure should include context").definition(),
+            Self::Uses => agent.uses[0].definition(),
         }
     }
 }
@@ -2366,7 +2422,8 @@ pub struct ReferenceAccess {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentPropertyName, ForClauseKeyword, SourcePosition, SourceSpan};
+    use super::{ForClauseKeyword, SourcePosition, SourceSpan};
+    use crate::dsl::structure::Agent;
 
     #[test]
     fn parses_for_clause_keywords_from_identifier() {
@@ -2404,19 +2461,25 @@ mod tests {
 
     #[test]
     fn suggests_closest_agent_property_name_for_typos() {
+        let agent = Agent::new();
+
         assert_eq!(
-            AgentPropertyName::suggested_from_identifier("instrction"),
-            Some(AgentPropertyName::Instruction)
+            agent
+                .suggested_property_definition("instrction")
+                .map(|property_definition| property_definition.name),
+            Some("instruction")
         );
 
         assert_eq!(
-            AgentPropertyName::suggested_from_identifier("modle"),
-            Some(AgentPropertyName::Model)
+            agent
+                .suggested_property_definition("modle")
+                .map(|property_definition| property_definition.name),
+            Some("model")
         );
     }
 
     #[test]
     fn does_not_suggest_agent_property_name_for_distant_identifier() {
-        assert_eq!(AgentPropertyName::suggested_from_identifier("retries"), None);
+        assert_eq!(Agent::new().suggested_property_definition("retries"), None);
     }
 }

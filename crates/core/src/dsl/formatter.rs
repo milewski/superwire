@@ -4,14 +4,15 @@ use std::fmt::Write;
 use thiserror::Error;
 
 use super::ast::{
-    AgentDeclaration, AgentForLoopPattern, AgentProperty, AgentPropertyName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock,
-    Expression, ForClauseKeyword, FunctionCall, ImportKeyword, MatchBranch, McpBatchImportDeclaration, McpCall, McpImportKind,
+    AgentDeclaration, AgentForLoopPattern, AgentProperty, CallArgument, Declaration, DeclarationKeyword, DynamicBlock, Expression,
+    ForClauseKeyword, FunctionCall, ImportKeyword, MatchBranch, McpBatchImportDeclaration, McpCall, McpImportKind, McpImportPropertyName,
     McpPromptBatchImportDeclaration, McpPromptImportDeclaration, McpResourceBatchImportDeclaration, McpResourceImportDeclaration,
-    McpToolBatchImportDeclaration, ModelUsage, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolDeclaration,
-    ToolPropertyName, TypeExpression, TypedField, Workflow,
+    McpToolBatchImportDeclaration, ModelUsage, ObjectField, Reference, StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName,
+    ToolDeclaration, ToolPropertyName, TypeExpression, TypedField, Workflow,
 };
 use super::parse_workflow;
 use super::parser::DslParseError;
+use super::structure::{self, DslProperty};
 
 const MAX_LINE_WIDTH: usize = 120;
 const WRAP_WIDTH_BUFFER: usize = 12;
@@ -399,7 +400,10 @@ impl McpToolBatchImportDeclaration {
         }
 
         if let Some(max_calls) = self.max_calls {
-            formatter.push_line(&format!("{}: {max_calls}", ToolPropertyName::MaxCalls.as_str()));
+            formatter.push_line(&format!(
+                "{}: {max_calls}",
+                super::ast::McpToolBatchImportPropertyName::MaxCalls.definition().name
+            ));
 
             if !self.output_fields.is_empty() || !self.items.is_empty() {
                 formatter.push_newline();
@@ -455,7 +459,7 @@ impl McpBatchImportDeclaration {
         }
 
         if !self.fixed_binding_fields.is_empty() {
-            formatter.push_declaration_block_start(ToolPropertyName::Bindings.as_str());
+            formatter.push_declaration_block_start(super::ast::McpToolBatchImportPropertyName::Bindings.definition().name);
 
             for object_field in &self.fixed_binding_fields {
                 object_field.push_to_formatter(formatter);
@@ -527,7 +531,7 @@ impl McpResourceBatchImportDeclaration {
         formatter.push_declaration_block_start(&header);
 
         if !self.parameters.is_empty() {
-            formatter.push_declaration_block_start("bindings");
+            formatter.push_declaration_block_start(McpImportPropertyName::Bindings.as_str());
 
             for parameter in &self.parameters {
                 parameter.push_to_formatter(formatter);
@@ -560,7 +564,7 @@ impl McpPromptBatchImportDeclaration {
         formatter.push_declaration_block_start(&header);
 
         if !self.parameters.is_empty() {
-            formatter.push_declaration_block_start("bindings");
+            formatter.push_declaration_block_start(McpImportPropertyName::Bindings.as_str());
 
             for parameter in &self.parameters {
                 parameter.push_to_formatter(formatter);
@@ -596,7 +600,7 @@ impl super::ast::McpResourceBatchImportItem {
         }
 
         formatter.push_declaration_block_start(&header);
-        formatter.push_declaration_block_start("bindings");
+        formatter.push_declaration_block_start(McpImportPropertyName::Bindings.as_str());
 
         for parameter in &self.parameters {
             parameter.push_to_formatter(formatter);
@@ -622,7 +626,7 @@ impl super::ast::McpPromptBatchImportItem {
         }
 
         formatter.push_declaration_block_start(&header);
-        formatter.push_declaration_block_start("bindings");
+        formatter.push_declaration_block_start(McpImportPropertyName::Bindings.as_str());
 
         for parameter in &self.parameters {
             parameter.push_to_formatter(formatter);
@@ -718,7 +722,11 @@ impl ToolDeclaration {
         formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Tool.as_str(), self.name));
 
         if let Some(description) = &self.description {
-            formatter.push_line(&format!("description: {}", render_plain_string_literal(description)));
+            formatter.push_line(&format!(
+                "{}: {}",
+                ToolPropertyName::Description.as_str(),
+                render_plain_string_literal(description)
+            ));
 
             if !self.input_fields.is_empty()
                 || !self.binding_fields.is_empty()
@@ -731,7 +739,7 @@ impl ToolDeclaration {
         }
 
         if let Some(max_calls) = self.max_calls {
-            formatter.push_line(&format!("max_calls: {max_calls}"));
+            formatter.push_line(&format!("{}: {max_calls}", ToolPropertyName::MaxCalls.as_str()));
 
             if !self.input_fields.is_empty()
                 || !self.binding_fields.is_empty()
@@ -743,7 +751,7 @@ impl ToolDeclaration {
         }
 
         if !self.input_fields.is_empty() {
-            formatter.push_declaration_block_start("input");
+            formatter.push_declaration_block_start(ToolPropertyName::Input.as_str());
 
             for typed_field in &self.input_fields {
                 typed_field.push_to_formatter(formatter);
@@ -757,7 +765,7 @@ impl ToolDeclaration {
         }
 
         if !self.binding_fields.is_empty() || !self.fixed_binding_fields.is_empty() {
-            formatter.push_declaration_block_start("bindings");
+            formatter.push_declaration_block_start(ToolPropertyName::Bindings.as_str());
 
             for typed_field in &self.binding_fields {
                 typed_field.push_to_formatter(formatter);
@@ -775,7 +783,7 @@ impl ToolDeclaration {
         }
 
         if !self.output_fields.is_empty() {
-            formatter.push_declaration_block_start("output");
+            formatter.push_declaration_block_start(ToolPropertyName::Output.as_str());
 
             for typed_field in &self.output_fields {
                 typed_field.push_to_formatter(formatter);
@@ -817,7 +825,7 @@ impl ToolDeclaration {
         formatter.push_declaration_block_start(&header);
 
         if let Some(max_calls) = self.max_calls {
-            formatter.push_line(&format!("max_calls: {max_calls}"));
+            formatter.push_line(&format!("{}: {max_calls}", ToolPropertyName::MaxCalls.as_str()));
 
             if !self.input_fields.is_empty() || !self.fixed_binding_fields.is_empty() || !self.output_fields.is_empty() {
                 formatter.push_newline();
@@ -825,7 +833,7 @@ impl ToolDeclaration {
         }
 
         if !self.input_fields.is_empty() {
-            formatter.push_declaration_block_start("input");
+            formatter.push_declaration_block_start(ToolPropertyName::Input.as_str());
 
             for input_field in &self.input_fields {
                 input_field.push_to_formatter(formatter);
@@ -839,7 +847,7 @@ impl ToolDeclaration {
         }
 
         if !self.fixed_binding_fields.is_empty() {
-            formatter.push_declaration_block_start("bindings");
+            formatter.push_declaration_block_start(ToolPropertyName::Bindings.as_str());
 
             for fixed_binding_field in &self.fixed_binding_fields {
                 fixed_binding_field.push_to_formatter(formatter);
@@ -853,7 +861,7 @@ impl ToolDeclaration {
         }
 
         if !self.output_fields.is_empty() {
-            formatter.push_declaration_block_start("output");
+            formatter.push_declaration_block_start(ToolPropertyName::Output.as_str());
 
             for output_field in &self.output_fields {
                 output_field.push_to_formatter(formatter);
@@ -902,7 +910,7 @@ fn push_mcp_import_with_parameters(formatter: &mut DslFormatter, header: &str, p
     }
 
     formatter.push_declaration_block_start(header);
-    formatter.push_declaration_block_start("bindings");
+    formatter.push_declaration_block_start(McpImportPropertyName::Bindings.as_str());
 
     for parameter in parameters {
         parameter.push_to_formatter(formatter);
@@ -926,26 +934,44 @@ impl AgentProperty {
         match self {
             Self::Dynamic(dynamic_block) => dynamic_block.push_to_formatter(formatter),
             Self::Model(model_usage) => model_usage.push_to_formatter(formatter),
-            Self::InvalidModel(expression) => formatter.push_agent_property_expression(AgentPropertyName::Model.as_str(), expression),
-            Self::Instruction(expression) => formatter.push_agent_property_expression(AgentPropertyName::Instruction.as_str(), expression),
-            Self::Output { fields, span: _ } => {
-                formatter.push_agent_property_type_block(AgentPropertyName::Output.as_str(), fields);
+            Self::InvalidModel(expression) => {
+                formatter.push_agent_property_expression(structure::Agent::new().model.definition().name, expression);
             }
-            Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
-            Self::Uses(expression) => self.push_agent_binding_list_property(formatter, AgentPropertyName::Uses, expression),
+            Self::Instruction(expression) => {
+                formatter.push_agent_property_expression(structure::Agent::new().instruction.definition().name, expression);
+            }
+            Self::Output { fields, span: _ } => {
+                let agent = structure::Agent::new();
+
+                formatter.push_agent_property_type_block(
+                    agent.output.expect("agent structure should include output").definition().name,
+                    fields,
+                );
+            }
+            Self::Context(expression) => {
+                let agent = structure::Agent::new();
+
+                formatter.push_agent_property_expression(
+                    agent.context.expect("agent structure should include context").definition().name,
+                    expression,
+                );
+            }
+            Self::Uses(expression) => {
+                self.push_agent_binding_list_property(formatter, structure::Agent::new().uses[0].definition().name, expression)
+            }
             Self::Unknown { name: _, span: _ } => {}
         }
     }
 
-    fn push_agent_binding_list_property(&self, formatter: &mut DslFormatter, property_name: AgentPropertyName, expression: &Expression) {
+    fn push_agent_binding_list_property(&self, formatter: &mut DslFormatter, property_name: &str, expression: &Expression) {
         let Expression::ArrayLiteral(tool_bindings) = expression else {
-            formatter.push_agent_property_expression(property_name.as_str(), expression);
+            formatter.push_agent_property_expression(property_name, expression);
 
             return;
         };
 
         formatter.push_indent();
-        formatter.output.push_str(property_name.as_str());
+        formatter.output.push_str(property_name);
         formatter.output.push_str(": ");
 
         if tool_bindings.is_empty() {
@@ -1034,7 +1060,8 @@ impl AgentProperty {
 impl DynamicBlock {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
-        formatter.output.push_str("dynamic ");
+        formatter.output.push_str(structure::Agent::new().dynamic[0].definition().name);
+        formatter.output.push(' ');
         formatter.output.push('{');
         formatter.push_newline();
         formatter.indentation_depth += 1;
@@ -1053,7 +1080,7 @@ impl DynamicBlock {
 impl ModelUsage {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.push_indent();
-        formatter.output.push_str(AgentPropertyName::Model.as_str());
+        formatter.output.push_str(structure::Agent::new().model.definition().name);
         formatter.output.push_str(": ");
         self.reference.push_to_formatter(formatter);
 
@@ -1760,7 +1787,7 @@ impl ToolCall {
         formatter.indentation_depth += 1;
 
         if !self.input_fields.is_empty() {
-            formatter.push_declaration_block_start("input");
+            formatter.push_declaration_block_start(ToolCallPropertyName::Input.definition().name);
 
             for object_field in &self.input_fields {
                 object_field.push_to_formatter(formatter);
@@ -1774,7 +1801,7 @@ impl ToolCall {
         }
 
         if !self.binding_fields.is_empty() {
-            formatter.push_declaration_block_start("bindings");
+            formatter.push_declaration_block_start(ToolCallPropertyName::Bindings.definition().name);
 
             for object_field in &self.binding_fields {
                 object_field.push_to_formatter(formatter);
@@ -1788,7 +1815,7 @@ impl ToolCall {
         }
 
         if let Some(max_calls) = self.max_calls {
-            formatter.push_line(&format!("max_calls: {max_calls}"));
+            formatter.push_line(&format!("{}: {max_calls}", ToolCallPropertyName::MaxCalls.definition().name));
         }
 
         formatter.indentation_depth -= 1;
@@ -1807,7 +1834,7 @@ impl ToolCall {
         formatter.push_newline();
         formatter.indentation_depth += 1;
         if !self.binding_fields.is_empty() {
-            formatter.push_declaration_block_start("bindings");
+            formatter.push_declaration_block_start(ToolCallPropertyName::Bindings.definition().name);
 
             for object_field in &self.binding_fields {
                 object_field.push_to_formatter(formatter);
@@ -1821,7 +1848,7 @@ impl ToolCall {
         }
 
         if let Some(max_calls) = self.max_calls {
-            formatter.push_line(&format!("max_calls: {max_calls}"));
+            formatter.push_line(&format!("{}: {max_calls}", ToolCallPropertyName::MaxCalls.definition().name));
         }
 
         formatter.indentation_depth -= 1;
@@ -1843,7 +1870,7 @@ impl McpCall {
         formatter.output.push_str(" {");
         formatter.push_newline();
         formatter.indentation_depth += 1;
-        formatter.push_declaration_block_start("bindings");
+        formatter.push_declaration_block_start(McpImportPropertyName::Bindings.as_str());
 
         for parameter_field in &self.parameter_fields {
             parameter_field.push_to_formatter(formatter);
