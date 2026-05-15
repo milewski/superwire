@@ -3,6 +3,19 @@
 
 target
 **/target
+dist
+**/dist
+node_modules
+**/node_modules
+playground/dist
+playground/node_modules
+
+*.log
+**/*.log
+**/.DS_Store
+
+.claude
+.opencode
 
 editors
 !editors/textmate/
@@ -11,4 +24,3 @@ editors
 integration
 documentation
 
-**/.DS_Store
