@@ -154,7 +154,7 @@ const wireStreamLanguage = StreamLanguage.define({
 const wireHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: 'var(--syntax-keyword)', fontWeight: '650' },
   { tag: tags.typeName, color: 'var(--syntax-type)' },
-  { tag: tags.propertyName, color: 'var(--syntax-variable)' },
+  { tag: tags.propertyName, color: 'var(--syntax-property)' },
   { tag: tags.variableName, color: 'var(--syntax-variable)' },
   { tag: tags.string, color: 'var(--syntax-string)' },
   { tag: tags.number, color: 'var(--syntax-number)' },

@@ -30,6 +30,7 @@
   --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --syntax-keyword: #ff7f00;
   --syntax-type: #7c3aed;
+  --syntax-property: #0f4f9e;
   --syntax-variable: #171717;
   --syntax-string: #0f8a5f;
   --syntax-number: #b25b00;
@@ -90,6 +91,7 @@
   --editor-active-line: rgba(255, 255, 255, 0.06);
   --syntax-keyword: #ff9b32;
   --syntax-type: #d7b6ff;
+  --syntax-property: #78b7ff;
   --syntax-variable: #f4f1ec;
   --syntax-string: #a9efc4;
   --syntax-number: #ffd08a;

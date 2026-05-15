@@ -477,7 +477,7 @@
       "begin": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\{)",
       "beginCaptures": {
         "1": {
-          "name": "variable.other.property.wire"
+          "name": "entity.other.attribute-name.wire"
         },
         "2": {
           "name": "punctuation.section.block.begin.wire"
@@ -564,7 +564,7 @@
       "begin": "\\b(output)\\s*(\\{)",
       "beginCaptures": {
         "1": {
-          "name": "variable.other.property.wire"
+          "name": "entity.other.attribute-name.wire"
         },
         "2": {
           "name": "punctuation.section.block.begin.wire"
@@ -588,7 +588,7 @@
           "match": "\\b(model)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.other.property.wire"
+              "name": "entity.other.attribute-name.wire"
             },
             "2": {
               "name": "punctuation.separator.key-value.wire"
@@ -634,7 +634,7 @@
           "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.other.property.wire"
+              "name": "entity.other.attribute-name.wire"
             },
             "2": {
               "name": "punctuation.separator.key-value.wire"
@@ -669,7 +669,7 @@
           "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
           "captures": {
             "1": {
-              "name": "variable.other.property.wire"
+              "name": "entity.other.attribute-name.wire"
             },
             "2": {
               "name": "punctuation.separator.key-value.wire"
