@@ -448,6 +448,15 @@ impl ModelDeclaration {
     }
 
     #[must_use]
+    pub fn id_literal(&self) -> Option<&str> {
+        let Expression::StringLiteral(model_identifier) = self.id_expression()? else {
+            return None;
+        };
+
+        Some(model_identifier)
+    }
+
+    #[must_use]
     pub fn inference_fields(&self) -> Option<&[ObjectField]> {
         let property = self.property(ModelDeclarationPropertyName::Inference)?;
         let Expression::ObjectLiteral(fields) = &property.value else {

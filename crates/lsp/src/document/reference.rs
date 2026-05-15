@@ -422,9 +422,27 @@ impl SemanticIndex {
             Some(ReferenceKeyword::Prompt) => {
                 self.mcp_import_reference_suggestions(reference_completion_path, &self.prompt_names, "Imported MCP prompt")
             }
-            Some(ReferenceKeyword::Model) => Vec::new(),
+            Some(ReferenceKeyword::Model) => self.model_reference_suggestions(reference_completion_path),
             None => Vec::new(),
         }
+    }
+
+    fn model_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
+        if !reference_completion_path.complete_accesses.is_empty() {
+            return Vec::new();
+        }
+
+        self.models
+            .iter()
+            .filter(|(model_name, _)| model_name.starts_with(&reference_completion_path.pending_prefix))
+            .map(|(model_name, model_summary)| CompletionSuggestion {
+                label: model_name.clone(),
+                kind: CompletionKind::Value,
+                detail: model_summary.completion_detail(),
+                documentation: "Model profile used in `model` properties.".to_string(),
+                insert_text: model_name.clone(),
+            })
+            .collect()
     }
 
     fn mcp_import_reference_suggestions(

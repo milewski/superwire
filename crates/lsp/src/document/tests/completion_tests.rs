@@ -1034,6 +1034,7 @@ fn completes_registered_provider_models_inside_model_call() {
     let gpt_model_completion = completion_suggestion_by_label(&completion_suggestions, "openai_gpt_4_1_mini");
 
     assert_eq!(gpt_model_completion.insert_text, "model.openai_gpt_4_1_mini");
+    assert_eq!(gpt_model_completion.detail, "gpt-4.1-mini");
 }
 
 #[test]
@@ -1105,6 +1106,43 @@ fn suggests_only_declared_providers_for_model_property_value() {
     let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai_model");
 
     assert_eq!(openai_completion.insert_text, "model.openai_model");
+    assert_eq!(openai_completion.detail, "gpt-4.1-mini");
+}
+
+#[test]
+fn suggests_declared_models_inside_model_reference_namespace() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai from openai {}
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        model backup_model from openai {
+            id: "gpt-4o-mini"
+        }
+
+        agent customer_email {
+            model: model.<cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "openai_model", "backup_model");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        BuiltinFunctionName::Context,
+        ReferenceKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        DeclarationKeyword::Provider,
+        InferenceSetting::MaxTokens,
+        "string"
+    );
+
+    let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai_model");
+
+    assert_eq!(openai_completion.insert_text, "openai_model");
+    assert_eq!(openai_completion.detail, "gpt-4.1-mini");
 }
 
 #[test]

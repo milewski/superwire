@@ -72,6 +72,15 @@ pub struct ProviderSummary {
 #[derive(Debug, Clone)]
 pub struct ModelSummary {
     pub provider_name: String,
+    pub model_identifier: Option<String>,
+}
+
+impl ModelSummary {
+    pub(in crate::document) fn completion_detail(&self) -> String {
+        self.model_identifier
+            .clone()
+            .unwrap_or_else(|| "Declared model profile".to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,12 +120,12 @@ impl SemanticIndex {
     pub fn model_profile_suggestions(&self, model_prefix: &str) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = self
             .models
-            .keys()
-            .filter(|model_name| model_name.starts_with(model_prefix))
-            .map(|model_name| CompletionSuggestion {
+            .iter()
+            .filter(|(model_name, _)| model_name.starts_with(model_prefix))
+            .map(|(model_name, model_summary)| CompletionSuggestion {
                 label: model_name.clone(),
                 kind: CompletionKind::Value,
-                detail: "Declared model profile".to_string(),
+                detail: model_summary.completion_detail(),
                 documentation: "Model profile used in `model` properties.".to_string(),
                 insert_text: format!("model.{model_name}"),
             })
@@ -1429,6 +1438,7 @@ impl SemanticIndex {
             model_declaration.name.clone(),
             ModelSummary {
                 provider_name: model_declaration.provider_name.clone(),
+                model_identifier: model_declaration.id_literal().map(str::to_string),
             },
         );
 
@@ -1445,10 +1455,10 @@ impl SemanticIndex {
             .filter(|(model_name, model_summary)| {
                 model_summary.provider_name == model_call_context.provider_name && model_name.starts_with(&model_call_context.model_prefix)
             })
-            .map(|(model_name, _)| CompletionSuggestion {
+            .map(|(model_name, model_summary)| CompletionSuggestion {
                 label: model_name.clone(),
                 kind: CompletionKind::Value,
-                detail: format!("Model from `{}` provider", model_call_context.provider_name),
+                detail: model_summary.completion_detail(),
                 documentation: "Declared model profile using this provider.".to_string(),
                 insert_text: model_name.clone(),
             })

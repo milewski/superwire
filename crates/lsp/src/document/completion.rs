@@ -1214,6 +1214,12 @@ impl DocumentState {
                 Some(semantic_index.context_function_suggestions(&agent_property_value_completion_context.value_prefix))
             }
             AgentExpressionPropertyName::Model => {
+                if ReferenceCompletionPath::from_line_prefix(line_prefix)
+                    .is_some_and(|reference_completion_path| reference_completion_path.root_keyword() == Some(ReferenceKeyword::Model))
+                {
+                    return None;
+                }
+
                 Some(semantic_index.model_profile_suggestions(&agent_property_value_completion_context.value_prefix))
             }
             AgentExpressionPropertyName::Instruction => {
