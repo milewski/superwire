@@ -1,7 +1,8 @@
 use super::text_utils::{
     for_clause_iterable_prefix, is_identifier, leading_identifier, split_for_clause_binding, trailing_identifier, trailing_reference_token,
 };
-use super::{CompletionKind, CompletionSuggestion};
+use super::CompletionSuggestion;
+use lsp_types::CompletionItemKind;
 use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword};
 use superwire_core::semantic::InferenceSetting;
 
@@ -89,7 +90,7 @@ impl DeclarationHeaderCompletionContext {
             Self::NamedDeclaration | Self::SingletonDeclaration | Self::ModelProvider { .. } | Self::AgentForIteratorName => Vec::new(),
             Self::NamedDeclarationBlock => vec![CompletionSuggestion {
                 label: "{}".to_string(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "Declaration block".to_string(),
                 documentation: "Insert declaration block braces.".to_string(),
                 insert_text: "{}".to_string(),
@@ -214,7 +215,7 @@ impl DeclarationHeaderCompletionContext {
 
         vec![CompletionSuggestion {
             label: for_clause_keyword.as_str().to_string(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: "For-clause keyword".to_string(),
             documentation: "Agent for-loop declaration keyword.".to_string(),
             insert_text: for_clause_keyword.as_str().to_string(),

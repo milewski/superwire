@@ -1,4 +1,4 @@
-use crate::protocol::{Position, Range};
+use lsp_types::{Position, Range};
 
 use super::position::source_span_to_range;
 use super::DocumentState;

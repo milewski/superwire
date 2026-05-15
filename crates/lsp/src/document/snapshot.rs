@@ -1,3 +1,4 @@
+use lsp_types::DiagnosticSeverity;
 use superwire_core::diagnostic::{
     Diagnostic as CoreDiagnostic, DiagnosticCode as CoreDiagnosticCode, DiagnosticSeverity as CoreDiagnosticSeverity,
 };
@@ -5,11 +6,11 @@ use superwire_core::dsl::{parse_workflow, validate_workflow, DslParseError};
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::build_dynamic_typed_workflow_ir;
 
-use crate::protocol::DiagnosticCode;
+use crate::diagnostic_code::DiagnosticCode;
 
 use super::position::{source_span_to_range, zero_range};
 use super::semantic_index::SemanticIndex;
-use super::{DiagnosticSeverity, DocumentDiagnostic};
+use super::DocumentDiagnostic;
 
 #[derive(Debug)]
 pub struct SemanticSnapshot {
@@ -71,18 +72,16 @@ fn document_diagnostic_from_core(core_diagnostic: &CoreDiagnostic, source_text: 
 
     DocumentDiagnostic {
         range,
-        severity: DiagnosticSeverity::from(core_diagnostic.severity),
+        severity: diagnostic_severity_from_core(core_diagnostic.severity),
         code: DiagnosticCode::from(core_diagnostic.code),
         message: core_diagnostic.message.clone(),
     }
 }
 
-impl From<CoreDiagnosticSeverity> for DiagnosticSeverity {
-    fn from(core_severity: CoreDiagnosticSeverity) -> Self {
-        match core_severity {
-            CoreDiagnosticSeverity::Error => Self::Error,
-            CoreDiagnosticSeverity::Warning | CoreDiagnosticSeverity::Information | CoreDiagnosticSeverity::Hint => Self::Warning,
-        }
+fn diagnostic_severity_from_core(core_severity: CoreDiagnosticSeverity) -> DiagnosticSeverity {
+    match core_severity {
+        CoreDiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
+        CoreDiagnosticSeverity::Warning | CoreDiagnosticSeverity::Information | CoreDiagnosticSeverity::Hint => DiagnosticSeverity::WARNING,
     }
 }
 

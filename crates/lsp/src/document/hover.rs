@@ -1,11 +1,11 @@
 use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SingletonDeclarationKind};
 use superwire_core::semantic::ProviderDriver;
 
-use crate::protocol::Position;
+use lsp_types::{CompletionItemKind, Position};
 
 use super::reference::ReferenceCompletionPath;
 use super::semantic_index::SemanticIndex;
-use super::{CompletionKind, CompletionSuggestion, DocumentState, RenderTypeExpression};
+use super::{CompletionSuggestion, DocumentState, RenderTypeExpression};
 
 impl DocumentState {
     #[must_use]
@@ -96,7 +96,7 @@ impl SemanticIndex {
 #[derive(Debug, Clone, Copy)]
 struct BuiltinSymbolDoc {
     label: &'static str,
-    kind: CompletionKind,
+    kind: CompletionItemKind,
     detail: &'static str,
     documentation: &'static str,
 }
@@ -104,73 +104,73 @@ struct BuiltinSymbolDoc {
 const BUILTIN_SYMBOL_DOCS: [BuiltinSymbolDoc; 12] = [
     BuiltinSymbolDoc {
         label: "from",
-        kind: CompletionKind::Keyword,
+        kind: CompletionItemKind::KEYWORD,
         detail: "MCP batch import",
         documentation: "Use `from mcp.<server>.tool { ... }` to import multiple MCP tools with shared bindings.",
     },
     BuiltinSymbolDoc {
         label: "as",
-        kind: CompletionKind::Keyword,
+        kind: CompletionItemKind::KEYWORD,
         detail: "Import alias",
         documentation: "Use `as <local_name>` inside MCP tool batch imports to alias a tool.",
     },
     BuiltinSymbolDoc {
         label: "tool",
-        kind: CompletionKind::Module,
+        kind: CompletionItemKind::MODULE,
         detail: "Tool namespace",
         documentation: "Use `tool.<name>` to reference declared tools.",
     },
     BuiltinSymbolDoc {
         label: "resource",
-        kind: CompletionKind::Module,
+        kind: CompletionItemKind::MODULE,
         detail: "Resource namespace",
         documentation: "Use `read resource.<name>` to read imported MCP resources.",
     },
     BuiltinSymbolDoc {
         label: "prompt",
-        kind: CompletionKind::Module,
+        kind: CompletionItemKind::MODULE,
         detail: "Prompt namespace",
         documentation: "Use `render prompt.<name>` to render imported MCP prompts.",
     },
     BuiltinSymbolDoc {
         label: "context",
-        kind: CompletionKind::Function,
+        kind: CompletionItemKind::FUNCTION,
         detail: "Builtin function",
         documentation: "Returns serialized context for `agent.<name>`.",
     },
     BuiltinSymbolDoc {
         label: "template",
-        kind: CompletionKind::Function,
+        kind: CompletionItemKind::FUNCTION,
         detail: "Builtin function",
         documentation: "Renders a string template from source and bindings.",
     },
     BuiltinSymbolDoc {
         label: "compact",
-        kind: CompletionKind::Function,
+        kind: CompletionItemKind::FUNCTION,
         detail: "Builtin function",
         documentation: "Compacts nullable values in object-like data.",
     },
     BuiltinSymbolDoc {
         label: "string",
-        kind: CompletionKind::Type,
+        kind: CompletionItemKind::STRUCT,
         detail: "Primitive type",
         documentation: "String type.",
     },
     BuiltinSymbolDoc {
         label: "number",
-        kind: CompletionKind::Type,
+        kind: CompletionItemKind::STRUCT,
         detail: "Primitive type",
         documentation: "Integer number type.",
     },
     BuiltinSymbolDoc {
         label: "float",
-        kind: CompletionKind::Type,
+        kind: CompletionItemKind::STRUCT,
         detail: "Primitive type",
         documentation: "Floating-point number type.",
     },
     BuiltinSymbolDoc {
         label: "boolean",
-        kind: CompletionKind::Type,
+        kind: CompletionItemKind::STRUCT,
         detail: "Primitive type",
         documentation: "Boolean type.",
     },
@@ -220,7 +220,9 @@ impl DeclarationKeywordCompletionDoc for DeclarationKeyword {
 
 pub fn builtin_symbol_suggestions(include_builtin_function_suggestions: bool) -> Vec<CompletionSuggestion> {
     builtin_symbol_docs()
-        .filter(|builtin_symbol_doc| include_builtin_function_suggestions || !matches!(builtin_symbol_doc.kind, CompletionKind::Function))
+        .filter(|builtin_symbol_doc| {
+            include_builtin_function_suggestions || !matches!(builtin_symbol_doc.kind, CompletionItemKind::FUNCTION)
+        })
         .map(|builtin_symbol_doc| CompletionSuggestion {
             label: builtin_symbol_doc.label.to_string(),
             kind: builtin_symbol_doc.kind,
@@ -244,67 +246,67 @@ fn declaration_builtin_symbol_docs() -> [BuiltinSymbolDoc; 11] {
     [
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Provider.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Provider.completion_detail(),
             documentation: DeclarationKeyword::Provider.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Mcp.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Mcp.completion_detail(),
             documentation: DeclarationKeyword::Mcp.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Agent.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Agent.completion_detail(),
             documentation: DeclarationKeyword::Agent.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Schema.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Schema.completion_detail(),
             documentation: DeclarationKeyword::Schema.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Tool.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Tool.completion_detail(),
             documentation: DeclarationKeyword::Tool.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Resource.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Resource.completion_detail(),
             documentation: DeclarationKeyword::Resource.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Prompt.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Prompt.completion_detail(),
             documentation: DeclarationKeyword::Prompt.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: DeclarationKeyword::Dynamic.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Dynamic.completion_detail(),
             documentation: DeclarationKeyword::Dynamic.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: SingletonDeclarationKind::Input.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Input.completion_detail(),
             documentation: DeclarationKeyword::Input.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: SingletonDeclarationKind::Secrets.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Secrets.completion_detail(),
             documentation: DeclarationKeyword::Secrets.completion_documentation(),
         },
         BuiltinSymbolDoc {
             label: SingletonDeclarationKind::Output.as_str(),
-            kind: CompletionKind::Keyword,
+            kind: CompletionItemKind::KEYWORD,
             detail: DeclarationKeyword::Output.completion_detail(),
             documentation: DeclarationKeyword::Output.completion_documentation(),
         },

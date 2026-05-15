@@ -1,3 +1,4 @@
+use lsp_types::CompletionItemKind;
 use superwire_core::dsl::{
     structure, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, McpServerPropertyName,
     ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
@@ -5,7 +6,7 @@ use superwire_core::dsl::{
 use superwire_core::semantic::InferenceSetting;
 
 use super::text_utils::{is_identifier, trailing_identifier};
-use super::{CompletionKind, CompletionSuggestion};
+use super::CompletionSuggestion;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompletionScope {
@@ -487,7 +488,7 @@ pub fn mcp_server_property_scope_suggestions(line_prefix: &str) -> Vec<Completio
         .filter(|property_definition| property_definition.name.starts_with(property_prefix))
         .map(|property_definition| CompletionSuggestion {
             label: property_definition.name.to_string(),
-            kind: CompletionKind::Property,
+            kind: CompletionItemKind::PROPERTY,
             detail: property_definition.detail.to_string(),
             documentation: property_definition.documentation.to_string(),
             insert_text: if McpServerPropertyName::from_identifier(property_definition.name) == Some(McpServerPropertyName::Headers) {
@@ -507,7 +508,7 @@ pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionS
         .filter(|inference_setting| inference_setting.key().starts_with(setting_prefix))
         .map(|inference_setting| CompletionSuggestion {
             label: inference_setting.key().to_string(),
-            kind: CompletionKind::Property,
+            kind: CompletionItemKind::PROPERTY,
             detail: inference_setting.completion_detail().to_string(),
             documentation: inference_setting.completion_documentation().to_string(),
             insert_text: inference_setting.key().to_string(),
@@ -530,7 +531,7 @@ fn property_definition_suggestions(
         .filter(|property_definition| property_definition.name.starts_with(property_prefix))
         .map(|property_definition| CompletionSuggestion {
             label: property_definition.name.to_string(),
-            kind: CompletionKind::Property,
+            kind: CompletionItemKind::PROPERTY,
             detail: property_definition.detail.to_string(),
             documentation: property_definition.documentation.to_string(),
             insert_text: property_definition.name.to_string(),
@@ -550,7 +551,7 @@ pub fn mcp_tool_batch_import_scope_suggestions(
         .filter(|property_name| property_name.starts_with(property_prefix))
         .map(|property_name| CompletionSuggestion {
             label: property_name.to_string(),
-            kind: CompletionKind::Property,
+            kind: CompletionItemKind::PROPERTY,
             detail: "MCP batch import item".to_string(),
             documentation: "MCP batch import item inside this block.".to_string(),
             insert_text: property_name.to_string(),
@@ -568,7 +569,7 @@ pub fn mcp_prompt_import_scope_suggestions(line_prefix: &str) -> Vec<CompletionS
 
     vec![CompletionSuggestion {
         label: property_definition.name.to_string(),
-        kind: CompletionKind::Property,
+        kind: CompletionItemKind::PROPERTY,
         detail: property_definition.detail.to_string(),
         documentation: property_definition.documentation.to_string(),
         insert_text: property_definition.name.to_string(),

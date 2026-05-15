@@ -1,6 +1,6 @@
 use superwire_core::dsl::{SourcePosition, SourceSpan};
 
-use crate::protocol::{Position, Range};
+use lsp_types::{Position, Range};
 
 pub fn byte_offset_for_position(source_text: &str, position: Position) -> Option<usize> {
     let target_line = position.line as usize;

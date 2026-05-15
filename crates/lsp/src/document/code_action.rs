@@ -1,6 +1,6 @@
 use superwire_core::dsl::{ToolPropertyName, TypedField};
 
-use crate::protocol::{Position, Range};
+use lsp_types::{Position, Range};
 
 use super::position::byte_offset_for_position;
 use super::{CodeActionEdit, CodeActionSuggestion, DocumentState, RenderTypeExpression};

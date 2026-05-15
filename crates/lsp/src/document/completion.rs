@@ -4,7 +4,7 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::McpServerLock;
 
-use crate::protocol::{Position, Range};
+use lsp_types::{CompletionItemKind, Position, Range};
 
 use super::completion_context::{
     AgentPropertyValueCompletionContext, ArrayFixedLengthCompletionContext, DeclarationHeaderCompletionContext,
@@ -22,7 +22,7 @@ use super::semantic_index::SemanticIndex;
 use super::text_utils::{
     is_inside_interpolation_expression, is_inside_multiline_string_literal, trailing_identifier, trailing_reference_token,
 };
-use super::{CompletionKind, CompletionSuggestion, DocumentState, RenderTypeExpression};
+use super::{CompletionSuggestion, DocumentState, RenderTypeExpression};
 use superwire_core::semantic::InferenceSetting;
 
 const COMPLETION_RECOVERY_PLACEHOLDER: &str = "__completion_placeholder";
@@ -608,7 +608,7 @@ impl DocumentState {
 
         CompletionSuggestion {
             label: typed_field.name.clone(),
-            kind: CompletionKind::Property,
+            kind: CompletionItemKind::PROPERTY,
             detail: typed_field.description.clone().unwrap_or_else(|| rendered_type.clone()),
             documentation: typed_field
                 .description
@@ -1200,7 +1200,7 @@ impl DocumentState {
                         .find(|completion_suggestion| completion_suggestion.label == property_name.as_str())
                         .unwrap_or_else(|| CompletionSuggestion {
                             label: property_name.as_str().to_string(),
-                            kind: CompletionKind::Property,
+                            kind: CompletionItemKind::PROPERTY,
                             detail: "Tool declaration property".to_string(),
                             documentation: "Property available inside a `tool` declaration.".to_string(),
                             insert_text: property_name.as_str().to_string(),
@@ -1209,7 +1209,7 @@ impl DocumentState {
 
                 CompletionSuggestion {
                     label: property_name.as_str().to_string(),
-                    kind: CompletionKind::Property,
+                    kind: CompletionItemKind::PROPERTY,
                     detail: "MCP schema property".to_string(),
                     documentation: format!("Insert `{}` with fields discovered from the MCP lock file.", property_name.as_str()),
                     insert_text: Self::render_schema_property_snippet(property_name, &schema_fields, line_prefix),

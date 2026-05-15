@@ -19,15 +19,16 @@ mod types;
 use snapshot::SemanticSnapshot;
 use text_utils::is_symbol_character;
 pub use types::{
-    CodeActionEdit, CodeActionSuggestion, CodeLensHint, CompletionKind, CompletionSuggestion, DiagnosticSeverity, DocumentDiagnostic,
-    DocumentFormattingEdit, DocumentSymbolNode, FoldingRangeBlock, SymbolKind, WorkspaceSymbolMatch,
+    CodeActionEdit, CodeActionSuggestion, CodeLensHint, CompletionSuggestion, DocumentDiagnostic, DocumentFormattingEdit,
+    DocumentSymbolNode, FoldingRangeBlock, WorkspaceSymbolMatch,
 };
 
+use lsp_types::{CompletionItemKind, DiagnosticSeverity, Position};
 use superwire_core::dsl::{parse_workflow, Declaration, Expression, ToolPropertyName, TypeExpression, TypedField};
 use superwire_core::mcp::{McpLock, McpToolLock};
 use superwire_core::semantic::ProviderDriver;
 
-use crate::protocol::Position;
+use crate::diagnostic_code::DiagnosticCode;
 
 #[derive(Debug)]
 pub struct DocumentState {
@@ -447,8 +448,8 @@ impl DocumentState {
     fn mcp_schema_diagnostic(&self, span: superwire_core::dsl::SourceSpan, message: String) -> DocumentDiagnostic {
         DocumentDiagnostic {
             range: position::source_span_to_range(&self.text, span),
-            severity: DiagnosticSeverity::Error,
-            code: crate::protocol::DiagnosticCode::InvalidToolBinding,
+            severity: DiagnosticSeverity::ERROR,
+            code: DiagnosticCode::InvalidToolBinding,
             message,
         }
     }
@@ -749,7 +750,7 @@ fn type_symbol_suggestions() -> Vec<CompletionSuggestion> {
 
             CompletionSuggestion {
                 label: type_name.clone(),
-                kind: CompletionKind::Type,
+                kind: CompletionItemKind::STRUCT,
                 detail: "Primitive type".to_string(),
                 documentation: "Primitive workflow type.".to_string(),
                 insert_text: type_name.clone(),

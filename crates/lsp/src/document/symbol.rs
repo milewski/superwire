@@ -1,8 +1,9 @@
+use lsp_types::SymbolKind;
 use superwire_core::dsl::{parse_workflow, Declaration, DeclarationKeyword, ToolDeclaration, TypedField, Workflow};
 
 use super::position::source_span_to_range;
 use super::semantic_index::SemanticIndex;
-use super::{CodeLensHint, DocumentState, DocumentSymbolNode, RenderTypeExpression, SymbolKind, WorkspaceSymbolMatch};
+use super::{CodeLensHint, DocumentState, DocumentSymbolNode, RenderTypeExpression, WorkspaceSymbolMatch};
 
 impl DocumentState {
     #[must_use]
@@ -61,7 +62,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: provider_declaration.name.clone(),
                     detail: Some("provider declaration".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -73,7 +74,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: model_declaration.name.clone(),
                     detail: Some("model declaration".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -85,7 +86,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: mcp_server_declaration.name.clone(),
                     detail: Some("MCP server declaration".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -102,7 +103,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: schema_declaration.name.clone(),
                     detail: Some("schema declaration".to_string()),
-                    kind: SymbolKind::Struct,
+                    kind: SymbolKind::STRUCT,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -120,7 +121,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: format!("mcp.{}.tool", tool_batch_import_declaration.server_name),
                     detail: Some("MCP tool batch import".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -140,7 +141,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     DocumentSymbolNode {
                         name: resource_import_declaration.name.clone(),
                         detail: Some("MCP resource import".to_string()),
-                        kind: SymbolKind::Object,
+                        kind: SymbolKind::OBJECT,
                         range: declaration_range,
                         selection_range: declaration_range,
                         children: Vec::new(),
@@ -153,7 +154,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                     DocumentSymbolNode {
                         name: prompt_import_declaration.name.clone(),
                         detail: Some("MCP prompt import".to_string()),
-                        kind: SymbolKind::Field,
+                        kind: SymbolKind::FIELD,
                         range: declaration_range,
                         selection_range: declaration_range,
                         children: Vec::new(),
@@ -163,7 +164,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: format!("mcp.{}", batch_import_declaration.server_name),
                     detail: Some("MCP batch import".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -175,7 +176,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: resource_import_declaration.name.clone(),
                     detail: Some("MCP resource import".to_string()),
-                    kind: SymbolKind::Object,
+                    kind: SymbolKind::OBJECT,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -192,7 +193,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                         DocumentSymbolNode {
                             name: resource_import_declaration.name.clone(),
                             detail: Some("MCP resource import".to_string()),
-                            kind: SymbolKind::Object,
+                            kind: SymbolKind::OBJECT,
                             range: declaration_range,
                             selection_range: declaration_range,
                             children: Vec::new(),
@@ -203,7 +204,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: format!("mcp.{}.resource", resource_batch_import_declaration.server_name),
                     detail: Some("MCP resource batch import".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -215,7 +216,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: prompt_import_declaration.name.clone(),
                     detail: Some("MCP prompt import".to_string()),
-                    kind: SymbolKind::Field,
+                    kind: SymbolKind::FIELD,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -232,7 +233,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                         DocumentSymbolNode {
                             name: prompt_import_declaration.name.clone(),
                             detail: Some("MCP prompt import".to_string()),
-                            kind: SymbolKind::Field,
+                            kind: SymbolKind::FIELD,
                             range: declaration_range,
                             selection_range: declaration_range,
                             children: Vec::new(),
@@ -243,7 +244,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: format!("mcp.{}.prompt", prompt_batch_import_declaration.server_name),
                     detail: Some("MCP prompt batch import".to_string()),
-                    kind: SymbolKind::Module,
+                    kind: SymbolKind::MODULE,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -260,7 +261,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: DeclarationKeyword::Input.as_str().to_string(),
                     detail: Some("input declaration".to_string()),
-                    kind: SymbolKind::Object,
+                    kind: SymbolKind::OBJECT,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -277,7 +278,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: DeclarationKeyword::Secrets.as_str().to_string(),
                     detail: Some("secrets declaration".to_string()),
-                    kind: SymbolKind::Object,
+                    kind: SymbolKind::OBJECT,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: child_symbols,
@@ -289,7 +290,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: agent_declaration.name.clone(),
                     detail: Some("agent declaration".to_string()),
-                    kind: SymbolKind::Function,
+                    kind: SymbolKind::FUNCTION,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -301,7 +302,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: DeclarationKeyword::Dynamic.as_str().to_string(),
                     detail: Some("dynamic declaration".to_string()),
-                    kind: SymbolKind::Field,
+                    kind: SymbolKind::FIELD,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -313,7 +314,7 @@ impl DeclarationDocumentSymbolExt for Declaration {
                 DocumentSymbolNode {
                     name: DeclarationKeyword::Output.as_str().to_string(),
                     detail: Some("output declaration".to_string()),
-                    kind: SymbolKind::Object,
+                    kind: SymbolKind::OBJECT,
                     range: declaration_range,
                     selection_range: declaration_range,
                     children: Vec::new(),
@@ -341,7 +342,7 @@ impl ToolDeclarationDocumentSymbolExt for ToolDeclaration {
         DocumentSymbolNode {
             name: self.name.clone(),
             detail: Some("tool declaration".to_string()),
-            kind: SymbolKind::Function,
+            kind: SymbolKind::FUNCTION,
             range: declaration_range,
             selection_range: declaration_range,
             children: child_symbols,
@@ -360,7 +361,7 @@ impl TypedFieldDocumentSymbolExt for TypedField {
         DocumentSymbolNode {
             name: self.name.clone(),
             detail: Some(format!("field: {}", self.field_type.render_type())),
-            kind: SymbolKind::Field,
+            kind: SymbolKind::FIELD,
             range: field_range,
             selection_range: field_range,
             children: Vec::new(),
@@ -378,7 +379,7 @@ impl SemanticIndex {
             symbol_nodes.push(DocumentSymbolNode {
                 name: provider_location.name.clone(),
                 detail: Some("provider declaration".to_string()),
-                kind: SymbolKind::Module,
+                kind: SymbolKind::MODULE,
                 range: provider_range,
                 selection_range: provider_range,
                 children: Vec::new(),
@@ -391,7 +392,7 @@ impl SemanticIndex {
             symbol_nodes.push(DocumentSymbolNode {
                 name: schema_location.name.clone(),
                 detail: Some("schema declaration".to_string()),
-                kind: SymbolKind::Struct,
+                kind: SymbolKind::STRUCT,
                 range: schema_range,
                 selection_range: schema_range,
                 children: Vec::new(),
@@ -404,7 +405,7 @@ impl SemanticIndex {
             symbol_nodes.push(DocumentSymbolNode {
                 name: agent_location.name.clone(),
                 detail: Some("agent declaration".to_string()),
-                kind: SymbolKind::Function,
+                kind: SymbolKind::FUNCTION,
                 range: agent_range,
                 selection_range: agent_range,
                 children: Vec::new(),
@@ -417,7 +418,7 @@ impl SemanticIndex {
             symbol_nodes.push(DocumentSymbolNode {
                 name: DeclarationKeyword::Output.as_str().to_string(),
                 detail: Some("output declaration".to_string()),
-                kind: SymbolKind::Object,
+                kind: SymbolKind::OBJECT,
                 range: output_range,
                 selection_range: output_range,
                 children: Vec::new(),

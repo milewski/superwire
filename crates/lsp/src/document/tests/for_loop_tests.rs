@@ -245,7 +245,7 @@ fn suggests_for_keyword_after_agent_name_in_agent_header() {
         .find(|completion_suggestion| completion_suggestion.label == ForClauseKeyword::For.as_str())
         .expect("for keyword completion should exist");
 
-    assert!(matches!(for_keyword_completion.kind, CompletionKind::Keyword));
+    assert!(matches!(for_keyword_completion.kind, CompletionItemKind::KEYWORD));
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn suggests_in_keyword_after_for_iterator_name_in_agent_header() {
         .find(|completion_suggestion| completion_suggestion.label == ForClauseKeyword::In.as_str())
         .expect("in keyword completion should exist");
 
-    assert!(matches!(in_keyword_completion.kind, CompletionKind::Keyword));
+    assert!(matches!(in_keyword_completion.kind, CompletionItemKind::KEYWORD));
 }
 
 #[test]

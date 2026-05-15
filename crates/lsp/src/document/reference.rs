@@ -4,12 +4,12 @@ use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SourcePosition, 
 use superwire_core::mcp::McpServerLock;
 use superwire_core::semantic::ToolingReferencePath;
 
-use crate::protocol::Position;
+use lsp_types::{CompletionItemKind, Position};
 
 use super::position::source_span_contains_position;
 use super::semantic_index::{FieldMetadata, SemanticIndex};
 use super::text_utils::{for_clause_iterable_prefix, is_identifier, trailing_reference_token};
-use super::{CompletionKind, CompletionSuggestion, RenderTypeExpression};
+use super::{CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
 pub struct ReferenceCompletionPath {
@@ -302,7 +302,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|normalized_tool_name| CompletionSuggestion {
                 label: normalized_tool_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "MCP tool".to_string(),
                 documentation: format!("MCP tool `{normalized_tool_name}` from server `{server_name}`."),
                 insert_text: normalized_tool_name,
@@ -329,7 +329,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|normalized_resource_name| CompletionSuggestion {
                 label: normalized_resource_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "MCP resource".to_string(),
                 documentation: format!("MCP resource `{normalized_resource_name}` from server `{server_name}`."),
                 insert_text: normalized_resource_name,
@@ -356,7 +356,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|normalized_prompt_name| CompletionSuggestion {
                 label: normalized_prompt_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "MCP prompt".to_string(),
                 documentation: format!("MCP prompt `{normalized_prompt_name}` from server `{server_name}`."),
                 insert_text: normalized_prompt_name,
@@ -437,7 +437,7 @@ impl SemanticIndex {
             .filter(|(model_name, _)| model_name.starts_with(&reference_completion_path.pending_prefix))
             .map(|(model_name, model_summary)| CompletionSuggestion {
                 label: model_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: model_summary.completion_detail(),
                 documentation: "Model profile used in `model` properties.".to_string(),
                 insert_text: model_name.clone(),
@@ -460,7 +460,7 @@ impl SemanticIndex {
             .filter(|import_name| import_name.starts_with(&reference_completion_path.pending_prefix))
             .map(|import_name| CompletionSuggestion {
                 label: import_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: detail.to_string(),
                 documentation: format!("Reference imported MCP item `{import_name}`."),
                 insert_text: import_name.clone(),
@@ -480,7 +480,7 @@ impl SemanticIndex {
                 .filter(|server_name| server_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|server_name| CompletionSuggestion {
                     label: server_name.clone(),
-                    kind: CompletionKind::Module,
+                    kind: CompletionItemKind::MODULE,
                     detail: "Declared MCP server".to_string(),
                     documentation: format!("MCP server `{server_name}` from lock file."),
                     insert_text: server_name.clone(),
@@ -499,7 +499,7 @@ impl SemanticIndex {
                 .filter(|kind_name| kind_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|kind_name| CompletionSuggestion {
                     label: kind_name.to_string(),
-                    kind: CompletionKind::Module,
+                    kind: CompletionItemKind::MODULE,
                     detail: "MCP import namespace".to_string(),
                     documentation: format!("Use `mcp.{server_name}.{kind_name}.<name>` for MCP imports."),
                     insert_text: kind_name.to_string(),
@@ -646,7 +646,7 @@ impl SemanticIndex {
                 .filter(|(_, field_type)| self.type_matches_reference_constraint(field_type, reference_completion_constraint))
                 .map(|(field_name, field_type)| CompletionSuggestion {
                     label: field_name.clone(),
-                    kind: CompletionKind::Property,
+                    kind: CompletionItemKind::PROPERTY,
                     detail: root_field_metadata
                         .and_then(|metadata_map| metadata_map.get(field_name))
                         .and_then(|field_metadata| field_metadata.description.clone())
@@ -701,7 +701,7 @@ impl SemanticIndex {
                 })
                 .map(|agent_name| CompletionSuggestion {
                     label: agent_name.clone(),
-                    kind: CompletionKind::Variable,
+                    kind: CompletionItemKind::VARIABLE,
                     detail: "Declared agent".to_string(),
                     documentation: "Reference to a declared agent output.".to_string(),
                     insert_text: agent_name.clone(),
@@ -757,7 +757,7 @@ impl SemanticIndex {
                 .filter(|schema_name| schema_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|schema_name| CompletionSuggestion {
                     label: schema_name.clone(),
-                    kind: CompletionKind::Type,
+                    kind: CompletionItemKind::STRUCT,
                     detail: "Named schema".to_string(),
                     documentation: "Named schema type from this workflow.".to_string(),
                     insert_text: schema_name.clone(),
@@ -873,7 +873,7 @@ impl SemanticIndex {
             })
             .map(|(field_name, field_metadata)| CompletionSuggestion {
                 label: field_name.clone(),
-                kind: CompletionKind::Property,
+                kind: CompletionItemKind::PROPERTY,
                 detail: field_metadata
                     .description
                     .clone()

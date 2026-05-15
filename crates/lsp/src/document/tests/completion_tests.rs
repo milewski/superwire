@@ -534,7 +534,7 @@ fn suppresses_builtin_functions_in_top_level_scope() {
     assert_completion_excludes_labels!(&completion_suggestions, BuiltinFunctionName);
     assert!(completion_suggestions
         .iter()
-        .all(|completion_suggestion| matches!(completion_suggestion.kind, CompletionKind::Keyword)));
+        .all(|completion_suggestion| matches!(completion_suggestion.kind, CompletionItemKind::KEYWORD)));
 }
 
 #[test]
@@ -725,7 +725,7 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
     );
 
     assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Provider);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::FUNCTION);
 }
 
 #[test]
@@ -752,7 +752,7 @@ fn suggests_only_model_properties_in_model_block_scope() {
         "headers"
     );
 
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::FUNCTION);
 }
 
 #[test]
@@ -942,7 +942,7 @@ fn suggests_only_inference_settings_inside_inference_object() {
         DeclarationKeyword::Provider
     );
 
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::FUNCTION);
 }
 
 #[test]
@@ -1253,12 +1253,12 @@ fn suggests_only_declared_providers_for_model_property_value() {
         "string"
     );
 
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Keyword);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Module);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Property);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Variable);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Type);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::KEYWORD);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::MODULE);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::PROPERTY);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::VARIABLE);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::STRUCT);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::FUNCTION);
 
     let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai_model");
 
@@ -1373,12 +1373,12 @@ fn suggests_only_declared_providers_for_model_declaration_provider() {
         "string"
     );
 
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Keyword);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Module);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Property);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Variable);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Type);
-    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::KEYWORD);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::MODULE);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::PROPERTY);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::VARIABLE);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::STRUCT);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionItemKind::FUNCTION);
 
     let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai");
 

@@ -10,14 +10,14 @@ use superwire_core::mcp::McpServerLock;
 use superwire_core::semantic::ProviderDriver;
 use superwire_core::semantic::{SemanticToolingSnapshot, ToolingReferencePath, ToolingSymbolCategory};
 
-use crate::protocol::Position;
+use lsp_types::{CompletionItemKind, Position};
 
 use super::completion_context::{ModelCallCompletionContext, ValueCompletionContext};
 use super::hover::builtin_symbol_suggestions;
 use super::position::source_span_contains_position;
 use super::reference::ReferenceCompletionPath;
 use super::text_utils::trailing_identifier;
-use super::{all_provider_property_names, type_symbol_suggestions, CompletionKind, CompletionSuggestion, RenderTypeExpression};
+use super::{all_provider_property_names, type_symbol_suggestions, CompletionSuggestion, RenderTypeExpression};
 
 #[derive(Debug, Clone)]
 pub struct SemanticIndex {
@@ -124,7 +124,7 @@ impl SemanticIndex {
             .filter(|(model_name, _)| model_name.starts_with(model_prefix))
             .map(|(model_name, model_summary)| CompletionSuggestion {
                 label: model_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: model_summary.completion_detail(),
                 documentation: "Model profile used in `model` properties.".to_string(),
                 insert_text: format!("model.{model_name}"),
@@ -147,7 +147,7 @@ impl SemanticIndex {
         .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
         .map(|reference_keyword| CompletionSuggestion {
             label: reference_keyword.as_str().to_string(),
-            kind: CompletionKind::Module,
+            kind: CompletionItemKind::MODULE,
             detail: "Model expression reference root".to_string(),
             documentation: format!("Use `{}.<path>` inside model expressions.", reference_keyword.as_str()),
             insert_text: format!("{}.", reference_keyword.as_str()),
@@ -161,7 +161,7 @@ impl SemanticIndex {
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
             .map(|reference_keyword| CompletionSuggestion {
                 label: reference_keyword.as_str().to_string(),
-                kind: CompletionKind::Module,
+                kind: CompletionItemKind::MODULE,
                 detail: "Inference value reference root".to_string(),
                 documentation: format!("Use `{}.<path>` for inference values.", reference_keyword.as_str()),
                 insert_text: format!("{}.", reference_keyword.as_str()),
@@ -181,7 +181,7 @@ impl SemanticIndex {
         .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
         .map(|reference_keyword| CompletionSuggestion {
             label: reference_keyword.as_str().to_string(),
-            kind: CompletionKind::Module,
+            kind: CompletionItemKind::MODULE,
             detail: "For-loop iterable reference root".to_string(),
             documentation: format!("Use `{}.<path>` in for-loop iterable expressions.", reference_keyword.as_str()),
             insert_text: format!("{}.", reference_keyword.as_str()),
@@ -191,7 +191,7 @@ impl SemanticIndex {
         if value_prefix.trim().is_empty() {
             completion_suggestions.push(CompletionSuggestion {
                 label: "[]".to_string(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "Array literal".to_string(),
                 documentation: "Inline array literal iterable expression.".to_string(),
                 insert_text: "[]".to_string(),
@@ -212,7 +212,7 @@ impl SemanticIndex {
         .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
         .map(|reference_keyword| CompletionSuggestion {
             label: reference_keyword.as_str().to_string(),
-            kind: CompletionKind::Module,
+            kind: CompletionItemKind::MODULE,
             detail: "Output value reference root".to_string(),
             documentation: format!("Use `{}.<path>` in output expressions.", reference_keyword.as_str()),
             insert_text: reference_keyword.as_str().to_string(),
@@ -238,7 +238,7 @@ impl SemanticIndex {
                 .filter(|(literal_label, _)| literal_label.starts_with(value_prefix))
                 .map(|(literal_label, literal_detail)| CompletionSuggestion {
                     label: literal_label.to_string(),
-                    kind: CompletionKind::Value,
+                    kind: CompletionItemKind::VALUE,
                     detail: literal_detail.to_string(),
                     documentation: "Literal output value expression.".to_string(),
                     insert_text: literal_label.to_string(),
@@ -259,7 +259,7 @@ impl SemanticIndex {
         .filter(|reference_keyword| reference_keyword.as_str().starts_with(value_prefix))
         .map(|reference_keyword| CompletionSuggestion {
             label: reference_keyword.as_str().to_string(),
-            kind: CompletionKind::Module,
+            kind: CompletionItemKind::MODULE,
             detail: "Dynamic value reference root".to_string(),
             documentation: format!("Use `{}.<path>` in dynamic value expressions.", reference_keyword.as_str()),
             insert_text: format!("{}.", reference_keyword.as_str()),
@@ -305,7 +305,7 @@ impl SemanticIndex {
                 .filter(|(label, _, _, _)| label.starts_with(value_prefix))
                 .map(|(label, detail, documentation, insert_text)| CompletionSuggestion {
                     label: label.to_string(),
-                    kind: CompletionKind::Function,
+                    kind: CompletionItemKind::FUNCTION,
                     detail: detail.to_string(),
                     documentation: documentation.to_string(),
                     insert_text: insert_text.to_string(),
@@ -323,7 +323,7 @@ impl SemanticIndex {
             .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
             .map(|reference_keyword| CompletionSuggestion {
                 label: reference_keyword.as_str().to_string(),
-                kind: CompletionKind::Module,
+                kind: CompletionItemKind::MODULE,
                 detail: "Prompt value reference root".to_string(),
                 documentation: format!("Use `{}.<path>` in prompt expressions.", reference_keyword.as_str()),
                 insert_text: format!("{}.", reference_keyword.as_str()),
@@ -342,7 +342,7 @@ impl SemanticIndex {
 
                 completion_suggestions.push(CompletionSuggestion {
                     label: for_loop_binding_name.to_string(),
-                    kind: CompletionKind::Variable,
+                    kind: CompletionItemKind::VARIABLE,
                     detail: "For-loop iterator variable".to_string(),
                     documentation: "Iterator binding declared in the current agent for-clause.".to_string(),
                     insert_text: for_loop_binding_name.to_string(),
@@ -360,7 +360,7 @@ impl SemanticIndex {
         if single_line_literal.starts_with(value_prefix) {
             completion_suggestions.push(CompletionSuggestion {
                 label: single_line_literal.to_string(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "String literal".to_string(),
                 documentation: "Literal prompt expression.".to_string(),
                 insert_text: single_line_literal.to_string(),
@@ -374,7 +374,7 @@ impl SemanticIndex {
         if multiline_literal_label.starts_with(value_prefix) {
             completion_suggestions.push(CompletionSuggestion {
                 label: multiline_literal_label.to_string(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "Multiline string literal".to_string(),
                 documentation: "Literal prompt expression.".to_string(),
                 insert_text: multiline_literal_insert_text,
@@ -402,7 +402,7 @@ impl SemanticIndex {
                 .filter(|(label, _, _, _)| label.starts_with(value_prefix))
                 .map(|(label, detail, documentation, insert_text)| CompletionSuggestion {
                     label: label.to_string(),
-                    kind: CompletionKind::Function,
+                    kind: CompletionItemKind::FUNCTION,
                     detail: detail.to_string(),
                     documentation: documentation.to_string(),
                     insert_text: insert_text.to_string(),
@@ -432,7 +432,7 @@ impl SemanticIndex {
         .filter(|reference_keyword| reference_keyword.as_str().starts_with(root_prefix))
         .map(|reference_keyword| CompletionSuggestion {
             label: reference_keyword.as_str().to_string(),
-            kind: CompletionKind::Module,
+            kind: CompletionItemKind::MODULE,
             detail: "Interpolation reference root".to_string(),
             documentation: format!("Use `{}.<path>` inside interpolation expressions.", reference_keyword.as_str()),
             insert_text: format!("{}.", reference_keyword.as_str()),
@@ -447,7 +447,7 @@ impl SemanticIndex {
 
                 completion_suggestions.push(CompletionSuggestion {
                     label: for_loop_binding_name.to_string(),
-                    kind: CompletionKind::Variable,
+                    kind: CompletionItemKind::VARIABLE,
                     detail: "For-loop iterator variable".to_string(),
                     documentation: "Iterator binding declared in the current agent for-clause.".to_string(),
                     insert_text: for_loop_binding_name.to_string(),
@@ -486,7 +486,7 @@ impl SemanticIndex {
 
                 CompletionSuggestion {
                     label: tool_name.clone(),
-                    kind: CompletionKind::Function,
+                    kind: CompletionItemKind::FUNCTION,
                     detail: "Declared tool".to_string(),
                     documentation: tool_summary
                         .and_then(|summary| summary.description.clone())
@@ -514,7 +514,7 @@ impl SemanticIndex {
             .filter(|(field_name, _)| !existing_argument_names.contains(field_name))
             .map(|(field_name, field_type)| CompletionSuggestion {
                 label: field_name.clone(),
-                kind: CompletionKind::Property,
+                kind: CompletionItemKind::PROPERTY,
                 detail: tool_summary
                     .bounded_field_metadata
                     .get(field_name)
@@ -555,7 +555,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|normalized_tool_name| CompletionSuggestion {
                 label: normalized_tool_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "MCP tool".to_string(),
                 documentation: format!("Import MCP tool `{normalized_tool_name}` from server `{server_name}`."),
                 insert_text: normalized_tool_name,
@@ -588,7 +588,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|normalized_resource_name| CompletionSuggestion {
                 label: normalized_resource_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "MCP resource".to_string(),
                 documentation: format!("Import MCP resource `{normalized_resource_name}` from server `{server_name}`."),
                 insert_text: normalized_resource_name,
@@ -621,7 +621,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|normalized_prompt_name| CompletionSuggestion {
                 label: normalized_prompt_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "MCP prompt".to_string(),
                 documentation: format!("Import MCP prompt `{normalized_prompt_name}` from server `{server_name}`."),
                 insert_text: normalized_prompt_name,
@@ -664,7 +664,7 @@ impl SemanticIndex {
 
                 CompletionSuggestion {
                     label: prompt_argument.name.clone(),
-                    kind: CompletionKind::Property,
+                    kind: CompletionItemKind::PROPERTY,
                     detail: requirement_detail.to_string(),
                     documentation,
                     insert_text: format!("{}: $1", prompt_argument.name),
@@ -694,7 +694,7 @@ impl SemanticIndex {
 
                 CompletionSuggestion {
                     label: typed_field.name.clone(),
-                    kind: CompletionKind::Property,
+                    kind: CompletionItemKind::PROPERTY,
                     detail: typed_field.description.clone().unwrap_or_else(|| rendered_type.clone()),
                     documentation: typed_field
                         .description
@@ -1443,7 +1443,7 @@ impl SemanticIndex {
             })
             .map(|(model_name, model_summary)| CompletionSuggestion {
                 label: model_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: model_summary.completion_detail(),
                 documentation: "Declared model profile using this provider.".to_string(),
                 insert_text: model_name.clone(),
@@ -1481,7 +1481,7 @@ impl SemanticIndex {
 
                 CompletionSuggestion {
                     label: driver_name.to_string(),
-                    kind: CompletionKind::Value,
+                    kind: CompletionItemKind::VALUE,
                     detail: "Provider driver".to_string(),
                     documentation: "Valid provider driver value.".to_string(),
                     insert_text,
@@ -1512,14 +1512,14 @@ impl SemanticIndex {
         let mut completion_suggestions = [
             CompletionSuggestion {
                 label: "[]".to_string(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "Model list".to_string(),
                 documentation: "Array of supported model identifiers.".to_string(),
                 insert_text: "[]".to_string(),
             },
             CompletionSuggestion {
                 label: "[\"\"]".to_string(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "Model list template".to_string(),
                 documentation: "Array literal with one model placeholder string.".to_string(),
                 insert_text: "[\"$1\"]".to_string(),
@@ -1554,7 +1554,7 @@ impl SemanticIndex {
             .into_iter()
             .map(|property_name| CompletionSuggestion {
                 label: property_name.to_string(),
-                kind: CompletionKind::Property,
+                kind: CompletionItemKind::PROPERTY,
                 detail: format!("`{provider_name}` provider property"),
                 documentation: "Provider configuration property.".to_string(),
                 insert_text: property_name.to_string(),
@@ -1643,7 +1643,7 @@ impl SemanticIndex {
                 .filter(|schema_name| current_schema_name.is_none_or(|current_name| *schema_name != current_name))
                 .map(|schema_name| CompletionSuggestion {
                     label: schema_name.clone(),
-                    kind: CompletionKind::Type,
+                    kind: CompletionItemKind::STRUCT,
                     detail: "Named schema".to_string(),
                     documentation: "Type declared in a `schema` block.".to_string(),
                     insert_text: schema_name.clone(),
@@ -1672,7 +1672,7 @@ impl SemanticIndex {
                 })
                 .map(|schema_name| CompletionSuggestion {
                     label: format!("schema.{schema_name}"),
-                    kind: CompletionKind::Type,
+                    kind: CompletionItemKind::STRUCT,
                     detail: "Named schema reference".to_string(),
                     documentation: "Reference a named schema type.".to_string(),
                     insert_text: format!("schema.{schema_name}"),
@@ -1695,7 +1695,7 @@ impl SemanticIndex {
                 .filter(|schema_name| schema_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|schema_name| CompletionSuggestion {
                     label: schema_name.clone(),
-                    kind: CompletionKind::Type,
+                    kind: CompletionItemKind::STRUCT,
                     detail: "Named schema".to_string(),
                     documentation: "Type declared in a `schema` block.".to_string(),
                     insert_text: schema_name.clone(),
@@ -1726,7 +1726,7 @@ impl SemanticIndex {
             })
             .map(|(field_name, field_type)| CompletionSuggestion {
                 label: field_name.clone(),
-                kind: CompletionKind::Property,
+                kind: CompletionItemKind::PROPERTY,
                 detail: format!("Enum field: {}", field_type.render_type()),
                 documentation: "Schema field usable as an enum reference.".to_string(),
                 insert_text: field_name,
@@ -1785,14 +1785,14 @@ impl SemanticIndex {
         let structural_type_suggestions = [
             CompletionSuggestion {
                 label: "[string]".to_string(),
-                kind: CompletionKind::Type,
+                kind: CompletionItemKind::STRUCT,
                 detail: "Array type".to_string(),
                 documentation: "Array type expression.".to_string(),
                 insert_text: "[string]".to_string(),
             },
             CompletionSuggestion {
                 label: "{}".to_string(),
-                kind: CompletionKind::Type,
+                kind: CompletionItemKind::STRUCT,
                 detail: "Object type".to_string(),
                 documentation: "Object type expression.".to_string(),
                 insert_text: "{}".to_string(),
@@ -1810,7 +1810,7 @@ impl SemanticIndex {
 
         let mut completion_suggestions = builtin_symbol_suggestions(false)
             .into_iter()
-            .filter(|completion_suggestion| matches!(completion_suggestion.kind, CompletionKind::Keyword))
+            .filter(|completion_suggestion| matches!(completion_suggestion.kind, CompletionItemKind::KEYWORD))
             .filter(|completion_suggestion| completion_suggestion.label.starts_with(declaration_prefix))
             .filter(|completion_suggestion| self.should_suggest_root_declaration_label(&completion_suggestion.label))
             .collect::<Vec<_>>();
@@ -1818,7 +1818,7 @@ impl SemanticIndex {
         if ImportKeyword::From.as_str().starts_with(declaration_prefix) {
             completion_suggestions.push(CompletionSuggestion {
                 label: ImportKeyword::From.as_str().to_string(),
-                kind: CompletionKind::Keyword,
+                kind: CompletionItemKind::KEYWORD,
                 detail: "MCP tool batch import".to_string(),
                 documentation: "Batch imports MCP tools from a server and applies shared bindings.".to_string(),
                 insert_text: "from mcp.$1.tool {\n    bindings {\n        $2\n    }\n\n    tool $3\n}".to_string(),
@@ -1826,7 +1826,7 @@ impl SemanticIndex {
 
             completion_suggestions.push(CompletionSuggestion {
                 label: ImportKeyword::From.as_str().to_string(),
-                kind: CompletionKind::Keyword,
+                kind: CompletionItemKind::KEYWORD,
                 detail: "MCP resource batch import".to_string(),
                 documentation: "Batch imports MCP resources from a server and applies shared bindings.".to_string(),
                 insert_text: "from mcp.$1.resource {\n    bindings {\n        $2\n    }\n\n    resource $3\n}".to_string(),
@@ -1834,7 +1834,7 @@ impl SemanticIndex {
 
             completion_suggestions.push(CompletionSuggestion {
                 label: ImportKeyword::From.as_str().to_string(),
-                kind: CompletionKind::Keyword,
+                kind: CompletionItemKind::KEYWORD,
                 detail: "MCP prompt batch import".to_string(),
                 documentation: "Batch imports MCP prompts from a server and applies shared bindings.".to_string(),
                 insert_text: "from mcp.$1.prompt {\n    bindings {\n        $2\n    }\n\n    prompt $3\n}".to_string(),
@@ -1842,7 +1842,7 @@ impl SemanticIndex {
 
             completion_suggestions.push(CompletionSuggestion {
                 label: ImportKeyword::From.as_str().to_string(),
-                kind: CompletionKind::Keyword,
+                kind: CompletionItemKind::KEYWORD,
                 detail: "MCP batch import".to_string(),
                 documentation: "Batch imports MCP tools, resources, and prompts from a server with shared bindings.".to_string(),
                 insert_text: "from mcp.$1 {\n    bindings {\n        $2\n    }\n\n    resource $3\n    prompt $4\n    tool $5\n}"
@@ -1910,7 +1910,7 @@ impl SemanticIndex {
 
         completion_suggestions.extend(self.providers.keys().map(|provider_name| CompletionSuggestion {
             label: provider_name.clone(),
-            kind: CompletionKind::Function,
+            kind: CompletionItemKind::FUNCTION,
             detail: "Declared provider".to_string(),
             documentation: "Provider call used in `model` properties.".to_string(),
             insert_text: provider_name.clone(),
@@ -1918,7 +1918,7 @@ impl SemanticIndex {
 
         completion_suggestions.extend(self.agent_names.iter().map(|agent_name| CompletionSuggestion {
             label: agent_name.clone(),
-            kind: CompletionKind::Variable,
+            kind: CompletionItemKind::VARIABLE,
             detail: "Declared agent".to_string(),
             documentation: "Agent declared in this document.".to_string(),
             insert_text: agent_name.clone(),
@@ -1936,7 +1936,7 @@ impl SemanticIndex {
             .filter(|provider_name| provider_name.starts_with(provider_prefix))
             .map(|provider_name| CompletionSuggestion {
                 label: provider_name.clone(),
-                kind: CompletionKind::Value,
+                kind: CompletionItemKind::VALUE,
                 detail: "Declared provider".to_string(),
                 documentation: "Provider declared in this document.".to_string(),
                 insert_text: provider_name.clone(),
@@ -1951,7 +1951,7 @@ impl SemanticIndex {
                 .filter(|provider_driver_name| !self.providers.contains_key(*provider_driver_name))
                 .map(|provider_driver_name| CompletionSuggestion {
                     label: provider_driver_name.to_string(),
-                    kind: CompletionKind::Value,
+                    kind: CompletionItemKind::VALUE,
                     detail: "Provider driver".to_string(),
                     documentation: "Built-in provider driver available for model declarations.".to_string(),
                     insert_text: provider_driver_name.to_string(),
@@ -2120,7 +2120,7 @@ impl SemanticIndex {
             .filter(|(field_name, _)| field_name.starts_with(field_prefix))
             .map(|(field_name, _)| CompletionSuggestion {
                 label: field_name.clone(),
-                kind: CompletionKind::Property,
+                kind: CompletionItemKind::PROPERTY,
                 detail: "Destructured for-loop field".to_string(),
                 documentation: "Field available on each item in the for-loop iterable expression.".to_string(),
                 insert_text: field_name,

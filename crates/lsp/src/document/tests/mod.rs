@@ -1,5 +1,6 @@
-use super::{CompletionKind, CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, TypeExpression};
-use crate::protocol::DiagnosticCode;
+use super::{CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, TypeExpression};
+use crate::diagnostic_code::DiagnosticCode;
+use lsp_types::CompletionItemKind;
 use superwire_core::dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword,
     SingletonDeclarationKind, ToolCallKeyword,
@@ -105,12 +106,7 @@ macro_rules! assert_completion_excludes_kind {
             stringify!($completion_kind_pattern),
             $completion_suggestions
                 .iter()
-                .map(|completion_suggestion| {
-                    (
-                        completion_suggestion.label.clone(),
-                        std::mem::discriminant(&completion_suggestion.kind),
-                    )
-                })
+                .map(|completion_suggestion| { (completion_suggestion.label.clone(), completion_suggestion.kind,) })
                 .collect::<Vec<_>>()
         );
     }};

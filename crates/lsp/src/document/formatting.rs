@@ -1,6 +1,6 @@
 use superwire_core::dsl::parse_workflow;
 
-use crate::protocol::{Position, Range};
+use lsp_types::{Position, Range};
 
 use super::{DocumentFormattingEdit, DocumentState};
 
