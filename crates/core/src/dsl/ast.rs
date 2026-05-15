@@ -414,16 +414,6 @@ impl ProviderDeclaration {
             .iter()
             .find(|property| ModelDeclarationPropertyName::from_identifier(property.name.as_str()) == Some(property_name))
     }
-
-    #[must_use]
-    pub fn inference_fields(&self) -> Option<&[ObjectField]> {
-        let property = self.property(ModelDeclarationPropertyName::Inference)?;
-        let Expression::ObjectLiteral(fields) = &property.value else {
-            return None;
-        };
-
-        Some(fields.as_slice())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1128,7 +1118,6 @@ impl AgentDeclaration {
             | AgentProperty::Instruction(_)
             | AgentProperty::Output { fields: _, span: _ }
             | AgentProperty::Context(_)
-            | AgentProperty::Inference(_)
             | AgentProperty::Uses(_)
             | AgentProperty::Unknown { name: _, span: _ } => None,
         })
@@ -1142,7 +1131,6 @@ impl AgentDeclaration {
                     return Some(expression)
                 }
                 AgentProperty::Context(expression) if property_name == AgentExpressionPropertyName::Context => return Some(expression),
-                AgentProperty::Inference(expression) if property_name == AgentExpressionPropertyName::Inference => return Some(expression),
                 AgentProperty::Uses(expression) if property_name == AgentExpressionPropertyName::Uses => return Some(expression),
                 AgentProperty::Dynamic(_) => {}
                 AgentProperty::Model(_)
@@ -1150,7 +1138,6 @@ impl AgentDeclaration {
                 | AgentProperty::Instruction(_)
                 | AgentProperty::Output { fields: _, span: _ }
                 | AgentProperty::Context(_)
-                | AgentProperty::Inference(_)
                 | AgentProperty::Uses(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
             }
@@ -1177,12 +1164,7 @@ impl AgentDeclaration {
         model_declaration: &ModelDeclaration,
     ) -> Vec<ObjectField> {
         let mut inference_fields = Vec::new();
-
-        if let Some(provider_declaration) = provider_declaration {
-            if let Some(provider_inference_fields) = provider_declaration.inference_fields() {
-                merge_inference_fields(&mut inference_fields, provider_inference_fields);
-            }
-        }
+        let _ = provider_declaration;
 
         if let Some(model_inference_fields) = model_declaration.inference_fields() {
             merge_inference_fields(&mut inference_fields, model_inference_fields);
@@ -1285,7 +1267,6 @@ pub enum AgentProperty {
     Instruction(Expression),
     Output { fields: Vec<TypedField>, span: SourceSpan },
     Context(Expression),
-    Inference(Expression),
     Uses(Expression),
     Unknown { name: String, span: SourceSpan },
 }
@@ -1341,7 +1322,6 @@ impl AgentProperty {
             | Self::InvalidModel(_)
             | Self::Instruction(_)
             | Self::Context(_)
-            | Self::Inference(_)
             | Self::Uses(_)
             | Self::Unknown { name: _, span: _ } => None,
         }
@@ -1356,7 +1336,6 @@ impl AgentProperty {
             Self::Instruction(_) => AgentPropertyName::Instruction,
             Self::Output { fields: _, span: _ } => AgentPropertyName::Output,
             Self::Context(_) => AgentPropertyName::Context,
-            Self::Inference(_) => AgentPropertyName::Inference,
             Self::Uses(_) => AgentPropertyName::Uses,
             Self::Unknown { name: _, span: _ } => AgentPropertyName::Unknown,
         }
@@ -1370,21 +1349,19 @@ pub enum AgentPropertyName {
     Instruction,
     Output,
     Context,
-    Inference,
     Uses,
     Unknown,
 }
 
 impl AgentPropertyName {
     #[must_use]
-    pub fn all() -> [Self; 7] {
+    pub fn all() -> [Self; 6] {
         [
             Self::Dynamic,
             Self::Model,
             Self::Instruction,
             Self::Output,
             Self::Context,
-            Self::Inference,
             Self::Uses,
         ]
     }
@@ -1402,7 +1379,6 @@ impl AgentPropertyName {
             Self::Instruction => "instruction",
             Self::Output => "output",
             Self::Context => "context",
-            Self::Inference => "inference",
             Self::Uses => "uses",
             Self::Unknown => "unknown",
         }
@@ -1467,7 +1443,6 @@ pub enum AgentExpressionPropertyName {
     Model,
     Instruction,
     Context,
-    Inference,
     Uses,
 }
 
@@ -1478,7 +1453,6 @@ impl AgentExpressionPropertyName {
             "model" => Some(Self::Model),
             "instruction" => Some(Self::Instruction),
             "context" => Some(Self::Context),
-            "inference" => Some(Self::Inference),
             "uses" => Some(Self::Uses),
             _ => None,
         }
@@ -1490,7 +1464,6 @@ impl AgentExpressionPropertyName {
             Self::Model => "model",
             Self::Instruction => "instruction",
             Self::Context => "context",
-            Self::Inference => "inference",
             Self::Uses => "uses",
         }
     }

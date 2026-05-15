@@ -124,6 +124,9 @@
       },
       "patterns": [
         {
+          "include": "#inference-block"
+        },
+        {
           "include": "#object-fields"
         }
       ]
@@ -585,6 +588,9 @@
     "agent-properties": {
       "patterns": [
         {
+          "include": "#model-usage-block"
+        },
+        {
           "match": "\\b(model)\\s*(:)",
           "captures": {
             "1": {
@@ -600,6 +606,59 @@
         },
         {
           "include": "#type-expression"
+        }
+      ]
+    },
+    "model-usage-block": {
+      "begin": "\\b(model)\\s*(:)\\s*(model(?:\\.[A-Za-z_][A-Za-z0-9_]*)+)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.wire"
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.model.wire"
+        },
+        "4": {
+          "name": "punctuation.section.block.begin.wire"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#inference-block"
+        },
+        {
+          "include": "#object-fields"
+        }
+      ]
+    },
+    "inference-block": {
+      "begin": "\\b(inference)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.wire"
+        },
+        "2": {
+          "name": "punctuation.section.block.begin.wire"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#object-fields"
         }
       ]
     },

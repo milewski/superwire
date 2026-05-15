@@ -1233,17 +1233,6 @@ impl DocumentState {
 
                 Some(semantic_index.prompt_value_suggestions(&agent_property_value_completion_context.value_prefix, line_prefix))
             }
-            AgentExpressionPropertyName::Inference => {
-                if agent_property_value_completion_context.inside_string_literal {
-                    return Some(Vec::new());
-                }
-
-                if ReferenceCompletionPath::from_line_prefix(line_prefix).is_some() {
-                    return Some(Vec::new());
-                }
-
-                Some(semantic_index.inference_object_suggestions(&agent_property_value_completion_context.value_prefix))
-            }
             AgentExpressionPropertyName::Uses => None,
         }
     }

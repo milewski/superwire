@@ -932,7 +932,6 @@ impl AgentProperty {
                 formatter.push_agent_property_type_block(AgentPropertyName::Output.as_str(), fields);
             }
             Self::Context(expression) => formatter.push_agent_property_expression(AgentPropertyName::Context.as_str(), expression),
-            Self::Inference(expression) => formatter.push_agent_property_expression(AgentPropertyName::Inference.as_str(), expression),
             Self::Uses(expression) => self.push_agent_binding_list_property(formatter, AgentPropertyName::Uses, expression),
             Self::Unknown { name: _, span: _ } => {}
         }

@@ -112,8 +112,10 @@ fn suggests_agent_properties_inside_for_loop_agent_block() {
 fn suggests_inference_settings_inside_for_loop_agent_inference_object() {
     let completion_suggestions = inline_completion_suggestions! {
         agent number_note for number in [1, 2, 3, 4] {
-            inference: {
-                <cursor>
+            model: model.fast {
+                inference {
+                    <cursor>
+                }
             }
         }
     };

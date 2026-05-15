@@ -1427,7 +1427,6 @@ impl AstVisitor {
                 property_span,
             )),
             AgentPropertyName::Context => Ok(AgentProperty::Context(self.visit_expression(value_pair)?)),
-            AgentPropertyName::Inference => Ok(AgentProperty::Inference(self.visit_expression(value_pair)?)),
             AgentPropertyName::Uses => Ok(AgentProperty::Uses(self.visit_tools_expression(value_pair)?)),
             AgentPropertyName::Dynamic | AgentPropertyName::Unknown => Err(DslParseError::unexpected_with_span(
                 Rule::named_agent_value_property,

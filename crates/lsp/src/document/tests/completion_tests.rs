@@ -137,8 +137,8 @@ fn agent_property_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             context: CompletionMatrixContext::AgentProperties,
             expectation_kind: CompletionExpectationKind::Negative,
             source_template: inline_document_template! {
-                agent writer {
-                    inference: {
+                model fast from openai {
+                    inference {
                         <cursor>
                     }
                 }
@@ -161,8 +161,10 @@ fn inference_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expectation_kind: CompletionExpectationKind::Positive,
             source_template: inline_document_template! {
                 agent writer {
-                    inference: {
-                        <cursor>
+                    model: model.fast {
+                        inference {
+                            <cursor>
+                        }
                     }
                 }
             },
@@ -180,9 +182,11 @@ fn inference_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
 
                     <cursor>
 
-                    inference: {
-                        temperature: 0.2
-                        max_tokens: 12_000
+                    model: model.fast {
+                        inference {
+                            temperature: 0.2
+                            max_tokens: 12_000
+                        }
                     }
                 }
             },
@@ -829,8 +833,8 @@ fn suppresses_invalid_prompt_reference_roots() {
 #[test]
 fn suggests_only_inference_settings_inside_inference_object() {
     let completion_suggestions = inline_completion_suggestions! {
-        agent writer {
-            inference: {
+        model fast from openai {
+            inference {
                 <cursor>
             }
         }
@@ -848,31 +852,30 @@ fn suggests_only_inference_settings_inside_inference_object() {
 }
 
 #[test]
-fn suggests_only_object_literal_for_inference_property_value() {
+fn suggests_inference_settings_inside_model_usage_override() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {
-            inference: <cursor>
+            model: model.fast {
+                inference {
+                    <cursor>
+                }
+            }
         }
     };
 
-    assert_completion_contains!(&completion_suggestions, "{}");
-    assert_completion_excludes_labels!(
-        &completion_suggestions,
-        ReferenceKeyword::Agent,
-        ReferenceKeyword::Input,
-        AgentExpressionPropertyName::Model,
-        AgentExpressionPropertyName::Instruction,
-        "number",
-        "string"
-    );
+    assert_completion_contains_all_inference_settings!(&completion_suggestions);
+
+    assert_completion_excludes_labels!(&completion_suggestions, AgentExpressionPropertyName::Model, "number", "string");
 }
 
 #[test]
 fn suppresses_inference_suggestions_inside_string_literal_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent writer {
-            inference: {
-                max_tokens: "<cursor>"
+            model: model.fast {
+                inference {
+                    max_tokens: "<cursor>"
+                }
             }
         }
     };
@@ -901,8 +904,10 @@ fn suggests_only_inference_value_reference_roots_for_integer_setting() {
         }
 
         agent writer {
-            inference: {
-                max_tokens: <cursor>
+            model: model.fast {
+                inference {
+                    max_tokens: <cursor>
+                }
             }
         }
     };
@@ -931,8 +936,10 @@ fn suggests_only_numeric_resolving_input_fields_for_integer_inference_value() {
         }
 
         agent writer {
-            inference: {
-                max_tokens: input.<cursor>
+            model: model.fast {
+                inference {
+                    max_tokens: input.<cursor>
+                }
             }
         }
     };
@@ -949,8 +956,10 @@ fn suppresses_schema_reference_suggestions_for_integer_inference_value() {
         }
 
         agent writer {
-            inference: {
-                max_tokens: schema.<cursor>
+            model: model.fast {
+                inference {
+                    max_tokens: schema.<cursor>
+                }
             }
         }
     };
@@ -966,9 +975,11 @@ fn suggests_agent_properties_before_inference_block() {
 
             <cursor>
 
-            inference: {
-                temperature: 0.2
-                max_tokens: 12_000
+            model: model.openai_model {
+                inference {
+                    temperature: 0.2
+                    max_tokens: 12_000
+                }
             }
         }
     };
@@ -986,8 +997,8 @@ fn includes_descriptive_details_for_agent_and_inference_completions() {
     };
 
     let inference_completions = inline_completion_suggestions! {
-        agent writer {
-            inference: {
+        model fast from openai {
+            inference {
                 <cursor>
             }
         }

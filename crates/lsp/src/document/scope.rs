@@ -1,5 +1,6 @@
 use superwire_core::dsl::{
-    AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, SingletonDeclarationKind, ToolPropertyName,
+    AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ModelDeclarationPropertyName, ModelUsagePropertyName,
+    ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
 };
 use superwire_core::semantic::InferenceSetting;
 
@@ -22,6 +23,8 @@ pub enum CompletionScope {
 enum ScopeBlock {
     Other,
     Agent,
+    Model,
+    ModelUsage,
     Tool,
     McpToolBatchImport,
     McpPromptImport,
@@ -78,7 +81,7 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
         Some(ScopeBlock::McpPromptImport) => CompletionScope::McpPromptImport,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
         Some(ScopeBlock::Dynamic) => CompletionScope::DynamicValues,
-        Some(ScopeBlock::Other) | None => CompletionScope::General,
+        Some(ScopeBlock::Model | ScopeBlock::ModelUsage | ScopeBlock::Other) | None => CompletionScope::General,
     }
 }
 
@@ -118,6 +121,10 @@ impl ScopeScannerTokenState {
             return ScopeBlock::TypedDeclaration;
         }
 
+        if let Some(inference_block) = Self::inference_block_for_open_brace(parent_block, last_identifier) {
+            return inference_block;
+        }
+
         if parent_block == Some(ScopeBlock::Tool)
             && matches!(
                 ToolPropertyName::from_identifier(last_identifier),
@@ -139,26 +146,8 @@ impl ScopeScannerTokenState {
             }
         }
 
-        if let Some(pending_property) = &self.pending_property {
-            if parent_block == Some(ScopeBlock::Agent) {
-                if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
-                    if agent_property_name == AgentPropertyName::Inference {
-                        return ScopeBlock::Inference;
-                    }
-
-                    if agent_property_name == AgentPropertyName::Output {
-                        return ScopeBlock::TypedDeclaration;
-                    }
-                }
-            }
-        }
-
-        if parent_block == Some(ScopeBlock::Agent) {
-            if let Some(agent_property_name) = AgentPropertyName::from_identifier(last_identifier) {
-                if agent_property_name == AgentPropertyName::Output {
-                    return ScopeBlock::TypedDeclaration;
-                }
-            }
+        if let Some(agent_property_block) = self.agent_property_block_for_open_brace(parent_block, last_identifier) {
+            return agent_property_block;
         }
 
         if last_identifier == SingletonDeclarationKind::Input.as_str() || last_identifier == SingletonDeclarationKind::Secrets.as_str() {
@@ -167,6 +156,10 @@ impl ScopeScannerTokenState {
 
         if DeclarationKeyword::from_identifier(last_identifier) == Some(DeclarationKeyword::Dynamic) {
             return ScopeBlock::Dynamic;
+        }
+
+        if self.is_model_declaration_open_brace() {
+            return ScopeBlock::Model;
         }
 
         if self.is_mcp_batch_import_open_brace() {
@@ -220,6 +213,73 @@ impl ScopeScannerTokenState {
         }
 
         ScopeBlock::Other
+    }
+
+    fn inference_block_for_open_brace(parent_block: Option<ScopeBlock>, last_identifier: &str) -> Option<ScopeBlock> {
+        if parent_block == Some(ScopeBlock::Model)
+            && ModelDeclarationPropertyName::from_identifier(last_identifier) == Some(ModelDeclarationPropertyName::Inference)
+        {
+            return Some(ScopeBlock::Inference);
+        }
+
+        if parent_block == Some(ScopeBlock::ModelUsage)
+            && ModelUsagePropertyName::from_identifier(last_identifier) == Some(ModelUsagePropertyName::Inference)
+        {
+            return Some(ScopeBlock::Inference);
+        }
+
+        None
+    }
+
+    fn agent_property_block_for_open_brace(&self, parent_block: Option<ScopeBlock>, last_identifier: &str) -> Option<ScopeBlock> {
+        if parent_block == Some(ScopeBlock::Agent) {
+            if let Some(pending_property) = &self.pending_property {
+                if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
+                    match agent_property_name {
+                        AgentPropertyName::Output => return Some(ScopeBlock::TypedDeclaration),
+                        AgentPropertyName::Model => return Some(ScopeBlock::ModelUsage),
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        if parent_block == Some(ScopeBlock::Agent) {
+            if let Some(agent_property_name) = AgentPropertyName::from_identifier(last_identifier) {
+                if agent_property_name == AgentPropertyName::Output {
+                    return Some(ScopeBlock::TypedDeclaration);
+                }
+            }
+        }
+
+        if let Some(pending_property) = &self.pending_property {
+            if let Some(agent_property_name) = AgentPropertyName::from_identifier(pending_property) {
+                if agent_property_name == AgentPropertyName::Model {
+                    return Some(ScopeBlock::ModelUsage);
+                }
+            }
+        }
+
+        if self.recent_identifiers.len() >= 2 {
+            let model_root_index = self.recent_identifiers.len() - 2;
+
+            if ReferenceKeyword::from_identifier(&self.recent_identifiers[model_root_index]) == Some(ReferenceKeyword::Model) {
+                return Some(ScopeBlock::ModelUsage);
+            }
+        }
+
+        None
+    }
+
+    fn is_model_declaration_open_brace(&self) -> bool {
+        if self.recent_identifiers.len() < 4 {
+            return false;
+        }
+
+        let model_keyword_index = self.recent_identifiers.len() - 4;
+
+        DeclarationKeyword::from_identifier(&self.recent_identifiers[model_keyword_index]) == Some(DeclarationKeyword::Model)
+            && self.recent_identifiers[model_keyword_index + 2] == ImportKeyword::From.as_str()
     }
 
     fn is_mcp_batch_import_open_brace(&self) -> bool {
@@ -342,7 +402,6 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
             Self::Instruction => "Instruction expression (required)",
             Self::Output => "Output type",
             Self::Context => "Context expression",
-            Self::Inference => "Inference settings object",
             Self::Uses => "Usable capabilities expression",
             Self::Unknown => "Unknown property",
         }
@@ -355,7 +414,6 @@ impl AgentPropertyCompletionDoc for AgentPropertyName {
             Self::Instruction => "Defines the instruction sent to the provider.",
             Self::Output => "Declares the expected structured output type.",
             Self::Context => "Prepends evaluated context to the rendered prompt.",
-            Self::Inference => "Configures sampling and provider retry behavior.",
             Self::Uses => "Declares tool, MCP prompt, and MCP resource references available to this agent.",
             Self::Unknown => "Unsupported agent property.",
         }

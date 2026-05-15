@@ -1814,7 +1814,6 @@ fn validate_duplicate_properties(workflow: &Workflow, validation_report: &mut Va
                         AgentProperty::InvalidModel(expression)
                         | AgentProperty::Instruction(expression)
                         | AgentProperty::Context(expression)
-                        | AgentProperty::Inference(expression)
                         | AgentProperty::Uses(expression) => {
                             report_duplicate_expression_object_fields(
                                 expression,
@@ -2117,17 +2116,6 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
 
     for declaration in workflow.declarations() {
         match declaration {
-            Declaration::Provider(provider_declaration) => {
-                if let Some(inference_fields) = provider_declaration.inference_fields() {
-                    validate_inference_fields(
-                        &provider_declaration.name,
-                        inference_fields,
-                        Some(provider_declaration.span),
-                        &mut invalid_inference_setting_values,
-                        validation_report,
-                    );
-                }
-            }
             Declaration::Model(model_declaration) => {
                 if let Some(inference_fields) = model_declaration.inference_fields() {
                     validate_inference_fields(
@@ -2142,19 +2130,6 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
             Declaration::Agent(agent_declaration) => {
                 for agent_property in &agent_declaration.properties {
                     match agent_property {
-                        AgentProperty::Inference(inference_expression) => {
-                            let Expression::ObjectLiteral(inference_fields) = inference_expression else {
-                                continue;
-                            };
-
-                            validate_inference_fields(
-                                &agent_declaration.name,
-                                inference_fields,
-                                Some(agent_declaration.span),
-                                &mut invalid_inference_setting_values,
-                                validation_report,
-                            );
-                        }
                         AgentProperty::Model(model_usage) => {
                             if let Some(inference_fields) = model_usage.inference_fields() {
                                 validate_inference_fields(
@@ -2176,7 +2151,8 @@ fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mu
                     }
                 }
             }
-            Declaration::McpServer(_)
+            Declaration::Provider(_)
+            | Declaration::McpServer(_)
             | Declaration::Secrets(_)
             | Declaration::Input(_)
             | Declaration::Schema(_)
@@ -2515,7 +2491,6 @@ fn validate_agent_model_bindings(workflow: &Workflow, validation_index: &Validat
                 | AgentProperty::Instruction(_)
                 | AgentProperty::Output { fields: _, span: _ }
                 | AgentProperty::Context(_)
-                | AgentProperty::Inference(_)
                 | AgentProperty::Uses(_)
                 | AgentProperty::Unknown { name: _, span: _ } => {}
             }
@@ -2859,14 +2834,6 @@ fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationI
                                     SecretReferencePolicy::Allow,
                                 );
                             }
-                        }
-                        AgentProperty::Inference(model_expression) => {
-                            keyword_reference_validation_state.validate_expression(
-                                model_expression,
-                                &agent_dynamic_field_types,
-                                agent_context.clone(),
-                                SecretReferencePolicy::Allow,
-                            );
                         }
                         AgentProperty::Model(model_usage) => {
                             for model_property in &model_usage.properties {
@@ -4237,7 +4204,6 @@ fn validate_agent_dependency_cycles(workflow: &Workflow, validation_index: &Vali
                 AgentProperty::InvalidModel(model_expression)
                 | AgentProperty::Instruction(model_expression)
                 | AgentProperty::Context(model_expression)
-                | AgentProperty::Inference(model_expression)
                 | AgentProperty::Uses(model_expression) => {
                     collect_agent_dependencies_from_expression(model_expression, &mut referenced_agents);
                 }
@@ -4863,9 +4829,11 @@ mod tests {
                 model: model.ollama_model
                 instruction: "hello"
                 instruction: "welcome"
-                inference: {
-                    temperature: 0.2
-                    temperature: 0.4
+                model: model.ollama_model {
+                    inference {
+                        temperature: 0.2
+                        temperature: 0.4
+                    }
                 }
                 output {
                     value: string
@@ -4921,8 +4889,10 @@ mod tests {
     #[test]
     fn reports_invalid_inference_setting_value_type() {
         let workflow = parse_inline_workflow! {
-            agent writer {
-                inference: {
+            model fast from openai {
+                id: "gpt-4.1-mini"
+
+                inference {
                     temperature: 0.2
                     max_tokens: "2_000"
                 }
@@ -4934,7 +4904,26 @@ mod tests {
             ValidationIssue::InvalidInferenceSettingValueType {
                 agent_name,
                 inference_setting
-            } if agent_name == "writer" && *inference_setting == InferenceSetting::MaxTokens
+            } if agent_name == "fast" && *inference_setting == InferenceSetting::MaxTokens
+        );
+    }
+
+    #[test]
+    fn reports_direct_agent_inference_as_unknown_property() {
+        let workflow = parse_inline_workflow! {
+            agent writer {
+                inference {
+                    max_tokens: 2_000
+                }
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::UnknownAgentProperty {
+                agent_name,
+                property_name
+            } if agent_name == "writer" && property_name == "inference"
         );
     }
 

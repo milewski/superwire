@@ -302,7 +302,6 @@ fn collect_dependencies_for_agent(
             AgentProperty::InvalidModel(expression)
             | AgentProperty::Instruction(expression)
             | AgentProperty::Context(expression)
-            | AgentProperty::Inference(expression)
             | AgentProperty::Uses(expression) => {
                 collect_agent_dependencies(expression, &mut dependencies);
             }
@@ -506,7 +505,6 @@ fn optional_agent_property_expression(agent_declaration: &AgentDeclaration, prop
             | AgentProperty::Instruction(_)
             | AgentProperty::Output { fields: _, span: _ }
             | AgentProperty::Context(_)
-            | AgentProperty::Inference(_)
             | AgentProperty::Uses(_)
             | AgentProperty::Dynamic(_)
             | AgentProperty::Unknown { name: _, span: _ } => {}
@@ -671,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn merges_provider_model_and_agent_inference_by_precedence() {
+    fn merges_model_and_model_usage_inference_by_precedence() {
         #[derive(Debug, Deserialize, JsonSchema)]
         #[allow(dead_code)]
         struct Output {
@@ -679,15 +677,7 @@ mod tests {
         }
 
         let workflow = parse_inline_workflow! {
-            provider openai from openai {
-                endpoint: "http://localhost:1234/v1"
-                api_key: "test-api-key"
-
-                inference {
-                    timeout_seconds: 60
-                    temperature: 0.1
-                }
-            }
+            provider openai from openai {}
 
             model fast from openai {
                 id: "model-a"
@@ -728,8 +718,8 @@ mod tests {
             .map(|field| field.name.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(inference_field_names, vec!["timeout_seconds", "temperature", "max_tokens"]);
-        assert!(matches!(writer_agent.inference_fields[1].value, crate::dsl::Expression::NumberLiteral(ref value) if value == "0.8"));
+        assert_eq!(inference_field_names, vec!["temperature", "max_tokens"]);
+        assert!(matches!(writer_agent.inference_fields[0].value, crate::dsl::Expression::NumberLiteral(ref value) if value == "0.8"));
     }
 
     #[test]
