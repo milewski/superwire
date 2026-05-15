@@ -98,6 +98,17 @@ export default function App() {
     updateActiveTab((tab) => ({ ...tab, activeView: nextView }));
   }
 
+  function toggleTheme() {
+    document.documentElement.classList.add('theme-switching');
+    setDarkMode((currentValue) => !currentValue);
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.documentElement.classList.remove('theme-switching');
+      });
+    });
+  }
+
   function addTab() {
     const tab = createWorkflowTab(`Workflow ${tabs.length + 1}`);
     setTabs((currentTabs) => [...currentTabs, tab]);
@@ -426,7 +437,7 @@ export default function App() {
                 </div>
 
                 <div className="playground__topbar-actions">
-                  <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={() => setDarkMode((currentValue) => !currentValue)}>
+                  <Button className="playground__theme-toggle" variant="ghost" size="icon-lg" aria-label="Toggle theme" onClick={toggleTheme}>
                     {darkMode ? <Sun /> : <Moon />}
                   </Button>
                 </div>

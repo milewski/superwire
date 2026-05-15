@@ -137,6 +137,13 @@ body {
   background: var(--background);
 }
 
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
 button,
 textarea {
   font: inherit;
