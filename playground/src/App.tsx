@@ -267,9 +267,12 @@ export default function App() {
     }));
 
     try {
-      const response = await fetch('/execute/stream', {
+      const response = await fetch('/execute', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          accept: 'text/event-stream',
+          'content-type': 'application/json',
+        },
         body: JSON.stringify(requestBody(currentTab, true)),
         signal: nextAbortController.signal,
       });

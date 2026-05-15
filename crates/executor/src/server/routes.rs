@@ -5,12 +5,12 @@ use crate::server::sse::event_to_sse_result;
 use crate::service::ExecutorService;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
-use axum::response::sse::{Event, Sse};
+use axum::http::{header, HeaderMap};
+use axum::response::sse::Sse;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get_service, post};
 use axum::{Json, Router};
-use futures::{SinkExt, Stream, StreamExt};
-use std::convert::Infallible;
+use futures::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use superwire_lsp::server::LanguageServer;
@@ -28,7 +28,6 @@ where
 {
     Router::new()
         .route("/execute", post(execute_handler::<ModelProviderType>))
-        .route("/execute/stream", post(execute_stream_handler::<ModelProviderType>))
         .route("/validate", post(validate_handler::<ModelProviderType>))
         .route("/format", post(format_handler::<ModelProviderType>))
         .route("/lsp", axum::routing::get(lsp_websocket_handler))
@@ -44,27 +43,54 @@ pub async fn serve_executor(address: SocketAddr) -> Result<(), std::io::Error> {
 
 async fn execute_handler<ModelProviderType>(
     State(service): State<ExecutorService<ModelProviderType>>,
+    request_headers: HeaderMap,
     Json(request): Json<ExecutionRequest>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    let response = service.execute(request).await?;
+    match ExecuteResponseKind::from_headers(&request_headers) {
+        ExecuteResponseKind::Json => {
+            let response = service.execute(request).await?;
 
-    Ok(Json(response).into_response())
+            Ok(Json(response).into_response())
+        }
+
+        ExecuteResponseKind::EventStream => {
+            let event_receiver = service.execute_stream(request);
+            let event_stream = ReceiverStream::new(event_receiver).map(event_to_sse_result);
+
+            Ok(Sse::new(event_stream).into_response())
+        }
+    }
 }
 
-async fn execute_stream_handler<ModelProviderType>(
-    State(service): State<ExecutorService<ModelProviderType>>,
-    Json(request): Json<ExecutionRequest>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>>
-where
-    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
-{
-    let event_receiver = service.execute_stream(request);
-    let event_stream = ReceiverStream::new(event_receiver).map(event_to_sse_result);
+enum ExecuteResponseKind {
+    Json,
+    EventStream,
+}
 
-    Sse::new(event_stream)
+impl ExecuteResponseKind {
+    fn from_headers(request_headers: &HeaderMap) -> Self {
+        let Some(accept_header) = request_headers.get(header::ACCEPT) else {
+            return Self::Json;
+        };
+
+        let Ok(accept_value) = accept_header.to_str() else {
+            return Self::Json;
+        };
+
+        for media_type in accept_value.split(',') {
+            let media_type = media_type.trim();
+            let normalized_media_type = media_type.split(';').next().unwrap_or(media_type).trim();
+
+            if normalized_media_type.eq_ignore_ascii_case("text/event-stream") {
+                return Self::EventStream;
+            }
+        }
+
+        Self::Json
+    }
 }
 
 async fn validate_handler<ModelProviderType>(

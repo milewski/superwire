@@ -132,6 +132,38 @@ async fn http_accepts_base64_workflow_source() {
 }
 
 #[tokio::test]
+async fn http_streams_events_when_accept_header_requests_event_stream() {
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]));
+    let request_body = json!({ "workflow_source": fixtures::MINIMUM });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/execute")
+        .header("accept", "text/event-stream")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.oneshot(request).await.expect("request should execute");
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|header_value| header_value.to_str().ok())
+        .unwrap_or_default();
+
+    assert!(content_type.starts_with("text/event-stream"));
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+
+    let response_body = String::from_utf8(body.to_vec()).expect("response body should be valid UTF-8");
+    assert!(response_body.contains("\"kind\":\"workflow_started\""));
+    assert!(response_body.contains("\"kind\":\"workflow_completed\""));
+}
+
+#[tokio::test]
 async fn http_validate_returns_success_without_execution() {
     let router = executor_router_with_service(support::service(vec![json!("unused")]));
     let request_body = json!({
