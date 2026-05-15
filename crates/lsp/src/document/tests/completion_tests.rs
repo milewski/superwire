@@ -1039,6 +1039,58 @@ fn suggests_only_numeric_resolving_input_fields_for_integer_inference_value() {
 }
 
 #[test]
+fn suggests_numeric_input_fields_for_model_inference_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        input {
+            penalty: number
+            metadata: {
+                nested_penalty: number
+            }
+            label: string
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+            inference {
+                frequency_penalty: input.<cursor>
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "penalty", "metadata");
+    assert_completion_excludes_labels!(&completion_suggestions, "label");
+}
+
+#[test]
+fn suggests_numeric_agent_outputs_for_model_inference_value() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent scorer {
+            instruction: "score"
+            output {
+                value: number
+            }
+        }
+
+        agent labeler {
+            instruction: "label"
+            output {
+                value: string
+            }
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+            inference {
+                frequency_penalty: agent.<cursor>
+            }
+        }
+    };
+
+    assert_completion_contains!(&completion_suggestions, "scorer");
+    assert_completion_excludes_labels!(&completion_suggestions, "labeler");
+}
+
+#[test]
 fn suppresses_schema_reference_suggestions_for_integer_inference_value() {
     let completion_suggestions = inline_completion_suggestions! {
         schema limits {
@@ -1247,6 +1299,51 @@ fn suggests_declared_models_inside_model_reference_namespace() {
 }
 
 #[test]
+fn suggests_declared_models_inside_for_loop_agent_model_reference_namespace() {
+    let completion_suggestions = inline_completion_suggestions! {
+        dynamic {
+            data: {
+                participants: [{ id: number }]
+            }
+        }
+
+        provider openai from openai {}
+
+        model participant_answer_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        agent participant_answer_analyzer for participant in dynamic.data.participants {
+            model: model.<cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "participant_answer_model");
+
+    let model_completion = completion_suggestion_by_label(&completion_suggestions, "participant_answer_model");
+
+    assert_eq!(model_completion.insert_text, "participant_answer_model");
+}
+
+#[test]
+fn suggests_secrets_fields_inside_model_id_reference_namespace() {
+    let completion_suggestions = inline_completion_suggestions! {
+        secrets {
+            models: {
+                pro: string
+            }
+            api_key: string
+        }
+
+        model max from openai {
+            id: secrets.<cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "models", "api_key");
+}
+
+#[test]
 fn suggests_only_declared_providers_for_model_declaration_provider() {
     let (source, cursor_position) = source_without_cursor_normalization(inline_document_template! {
         provider openai from openai {
@@ -1282,6 +1379,19 @@ fn suggests_only_declared_providers_for_model_declaration_provider() {
     let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai");
 
     assert_eq!(openai_completion.insert_text, "openai");
+}
+
+#[test]
+fn suggests_provider_drivers_for_model_declaration_provider_without_declared_providers() {
+    let (source, cursor_position) = source_without_cursor_normalization(inline_document_template! {
+        model pro from <cursor> {
+            id: "model-a"
+        }
+    });
+
+    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+
+    assert_completion_contains_labels!(&completion_suggestions, "openai", "ollama");
 }
 
 #[test]

@@ -1943,6 +1943,21 @@ impl SemanticIndex {
             })
             .collect::<Vec<_>>();
 
+        completion_suggestions.extend(
+            ProviderDriver::all()
+                .into_iter()
+                .map(ProviderDriver::as_str)
+                .filter(|provider_driver_name| provider_driver_name.starts_with(provider_prefix))
+                .filter(|provider_driver_name| !self.providers.contains_key(*provider_driver_name))
+                .map(|provider_driver_name| CompletionSuggestion {
+                    label: provider_driver_name.to_string(),
+                    kind: CompletionKind::Value,
+                    detail: "Provider driver".to_string(),
+                    documentation: "Built-in provider driver available for model declarations.".to_string(),
+                    insert_text: provider_driver_name.to_string(),
+                }),
+        );
+
         completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 
         completion_suggestions

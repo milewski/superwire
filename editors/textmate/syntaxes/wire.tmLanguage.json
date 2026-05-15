@@ -610,7 +610,7 @@
       ]
     },
     "model-usage-block": {
-      "begin": "\\b(model)\\s*(:)\\s*(model(?:\\.[A-Za-z_][A-Za-z0-9_]*)+)\\s*(\\{)",
+      "begin": "\\b(model)\\s*(:)\\s*(model)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?:(\\.)([A-Za-z_][A-Za-z0-9_]*))*\\s*(\\{)",
       "beginCaptures": {
         "1": {
           "name": "entity.other.attribute-name.wire"
@@ -619,9 +619,21 @@
           "name": "punctuation.separator.key-value.wire"
         },
         "3": {
-          "name": "variable.other.reference.model.wire"
+          "name": "support.type.reference-root.model.wire"
         },
         "4": {
+          "name": "punctuation.accessor.wire"
+        },
+        "5": {
+          "name": "variable.other.reference.model.wire"
+        },
+        "6": {
+          "name": "punctuation.accessor.wire"
+        },
+        "7": {
+          "name": "variable.other.reference.model.member.wire"
+        },
+        "8": {
           "name": "punctuation.section.block.begin.wire"
         }
       },
@@ -1090,6 +1102,36 @@
     "references": {
       "patterns": [
         {
+          "include": "#model-reference"
+        },
+        {
+          "include": "#tool-reference"
+        },
+        {
+          "include": "#resource-reference"
+        },
+        {
+          "include": "#prompt-reference"
+        },
+        {
+          "include": "#agent-reference"
+        },
+        {
+          "include": "#input-reference"
+        },
+        {
+          "include": "#dynamic-reference"
+        },
+        {
+          "include": "#secrets-reference"
+        },
+        {
+          "include": "#schema-expression-reference"
+        },
+        {
+          "include": "#mcp-expression-reference"
+        },
+        {
           "match": "\\b([A-Za-z_][A-Za-z0-9_]*)(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*\\b",
           "captures": {
             "1": {
@@ -1104,6 +1146,176 @@
           }
         }
       ]
+    },
+    "model-reference": {
+      "match": "\\b(model)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "support.type.reference-root.model.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.model.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "tool-reference": {
+      "match": "\\b(tool)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "support.function.reference-root.tool.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "entity.name.function.tool.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "resource-reference": {
+      "match": "\\b(resource)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "support.constant.reference-root.resource.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.resource.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "prompt-reference": {
+      "match": "\\b(prompt)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "support.function.reference-root.prompt.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "entity.name.function.prompt.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "agent-reference": {
+      "match": "\\b(agent)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "support.variable.reference-root.agent.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.agent.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "input-reference": {
+      "match": "\\b(input)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "variable.language.reference-root.input.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.input.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "dynamic-reference": {
+      "match": "\\b(dynamic)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "variable.language.reference-root.dynamic.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.dynamic.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "secrets-reference": {
+      "match": "\\b(secrets)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "variable.language.reference-root.secrets.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.secrets.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "schema-expression-reference": {
+      "match": "\\b(schema)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "support.type.reference-root.schema.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "entity.name.type.schema.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
+    },
+    "mcp-expression-reference": {
+      "match": "\\b(mcp)(?=(?:\\?\\.|\\.))(?:(\\?\\.|\\.)([A-Za-z_][A-Za-z0-9_]*))*(\\?\\.|\\.)?",
+      "captures": {
+        "1": {
+          "name": "entity.name.namespace.mcp.wire"
+        },
+        "2": {
+          "name": "punctuation.accessor.wire"
+        },
+        "3": {
+          "name": "variable.other.reference.mcp.wire"
+        },
+        "4": {
+          "name": "punctuation.accessor.wire"
+        }
+      }
     },
     "strings": {
       "patterns": [
