@@ -1933,6 +1933,25 @@ impl SemanticIndex {
         completion_suggestions
     }
 
+    pub fn provider_reference_suggestions(&self, provider_prefix: &str) -> Vec<CompletionSuggestion> {
+        let mut completion_suggestions = self
+            .providers
+            .keys()
+            .filter(|provider_name| provider_name.starts_with(provider_prefix))
+            .map(|provider_name| CompletionSuggestion {
+                label: provider_name.clone(),
+                kind: CompletionKind::Value,
+                detail: "Declared provider".to_string(),
+                documentation: "Provider declared in this document.".to_string(),
+                insert_text: provider_name.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
+
+        completion_suggestions
+    }
+
     pub fn is_root_declaration_position(&self, position: Position) -> bool {
         if self
             .provider_locations

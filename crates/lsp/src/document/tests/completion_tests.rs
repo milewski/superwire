@@ -1108,6 +1108,44 @@ fn suggests_only_declared_providers_for_model_property_value() {
 }
 
 #[test]
+fn suggests_only_declared_providers_for_model_declaration_provider() {
+    let (source, cursor_position) = source_without_cursor_normalization(inline_document_template! {
+        provider openai from openai {
+            endpoint: "http://100.118.249.48:3000/v1"
+            api_key: "xxxx"
+        }
+
+        model openai_model from <cursor> {
+            id: "big-pickle"
+        }
+    });
+    let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+
+    assert_completion_contains_labels!(&completion_suggestions, "openai");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        BuiltinFunctionName::Context,
+        ReferenceKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        DeclarationKeyword::Provider,
+        InferenceSetting::MaxTokens,
+        "string"
+    );
+
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Keyword);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Module);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Property);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Variable);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Type);
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+
+    let openai_completion = completion_suggestion_by_label(&completion_suggestions, "openai");
+
+    assert_eq!(openai_completion.insert_text, "openai");
+}
+
+#[test]
 fn suggests_reference_roots_inside_model_call_expression() {
     let completion_suggestions = inline_completion_suggestions! {
         provider openai from openai {}

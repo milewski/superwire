@@ -277,9 +277,14 @@ impl CompletionLabel for TypeExpression {
 
 fn source_with_cursor(source_template: &str) -> (String, Position) {
     let normalized_template = normalize_inline_cursor_layout(source_template);
+
+    source_without_cursor_normalization(&normalized_template)
+}
+
+fn source_without_cursor_normalization(source_template: &str) -> (String, Position) {
     let compact_cursor_marker = "<cursor>";
 
-    let (cursor_marker, cursor_byte_offset) = if let Some(marker_offset) = normalized_template.find(compact_cursor_marker) {
+    let (cursor_marker, cursor_byte_offset) = if let Some(marker_offset) = source_template.find(compact_cursor_marker) {
         (compact_cursor_marker, marker_offset)
     } else {
         panic!("cursor marker should exist in test source");
@@ -288,7 +293,7 @@ fn source_with_cursor(source_template: &str) -> (String, Position) {
     let mut line = 0_u32;
     let mut character = 0_u32;
 
-    for character_in_source in normalized_template[..cursor_byte_offset].chars() {
+    for character_in_source in source_template[..cursor_byte_offset].chars() {
         if character_in_source == '\n' {
             line += 1;
             character = 0;
@@ -298,7 +303,7 @@ fn source_with_cursor(source_template: &str) -> (String, Position) {
         character += 1;
     }
 
-    let source_without_cursor = normalized_template.replacen(cursor_marker, "", 1);
+    let source_without_cursor = source_template.replacen(cursor_marker, "", 1);
 
     (source_without_cursor, Position { line, character })
 }

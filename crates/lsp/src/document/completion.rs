@@ -429,6 +429,10 @@ impl DocumentState {
             }
 
             if let Some(declaration_header_completion_context) = DeclarationHeaderCompletionContext::from_line_prefix(line_prefix) {
+                if let DeclarationHeaderCompletionContext::ModelProvider { provider_prefix } = declaration_header_completion_context {
+                    return Some(semantic_index.provider_reference_suggestions(&provider_prefix));
+                }
+
                 return Some(declaration_header_completion_context.completion_suggestions());
             }
 

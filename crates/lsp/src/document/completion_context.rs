@@ -2,7 +2,7 @@ use super::text_utils::{
     for_clause_iterable_prefix, is_identifier, leading_identifier, split_for_clause_binding, trailing_identifier, trailing_reference_token,
 };
 use super::{CompletionKind, CompletionSuggestion};
-use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ReferenceKeyword};
+use superwire_core::dsl::{AgentExpressionPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ReferenceKeyword};
 use superwire_core::semantic::InferenceSetting;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,6 +10,7 @@ pub enum DeclarationHeaderCompletionContext {
     NamedDeclaration,
     SingletonDeclaration,
     NamedDeclarationBlock,
+    ModelProvider { provider_prefix: String },
     AgentForKeyword { keyword_prefix: String },
     AgentForIteratorName,
     AgentInKeyword { keyword_prefix: String },
@@ -30,7 +31,9 @@ impl DeclarationHeaderCompletionContext {
             return None;
         }
 
-        let declaration_keyword = Self::declaration_keyword_from_prefix(declaration_line_prefix)?;
+        let Some(declaration_keyword) = Self::declaration_keyword_from_prefix(declaration_line_prefix) else {
+            return Self::model_provider_completion_context(declaration_line_prefix);
+        };
         let line_after_keyword = declaration_line_prefix.strip_prefix(declaration_keyword.as_str())?;
 
         if !line_after_keyword.starts_with(char::is_whitespace) {
@@ -48,8 +51,17 @@ impl DeclarationHeaderCompletionContext {
             | DeclarationKeyword::Resource
             | DeclarationKeyword::Prompt
             | DeclarationKeyword::Agent => {
-                if declaration_keyword == DeclarationKeyword::Agent {
-                    return Self::agent_header_completion_context(trimmed_line_after_keyword);
+                match declaration_keyword {
+                    DeclarationKeyword::Agent => {
+                        return Self::agent_header_completion_context(trimmed_line_after_keyword);
+                    }
+                    DeclarationKeyword::Model => {
+                        if let Some(model_provider_completion_context) = Self::model_provider_completion_context(trimmed_line_after_keyword)
+                        {
+                            return Some(model_provider_completion_context);
+                        }
+                    }
+                    _ => {}
                 }
 
                 if trimmed_line_after_keyword.is_empty() || !trimmed_line_after_keyword.contains(char::is_whitespace) {
@@ -74,7 +86,7 @@ impl DeclarationHeaderCompletionContext {
 
     pub fn completion_suggestions(self) -> Vec<CompletionSuggestion> {
         match self {
-            Self::NamedDeclaration | Self::SingletonDeclaration | Self::AgentForIteratorName => Vec::new(),
+            Self::NamedDeclaration | Self::SingletonDeclaration | Self::ModelProvider { .. } | Self::AgentForIteratorName => Vec::new(),
             Self::NamedDeclarationBlock => vec![CompletionSuggestion {
                 label: "{}".to_string(),
                 kind: CompletionKind::Value,
@@ -167,6 +179,31 @@ impl DeclarationHeaderCompletionContext {
 
         Some(Self::AgentInKeyword {
             keyword_prefix: in_keyword_segment.to_string(),
+        })
+    }
+
+    fn model_provider_completion_context(trimmed_line_after_keyword: &str) -> Option<Self> {
+        let line_has_trailing_whitespace = trimmed_line_after_keyword.ends_with(char::is_whitespace);
+        let model_name = leading_identifier(trimmed_line_after_keyword)?;
+        let after_model_name = trimmed_line_after_keyword[model_name.len()..].trim_start();
+        let after_from_keyword = after_model_name.strip_prefix(ImportKeyword::From.as_str())?;
+
+        if !after_from_keyword.is_empty() && !after_from_keyword.starts_with(char::is_whitespace) {
+            return None;
+        }
+
+        let provider_prefix = after_from_keyword.trim_start();
+
+        if provider_prefix.contains(char::is_whitespace) {
+            return None;
+        }
+
+        if provider_prefix.is_empty() && !line_has_trailing_whitespace {
+            return None;
+        }
+
+        Some(Self::ModelProvider {
+            provider_prefix: provider_prefix.to_string(),
         })
     }
 
