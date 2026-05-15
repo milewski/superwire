@@ -1,30 +1,56 @@
 import { HighlightStyle, LanguageSupport, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import textMateGrammarSource from '../../editors/textmate/syntaxes/wire.tmLanguage.json?raw';
 
-const keywords = new Set([
-  'agent',
-  'as',
-  'bindings',
-  'call',
-  'dynamic',
-  'for',
-  'from',
-  'in',
-  'input',
-  'mcp',
-  'model',
-  'output',
-  'prompt',
-  'provider',
-  'read',
-  'render',
-  'resource',
-  'schema',
-  'secrets',
-  'tool',
-]);
+type TextMatePattern = {
+  match?: string;
+};
 
-const types = new Set(['boolean', 'enum', 'float', 'maybe', 'null', 'number', 'string']);
+type TextMateGrammar = {
+  repository?: {
+    'language-keywords'?: {
+      patterns?: TextMatePattern[];
+    };
+    'type-keywords'?: {
+      patterns?: TextMatePattern[];
+    };
+  };
+};
+
+function extractAlternativesFromWordRegex(regexText: string | undefined): string[] {
+  if (!regexText) {
+    return [];
+  }
+
+  const keywordGroupMatch = regexText.match(/\\b\(([^()]+)\)/);
+
+  if (!keywordGroupMatch) {
+    return [];
+  }
+
+  return keywordGroupMatch[1]
+    .split('|')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function createTokenSetsFromTextMateGrammar(): {
+  keywords: Set<string>;
+  types: Set<string>;
+} {
+  const textMateGrammar = JSON.parse(textMateGrammarSource) as TextMateGrammar;
+  const languageKeywordPatterns = textMateGrammar.repository?.['language-keywords']?.patterns ?? [];
+  const typeKeywordPatterns = textMateGrammar.repository?.['type-keywords']?.patterns ?? [];
+
+  const keywords = new Set(extractAlternativesFromWordRegex(languageKeywordPatterns[0]?.match));
+  const types = new Set(extractAlternativesFromWordRegex(typeKeywordPatterns[0]?.match));
+
+  return { keywords, types };
+}
+
+const tokenSets = createTokenSetsFromTextMateGrammar();
+const keywords = tokenSets.keywords;
+const types = tokenSets.types;
 const constants = new Set(['false', 'true']);
 
 const wireStreamLanguage = StreamLanguage.define({
@@ -75,14 +101,34 @@ const wireStreamLanguage = StreamLanguage.define({
       return 'punctuation';
     }
 
-    if (stream.match(/\?\.|\./)) {
+    if (stream.match(/\?\.|\?\?|\./)) {
       return 'operator';
+    }
+
+    if (stream.match(/#[A-Za-z_][A-Za-z0-9_]*/)) {
+      return 'typeName';
     }
 
     const identifier = stream.match(/[A-Za-z_][A-Za-z0-9_]*/);
 
     if (identifier && typeof identifier !== 'boolean') {
       const value = identifier[0];
+
+      if (value === '_') {
+        return 'keyword';
+      }
+
+      const currentPosition = stream.pos;
+
+      stream.eatSpace();
+
+      const isPropertyAssignment = stream.peek() === ':';
+
+      stream.pos = currentPosition;
+
+      if (isPropertyAssignment) {
+        return 'propertyName';
+      }
 
       if (keywords.has(value)) {
         return 'keyword';
@@ -108,6 +154,7 @@ const wireStreamLanguage = StreamLanguage.define({
 const wireHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: 'var(--syntax-keyword)', fontWeight: '650' },
   { tag: tags.typeName, color: 'var(--syntax-type)' },
+  { tag: tags.propertyName, color: 'var(--syntax-variable)' },
   { tag: tags.variableName, color: 'var(--syntax-variable)' },
   { tag: tags.string, color: 'var(--syntax-string)' },
   { tag: tags.number, color: 'var(--syntax-number)' },
