@@ -35,6 +35,8 @@ export default function App() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [renameDialogTabId, setRenameDialogTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   const validationDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
@@ -141,6 +143,56 @@ export default function App() {
     if (activeTabId === tabId) {
       setActiveTabId(nextTabs[Math.max(0, closedIndex - 1)]?.id ?? nextTabs[0]?.id ?? '');
     }
+  }
+
+  function reorderTab(draggedTabIdentifier: string, targetTabIdentifier: string) {
+    if (draggedTabIdentifier === targetTabIdentifier) {
+      return;
+    }
+
+    setTabs((currentTabs) => {
+      const draggedIndex = currentTabs.findIndex((tab) => tab.id === draggedTabIdentifier);
+      const targetIndex = currentTabs.findIndex((tab) => tab.id === targetTabIdentifier);
+
+      if (draggedIndex < 0 || targetIndex < 0) {
+        return currentTabs;
+      }
+
+      const nextTabs = [...currentTabs];
+      const [draggedTab] = nextTabs.splice(draggedIndex, 1);
+
+      nextTabs.splice(targetIndex, 0, draggedTab);
+
+      return nextTabs;
+    });
+  }
+
+  function handleTabDragStart(tabId: string) {
+    setDraggedTabId(tabId);
+    setDragOverTabId(tabId);
+  }
+
+  function handleTabDragOver(tabId: string) {
+    if (!draggedTabId || draggedTabId === tabId) {
+      return;
+    }
+
+    setDragOverTabId(tabId);
+  }
+
+  function handleTabDrop(targetTabId: string) {
+    if (!draggedTabId) {
+      return;
+    }
+
+    reorderTab(draggedTabId, targetTabId);
+    setDraggedTabId(null);
+    setDragOverTabId(null);
+  }
+
+  function clearTabDragState() {
+    setDraggedTabId(null);
+    setDragOverTabId(null);
   }
 
   function openRenameDialog(tabId: string) {
@@ -383,7 +435,23 @@ export default function App() {
               <Tabs value={activeTab?.id ?? ''} onValueChange={setActiveTabId} className="playground__tabs">
                 <TabsList variant="line" className="h-auto flex-wrap justify-start gap-3 bg-transparent p-0">
                   {tabs.map((tab) => (
-                    <div key={tab.id} className="playground-tabs__item">
+                    <div
+                      key={tab.id}
+                      className="playground-tabs__item"
+                      draggable
+                      data-dragging={draggedTabId === tab.id ? 'true' : 'false'}
+                      data-drag-over={dragOverTabId === tab.id ? 'true' : 'false'}
+                      onDragStart={() => handleTabDragStart(tab.id)}
+                      onDragOver={(dragEvent) => {
+                        dragEvent.preventDefault();
+                        handleTabDragOver(tab.id);
+                      }}
+                      onDrop={(dragEvent) => {
+                        dragEvent.preventDefault();
+                        handleTabDrop(tab.id);
+                      }}
+                      onDragEnd={clearTabDragState}
+                    >
                       <TabsTrigger value={tab.id} className="playground-tabs__trigger">
                         <span className="playground-tabs__dot" />
                         <span className="playground-tabs__title">{tab.name}</span>

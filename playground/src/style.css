@@ -257,15 +257,21 @@ textarea {
 .playground__tabs {
   @apply gap-0 overflow-x-auto px-4 py-4 lg:px-6 xl:px-8;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card) 64%, transparent);
+  background: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
 }
 
 .playground-tabs__item {
-  @apply flex h-11 w-auto shrink-0 items-center gap-1 overflow-visible px-1.5 py-1 transition-[border-color,background-color] duration-200 ease-out;
-  border: 1px solid var(--border);
+  @apply flex h-11 w-auto shrink-0 items-center gap-1 overflow-visible px-1.5 py-1 transition-[border-color,background-color,box-shadow,transform] duration-200 ease-out;
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--card) 84%, #000 16%);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--card) 98%, var(--foreground) 2%);
+  box-shadow: 0 2px 6px rgba(22, 22, 22, 0.06);
+  color: var(--muted-foreground);
+  cursor: grab;
+}
+
+.playground-tabs__item:active {
+  cursor: grabbing;
 }
 
 .playground-tabs__actions {
@@ -294,12 +300,31 @@ textarea {
 }
 
 .playground-tabs__item:has([data-active]) {
+  border-color: color-mix(in srgb, var(--superwire-accent) 72%, var(--border));
+  background: color-mix(in srgb, var(--superwire-accent) 10%, var(--card));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--superwire-accent) 20%, transparent);
+}
+
+.playground-tabs__item[data-drag-over="true"] {
   border-color: var(--superwire-accent);
-  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--superwire-accent) 65%, transparent);
+}
+
+.playground-tabs__item[data-dragging="true"] {
+  opacity: 0.66;
+  transform: scale(0.985);
 }
 
 .playground-tabs__trigger {
   @apply h-9 w-auto min-w-0 flex-none justify-start gap-2 bg-transparent px-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent;
+}
+
+.playground-tabs__trigger[data-state="inactive"] {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.playground-tabs__trigger[data-state="active"] {
+  color: var(--foreground);
 }
 
 .playground-tabs__title {
@@ -373,7 +398,7 @@ textarea {
 
 .runtime-sidebar {
   @apply flex min-h-0 flex-col gap-4 border-b border-border p-4 lg:border-r lg:border-b-0 xl:p-6;
-  background: color-mix(in srgb, var(--card) 58%, #000 16%);
+  background: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
 }
 
 .runtime-sidebar-header {
@@ -399,7 +424,7 @@ textarea {
 .workflow-editor,
 .panel-card,
 .event-card {
-  background: color-mix(in srgb, var(--card) 86%, #000 14%);
+  background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 16px;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
@@ -572,7 +597,7 @@ textarea {
 
 .json-code-editor {
   @apply min-h-80 text-sm leading-6 transition;
-  background: color-mix(in srgb, var(--background) 82%, #000 18%);
+  background: color-mix(in srgb, var(--card) 98%, var(--superwire-accent) 2%);
   border: 1px solid var(--border);
   border-radius: 16px;
   color: var(--foreground);
@@ -621,9 +646,10 @@ textarea {
 
 .workflow-output__json {
   @apply min-h-20;
-  background: #070707;
+  background: color-mix(in srgb, var(--card) 97%, var(--foreground) 3%);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  color: #f2f2f2;
+  color: var(--foreground);
 }
 
 .workflow-output__json .cm-content {
