@@ -12,6 +12,8 @@ workspace = true
 
 [dependencies]
 superwire-core = { path = "../core" }
+lsp-server = "0.7"
+lsp-types = "0.97"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
