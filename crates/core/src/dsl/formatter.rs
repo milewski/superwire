@@ -957,7 +957,7 @@ impl AgentProperty {
                 );
             }
             Self::Uses(expression) => {
-                self.push_agent_binding_list_property(formatter, structure::Agent::new().uses[0].definition().name, expression)
+                self.push_agent_binding_list_property(formatter, structure::Agent::new().uses[0].definition().name, expression);
             }
             Self::Unknown { name: _, span: _ } => {}
         }

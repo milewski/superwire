@@ -3,6 +3,7 @@ use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
 use serde_json::Value;
+use std::time::Instant;
 use superwire_core::dsl::format_workflow_source;
 use tokio::sync::mpsc;
 
@@ -97,10 +98,17 @@ where
         let max_concurrency = request.options.max_concurrency;
 
         tokio::spawn(async move {
-            let execution_result = run_streamed_execution(request, model_provider, event_sender.clone(), max_concurrency).await;
+            let workflow_started_at = Instant::now();
+            let execution_result =
+                run_streamed_execution(request, model_provider, event_sender.clone(), max_concurrency, workflow_started_at).await;
 
             if let Err(error) = execution_result {
-                let _ = event_sender.send(ExecutorEvent::workflow_failed(error.to_string())).await;
+                let _ = event_sender
+                    .send(ExecutorEvent::workflow_failed(
+                        error.to_string(),
+                        Some(workflow_started_at.elapsed()),
+                    ))
+                    .await;
             }
         });
 
@@ -113,6 +121,7 @@ async fn run_streamed_execution<ModelProviderType>(
     model_provider: ModelProviderType,
     event_sender: mpsc::Sender<ExecutorEvent>,
     max_concurrency: usize,
+    workflow_started_at: Instant,
 ) -> Result<(), ExecutorError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
@@ -172,7 +181,7 @@ where
         .await?;
 
     event_sender
-        .send(ExecutorEvent::workflow_completed(output))
+        .send(ExecutorEvent::workflow_completed(output, workflow_started_at.elapsed()))
         .await
         .map_err(|error| ExecutorError::Other {
             message: format!("failed to send workflow completion event: {error}"),

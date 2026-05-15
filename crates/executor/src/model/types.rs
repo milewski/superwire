@@ -34,10 +34,13 @@ pub struct ModelToolDefinition {
 }
 
 impl ModelToolDefinition {
+    const FINALIZE_NAME: &'static str = "finalize";
+    const INTERNAL_FINALIZE_DISPLAY_NAME: &'static str = "internal:finalize";
+
     #[must_use]
     pub fn finalize(output_schema: Value) -> Self {
         Self {
-            name: "finalize".to_string(),
+            name: Self::FINALIZE_NAME.to_string(),
             description: Some(
                 "Finish the agent run. Use success with output matching the schema, or fail with a clear reason when the request cannot be fulfilled."
                     .to_string(),
@@ -48,6 +51,14 @@ impl ModelToolDefinition {
             bindings: Value::Null,
             max_calls: None,
             max_calls_scope: ToolCallLimitScope::Workflow,
+        }
+    }
+
+    #[must_use]
+    pub fn event_display_name(&self) -> String {
+        match &self.source {
+            ModelToolSource::Finalize => Self::INTERNAL_FINALIZE_DISPLAY_NAME.to_string(),
+            _ => self.name.clone(),
         }
     }
 }

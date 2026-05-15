@@ -13,6 +13,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 use superwire_core::dsl::{
     parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
     ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
@@ -521,6 +522,7 @@ impl WorkflowExecutor {
                     ));
                 }
 
+                let started_at = Instant::now();
                 log::info!("calling MCP tool `{mcp_tool_name}` for deterministic tool `{tool_name}`");
                 let result = self
                     .mcp_pool
@@ -538,6 +540,7 @@ impl WorkflowExecutor {
                         String::new(),
                         tool_name.to_string(),
                         normalized_result.clone(),
+                        started_at.elapsed(),
                     ));
                 }
 
@@ -565,6 +568,7 @@ impl WorkflowExecutor {
     where
         ModelProviderType: ModelProvider,
     {
+        let agent_started_at = Instant::now();
         let agent_dynamic_values = self.execute_agent_dynamic_blocks(
             planned_agent,
             runtime_state,
@@ -613,7 +617,7 @@ impl WorkflowExecutor {
         tool_definitions.push(ModelToolDefinition::finalize(output_schema.clone()));
         let tool_names = tool_definitions
             .iter()
-            .map(|tool_definition| tool_definition.name.clone())
+            .map(ModelToolDefinition::event_display_name)
             .collect::<Vec<_>>();
 
         log::debug!(
@@ -658,6 +662,7 @@ impl WorkflowExecutor {
                 .send(ExecutorEvent::agent_completed(
                     planned_agent.name.clone(),
                     model_response.output.clone(),
+                    agent_started_at.elapsed(),
                 ))
                 .await;
         }
@@ -1022,6 +1027,7 @@ impl WorkflowExecutor {
             ));
         }
 
+        let started_at = Instant::now();
         let result = match self
             .mcp_pool
             .get(&server_config)?
@@ -1034,6 +1040,7 @@ impl WorkflowExecutor {
                         operation,
                         resource_name.to_string(),
                         Value::String(error.to_string()),
+                        started_at.elapsed(),
                     ));
                 }
 
@@ -1049,6 +1056,7 @@ impl WorkflowExecutor {
                 mcp_call.operation.as_str().to_string(),
                 resource_name.to_string(),
                 rendered_result.clone(),
+                started_at.elapsed(),
             ));
         }
 
@@ -1082,6 +1090,7 @@ impl WorkflowExecutor {
             ));
         }
 
+        let started_at = Instant::now();
         let result = match self
             .mcp_pool
             .get(&server_config)?
@@ -1094,6 +1103,7 @@ impl WorkflowExecutor {
                         operation,
                         prompt_name.to_string(),
                         Value::String(error.to_string()),
+                        started_at.elapsed(),
                     ));
                 }
 
@@ -1109,6 +1119,7 @@ impl WorkflowExecutor {
                 mcp_call.operation.as_str().to_string(),
                 prompt_name.to_string(),
                 rendered_result.clone(),
+                started_at.elapsed(),
             ));
         }
 

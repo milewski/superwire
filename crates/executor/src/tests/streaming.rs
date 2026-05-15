@@ -45,6 +45,38 @@ async fn agent_names_are_included_in_events() {
 }
 
 #[tokio::test]
+async fn events_include_internal_tool_names_and_timings() {
+    let service = support::service(vec![json!({ "value": "done" })]);
+    let request = support::request_with_input(fixtures::INPUT_STRING, json!({ "topic": "testing" }));
+    let mut receiver = service.execute_stream(request);
+    let mut agent_started_tools = Vec::new();
+    let mut saw_timestamp = false;
+    let mut saw_duration = false;
+
+    while let Some(event) = receiver.recv().await {
+        saw_timestamp = saw_timestamp || event.timestamp_ms > 0;
+
+        if event.kind == ExecutorEventKind::AgentStarted {
+            agent_started_tools = event.data.as_ref().unwrap()["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|tool_name| tool_name.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+        }
+
+        if matches!(event.kind, ExecutorEventKind::AgentCompleted | ExecutorEventKind::WorkflowCompleted) {
+            saw_duration = event.data.as_ref().unwrap()["duration_ms"].as_u64().is_some();
+        }
+    }
+
+    assert!(saw_timestamp, "expected events to include timestamp_ms");
+    assert!(saw_duration, "expected completion events to include duration_ms");
+    assert!(agent_started_tools.contains(&"internal:finalize".to_string()));
+    assert!(!agent_started_tools.contains(&"finalize".to_string()));
+}
+
+#[tokio::test]
 async fn failure_emits_workflow_failed_event() {
     let service = support::service(vec![]);
     let request = support::request_with_input(fixtures::INPUT_STRING, json!({ "topic": 123 }));

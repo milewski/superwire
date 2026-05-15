@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlannedMcpImportEvent {
@@ -50,6 +51,8 @@ impl ExecutorEventKind {
 pub struct ExecutorEvent {
     pub kind: ExecutorEventKind,
 
+    pub timestamp_ms: u64,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_name: Option<String>,
 
@@ -85,10 +88,13 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn agent_completed(agent_name: String, output: Value) -> Self {
+    pub fn agent_completed(agent_name: String, output: Value, duration: Duration) -> Self {
         Self::new(ExecutorEventKind::AgentCompleted)
             .with_agent_name(agent_name)
-            .with_data(serde_json::json!({ "output": output }))
+            .with_data(serde_json::json!({
+                "output": output,
+                "duration_ms": duration_ms(duration),
+            }))
     }
 
     #[must_use]
@@ -102,22 +108,24 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn tool_call_completed(agent_name: String, tool_name: String, result: Value) -> Self {
+    pub fn tool_call_completed(agent_name: String, tool_name: String, result: Value, duration: Duration) -> Self {
         Self::new(ExecutorEventKind::ToolCallCompleted)
             .with_agent_name(agent_name)
             .with_data(serde_json::json!({
                 "tool_name": tool_name,
                 "result": result,
+                "duration_ms": duration_ms(duration),
             }))
     }
 
     #[must_use]
-    pub fn tool_call_failed(agent_name: String, tool_name: String, error: Value) -> Self {
+    pub fn tool_call_failed(agent_name: String, tool_name: String, error: Value, duration: Duration) -> Self {
         Self::new(ExecutorEventKind::ToolCallFailed)
             .with_agent_name(agent_name)
             .with_data(serde_json::json!({
                 "tool_name": tool_name,
                 "error": error,
+                "duration_ms": duration_ms(duration),
             }))
     }
 
@@ -131,36 +139,47 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn mcp_call_completed(operation: String, target_name: String, result: Value) -> Self {
+    pub fn mcp_call_completed(operation: String, target_name: String, result: Value, duration: Duration) -> Self {
         Self::new(ExecutorEventKind::McpCallCompleted).with_data(serde_json::json!({
             "operation": operation,
             "target_name": target_name,
             "result": result,
+            "duration_ms": duration_ms(duration),
         }))
     }
 
     #[must_use]
-    pub fn mcp_call_failed(operation: String, target_name: String, error: Value) -> Self {
+    pub fn mcp_call_failed(operation: String, target_name: String, error: Value, duration: Duration) -> Self {
         Self::new(ExecutorEventKind::McpCallFailed).with_data(serde_json::json!({
             "operation": operation,
             "target_name": target_name,
             "error": error,
+            "duration_ms": duration_ms(duration),
         }))
     }
 
     #[must_use]
-    pub fn workflow_completed(output: Value) -> Self {
-        Self::new(ExecutorEventKind::WorkflowCompleted).with_data(serde_json::json!({ "output": output }))
+    pub fn workflow_completed(output: Value, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::WorkflowCompleted).with_data(serde_json::json!({
+            "output": output,
+            "duration_ms": duration_ms(duration),
+        }))
     }
 
     #[must_use]
-    pub fn workflow_failed(message: String) -> Self {
-        Self::new(ExecutorEventKind::WorkflowFailed).with_message(message)
+    pub fn workflow_failed(message: String, duration: Option<Duration>) -> Self {
+        let event = Self::new(ExecutorEventKind::WorkflowFailed).with_message(message);
+
+        match duration {
+            Some(duration) => event.with_data(serde_json::json!({ "duration_ms": duration_ms(duration) })),
+            None => event,
+        }
     }
 
     fn new(kind: ExecutorEventKind) -> Self {
         Self {
             kind,
+            timestamp_ms: current_timestamp_ms(),
             agent_name: None,
             message: None,
             data: None,
@@ -181,4 +200,17 @@ impl ExecutorEvent {
         self.data = Some(data);
         self
     }
+}
+
+fn current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
 }
