@@ -12,7 +12,7 @@ type JsonRuntimeEditorProps = {
 
 export default function JsonRuntimeEditor({ title, value, secret, validationError, onChange, onFormat }: JsonRuntimeEditorProps) {
   return (
-    <label className="runtime-json-editor">
+    <section className="runtime-json-editor" aria-label={`${title} JSON editor`}>
       <span className="runtime-json-editor__header">
         <span>
           <strong>{title}</strong>
@@ -24,6 +24,6 @@ export default function JsonRuntimeEditor({ title, value, secret, validationErro
       <em className={validationError ? 'runtime-json-editor__status runtime-json-editor__status--error' : 'runtime-json-editor__status runtime-json-editor__status--ok'}>
         {validationError ?? 'Valid JSON object'}
       </em>
-    </label>
+    </section>
   );
 }

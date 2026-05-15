@@ -56,6 +56,11 @@ const jsonHighlightStyle = HighlightStyle.define([
 export default function JsonCodeEditor({ value, readOnly = false, className, onChange }: JsonCodeEditorProps) {
   const editorContainerElementRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     const editorContainerElement = editorContainerElementRef.current;
@@ -73,17 +78,15 @@ export default function JsonCodeEditor({ value, readOnly = false, className, onC
       EditorView.editable.of(!readOnly),
     ];
 
-    if (onChange) {
-      extensions.push(
-        EditorView.updateListener.of((update) => {
-          if (!update.docChanged) {
-            return;
-          }
+    extensions.push(
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged) {
+          return;
+        }
 
-          onChange(update.state.doc.toString());
-        }),
-      );
-    }
+        onChangeRef.current?.(update.state.doc.toString());
+      }),
+    );
 
     const editorView = new EditorView({
       parent: editorContainerElement,
@@ -99,7 +102,7 @@ export default function JsonCodeEditor({ value, readOnly = false, className, onC
       editorView.destroy();
       editorViewRef.current = null;
     };
-  }, [readOnly, onChange]);
+  }, [readOnly]);
 
   useEffect(() => {
     const editorView = editorViewRef.current;
