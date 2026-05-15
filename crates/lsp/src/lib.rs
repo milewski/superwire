@@ -1,3 +1,3 @@
+pub mod diagnostic_code;
 pub mod document;
-pub mod protocol;
 pub mod server;
