@@ -13,7 +13,7 @@ secrets {
 
 mcp local {
     endpoint: secrets.mcp_endpoint
-    headers: { Authorization: "Bearer test-token" }
+    headers { Authorization: "Bearer test-token" }
 }
 
 input {

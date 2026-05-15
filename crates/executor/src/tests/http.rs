@@ -231,7 +231,7 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
 
         mcp local {
             endpoint: secrets.mcp_endpoint
-            headers: {
+            headers {
                 Authorization: secrets.mcp_token
             }
         }

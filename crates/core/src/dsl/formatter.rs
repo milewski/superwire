@@ -263,7 +263,7 @@ impl Declaration {
                 formatter.push_declaration_block_start(&format!("{} {}", DeclarationKeyword::Mcp.as_str(), mcp_server_declaration.name));
 
                 for object_field in &mcp_server_declaration.properties {
-                    object_field.push_to_formatter(formatter);
+                    object_field.push_config_property_to_formatter(formatter);
                 }
 
                 formatter.push_declaration_block_end();
@@ -2701,6 +2701,7 @@ fn leading_whitespace(line_text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::format_workflow_source;
+    use crate::workflow_source;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -2758,6 +2759,24 @@ mod tests {
             "agent analyzer for { id, name } in agent.alpha.participants {\n    instruction: \"hello\"\n    output {\n        value: string\n    }\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("workflow should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
+    }
+
+    #[test]
+    fn formatter_renders_mcp_headers_as_block_property() {
+        let source_text = workflow_source! {
+            mcp local {
+                endpoint: secrets.mcp_summarizer_endpoint
+                headers {
+                    Accept: "application/json"
+                    Authorization: "Bearer {{ secrets.mcp_token }}"
+                }
+            }
+        };
+        let expected_output = "mcp local {\n    endpoint: secrets.mcp_summarizer_endpoint\n    headers {\n        Accept: \"application/json\"\n        Authorization: \"Bearer {{ secrets.mcp_token }}\"\n    }\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("MCP headers workflow should format successfully");
 
         assert_eq!(formatted_source, expected_output);
     }

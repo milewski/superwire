@@ -3,10 +3,11 @@ use super::ast::{
     InputDeclaration, MatchBranch, MatchExpression, McpBatchImportDeclaration, McpCall, McpCallOperation, McpImportKind,
     McpImportPropertyName, McpImportSource, McpPromptBatchImportDeclaration, McpPromptBatchImportItem, McpPromptImportDeclaration,
     McpResourceBatchImportDeclaration, McpResourceBatchImportItem, McpResourceImportDeclaration, McpServerDeclaration,
-    McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, ModelDeclaration, ModelUsage, NamedArgument,
-    NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceRoot,
-    SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallPropertyName,
-    ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase, VariantProjectionExpression, Workflow,
+    McpServerPropertyName, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolBatchImportPropertyName, ModelDeclaration,
+    ModelUsage, NamedArgument, NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess,
+    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
+    ToolCallPropertyName, ToolDeclaration, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase,
+    VariantProjectionExpression, Workflow,
 };
 use super::parser::{DslParseError, Rule};
 use super::structure;
@@ -1029,14 +1030,48 @@ impl AstVisitor {
         let mut inner_pairs = mcp_pair.into_inner();
 
         let server_name = self.next_identifier(&mut inner_pairs, "MCP server name", "MCP declaration")?;
-        let object_expression_pair = self.next_pair(&mut inner_pairs, "MCP body", "MCP declaration")?;
-        let properties = self.visit_object_expression(object_expression_pair)?;
+        let server_block_pair = self.next_pair(&mut inner_pairs, "MCP body", "MCP declaration")?;
+        let properties = self.visit_mcp_server_block(server_block_pair)?;
 
         Ok(Declaration::McpServer(McpServerDeclaration {
             name: server_name,
             properties,
             span: declaration_span,
         }))
+    }
+
+    fn visit_mcp_server_block(&self, server_block_pair: Pair<'_, Rule>) -> Result<Vec<ObjectField>, DslParseError> {
+        let mut properties = Vec::new();
+
+        for property_pair in server_block_pair.into_inner() {
+            let property = match property_pair.as_rule() {
+                Rule::named_object_property => self.visit_named_object_property_as_field(property_pair)?,
+                Rule::object_field => {
+                    let property = self.visit_object_field(property_pair)?;
+
+                    if McpServerPropertyName::from_identifier(&property.name) == Some(McpServerPropertyName::Headers) {
+                        return Err(DslParseError::unexpected_with_span(
+                            Rule::object_field,
+                            "MCP headers block property",
+                            property.span,
+                        ));
+                    }
+
+                    property
+                }
+                _ => {
+                    return Err(DslParseError::unexpected_with_span(
+                        property_pair.as_rule(),
+                        "MCP server property",
+                        source_span_from_pair(&property_pair),
+                    ));
+                }
+            };
+
+            properties.push(property);
+        }
+
+        Ok(properties)
     }
 
     fn visit_tool_bindings_block(&self, bindings_block_pair: Pair<'_, Rule>) -> Result<(Vec<TypedField>, Vec<ObjectField>), DslParseError> {

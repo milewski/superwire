@@ -1,6 +1,6 @@
 use superwire_core::dsl::{
-    structure, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, ModelDeclarationPropertyName,
-    ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
+    structure, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpImportPropertyName, McpServerPropertyName,
+    ModelDeclarationPropertyName, ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
 };
 use superwire_core::semantic::InferenceSetting;
 
@@ -481,7 +481,22 @@ pub fn model_usage_property_scope_suggestions(line_prefix: &str) -> Vec<Completi
 pub fn mcp_server_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
     let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
 
-    property_definition_suggestions(property_prefix, &structure::McpServer::new().properties())
+    structure::McpServer::new()
+        .properties()
+        .into_iter()
+        .filter(|property_definition| property_definition.name.starts_with(property_prefix))
+        .map(|property_definition| CompletionSuggestion {
+            label: property_definition.name.to_string(),
+            kind: CompletionKind::Property,
+            detail: property_definition.detail.to_string(),
+            documentation: property_definition.documentation.to_string(),
+            insert_text: if McpServerPropertyName::from_identifier(property_definition.name) == Some(McpServerPropertyName::Headers) {
+                format!("{} {{\n    $1\n}}", property_definition.name)
+            } else {
+                property_definition.name.to_string()
+            },
+        })
+        .collect()
 }
 
 pub fn inference_setting_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {

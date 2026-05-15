@@ -106,7 +106,7 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
 
         mcp local {
             endpoint: "__ENDPOINT__"
-            headers: {
+            headers {
                 Authorization: "Bearer test-token"
             }
         }

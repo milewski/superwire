@@ -59,7 +59,7 @@ async fn deterministic_tool_call_in_dynamic_block_executes_via_mcp() {
 
         mcp local {
             endpoint: "__ENDPOINT__"
-            headers: {
+            headers {
                 Authorization: "Bearer test-token"
             }
         }

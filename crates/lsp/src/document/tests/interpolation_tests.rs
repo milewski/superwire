@@ -245,7 +245,7 @@ fn completes_secrets_references_inside_non_prompt_string_interpolation() {
 
         mcp local {
             endpoint: secrets.mcp_api_token
-            headers: {
+            headers {
                 Accept: "application/json"
                 Authorization: "Bearer {{ secrets.<cursor> }}"
             }

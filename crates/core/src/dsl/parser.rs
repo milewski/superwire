@@ -283,7 +283,7 @@ mod tests {
     use crate::dsl::macros::parse_inline_workflow;
     use crate::dsl::{
         AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, DslParseError, Expression, McpCallOperation,
-        McpImportKind, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
+        McpImportKind, McpServerPropertyName, ReferenceKeyword, ReferenceRoot, StringTemplatePart, ToolSource, TypeExpression,
     };
     use crate::workflow_source;
     use std::fs;
@@ -493,6 +493,46 @@ mod tests {
                 uses: [
                     tool.knowledge_base_search(password: secrets.knowledge_base_password)
                 ]
+            }
+        };
+
+        assert!(parse_workflow(workflow_source).is_err());
+    }
+
+    #[test]
+    fn parses_mcp_headers_as_block_property() {
+        let workflow = parse_inline_workflow! {
+            mcp local {
+                endpoint: secrets.mcp_summarizer_endpoint
+                headers {
+                    Accept: "application/json"
+                    Authorization: "Bearer {{ secrets.mcp_token }}"
+                }
+            }
+        };
+
+        let mcp_server = workflow.find_mcp_server("local").expect("MCP server should parse");
+        let headers_property = mcp_server
+            .properties
+            .iter()
+            .find(|property| McpServerPropertyName::from_identifier(&property.name) == Some(McpServerPropertyName::Headers))
+            .expect("headers property should parse");
+
+        let Expression::ObjectLiteral(header_fields) = &headers_property.value else {
+            panic!("headers should parse as object literal");
+        };
+
+        assert_eq!(header_fields.len(), 2);
+    }
+
+    #[test]
+    fn rejects_mcp_headers_colon_property() {
+        let workflow_source = workflow_source! {
+            mcp local {
+                endpoint: secrets.mcp_summarizer_endpoint
+                headers: {
+                    Accept: "application/json"
+                }
             }
         };
 

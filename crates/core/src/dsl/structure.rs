@@ -457,7 +457,7 @@ impl DslProperty for McpServerHeaders {
             required: false,
             repeatable: false,
             detail: "MCP headers",
-            documentation: "Defines optional MCP request headers as an expression, usually an object literal.",
+            documentation: "Defines optional MCP request headers as a block.",
         }
     }
 }

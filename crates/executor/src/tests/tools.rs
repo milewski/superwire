@@ -26,7 +26,7 @@ async fn agent_tool_definitions_are_passed_to_model_provider() {
 
         mcp local {
             endpoint: "__ENDPOINT__"
-            headers: {
+            headers {
                 Authorization: "Bearer test-token"
             }
         }
@@ -1090,7 +1090,7 @@ async fn mcp_endpoint_from_secrets_applies_omitted_tool_schema_before_model_requ
 
         mcp local {
             endpoint: secrets.mcp_endpoint
-            headers: {
+            headers {
                 Authorization: secrets.mcp_token
             }
         }

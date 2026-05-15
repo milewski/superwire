@@ -158,6 +158,9 @@
       },
       "patterns": [
         {
+          "include": "#named-object-property"
+        },
+        {
           "include": "#object-fields"
         }
       ]
@@ -182,6 +185,9 @@
         }
       },
       "patterns": [
+        {
+          "include": "#named-object-property"
+        },
         {
           "include": "#object-fields"
         }
@@ -752,6 +758,28 @@
         },
         {
           "include": "#punctuation"
+        }
+      ]
+    },
+    "named-object-property": {
+      "begin": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.wire"
+        },
+        "2": {
+          "name": "punctuation.section.block.begin.wire"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.end.wire"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#object-fields"
         }
       ]
     },

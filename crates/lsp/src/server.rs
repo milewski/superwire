@@ -754,7 +754,7 @@ mod tests {
 
             mcp local {
                 endpoint: secrets.mcp_endpoint
-                headers: {
+                headers {
                     Accept: "application/json"
                 }
             }

@@ -808,6 +808,10 @@ fn suggests_only_mcp_server_properties_in_mcp_block_scope() {
 
     assert_completion_contains_labels!(&completion_suggestions, "endpoint", "headers");
 
+    let headers_completion = completion_suggestion_by_label(&completion_suggestions, "headers");
+
+    assert_eq!(headers_completion.insert_text, "headers {\n    $1\n}");
+
     assert_completion_excludes_labels!(
         &completion_suggestions,
         DeclarationKeyword::Provider,
