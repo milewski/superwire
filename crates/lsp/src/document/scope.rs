@@ -1,6 +1,6 @@
 use superwire_core::dsl::{
-    AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, ModelDeclarationPropertyName, ModelUsagePropertyName,
-    ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
+    AgentPropertyName, DeclarationKeyword, ForClauseKeyword, ImportKeyword, McpServerPropertyName, ModelDeclarationPropertyName,
+    ModelUsagePropertyName, ReferenceKeyword, SingletonDeclarationKind, ToolPropertyName,
 };
 use superwire_core::semantic::InferenceSetting;
 
@@ -10,6 +10,10 @@ use super::{CompletionKind, CompletionSuggestion};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompletionScope {
     General,
+    ProviderProperties,
+    ModelProperties,
+    ModelUsageProperties,
+    McpServerProperties,
     AgentProperties,
     ToolProperties,
     McpToolBatchImport,
@@ -22,9 +26,11 @@ pub enum CompletionScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopeBlock {
     Other,
+    Provider,
     Agent,
     Model,
     ModelUsage,
+    McpServer,
     Tool,
     McpToolBatchImport,
     McpPromptImport,
@@ -75,13 +81,17 @@ pub fn completion_scope_at_offset(source_text: &str, cursor_offset: usize) -> Co
 
     match scope_blocks.last().copied() {
         Some(ScopeBlock::Inference) => CompletionScope::InferenceSettings,
+        Some(ScopeBlock::Provider) => CompletionScope::ProviderProperties,
+        Some(ScopeBlock::Model) => CompletionScope::ModelProperties,
+        Some(ScopeBlock::ModelUsage) => CompletionScope::ModelUsageProperties,
+        Some(ScopeBlock::McpServer) => CompletionScope::McpServerProperties,
         Some(ScopeBlock::Agent) => CompletionScope::AgentProperties,
         Some(ScopeBlock::Tool) => CompletionScope::ToolProperties,
         Some(ScopeBlock::McpToolBatchImport) => CompletionScope::McpToolBatchImport,
         Some(ScopeBlock::McpPromptImport) => CompletionScope::McpPromptImport,
         Some(ScopeBlock::TypedDeclaration) => CompletionScope::TypedDeclarations,
         Some(ScopeBlock::Dynamic) => CompletionScope::DynamicValues,
-        Some(ScopeBlock::Model | ScopeBlock::ModelUsage | ScopeBlock::Other) | None => CompletionScope::General,
+        Some(ScopeBlock::Other) | None => CompletionScope::General,
     }
 }
 
@@ -168,6 +178,14 @@ impl ScopeScannerTokenState {
 
         if self.is_mcp_prompt_import_open_brace() {
             return ScopeBlock::McpPromptImport;
+        }
+
+        if self.is_provider_declaration_open_brace() {
+            return ScopeBlock::Provider;
+        }
+
+        if self.is_mcp_server_declaration_open_brace() {
+            return ScopeBlock::McpServer;
         }
 
         if let Some(agent_keyword_index) = self
@@ -272,14 +290,32 @@ impl ScopeScannerTokenState {
     }
 
     fn is_model_declaration_open_brace(&self) -> bool {
+        self.is_named_declaration_with_from_open_brace(DeclarationKeyword::Model)
+    }
+
+    fn is_provider_declaration_open_brace(&self) -> bool {
+        self.is_named_declaration_with_from_open_brace(DeclarationKeyword::Provider)
+    }
+
+    fn is_named_declaration_with_from_open_brace(&self, declaration_keyword: DeclarationKeyword) -> bool {
         if self.recent_identifiers.len() < 4 {
             return false;
         }
 
-        let model_keyword_index = self.recent_identifiers.len() - 4;
+        let declaration_keyword_index = self.recent_identifiers.len() - 4;
 
-        DeclarationKeyword::from_identifier(&self.recent_identifiers[model_keyword_index]) == Some(DeclarationKeyword::Model)
-            && self.recent_identifiers[model_keyword_index + 2] == ImportKeyword::From.as_str()
+        DeclarationKeyword::from_identifier(&self.recent_identifiers[declaration_keyword_index]) == Some(declaration_keyword)
+            && self.recent_identifiers[declaration_keyword_index + 2] == ImportKeyword::From.as_str()
+    }
+
+    fn is_mcp_server_declaration_open_brace(&self) -> bool {
+        if self.recent_identifiers.len() < 2 {
+            return false;
+        }
+
+        let declaration_keyword_index = self.recent_identifiers.len() - 2;
+
+        DeclarationKeyword::from_identifier(&self.recent_identifiers[declaration_keyword_index]) == Some(DeclarationKeyword::Mcp)
     }
 
     fn is_mcp_batch_import_open_brace(&self) -> bool {
@@ -472,6 +508,54 @@ pub fn agent_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSugg
             detail: agent_property_name.completion_detail().to_string(),
             documentation: agent_property_name.completion_documentation().to_string(),
             insert_text: agent_property_name.as_str().to_string(),
+        })
+        .collect()
+}
+
+pub fn model_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    [ModelDeclarationPropertyName::Id, ModelDeclarationPropertyName::Inference]
+        .into_iter()
+        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
+        .map(|property_name| CompletionSuggestion {
+            label: property_name.as_str().to_string(),
+            kind: CompletionKind::Property,
+            detail: "Model declaration property".to_string(),
+            documentation: "Property available inside a `model` declaration.".to_string(),
+            insert_text: property_name.as_str().to_string(),
+        })
+        .collect()
+}
+
+pub fn model_usage_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    [ModelUsagePropertyName::Inference]
+        .into_iter()
+        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
+        .map(|property_name| CompletionSuggestion {
+            label: property_name.as_str().to_string(),
+            kind: CompletionKind::Property,
+            detail: "Model override property".to_string(),
+            documentation: "Property available inside an agent `model` override block.".to_string(),
+            insert_text: property_name.as_str().to_string(),
+        })
+        .collect()
+}
+
+pub fn mcp_server_property_scope_suggestions(line_prefix: &str) -> Vec<CompletionSuggestion> {
+    let property_prefix = trailing_identifier(line_prefix).unwrap_or_default();
+
+    McpServerPropertyName::all()
+        .into_iter()
+        .filter(|property_name| property_name.as_str().starts_with(property_prefix))
+        .map(|property_name| CompletionSuggestion {
+            label: property_name.as_str().to_string(),
+            kind: CompletionKind::Property,
+            detail: "MCP server property".to_string(),
+            documentation: "Property available inside an `mcp` declaration.".to_string(),
+            insert_text: property_name.as_str().to_string(),
         })
         .collect()
 }

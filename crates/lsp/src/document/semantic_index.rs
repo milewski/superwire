@@ -2009,6 +2009,13 @@ impl SemanticIndex {
             .map(|provider_location| provider_location.name.as_str())
     }
 
+    pub fn model_name_at_position(&self, position: Position) -> Option<&str> {
+        self.model_locations
+            .iter()
+            .find(|model_location| source_span_contains_position(model_location.span, position))
+            .map(|model_location| model_location.name.as_str())
+    }
+
     pub fn schema_name_at_position(&self, position: Position) -> Option<&str> {
         self.schema_locations
             .iter()

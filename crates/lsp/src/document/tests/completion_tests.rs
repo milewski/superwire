@@ -729,6 +729,96 @@ fn suggests_only_agent_properties_in_agent_block_scope() {
 }
 
 #[test]
+fn suggests_only_model_properties_in_model_block_scope() {
+    let completion_suggestions = inline_completion_suggestions! {
+        model openai_model from openai {
+            id: "big-pickle"
+            <cursor>
+            inference {
+                max_tokens: 800
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "id", "inference");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        AgentExpressionPropertyName::Uses,
+        "endpoint",
+        "headers"
+    );
+
+    assert_completion_excludes_kind!(&completion_suggestions, CompletionKind::Function);
+}
+
+#[test]
+fn suggests_only_model_usage_properties_in_agent_model_override_scope() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            model: model.openai_model {
+                <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "inference");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "id",
+        DeclarationKeyword::Provider,
+        AgentExpressionPropertyName::Instruction,
+        AgentExpressionPropertyName::Uses,
+        "endpoint",
+        "headers"
+    );
+}
+
+#[test]
+fn suggests_only_provider_properties_in_provider_block_scope() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider openai from openai {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "endpoint", "api_key");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        "id",
+        "headers"
+    );
+}
+
+#[test]
+fn suggests_only_mcp_server_properties_in_mcp_block_scope() {
+    let completion_suggestions = inline_completion_suggestions! {
+        mcp local {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "endpoint", "headers");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        "id",
+        "api_key"
+    );
+}
+
+#[test]
 fn suggests_only_context_function_for_agent_context_property_value() {
     let completion_suggestions = inline_completion_suggestions! {
         agent example {

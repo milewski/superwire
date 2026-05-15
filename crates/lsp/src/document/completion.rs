@@ -15,7 +15,8 @@ use super::position::{byte_offset_for_position, source_span_contains_position};
 use super::reference::{ReferenceCompletionConstraint, ReferenceCompletionPath};
 use super::scope::{
     agent_property_scope_suggestions, completion_scope_at_offset, inference_setting_scope_suggestions, mcp_prompt_import_scope_suggestions,
-    mcp_tool_batch_import_scope_suggestions, tool_property_scope_suggestions, CompletionScope,
+    mcp_server_property_scope_suggestions, mcp_tool_batch_import_scope_suggestions, model_property_scope_suggestions,
+    model_usage_property_scope_suggestions, tool_property_scope_suggestions, CompletionScope,
 };
 use super::semantic_index::SemanticIndex;
 use super::text_utils::{
@@ -323,6 +324,7 @@ impl DocumentState {
         Some(semantic_index.type_suggestions(line_prefix, current_schema_name))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn non_reference_suggestions(
         &self,
         semantic_index: &SemanticIndex,
@@ -354,6 +356,17 @@ impl DocumentState {
             && semantic_index.is_output_position(position)
         {
             return Some(Vec::new());
+        }
+
+        if let Some(property_suggestions) = self.scoped_property_suggestions_after_completed_value(
+            semantic_index,
+            line_prefix,
+            position,
+            completion_scope,
+            line_has_property_separator,
+            inside_interpolation_expression,
+        ) {
+            return Some(property_suggestions);
         }
 
         if line_has_property_separator {
@@ -436,6 +449,17 @@ impl DocumentState {
                 return Some(declaration_header_completion_context.completion_suggestions());
             }
 
+            if let Some(model_property_suggestions) = Self::model_property_suggestions_at_position(
+                semantic_index,
+                line_prefix,
+                position,
+                completion_scope,
+                line_has_property_separator,
+                inside_interpolation_expression,
+            ) {
+                return Some(model_property_suggestions);
+            }
+
             if Self::should_defer_to_reference_completion(line_prefix) {
                 return None;
             }
@@ -450,6 +474,79 @@ impl DocumentState {
         }
 
         self.provider_non_reference_suggestions(semantic_index, line_prefix, position)
+    }
+
+    fn scoped_property_suggestions_after_completed_value(
+        &self,
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+        completion_scope: CompletionScope,
+        line_has_property_separator: bool,
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if !line_has_property_separator
+            || inside_interpolation_expression
+            || !Self::can_continue_property_scope_after_value(completion_scope, line_prefix)
+            || Self::line_prefix_has_open_property_string_value(line_prefix)
+        {
+            return None;
+        }
+
+        self.property_scope_suggestions(semantic_index, completion_scope, line_prefix, position)
+    }
+
+    fn model_property_suggestions_at_position(
+        semantic_index: &SemanticIndex,
+        line_prefix: &str,
+        position: Position,
+        completion_scope: CompletionScope,
+        line_has_property_separator: bool,
+        inside_interpolation_expression: bool,
+    ) -> Option<Vec<CompletionSuggestion>> {
+        if inside_interpolation_expression
+            || !matches!(completion_scope, CompletionScope::ModelProperties | CompletionScope::General)
+            || semantic_index.model_name_at_position(position).is_none()
+            || (line_has_property_separator && !Self::line_prefix_ends_after_property_value(line_prefix))
+            || Self::line_prefix_has_open_property_string_value(line_prefix)
+        {
+            return None;
+        }
+
+        Some(model_property_scope_suggestions(line_prefix))
+    }
+
+    fn can_continue_property_scope_after_value(completion_scope: CompletionScope, line_prefix: &str) -> bool {
+        if !matches!(
+            completion_scope,
+            CompletionScope::ProviderProperties
+                | CompletionScope::ModelProperties
+                | CompletionScope::ModelUsageProperties
+                | CompletionScope::McpServerProperties
+                | CompletionScope::AgentProperties
+                | CompletionScope::ToolProperties
+                | CompletionScope::McpToolBatchImport
+                | CompletionScope::McpPromptImport
+                | CompletionScope::InferenceSettings
+        ) {
+            return false;
+        }
+
+        Self::line_prefix_ends_after_property_value(line_prefix)
+    }
+
+    fn line_prefix_ends_after_property_value(line_prefix: &str) -> bool {
+        let trimmed_line_prefix = line_prefix.trim_end();
+
+        matches!(trimmed_line_prefix.chars().next_back(), Some('"' | '}' | ']' | ')' | '0'..='9'))
+    }
+
+    fn line_prefix_has_open_property_string_value(line_prefix: &str) -> bool {
+        let Some((_, property_value_prefix)) = line_prefix.trim_start().rsplit_once(':') else {
+            return false;
+        };
+
+        ValueCompletionContext::from_value_prefix(property_value_prefix).inside_string_literal
     }
 
     fn mcp_tool_schema_field_suggestions(
@@ -1051,6 +1148,14 @@ impl DocumentState {
         position: Position,
     ) -> Option<Vec<CompletionSuggestion>> {
         match completion_scope {
+            CompletionScope::ProviderProperties => Some(
+                semantic_index
+                    .provider_property_suggestions(position, line_prefix)
+                    .unwrap_or_default(),
+            ),
+            CompletionScope::ModelProperties => Some(model_property_scope_suggestions(line_prefix)),
+            CompletionScope::ModelUsageProperties => Some(model_usage_property_scope_suggestions(line_prefix)),
+            CompletionScope::McpServerProperties => Some(mcp_server_property_scope_suggestions(line_prefix)),
             CompletionScope::InferenceSettings => Some(inference_setting_scope_suggestions(line_prefix)),
             CompletionScope::AgentProperties => Some(agent_property_scope_suggestions(line_prefix)),
             CompletionScope::ToolProperties => Some(self.tool_property_suggestions(semantic_index, line_prefix, position)),
