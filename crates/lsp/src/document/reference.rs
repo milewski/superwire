@@ -469,29 +469,26 @@ impl SemanticIndex {
     }
 
     fn mcp_namespace_reference_suggestions(&self, reference_completion_path: &ReferenceCompletionPath) -> Vec<CompletionSuggestion> {
-        let Some(mcp_lock) = &self.mcp_lock else {
-            return Vec::new();
-        };
-
         if reference_completion_path.complete_accesses.is_empty() {
-            return mcp_lock
-                .servers
-                .keys()
+            return self
+                .mcp_server_names_for_completion()
+                .into_iter()
                 .filter(|server_name| server_name.starts_with(&reference_completion_path.pending_prefix))
                 .map(|server_name| CompletionSuggestion {
-                    label: server_name.clone(),
+                    label: server_name.to_string(),
                     kind: CompletionItemKind::MODULE,
                     detail: "Declared MCP server".to_string(),
                     documentation: format!("MCP server `{server_name}` from lock file."),
-                    insert_text: server_name.clone(),
+                    insert_text: server_name.to_string(),
                 })
                 .collect();
         }
 
         let server_name = &reference_completion_path.complete_accesses[0];
-        let Some(_server_lock) = mcp_lock.servers.get(server_name) else {
+
+        if !self.has_mcp_server_for_completion(server_name) {
             return Vec::new();
-        };
+        }
 
         if reference_completion_path.complete_accesses.len() == 1 {
             return ["tool", "resource", "prompt"]
@@ -520,6 +517,31 @@ impl SemanticIndex {
             "prompt" => self.mcp_prompt_name_suggestions(server_name, pending_prefix),
             _ => Vec::new(),
         }
+    }
+
+    fn mcp_server_names_for_completion(&self) -> Vec<&str> {
+        let mut server_names = self
+            .mcp_lock
+            .as_ref()
+            .into_iter()
+            .flat_map(|mcp_lock| mcp_lock.servers.keys().map(String::as_str))
+            .chain(self.mcp_server_names.iter().map(String::as_str))
+            .collect::<Vec<_>>();
+
+        server_names.sort_unstable();
+        server_names.dedup();
+
+        server_names
+    }
+
+    fn has_mcp_server_for_completion(&self, server_name: &str) -> bool {
+        self.mcp_lock
+            .as_ref()
+            .is_some_and(|mcp_lock| mcp_lock.servers.contains_key(server_name))
+            || self
+                .mcp_server_names
+                .iter()
+                .any(|known_server_name| known_server_name == server_name)
     }
 
     fn tool_namespace_reference_suggestions(

@@ -1,4 +1,4 @@
-use super::{read_project_mcp_lock, resolve_mcp_lock};
+use super::{read_project_mcp_lock, LanguageServer};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -81,34 +81,79 @@ fn discovers_mcp_lock_from_document_when_project_lock_is_missing() {
     };
     let workflow_source = workflow_source.replace("http://placeholder.test", &server.endpoint());
 
-    let discovered_lock = resolve_mcp_lock("file:///playground/document.wire", &workflow_source, None)
+    let mut language_server = LanguageServer::default();
+    let discovered_lock = language_server
+        .resolve_mcp_lock("file:///playground/document.wire", &workflow_source, None)
         .expect("MCP metadata should discover from document source");
 
     assert!(discovered_lock.servers.contains_key("local"));
     assert!(discovered_lock.servers["local"].find_tool_with_name("update_user_name").is_some());
 }
 
+#[test]
+fn caches_document_mcp_discovery_until_server_settings_change() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "http://placeholder.test"
+        }
+
+        output {
+            value: null
+        }
+    };
+    let workflow_source = workflow_source.replace("http://placeholder.test", &server.endpoint());
+    let changed_workflow_source = workflow_source.replace("local", "renamed_local");
+    let mut language_server = LanguageServer::default();
+
+    let first_lock = language_server
+        .resolve_mcp_lock("file:///playground/document.wire", &workflow_source, None)
+        .expect("first discovery should succeed");
+    let first_request_count = server.request_count();
+    let second_lock = language_server
+        .resolve_mcp_lock("file:///playground/document.wire", &workflow_source, Some(first_lock))
+        .expect("second discovery should reuse cache");
+
+    assert!(second_lock.servers.contains_key("local"));
+    assert_eq!(server.request_count(), first_request_count);
+
+    let changed_lock = language_server
+        .resolve_mcp_lock("file:///playground/document.wire", &changed_workflow_source, Some(second_lock))
+        .expect("changed settings should trigger discovery");
+
+    assert!(changed_lock.servers.contains_key("renamed_local"));
+    assert!(server.request_count() > first_request_count);
+}
+
 struct TestMcpHttpServer {
     endpoint: String,
+    request_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl TestMcpHttpServer {
     fn spawn() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
+        let request_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server_request_count = request_count.clone();
 
         thread::spawn(move || {
             for incoming_stream in listener.incoming().take(12) {
+                server_request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let stream = incoming_stream.expect("test MCP stream should open");
                 handle_mcp_request(stream);
             }
         });
 
-        Self { endpoint }
+        Self { endpoint, request_count }
     }
 
     fn endpoint(&self) -> String {
         self.endpoint.clone()
+    }
+
+    fn request_count(&self) -> usize {
+        self.request_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

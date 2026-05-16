@@ -434,6 +434,42 @@ fn suggests_mcp_servers_inside_batch_import_header() {
 }
 
 #[test]
+fn suggests_declared_mcp_server_inside_incomplete_batch_import_without_lock() {
+    let completion_suggestions = inline_completion_suggestions! {
+        mcp mintilify {
+            endpoint: "https://acme-796e8c63.mintlify.app/mcp"
+        }
+
+        from mcp.<cursor> {
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "mintilify");
+    assert_completion_excludes_labels!(&completion_suggestions, DeclarationKeyword::Agent, DeclarationKeyword::Provider);
+}
+
+#[test]
+fn excludes_recovery_placeholder_inside_incomplete_mcp_batch_import() {
+    let completion_suggestions = inline_completion_suggestions! {
+        mcp mintilify {
+            endpoint: "https://acme-796e8c63.mintlify.app/mcp"
+        }
+
+        from mcp.mintilify {
+            <cursor>
+        }
+    };
+
+    assert_completion_excludes_labels!(&completion_suggestions, "__completion_placeholder");
+    assert!(
+        completion_suggestions
+            .iter()
+            .all(|completion_suggestion| !completion_suggestion.insert_text.contains("__completion_placeholder")),
+        "recovery placeholder should not appear in completion insert text: {completion_suggestions:?}"
+    );
+}
+
+#[test]
 fn suggests_mcp_import_namespaces_after_server() {
     let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
         mcp.local.<cursor> {

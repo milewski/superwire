@@ -409,10 +409,20 @@ function lspCompletionSource(documentUri: string, languageClient: WebSocketLangu
     const items = Array.isArray(result.items) ? result.items : [];
 
     return {
-      from: word?.from ?? completionContext.pos,
+      from: completionResultFrom(completionContext, items, word),
       options: items.map((item) => completionItemToCodeMirror(completionContext.state, item)),
     };
   };
+}
+
+function completionResultFrom(completionContext: CompletionContext, items: CompletionItem[], word: { from: number } | null) {
+  const firstTextEdit = items.find((item) => item.textEdit)?.textEdit;
+
+  if (firstTextEdit) {
+    return lspPositionToOffset(completionContext.state, firstTextEdit.range.start);
+  }
+
+  return word?.from ?? completionContext.pos;
 }
 
 async function lspHoverTooltip(editorView: EditorView, position: number, documentUri: string, languageClient: WebSocketLanguageClient) {

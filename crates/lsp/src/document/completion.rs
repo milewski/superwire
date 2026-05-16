@@ -65,6 +65,13 @@ struct ReferenceCompletionInputs<'completion> {
 impl DocumentState {
     #[must_use]
     pub fn completion_suggestions(&self, position: Position) -> Vec<CompletionSuggestion> {
+        self.completion_suggestions_inner(position)
+            .into_iter()
+            .filter(|completion_suggestion| !Self::completion_suggestion_contains_recovery_placeholder(completion_suggestion))
+            .collect()
+    }
+
+    fn completion_suggestions_inner(&self, position: Position) -> Vec<CompletionSuggestion> {
         let Some(line_prefix) = self.line_prefix(position) else {
             return Vec::new();
         };
@@ -171,6 +178,13 @@ impl DocumentState {
         }
 
         semantic_index.default_suggestions(should_include_builtin_function_suggestions)
+    }
+
+    fn completion_suggestion_contains_recovery_placeholder(completion_suggestion: &CompletionSuggestion) -> bool {
+        completion_suggestion.label.contains(COMPLETION_RECOVERY_PLACEHOLDER)
+            || completion_suggestion.insert_text.contains(COMPLETION_RECOVERY_PLACEHOLDER)
+            || completion_suggestion.detail.contains(COMPLETION_RECOVERY_PLACEHOLDER)
+            || completion_suggestion.documentation.contains(COMPLETION_RECOVERY_PLACEHOLDER)
     }
 
     fn is_typed_description_string_literal_context(
@@ -1714,6 +1728,8 @@ impl DocumentState {
     ) -> Option<Vec<CompletionSuggestion>> {
         let reference_root_keyword = reference_completion_path.root_keyword();
         let schema_reference_root = reference_completion_path.is_schema_root();
+        let mcp_reference_root =
+            DeclarationKeyword::from_identifier(reference_completion_path.root_identifier()) == Some(DeclarationKeyword::Mcp);
 
         if reference_completion_constraint == ReferenceCompletionConstraint::ForLoopIterable {
             return Some(reference_suggestions.to_vec());
@@ -1726,7 +1742,7 @@ impl DocumentState {
             return Some(reference_suggestions.to_vec());
         }
 
-        if schema_reference_root || reference_root_keyword.is_some() {
+        if schema_reference_root || mcp_reference_root || reference_root_keyword.is_some() {
             return Some(reference_suggestions.to_vec());
         }
 

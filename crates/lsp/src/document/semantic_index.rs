@@ -36,6 +36,7 @@ pub struct SemanticIndex {
     pub resource_locations: Vec<NamedSpan>,
     pub prompt_names: Vec<String>,
     pub prompt_locations: Vec<NamedSpan>,
+    pub mcp_server_names: Vec<String>,
     pub input_fields: BTreeMap<String, TypeExpression>,
     pub input_field_metadata: BTreeMap<String, FieldMetadata>,
     input_field_locations: HashMap<String, SourceSpan>,
@@ -821,6 +822,7 @@ impl SemanticIndex {
             resource_locations: Vec::new(),
             prompt_names: Vec::new(),
             prompt_locations: Vec::new(),
+            mcp_server_names: Vec::new(),
             input_fields: BTreeMap::new(),
             input_field_metadata: BTreeMap::new(),
             input_field_locations: HashMap::new(),
@@ -879,7 +881,9 @@ impl SemanticIndex {
             Declaration::Model(model_declaration) => {
                 self.insert_model(model_declaration);
             }
-            Declaration::McpServer(_) => {}
+            Declaration::McpServer(mcp_server_declaration) => {
+                self.mcp_server_names.push(mcp_server_declaration.name.clone());
+            }
             Declaration::Schema(schema_declaration) => {
                 self.insert_schema_declaration(schema_declaration);
             }
@@ -1110,6 +1114,7 @@ impl SemanticIndex {
             || Self::source_has_named_block_declaration(source_text, DeclarationKeyword::Secrets.as_str());
         semantic_index.has_output_declaration = semantic_index.has_output_declaration
             || Self::source_has_named_block_declaration(source_text, DeclarationKeyword::Output.as_str());
+        semantic_index.mcp_server_names = Self::mcp_server_names_from_text(source_text);
 
         semantic_index
     }
@@ -1202,6 +1207,7 @@ impl SemanticIndex {
             resource_locations: Vec::new(),
             prompt_names: Vec::new(),
             prompt_locations: Vec::new(),
+            mcp_server_names: Vec::new(),
             input_fields: tooling_snapshot.input_fields().clone(),
             input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
             input_field_locations: HashMap::new(),
@@ -1271,6 +1277,37 @@ impl SemanticIndex {
             .collect::<Vec<_>>();
 
         (tools, tool_names, tool_locations)
+    }
+
+    fn mcp_server_names_from_text(source_text: &str) -> Vec<String> {
+        let mut server_names = source_text.lines().filter_map(Self::mcp_server_name_from_line).collect::<Vec<_>>();
+
+        server_names.sort();
+        server_names.dedup();
+
+        server_names
+    }
+
+    fn mcp_server_name_from_line(source_line: &str) -> Option<String> {
+        let trimmed_source_line = source_line.trim_start();
+        let declaration_keyword = DeclarationKeyword::Mcp.as_str();
+        let after_declaration_keyword = trimmed_source_line.strip_prefix(declaration_keyword)?;
+
+        if !after_declaration_keyword.starts_with(char::is_whitespace) {
+            return None;
+        }
+
+        let server_name = after_declaration_keyword
+            .trim_start()
+            .chars()
+            .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+            .collect::<String>();
+
+        if server_name.is_empty() {
+            return None;
+        }
+
+        Some(server_name)
     }
 
     fn source_has_named_block_declaration(source_text: &str, declaration_keyword: &str) -> bool {
