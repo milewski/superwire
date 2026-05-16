@@ -24,8 +24,7 @@ services:
   superwire:
     image: rmilewski/superwire:latest
     ports:
-      - 13703:13703 # Server
-      - 13704:13704 # Playground UI
+      - 13703:13703
 ```
 
 Open [http://localhost:13704](http://localhost:13704) to access the Playground UI.
@@ -41,32 +40,20 @@ provider openai from openai {
 }
 
 model openai_model from openai {
-    id: "model-a"
+    id: "gpt-5.5"
 }
 
 agent greeting {
     model: model.openai_model
     instruction: "Write a short welcome message."
     output {
-        value: string
+        message: string
     }
 }
 
 output {
-    greeting: agent.greeting.value
+    greeting: agent.greeting.message
 }
-```
-
-### Installation (CLI)
-
-```bash
-# Install the CLI tool
-cargo install --path crates/cli
-
-# Or build from source
-git clone https://github.com/milewski/superwire.git
-cd superwire
-cargo build --release
 ```
 
 ## Core Concepts
@@ -77,7 +64,8 @@ Define AI model providers (Ollama, OpenAI, etc.):
 
 ```wire
 provider openai from openai {
-api_key: secrets.OPENAI_KEY
+    endpoint: "https://olama.com/v1"
+    api_key: secrets.OLLAMA_API_KEY
 }
 
 model openai_gpt_4 from openai {
@@ -94,10 +82,10 @@ model openai_gpt_3_5_turbo from openai {
 Define structured output types:
 
 ```wire
-schema User {
-    name: string "User's full name"
-    age: number "Age in years"
-    email: string "Email address"
+schema user {
+    name: string
+    age: number
+    email: string
 }
 ```
 
@@ -108,103 +96,13 @@ Define AI agents with prompts and outputs:
 ```wire
 agent greet_user {
     model: model.openai_gpt_4
-    
-    prompt: "Say hello to {{ input.name }}"
-    
-    output: string
+    instruction: "Say hello to {{ input.name }}"
+    output {
+        message: string
+    }
 }
 ```
-
-### Context Sharing
-
-Agents can share context:
-
-```wire
-agent second_agent {
-    model: model.openai_gpt_4
-    context: context(agent.first_agent)
-    
-    prompt: "Continue from previous response"
-    output: string
-}
-```
-
-## Architecture
-
-```
-superwire/
-├── crates/
-│   ├── agent/      # Agent execution and tool runtime
-│   ├── cli/        # Command-line interface
-│   ├── core/       # DSL parser, validator, and runtime
-│   ├── ffi/        # Foreign function interfaces (PHP, JavaScript)
-│   └── lsp/        # Language server for editor support
-├── editors/
-│   ├── intellij/   # IntelliJ/JetBrains plugin
-│   └── textmate/   # TextMate grammar for syntax highlighting
-└── documentation/  # Mintlify documentation source
-```
-
-## Development
-
-### Prerequisites
-
-- Rust 1.80+
-- Node.js 18+ (for JavaScript FFI)
-- PHP 8.2+ (for PHP FFI, optional)
-
-### Build
-
-```bash
-# Build all crates
-cargo build --all
-
-# Run tests
-cargo test --all
-
-# Run linter
-cargo clippy --all-targets --all-features -- -D warnings
-cargo fmt --check
-```
-
-### IntelliJ Plugin Development
-
-```bash
-cd editors/intellij
-./gradlew buildPlugin
-```
-
-## Documentation
-
-Full documentation is available at the [Superwire Docs](https://superwire.dev) (built from `documentation/` directory).
-
-### Local Docs Preview
-
-```bash
-cd documentation
-npx mintlify dev
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes with clear messages
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Style
-
-- Follow existing code patterns and conventions
-- Run `cargo clippy` and `cargo fmt` before committing
-- Add tests for new features
-- Update documentation as needed
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-- Issues: [GitHub Issues](https://github.com/milewski/superwire/issues)
-- Discussions: [GitHub Discussions](https://github.com/milewski/superwire/discussions)
