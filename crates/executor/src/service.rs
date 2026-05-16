@@ -153,6 +153,7 @@ where
         Some(&event_sender),
     )?;
     let agent_execution_order = executor.agent_execution_order();
+    let planned_steps = executor.planned_execution_steps(&request.input, &request.secrets, max_concurrency)?;
     let mcp_imports = executor
         .mcp_imports()
         .iter()
@@ -169,7 +170,7 @@ where
 
     log::debug!("streamed workflow planned with agent order: {agent_execution_order:?}");
     event_sender
-        .send(ExecutorEvent::workflow_planned(agent_execution_order, mcp_imports))
+        .send(ExecutorEvent::workflow_planned(agent_execution_order, mcp_imports, planned_steps))
         .await
         .map_err(|error| ExecutorError::Other {
             message: format!("failed to send workflow planned event: {error}"),

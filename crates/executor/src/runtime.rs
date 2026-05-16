@@ -124,7 +124,10 @@ impl WorkflowExecutor {
             message: error.to_string(),
         })?;
 
-        Self::from_workflow(workflow_source, workflow, mcp_pool)
+        let executor = Self::from_workflow(workflow_source, workflow, mcp_pool)?;
+        executor.validate_startup_mcp_tool_calls(&evaluation_context, event_sender)?;
+
+        Ok(executor)
     }
 
     fn discover_mcp_lock_with_context(
@@ -219,6 +222,291 @@ impl WorkflowExecutor {
     #[must_use]
     pub fn mcp_imports(&self) -> &[superwire_core::semantic::PlannedMcpImport] {
         &self.execution_plan.mcp_imports
+    }
+
+    pub fn planned_execution_steps(&self, input: &Value, secrets: &Value, max_concurrency: usize) -> Result<Value, ExecutorError> {
+        let input_values = self.resolve_input_values(input)?;
+        let secret_values = self.resolve_secret_values(secrets)?;
+        let runtime_state = RuntimeState::new(input_values, secret_values);
+        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
+        let mut steps = Vec::new();
+
+        let dynamic_calls = self.planned_workflow_dynamic_calls(&evaluation_context)?;
+
+        if !dynamic_calls.is_empty() {
+            steps.push(serde_json::json!({
+                "type": "workflow_dynamic",
+                "calls": dynamic_calls,
+            }));
+        }
+
+        for execution_batch in self.resolve_agent_execution_batches()? {
+            let planned_agents = execution_batch
+                .iter()
+                .map(|agent_name| self.planned_agent_step(agent_name, &evaluation_context))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            if planned_agents.len() == 1 || max_concurrency <= 1 {
+                steps.extend(planned_agents);
+            } else {
+                steps.push(serde_json::json!({ "parallel": planned_agents }));
+            }
+        }
+
+        let output_calls = self.planned_output_calls(&evaluation_context)?;
+
+        steps.push(serde_json::json!({
+            "type": "workflow_output",
+            "calls": output_calls,
+        }));
+
+        Ok(Value::Array(steps))
+    }
+
+    fn planned_workflow_dynamic_calls(&self, evaluation_context: &EvaluationContext) -> Result<Vec<Value>, ExecutorError> {
+        let mut calls = Vec::new();
+
+        for declaration in self.workflow.declarations() {
+            let Declaration::Dynamic(dynamic_block) = declaration else {
+                continue;
+            };
+
+            for dynamic_field in &dynamic_block.fields {
+                calls.extend(dynamic_field.value.planned_mcp_calls(self, evaluation_context)?);
+            }
+        }
+
+        Ok(calls)
+    }
+
+    fn planned_output_calls(&self, evaluation_context: &EvaluationContext) -> Result<Vec<Value>, ExecutorError> {
+        let mut calls = Vec::new();
+
+        for output_field in &self.execution_plan.output_declaration.fields {
+            calls.extend(output_field.value.planned_mcp_calls(self, evaluation_context)?);
+        }
+
+        Ok(calls)
+    }
+
+    fn planned_agent_step(&self, agent_name: &str, evaluation_context: &EvaluationContext) -> Result<Value, ExecutorError> {
+        let planned_agent = self
+            .execution_plan
+            .planned_agents
+            .get(agent_name)
+            .ok_or_else(|| ExecutorError::Other {
+                message: format!("planned agent `{agent_name}` is missing"),
+            })?;
+        let mut dynamic_calls = Vec::new();
+
+        for agent_property in &planned_agent.declaration.properties {
+            let AgentProperty::Dynamic(dynamic_block) = agent_property else {
+                continue;
+            };
+
+            for dynamic_field in &dynamic_block.fields {
+                dynamic_calls.extend(dynamic_field.value.planned_mcp_calls(self, evaluation_context)?);
+            }
+        }
+
+        Ok(serde_json::json!({
+            "type": "agent",
+            "agent_name": agent_name,
+            "dependencies": planned_agent.dependencies,
+            "dynamic_calls": dynamic_calls,
+            "available_mcp_calls": self.planned_agent_available_mcp_calls(planned_agent, evaluation_context)?,
+        }))
+    }
+
+    fn planned_agent_available_mcp_calls(
+        &self,
+        planned_agent: &PlannedAgent,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<Vec<Value>, ExecutorError> {
+        let tool_definitions = self.resolve_agent_use_definitions(planned_agent, evaluation_context)?;
+        let mut calls = Vec::new();
+
+        for tool_definition in tool_definitions {
+            match tool_definition.source {
+                ModelToolSource::Mcp {
+                    server_name, tool_name, ..
+                } => calls.push(serde_json::json!({
+                    "operation": "call",
+                    "target_name": tool_definition.name,
+                    "server_name": server_name.unwrap_or_else(|| "default".to_string()),
+                    "item_name": tool_name,
+                })),
+                ModelToolSource::McpPrompt {
+                    server_name, prompt_name, ..
+                } => calls.push(serde_json::json!({
+                    "operation": "render",
+                    "target_name": tool_definition.name,
+                    "server_name": server_name,
+                    "item_name": prompt_name,
+                })),
+                ModelToolSource::McpResource {
+                    server_name,
+                    resource_name,
+                    ..
+                } => calls.push(serde_json::json!({
+                    "operation": "read",
+                    "target_name": tool_definition.name,
+                    "server_name": server_name,
+                    "item_name": resource_name,
+                })),
+                ModelToolSource::Finalize | ModelToolSource::Local => {}
+            }
+        }
+
+        Ok(calls)
+    }
+
+    fn planned_mcp_tool_call(&self, tool_name: &str, evaluation_context: &EvaluationContext) -> Result<Option<Value>, ExecutorError> {
+        let Some(typed_tool) = self.execution_plan.tools.get(tool_name) else {
+            return Ok(None);
+        };
+        let ModelToolSource::Mcp {
+            server_name,
+            tool_name: mcp_tool_name,
+            ..
+        } = self.model_tool_source(&typed_tool.declaration, evaluation_context)?
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(serde_json::json!({
+            "operation": "call",
+            "target_name": tool_name,
+            "server_name": server_name.unwrap_or_else(|| "default".to_string()),
+            "item_name": mcp_tool_name,
+        })))
+    }
+
+    fn planned_mcp_import_call(&self, mcp_call: &superwire_core::dsl::McpCall) -> Option<Value> {
+        let target_name = mcp_call.target_name()?;
+
+        match mcp_call.operation {
+            superwire_core::dsl::McpCallOperation::Read => {
+                let resource_import = self.workflow.find_resource_import(target_name)?;
+
+                Some(serde_json::json!({
+                    "operation": "read",
+                    "target_name": target_name,
+                    "server_name": resource_import.source.server_name,
+                    "item_name": resource_import.source.item_name,
+                }))
+            }
+            superwire_core::dsl::McpCallOperation::Render => {
+                let prompt_import = self.workflow.find_prompt_import(target_name)?;
+
+                Some(serde_json::json!({
+                    "operation": "render",
+                    "target_name": target_name,
+                    "server_name": prompt_import.source.server_name,
+                    "item_name": prompt_import.source.item_name,
+                }))
+            }
+        }
+    }
+
+    fn validate_startup_mcp_tool_calls(
+        &self,
+        evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<(), ExecutorError> {
+        for tool_call in self.workflow.startup_tool_calls() {
+            self.validate_startup_mcp_tool_call(tool_call, evaluation_context, event_sender)?;
+        }
+
+        for output_field in &self.execution_plan.output_declaration.fields {
+            for tool_call in output_field.value.tool_calls() {
+                self.validate_startup_mcp_tool_call(tool_call, evaluation_context, event_sender)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_startup_mcp_tool_call(
+        &self,
+        tool_call: &ToolCall,
+        evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<(), ExecutorError> {
+        let Some(tool_name) = tool_call.callee.tool_name() else {
+            return Ok(());
+        };
+        let Some(typed_tool) = self.execution_plan.tools.get(tool_name) else {
+            return Ok(());
+        };
+        let ModelToolSource::Mcp { .. } = self.model_tool_source(&typed_tool.declaration, evaluation_context)? else {
+            return Ok(());
+        };
+        let Ok(bindings) = typed_tool.resolve_bindings(&tool_call.binding_fields, evaluation_context) else {
+            return Ok(());
+        };
+        let Some(arguments) = self.startup_tool_call_arguments(tool_call, typed_tool, evaluation_context, &bindings)? else {
+            return Ok(());
+        };
+        let validation_started_at = Instant::now();
+        let input_schema = typed_tool.model_input_schema(&bindings);
+
+        if let Some(sender) = event_sender {
+            let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
+                String::new(),
+                tool_name.to_string(),
+                Value::Object(arguments.clone()),
+                input_schema,
+            ));
+        }
+
+        if let Some(sender) = event_sender {
+            let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
+                String::new(),
+                tool_name.to_string(),
+                validation_started_at.elapsed(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn startup_tool_call_arguments(
+        &self,
+        tool_call: &ToolCall,
+        typed_tool: &TypedToolIr,
+        evaluation_context: &EvaluationContext,
+        bindings: &Value,
+    ) -> Result<Option<Map<String, Value>>, ExecutorError> {
+        let Some(tool_name) = tool_call.callee.tool_name() else {
+            return Ok(None);
+        };
+        let mut arguments = Map::new();
+        let mut input_arguments = Map::new();
+
+        for input_field in &tool_call.input_fields {
+            let Ok(input_value) = evaluate_expression(
+                &input_field.value,
+                evaluation_context,
+                &format!("input field `{}` for tool `{tool_name}`", input_field.name),
+            ) else {
+                return Ok(None);
+            };
+            arguments.insert(input_field.name.clone(), input_value.clone());
+            input_arguments.insert(input_field.name.clone(), input_value);
+        }
+
+        validate_value_against_type(&Value::Object(input_arguments), &typed_tool.input_type).map_err(|message| ExecutorError::Other {
+            message: format!("deterministic tool call `{tool_name}` input is invalid: {message}"),
+        })?;
+
+        if let Some(binding_object) = bindings.as_object() {
+            for (binding_name, binding_value) in binding_object {
+                arguments.insert(binding_name.clone(), binding_value.clone());
+            }
+        }
+
+        Ok(Some(arguments))
     }
 
     pub async fn execute<ModelProviderType>(
@@ -570,22 +858,7 @@ impl WorkflowExecutor {
                 endpoint,
                 headers,
             } => {
-                let validation_started_at = Instant::now();
                 let input_schema = typed_tool.model_input_schema(&bindings);
-
-                if let Some(sender) = event_sender {
-                    let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
-                        String::new(),
-                        tool_name.to_string(),
-                        Value::Object(arguments.clone()),
-                        input_schema.clone(),
-                    ));
-                    let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
-                        String::new(),
-                        tool_name.to_string(),
-                        validation_started_at.elapsed(),
-                    ));
-                }
 
                 let server_config = McpServerConfig {
                     name: server_name.unwrap_or_else(|| "default".to_string()),
@@ -602,11 +875,6 @@ impl WorkflowExecutor {
                 );
 
                 if let Some(sender) = event_sender {
-                    let _ = sender.try_send(ExecutorEvent::tool_call_started(
-                        String::new(),
-                        tool_name.to_string(),
-                        Value::Object(arguments.clone()),
-                    ));
                     let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
                 }
 
@@ -641,12 +909,6 @@ impl WorkflowExecutor {
                         call_details,
                         normalized_result.clone(),
                         result,
-                        started_at.elapsed(),
-                    ));
-                    let _ = sender.try_send(ExecutorEvent::tool_call_completed(
-                        String::new(),
-                        tool_name.to_string(),
-                        normalized_result.clone(),
                         started_at.elapsed(),
                     ));
                 }
@@ -1633,6 +1895,218 @@ impl ToolReferenceExt for Reference {
         }
 
         self.first_access_field()
+    }
+}
+
+trait WorkflowStartupToolCallsExt {
+    fn startup_tool_calls(&self) -> Vec<&ToolCall>;
+}
+
+impl WorkflowStartupToolCallsExt for Workflow {
+    fn startup_tool_calls(&self) -> Vec<&ToolCall> {
+        let mut tool_calls = Vec::new();
+
+        for declaration in self.declarations() {
+            let Declaration::Dynamic(dynamic_block) = declaration else {
+                continue;
+            };
+
+            for dynamic_field in &dynamic_block.fields {
+                tool_calls.extend(dynamic_field.value.tool_calls());
+            }
+        }
+
+        tool_calls
+    }
+}
+
+trait ExpressionMcpExecutionPlanExt {
+    fn tool_calls(&self) -> Vec<&ToolCall>;
+
+    fn planned_mcp_calls(&self, executor: &WorkflowExecutor, evaluation_context: &EvaluationContext) -> Result<Vec<Value>, ExecutorError>;
+}
+
+impl ExpressionMcpExecutionPlanExt for Expression {
+    fn tool_calls(&self) -> Vec<&ToolCall> {
+        let mut tool_calls = Vec::new();
+        self.collect_tool_calls(&mut tool_calls);
+
+        tool_calls
+    }
+
+    fn planned_mcp_calls(&self, executor: &WorkflowExecutor, evaluation_context: &EvaluationContext) -> Result<Vec<Value>, ExecutorError> {
+        let mut planned_calls = Vec::new();
+        self.collect_planned_mcp_calls(executor, evaluation_context, &mut planned_calls)?;
+
+        Ok(planned_calls)
+    }
+}
+
+trait ExpressionMcpExecutionPlanCollectorExt {
+    fn collect_tool_calls<'expression>(&'expression self, tool_calls: &mut Vec<&'expression ToolCall>);
+
+    fn collect_planned_mcp_calls(
+        &self,
+        executor: &WorkflowExecutor,
+        evaluation_context: &EvaluationContext,
+        planned_calls: &mut Vec<Value>,
+    ) -> Result<(), ExecutorError>;
+}
+
+impl ExpressionMcpExecutionPlanCollectorExt for Expression {
+    fn collect_tool_calls<'expression>(&'expression self, tool_calls: &mut Vec<&'expression ToolCall>) {
+        match self {
+            Self::ToolCall(tool_call) => {
+                tool_calls.push(tool_call);
+
+                for input_field in &tool_call.input_fields {
+                    input_field.value.collect_tool_calls(tool_calls);
+                }
+
+                for binding_field in &tool_call.binding_fields {
+                    binding_field.value.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        interpolation_expression.collect_tool_calls(tool_calls);
+                    }
+                }
+            }
+            Self::FunctionCall(function_call) => {
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_tool_calls(tool_calls);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                for parameter_field in &mcp_call.parameter_fields {
+                    parameter_field.value.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_tool_calls(tool_calls);
+                null_fallback.fallback.collect_tool_calls(tool_calls);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_tool_calls(tool_calls);
+
+                for match_branch in &match_expression.branches {
+                    if let superwire_core::dsl::MatchBranch::Fallback { value, .. } = match_branch {
+                        value.collect_tool_calls(tool_calls);
+                    }
+                }
+            }
+            Self::ArrayLiteral(item_expressions) => {
+                for item_expression in item_expressions {
+                    item_expression.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::StringLiteral(_)
+            | Self::Reference(_)
+            | Self::VariantProjection(_) => {}
+        }
+    }
+
+    fn collect_planned_mcp_calls(
+        &self,
+        executor: &WorkflowExecutor,
+        evaluation_context: &EvaluationContext,
+        planned_calls: &mut Vec<Value>,
+    ) -> Result<(), ExecutorError> {
+        match self {
+            Self::ToolCall(tool_call) => {
+                if let Some(tool_name) = tool_call.callee.tool_name() {
+                    if let Some(planned_call) = executor.planned_mcp_tool_call(tool_name, evaluation_context)? {
+                        planned_calls.push(planned_call);
+                    }
+                }
+
+                for input_field in &tool_call.input_fields {
+                    input_field
+                        .value
+                        .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+
+                for binding_field in &tool_call.binding_fields {
+                    binding_field
+                        .value
+                        .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                if let Some(planned_call) = executor.planned_mcp_import_call(mcp_call) {
+                    planned_calls.push(planned_call);
+                }
+
+                for parameter_field in &mcp_call.parameter_fields {
+                    parameter_field
+                        .value
+                        .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        interpolation_expression.collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                    }
+                }
+            }
+            Self::FunctionCall(function_call) => {
+                for call_argument in &function_call.arguments {
+                    call_argument
+                        .expression()
+                        .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback
+                    .value
+                    .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                null_fallback
+                    .fallback
+                    .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+            }
+            Self::Match(match_expression) => {
+                match_expression
+                    .value
+                    .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+
+                for match_branch in &match_expression.branches {
+                    if let superwire_core::dsl::MatchBranch::Fallback { value, .. } = match_branch {
+                        value.collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                    }
+                }
+            }
+            Self::ArrayLiteral(item_expressions) => {
+                for item_expression in item_expressions {
+                    item_expression.collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field
+                        .value
+                        .collect_planned_mcp_calls(executor, evaluation_context, planned_calls)?;
+                }
+            }
+            Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::StringLiteral(_)
+            | Self::Reference(_)
+            | Self::VariantProjection(_) => {}
+        }
+
+        Ok(())
     }
 }
 

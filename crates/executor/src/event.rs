@@ -131,10 +131,11 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn workflow_planned(agent_execution_order: Vec<String>, mcp_imports: Vec<PlannedMcpImportEvent>) -> Self {
+    pub fn workflow_planned(agent_execution_order: Vec<String>, mcp_imports: Vec<PlannedMcpImportEvent>, steps: Value) -> Self {
         Self::new(ExecutorEventKind::WorkflowPlanned).with_data(serde_json::json!({
             "agent_execution_order": agent_execution_order,
             "mcp_imports": mcp_imports,
+            "steps": steps,
         }))
     }
 

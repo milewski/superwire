@@ -149,43 +149,38 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
     request.options.include_events = true;
 
     let mut receiver = service.execute_stream(request);
-    let mut tool_call_events = Vec::new();
+    let mut mcp_call_events = Vec::new();
 
     while let Some(event) = receiver.recv().await {
-        if matches!(
-            event.kind,
-            ExecutorEventKind::ToolCallStarted | ExecutorEventKind::ToolCallCompleted
-        ) {
-            tool_call_events.push(event);
+        if matches!(event.kind, ExecutorEventKind::McpCallStarted | ExecutorEventKind::McpCallCompleted) {
+            mcp_call_events.push(event);
         }
     }
 
     assert!(
-        tool_call_events
-            .iter()
-            .any(|event| event.kind == ExecutorEventKind::ToolCallStarted),
-        "expected tool_call_started event"
+        mcp_call_events.iter().any(|event| event.kind == ExecutorEventKind::McpCallStarted),
+        "expected mcp_call_started event"
     );
 
     assert!(
-        tool_call_events
+        mcp_call_events
             .iter()
-            .any(|event| event.kind == ExecutorEventKind::ToolCallCompleted),
-        "expected tool_call_completed event"
+            .any(|event| event.kind == ExecutorEventKind::McpCallCompleted),
+        "expected mcp_call_completed event"
     );
 
-    let started = tool_call_events
+    let started = mcp_call_events
         .iter()
-        .find(|event| event.kind == ExecutorEventKind::ToolCallStarted)
+        .find(|event| event.kind == ExecutorEventKind::McpCallStarted)
         .unwrap();
-    assert_eq!(started.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+    assert_eq!(started.data.as_ref().unwrap()["target_name"], "fetch_task_data");
 
-    let completed = tool_call_events
+    let completed = mcp_call_events
         .iter()
-        .find(|event| event.kind == ExecutorEventKind::ToolCallCompleted)
+        .find(|event| event.kind == ExecutorEventKind::McpCallCompleted)
         .unwrap();
 
-    assert_eq!(completed.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+    assert_eq!(completed.data.as_ref().unwrap()["target_name"], "fetch_task_data");
 
     assert_eq!(
         completed.data.as_ref().unwrap()["result"],
@@ -226,6 +221,10 @@ async fn output_tool_call_emits_mcp_call_events() {
         .iter()
         .position(|event| event.kind == ExecutorEventKind::WorkflowPlanned)
         .expect("workflow planned event should exist");
+    let validation_completed_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::McpToolValidationCompleted)
+        .expect("MCP validation completion event should exist");
     let call_started_index = events
         .iter()
         .position(|event| event.kind == ExecutorEventKind::McpCallStarted)
@@ -235,8 +234,20 @@ async fn output_tool_call_emits_mcp_call_events() {
         .position(|event| event.kind == ExecutorEventKind::McpCallCompleted)
         .expect("output MCP call completion event should exist");
 
+    assert!(validation_completed_index < planned_index);
     assert!(planned_index < call_started_index);
     assert!(call_started_index < call_completed_index);
+
+    let planned_event = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::WorkflowPlanned)
+        .expect("workflow planned event should exist");
+    let planned_steps = planned_event.data.as_ref().unwrap()["steps"]
+        .as_array()
+        .expect("planned steps should be an array");
+    assert_eq!(planned_steps[0]["type"], "workflow_output");
+    assert_eq!(planned_steps[0]["calls"][0]["operation"], "call");
+    assert_eq!(planned_steps[0]["calls"][0]["target_name"], "fetch_task_data");
 
     let call_started = &events[call_started_index];
     assert_eq!(call_started.data.as_ref().unwrap()["operation"], "call");
@@ -255,6 +266,7 @@ async fn output_tool_call_emits_mcp_call_events() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
@@ -340,6 +352,25 @@ async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     assert_eq!(validation_completed.agent_name.as_deref(), Some(""));
     assert_eq!(validation_completed.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
     assert!(validation_completed.data.as_ref().unwrap()["duration_ms"].as_u64().is_some());
+
+    let validation_completed_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::McpToolValidationCompleted)
+        .expect("MCP validation completion event should exist");
+    let planned_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::WorkflowPlanned)
+        .expect("workflow planned event should exist");
+
+    assert!(validation_completed_index < planned_index);
+
+    let planned_event = &events[planned_index];
+    assert_eq!(planned_event.data.as_ref().unwrap()["steps"][0]["type"], "workflow_dynamic");
+    assert_eq!(planned_event.data.as_ref().unwrap()["steps"][0]["calls"][0]["operation"], "call");
+    assert_eq!(
+        planned_event.data.as_ref().unwrap()["steps"][0]["calls"][0]["target_name"],
+        "fetch_task_data"
+    );
 
     let mcp_call_started = events
         .iter()

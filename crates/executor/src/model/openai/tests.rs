@@ -397,10 +397,6 @@ fn returns_tool_error_when_max_calls_limit_is_exceeded() {
 
     assert_eq!(validation_completed_event.kind, ExecutorEventKind::McpToolValidationCompleted);
 
-    let started_event = event_receiver.try_recv().expect("first tool call should emit started event");
-
-    assert_eq!(started_event.kind, ExecutorEventKind::ToolCallStarted);
-
     let mcp_started_event = event_receiver.try_recv().expect("first tool call should emit MCP call start event");
 
     assert_eq!(mcp_started_event.kind, ExecutorEventKind::McpCallStarted);
@@ -410,10 +406,6 @@ fn returns_tool_error_when_max_calls_limit_is_exceeded() {
         .expect("first tool call should emit MCP call completion event");
 
     assert_eq!(mcp_completed_event.kind, ExecutorEventKind::McpCallCompleted);
-
-    let completed_event = event_receiver.try_recv().expect("first tool call should emit completed event");
-
-    assert_eq!(completed_event.kind, ExecutorEventKind::ToolCallCompleted);
 
     let failed_event = event_receiver.try_recv().expect("max_calls rejection should emit failure event");
 

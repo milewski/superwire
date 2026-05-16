@@ -166,7 +166,6 @@ impl super::OpenAiModelProvider {
                     Some(tool_definition.input_schema.clone()),
                 );
 
-                request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
                 request.send_mcp_call_started(call_details.clone());
                 let started_at = Instant::now();
                 log::info!(
@@ -190,7 +189,6 @@ impl super::OpenAiModelProvider {
                 let normalized_result = normalize_mcp_tool_result(result.clone());
 
                 request.send_mcp_call_completed(call_details, normalized_result.clone(), result, started_at.elapsed());
-                request.send_tool_call_completed(tool_definition.name.clone(), normalized_result.clone(), started_at.elapsed());
                 log::debug!(
                     "completed MCP tool call: agent={}, tool={}",
                     request.agent_name,
@@ -219,7 +217,6 @@ impl super::OpenAiModelProvider {
                     Some(tool_definition.input_schema.clone()),
                 );
 
-                request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
                 request.send_mcp_call_started(call_details.clone());
                 let started_at = Instant::now();
                 let result = match request.mcp_pool.get(&server_config)?.get_prompt(prompt_name, arguments) {
@@ -236,7 +233,6 @@ impl super::OpenAiModelProvider {
                 let rendered_result = Value::String(render_mcp_prompt_result(&result));
 
                 request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
-                request.send_tool_call_completed(tool_definition.name.clone(), rendered_result.clone(), started_at.elapsed());
 
                 Ok(ToolCallOutcome::Continue(rendered_result))
             }
@@ -260,7 +256,6 @@ impl super::OpenAiModelProvider {
                     Some(tool_definition.input_schema.clone()),
                 );
 
-                request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
                 request.send_mcp_call_started(call_details.clone());
                 let started_at = Instant::now();
                 let result = match request.mcp_pool.get(&server_config)?.read_resource(resource_name, arguments) {
@@ -277,7 +272,6 @@ impl super::OpenAiModelProvider {
                 let rendered_result = Value::String(render_mcp_resource_result(&result));
 
                 request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
-                request.send_tool_call_completed(tool_definition.name.clone(), rendered_result.clone(), started_at.elapsed());
 
                 Ok(ToolCallOutcome::Continue(rendered_result))
             }
@@ -447,11 +441,7 @@ fn normalize_instance_path(instance_path: &str) -> String {
 }
 
 trait ToolCallEventSender {
-    fn send_tool_call_started(&self, tool_name: String, arguments: Value);
-
     fn send_tool_call_failed(&self, tool_name: String, error: Value, duration: Duration);
-
-    fn send_tool_call_completed(&self, tool_name: String, result: Value, duration: Duration);
 
     fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value, input_schema: Value);
 
@@ -467,26 +457,9 @@ trait ToolCallEventSender {
 }
 
 impl ToolCallEventSender for ModelRequest {
-    fn send_tool_call_started(&self, tool_name: String, arguments: Value) {
-        if let Some(event_sender) = &self.event_sender {
-            let _ = event_sender.try_send(ExecutorEvent::tool_call_started(self.agent_name.clone(), tool_name, arguments));
-        }
-    }
-
     fn send_tool_call_failed(&self, tool_name: String, error: Value, duration: Duration) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::tool_call_failed(self.agent_name.clone(), tool_name, error, duration));
-        }
-    }
-
-    fn send_tool_call_completed(&self, tool_name: String, result: Value, duration: Duration) {
-        if let Some(event_sender) = &self.event_sender {
-            let _ = event_sender.try_send(ExecutorEvent::tool_call_completed(
-                self.agent_name.clone(),
-                tool_name,
-                result,
-                duration,
-            ));
         }
     }
 
