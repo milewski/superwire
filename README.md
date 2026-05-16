@@ -17,7 +17,47 @@ Superwire provides a domain-specific language for defining AI agent workflows th
 
 ## Quick Start
 
-### Installation
+### Run with Docker
+
+```yaml
+services:
+  superwire:
+    image: rmilewski/superwire:latest
+    ports:
+      - 13703:13703 # Server
+      - 13704:13704 # Playground UI
+```
+
+Open [http://localhost:13704](http://localhost:13704) to access the Playground UI.
+
+### Create a Workflow
+
+Create a `hello.wire` file:
+
+```wire
+provider openai from openai {
+    endpoint: "http://localhost:1234/v1"
+    api_key: "test-api-key"
+}
+
+model openai_model from openai {
+    id: "model-a"
+}
+
+agent greeting {
+    model: model.openai_model
+    instruction: "Write a short welcome message."
+    output {
+        value: string
+    }
+}
+
+output {
+    greeting: agent.greeting.value
+}
+```
+
+### Installation (CLI)
 
 ```bash
 # Install the CLI tool
@@ -27,54 +67,6 @@ cargo install --path crates/cli
 git clone https://github.com/milewski/superwire.git
 cd superwire
 cargo build --release
-```
-
-### Basic Workflow
-
-Create a `example.wire` file:
-
-```wire
-provider ollama from ollama {
-endpoint: "http://localhost:11434"
-}
-
-model ollama_model from ollama {
-    id: "llama2"
-}
-
-schema Summary {
-    text: string "The summary text"
-    length: number "Character count"
-}
-
-input {
-    content: string "Text to summarize"
-}
-
-agent summarizer {
-    model: model.ollama_model
-    
-    prompt: """
-        Summarize the following text in one sentence:
-        {{ input.content }}
-    """
-    
-    output: schema.Summary
-}
-
-output {
-    result: agent.summarizer
-}
-```
-
-### Run with CLI
-
-```bash
-# Format a workflow file
-cli fmt example.wire
-
-# Execute a workflow (via runtime)
-cargo run --bin superwire-core --example minimum
 ```
 
 ## Core Concepts

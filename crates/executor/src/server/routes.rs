@@ -31,7 +31,7 @@ where
         .route("/validate", post(validate_handler::<ModelProviderType>))
         .route("/format", post(format_handler::<ModelProviderType>))
         .route("/lsp", axum::routing::get(lsp_websocket_handler))
-        .nest_service("/playground", get_service(playground_static_service()))
+        .fallback_service(get_service(playground_static_service()))
         .with_state(service)
 }
 

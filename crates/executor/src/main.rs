@@ -4,10 +4,10 @@ use superwire_executor::serve_executor;
 
 #[derive(Debug, Parser)]
 struct Cli {
-    #[arg(long, default_value = "127.0.0.1:3000")]
+    #[arg(long, default_value = "0.0.0.0:13703")]
     address: SocketAddr,
 
-    #[arg(long)]
+    #[arg(long, default_value = "0.0.0.0:13704")]
     ui: Option<SocketAddr>,
 }
 
@@ -27,7 +27,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("starting executor server on {}", cli.address);
 
     if let Some(ui_address) = cli.ui {
-        log::info!("starting playground server on http://{ui_address}/playground");
+        log::info!("starting playground server on http://{ui_address}/");
 
         tokio::try_join!(serve_executor(cli.address), serve_executor(ui_address))?;
     } else {

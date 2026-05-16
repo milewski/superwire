@@ -52,9 +52,7 @@ ENV SUPERWIRE_PLAYGROUND_DIST=/usr/local/share/superwire/playground
 
 USER superwire
 
-EXPOSE 3000
-EXPOSE 3001
+EXPOSE 13703
+EXPOSE 13704
 
 ENTRYPOINT ["/usr/local/bin/superwire-executor"]
-
-CMD ["--address", "0.0.0.0:3000"]
