@@ -194,6 +194,67 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
 }
 
 #[tokio::test]
+async fn output_tool_call_emits_mcp_call_events() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        tool fetch_task_data from mcp.local.tool.fetch_task_data {
+            bindings {
+                project_id: 42
+                task_id: 7
+            }
+        }
+
+        output {
+            data: call tool.fetch_task_data
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TestModelProvider::new(Vec::new());
+    let service = ExecutorService::new(model_provider);
+    let mut receiver = service.execute_stream(support::request(&workflow_source));
+    let mut events = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        events.push(event);
+    }
+
+    let planned_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::WorkflowPlanned)
+        .expect("workflow planned event should exist");
+    let call_started_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::McpCallStarted)
+        .expect("output MCP call start event should exist");
+    let call_completed_index = events
+        .iter()
+        .position(|event| event.kind == ExecutorEventKind::McpCallCompleted)
+        .expect("output MCP call completion event should exist");
+
+    assert!(planned_index < call_started_index);
+    assert!(call_started_index < call_completed_index);
+
+    let call_started = &events[call_started_index];
+    assert_eq!(call_started.data.as_ref().unwrap()["operation"], "call");
+    assert_eq!(call_started.data.as_ref().unwrap()["target_name"], "fetch_task_data");
+    assert_eq!(call_started.data.as_ref().unwrap()["server_name"], "local");
+    assert_eq!(call_started.data.as_ref().unwrap()["item_name"], "fetch_task_data");
+    assert_eq!(call_started.data.as_ref().unwrap()["params"]["project_id"], 42);
+    assert_eq!(call_started.data.as_ref().unwrap()["input_schema"]["type"], "object");
+
+    let call_completed = &events[call_completed_index];
+    assert_eq!(call_completed.data.as_ref().unwrap()["result"]["task_title"], "Survey");
+    assert_eq!(
+        call_completed.data.as_ref().unwrap()["raw_result"]["structuredContent"]["participants"],
+        10
+    );
+}
+
+#[tokio::test]
 async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {
@@ -269,6 +330,8 @@ async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     assert_eq!(validation_started.agent_name.as_deref(), Some(""));
     assert_eq!(validation_started.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
     assert_eq!(validation_started.data.as_ref().unwrap()["arguments"]["project_id"], 42);
+    assert_eq!(validation_started.data.as_ref().unwrap()["params"]["project_id"], 42);
+    assert_eq!(validation_started.data.as_ref().unwrap()["input_schema"]["type"], "object");
 
     let validation_completed = events
         .iter()
@@ -277,6 +340,26 @@ async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
     assert_eq!(validation_completed.agent_name.as_deref(), Some(""));
     assert_eq!(validation_completed.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
     assert!(validation_completed.data.as_ref().unwrap()["duration_ms"].as_u64().is_some());
+
+    let mcp_call_started = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpCallStarted && event.data.as_ref().unwrap()["operation"] == "call")
+        .expect("MCP tool call start event should exist");
+    assert_eq!(mcp_call_started.data.as_ref().unwrap()["target_name"], "fetch_task_data");
+    assert_eq!(mcp_call_started.data.as_ref().unwrap()["server_name"], "local");
+    assert_eq!(mcp_call_started.data.as_ref().unwrap()["item_name"], "fetch_task_data");
+    assert_eq!(mcp_call_started.data.as_ref().unwrap()["params"]["project_id"], 42);
+    assert_eq!(mcp_call_started.data.as_ref().unwrap()["input_schema"]["type"], "object");
+
+    let mcp_call_completed = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpCallCompleted && event.data.as_ref().unwrap()["operation"] == "call")
+        .expect("MCP tool call completion event should exist");
+    assert_eq!(mcp_call_completed.data.as_ref().unwrap()["result"]["task_title"], "Survey");
+    assert_eq!(
+        mcp_call_completed.data.as_ref().unwrap()["raw_result"]["structuredContent"]["participants"],
+        10
+    );
 }
 
 #[tokio::test]
@@ -348,17 +431,27 @@ async fn explicit_mcp_calls_emit_started_and_completed_events() {
         .find(|event| event.kind == ExecutorEventKind::McpCallStarted && event.data.as_ref().unwrap()["target_name"] == "project_readme")
         .expect("resource read start event should exist");
     assert_eq!(resource_started.data.as_ref().unwrap()["operation"], "read");
+    assert_eq!(resource_started.data.as_ref().unwrap()["server_name"], "local");
+    assert_eq!(resource_started.data.as_ref().unwrap()["item_name"], "project_readme");
     assert_eq!(resource_started.data.as_ref().unwrap()["arguments"]["workspace_id"], "workspace-1");
     assert_eq!(resource_started.data.as_ref().unwrap()["arguments"]["section"], "setup");
+    assert_eq!(resource_started.data.as_ref().unwrap()["params"]["section"], "setup");
 
     let prompt_completed = mcp_call_events
         .iter()
         .find(|event| event.kind == ExecutorEventKind::McpCallCompleted && event.data.as_ref().unwrap()["target_name"] == "system_prompt")
         .expect("prompt render completion event should exist");
     assert_eq!(prompt_completed.data.as_ref().unwrap()["operation"], "render");
+    assert_eq!(prompt_completed.data.as_ref().unwrap()["server_name"], "local");
+    assert_eq!(prompt_completed.data.as_ref().unwrap()["item_name"], "system_prompt");
     assert!(prompt_completed.data.as_ref().unwrap()["result"]
         .as_str()
         .is_some_and(|result| result.contains("Follow project conventions.")));
+    assert!(
+        prompt_completed.data.as_ref().unwrap()["raw_result"]["messages"][0]["content"]["text"]
+            .as_str()
+            .is_some_and(|result| result.contains("Follow project conventions."))
+    );
 }
 
 struct TestMcpHttpServer {

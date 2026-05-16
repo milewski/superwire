@@ -401,6 +401,16 @@ fn returns_tool_error_when_max_calls_limit_is_exceeded() {
 
     assert_eq!(started_event.kind, ExecutorEventKind::ToolCallStarted);
 
+    let mcp_started_event = event_receiver.try_recv().expect("first tool call should emit MCP call start event");
+
+    assert_eq!(mcp_started_event.kind, ExecutorEventKind::McpCallStarted);
+
+    let mcp_completed_event = event_receiver
+        .try_recv()
+        .expect("first tool call should emit MCP call completion event");
+
+    assert_eq!(mcp_completed_event.kind, ExecutorEventKind::McpCallCompleted);
+
     let completed_event = event_receiver.try_recv().expect("first tool call should emit completed event");
 
     assert_eq!(completed_event.kind, ExecutorEventKind::ToolCallCompleted);

@@ -3,7 +3,7 @@ pub mod state;
 
 pub use error::ExecutorError;
 
-use crate::event::ExecutorEvent;
+use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::{
     normalize_mcp_tool_result, ModelProvider, ModelRequest, ModelToolDefinition, ModelToolSource, ToolCallLimitScope, ToolCallTracker,
 };
@@ -308,7 +308,7 @@ impl WorkflowExecutor {
             }
         }
 
-        let output = self.evaluate_workflow_output(&runtime_state, &tool_call_tracker)?;
+        let output = self.evaluate_workflow_output(&runtime_state, event_sender.as_ref(), &tool_call_tracker)?;
 
         validate_value_against_type(&output, &self.execution_plan.workflow_output_type).map_err(|message| {
             ExecutorError::OutputTypeMismatch {
@@ -571,12 +571,14 @@ impl WorkflowExecutor {
                 headers,
             } => {
                 let validation_started_at = Instant::now();
+                let input_schema = typed_tool.model_input_schema(&bindings);
 
                 if let Some(sender) = event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
                         String::new(),
                         tool_name.to_string(),
                         Value::Object(arguments.clone()),
+                        input_schema.clone(),
                     ));
                     let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
                         String::new(),
@@ -590,6 +592,14 @@ impl WorkflowExecutor {
                     endpoint,
                     headers,
                 };
+                let call_details = McpCallEventDetails::new(
+                    "call".to_string(),
+                    tool_name.to_string(),
+                    server_config.name.clone(),
+                    mcp_tool_name.clone(),
+                    Value::Object(arguments.clone()),
+                    Some(input_schema),
+                );
 
                 if let Some(sender) = event_sender {
                     let _ = sender.try_send(ExecutorEvent::tool_call_started(
@@ -597,22 +607,42 @@ impl WorkflowExecutor {
                         tool_name.to_string(),
                         Value::Object(arguments.clone()),
                     ));
+                    let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
                 }
 
                 let started_at = Instant::now();
                 log::info!("calling MCP tool `{mcp_tool_name}` for deterministic tool `{tool_name}`");
-                let result = self
+                let result = match self
                     .mcp_pool
                     .get(&server_config)?
                     .call_tool(&mcp_tool_name, Value::Object(arguments))
-                    .map_err(|error| ExecutorError::Other {
-                        message: format!("deterministic tool call `{tool_name}` failed: {error}"),
-                    })?;
-                let normalized_result = normalize_mcp_tool_result(result);
+                {
+                    Ok(result) => result,
+                    Err(error) => {
+                        if let Some(sender) = event_sender {
+                            let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
+                                call_details,
+                                Value::String(error.to_string()),
+                                started_at.elapsed(),
+                            ));
+                        }
+
+                        return Err(ExecutorError::Other {
+                            message: format!("deterministic tool call `{tool_name}` failed: {error}"),
+                        });
+                    }
+                };
+                let normalized_result = normalize_mcp_tool_result(result.clone());
 
                 log::debug!("completed deterministic MCP tool `{tool_name}`");
 
                 if let Some(sender) = event_sender {
+                    let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
+                        call_details,
+                        normalized_result.clone(),
+                        result,
+                        started_at.elapsed(),
+                    ));
                     let _ = sender.try_send(ExecutorEvent::tool_call_completed(
                         String::new(),
                         tool_name.to_string(),
@@ -852,13 +882,23 @@ impl WorkflowExecutor {
         Ok(())
     }
 
-    fn evaluate_workflow_output(&self, runtime_state: &RuntimeState, tool_call_tracker: &ToolCallTracker) -> Result<Value, ExecutorError> {
+    fn evaluate_workflow_output(
+        &self,
+        runtime_state: &RuntimeState,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        tool_call_tracker: &ToolCallTracker,
+    ) -> Result<Value, ExecutorError> {
         let mut output_fields = Map::new();
         let evaluation_context = runtime_state.evaluation_context(HashMap::new());
 
         for output_field in &self.execution_plan.output_declaration.fields {
-            let output_value =
-                self.evaluate_runtime_expression(&output_field.value, &evaluation_context, "workflow output", None, tool_call_tracker)?;
+            let output_value = self.evaluate_runtime_expression(
+                &output_field.value,
+                &evaluation_context,
+                "workflow output",
+                event_sender,
+                tool_call_tracker,
+            )?;
             output_fields.insert(output_field.name.clone(), output_value);
         }
 
@@ -1109,14 +1149,17 @@ impl WorkflowExecutor {
             evaluation_context,
             resource_name,
         )?;
-        let operation = mcp_call.operation.as_str().to_string();
+        let call_details = McpCallEventDetails::new(
+            mcp_call.operation.as_str().to_string(),
+            resource_name.to_string(),
+            resource_import.source.server_name.clone(),
+            resource_import.source.item_name.clone(),
+            arguments.clone(),
+            None,
+        );
 
         if let Some(sender) = event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_call_started(
-                operation.clone(),
-                resource_name.to_string(),
-                arguments.clone(),
-            ));
+            let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
         }
 
         let started_at = Instant::now();
@@ -1129,8 +1172,7 @@ impl WorkflowExecutor {
             Err(error) => {
                 if let Some(sender) = event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
-                        operation,
-                        resource_name.to_string(),
+                        call_details,
                         Value::String(error.to_string()),
                         started_at.elapsed(),
                     ));
@@ -1145,9 +1187,9 @@ impl WorkflowExecutor {
 
         if let Some(sender) = event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
-                mcp_call.operation.as_str().to_string(),
-                resource_name.to_string(),
+                call_details,
                 rendered_result.clone(),
+                result,
                 started_at.elapsed(),
             ));
         }
@@ -1172,14 +1214,17 @@ impl WorkflowExecutor {
             evaluation_context,
             prompt_name,
         )?;
-        let operation = mcp_call.operation.as_str().to_string();
+        let call_details = McpCallEventDetails::new(
+            mcp_call.operation.as_str().to_string(),
+            prompt_name.to_string(),
+            prompt_import.source.server_name.clone(),
+            prompt_import.source.item_name.clone(),
+            arguments.clone(),
+            None,
+        );
 
         if let Some(sender) = event_sender {
-            let _ = sender.try_send(ExecutorEvent::mcp_call_started(
-                operation.clone(),
-                prompt_name.to_string(),
-                arguments.clone(),
-            ));
+            let _ = sender.try_send(ExecutorEvent::mcp_call_started(call_details.clone()));
         }
 
         let started_at = Instant::now();
@@ -1192,8 +1237,7 @@ impl WorkflowExecutor {
             Err(error) => {
                 if let Some(sender) = event_sender {
                     let _ = sender.try_send(ExecutorEvent::mcp_call_failed(
-                        operation,
-                        prompt_name.to_string(),
+                        call_details,
                         Value::String(error.to_string()),
                         started_at.elapsed(),
                     ));
@@ -1208,9 +1252,9 @@ impl WorkflowExecutor {
 
         if let Some(sender) = event_sender {
             let _ = sender.try_send(ExecutorEvent::mcp_call_completed(
-                mcp_call.operation.as_str().to_string(),
-                prompt_name.to_string(),
+                call_details,
                 rendered_result.clone(),
+                result,
                 started_at.elapsed(),
             ));
         }

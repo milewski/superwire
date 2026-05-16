@@ -1,6 +1,6 @@
 use super::format::format_tool_name;
 use super::request::ChatCompletionRequestMessageExt;
-use crate::event::ExecutorEvent;
+use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::response::normalize_mcp_tool_result;
 use crate::model::types::{ModelRequest, ModelToolDefinition, ModelToolSource};
 use crate::runtime::ExecutorError;
@@ -104,7 +104,11 @@ impl super::OpenAiModelProvider {
         let validation_started_at = Instant::now();
 
         if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
-            request.send_mcp_tool_validation_started(tool_definition.name.clone(), arguments.clone());
+            request.send_mcp_tool_validation_started(
+                tool_definition.name.clone(),
+                arguments.clone(),
+                tool_definition.input_schema.clone(),
+            );
         }
 
         if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
@@ -153,8 +157,17 @@ impl super::OpenAiModelProvider {
                     endpoint: endpoint.clone(),
                     headers: headers.clone(),
                 };
+                let call_details = McpCallEventDetails::new(
+                    "call".to_string(),
+                    tool_definition.name.clone(),
+                    server_config.name.clone(),
+                    tool_name.clone(),
+                    arguments.clone(),
+                    Some(tool_definition.input_schema.clone()),
+                );
 
                 request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
+                request.send_mcp_call_started(call_details.clone());
                 let started_at = Instant::now();
                 log::info!(
                     "dispatching MCP tool call: agent={}, tool={}, mcp_tool={}",
@@ -163,16 +176,20 @@ impl super::OpenAiModelProvider {
                     tool_name
                 );
 
-                let result = request
-                    .mcp_pool
-                    .get(&server_config)?
-                    .call_tool(tool_name, arguments)
-                    .map_err(|error| ExecutorError::Model {
-                        agent_name: request.agent_name.clone(),
-                        message: error.to_string(),
-                    })?;
-                let normalized_result = normalize_mcp_tool_result(result);
+                let result = match request.mcp_pool.get(&server_config)?.call_tool(tool_name, arguments) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        request.send_mcp_call_failed(call_details, Value::String(error.to_string()), started_at.elapsed());
 
+                        return Err(ExecutorError::Model {
+                            agent_name: request.agent_name.clone(),
+                            message: error.to_string(),
+                        });
+                    }
+                };
+                let normalized_result = normalize_mcp_tool_result(result.clone());
+
+                request.send_mcp_call_completed(call_details, normalized_result.clone(), result, started_at.elapsed());
                 request.send_tool_call_completed(tool_definition.name.clone(), normalized_result.clone(), started_at.elapsed());
                 log::debug!(
                     "completed MCP tool call: agent={}, tool={}",
@@ -193,19 +210,32 @@ impl super::OpenAiModelProvider {
                     endpoint: endpoint.clone(),
                     headers: headers.clone(),
                 };
+                let call_details = McpCallEventDetails::new(
+                    "render".to_string(),
+                    tool_definition.name.clone(),
+                    server_config.name.clone(),
+                    prompt_name.clone(),
+                    arguments.clone(),
+                    Some(tool_definition.input_schema.clone()),
+                );
 
                 request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
+                request.send_mcp_call_started(call_details.clone());
                 let started_at = Instant::now();
-                let result = request
-                    .mcp_pool
-                    .get(&server_config)?
-                    .get_prompt(prompt_name, arguments)
-                    .map_err(|error| ExecutorError::Model {
-                        agent_name: request.agent_name.clone(),
-                        message: error.to_string(),
-                    })?;
+                let result = match request.mcp_pool.get(&server_config)?.get_prompt(prompt_name, arguments) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        request.send_mcp_call_failed(call_details, Value::String(error.to_string()), started_at.elapsed());
+
+                        return Err(ExecutorError::Model {
+                            agent_name: request.agent_name.clone(),
+                            message: error.to_string(),
+                        });
+                    }
+                };
                 let rendered_result = Value::String(render_mcp_prompt_result(&result));
 
+                request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
                 request.send_tool_call_completed(tool_definition.name.clone(), rendered_result.clone(), started_at.elapsed());
 
                 Ok(ToolCallOutcome::Continue(rendered_result))
@@ -221,19 +251,32 @@ impl super::OpenAiModelProvider {
                     endpoint: endpoint.clone(),
                     headers: headers.clone(),
                 };
+                let call_details = McpCallEventDetails::new(
+                    "read".to_string(),
+                    tool_definition.name.clone(),
+                    server_config.name.clone(),
+                    resource_name.clone(),
+                    arguments.clone(),
+                    Some(tool_definition.input_schema.clone()),
+                );
 
                 request.send_tool_call_started(tool_definition.name.clone(), arguments.clone());
+                request.send_mcp_call_started(call_details.clone());
                 let started_at = Instant::now();
-                let result = request
-                    .mcp_pool
-                    .get(&server_config)?
-                    .read_resource(resource_name, arguments)
-                    .map_err(|error| ExecutorError::Model {
-                        agent_name: request.agent_name.clone(),
-                        message: error.to_string(),
-                    })?;
+                let result = match request.mcp_pool.get(&server_config)?.read_resource(resource_name, arguments) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        request.send_mcp_call_failed(call_details, Value::String(error.to_string()), started_at.elapsed());
+
+                        return Err(ExecutorError::Model {
+                            agent_name: request.agent_name.clone(),
+                            message: error.to_string(),
+                        });
+                    }
+                };
                 let rendered_result = Value::String(render_mcp_resource_result(&result));
 
+                request.send_mcp_call_completed(call_details, rendered_result.clone(), result, started_at.elapsed());
                 request.send_tool_call_completed(tool_definition.name.clone(), rendered_result.clone(), started_at.elapsed());
 
                 Ok(ToolCallOutcome::Continue(rendered_result))
@@ -410,11 +453,17 @@ trait ToolCallEventSender {
 
     fn send_tool_call_completed(&self, tool_name: String, result: Value, duration: Duration);
 
-    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value);
+    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value, input_schema: Value);
 
     fn send_mcp_tool_validation_failed(&self, tool_name: String, error: Value, duration: Duration);
 
     fn send_mcp_tool_validation_completed(&self, tool_name: String, duration: Duration);
+
+    fn send_mcp_call_started(&self, details: McpCallEventDetails);
+
+    fn send_mcp_call_failed(&self, details: McpCallEventDetails, error: Value, duration: Duration);
+
+    fn send_mcp_call_completed(&self, details: McpCallEventDetails, result: Value, raw_result: Value, duration: Duration);
 }
 
 impl ToolCallEventSender for ModelRequest {
@@ -441,12 +490,13 @@ impl ToolCallEventSender for ModelRequest {
         }
     }
 
-    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value) {
+    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value, input_schema: Value) {
         if let Some(event_sender) = &self.event_sender {
             let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_started(
                 self.agent_name.clone(),
                 tool_name,
                 arguments,
+                input_schema,
             ));
         }
     }
@@ -469,6 +519,27 @@ impl ToolCallEventSender for ModelRequest {
                 tool_name,
                 duration,
             ));
+        }
+    }
+
+    fn send_mcp_call_started(&self, details: McpCallEventDetails) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::mcp_call_started(details).with_agent_name(self.agent_name.clone()));
+        }
+    }
+
+    fn send_mcp_call_failed(&self, details: McpCallEventDetails, error: Value, duration: Duration) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ =
+                event_sender.try_send(ExecutorEvent::mcp_call_failed(details, error, duration).with_agent_name(self.agent_name.clone()));
+        }
+    }
+
+    fn send_mcp_call_completed(&self, details: McpCallEventDetails, result: Value, raw_result: Value, duration: Duration) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(
+                ExecutorEvent::mcp_call_completed(details, result, raw_result, duration).with_agent_name(self.agent_name.clone()),
+            );
         }
     }
 }

@@ -10,6 +10,55 @@ pub struct PlannedMcpImportEvent {
     pub item_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpCallEventDetails {
+    pub operation: String,
+    pub target_name: String,
+    pub server_name: String,
+    pub item_name: String,
+    pub arguments: Value,
+    pub input_schema: Option<Value>,
+}
+
+impl McpCallEventDetails {
+    #[must_use]
+    pub fn new(
+        operation: String,
+        target_name: String,
+        server_name: String,
+        item_name: String,
+        arguments: Value,
+        input_schema: Option<Value>,
+    ) -> Self {
+        Self {
+            operation,
+            target_name,
+            server_name,
+            item_name,
+            arguments,
+            input_schema,
+        }
+    }
+
+    #[must_use]
+    fn event_data(&self) -> serde_json::Map<String, Value> {
+        let mut event_data = serde_json::Map::from_iter([
+            ("operation".to_string(), Value::String(self.operation.clone())),
+            ("target_name".to_string(), Value::String(self.target_name.clone())),
+            ("server_name".to_string(), Value::String(self.server_name.clone())),
+            ("item_name".to_string(), Value::String(self.item_name.clone())),
+            ("arguments".to_string(), self.arguments.clone()),
+            ("params".to_string(), self.arguments.clone()),
+        ]);
+
+        if let Some(input_schema) = &self.input_schema {
+            event_data.insert("input_schema".to_string(), input_schema.clone());
+        }
+
+        event_data
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutorEventKind {
@@ -167,12 +216,14 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn mcp_tool_validation_started(agent_name: String, tool_name: String, arguments: Value) -> Self {
+    pub fn mcp_tool_validation_started(agent_name: String, tool_name: String, arguments: Value, input_schema: Value) -> Self {
         Self::new(ExecutorEventKind::McpToolValidationStarted)
             .with_agent_name(agent_name)
             .with_data(serde_json::json!({
                 "tool_name": tool_name,
                 "arguments": arguments,
+                "params": arguments,
+                "input_schema": input_schema,
             }))
     }
 
@@ -198,32 +249,28 @@ impl ExecutorEvent {
     }
 
     #[must_use]
-    pub fn mcp_call_started(operation: String, target_name: String, arguments: Value) -> Self {
-        Self::new(ExecutorEventKind::McpCallStarted).with_data(serde_json::json!({
-            "operation": operation,
-            "target_name": target_name,
-            "arguments": arguments,
-        }))
+    pub fn mcp_call_started(details: McpCallEventDetails) -> Self {
+        Self::new(ExecutorEventKind::McpCallStarted).with_data(Value::Object(details.event_data()))
     }
 
     #[must_use]
-    pub fn mcp_call_completed(operation: String, target_name: String, result: Value, duration: Duration) -> Self {
-        Self::new(ExecutorEventKind::McpCallCompleted).with_data(serde_json::json!({
-            "operation": operation,
-            "target_name": target_name,
-            "result": result,
-            "duration_ms": duration_ms(duration),
-        }))
+    pub fn mcp_call_completed(details: McpCallEventDetails, result: Value, raw_result: Value, duration: Duration) -> Self {
+        let mut event_data = details.event_data();
+        event_data.insert("result".to_string(), result);
+        event_data.insert("output".to_string(), raw_result.clone());
+        event_data.insert("raw_result".to_string(), raw_result);
+        event_data.insert("duration_ms".to_string(), serde_json::json!(duration_ms(duration)));
+
+        Self::new(ExecutorEventKind::McpCallCompleted).with_data(Value::Object(event_data))
     }
 
     #[must_use]
-    pub fn mcp_call_failed(operation: String, target_name: String, error: Value, duration: Duration) -> Self {
-        Self::new(ExecutorEventKind::McpCallFailed).with_data(serde_json::json!({
-            "operation": operation,
-            "target_name": target_name,
-            "error": error,
-            "duration_ms": duration_ms(duration),
-        }))
+    pub fn mcp_call_failed(details: McpCallEventDetails, error: Value, duration: Duration) -> Self {
+        let mut event_data = details.event_data();
+        event_data.insert("error".to_string(), error);
+        event_data.insert("duration_ms".to_string(), serde_json::json!(duration_ms(duration)));
+
+        Self::new(ExecutorEventKind::McpCallFailed).with_data(Value::Object(event_data))
     }
 
     #[must_use]
@@ -254,7 +301,7 @@ impl ExecutorEvent {
         }
     }
 
-    fn with_agent_name(mut self, agent_name: String) -> Self {
+    pub(crate) fn with_agent_name(mut self, agent_name: String) -> Self {
         self.agent_name = Some(agent_name);
         self
     }
