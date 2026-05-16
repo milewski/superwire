@@ -414,6 +414,36 @@ fn suggests_mcp_tool_names_inside_tool_import_path() {
 }
 
 #[test]
+fn suggests_mcp_servers_after_mcp_namespace_root() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        mcp.<cursor> {
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "local");
+}
+
+#[test]
+fn suggests_mcp_servers_inside_batch_import_header() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        from mcp.<cursor> {
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "local");
+}
+
+#[test]
+fn suggests_mcp_import_namespaces_after_server() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
+        mcp.local.<cursor> {
+        }
+    });
+
+    assert_completion_contains_labels!(&completion_suggestions, "tool", "resource", "prompt");
+}
+
+#[test]
 fn suggests_mcp_tool_names_inside_batch_tool_import_item() {
     let completion_suggestions = completion_suggestions_with_mcp_lock_without_cursor_normalization(inline_document_template! {
         from mcp.local.tool {

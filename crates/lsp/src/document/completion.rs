@@ -1281,6 +1281,7 @@ impl DocumentState {
         };
 
         reference_completion_path.root_keyword().is_some()
+            || DeclarationKeyword::from_identifier(reference_completion_path.root_identifier()) == Some(DeclarationKeyword::Mcp)
             || reference_completion_path.is_schema_root()
             || !reference_completion_path.complete_accesses.is_empty()
     }

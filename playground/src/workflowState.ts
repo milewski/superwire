@@ -1,4 +1,4 @@
-import type { WorkflowTab } from './types';
+import type { ExecutorEvent, WorkflowTab } from './types';
 
 export function uniqueId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -56,6 +56,60 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
     secretsJson: typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2),
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
   };
+}
+
+export function recoverWorkflowTabAfterReload(tab: unknown): WorkflowTab {
+  const normalizedTab = normalizeWorkflowTab(tab);
+
+  if (normalizedTab.runState !== 'running') {
+    return normalizedTab;
+  }
+
+  const terminalEvent = terminalWorkflowEvent(normalizedTab.eventLog);
+
+  if (terminalEvent?.kind === 'workflow_completed') {
+    return {
+      ...normalizedTab,
+      runState: 'completed',
+      validationState: 'valid',
+      message: 'Workflow completed.',
+      outputJson: eventOutputJson(terminalEvent) ?? normalizedTab.outputJson,
+    };
+  }
+
+  if (terminalEvent?.kind === 'workflow_failed') {
+    return {
+      ...normalizedTab,
+      runState: 'failed',
+      message: terminalEvent.message ?? 'Workflow failed.',
+    };
+  }
+
+  return {
+    ...normalizedTab,
+    runState: 'failed',
+    message: 'Run connection was lost during page reload. Start a new run to continue.',
+  };
+}
+
+function terminalWorkflowEvent(events: ExecutorEvent[]) {
+  for (let eventIndex = events.length - 1; eventIndex >= 0; eventIndex -= 1) {
+    const event = events[eventIndex];
+
+    if (event.kind === 'workflow_completed' || event.kind === 'workflow_failed') {
+      return event;
+    }
+  }
+
+  return null;
+}
+
+function eventOutputJson(event: ExecutorEvent) {
+  if (!isJsonObject(event.data) || !('output' in event.data)) {
+    return null;
+  }
+
+  return JSON.stringify(event.data.output, null, 2);
 }
 
 function normalizePlaygroundView(value: unknown): WorkflowTab['activeView'] {

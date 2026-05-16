@@ -229,6 +229,7 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
   const editorViewRef = useRef<EditorView | null>(null);
   const languageClientRef = useRef<WebSocketLanguageClient | null>(null);
   const onChangeRef = useRef(onChange);
+  const documentVersionRef = useRef(1);
   const didSaveDebounceTimeoutRef = useRef<number | null>(null);
   const diagnosticsRef = useRef<LspDiagnostic[]>([]);
   const [editorHeight, setEditorHeight] = useState(260);
@@ -259,7 +260,16 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
     });
 
     const editorView = new EditorView({
-      state: createEditorState(value, documentUri, languageClient, onChangeRef, didSaveDebounceTimeoutRef, diagnosticsRef, setEditorHeight),
+      state: createEditorState(
+        value,
+        documentUri,
+        languageClient,
+        onChangeRef,
+        documentVersionRef,
+        didSaveDebounceTimeoutRef,
+        diagnosticsRef,
+        setEditorHeight,
+      ),
       parent: parentElement,
     });
     editorViewRef.current = editorView;
@@ -272,7 +282,7 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
           textDocument: {
             uri: documentUri,
             languageId: 'wire',
-            version: 1,
+            version: documentVersionRef.current,
             text: value,
           },
         }),
@@ -324,6 +334,7 @@ function createEditorState(
   documentUri: string,
   languageClient: WebSocketLanguageClient,
   onChangeRef: React.MutableRefObject<(value: string) => void>,
+  documentVersionRef: React.MutableRefObject<number>,
   didSaveDebounceTimeoutRef: React.MutableRefObject<number | null>,
   diagnosticsRef: React.MutableRefObject<LspDiagnostic[]>,
   setEditorHeight: (height: number) => void,
@@ -355,9 +366,10 @@ function createEditorState(
         const nextValue = update.state.doc.toString();
         onChangeRef.current(nextValue);
         updateEditorHeight(update.view, setEditorHeight);
+        documentVersionRef.current += 1;
 
         void languageClient.notify('textDocument/didChange', {
-          textDocument: { uri: documentUri, version: Date.now() },
+          textDocument: { uri: documentUri, version: documentVersionRef.current },
           contentChanges: [{ text: nextValue }],
         });
 

@@ -15,7 +15,7 @@ import ViewHeader from '@/components/playground/view-header';
 import type { ExecutorEvent, PlaygroundView, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
 import { workflowTemplates, type WorkflowTemplate } from './workflowTemplates';
-import { createWorkflowTab, normalizeWorkflowTab, parseJsonObject, uniqueId } from './workflowState';
+import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniqueId } from './workflowState';
 
 const tabsStorageKey = 'superwire.playground.tabs.v3';
 const legacyTabsStorageKey = 'superwire.playground.tabs.v2';
@@ -369,7 +369,13 @@ export default function App() {
   }
 
   function stopRun() {
-    abortController?.abort();
+    if (abortController) {
+      abortController.abort();
+
+      return;
+    }
+
+    updateActiveTab((tab) => ({ ...tab, runState: 'idle', message: 'Run connection was lost. Start a new run to continue.' }));
   }
 
   function formatRuntimeJson(fieldName: 'inputJson' | 'secretsJson') {
@@ -616,7 +622,7 @@ function restoreFromStorage(setTabs: (tabs: WorkflowTab[]) => void, setActiveTab
   setDarkMode(localStorage.getItem(themeStorageKey) !== 'light');
 
   const savedTabs = localStorage.getItem(tabsStorageKey) ?? localStorage.getItem(legacyTabsStorageKey);
-  const restoredTabs = savedTabs ? (JSON.parse(savedTabs) as unknown[]).map(normalizeWorkflowTab) : [createWorkflowTab('Launch brief')];
+  const restoredTabs = savedTabs ? (JSON.parse(savedTabs) as unknown[]).map(recoverWorkflowTabAfterReload) : [createWorkflowTab('Launch brief')];
   const tabs = restoredTabs.length > 0 ? restoredTabs : [createWorkflowTab('Launch brief')];
   const savedActiveTabId = localStorage.getItem(activeTabStorageKey) ?? localStorage.getItem(legacyActiveTabStorageKey);
   const activeTabId = tabs.some((tab) => tab.id === savedActiveTabId) ? savedActiveTabId! : tabs[0]?.id ?? '';

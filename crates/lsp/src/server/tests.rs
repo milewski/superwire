@@ -1,4 +1,4 @@
-use super::read_project_mcp_lock;
+use super::{read_project_mcp_lock, resolve_mcp_lock};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -65,6 +65,27 @@ fn reads_mcp_lock_from_project_lock_without_refreshing() {
     assert!(!temp_file_path.with_extension("wire.lock").exists());
 
     let _ = std::fs::remove_dir_all(&temp_directory_path);
+}
+
+#[test]
+fn discovers_mcp_lock_from_document_when_project_lock_is_missing() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        mcp local {
+            endpoint: "http://placeholder.test"
+        }
+
+        output {
+            value: null
+        }
+    };
+    let workflow_source = workflow_source.replace("http://placeholder.test", &server.endpoint());
+
+    let discovered_lock = resolve_mcp_lock("file:///playground/document.wire", &workflow_source, None)
+        .expect("MCP metadata should discover from document source");
+
+    assert!(discovered_lock.servers.contains_key("local"));
+    assert!(discovered_lock.servers["local"].find_tool_with_name("update_user_name").is_some());
 }
 
 struct TestMcpHttpServer {

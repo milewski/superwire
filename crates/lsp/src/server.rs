@@ -18,6 +18,7 @@ use lsp_types::{
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use superwire_core::dsl::parse_workflow;
 use superwire_core::mcp::{McpLock, ProjectMcpLock};
 use thiserror::Error;
 
@@ -161,7 +162,7 @@ impl LanguageServer {
     fn handle_did_open(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
         let open_params: lsp_types::DidOpenTextDocumentParams = deserialize_params(params)?;
         let document_uri = open_params.text_document.uri.to_string();
-        let mcp_lock = read_project_mcp_lock(&document_uri);
+        let mcp_lock = resolve_mcp_lock(&document_uri, &open_params.text_document.text, None);
 
         self.documents
             .insert(document_uri.clone(), DocumentState::new(open_params.text_document.text, mcp_lock));
@@ -176,8 +177,8 @@ impl LanguageServer {
         let document_uri = change_params.text_document.uri.to_string();
 
         if let Some(last_change) = change_params.content_changes.last() {
-            let mcp_lock =
-                read_project_mcp_lock(&document_uri).or_else(|| self.documents.get(&document_uri).and_then(DocumentState::mcp_lock));
+            let previous_mcp_lock = self.documents.get(&document_uri).and_then(DocumentState::mcp_lock);
+            let mcp_lock = resolve_mcp_lock(&document_uri, &last_change.text, previous_mcp_lock);
 
             if let Some(document_state) = self.documents.get_mut(&document_uri) {
                 document_state.replace_text(last_change.text.clone(), mcp_lock);
@@ -700,6 +701,52 @@ fn read_project_mcp_lock(document_uri: &str) -> Option<McpLock> {
     let project_lock = ProjectMcpLock::read_from_path(&lock_path).ok()?;
 
     project_lock.workflow_lock(lock_root, &workflow_path).cloned()
+}
+
+fn resolve_mcp_lock(document_uri: &str, source_text: &str, previous_mcp_lock: Option<McpLock>) -> Option<McpLock> {
+    let project_mcp_lock = read_project_mcp_lock(document_uri);
+
+    if let Some(mcp_lock) = lock_with_discovered_missing_servers(source_text, project_mcp_lock) {
+        return Some(mcp_lock);
+    }
+
+    previous_mcp_lock.or_else(|| discover_mcp_lock_from_source(source_text))
+}
+
+fn discover_mcp_lock_from_source(source_text: &str) -> Option<McpLock> {
+    let workflow = parse_workflow(source_text).ok()?;
+
+    McpLock::discover_from_workflow(&workflow).ok()
+}
+
+fn lock_with_discovered_missing_servers(source_text: &str, project_mcp_lock: Option<McpLock>) -> Option<McpLock> {
+    let Some(mut mcp_lock) = project_mcp_lock else {
+        return discover_mcp_lock_from_source(source_text);
+    };
+    let workflow = parse_workflow(source_text).ok()?;
+    let missing_server_names = workflow
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration {
+            superwire_core::dsl::Declaration::McpServer(mcp_server_declaration) => Some(mcp_server_declaration.name.as_str()),
+            _ => None,
+        })
+        .filter(|server_name| !mcp_lock.servers.contains_key(*server_name))
+        .collect::<Vec<_>>();
+
+    if missing_server_names.is_empty() {
+        return Some(mcp_lock);
+    }
+
+    let discovered_mcp_lock = McpLock::discover_from_workflow(&workflow).ok()?;
+
+    for missing_server_name in missing_server_names {
+        if let Some(server_lock) = discovered_mcp_lock.servers.get(missing_server_name) {
+            mcp_lock.servers.insert(missing_server_name.to_string(), server_lock.clone());
+        }
+    }
+
+    Some(mcp_lock)
 }
 
 fn path_for_document_uri(document_uri: &str) -> Option<PathBuf> {
