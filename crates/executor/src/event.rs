@@ -20,6 +20,12 @@ pub enum ExecutorEventKind {
     ToolCallStarted,
     ToolCallFailed,
     ToolCallCompleted,
+    McpToolSchemaFetchStarted,
+    McpToolSchemaFetchFailed,
+    McpToolSchemaFetchCompleted,
+    McpToolValidationStarted,
+    McpToolValidationFailed,
+    McpToolValidationCompleted,
     McpCallStarted,
     McpCallFailed,
     McpCallCompleted,
@@ -38,6 +44,12 @@ impl ExecutorEventKind {
             Self::ToolCallStarted => "tool_call_started",
             Self::ToolCallFailed => "tool_call_failed",
             Self::ToolCallCompleted => "tool_call_completed",
+            Self::McpToolSchemaFetchStarted => "mcp_tool_schema_fetch_started",
+            Self::McpToolSchemaFetchFailed => "mcp_tool_schema_fetch_failed",
+            Self::McpToolSchemaFetchCompleted => "mcp_tool_schema_fetch_completed",
+            Self::McpToolValidationStarted => "mcp_tool_validation_started",
+            Self::McpToolValidationFailed => "mcp_tool_validation_failed",
+            Self::McpToolValidationCompleted => "mcp_tool_validation_completed",
             Self::McpCallStarted => "mcp_call_started",
             Self::McpCallFailed => "mcp_call_failed",
             Self::McpCallCompleted => "mcp_call_completed",
@@ -121,6 +133,62 @@ impl ExecutorEvent {
     #[must_use]
     pub fn tool_call_failed(agent_name: String, tool_name: String, error: Value, duration: Duration) -> Self {
         Self::new(ExecutorEventKind::ToolCallFailed)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "tool_name": tool_name,
+                "error": error,
+                "duration_ms": duration_ms(duration),
+            }))
+    }
+
+    #[must_use]
+    pub fn mcp_tool_schema_fetch_started(server_name: String) -> Self {
+        Self::new(ExecutorEventKind::McpToolSchemaFetchStarted).with_data(serde_json::json!({
+            "server_name": server_name,
+        }))
+    }
+
+    #[must_use]
+    pub fn mcp_tool_schema_fetch_completed(server_name: String, tool_count: usize, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::McpToolSchemaFetchCompleted).with_data(serde_json::json!({
+            "server_name": server_name,
+            "tool_count": tool_count,
+            "duration_ms": duration_ms(duration),
+        }))
+    }
+
+    #[must_use]
+    pub fn mcp_tool_schema_fetch_failed(server_name: String, error: Value, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::McpToolSchemaFetchFailed).with_data(serde_json::json!({
+            "server_name": server_name,
+            "error": error,
+            "duration_ms": duration_ms(duration),
+        }))
+    }
+
+    #[must_use]
+    pub fn mcp_tool_validation_started(agent_name: String, tool_name: String, arguments: Value) -> Self {
+        Self::new(ExecutorEventKind::McpToolValidationStarted)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "tool_name": tool_name,
+                "arguments": arguments,
+            }))
+    }
+
+    #[must_use]
+    pub fn mcp_tool_validation_completed(agent_name: String, tool_name: String, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::McpToolValidationCompleted)
+            .with_agent_name(agent_name)
+            .with_data(serde_json::json!({
+                "tool_name": tool_name,
+                "duration_ms": duration_ms(duration),
+            }))
+    }
+
+    #[must_use]
+    pub fn mcp_tool_validation_failed(agent_name: String, tool_name: String, error: Value, duration: Duration) -> Self {
+        Self::new(ExecutorEventKind::McpToolValidationFailed)
             .with_agent_name(agent_name)
             .with_data(serde_json::json!({
                 "tool_name": tool_name,

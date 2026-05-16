@@ -146,7 +146,12 @@ where
         max_concurrency
     );
 
-    let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &request.input, &request.secrets)?;
+    let executor = WorkflowExecutor::from_source_with_runtime_values_and_event_sender(
+        &workflow_source,
+        &request.input,
+        &request.secrets,
+        Some(&event_sender),
+    )?;
     let agent_execution_order = executor.agent_execution_order();
     let mcp_imports = executor
         .mcp_imports()

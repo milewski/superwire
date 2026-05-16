@@ -194,6 +194,92 @@ async fn deterministic_tool_call_emits_started_and_completed_events() {
 }
 
 #[tokio::test]
+async fn mcp_tool_schema_fetch_and_validation_events_are_emitted() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "http://localhost:1234/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "model-a"
+        }
+
+        mcp local {
+            endpoint: "__ENDPOINT__"
+        }
+
+        input {
+            project_id: number
+            task_id: number
+        }
+
+        tool fetch_task_data from mcp.local.tool.fetch_task_data {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+        }
+
+        dynamic {
+            data: call tool.fetch_task_data
+        }
+
+        agent summarizer {
+            model: model.openai_model
+            instruction: "Summarize {{ dynamic.data }}"
+            output {
+                summary: string
+            }
+        }
+
+        output {
+            summary: agent.summarizer.summary
+        }
+    }
+    .replace("__ENDPOINT__", &server.endpoint());
+    let model_provider = TestModelProvider::new(vec![json!({ "summary": "done" })]);
+    let service = ExecutorService::new(model_provider);
+    let mut receiver = service.execute_stream(request_with_input(&workflow_source, json!({ "project_id": 42, "task_id": 7 })));
+    let mut events = Vec::new();
+
+    while let Some(event) = receiver.recv().await {
+        events.push(event);
+    }
+
+    let schema_started = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpToolSchemaFetchStarted)
+        .expect("schema fetch start event should exist");
+    assert_eq!(schema_started.data.as_ref().unwrap()["server_name"], "local");
+
+    let schema_completed = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpToolSchemaFetchCompleted)
+        .expect("schema fetch completion event should exist");
+    assert_eq!(schema_completed.data.as_ref().unwrap()["server_name"], "local");
+    assert_eq!(schema_completed.data.as_ref().unwrap()["tool_count"], 1);
+    assert!(schema_completed.data.as_ref().unwrap()["duration_ms"].as_u64().is_some());
+
+    let validation_started = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpToolValidationStarted)
+        .expect("MCP validation start event should exist");
+    assert_eq!(validation_started.agent_name.as_deref(), Some(""));
+    assert_eq!(validation_started.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+    assert_eq!(validation_started.data.as_ref().unwrap()["arguments"]["project_id"], 42);
+
+    let validation_completed = events
+        .iter()
+        .find(|event| event.kind == ExecutorEventKind::McpToolValidationCompleted)
+        .expect("MCP validation completion event should exist");
+    assert_eq!(validation_completed.agent_name.as_deref(), Some(""));
+    assert_eq!(validation_completed.data.as_ref().unwrap()["tool_name"], "fetch_task_data");
+    assert!(validation_completed.data.as_ref().unwrap()["duration_ms"].as_u64().is_some());
+}
+
+#[tokio::test]
 async fn explicit_mcp_calls_emit_started_and_completed_events() {
     let server = TestMcpHttpServer::spawn();
     let workflow_source = workflow_source! {

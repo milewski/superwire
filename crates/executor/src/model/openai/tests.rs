@@ -205,6 +205,24 @@ fn rejects_invalid_tool_arguments_before_mcp_call() {
         .contains("en_US"));
     assert_eq!(server.received_tool_arguments(), None);
 
+    let validation_started_event = event_receiver.try_recv().expect("validation start event should be emitted");
+
+    assert_eq!(validation_started_event.kind, ExecutorEventKind::McpToolValidationStarted);
+    assert_eq!(validation_started_event.agent_name.as_deref(), Some("updater"));
+    assert_eq!(
+        validation_started_event.data.as_ref().and_then(|data| data.get("tool_name")),
+        Some(&json!("update_user_name"))
+    );
+
+    let validation_failed_event = event_receiver.try_recv().expect("validation failure event should be emitted");
+
+    assert_eq!(validation_failed_event.kind, ExecutorEventKind::McpToolValidationFailed);
+    assert_eq!(validation_failed_event.agent_name.as_deref(), Some("updater"));
+    assert_eq!(
+        validation_failed_event.data.as_ref().and_then(|data| data.pointer("/error/error")),
+        Some(&json!("tool_argument_schema_mismatch"))
+    );
+
     let event = event_receiver.try_recv().expect("tool call failure event should be emitted");
 
     assert_eq!(event.kind, ExecutorEventKind::ToolCallFailed);
@@ -335,7 +353,7 @@ fn returns_tool_error_when_max_calls_limit_is_exceeded() {
     let mcp_server = TestMcpHttpServer::spawn();
     let provider = OpenAiModelProvider;
     let mut request = model_request("http://localhost:1234/v1".to_string(), mcp_server.endpoint());
-    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(4);
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::channel(8);
 
     request.tools[0].max_calls = Some(1);
     request.event_sender = Some(event_sender);
@@ -366,6 +384,18 @@ fn returns_tool_error_when_max_calls_limit_is_exceeded() {
         .as_str()
         .expect("error message should be string")
         .contains("tool `update_user_name` cannot be called more than 1 times"));
+
+    let validation_started_event = event_receiver
+        .try_recv()
+        .expect("first tool call should emit validation start event");
+
+    assert_eq!(validation_started_event.kind, ExecutorEventKind::McpToolValidationStarted);
+
+    let validation_completed_event = event_receiver
+        .try_recv()
+        .expect("first tool call should emit validation completion event");
+
+    assert_eq!(validation_completed_event.kind, ExecutorEventKind::McpToolValidationCompleted);
 
     let started_event = event_receiver.try_recv().expect("first tool call should emit started event");
 

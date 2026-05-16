@@ -101,8 +101,18 @@ impl super::OpenAiModelProvider {
             }
         };
 
+        let validation_started_at = Instant::now();
+
+        if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
+            request.send_mcp_tool_validation_started(tool_definition.name.clone(), arguments.clone());
+        }
+
         if let Err(message) = validate_tool_arguments(&arguments, &tool_definition.input_schema) {
             let tool_error = tool_definition.argument_error(message);
+
+            if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
+                request.send_mcp_tool_validation_failed(tool_definition.name.clone(), tool_error.clone(), validation_started_at.elapsed());
+            }
 
             if !matches!(tool_definition.source, ModelToolSource::Finalize) {
                 request.send_tool_call_failed(tool_definition.name.clone(), tool_error.clone(), tool_call_started_at.elapsed());
@@ -115,6 +125,10 @@ impl super::OpenAiModelProvider {
             );
 
             return Ok(ToolCallOutcome::Continue(tool_error));
+        }
+
+        if matches!(tool_definition.source, ModelToolSource::Mcp { .. }) {
+            request.send_mcp_tool_validation_completed(tool_definition.name.clone(), validation_started_at.elapsed());
         }
 
         if matches!(tool_definition.source, ModelToolSource::Finalize) {
@@ -395,6 +409,12 @@ trait ToolCallEventSender {
     fn send_tool_call_failed(&self, tool_name: String, error: Value, duration: Duration);
 
     fn send_tool_call_completed(&self, tool_name: String, result: Value, duration: Duration);
+
+    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value);
+
+    fn send_mcp_tool_validation_failed(&self, tool_name: String, error: Value, duration: Duration);
+
+    fn send_mcp_tool_validation_completed(&self, tool_name: String, duration: Duration);
 }
 
 impl ToolCallEventSender for ModelRequest {
@@ -416,6 +436,37 @@ impl ToolCallEventSender for ModelRequest {
                 self.agent_name.clone(),
                 tool_name,
                 result,
+                duration,
+            ));
+        }
+    }
+
+    fn send_mcp_tool_validation_started(&self, tool_name: String, arguments: Value) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_started(
+                self.agent_name.clone(),
+                tool_name,
+                arguments,
+            ));
+        }
+    }
+
+    fn send_mcp_tool_validation_failed(&self, tool_name: String, error: Value, duration: Duration) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_failed(
+                self.agent_name.clone(),
+                tool_name,
+                error,
+                duration,
+            ));
+        }
+    }
+
+    fn send_mcp_tool_validation_completed(&self, tool_name: String, duration: Duration) {
+        if let Some(event_sender) = &self.event_sender {
+            let _ = event_sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
+                self.agent_name.clone(),
+                tool_name,
                 duration,
             ));
         }

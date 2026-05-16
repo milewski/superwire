@@ -18,7 +18,7 @@ use superwire_core::dsl::{
     parse_workflow, validate_workflow, AgentExpressionPropertyName, AgentForLoopPattern, AgentProperty, Declaration, Expression,
     ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
-use superwire_core::mcp::{McpClientPool, McpLock, McpServerConfig};
+use superwire_core::mcp::{McpClient, McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
@@ -84,6 +84,15 @@ impl WorkflowExecutor {
     }
 
     pub fn from_source_with_runtime_values(workflow_source: &str, input: &Value, secrets: &Value) -> Result<Self, ExecutorError> {
+        Self::from_source_with_runtime_values_and_event_sender(workflow_source, input, secrets, None)
+    }
+
+    pub fn from_source_with_runtime_values_and_event_sender(
+        workflow_source: &str,
+        input: &Value,
+        secrets: &Value,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<Self, ExecutorError> {
         let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
             let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
 
@@ -99,10 +108,7 @@ impl WorkflowExecutor {
             agent_contexts: HashMap::new(),
             local_bindings: HashMap::new(),
         };
-        let mcp_lock =
-            McpLock::discover_from_workflow_with_context(&workflow, &evaluation_context).map_err(|error| ExecutorError::Other {
-                message: error.to_string(),
-            })?;
+        let mcp_lock = Self::discover_mcp_lock_with_context(&workflow, &evaluation_context, event_sender)?;
 
         log::debug!("discovered MCP schemas using runtime values: servers={}", mcp_lock.servers.len());
         mcp_lock.apply_to_workflow(&mut workflow);
@@ -119,6 +125,61 @@ impl WorkflowExecutor {
         })?;
 
         Self::from_workflow(workflow_source, workflow, mcp_pool)
+    }
+
+    fn discover_mcp_lock_with_context(
+        workflow: &Workflow,
+        evaluation_context: &EvaluationContext,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<McpLock, ExecutorError> {
+        let mut mcp_lock = McpLock::empty();
+
+        for declaration in workflow.declarations() {
+            let Declaration::McpServer(mcp_server_declaration) = declaration else {
+                continue;
+            };
+            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| {
+                ExecutorError::Other {
+                    message: error.to_string(),
+                }
+            })?;
+            let started_at = Instant::now();
+
+            if let Some(sender) = event_sender {
+                let _ = sender.try_send(ExecutorEvent::mcp_tool_schema_fetch_started(server_config.name.clone()));
+            }
+
+            log::debug!("discovering MCP tools from runtime server config: {}", server_config.name);
+            let server_lock = match McpClient::new(server_config.clone()).list_tools() {
+                Ok(server_lock) => server_lock,
+                Err(error) => {
+                    if let Some(sender) = event_sender {
+                        let _ = sender.try_send(ExecutorEvent::mcp_tool_schema_fetch_failed(
+                            server_config.name,
+                            Value::String(error.to_string()),
+                            started_at.elapsed(),
+                        ));
+                    }
+
+                    return Err(ExecutorError::Other {
+                        message: error.to_string(),
+                    });
+                }
+            };
+            let tool_count = server_lock.tools.len();
+
+            if let Some(sender) = event_sender {
+                let _ = sender.try_send(ExecutorEvent::mcp_tool_schema_fetch_completed(
+                    server_config.name.clone(),
+                    tool_count,
+                    started_at.elapsed(),
+                ));
+            }
+
+            mcp_lock.servers.insert(server_config.name, server_lock);
+        }
+
+        Ok(mcp_lock)
     }
 
     fn from_workflow(workflow_source: &str, workflow: Workflow, mcp_pool: McpClientPool) -> Result<Self, ExecutorError> {
@@ -453,6 +514,7 @@ impl WorkflowExecutor {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn execute_deterministic_tool_call(
         &self,
         tool_call: &ToolCall,
@@ -487,11 +549,11 @@ impl WorkflowExecutor {
             input_arguments.insert(input_field.name.clone(), input_value);
         }
 
-        validate_value_against_type(&Value::Object(input_arguments.clone()), &typed_tool.input_type).map_err(|message| {
-            ExecutorError::Other {
+        if let Err(message) = validate_value_against_type(&Value::Object(input_arguments.clone()), &typed_tool.input_type) {
+            return Err(ExecutorError::Other {
                 message: format!("deterministic tool call `{tool_name}` input is invalid: {message}"),
-            }
-        })?;
+            });
+        }
 
         let mut arguments = input_arguments;
 
@@ -508,6 +570,21 @@ impl WorkflowExecutor {
                 endpoint,
                 headers,
             } => {
+                let validation_started_at = Instant::now();
+
+                if let Some(sender) = event_sender {
+                    let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_started(
+                        String::new(),
+                        tool_name.to_string(),
+                        Value::Object(arguments.clone()),
+                    ));
+                    let _ = sender.try_send(ExecutorEvent::mcp_tool_validation_completed(
+                        String::new(),
+                        tool_name.to_string(),
+                        validation_started_at.elapsed(),
+                    ));
+                }
+
                 let server_config = McpServerConfig {
                     name: server_name.unwrap_or_else(|| "default".to_string()),
                     endpoint,
