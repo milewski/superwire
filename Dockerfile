@@ -6,6 +6,7 @@ COPY playground/package.json playground/package-lock.json ./
 RUN npm ci
 
 COPY playground/ ./
+COPY documentation/public /workspace/documentation/public
 COPY editors/textmate/syntaxes/wire.tmLanguage.json /workspace/editors/textmate/syntaxes/wire.tmLanguage.json
 RUN npm run build
 
@@ -53,6 +54,5 @@ ENV SUPERWIRE_PLAYGROUND_DIST=/usr/local/share/superwire/playground
 USER superwire
 
 EXPOSE 13703
-EXPOSE 13704
 
 ENTRYPOINT ["/usr/local/bin/superwire-executor"]

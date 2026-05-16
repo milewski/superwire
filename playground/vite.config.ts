@@ -4,7 +4,7 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/',
+  base: '/playground/',
   publicDir: '../documentation/public',
   plugins: [react(), tailwindcss()],
   resolve: {

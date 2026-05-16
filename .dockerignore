@@ -23,4 +23,6 @@ editors
 !editors/textmate/syntaxes/wire.tmLanguage.json
 integration
 documentation
-
+!documentation/
+!documentation/public/
+!documentation/public/**

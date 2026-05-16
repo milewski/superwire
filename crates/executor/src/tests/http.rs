@@ -6,6 +6,7 @@ use crate::server::executor_router_with_service;
 use crate::service::ExecutorService;
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::json;
+use std::path::PathBuf;
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -76,7 +77,7 @@ async fn tracking_provider_records_all_calls() {
 
 #[tokio::test]
 async fn http_returns_final_output() {
-    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]));
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]), true);
     let request_body = json!({ "workflow_source": fixtures::MINIMUM });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -97,7 +98,7 @@ async fn http_returns_final_output() {
 
 #[tokio::test]
 async fn http_maps_bad_input_to_bad_request() {
-    let router = executor_router_with_service(support::service(vec![]));
+    let router = executor_router_with_service(support::service(vec![]), true);
     let request_body = json!({ "workflow_source": fixtures::INPUT_STRING, "input": { "topic": 123 } });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -112,7 +113,7 @@ async fn http_maps_bad_input_to_bad_request() {
 
 #[tokio::test]
 async fn http_accepts_base64_workflow_source() {
-    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]));
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]), true);
     let request_body = json!({ "workflow_source_base64": BASE64_STANDARD.encode(fixtures::MINIMUM) });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -133,7 +134,7 @@ async fn http_accepts_base64_workflow_source() {
 
 #[tokio::test]
 async fn http_streams_events_when_accept_header_requests_event_stream() {
-    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]));
+    let router = executor_router_with_service(support::service(vec![json!({ "value": "ok" })]), true);
     let request_body = json!({ "workflow_source": fixtures::MINIMUM });
     let request = axum::http::Request::builder()
         .method("POST")
@@ -165,7 +166,7 @@ async fn http_streams_events_when_accept_header_requests_event_stream() {
 
 #[tokio::test]
 async fn http_validate_returns_success_without_execution() {
-    let router = executor_router_with_service(support::service(vec![json!("unused")]));
+    let router = executor_router_with_service(support::service(vec![json!("unused")]), true);
     let request_body = json!({
         "workflow_source": fixtures::INPUT_STRING
     });
@@ -188,7 +189,7 @@ async fn http_validate_returns_success_without_execution() {
 
 #[tokio::test]
 async fn http_validate_rejects_input_field() {
-    let router = executor_router_with_service(support::service(vec![]));
+    let router = executor_router_with_service(support::service(vec![]), true);
     let request_body = json!({
         "workflow_source": fixtures::INPUT_STRING,
         "input": { "topic": 123 }
@@ -213,7 +214,7 @@ async fn http_validate_rejects_input_field() {
 #[tokio::test]
 async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
     let server = TestMcpHttpServer::spawn([("authorization".to_string(), "Bearer secret-token".to_string())]);
-    let router = executor_router_with_service(support::service(vec![]));
+    let router = executor_router_with_service(support::service(vec![]), true);
     let workflow_source = superwire_core::workflow_source! {
         provider openai from openai {
             endpoint: "https://api.openai.com/v1"
@@ -281,7 +282,7 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
 
 #[tokio::test]
 async fn http_format_formats_source_after_validation() {
-    let router = executor_router_with_service(support::service(vec![]));
+    let router = executor_router_with_service(support::service(vec![]), true);
     let request_body = json!({
         "workflow_source": "output { greeting: \"ok\" }"
     });
@@ -301,4 +302,78 @@ async fn http_format_formats_source_after_validation() {
     let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
     assert_eq!(response_json["valid"], json!(true));
     assert!(response_json["formatted_workflow_source"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn playground_serves_root_redirect_and_index() {
+    let router = executor_router_with_service(support::service(vec![]), false);
+
+    let root_request = axum::http::Request::builder()
+        .uri("/")
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let root_response = router.clone().oneshot(root_request).await.expect("request should execute");
+
+    assert_eq!(root_response.status(), axum::http::StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        root_response
+            .headers()
+            .get("location")
+            .and_then(|header_value| header_value.to_str().ok()),
+        Some("/playground")
+    );
+
+    let playground_request = axum::http::Request::builder()
+        .uri("/playground")
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let playground_response = router.oneshot(playground_request).await.expect("request should execute");
+
+    assert_eq!(playground_response.status(), axum::http::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn playground_serves_logo_and_built_assets() {
+    let router = executor_router_with_service(support::service(vec![]), false);
+
+    let logo_request = axum::http::Request::builder()
+        .uri("/playground/logo-horizontal.svg")
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let logo_response = router.clone().oneshot(logo_request).await.expect("request should execute");
+
+    assert_eq!(logo_response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        logo_response
+            .headers()
+            .get("content-type")
+            .and_then(|header_value| header_value.to_str().ok()),
+        Some("image/svg+xml")
+    );
+
+    let asset_path = first_playground_asset_path("js");
+    let asset_request = axum::http::Request::builder()
+        .uri(format!(
+            "/playground/assets/{}",
+            asset_path
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                .expect("asset file name should be UTF-8")
+        ))
+        .body(axum::body::Body::empty())
+        .expect("request should build");
+    let asset_response = router.oneshot(asset_request).await.expect("request should execute");
+
+    assert_eq!(asset_response.status(), axum::http::StatusCode::OK);
+}
+
+fn first_playground_asset_path(extension: &str) -> PathBuf {
+    let asset_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../playground/dist/assets");
+
+    std::fs::read_dir(asset_directory)
+        .expect("asset directory should exist")
+        .filter_map(Result::ok)
+        .map(|directory_entry| directory_entry.path())
+        .find(|asset_path| asset_path.extension().and_then(|asset_extension| asset_extension.to_str()) == Some(extension))
+        .expect("playground asset should exist")
 }

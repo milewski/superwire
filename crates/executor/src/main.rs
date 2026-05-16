@@ -7,8 +7,8 @@ struct Cli {
     #[arg(long, default_value = "0.0.0.0:13703")]
     address: SocketAddr,
 
-    #[arg(long, default_value = "0.0.0.0:13704")]
-    ui: Option<SocketAddr>,
+    #[arg(long, default_value_t = false)]
+    disable_playground: bool,
 }
 
 #[tokio::main]
@@ -26,13 +26,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("starting executor server on {}", cli.address);
 
-    if let Some(ui_address) = cli.ui {
-        log::info!("starting playground server on http://{ui_address}/");
-
-        tokio::try_join!(serve_executor(cli.address), serve_executor(ui_address))?;
-    } else {
-        serve_executor(cli.address).await?;
-    }
+    serve_executor(cli.address, cli.disable_playground).await?;
 
     Ok(())
 }
