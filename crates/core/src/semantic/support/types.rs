@@ -9,6 +9,7 @@ use std::hash::BuildHasher;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowType {
+    Any,
     String,
     Integer,
     Float,
@@ -35,7 +36,8 @@ impl WorkflowType {
         match self {
             Self::Null => true,
             Self::Union(members) => members.iter().any(Self::can_be_null),
-            Self::String
+            Self::Any
+            | Self::String
             | Self::Integer
             | Self::Float
             | Self::Boolean
@@ -99,7 +101,8 @@ impl WorkflowType {
 
                 Some(normalize_union_members(field_types))
             }
-            Self::String
+            Self::Any
+            | Self::String
             | Self::Integer
             | Self::Float
             | Self::Boolean
@@ -131,7 +134,8 @@ impl WorkflowType {
             Self::Union(members) => members
                 .iter()
                 .find_map(|member| member.variant_case_field_type(case_name, field_path)),
-            Self::String
+            Self::Any
+            | Self::String
             | Self::Integer
             | Self::Float
             | Self::Boolean
@@ -152,7 +156,8 @@ impl WorkflowType {
         match self {
             Self::Variant { discriminator: _, cases } => Some(cases.keys().cloned().collect()),
             Self::Union(members) => members.iter().find_map(Self::variant_case_names),
-            Self::String
+            Self::Any
+            | Self::String
             | Self::Integer
             | Self::Float
             | Self::Boolean
@@ -203,12 +208,15 @@ impl WorkflowType {
                 }
             }
             Self::Union(members) => normalize_union_members(members.into_iter().map(Self::normalize).collect()),
-            Self::String | Self::Integer | Self::Float | Self::Boolean | Self::Null | Self::AnyObject | Self::StringEnum(_) => self,
+            Self::Any | Self::String | Self::Integer | Self::Float | Self::Boolean | Self::Null | Self::AnyObject | Self::StringEnum(_) => {
+                self
+            }
         }
     }
 
     fn canonical_key(&self) -> String {
         match self {
+            Self::Any => "any".to_string(),
             Self::String => "string".to_string(),
             Self::Integer => "integer".to_string(),
             Self::Float => "float".to_string(),
@@ -272,7 +280,8 @@ impl WorkflowType {
                 fixed_length: _,
             } => true,
             Self::Union(union_members) => union_members.iter().all(Self::is_guaranteed_array),
-            Self::String
+            Self::Any
+            | Self::String
             | Self::Integer
             | Self::Float
             | Self::Boolean
@@ -292,6 +301,7 @@ impl WorkflowType {
 impl Display for WorkflowType {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Any => write!(formatter, "any"),
             Self::String => write!(formatter, "string"),
             Self::Integer => write!(formatter, "number"),
             Self::Float => write!(formatter, "float"),
@@ -759,6 +769,7 @@ pub fn validate_value_against_type(value: &Value, expected_type: &WorkflowType) 
 
 pub fn workflow_type_to_json_schema(workflow_type: &WorkflowType) -> Value {
     match workflow_type {
+        WorkflowType::Any => json!({}),
         WorkflowType::String => json!({ "type": "string" }),
         WorkflowType::Integer => json!({ "type": "integer" }),
         WorkflowType::Float => json!({ "type": "number" }),
@@ -918,7 +929,70 @@ pub fn parse_number_literal(number_literal: &str) -> Result<Number, WorkflowSema
 
 #[must_use]
 pub fn ensure_type_matches(expected_type: &WorkflowType, actual_type: &WorkflowType) -> bool {
-    expected_type.clone().normalize() == actual_type.clone().normalize()
+    let expected_type = expected_type.clone().normalize();
+    let actual_type = actual_type.clone().normalize();
+
+    if matches!(expected_type, WorkflowType::Any) || matches!(actual_type, WorkflowType::Any) {
+        return true;
+    }
+
+    match (&expected_type, &actual_type) {
+        (
+            WorkflowType::Array {
+                item_type: expected_item_type,
+                fixed_length: expected_fixed_length,
+            },
+            WorkflowType::Array {
+                item_type: actual_item_type,
+                fixed_length: actual_fixed_length,
+            },
+        ) => expected_fixed_length == actual_fixed_length && ensure_type_matches(expected_item_type, actual_item_type),
+        (WorkflowType::Tuple(expected_item_types), WorkflowType::Tuple(actual_item_types)) => {
+            expected_item_types.len() == actual_item_types.len()
+                && expected_item_types
+                    .iter()
+                    .zip(actual_item_types)
+                    .all(|(expected_item_type, actual_item_type)| ensure_type_matches(expected_item_type, actual_item_type))
+        }
+        (WorkflowType::Object(expected_fields), WorkflowType::Object(actual_fields)) => {
+            expected_fields.len() == actual_fields.len()
+                && expected_fields.iter().all(|(field_name, expected_field_type)| {
+                    actual_fields
+                        .get(field_name)
+                        .is_some_and(|actual_field_type| ensure_type_matches(expected_field_type, actual_field_type))
+                })
+        }
+        (
+            WorkflowType::Variant {
+                discriminator: expected_discriminator,
+                cases: expected_cases,
+            },
+            WorkflowType::Variant {
+                discriminator: actual_discriminator,
+                cases: actual_cases,
+            },
+        ) => {
+            expected_discriminator == actual_discriminator
+                && expected_cases.len() == actual_cases.len()
+                && expected_cases.iter().all(|(case_name, expected_fields)| {
+                    actual_cases.get(case_name).is_some_and(|actual_fields| {
+                        ensure_type_matches(
+                            &WorkflowType::Object(expected_fields.clone()),
+                            &WorkflowType::Object(actual_fields.clone()),
+                        )
+                    })
+                })
+        }
+        (WorkflowType::Union(expected_members), WorkflowType::Union(actual_members)) => {
+            expected_members.len() == actual_members.len()
+                && expected_members.iter().all(|expected_member| {
+                    actual_members
+                        .iter()
+                        .any(|actual_member| ensure_type_matches(expected_member, actual_member))
+                })
+        }
+        _ => expected_type == actual_type,
+    }
 }
 
 #[must_use]

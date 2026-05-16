@@ -617,6 +617,13 @@ pub struct ToolDeclaration {
     pub span: SourceSpan,
 }
 
+impl ToolDeclaration {
+    #[must_use]
+    pub fn has_untyped_mcp_output(&self) -> bool {
+        self.output_fields.is_empty() && matches!(self.source, Some(ToolSource::Mcp(_)))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpBatchImportDeclaration {
     pub server_name: String,

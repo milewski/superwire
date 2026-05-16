@@ -239,6 +239,22 @@ fn allows_block_style_tool_binding_overrides() {
 }
 
 #[test]
+fn reports_parse_error_for_type_syntax_inside_bindings_blocks() {
+    let diagnostics = inline_diagnostics! {
+        from mcp.mintilify {
+            tool query_docs_filesystem_superwire {
+                bindings {
+                    /// A shell command to run against the virtualized documentation filesystem.
+                    command: string
+                }
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::ParseError);
+}
+
+#[test]
 fn reports_missing_tool_binding_overrides_diagnostic() {
     let diagnostics = inline_diagnostics! {
         input {
@@ -277,7 +293,7 @@ fn reports_missing_tool_binding_overrides_diagnostic() {
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnexpectedRule);
 }
 
 #[test]
@@ -359,7 +375,7 @@ fn reports_invalid_tool_binding_override_type_diagnostic() {
         }
     };
 
-    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidToolBinding);
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::UnexpectedRule);
 }
 
 #[test]

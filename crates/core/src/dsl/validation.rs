@@ -1291,7 +1291,11 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                             .insert(tool_declaration.name.clone(), tool_declaration.fixed_binding_fields.clone());
                     }
 
-                    if let Ok(tool_output_type) =
+                    if tool_declaration.has_untyped_mcp_output() {
+                        validation_index
+                            .tool_output_types
+                            .insert(tool_declaration.name.clone(), crate::semantic::support::types::WorkflowType::Any);
+                    } else if let Ok(tool_output_type) =
                         workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
                     {
                         validation_index
@@ -1350,7 +1354,11 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                             .insert(tool_declaration.name.clone(), tool_declaration.fixed_binding_fields.clone());
                     }
 
-                    if let Ok(tool_output_type) =
+                    if tool_declaration.has_untyped_mcp_output() {
+                        validation_index
+                            .tool_output_types
+                            .insert(tool_declaration.name.clone(), crate::semantic::support::types::WorkflowType::Any);
+                    } else if let Ok(tool_output_type) =
                         workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
                     {
                         validation_index
@@ -3076,7 +3084,9 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 tool_binding_types.insert(tool_declaration.name.clone(), tool_binding_type);
             }
 
-            if let Ok(tool_output_type) =
+            if tool_declaration.has_untyped_mcp_output() {
+                tool_output_types.insert(tool_declaration.name.clone(), crate::semantic::support::types::WorkflowType::Any);
+            } else if let Ok(tool_output_type) =
                 workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
             {
                 tool_output_types.insert(tool_declaration.name.clone(), tool_output_type);
@@ -3369,7 +3379,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                         item_type,
                         fixed_length: _,
                     } => Some(*item_type),
-                    crate::semantic::support::types::WorkflowType::String
+                    crate::semantic::support::types::WorkflowType::Any
+                    | crate::semantic::support::types::WorkflowType::String
                     | crate::semantic::support::types::WorkflowType::Integer
                     | crate::semantic::support::types::WorkflowType::Float
                     | crate::semantic::support::types::WorkflowType::Boolean
@@ -3385,7 +3396,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     } => None,
                 })
             }
-            crate::semantic::support::types::WorkflowType::String
+            crate::semantic::support::types::WorkflowType::Any
+            | crate::semantic::support::types::WorkflowType::String
             | crate::semantic::support::types::WorkflowType::Integer
             | crate::semantic::support::types::WorkflowType::Float
             | crate::semantic::support::types::WorkflowType::Boolean
@@ -4006,7 +4018,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                     );
                 }
             }
-            crate::semantic::support::types::WorkflowType::String
+            crate::semantic::support::types::WorkflowType::Any
+            | crate::semantic::support::types::WorkflowType::String
             | crate::semantic::support::types::WorkflowType::Integer
             | crate::semantic::support::types::WorkflowType::Float
             | crate::semantic::support::types::WorkflowType::Boolean
@@ -4062,7 +4075,8 @@ fn workflow_type_can_be_null(workflow_type: &crate::semantic::support::types::Wo
     match workflow_type {
         crate::semantic::support::types::WorkflowType::Null => true,
         crate::semantic::support::types::WorkflowType::Union(union_members) => union_members.iter().any(workflow_type_can_be_null),
-        crate::semantic::support::types::WorkflowType::String
+        crate::semantic::support::types::WorkflowType::Any
+        | crate::semantic::support::types::WorkflowType::String
         | crate::semantic::support::types::WorkflowType::Integer
         | crate::semantic::support::types::WorkflowType::Float
         | crate::semantic::support::types::WorkflowType::Boolean
@@ -4334,7 +4348,7 @@ fn collect_agent_dependency_from_reference(reference: &Reference, referenced_age
 #[cfg(test)]
 mod tests {
     use super::{validate_workflow, ReferenceKeyword, SingletonDeclarationKind, ValidationContext, ValidationIssue};
-    use crate::dsl::macros::parse_inline_workflow;
+    use crate::dsl::macros::{parse_inline_workflow, workflow_source};
     use crate::dsl::parse_workflow;
     use crate::semantic::InferenceSetting;
 
@@ -4580,7 +4594,7 @@ mod tests {
 
     #[test]
     fn reports_missing_agent_tool_binding_overrides() {
-        let workflow = parse_inline_workflow! {
+        let workflow_source = workflow_source! {
             input {
                 project_id: number
                 task_id: number
@@ -4602,14 +4616,7 @@ mod tests {
             }
         };
 
-        assert_workflow_issues_contain!(
-            workflow,
-            ValidationIssue::InvalidToolBinding {
-                agent_name,
-                tool_name,
-                message: _
-            } if agent_name == "participant_answer_analyzer" && tool_name == "fetch_participant_answer"
-        );
+        assert!(parse_workflow(workflow_source).is_err());
     }
 
     #[test]
@@ -4682,7 +4689,7 @@ mod tests {
 
     #[test]
     fn reports_agent_tool_binding_override_type_mismatch() {
-        let workflow = parse_inline_workflow! {
+        let workflow_source = workflow_source! {
             input {
                 project_id: string
                 task_id: number
@@ -4711,14 +4718,7 @@ mod tests {
             }
         };
 
-        assert_workflow_issues_contain!(
-            workflow,
-            ValidationIssue::InvalidToolBinding {
-                agent_name: _,
-                tool_name: _,
-                message
-            } if message.contains("expects number, found string")
-        );
+        assert!(parse_workflow(workflow_source).is_err());
     }
 
     #[test]

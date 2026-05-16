@@ -133,7 +133,11 @@ fn collect_tool_types(
     for tool_declaration in workflow.tool_declarations() {
         let input_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), named_schema_types)?;
         let binding_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.binding_fields.clone()), named_schema_types)?;
-        let output_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), named_schema_types)?;
+        let output_type = if tool_declaration.has_untyped_mcp_output() {
+            WorkflowType::Any
+        } else {
+            workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), named_schema_types)?
+        };
 
         input.insert(tool_declaration.name.clone(), input_type.clone());
         bindings.insert(tool_declaration.name.clone(), binding_type.clone());
@@ -441,7 +445,8 @@ fn is_no_input_type(workflow_type: &WorkflowType) -> bool {
     match workflow_type {
         WorkflowType::Null => true,
         WorkflowType::Object(fields) => fields.is_empty(),
-        WorkflowType::String
+        WorkflowType::Any
+        | WorkflowType::String
         | WorkflowType::Integer
         | WorkflowType::Float
         | WorkflowType::Boolean
@@ -515,6 +520,12 @@ mod tests {
         values: Vec<ScoreOutput>,
     }
 
+    #[derive(Debug, Deserialize, JsonSchema)]
+    #[allow(dead_code)]
+    struct GreetingOutput {
+        greeting: String,
+    }
+
     #[test]
     fn builds_typed_ir_with_dependencies_and_loop_output_types() {
         let workflow = parse_inline_workflow! {
@@ -581,6 +592,34 @@ mod tests {
         assert_eq!(
             typed_workflow_ir.workflow_output_type,
             WorkflowType::Object(expected_output_fields).normalize()
+        );
+    }
+
+    #[test]
+    fn infers_untyped_mcp_tool_outputs_as_any() {
+        let workflow = parse_inline_workflow! {
+            mcp mintilify {
+                endpoint: "https://example.test/mcp"
+            }
+
+            from mcp.mintilify {
+                tool query_docs_filesystem_superwire {
+                    bindings {
+                        command: "ls"
+                    }
+                }
+            }
+
+            output {
+                greeting: call tool.query_docs_filesystem_superwire {}
+            }
+        };
+
+        let typed_workflow_ir = build_typed_workflow_ir::<(), GreetingOutput>(&workflow).expect("typecheck should succeed");
+
+        assert_eq!(
+            typed_workflow_ir.workflow_output_type,
+            WorkflowType::Object(BTreeMap::from([("greeting".to_string(), WorkflowType::Any)]))
         );
     }
 

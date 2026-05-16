@@ -85,11 +85,11 @@ fn inserts_plain_tool_name_for_tool_without_bounded_arguments() {
 }
 
 #[test]
-fn inserts_binding_block_for_tool_with_bounded_arguments_when_block_does_not_exist() {
+fn inserts_plain_tool_name_for_tool_with_fixed_bindings() {
     let completion_suggestions = inline_completion_suggestions! {
         tool issue_tracker_lookup {
             bindings {
-                password: string
+                password: "secret"
             }
         }
 
@@ -100,14 +100,11 @@ fn inserts_binding_block_for_tool_with_bounded_arguments_when_block_does_not_exi
 
     let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "issue_tracker_lookup");
 
-    assert_eq!(
-        completion_suggestion.insert_text,
-        "issue_tracker_lookup {\n    bindings {\n        $1\n    }\n}"
-    );
+    assert_eq!(completion_suggestion.insert_text, "issue_tracker_lookup");
 }
 
 #[test]
-fn inserts_plain_tool_name_when_binding_block_already_exists() {
+fn does_not_complete_tool_with_invalid_schema_like_bindings() {
     let completion_suggestions = inline_completion_suggestions! {
         secrets {
             knowledge_base_password: string
@@ -128,9 +125,7 @@ fn inserts_plain_tool_name_when_binding_block_already_exists() {
         }
     };
 
-    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "issue_tracker_lookup");
-
-    assert_eq!(completion_suggestion.insert_text, "issue_tracker_lookup");
+    assert_completion_excludes_labels!(&completion_suggestions, "issue_tracker_lookup");
 }
 
 #[test]
@@ -216,7 +211,7 @@ fn test_mcp_lock() -> McpLock {
                 "type": "object",
                 "properties": {
                     "common_shared_among_all_feature": { "type": "string" },
-                    "project_id": { "type": "number" },
+                    "project_id": { "description": "Project identifier", "type": "number" },
                     "task_id": { "type": "number" }
                 },
                 "required": ["common_shared_among_all_feature", "project_id", "task_id"]
@@ -633,6 +628,23 @@ fn suggests_mcp_input_fields_inside_tool_binding_override_block() {
 }
 
 #[test]
+fn inserts_mcp_bindings_as_value_assignments_with_doc_comments() {
+    let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
+        from mcp.local.tool {
+            tool list_all_participants_who_has_answered_given_task {
+                bind<cursor>
+            }
+        }
+    });
+
+    let completion_suggestion = completion_suggestion_by_label(&completion_suggestions, "bindings");
+
+    assert!(completion_suggestion.insert_text.contains("/// Project identifier"));
+    assert!(completion_suggestion.insert_text.contains("project_id: $1"));
+    assert!(!completion_suggestion.insert_text.contains("project_id: string"));
+}
+
+#[test]
 fn does_not_suggest_mcp_input_fields_at_root_of_batch_tool_body() {
     let completion_suggestions = completion_suggestions_with_mcp_lock(inline_document_template! {
         from mcp.local.tool {
@@ -893,7 +905,7 @@ fn suggests_mcp_prompt_arguments_inside_prompt_import_bindings_block() {
 }
 
 #[test]
-fn suggests_types_inside_tool_bounded_field() {
+fn does_not_suggest_types_inside_tool_binding_value() {
     let completion_suggestions = inline_completion_suggestions! {
         tool issue_tracker_lookup {
             bindings {
@@ -902,19 +914,17 @@ fn suggests_types_inside_tool_bounded_field() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, TypeExpression::String, TypeExpression::Number);
     assert_completion_excludes_labels!(
         &completion_suggestions,
-        DeclarationKeyword::Provider,
-        DeclarationKeyword::Agent,
+        TypeExpression::String,
+        TypeExpression::Number,
         "description",
-        "input",
         "bindings",
     );
 }
 
 #[test]
-fn suggests_bounded_arguments_inside_tool_call() {
+fn does_not_suggest_fixed_bindings_inside_tool_call() {
     let completion_suggestions = inline_completion_suggestions! {
         tool knowledge_base_search {
             input {
@@ -922,8 +932,8 @@ fn suggests_bounded_arguments_inside_tool_call() {
             }
 
             bindings {
-                password: string
-                token: string
+                password: "secret"
+                token: "token"
             }
         }
 
@@ -936,12 +946,11 @@ fn suggests_bounded_arguments_inside_tool_call() {
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "password", "token");
-    assert_completion_excludes_labels!(&completion_suggestions, "query");
+    assert_completion_excludes_labels!(&completion_suggestions, "password", "token", "query");
 }
 
 #[test]
-fn suggests_declared_bindings_inside_deterministic_tool_call_binding_overrides() {
+fn does_not_suggest_fixed_bindings_inside_deterministic_tool_call_binding_overrides() {
     let completion_suggestions = inline_completion_suggestions! {
         tool knowledge_base_search {
             input {
@@ -949,9 +958,9 @@ fn suggests_declared_bindings_inside_deterministic_tool_call_binding_overrides()
             }
 
             bindings {
-                password: string
+                password: "secret"
                 endpoint: "https://example.test"
-                token: string
+                token: "token"
             }
         }
 
@@ -964,17 +973,16 @@ fn suggests_declared_bindings_inside_deterministic_tool_call_binding_overrides()
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "password", "token");
-    assert_completion_excludes_labels!(&completion_suggestions, "query", "endpoint");
+    assert_completion_excludes_labels!(&completion_suggestions, "password", "token", "query", "endpoint");
 }
 
 #[test]
-fn filters_existing_bindings_inside_deterministic_tool_call_binding_overrides() {
+fn does_not_suggest_existing_fixed_bindings_inside_deterministic_tool_call_binding_overrides() {
     let completion_suggestions = inline_completion_suggestions! {
         tool knowledge_base_search {
             bindings {
-                password: string
-                token: string
+                password: "secret"
+                token: "token"
             }
         }
 
@@ -988,6 +996,5 @@ fn filters_existing_bindings_inside_deterministic_tool_call_binding_overrides() 
         }
     };
 
-    assert_completion_contains_labels!(&completion_suggestions, "token");
-    assert_completion_excludes_labels!(&completion_suggestions, "password");
+    assert_completion_excludes_labels!(&completion_suggestions, "password", "token");
 }

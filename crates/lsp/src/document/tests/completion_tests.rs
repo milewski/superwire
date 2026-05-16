@@ -367,7 +367,7 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
             expects_empty_suggestions: false,
         },
         CompletionMatrixCase {
-            case_name: "tool_call_excludes_input_field_arguments",
+            case_name: "tool_call_excludes_fixed_bindings_and_input_field_arguments",
             context: CompletionMatrixContext::Tools,
             expectation_kind: CompletionExpectationKind::Negative,
             source_template: inline_document_template! {
@@ -377,7 +377,7 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                     }
 
                     bindings {
-                        password: string
+                        password: "secret"
                     }
                 }
 
@@ -389,8 +389,8 @@ fn tools_completion_matrix_cases() -> Vec<CompletionMatrixCase> {
                     }]
                 }
             },
-            expected_present_labels: vec!["password"],
-            expected_absent_labels: vec!["query"],
+            expected_present_labels: vec![],
+            expected_absent_labels: vec!["password", "query"],
             expects_empty_suggestions: false,
         },
     ]

@@ -164,7 +164,9 @@ impl DocumentState {
             );
         }
 
-        if semantic_index.is_type_position(position, &line_prefix) {
+        let inside_bindings_value = self.tool_schema_property_name_at_position(position) == Some(ToolPropertyName::Bindings);
+
+        if !inside_bindings_value && semantic_index.is_type_position(position, &line_prefix) {
             let current_schema_name = semantic_index.schema_name_at_position(position);
             let type_suggestions = semantic_index.type_suggestions(&line_prefix, current_schema_name);
 
@@ -175,6 +177,15 @@ impl DocumentState {
 
         if semantic_index.is_inside_agent_output_declaration(position) {
             return Vec::new();
+        }
+
+        if inside_bindings_value {
+            let value_prefix = line_prefix
+                .split_once(':')
+                .map_or(line_prefix.as_str(), |(_, value_prefix)| value_prefix)
+                .trim_start();
+
+            return semantic_index.output_value_suggestions(value_prefix);
         }
 
         semantic_index.default_suggestions(should_include_builtin_function_suggestions)
@@ -311,6 +322,10 @@ impl DocumentState {
         semantic_index: &SemanticIndex,
     ) -> Option<Vec<CompletionSuggestion>> {
         if completion_scope != CompletionScope::TypedDeclarations {
+            return None;
+        }
+
+        if self.tool_schema_property_name_at_position(position) == Some(ToolPropertyName::Bindings) {
             return None;
         }
 
@@ -1257,11 +1272,15 @@ impl DocumentState {
                     })
                     .unwrap_or_default();
 
-                let rendered_field_type = typed_field.field_type.render_type_expanded(field_indent.as_str());
-                let normalized_rendered_field_type =
-                    Self::normalize_rendered_field_type_snippet(&typed_field.field_type, &rendered_field_type, field_indent.as_str());
+                let rendered_field = if property_name == ToolPropertyName::Bindings {
+                    format!("{field_indent}{}: $1", typed_field.name)
+                } else {
+                    let rendered_field_type = typed_field.field_type.render_type_expanded(field_indent.as_str());
+                    let normalized_rendered_field_type =
+                        Self::normalize_rendered_field_type_snippet(&typed_field.field_type, &rendered_field_type, field_indent.as_str());
 
-                let rendered_field = format!("{field_indent}{}: {}", typed_field.name, normalized_rendered_field_type);
+                    format!("{field_indent}{}: {}", typed_field.name, normalized_rendered_field_type)
+                };
 
                 if rendered_description.is_empty() {
                     return rendered_field;

@@ -554,10 +554,10 @@ mod tests {
                 }
 
                 bindings {
-                    project: string,
+                    project: input.project,
                     endpoint: "https://example.test",
-                    status: "open" | "closed",
-                    token: string,
+                    status: "open",
+                    token: input.token,
                 }
 
                 output {
@@ -577,9 +577,9 @@ mod tests {
 
         assert_eq!(issue_tracker_tool.description.as_deref(), Some("retrieve details about an issue"));
         assert_eq!(issue_tracker_tool.input_fields.len(), 1);
-        assert_eq!(issue_tracker_tool.binding_fields.len(), 3);
-        assert_eq!(issue_tracker_tool.fixed_binding_fields.len(), 1);
-        assert_eq!(issue_tracker_tool.fixed_binding_fields[0].name, "endpoint");
+        assert!(issue_tracker_tool.binding_fields.is_empty());
+        assert_eq!(issue_tracker_tool.fixed_binding_fields.len(), 4);
+        assert_eq!(issue_tracker_tool.fixed_binding_fields[0].name, "project");
         assert_eq!(issue_tracker_tool.output_fields.len(), 1);
     }
 
@@ -970,7 +970,7 @@ mod tests {
                 description: "Fetch issue"
 
                 bindings {
-                    repository: string
+                    repository: input.repository
                 }
 
                 input {
@@ -1399,6 +1399,22 @@ mod tests {
         let workflow_source = workflow_source! {
             input {
                 greeting: string "example"
+            }
+        };
+
+        assert!(parse_workflow(workflow_source).is_err());
+    }
+
+    #[test]
+    fn rejects_type_syntax_inside_bindings_blocks() {
+        let workflow_source = workflow_source! {
+            from mcp.local {
+                tool query_docs_filesystem_superwire {
+                    bindings {
+                        /// Shell command to run.
+                        command: string
+                    }
+                }
             }
         };
 

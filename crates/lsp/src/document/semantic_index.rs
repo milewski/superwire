@@ -997,13 +997,19 @@ impl SemanticIndex {
             None => (None, None),
         };
 
+        let output_type_expression = if tool_declaration.has_untyped_mcp_output() {
+            None
+        } else {
+            Some(TypeExpression::Object(tool_declaration.output_fields.clone()))
+        };
+
         self.tools.insert(
             tool_declaration.name.clone(),
             ToolSummary {
                 description: tool_declaration.description.clone(),
                 bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
                 bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.binding_fields),
-                output_type_expression: Some(TypeExpression::Object(tool_declaration.output_fields.clone())),
+                output_type_expression,
                 mcp_server_name,
                 mcp_tool_name,
             },

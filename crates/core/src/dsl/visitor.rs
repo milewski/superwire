@@ -1075,45 +1075,50 @@ impl AstVisitor {
     }
 
     fn visit_tool_bindings_block(&self, bindings_block_pair: Pair<'_, Rule>) -> Result<(Vec<TypedField>, Vec<ObjectField>), DslParseError> {
-        let mut typed_fields = Vec::new();
         let mut fixed_fields = Vec::new();
 
         for binding_field_pair in bindings_block_pair.into_inner() {
             let binding_field_span = source_span_from_pair(&binding_field_pair);
             let mut inner_pairs = binding_field_pair.into_inner();
-            let field_name = self.next_identifier(&mut inner_pairs, "binding field name", "tool bindings field")?;
+            let mut field_name = None;
+
+            for inner_pair in inner_pairs.by_ref() {
+                if inner_pair.as_rule() == Rule::doc_comment {
+                    continue;
+                }
+
+                field_name = Some(inner_pair.as_str().to_owned());
+
+                break;
+            }
+
+            let field_name = field_name
+                .ok_or_else(|| DslParseError::missing_with_span("binding field name", "tool bindings field", binding_field_span))?;
             let field_value_pair = self.next_pair(&mut inner_pairs, "binding field value", "tool bindings field")?;
 
             match field_value_pair.as_rule() {
                 Rule::tool_binding_type_expression => {
-                    let field_type = self.visit_tool_binding_type_expression(field_value_pair)?;
+                    let field_type = self.visit_tool_binding_type_expression(field_value_pair.clone())?;
 
-                    if let TypeExpression::StringEnum(string_value) = field_type {
-                        fixed_fields.push(ObjectField {
+                    match field_type {
+                        TypeExpression::StringEnum(string_value) => fixed_fields.push(ObjectField {
                             name: field_name,
                             value: Expression::StringLiteral(string_value),
                             span: binding_field_span,
-                        });
-
-                        continue;
-                    }
-
-                    if let TypeExpression::StringEnumReference(reference) = field_type {
-                        fixed_fields.push(ObjectField {
+                        }),
+                        TypeExpression::StringEnumReference(reference) => fixed_fields.push(ObjectField {
                             name: field_name,
                             value: Expression::Reference(reference),
                             span: binding_field_span,
-                        });
-
-                        continue;
+                        }),
+                        _ => {
+                            return Err(DslParseError::unexpected_with_span(
+                                field_value_pair.as_rule(),
+                                "tool bindings field value",
+                                source_span_from_pair(&field_value_pair),
+                            ));
+                        }
                     }
-
-                    typed_fields.push(TypedField {
-                        name: field_name,
-                        field_type,
-                        description: None,
-                        span: binding_field_span,
-                    });
                 }
                 Rule::expression
                 | Rule::fallback_expression
@@ -1147,7 +1152,7 @@ impl AstVisitor {
             }
         }
 
-        Ok((typed_fields, fixed_fields))
+        Ok((Vec::new(), fixed_fields))
     }
 
     fn visit_tool_typed_fields_block(&self, typed_fields_block_pair: Pair<'_, Rule>) -> Result<Vec<TypedField>, DslParseError> {
