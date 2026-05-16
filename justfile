@@ -16,7 +16,7 @@ build-cli-alpine:
 
 # Build the executor Docker image
 build-docker tag="latest":
-    docker build -t rmilewski/superwire-executor:{{tag}} -f Dockerfile .
+    docker build -t rmilewski/superwire:{{tag}} -f Dockerfile .
 
 playground:
     cargo run --release -p superwire-executor -- --address=0.0.0.0:3000 --ui=0.0.0.0:3001
