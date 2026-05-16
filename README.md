@@ -31,16 +31,16 @@ Open [http://localhost:13704](http://localhost:13704) to access the Playground U
 
 ### Create a Workflow
 
-Create a `hello.wire` file:
+Paste the following into the Playground editor and replace the provider values with your own:
 
 ```wire
 provider openai from openai {
-    endpoint: "http://localhost:1234/v1"
-    api_key: "test-api-key"
+    endpoint: "https://api.openai.com/v1"
+    api_key: "your-api-key"
 }
 
 model openai_model from openai {
-    id: "gpt-5.5"
+    id: "gpt-4"
 }
 
 agent greeting {
@@ -58,50 +58,15 @@ output {
 
 ## Core Concepts
 
-### Providers
+Superwire workflows structure and orchestrate the execution of LLM agents. Define your agents, their models, and the data flow between them in a declarative `.wire` file—Superwire handles parsing, validation, and runtime execution.
 
-Define AI model providers (Ollama, OpenAI, etc.):
+**Advantages:**
+- **Type safety** — Define inputs, outputs, and schemas with compile-time validation
+- **Composability** — Reuse providers, models, and agents across workflows
+- **Runtime validation** — Catch errors before they reach production
+- **Portable** — Single `.wire` file contains everything needed to execute a workflow
 
-```wire
-provider openai from openai {
-    endpoint: "https://olama.com/v1"
-    api_key: secrets.OLLAMA_API_KEY
-}
-
-model openai_gpt_4 from openai {
-    id: "gpt-4"
-}
-
-model openai_gpt_3_5_turbo from openai {
-    id: "gpt-3.5-turbo"
-}
-```
-
-### Schemas
-
-Define structured output types:
-
-```wire
-schema user {
-    name: string
-    age: number
-    email: string
-}
-```
-
-### Agents
-
-Define AI agents with prompts and outputs:
-
-```wire
-agent greet_user {
-    model: model.openai_gpt_4
-    instruction: "Say hello to {{ input.name }}"
-    output {
-        message: string
-    }
-}
-```
+For full documentation, visit [https://acme-796e8c63.mintlify.app](https://acme-796e8c63.mintlify.app).
 
 ## License
 
