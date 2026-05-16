@@ -179,7 +179,7 @@ textarea {
 }
 
 .playground__logo {
-  @apply h-8 w-36 shrink-0 object-contain object-left invert dark:invert-0;
+  @apply w-48 shrink-0 object-contain object-left;
 }
 
 .eyebrow {

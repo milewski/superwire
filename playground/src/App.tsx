@@ -22,7 +22,7 @@ const legacyTabsStorageKey = 'superwire.playground.tabs.v2';
 const activeTabStorageKey = 'superwire.playground.activeTab.v3';
 const legacyActiveTabStorageKey = 'superwire.playground.activeTab.v2';
 const themeStorageKey = 'superwire.playground.theme';
-const logoSource = `${import.meta.env.BASE_URL}logo.svg`;
+const logoSource = `${import.meta.env.BASE_URL}logo-horizontal.svg`;
 
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
