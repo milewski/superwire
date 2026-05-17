@@ -1,0 +1,50 @@
+---
+title: Context Continuation
+description: Continue one agent from another agent's message history.
+---
+
+```wire
+input {
+    task_id: number
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent investigate {
+    model: model.fast
+    instruction: "Investigate task {{ input.task_id }} and identify the problem."
+
+    output {
+        problem: string
+        evidence: [string]
+    }
+}
+
+agent solve {
+    model: model.fast
+    context: context(agent.investigate)
+    instruction: "Continue from the investigation and propose a solution."
+
+    output {
+        solution: string
+        steps: [string]
+    }
+}
+
+output {
+    problem: agent.investigate.problem
+    solution: agent.solve.solution
+    steps: agent.solve.steps
+}
+```

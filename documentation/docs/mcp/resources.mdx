@@ -1,0 +1,32 @@
+---
+title: MCP Resources
+description: Import and read MCP resources.
+---
+
+A resource import exposes an MCP resource to a workflow.
+
+```wire
+resource project_readme from mcp.tasks.resource.project_readme
+```
+
+Read a resource in a dynamic block:
+
+```wire
+dynamic {
+    readme: read resource.project_readme
+}
+```
+
+Resources can also be made available to agents through `uses`.
+
+```wire
+agent writer {
+    model: model.fast
+    uses: [resource.project_readme]
+    instruction: "Use the project README to write a short overview."
+
+    output {
+        overview: string
+    }
+}
+```

@@ -1,0 +1,62 @@
+---
+title: Parallel Execution
+description: How Superwire runs independent agents and loop iterations concurrently.
+---
+
+Superwire builds a dependency graph from references. Nodes with no dependency relationship can run concurrently.
+
+## Independent agents
+
+```wire
+agent extract_risks {
+    model: model.fast
+    instruction: "List risks for {{ input.topic }}."
+
+    output {
+        risks: [string]
+    }
+}
+
+agent extract_actions {
+    model: model.fast
+    instruction: "List action items for {{ input.topic }}."
+
+    output {
+        actions: [string]
+    }
+}
+
+agent create_plan {
+    model: model.smart
+    instruction: "Create a plan from risks {{ agent.extract_risks.risks }} and actions {{ agent.extract_actions.actions }}."
+
+    output {
+        plan: string
+    }
+}
+```
+
+`extract_risks` and `extract_actions` can run at the same time. `create_plan` waits for both.
+
+## Looped agents
+
+```wire
+agent summarize_each for task_id in input.task_ids {
+    model: model.fast
+    instruction: "Summarize task {{ task_id }}."
+
+    output {
+        task_id: number
+        summary: string
+    }
+}
+```
+
+Each loop iteration is independent unless it references shared upstream work that must run first.
+
+## Practical guidance
+
+- Split unrelated work into separate agents.
+- Keep dependencies explicit through references.
+- Use looped agents for batch work.
+- Add aggregation agents only after fan-out work has completed.

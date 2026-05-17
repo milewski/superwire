@@ -1,0 +1,29 @@
+---
+title: Language Server
+description: Editor-oriented diagnostics and language features for .wire files.
+---
+
+The language server should help authors catch workflow issues before execution.
+
+## Core features
+
+- parse diagnostics with source spans
+- validation diagnostics for references and schemas
+- completion for declaration names and root namespaces
+- hover information for schema fields and agent outputs
+- go-to-definition for references
+
+## Useful completions
+
+```wire
+input.
+secrets.
+agent.
+schema.
+tool.
+resource.
+prompt.
+dynamic.
+```
+
+The LSP should follow the same semantics as executor validation so editor feedback matches runtime behavior.

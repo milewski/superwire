@@ -1,0 +1,74 @@
+---
+title: Workflow Contract
+description: How a .wire file gives backend AI behavior a stable runtime contract.
+---
+
+A `.wire` file is more than a prompt. It is a workflow contract between your application, the executor, the model providers, the MCP capabilities, and the final consumer of the result.
+
+In a direct LLM integration, the application usually sends a prompt and receives text or structured JSON. That is enough for small one-step features. It becomes less clear when the feature requires multiple model calls, tool access, intermediate decisions, selective context loading, and a final object that the UI or backend logic depends on.
+
+Superwire gives those moving parts a single declaration surface. The workflow can say which runtime values are public input, which values are secrets, which provider instance should be used, which model profile is assigned to an agent, which MCP tools are imported, which tool calls are decided by the workflow, which capabilities a model-owned step can use, and which JSON fields are returned at the end.
+
+## What the contract contains
+
+The contract starts with runtime boundaries. The `input` block describes public values supplied by the request. The `secrets` block describes sensitive values supplied at execution time, such as provider keys or internal tokens. This keeps the workflow source reusable while avoiding hardcoded credentials.
+
+The contract then describes provider and model boundaries. A `provider` declaration configures a named backend provider instance. A `model` declaration creates a reusable model profile on top of that provider. Different agents can use different profiles, which makes cost, latency, and quality tradeoffs visible in the workflow instead of burying them inside service code.
+
+The contract also describes capability boundaries. MCP tools, prompts, and resources can be imported into the workflow, but importing a capability does not mean every agent automatically receives it. The workflow author decides where each capability is available.
+
+Finally, the contract describes data boundaries. Agent outputs are structured objects. Later steps reference specific values through dot paths. The final `output` block maps workflow values into the JSON object returned to the application.
+
+## A small example
+
+```wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent summarize {
+    model: model.fast
+    instruction: "Summarize {{ input.topic }} for a technical reader."
+
+    output {
+        summary: string
+        audience: string
+    }
+}
+
+output {
+    summary: agent.summarize.summary
+    audience: agent.summarize.audience
+}
+```
+
+This example is small, but it already shows the contract. The input is typed. The secret is separate. The provider and model profile are explicit. The agent has a declared output shape. The final response is not whatever the model decided to say; it is the object described by the workflow.
+
+## Why the contract matters in production
+
+A backend feature usually has consumers. The frontend may expect a `summary` string and a `confidence` number. Another service may expect a list of IDs. A job may need to store structured fields in a database. A monitoring system may need to identify which workflow step failed.
+
+When those expectations are implicit, the integration becomes brittle. A prompt change can break a parser. A tool can be called before required data exists. A model can return prose where the application expected an object. A later maintainer may not know which values are safe to pass forward.
+
+A `.wire` file makes those expectations explicit. It does not eliminate every runtime failure, but it gives the executor and the application a stable structure to validate and execute. Parse errors, validation errors, provider errors, tool errors, and model-output errors become easier to separate because the workflow has declared what should have happened.
+
+## The control-plane mental model
+
+It is useful to separate an AI workflow into two layers. The reasoning layer is where the model interprets instructions and produces content. The control layer is where the system decides what runs, in what order, with which inputs, with which tools, and what shape the result must have.
+
+Traditional autonomous agents give the model a large share of both layers. Superwire keeps the control layer in the workflow specification. The model remains useful, but the application does not give it ownership of the whole backend process.
+
+That is the central Superwire mental model: probabilistic reasoning inside deterministic workflow boundaries.

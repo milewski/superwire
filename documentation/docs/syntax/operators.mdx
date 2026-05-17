@@ -1,0 +1,59 @@
+---
+title: Operators and Special Forms
+description: Dot access, model usage, tool calls, and inline separators.
+---
+
+## Dot access
+
+Use dot access to read nested fields.
+
+```wire
+input.project_id
+agent.summarize.summary
+schema.shared.status
+model.fast
+```
+
+## Model usage
+
+Agents reference named model profiles.
+
+```wire
+model: model.fast
+```
+
+Model inference overrides can be placed in a block after the model reference.
+
+```wire
+model: model.fast {
+    inference {
+        temperature: 0.2
+        max_tokens: 1000
+    }
+}
+```
+
+## Tool calls
+
+Tool calls use `bindings {}` for runtime values.
+
+```wire
+call tool.fetch_task {
+    bindings {
+        task_id: input.task_id
+    }
+}
+```
+
+## Inline separators
+
+Use commas for inline arrays, tuples, objects, and enums:
+
+```wire
+["a", "b", "c"]
+(string, number)
+{ title: string, score: number }
+enum { draft, ready, published }
+```
+
+When object or enum entries are on separate lines, commas are not required.

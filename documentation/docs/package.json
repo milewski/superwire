@@ -1,0 +1,19 @@
+{
+  "name": "documentation",
+  "version": "1.0.0",
+  "description": "This directory contains the Mintlify documentation for the Superwire workflow DSL.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "mintlify": "^4.2.566"
+  }
+}

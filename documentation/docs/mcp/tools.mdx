@@ -1,0 +1,60 @@
+---
+title: MCP Tools
+description: Import tools, define schemas, bind trusted values, and make tools available to agents.
+---
+
+A tool import exposes an MCP tool to a workflow.
+
+```wire
+tool fetch_task from mcp.tasks.tool.fetch_task
+```
+
+## Tool schemas
+
+`input {}` and `output {}` describe tool contracts.
+
+```wire
+tool fetch_task from mcp.tasks.tool.fetch_task {
+    input {
+        task_id: number
+    }
+
+    output {
+        title: string
+        description: string
+        status: string
+    }
+}
+```
+
+## Runtime bindings
+
+Use `bindings {}` to override the native inputs of an MCP tool. When an agent calls a tool, it naturally provides values for the tool's inputs through the agent's context. Bindings let you explicitly override those inputs with specific values that take precedence over what the agent would provide.
+
+```wire
+dynamic {
+    task: call tool.fetch_task {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+}
+```
+
+## Agent tool access
+
+Agents receive tools only when listed in `uses`.
+
+```wire
+agent researcher {
+    model: model.fast
+    uses: [tool.fetch_task]
+    instruction: "Fetch the task and summarize it."
+
+    output {
+        summary: string
+    }
+}
+```
+
+`uses` can also include prompts and resources.

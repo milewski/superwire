@@ -1,0 +1,39 @@
+---
+title: Why Superwire
+description: Understand what Superwire is, why it exists, and when it belongs in a backend product.
+---
+
+Superwire is a declarative DSL for controlled server-side AI workflows. It is designed for developers who are adding AI behavior to a real backend, not only experimenting with a prompt in a chat window or wiring a single LLM call into a controller.
+
+The easiest way to understand Superwire is to think of a `.wire` file as the contract for an AI feature. The file describes what the workflow accepts, which secrets it needs, which providers and model profiles are available, which MCP capabilities can be imported, which agents run, what each agent is allowed to use, how values move between steps, and what final JSON the application receives.
+
+That contract matters because backend AI features usually need more than model intelligence. They need boundaries. They need predictable control flow. They need typed outputs that the application can consume without parsing prose. They need scoped tool access so a model does not receive every backend capability at once. They need enough structure that another developer can review the workflow later and understand what the AI feature actually does.
+
+```text
+application request
+  -> input + secrets + .wire workflow
+  -> Superwire executor
+  -> validated workflow graph
+  -> scoped model and tool execution
+  -> structured JSON output
+```
+
+Superwire does not try to make language model reasoning perfectly deterministic. The text or structured content produced by a model can still vary depending on provider behavior and model settings. The value of Superwire is that the workflow boundary becomes deterministic. The same declared graph, the same dependencies, the same tool scopes, the same schema contracts, and the same final output shape are applied every time the workflow runs.
+
+## The core idea
+
+Most agent systems begin with the model at the center. The developer gives the model a goal, a large prompt, and a set of tools, then asks it to decide what to do. That can be useful when the user is supervising the agent directly. It is less comfortable when the agent is part of a production application and may be operating on user data, creating records, calling internal services, or consuming tokens at scale.
+
+Superwire inverts that relationship. The application keeps control of the process, and the model reasons inside declared steps. A step can still use an LLM for judgment, summarization, classification, extraction, drafting, or planning, but the workflow author decides where that step sits, what data it sees, which tools it can call, and what shape it must return.
+
+This makes Superwire closer to backend infrastructure than to a prompt playground. A workflow can be versioned, reviewed, validated, tested, and executed through a runtime contract. The `.wire` file becomes a durable artifact that explains the AI behavior of the feature.
+
+## Why this belongs before the syntax reference
+
+The syntax reference explains how to write valid Superwire. This section explains why the language exists and what kind of problem it is meant to solve. That distinction is important because Superwire is not primarily about replacing a few lines of provider SDK code. It is about giving backend teams a clearer way to express AI orchestration when the workflow has structure.
+
+A simple one-step prompt may not need Superwire. A feature that performs staged reasoning, calls tools, fetches context selectively, uses multiple agents, fans out work in parallel, or returns structured JSON usually benefits from a workflow contract. In those cases, the hard part is no longer calling an LLM. The hard part is making the AI behavior safe enough, explicit enough, and maintainable enough to live inside a product.
+
+## What to read next
+
+Start with [Why it exists](/why-superwire/why-it-exists) if you want the product-backend motivation. Read [Workflow contract](/why-superwire/workflow-contract) for the main mental model. Read [Controlled tool access](/why-superwire/controlled-tools) and [Structured outputs and data flow](/why-superwire/structured-outputs) to understand the two most important design boundaries. Use [Use cases](/why-superwire/use-cases), [Comparison](/why-superwire/comparison), and [Adoption checklist](/why-superwire/adoption-checklist) when deciding whether Superwire is a good fit for a specific feature.

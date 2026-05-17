@@ -1,0 +1,83 @@
+---
+title: Data Types
+description: Primitive, object, array, tuple, enum, and schema reference types.
+---
+
+Superwire types describe `input`, `secrets`, schema fields, tool contracts, and agent outputs.
+
+## Primitives
+
+```wire
+string
+number
+float
+boolean
+```
+
+## Objects
+
+```wire
+{
+    title: string
+    score: number
+}
+```
+
+Inline object fields use commas:
+
+```wire
+{ title: string, score: number }
+```
+
+## Arrays
+
+```wire
+[string]
+[number]
+[schema.participant]
+```
+
+Fixed-length arrays use a semicolon:
+
+```wire
+[string; 3]
+```
+
+## Tuples
+
+```wire
+(string, number)
+(string, number, [string; 3])
+```
+
+## Enums
+
+Inline enum variants use commas:
+
+```wire
+enum { draft, ready, published }
+```
+
+Multiline enum variants do not require commas:
+
+```wire
+enum {
+    draft
+    ready
+    published
+}
+```
+
+## Schema references
+
+```wire
+schema participant {
+    name: string
+    role: string
+}
+
+schema article {
+    title: string
+    author: schema.participant
+}
+```

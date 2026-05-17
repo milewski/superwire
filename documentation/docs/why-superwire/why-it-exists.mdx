@@ -1,0 +1,42 @@
+---
+title: Why It Exists
+description: Why product backends need a different kind of agent workflow than local assistants or prompt-only integrations.
+---
+
+Superwire exists because adding AI behavior to a backend product is different from running an autonomous agent on a personal machine.
+
+A local assistant can be very flexible. The user asks for a goal, the model decides a plan, the model chooses tools, and the user watches the result. If the agent makes a questionable decision, the user can interrupt it, inspect what happened, and correct the next attempt. The blast radius is usually limited to one person, one environment, and one supervised session.
+
+A product backend has a different operating model. The agent may run after an API request, inside a queue worker, during an admin action, or as part of a scheduled process. It may run thousands of times. It may touch user data. It may call internal services. It may create or update records. It may need to return data that a UI renders directly. In that environment, the application cannot rely only on the model deciding the whole process from a prompt.
+
+The problem is not that models are useless. The problem is that unrestricted autonomy is the wrong default boundary for many backend features.
+
+## The backend needs to own the process
+
+When a backend feature performs work on behalf of a user, the product usually already has a domain model and an expected sequence of operations. A project must exist before tasks can be created inside it. A survey answer index may need to be fetched before expensive transcripts are loaded. A classification step may need to happen before a creation step receives write access. A final response may need to match a JSON shape that the frontend expects.
+
+These are control-flow and contract concerns. They should not be hidden inside a large system prompt if the application depends on them.
+
+Superwire gives those concerns a dedicated place. The workflow author declares the steps, the dependencies, the scoped capabilities, and the output shape. The model still performs reasoning where reasoning is useful, but the backend keeps ownership of the workflow boundary.
+
+## The cost of building this manually
+
+Without a workflow DSL, teams often rebuild the same orchestration layer inside application code. They define request DTOs, response DTOs, provider clients, prompt templates, tool wrappers, JSON validators, retry behavior, intermediate state, test fakes, and streaming surfaces. They also have to decide how model outputs flow into later model calls and how to prevent tools from being available too early.
+
+That approach works, but it tends to scatter the AI feature across many files. A future maintainer may need to inspect a controller, a service class, a provider adapter, a prompt file, a schema definition, a queue job, and several tests before they understand the intended workflow. The actual product behavior becomes implicit in implementation details.
+
+Superwire concentrates the AI workflow into one readable source file. The surrounding application still owns authentication, authorization, persistence, queues, billing, and transactions. The `.wire` file owns the shape and sequence of the AI work.
+
+## The limits of prompt-only control
+
+A common early implementation is to put every rule into a long prompt and expose every relevant tool to the model. This is attractive because it is fast to prototype. It also creates a fragile production boundary.
+
+If the prompt describes every stage and exception, the prompt becomes difficult to review. If the model receives a broad toolset, it can call tools that are irrelevant, expensive, destructive, or simply out of order. If the model receives every piece of possible context up front, token usage grows and the model spends attention on data that may not matter for the current request.
+
+Superwire encourages a more explicit design. The workflow can start with a narrow classification step, then fetch selected context, then unlock a deeper inspection tool, then run a synthesis step, then return a structured result. Each stage has a purpose. Each stage receives only the capabilities it needs.
+
+## The practical goal
+
+The goal of Superwire is not to remove model intelligence. The goal is to place that intelligence inside a workflow the application can understand. The model can still classify, summarize, rank, generate, extract, and decide among options. The difference is that those decisions happen inside declared boundaries rather than across the entire backend process.
+
+That is why Superwire is useful for product teams. It turns AI-agent behavior from an open-ended prompt into a backend workflow that can be reviewed, validated, tested, streamed, and evolved over time.

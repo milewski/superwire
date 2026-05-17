@@ -1,0 +1,34 @@
+---
+title: MCP Prompts
+description: Import, render, and provide prompts to agents.
+---
+
+A prompt import exposes an MCP prompt to a workflow.
+
+```wire
+prompt writer_instructions from mcp.tasks.prompt.writer_instructions
+```
+
+Render a prompt in a dynamic block:
+
+```wire
+dynamic {
+    instructions: render prompt.writer_instructions
+}
+```
+
+Prompts can also be provided to an agent through `uses`.
+
+```wire
+agent writer {
+    model: model.fast
+    uses: [prompt.writer_instructions]
+    instruction: "Use the writing instructions to draft a response for {{ input.topic }}."
+
+    output {
+        draft: string
+    }
+}
+```
+
+`uses` accepts tools, prompts, and resources.

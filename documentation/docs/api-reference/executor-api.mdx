@@ -1,0 +1,87 @@
+---
+title: Executor API
+description: HTTP contract for /execute and /execute/stream.
+---
+
+The Docker executor exposes two endpoints with the same request body:
+
+- `POST /execute` returns the completed workflow output as JSON.
+- `POST /execute/stream` returns Server-Sent Events while the workflow is running.
+
+## Request body
+
+```json
+{
+  "input": {
+    "message": "Write a short welcome message."
+  },
+  "secrets": {
+    "api_key": "sk-..."
+  },
+  "workflow_source_base64": "..."
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `input` | object | Public workflow input. Must match the workflow `input` block. |
+| `secrets` | object | Sensitive runtime values. Must match the workflow `secrets` block. |
+| `workflow_source_base64` | string | Base64-encoded `.wire` source. |
+
+## `/execute` response
+
+Successful responses return the workflow `output` block as JSON.
+
+```json
+{
+  "result": {
+    "message": "Welcome to Superwire."
+  }
+}
+```
+
+Errors use a structured JSON body.
+
+```json
+{
+  "error": {
+    "kind": "validation_error",
+    "message": "Unknown reference: agent.missing.summary",
+    "issues": [
+      {
+        "path": "agent.writer.instruction",
+        "message": "Unknown reference: agent.missing.summary"
+      }
+    ]
+  }
+}
+```
+
+## `/execute/stream` response
+
+The streaming endpoint uses `text/event-stream`. A typical stream contains lifecycle events, agent events, tool/MCP events, and a final completion event.
+
+```text
+event: workflow_started
+data: {}
+
+event: workflow_planned
+data: {"nodes":[]}
+
+event: agent_started
+data: {"agent":"reply"}
+
+event: agent_completed
+data: {"output":{"message":"Welcome to Superwire."}}
+
+event: workflow_completed
+data: {"output":{"result":{"message":"Welcome to Superwire."}}}
+```
+
+Exact event payloads may evolve with the executor. Treat `workflow_completed` as the terminal success event and `workflow_failed` as the terminal failure event.
+
+## Security notes
+
+- Do not log raw request bodies in production because `secrets` contains provider and MCP credentials.
+- Prefer short-lived API keys or internal credentials when possible.
+- Keep `.wire` source free of hardcoded secrets.

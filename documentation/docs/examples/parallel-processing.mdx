@@ -1,0 +1,50 @@
+---
+title: Parallel Processing
+description: Process a list with a looped agent and aggregate the result.
+---
+
+```wire
+input {
+    tasks: [{ id: number, title: string, description: string }]
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent analyze_each for { id, title, description } in input.tasks {
+    model: model.fast
+    instruction: "Analyze task {{ id }}: {{ title }}. Details: {{ description }}."
+
+    output {
+        task_id: number
+        summary: string
+        risk: enum { low, medium, high }
+    }
+}
+
+agent aggregate {
+    model: model.fast
+    instruction: "Aggregate these task analyses: {{ agent.analyze_each }}."
+
+    output {
+        overview: string
+        high_risk_task_ids: [number]
+    }
+}
+
+output {
+    analyses: agent.analyze_each
+    overview: agent.aggregate.overview
+    high_risk_task_ids: agent.aggregate.high_risk_task_ids
+}
+```

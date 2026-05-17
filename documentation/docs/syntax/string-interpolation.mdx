@@ -1,0 +1,34 @@
+---
+title: String Interpolation
+description: Insert workflow values into agent instructions.
+---
+
+Use `{{ ... }}` inside strings to render values.
+
+```wire
+agent summarize {
+    model: model.fast
+    instruction: "Summarize task {{ input.task_id }} in project {{ input.project_id }}."
+
+    output {
+        summary: string
+    }
+}
+```
+
+References inside interpolation are validated the same way as references elsewhere.
+
+## Interpolating agent outputs
+
+```wire
+agent writer {
+    model: model.fast
+    instruction: "Write a response using this summary: {{ agent.summarize.summary }}"
+
+    output {
+        response: string
+    }
+}
+```
+
+Prefer focused instructions that reference structured values rather than copying large payloads into one string.

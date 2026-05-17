@@ -1,0 +1,29 @@
+---
+title: Rust API
+description: Parse, validate, and execute workflows from Rust when embedding the runtime directly.
+---
+
+The Docker executor is the recommended path for application integration. The Rust API is useful for runtime-level work such as parser validation, executor internals, and deterministic tests.
+
+Provider drivers are implemented by the Superwire engine. Application code should not be documented as registering arbitrary provider drivers.
+
+## Typical responsibilities
+
+- parse `.wire` source into an AST
+- validate declarations, references, schemas, and dependencies
+- execute workflows in runtime-level tests
+
+## Example shape
+
+```rust
+use superwire_core::dsl::{parse_workflow, validate_workflow};
+
+let workflow = parse_workflow(source)?;
+let report = validate_workflow(&workflow);
+
+if !report.is_valid() {
+    panic!("invalid workflow: {:?}", report.issues);
+}
+```
+
+Prefer [Executor API](/api-reference/executor-api) for product integration unless you need direct runtime control.

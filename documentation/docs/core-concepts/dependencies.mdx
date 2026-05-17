@@ -1,0 +1,56 @@
+---
+title: Dependencies
+description: How Superwire builds and executes the workflow graph.
+---
+
+Superwire builds a dependency graph from references. A node can run once every value it references is available.
+
+## Data dependencies
+
+```wire
+agent extract_facts {
+    model: model.fast
+    instruction: "Extract facts from {{ input.notes }}."
+    output {
+        facts: [string]
+    }
+}
+
+agent write_summary {
+    model: model.fast
+    instruction: "Write a summary from {{ agent.extract_facts.facts }}."
+    output {
+        summary: string
+    }
+}
+```
+
+`write_summary` depends on `extract_facts` because it references `agent.extract_facts.facts`.
+
+## Independent work
+
+Agents with no dependency relationship may run concurrently.
+
+```wire
+agent list_risks {
+    model: model.fast
+    instruction: "List risks for {{ input.topic }}."
+    output {
+        risks: [string]
+    }
+}
+
+agent list_actions {
+    model: model.fast
+    instruction: "List action items for {{ input.topic }}."
+    output {
+        actions: [string]
+    }
+}
+```
+
+These agents can run at the same time because neither references the other.
+
+## Schema dependencies
+
+Schemas do not run. They define shapes used by input, tool contracts, agent outputs, and final output.

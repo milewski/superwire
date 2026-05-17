@@ -1,0 +1,53 @@
+---
+title: MCP Servers
+description: Define MCP server endpoints and authenticated headers.
+---
+
+An `mcp` declaration names an MCP server endpoint.
+
+```wire
+mcp tasks {
+    endpoint: "http://localhost:8000/mcp/tasks"
+}
+```
+
+Imported tools, prompts, and resources reference that server through the `mcp` namespace.
+
+```wire
+tool fetch_task from mcp.tasks.tool.fetch_task
+prompt writer_instructions from mcp.tasks.prompt.writer_instructions
+resource project_readme from mcp.tasks.resource.project_readme
+```
+
+## Authenticated MCP servers
+
+Use `headers {}` when the MCP server requires authentication or request-scoped metadata.
+
+```wire
+secrets {
+    mcp_token: string
+}
+
+mcp summarizer {
+    endpoint: "http://localhost:8000/mcp/summarizer"
+
+    headers {
+        Authorization: "Bearer {{ secrets.mcp_token }}"
+    }
+}
+```
+
+Headers may reference runtime values.
+
+```wire
+mcp internal_tools {
+    endpoint: "https://tools.internal.example.com/mcp"
+
+    headers {
+        Authorization: "Bearer {{ secrets.internal_tools_token }}"
+        X_Workspace_ID: "{{ input.workspace_id }}"
+    }
+}
+```
+
+Do not hardcode long-lived tokens in `.wire` files. Pass them through `secrets`.

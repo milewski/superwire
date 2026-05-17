@@ -1,0 +1,46 @@
+---
+title: Error Handling
+description: Understand parse, validation, and runtime errors.
+---
+
+The executor can fail before execution, during validation, or while running providers and tools.
+
+## Error phases
+
+| Phase | Example |
+| --- | --- |
+| Parse | malformed block syntax |
+| Validation | unknown reference or invalid schema path |
+| Runtime | provider request failed, tool call failed, invalid model output |
+
+## `/execute` error shape
+
+```json
+{
+  "error": {
+    "kind": "validation_error",
+    "message": "Unknown reference: agent.missing.summary",
+    "issues": [
+      {
+        "path": "agent.writer.instruction",
+        "message": "Unknown reference: agent.missing.summary"
+      }
+    ]
+  }
+}
+```
+
+## `/execute/stream` error shape
+
+```text
+event: workflow.failed
+data: {"message":"Provider request failed"}
+```
+
+## Common fixes
+
+- Check that every referenced agent field exists in that agent's `output` block.
+- Check that `input` and `secrets` payloads match the workflow declarations.
+- Check that imported tools, prompts, and resources are listed in an agent's `uses` array when the agent needs them.
+- Check provider endpoint, API key, and model IDs.
+- Check that tool call runtime values are supplied with `bindings {}`.

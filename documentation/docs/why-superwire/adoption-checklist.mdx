@@ -1,0 +1,55 @@
+---
+title: Adoption Checklist
+description: Decide whether Superwire is the right boundary for a specific AI feature.
+---
+
+Superwire is most useful when an AI feature has durable backend behavior. It is not intended to make every prompt more complicated. Before introducing a `.wire` workflow, look at the shape of the feature and decide whether the extra structure will pay for itself.
+
+## Strong fit
+
+Superwire is a strong fit when the AI feature is part of a product backend rather than a one-off interaction. The feature probably receives typed request data, uses provider credentials, calls internal tools, produces output consumed by the UI, and needs to behave consistently across many executions.
+
+It is also a strong fit when the workflow has stages. If the feature first classifies a request, then fetches selected context, then runs deeper analysis, then returns a structured result, a `.wire` file makes that process explicit. The same applies when the feature creates records in a required order or when capabilities should only become available after earlier results exist.
+
+Structured output is another strong signal. If downstream code needs fields such as IDs, categories, priorities, generated questions, evidence items, confidence scores, or report sections, the workflow should declare those shapes directly instead of asking the application to parse prose.
+
+Tool access is also a major signal. If the model needs MCP tools, prompts, or resources, Superwire gives the workflow author a place to scope those capabilities. A read-only analysis step does not need write tools. A creation step does not need every retrieval tool. A workflow-owned tool call can run deterministically when the model should not choose.
+
+## A simpler approach may be enough
+
+A direct provider call is often enough when the feature is a single prompt, has no tools, does not require strict structured output, and is not yet part of a stable product workflow. If the result is displayed as text and no downstream system depends on specific fields, adding a DSL may be unnecessary.
+
+A simpler approach may also be better during very early exploration. If the team is still discovering whether a prompt is useful at all, start small. Superwire becomes more valuable once the feature needs repeatability, tool boundaries, validation, and a maintainable contract.
+
+## Questions to ask before adopting
+
+| Question | Why it matters |
+| --- | --- |
+| Does the feature run inside a backend or product system? | Backend workflows need clearer boundaries than supervised local agents. |
+| Does the application consume the result as structured data? | Structured outputs reduce prose parsing and integration fragility. |
+| Does the feature use tools, MCP servers, prompts, or resources? | Tool scope should be visible and least-privilege. |
+| Does the process have multiple stages? | Staged workflows are easier to review when declared explicitly. |
+| Should some operations be deterministic? | Workflow-owned tool calls keep fixed backend operations outside model discretion. |
+| Can some steps run independently? | Explicit dependencies let the executor schedule independent work. |
+| Will this workflow be reviewed or changed by other developers? | A `.wire` file creates a durable artifact for review and version control. |
+| Do tests need to avoid live provider calls? | A workflow boundary makes fakes and validation easier to introduce. |
+
+A “yes” to several of these questions is a good sign that Superwire belongs in the design.
+
+## Architectural boundary
+
+Superwire should not replace your application's domain safeguards. Authorization should still happen in the backend. Destructive actions should still be protected by product logic. Database transactions, rate limits, audit logs, and human approval flows still matter.
+
+The right mental model is that Superwire controls AI orchestration, not the entire product. MCP tools expose controlled capabilities. The application enforces domain rules. The `.wire` file describes how AI steps, model profiles, tool scopes, dependencies, and outputs fit together.
+
+## How to introduce it gradually
+
+A practical adoption path is to start with one feature that already has structure. Choose a workflow where the current implementation has prompt glue, output parsing, tool calls, or multi-step logic spread across backend code. Move the AI orchestration into a `.wire` file while keeping existing domain services and MCP tools behind stable interfaces.
+
+After that, validate the workflow source in development, add tests around executor integration, and compare the resulting artifact with the old implementation. The goal is not merely fewer lines of code. The goal is a workflow that another developer can open and understand without reconstructing the AI process from scattered implementation details.
+
+## Final decision rule
+
+Use Superwire when the AI behavior is important enough to deserve a contract.
+
+If the feature is a small prompt, keep it simple. If the feature coordinates models, tools, schemas, dependencies, secrets, and backend outputs, put that behavior in a `.wire` workflow so the product can own it deliberately.

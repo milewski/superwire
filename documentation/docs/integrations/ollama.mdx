@@ -1,0 +1,27 @@
+---
+title: Ollama
+description: Configure a local Ollama provider and model profile.
+---
+
+Ollama is useful for local development when you do not want to call a remote provider.
+
+```wire
+provider local_llm from ollama {
+    endpoint: "http://localhost:11434"
+}
+
+model local_fast from local_llm {
+    id: "llama3.1"
+}
+
+agent reply {
+    model: model.local_fast
+    instruction: "Reply to {{ input.message }}."
+
+    output {
+        message: string
+    }
+}
+```
+
+The executor container must be able to reach the Ollama host. In Docker deployments, `localhost` refers to the container itself, not necessarily your host machine.

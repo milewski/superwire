@@ -1,0 +1,68 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'documentation/github-pages/**'
+      - '.github/workflows/github-pages.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'documentation/github-pages/**'
+      - '.github/workflows/github-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build static site
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: documentation/github-pages/package-lock.json
+
+      - name: Install dependencies
+        working-directory: documentation/github-pages
+        run: npm ci
+
+      - name: Build site
+        working-directory: documentation/github-pages
+        run: npm run build
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: documentation/github-pages/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy site
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,49 @@
+---
+title: Installation
+description: Run the Superwire executor and configure model access.
+---
+
+The recommended way to run Superwire is the Docker executor.
+
+```bash
+docker pull rmilewski/superwire
+docker run --rm -p 8080:8080 rmilewski/superwire
+```
+
+The executor exposes:
+
+- `POST /execute`
+- `POST /execute/stream`
+
+## Runtime requirements
+
+Your executor host needs:
+
+- Docker or a compatible container runtime.
+- Network access to the model provider endpoint used by the workflow.
+- Network access to any MCP servers imported by the workflow.
+
+## Provider setup
+
+Provider drivers are implemented by the Superwire engine. A workflow creates provider instances from the drivers supported by the executor it is running on.
+
+```wire
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+```
+
+The provider instance configures access to the backend. The model profile selects the provider-specific model ID used by agents.
+
+## Health checks
+
+A deployment should verify that the executor is reachable before sending workflow traffic. The exact health endpoint depends on the executor build and deployment configuration.

@@ -1,0 +1,27 @@
+---
+title: Comments
+description: Add comments and schema documentation comments to .wire files.
+---
+
+Use `//` for regular comments.
+
+```wire
+// Runtime credentials come from the executor request.
+secrets {
+    api_key: string
+}
+```
+
+Use `///` for documentation comments on schema fields.
+
+```wire
+schema release_note {
+    /// Short title shown to the user
+    title: string
+
+    /// Severity bucket
+    impact: enum { low, medium, high }
+}
+```
+
+Block comments are not supported.

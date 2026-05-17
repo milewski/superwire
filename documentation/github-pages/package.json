@@ -1,18 +1,28 @@
 {
-  "name": "superwire-landing-page",
-  "version": "1.0.0",
+  "name": "superwire-github-pages",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview"
+    "dev": "astro dev --host 0.0.0.0",
+    "build": "astro check && astro build",
+    "preview": "astro preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@astrojs/react": "latest",
-    "astro": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "three": "^0.184.0"
+    "@astrojs/react": "^4.4.2",
+    "@fontsource-variable/geist": "^5.2.8",
+    "@tailwindcss/vite": "^4.3.0",
+    "astro": "^5.16.5",
+    "lucide-react": "^1.14.0",
+    "motion": "^12.38.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tailwindcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
   }
 }

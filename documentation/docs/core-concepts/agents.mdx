@@ -1,0 +1,110 @@
+---
+title: Agents
+description: Define model steps, dependencies, loops, context continuation, and structured outputs.
+---
+
+An agent is one LLM step in the workflow graph.
+
+```wire
+agent summarize_task {
+    model: model.fast
+    instruction: "Summarize task {{ input.task_id }}."
+
+    output {
+        summary: string
+        next_action: string
+    }
+}
+```
+
+## Agent properties
+
+| Property | Purpose |
+| --- | --- |
+| `model` | Selects a named model profile, such as `model.fast`. |
+| `uses` | Makes tools, prompts, and resources available to the agent. |
+| `context` | Continues from another agent's message history. |
+| `instruction` | The instruction appended for this agent step. |
+| `output` | The required structured output contract. |
+
+## Uses
+
+`uses` declares external capabilities and context available to the agent. It can include tools, prompts, and resources.
+
+```wire
+agent writer {
+    model: model.fast
+
+    uses: [
+        prompt.writer_instructions,
+        resource.project_readme,
+        tool.create_draft,
+    ]
+
+    instruction: "Create a draft for {{ input.topic }}."
+
+    output {
+        draft: string
+    }
+}
+```
+
+## Agent loops
+
+Use `for ... in` when each item in a collection should be processed with the same agent.
+
+```wire
+agent summarize_each for task in input.tasks {
+    model: model.fast
+    instruction: "Summarize {{ task.title }}."
+
+    output {
+        title: string
+        summary: string
+    }
+}
+```
+
+Loop headers may destructure object-shaped items:
+
+```wire
+agent summarize_each for { a, b } in input.something {
+    model: model.fast
+    instruction: "Summarize A={{ a }} and B={{ b }}."
+
+    output {
+        summary: string
+    }
+}
+```
+
+The output of a looped agent is an array of that agent's output objects.
+
+## Context continuation
+
+Use `context: context(agent.some_agent)` when a later agent should continue from an earlier agent's message history.
+
+```wire
+agent investigate_task {
+    model: model.fast
+    instruction: "Investigate task {{ input.task_id }} and identify the main issue."
+
+    output {
+        issue: string
+        evidence: [string]
+    }
+}
+
+agent propose_solution {
+    model: model.fast
+    context: context(agent.investigate_task)
+    instruction: "Continue from the investigation and propose a concrete solution."
+
+    output {
+        solution: string
+        steps: [string]
+    }
+}
+```
+
+A structured reference such as `agent.investigate_task.issue` reads an output value. `context(agent.investigate_task)` passes the prior conversation/message history so the next agent can append a new instruction and continue the work.

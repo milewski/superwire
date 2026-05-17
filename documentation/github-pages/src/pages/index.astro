@@ -1,6 +1,6 @@
 ---
-import LandingPage from "../components/LandingPage.jsx";
-import "../styles/global.css";
+import LandingHero from '../components/LandingHero';
+import '../styles/global.css';
 ---
 
 <!doctype html>
@@ -8,22 +8,14 @@ import "../styles/global.css";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Superwire - Declarative AI Workflows</title>
+    <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="Superwire is a declarative DSL for controlled server-side AI workflows with explicit tools, dependencies, and structured outputs."
+      content="Superwire turns AI agent behavior into controlled backend workflows."
     />
-    <meta property="og:title" content="Superwire - Declarative AI Workflows" />
-    <meta
-      property="og:description"
-      content="Build reliable AI workflows with explicit contracts for models, tools, dependencies, and output schemas."
-    />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://superwire.dev" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="canonical" href="https://superwire.dev" />
+    <title>Superwire</title>
   </head>
   <body>
-    <LandingPage />
+    <LandingHero client:load />
   </body>
 </html>

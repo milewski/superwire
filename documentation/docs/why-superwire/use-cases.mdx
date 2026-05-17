@@ -1,0 +1,62 @@
+---
+title: Use Cases
+description: Practical backend scenarios where Superwire provides a clearer workflow boundary.
+---
+
+Superwire is strongest when an AI feature has structure. The feature may still use language models for judgment and generation, but the overall process has a shape that the application should own. The examples below show the kind of backend problems where a `.wire` workflow becomes more useful than a single prompt or a freeform agent.
+
+## Survey analysis
+
+Imagine a product where users submit surveys across projects. A survey may contain short text answers, long text answers, yes/no responses, image uploads, video responses, and file attachments. An admin wants to ask a question such as: “Summarize what this user has said across recent survey responses and highlight the most important themes.”
+
+A naive implementation might send every answer, transcript, and attachment summary into one large model call. That is expensive and noisy. Many records may be irrelevant to the question, but the model still has to spend attention on them.
+
+A freeform agent can improve the situation by using tools, but it creates a different risk. If the agent receives all survey tools at once, it may fetch expensive details too early, inspect irrelevant records, or follow a sequence that is hard to reproduce in tests.
+
+A Superwire workflow can express the process in stages. The workflow can first call a tool that fetches lightweight answer metadata. A selection agent can identify the answer IDs most relevant to the user question. A deeper inspection agent can receive transcript or media-detail tools, but only for the selected records. A summarization agent can then produce a structured result with themes, evidence, confidence, and follow-up questions.
+
+The value is not only cost reduction. The workflow becomes reviewable. A developer can see which tools are available at each stage, which values move forward, and what the UI receives at the end.
+
+## Survey generation
+
+Survey creation has the opposite shape. Instead of analyzing existing records, the system needs to create a structured set of records from a user request. The backend may need to create or select a project, create task groups or sections, generate candidate questions, assign answer types, create records, reorder the questions, and return a summary of what was created.
+
+A single large tool could accept one giant JSON payload and create everything at once. That can work, but it forces the model to produce a perfect payload in one shot. It also removes intermediate checkpoints where the application could validate IDs, revise sections, or stage write operations.
+
+A freeform agent with many smaller tools has a different failure mode. It can create pieces one by one, but it may call tools in the wrong order unless the prompt is extremely careful.
+
+Superwire supports a staged middle path. An early agent can interpret the user's goal and produce a structured plan. A workflow-owned tool call can create the project. The resulting project ID can be referenced by later steps. Section generation, question generation, record creation, ordering, and final summarization can each live in their appropriate stage.
+
+This mirrors the backend domain model. Capabilities become available when the required data exists, not before.
+
+## Research-backed content generation
+
+A blog platform, documentation product, or marketing tool may need to generate research-backed content. The desired process is rarely just “write an article.” The system may need to interpret the topic, search approved sources, summarize evidence, draft an outline, write sections, produce image prompts, and return fields the editor can review.
+
+A prompt-only agent can blur all of those stages together. It may search too broadly, cite weak evidence, generate before enough context is available, or expose publishing tools too early.
+
+A Superwire workflow can keep the pipeline explicit. The research step can use search tools. The evidence step can produce structured findings. The drafting step can use the evidence and outline. The final output can return title, summary, sections, citations, image prompts, and suggested next actions. Publishing can remain outside the workflow or be placed behind a separate, explicitly scoped step.
+
+This is a good example of a workflow where different steps may use different model profiles. A cheaper model may classify sources. A stronger model may synthesize evidence. A creative profile may draft copy. The workflow makes those choices visible.
+
+## Support triage and routing
+
+Customer support systems often need structured classification before action. A message may need to be categorized, prioritized, routed, summarized, and optionally escalated. Some steps may use only the message. Other steps may need to fetch customer history, account state, or recent incidents.
+
+Superwire lets the workflow start narrow. A first agent can classify the request without tools. If the request is technical or account-related, later steps can fetch the relevant records. If the issue requires a human, the final output can include a reason and a suggested handoff summary.
+
+This pattern avoids giving every support message immediate access to every backend capability. It also gives the application stable fields such as category, priority, escalation reason, and recommended response.
+
+## Internal operations workflows
+
+Many internal tools combine deterministic backend operations with model reasoning. A workflow may fetch a task, summarize blockers, classify risk, generate a status update, and create a follow-up ticket. Some operations should be deterministic tool calls. Others should be model-owned reasoning steps.
+
+Superwire is useful because it lets the author choose the boundary for each operation. Fetching a known task by ID can be workflow-owned. Summarizing blockers can be an agent step. Creating a follow-up ticket can happen only after a structured decision says it is needed.
+
+The result is a controlled workflow that still benefits from model judgment where judgment is useful.
+
+## The common pattern
+
+These use cases share the same shape. The application has a real domain model. The AI feature needs to call tools or fetch context. Not every tool should be available at every stage. Intermediate results should be structured. The final response should be stable enough for backend code or UI components to consume.
+
+That is the Superwire sweet spot.

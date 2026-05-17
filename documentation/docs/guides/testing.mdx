@@ -1,0 +1,46 @@
+---
+title: Testing
+description: Validate workflows and test application integrations.
+---
+
+Testing usually happens at two levels: executor-level workflow validation and application-level integration tests.
+
+## Validate a workflow through Laravel
+
+```php
+use Superwire\Laravel\Workflow;
+
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->secrets([
+        'api_key' => config('services.openai.key'),
+    ])
+    ->validate();
+```
+
+## Fake workflow execution in Laravel
+
+```php
+use Superwire\Laravel\Workflow;
+
+Workflow::fake([
+    'message' => 'Hello from a fake workflow.',
+]);
+
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => 'test-key'])
+    ->run();
+
+expect($result->output)->toBe([
+    'message' => 'Hello from a fake workflow.',
+]);
+
+Workflow::restoreFake();
+```
+
+## Test data guidance
+
+- Keep test workflows small.
+- Use deterministic inputs.
+- Avoid live provider calls in unit tests.
+- Reserve end-to-end tests for the executor boundary.

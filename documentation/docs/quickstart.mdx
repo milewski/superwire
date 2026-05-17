@@ -1,0 +1,106 @@
+---
+title: Quickstart
+description: Create a small workflow and execute it through the Docker executor.
+---
+
+This guide creates one `.wire` file, sends it to the executor, and reads the JSON result.
+
+## 1. Start the executor
+
+```bash
+docker run --rm -p 8080:8080 rmilewski/superwire
+```
+
+## 2. Create `hello.wire`
+
+```wire
+input {
+    name: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent greeting {
+    model: model.fast
+    instruction: "Greet {{ input.name }} in one friendly sentence."
+
+    output {
+        message: string
+    }
+}
+
+output {
+    message: agent.greeting.message
+}
+```
+
+## 3. Encode the workflow
+
+Linux:
+
+```bash
+WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
+```
+
+macOS:
+
+```bash
+WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
+```
+
+## 4. Execute it
+
+```bash
+curl -s http://localhost:8080/execute \
+  -H 'Content-Type: application/json' \
+  -d @- <<JSON
+{
+  "input": {
+    "name": "Rafael"
+  },
+  "secrets": {
+    "api_key": "sk-..."
+  },
+  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
+}
+JSON
+```
+
+Expected response shape:
+
+```json
+{
+  "message": "Hello Rafael — welcome to Superwire."
+}
+```
+
+## 5. Use streaming when needed
+
+`/execute/stream` accepts the same JSON body and returns Server-Sent Events:
+
+```bash
+curl -N http://localhost:8080/execute/stream \
+  -H 'Content-Type: application/json' \
+  -d @- <<JSON
+{
+  "input": {
+    "name": "Rafael"
+  },
+  "secrets": {
+    "api_key": "sk-..."
+  },
+  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
+}
+JSON
+```

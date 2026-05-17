@@ -1,0 +1,47 @@
+---
+title: OpenAI-Compatible Providers
+description: Configure an OpenAI-compatible provider and model profile.
+---
+
+Use the `openai` driver for OpenAI-compatible HTTP APIs.
+
+```wire
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+```
+
+For an OpenAI-compatible gateway, change the endpoint and model ID.
+
+```wire
+provider llm from openai {
+    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "qwen3.6-plus"
+}
+```
+
+Agents use the named model profile.
+
+```wire
+agent reply {
+    model: model.fast
+    instruction: "Reply to {{ input.message }}."
+
+    output {
+        message: string
+    }
+}
+```

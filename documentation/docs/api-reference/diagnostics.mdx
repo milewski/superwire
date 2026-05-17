@@ -1,0 +1,41 @@
+---
+title: Diagnostics
+description: Parse, validation, and runtime diagnostics exposed by Superwire.
+---
+
+Diagnostics are grouped by phase.
+
+## Parse diagnostics
+
+Parse diagnostics mean the `.wire` source could not be parsed.
+
+Examples:
+
+- unclosed block
+- invalid declaration syntax
+- malformed string literal
+
+## Validation diagnostics
+
+Validation diagnostics mean the source is syntactically valid but semantically invalid.
+
+Examples:
+
+- unknown `agent.*` reference
+- unknown `schema.*` reference
+- invalid nested field path
+- dependency cycle
+- tool used by an agent but not listed in `uses:`
+
+## Runtime diagnostics
+
+Runtime diagnostics happen after validation.
+
+Examples:
+
+- provider returned an error
+- MCP server failed
+- tool result did not match its declared output schema
+- model output did not match the agent output schema
+
+Executor errors are described in [Executor API](/api-reference/executor-api).

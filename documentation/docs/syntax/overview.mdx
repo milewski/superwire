@@ -1,0 +1,71 @@
+---
+title: Syntax Overview
+description: A compact reference for Superwire syntax.
+---
+
+Superwire uses block-based declarations and expression references.
+
+```wire
+input {
+    topic: string
+}
+
+secrets {
+    api_key: string
+}
+
+provider llm from openai {
+    endpoint: "https://api.openai.com/v1"
+    api_key: secrets.api_key
+}
+
+model fast from llm {
+    id: "gpt-4.1-mini"
+}
+
+agent summarize {
+    model: model.fast
+    instruction: "Summarize {{ input.topic }}."
+
+    output {
+        summary: string
+    }
+}
+```
+
+## Declaration blocks
+
+```wire
+secrets { ... }
+input { ... }
+schema name { ... }
+provider name from driver { ... }
+model name from provider { ... }
+mcp name { ... }
+tool local_name from mcp.server.tool.remote_name
+resource local_name from mcp.server.resource.remote_name
+prompt local_name from mcp.server.prompt.remote_name
+dynamic { ... }
+agent name { ... }
+output { ... }
+```
+
+## Common expressions
+
+```wire
+"text"
+123
+true
+input.topic
+secrets.api_key
+agent.summarize.summary
+schema.shared.status
+call tool.fetch_context { bindings { task_id: input.task_id } }
+read resource.project_readme
+render prompt.instructions
+context(agent.investigate_task)
+```
+
+## Naming
+
+Prefer lowercase `snake_case` for schemas, agents, tools, resources, prompts, providers, models, and fields.

@@ -1,0 +1,60 @@
+---
+title: Control Flow
+description: Use looped agents and dynamic match expressions.
+---
+
+## Agent loops
+
+Use `for ... in` when each item in a collection should be processed with the same agent.
+
+```wire
+input {
+    tasks: [{ id: number, title: string }]
+}
+
+agent summarize_each for task in input.tasks {
+    model: model.fast
+    instruction: "Summarize task {{ task.title }}."
+
+    output {
+        task_id: number
+        summary: string
+    }
+}
+
+output {
+    summaries: agent.summarize_each
+}
+```
+
+## Destructuring loop bindings
+
+Loop headers may destructure object-shaped items.
+
+```wire
+agent summarize_each for { id, title } in input.tasks {
+    model: model.fast
+    instruction: "Summarize task {{ id }}: {{ title }}."
+
+    output {
+        task_id: number
+        summary: string
+    }
+}
+```
+
+## Dynamic match
+
+Use `match` when a dynamic value depends on a variant-like result. Branches must return the same type.
+
+```wire
+dynamic {
+    selected_message: match agent.event.kind {
+        user_created: agent.event.created_message
+        user_deleted: agent.event.deleted_message
+        _: agent.event.default_message
+    }
+}
+```
+
+Use `_` as the catch-all branch.
