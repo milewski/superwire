@@ -1,5 +1,7 @@
 import { ArrowRight, Braces, Copy, FileText, Pencil, Play, Plus, RefreshCcw, Sun, Trash2, Workflow } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import frameUrl from '../../frame.webp';
 import logoUrl from '../../../docs/public/logo-horizontal.svg';
 
 const documentationUrl = 'https://docs.superwire.dev';
@@ -9,6 +11,19 @@ type CodeSegmentColor = 'keyword' | 'number' | 'plain' | 'property' | 'reference
 type CodeSegment = {
   text: string;
   color?: CodeSegmentColor;
+};
+
+type EditorTransformPoint = {
+  coordinateX: number;
+  coordinateY: number;
+};
+
+type EditorCornerName = 'topLeft' | 'topRight' | 'bottomRight' | 'bottomLeft';
+
+type EditorCorner = {
+  name: EditorCornerName;
+  label: string;
+  point: EditorTransformPoint;
 };
 
 const codeLines: CodeSegment[][] = [
@@ -75,6 +90,180 @@ const colorClassNames = {
   string: 'text-[#94e5b6]',
   type: 'text-[#a8c7ff]',
 };
+
+const calibratedEditorMatrix = [
+  0.76826141,
+  -0.03798719,
+  0,
+  -0.00008041,
+  -0.06507278,
+  0.84535119,
+  0,
+  -0.00001994,
+  0,
+  0,
+  1,
+  0,
+  98.56508016,
+  67.72832458,
+  0,
+  1,
+];
+
+const editorSourceSize = 1000;
+
+const editorSourceCorners: EditorTransformPoint[] = [
+  { coordinateX: 0, coordinateY: 0 },
+  { coordinateX: editorSourceSize, coordinateY: 0 },
+  { coordinateX: editorSourceSize, coordinateY: editorSourceSize },
+  { coordinateX: 0, coordinateY: editorSourceSize },
+];
+
+function applyMatrixToPoint(matrixValues: number[], point: EditorTransformPoint) {
+  const divisor = matrixValues[3] * point.coordinateX + matrixValues[7] * point.coordinateY + matrixValues[15];
+
+  return {
+    coordinateX: (matrixValues[0] * point.coordinateX + matrixValues[4] * point.coordinateY + matrixValues[12]) / divisor,
+    coordinateY: (matrixValues[1] * point.coordinateX + matrixValues[5] * point.coordinateY + matrixValues[13]) / divisor,
+  };
+}
+
+function createInitialEditorCorners(): EditorCorner[] {
+  const labels: Array<{ name: EditorCornerName; label: string }> = [
+    { name: 'topLeft', label: 'TL' },
+    { name: 'topRight', label: 'TR' },
+    { name: 'bottomRight', label: 'BR' },
+    { name: 'bottomLeft', label: 'BL' },
+  ];
+
+  return labels.map((cornerLabel, cornerIndex) => ({
+    ...cornerLabel,
+    point: applyMatrixToPoint(calibratedEditorMatrix, editorSourceCorners[cornerIndex]),
+  }));
+}
+
+function solveLinearSystem(matrixRows: number[][], vectorValues: number[]) {
+  const rowCount = matrixRows.length;
+  const augmentedMatrix = matrixRows.map((matrixRow, rowIndex) => [...matrixRow, vectorValues[rowIndex]]);
+
+  for (let pivotIndex = 0; pivotIndex < rowCount; pivotIndex += 1) {
+    let bestRowIndex = pivotIndex;
+
+    for (let rowIndex = pivotIndex + 1; rowIndex < rowCount; rowIndex += 1) {
+      if (Math.abs(augmentedMatrix[rowIndex][pivotIndex]) > Math.abs(augmentedMatrix[bestRowIndex][pivotIndex])) {
+        bestRowIndex = rowIndex;
+      }
+    }
+
+    [augmentedMatrix[pivotIndex], augmentedMatrix[bestRowIndex]] = [augmentedMatrix[bestRowIndex], augmentedMatrix[pivotIndex]];
+
+    const pivotValue = augmentedMatrix[pivotIndex][pivotIndex];
+
+    if (Math.abs(pivotValue) < 1e-10) {
+      return calibratedEditorMatrix;
+    }
+
+    for (let columnIndex = pivotIndex; columnIndex <= rowCount; columnIndex += 1) {
+      augmentedMatrix[pivotIndex][columnIndex] /= pivotValue;
+    }
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      if (rowIndex === pivotIndex) {
+        continue;
+      }
+
+      const rowFactor = augmentedMatrix[rowIndex][pivotIndex];
+
+      for (let columnIndex = pivotIndex; columnIndex <= rowCount; columnIndex += 1) {
+        augmentedMatrix[rowIndex][columnIndex] -= rowFactor * augmentedMatrix[pivotIndex][columnIndex];
+      }
+    }
+  }
+
+  return augmentedMatrix.map((matrixRow) => matrixRow[rowCount]);
+}
+
+function getEditorTransformMatrix(sourcePoints: EditorTransformPoint[], targetPoints: EditorTransformPoint[]) {
+  const matrixRows: number[][] = [];
+  const vectorValues: number[] = [];
+
+  sourcePoints.forEach((sourcePoint, sourcePointIndex) => {
+    const targetPoint = targetPoints[sourcePointIndex];
+
+    matrixRows.push([
+      sourcePoint.coordinateX,
+      sourcePoint.coordinateY,
+      1,
+      0,
+      0,
+      0,
+      -sourcePoint.coordinateX * targetPoint.coordinateX,
+      -sourcePoint.coordinateY * targetPoint.coordinateX,
+    ]);
+    matrixRows.push([
+      0,
+      0,
+      0,
+      sourcePoint.coordinateX,
+      sourcePoint.coordinateY,
+      1,
+      -sourcePoint.coordinateX * targetPoint.coordinateY,
+      -sourcePoint.coordinateY * targetPoint.coordinateY,
+    ]);
+    vectorValues.push(targetPoint.coordinateX, targetPoint.coordinateY);
+  });
+
+  const solutionValues = solveLinearSystem(matrixRows, vectorValues);
+  const homographyMatrix = [
+    [solutionValues[0], solutionValues[1], 0, solutionValues[2]],
+    [solutionValues[3], solutionValues[4], 0, solutionValues[5]],
+    [0, 0, 1, 0],
+    [solutionValues[6], solutionValues[7], 0, 1],
+  ];
+
+  return [
+    homographyMatrix[0][0],
+    homographyMatrix[1][0],
+    homographyMatrix[2][0],
+    homographyMatrix[3][0],
+    homographyMatrix[0][1],
+    homographyMatrix[1][1],
+    homographyMatrix[2][1],
+    homographyMatrix[3][1],
+    homographyMatrix[0][2],
+    homographyMatrix[1][2],
+    homographyMatrix[2][2],
+    homographyMatrix[3][2],
+    homographyMatrix[0][3],
+    homographyMatrix[1][3],
+    homographyMatrix[2][3],
+    homographyMatrix[3][3],
+  ];
+}
+
+function scaleCalibratedMatrix(matrixValues: number[], width: number, height: number) {
+  const horizontalScale = width / 1000;
+  const verticalScale = height / 1000;
+
+  return [
+    matrixValues[0],
+    matrixValues[1] * (verticalScale / horizontalScale),
+    matrixValues[2],
+    matrixValues[3] / horizontalScale,
+    matrixValues[4] * (horizontalScale / verticalScale),
+    matrixValues[5],
+    matrixValues[6],
+    matrixValues[7] / verticalScale,
+    matrixValues[8],
+    matrixValues[9],
+    matrixValues[10],
+    matrixValues[11],
+    matrixValues[12] * horizontalScale,
+    matrixValues[13] * verticalScale,
+    matrixValues[14],
+    matrixValues[15],
+  ];
+}
 
 function CircuitLines() {
   const circuitPaths = [
@@ -160,15 +349,101 @@ function CircuitLines() {
 }
 
 function EditorWindow() {
+  const editorPerspectiveElementRef = useRef<HTMLDivElement | null>(null);
+  const [editorPanelTransform, setEditorPanelTransform] = useState('none');
+  const [isCalibrationEnabled, setIsCalibrationEnabled] = useState(false);
+  const [activeCornerName, setActiveCornerName] = useState<EditorCornerName | null>(null);
+  const [editorCorners, setEditorCorners] = useState(createInitialEditorCorners);
+  const editorMatrixValues = useMemo(
+    () => getEditorTransformMatrix(editorSourceCorners, editorCorners.map((editorCorner) => editorCorner.point)),
+    [editorCorners],
+  );
+
+  useEffect(() => {
+    const editorPerspectiveElement = editorPerspectiveElementRef.current;
+
+    if (!editorPerspectiveElement) {
+      return undefined;
+    }
+
+    const updateEditorPanelTransform = () => {
+      const { width, height } = editorPerspectiveElement.getBoundingClientRect();
+
+      if (width === 0 || height === 0) {
+        return;
+      }
+
+      const matrixValues = scaleCalibratedMatrix(editorMatrixValues, width, height);
+
+      setEditorPanelTransform(`matrix3d(${matrixValues.join(',')})`);
+    };
+
+    updateEditorPanelTransform();
+
+    const resizeObserver = new ResizeObserver(updateEditorPanelTransform);
+    resizeObserver.observe(editorPerspectiveElement);
+
+    return () => resizeObserver.disconnect();
+  }, [editorMatrixValues]);
+
+  useEffect(() => {
+    function handleKeyDown(keyboardEvent: KeyboardEvent) {
+      if (!(keyboardEvent.ctrlKey || keyboardEvent.metaKey) || keyboardEvent.key.toLowerCase() !== 'k') {
+        return;
+      }
+
+      keyboardEvent.preventDefault();
+      setActiveCornerName(null);
+      setIsCalibrationEnabled((currentValue) => !currentValue);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    function handlePointerMove(pointerEvent: PointerEvent) {
+      const editorPerspectiveElement = editorPerspectiveElementRef.current;
+
+      if (!activeCornerName || !editorPerspectiveElement) {
+        return;
+      }
+
+      const editorPerspectiveRect = editorPerspectiveElement.getBoundingClientRect();
+      const nextPoint = {
+        coordinateX: Math.min(editorSourceSize, Math.max(0, ((pointerEvent.clientX - editorPerspectiveRect.left) / editorPerspectiveRect.width) * editorSourceSize)),
+        coordinateY: Math.min(editorSourceSize, Math.max(0, ((pointerEvent.clientY - editorPerspectiveRect.top) / editorPerspectiveRect.height) * editorSourceSize)),
+      };
+
+      setEditorCorners((currentCorners) => currentCorners.map((editorCorner) => (
+        editorCorner.name === activeCornerName ? { ...editorCorner, point: nextPoint } : editorCorner
+      )));
+    }
+
+    function handlePointerUp() {
+      setActiveCornerName(null);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [activeCornerName]);
+
   return (
     <motion.div
       className="editor-perspective"
+      ref={editorPerspectiveElementRef}
       initial={{ opacity: 0, rotateX: 10, rotateY: -18, rotateZ: 2, scale: 0.88, y: 72 }}
-      animate={{ opacity: 1, rotateX: 2, rotateY: -7, rotateZ: 1.2, scale: 1, y: 0 }}
+      animate={{ opacity: 1, rotateX: 0, rotateY: 0, rotateZ: 0, scale: 1, y: 0 }}
       transition={{ duration: 1.25, ease: [0.16, 1, 0.3, 1], delay: 0.28 }}
     >
-      <div className="editor-extrusion" />
-      <div className="editor-panel">
+      <img className="editor-frame-image" src={frameUrl.src} alt="" aria-hidden="true" />
+      <div className="editor-panel" style={{ transform: editorPanelTransform }}>
         <div className="playground-preview dark">
           <section className="playground__frame">
             <div className="playground__main">
@@ -307,6 +582,24 @@ function EditorWindow() {
           </section>
           </div>
         </div>
+      {isCalibrationEnabled ? (
+        <div className="editor-calibration" data-dragging={activeCornerName ? 'true' : 'false'}>
+          {editorCorners.map((editorCorner) => (
+            <button
+              className="editor-calibration__handle"
+              key={editorCorner.name}
+              onPointerDown={(pointerEvent) => {
+                pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+                setActiveCornerName(editorCorner.name);
+              }}
+              style={{ left: `${editorCorner.point.coordinateX / 10}%`, top: `${editorCorner.point.coordinateY / 10}%` }}
+              type="button"
+            >
+              {editorCorner.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </motion.div>
   );
 }
