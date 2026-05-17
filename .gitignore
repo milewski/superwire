@@ -1,6 +1,9 @@
 /target
 /playground/dist
 /playground/node_modules
+/documentation/github-pages/.astro
+/documentation/github-pages/dist
+/documentation/github-pages/node_modules
 .idea
 .claude/settings.local.json
 .claude/worktrees
