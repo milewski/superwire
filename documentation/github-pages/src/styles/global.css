@@ -124,16 +124,15 @@ a {
   font-size: clamp(4.05rem, 5.25vw, 6.15rem);
   font-weight: 800;
   line-height: 1.085;
-  letter-spacing: -0.07em;
+  letter-spacing: -0.05em;
   color: #fff;
   text-shadow: 0 3px 14px rgba(255, 255, 255, 0.18);
 }
 
 .hero-copy h1 span {
-  display: block;
   margin-top: 0.035em;
   color: #ff7600;
-  font-weight: 900;
+  font-weight: 800;
   line-height: 1.08;
   text-shadow:
     0 0 1px rgba(255, 255, 255, 0.25),

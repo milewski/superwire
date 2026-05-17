@@ -40,7 +40,7 @@ const codeLines: CodeSegment[][] = [
   [{ text: '  endpoint: ', color: 'property' }, { text: '"http://localhost:8000/mcp/summarizer"', color: 'string' }],
   [{ text: '  headers {' }],
   [{ text: '    Accept: ', color: 'property' }, { text: '"application/json"', color: 'string' }],
-  [{ text: '    Authorization: ', color: 'property' }, { text: '"Bearer 78N!CJXMMCJrHwFa6qApHt7X8Pg00NiLj1MKXyR81da8Sdce"', color: 'string' }],
+  [{ text: '    Authorization: ', color: 'property' }, { text: '"Bearer 74N!CJXMMCJrHwFa6qApHt7X8Pg00NiLj1MKXyR81da8Sdce"', color: 'string' }],
   [{ text: '  }' }],
   [{ text: '}' }],
   [],
@@ -92,7 +92,7 @@ const colorClassNames = {
 };
 
 const calibratedEditorMatrix = [
-  0.873786, -0.0372113, 0, -8.97e-05, -0.0725124, 0.874549, 0, -2.11e-05, 0, 0, 1, 0, 99.422, 61.0817, 0, 1
+  0.763615, -0.0418114, 0, -9.81e-05, -0.0668422, 0.8398, 0, -2.72e-05, 0, 0, 1, 0, 85.7695, 59.7734, 0, 1
 ];
 
 const editorSourceSize = 1000;
@@ -329,9 +329,7 @@ function EditorWindow() {
       return undefined;
     }
 
-    const updateEditorPanelTransform = () => {
-      const { width, height } = editorPerspectiveElement.getBoundingClientRect();
-
+    const updateEditorPanelTransform = (width = editorPerspectiveElement.clientWidth, height = editorPerspectiveElement.clientHeight) => {
       if (width === 0 || height === 0) {
         return;
       }
@@ -341,7 +339,17 @@ function EditorWindow() {
 
     updateEditorPanelTransform();
 
-    const resizeObserver = new ResizeObserver(updateEditorPanelTransform);
+    const resizeObserver = new ResizeObserver((resizeObserverEntries) => {
+      const resizeObserverEntry = resizeObserverEntries[0];
+      const resizeObserverSize = Array.isArray(resizeObserverEntry.contentBoxSize)
+        ? resizeObserverEntry.contentBoxSize[0]
+        : resizeObserverEntry.contentBoxSize;
+
+      updateEditorPanelTransform(
+        resizeObserverSize?.inlineSize ?? resizeObserverEntry.contentRect.width,
+        resizeObserverSize?.blockSize ?? resizeObserverEntry.contentRect.height,
+      );
+    });
     resizeObserver.observe(editorPerspectiveElement);
 
     return () => resizeObserver.disconnect();
@@ -437,12 +445,6 @@ function EditorWindow() {
                         <span className="playground-tabs__title">Launch brief</span>
                         <span className="mini-status completed">completed</span>
                       </button>
-
-                      <div className="playground-tabs__actions">
-                        <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Rename Launch brief"><Pencil /></button>
-                        <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Duplicate Launch brief"><Copy /></button>
-                        <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Close Launch brief"><Trash2 /></button>
-                      </div>
                     </div>
 
                     <div className="playground-tabs__item playground-tabs__item--active">
