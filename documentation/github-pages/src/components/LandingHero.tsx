@@ -1,4 +1,4 @@
-import { ArrowRight, FileText } from 'lucide-react';
+import { ArrowRight, Braces, Copy, FileText, Pencil, Play, Plus, RefreshCcw, Sun, Trash2, Workflow } from 'lucide-react';
 import { motion } from 'motion/react';
 import logoUrl from '../../../docs/public/logo-horizontal.svg';
 
@@ -78,12 +78,12 @@ const colorClassNames = {
 
 function CircuitLines() {
   const circuitPaths = [
-    'M2 126 H86 C114 126 114 158 143 158 H194',
-    'M0 262 H136 C164 262 164 296 193 296 H238',
-    'M102 24 V88 C102 112 82 116 63 116 H0',
-    'M682 58 H755 C783 58 786 92 814 92 H878',
-    'M710 300 H807 C835 300 835 334 864 334 H930',
-    'M686 444 H760 C790 444 790 492 820 492 H932',
+    { path: 'M2 126 H86 C114 126 114 158 143 158 H194', duration: 5.2, delay: 0 },
+    { path: 'M0 262 H136 C164 262 164 296 193 296 H238', duration: 6.4, delay: 0.35 },
+    { path: 'M102 24 V88 C102 112 82 116 63 116 H0', duration: 5.8, delay: 0.7 },
+    { path: 'M682 58 H755 C783 58 786 92 814 92 H878', duration: 6.1, delay: 0.1 },
+    { path: 'M710 300 H807 C835 300 835 334 864 334 H930', duration: 5.6, delay: 0.55 },
+    { path: 'M686 444 H760 C790 444 790 492 820 492 H932', duration: 6.8, delay: 0.85 },
   ];
 
   return (
@@ -98,26 +98,45 @@ function CircuitLines() {
         </filter>
       </defs>
 
-      {circuitPaths.map((circuitPath, circuitPathIndex) => (
-        <motion.path
-          key={circuitPath}
-          d={circuitPath}
-          fill="none"
-          stroke="#ff7900"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.25"
-          filter="url(#circuit-glow)"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: [0, 1, 1], opacity: [0, 0.88, 0.45] }}
-          transition={{
-            delay: 0.7 + circuitPathIndex * 0.16,
-            duration: 2.8,
-            ease: 'easeInOut',
-            repeat: Infinity,
-            repeatDelay: 1.2,
-          }}
-        />
+      {circuitPaths.map((circuitPath) => (
+        <g key={circuitPath.path}>
+          <path
+            d={circuitPath.path}
+            fill="none"
+            stroke="#ff7900"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1"
+            opacity="0.34"
+          />
+          <motion.path
+            d={circuitPath.path}
+            fill="none"
+            stroke="#ff8a14"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.35"
+            strokeDasharray="1 17"
+            filter="url(#circuit-glow)"
+            initial={{ strokeDashoffset: 0, opacity: 0.32 }}
+            animate={{ strokeDashoffset: -72, opacity: [0.32, 0.95, 0.32] }}
+            transition={{
+              strokeDashoffset: {
+                delay: circuitPath.delay,
+                duration: circuitPath.duration,
+                ease: 'linear',
+                repeat: Infinity,
+              },
+              opacity: {
+                delay: circuitPath.delay,
+                duration: circuitPath.duration * 0.5,
+                ease: 'easeInOut',
+                repeat: Infinity,
+                repeatType: 'mirror',
+              },
+            }}
+          />
+        </g>
       ))}
 
       <motion.circle
@@ -150,46 +169,144 @@ function EditorWindow() {
     >
       <div className="editor-extrusion" />
       <div className="editor-panel">
-        <div className="editor-topbar">
-          <div className="editor-brand">superwire</div>
-          <div className="editor-star">*</div>
-        </div>
+        <div className="playground-preview dark">
+          <section className="playground__frame">
+            <div className="playground__main">
+              <header className="playground__topbar">
+                <div className="playground__brand">
+                  <img src={logoUrl.src} alt="Superwire" className="playground__logo" />
+                </div>
 
-        <div className="editor-tabs-row">
-          <div className="editor-pill"><span />Launch brief <strong>COMPLETED</strong></div>
-          <div className="editor-pill editor-pill-active"><span />Workflow 2 <strong>COMPLETED</strong></div>
-          <button className="editor-add-button" type="button">+ Workflow</button>
-        </div>
+                <div className="playground__topbar-actions">
+                  <button className="button button--ghost button--icon-lg playground__theme-toggle" type="button" aria-label="Toggle theme">
+                    <Sun />
+                  </button>
+                </div>
+              </header>
 
-        <div className="editor-toolbar">
-          <div className="editor-toggle editor-toggle-active">Workflow</div>
-          <div className="editor-toggle">&#123;&#125; Variables</div>
-          <div className="editor-toolbar-spacer" />
-          <div className="editor-invalid">INVALID</div>
-          <div className="editor-action">Format</div>
-          <div className="editor-action">Validate</div>
-          <button className="editor-run-button" type="button">&#9655; Run workflow</button>
-        </div>
+              <div className="playground__tabs">
+                <div className="tabs-list">
+                  <div className="playground-tabs__item">
+                    <button className="playground-tabs__trigger" type="button" data-state="inactive">
+                      <span className="playground-tabs__dot" />
+                      <span className="playground-tabs__title">Launch brief</span>
+                      <span className="mini-status completed">completed</span>
+                    </button>
 
-        <div className="editor-code-card">
-          <div className="editor-code-title">Workflow 2</div>
-          <div className="editor-code" aria-label="Superwire workflow code preview">
-            {codeLines.map((codeLine, codeLineIndex) => (
-              <div className="editor-code-line" key={`code-line-${codeLineIndex + 1}`}>
-                <span className="editor-line-number">{codeLineIndex + 1}</span>
-                <span className="editor-line-content">
-                  {codeLine.map((codeSegment, codeSegmentIndex) => {
-                    const colorName = codeSegment.color;
-                    const className = colorName ? colorClassNames[colorName] : 'text-[#d6d6d6]';
+                    <div className="playground-tabs__actions">
+                      <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Rename Launch brief"><Pencil /></button>
+                      <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Duplicate Launch brief"><Copy /></button>
+                      <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Close Launch brief"><Trash2 /></button>
+                    </div>
+                  </div>
 
-                    return <span className={className} key={`${codeSegment.text}-${codeSegmentIndex}`}>{codeSegment.text}</span>;
-                  })}
-                </span>
+                  <div className="playground-tabs__item playground-tabs__item--active">
+                    <button className="playground-tabs__trigger" type="button" data-state="active" data-active>
+                      <span className="playground-tabs__dot" />
+                      <span className="playground-tabs__title">Workflow 2</span>
+                      <span className="mini-status completed">completed</span>
+                    </button>
+
+                    <div className="playground-tabs__actions">
+                      <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Rename Workflow 2"><Pencil /></button>
+                      <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Duplicate Workflow 2"><Copy /></button>
+                      <button className="button button--ghost button--icon-sm playground-tabs__action" type="button" aria-label="Close Workflow 2"><Trash2 /></button>
+                    </div>
+                  </div>
+
+                  <button className="button button--outline button--lg playground-tabs__new" type="button"><Plus /> Workflow</button>
+                </div>
               </div>
-            ))}
+
+              <div className="playground__canvas">
+                <section className="playground__content">
+                  <div className="playground__controls">
+                    <nav className="playground-mode-switch" aria-label="Playground mode">
+                      <button className="button button--secondary button--lg playground-mode-switch__button" type="button"><Workflow /> Workflow</button>
+                      <button className="button button--ghost button--lg playground-mode-switch__button" type="button"><Braces /> Variables</button>
+                    </nav>
+
+                    <div className="playground-actions">
+                      <span className="status-pill invalid">invalid</span>
+                      <button className="button button--ghost button--lg" type="button"><RefreshCcw /> Format</button>
+                      <button className="button button--ghost button--lg" type="button">Validate</button>
+                      <button className="button button--lg playground-actions__run" type="button"><Play /> Run workflow</button>
+                    </div>
+                  </div>
+
+                  <section className="workflow-layout">
+                    <div className="workflow-layout__top workflow-layout__top--single">
+                      <article className="workflow-editor">
+                        <div className="workflow-editor__header panel-card__header">
+                          <div className="panel-card__title-block">
+                            <strong>Workflow 2</strong>
+                          </div>
+                        </div>
+
+                        <div className="wire-editor-shell">
+                          <div className="wire-editor-preview" aria-label="Superwire workflow code preview">
+                            <div className="cm-gutters" aria-hidden="true">
+                              {codeLines.map((_, codeLineIndex) => <span key={`gutter-${codeLineIndex + 1}`}>{codeLineIndex + 1}</span>)}
+                            </div>
+
+                            <div className="cm-content">
+                              {codeLines.map((codeLine, codeLineIndex) => (
+                                <div className="cm-line" key={`code-line-${codeLineIndex + 1}`}>
+                                  {codeLine.map((codeSegment, codeSegmentIndex) => {
+                                    const colorName = codeSegment.color;
+                                    const className = colorName ? colorClassNames[colorName] : 'text-[#d6d6d6]';
+
+                                    return <span className={className} key={`${codeSegment.text}-${codeSegmentIndex}`}>{codeSegment.text}</span>;
+                                  })}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="workflow-editor__message workflow-editor__message--error">
+                          <span className="workflow-editor__message-line workflow-editor__message-line--full">Unable to validate workflow: provider endpoint is not reachable.</span>
+                        </div>
+                      </article>
+                    </div>
+
+                    <div className="workflow-layout__bottom">
+                      <article className="panel-card workflow-log-panel" data-state="open">
+                        <div className="panel-card__header">
+                          <div className="panel-card__title-block">
+                            <strong>Output</strong>
+                            <small>Final workflow output payload.</small>
+                          </div>
+                        </div>
+                        <div className="workflow-log-panel__body">
+                          <pre className="workflow-output__json">{"{\n  \"greeting\": \"Summary is ready.\"\n}"}</pre>
+                        </div>
+                      </article>
+
+                      <article className="panel-card workflow-log-panel" data-state="open">
+                        <div className="panel-card__header">
+                          <div className="panel-card__title-block">
+                            <strong>Server events</strong>
+                            <small>3 streamed events.</small>
+                          </div>
+                        </div>
+                        <div className="workflow-log-panel__body events-log">
+                          <div className="events-log__item">
+                            <div className="events-log__item-trigger">
+                              <span className="events-log__item-meta"><span className="event-chip event-completed">completed</span><span className="events-log__item-summary">agent.greeting finished</span></span>
+                              <span className="events-log__item-time">12ms</span>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+                  </section>
+                </section>
+              </div>
+            </div>
+          </section>
           </div>
         </div>
-      </div>
     </motion.div>
   );
 }
@@ -236,7 +353,7 @@ export default function LandingHero() {
             >
               <FileText aria-hidden="true" size={25} strokeWidth={2.2} />
               <span>Read the documentation</span>
-              <ArrowRight aria-hidden="true" size={27} strokeWidth={2.2} />
+              <ArrowRight className="documentation-button__arrow" aria-hidden="true" size={27} strokeWidth={2.2} />
             </motion.a>
           </div>
         </motion.section>
