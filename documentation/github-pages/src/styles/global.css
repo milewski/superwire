@@ -213,8 +213,9 @@ a {
 
 .hero__footer {
   position: absolute;
+  top: 26px;
   right: 32px;
-  bottom: 26px;
+  bottom: auto;
   z-index: 5;
 }
 
@@ -1002,7 +1003,7 @@ a {
   }
 
   .hero__copy-content {
-    @apply mt-16 flex-none justify-start pb-6;
+    @apply mt-16 flex-none justify-start pb-2;
   }
 
   .hero__copy h1 {
@@ -1028,21 +1029,21 @@ a {
   }
 
   .hero__footer {
-    right: 0;
-    bottom: 18px;
-    left: 0;
-    display: flex;
-    justify-content: center;
+    top: 18px;
+    right: 18px;
+    bottom: auto;
+    left: auto;
   }
 
   .hero__visual {
-    min-height: 560px;
+    min-height: auto;
+    padding: 0 16px 20px;
     justify-content: center;
     align-items: flex-end;
   }
 
   .editor-preview {
-    width: min(112vw, 760px);
+    width: min(calc(100vw - 32px), 760px);
     max-width: none;
     margin-left: 0;
     scale: 1;
@@ -1055,16 +1056,17 @@ a {
   }
 
   .editor-preview__coordinate-space {
-    position: static;
-    width: 100%;
-    height: 100%;
-    transform: none !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1000px;
+    height: 1000px;
   }
 
   .editor-preview__panel {
-    position: static;
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    width: 1000px;
+    height: 1000px;
     border: 0;
     border-radius: 28px 28px 0 0;
     box-shadow: none;
@@ -1085,6 +1087,19 @@ a {
   .circuit-board {
     inset: -2% -76% -7% -62%;
     opacity: 0.78;
+  }
+
+  .circuit-board__glint,
+  .circuit-board__node,
+  .circuit-board::before,
+  .circuit-board::after,
+  .circuit-board__tile--back,
+  .circuit-board__tile--front {
+    animation: none;
+  }
+
+  .circuit-board__glint {
+    display: none;
   }
 }
 
