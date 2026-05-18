@@ -997,7 +997,7 @@ a {
 
 @media (max-width: 1200px) {
   .hero__inner {
-    @apply min-h-0 grid-cols-1 px-4 py-6;
+    @apply min-h-0 grid-cols-1 px-4 pt-6 pb-0;
   }
 
   .hero__copy {
@@ -1045,13 +1045,13 @@ a {
 
   .hero__visual {
     min-height: auto;
-    padding: 0 16px 20px;
+    padding: 0;
     justify-content: center;
     align-items: flex-end;
   }
 
   .editor-preview {
-    width: min(calc(100vw - 32px), 760px);
+    width: min(100vw, 760px);
     max-width: none;
     margin-left: 0;
     scale: 1;
