@@ -129,12 +129,13 @@ a {
 }
 
 .hero__copy h1 {
-  max-width: 770px;
+  max-width: 680px;
   margin: 0;
-  font-size: clamp(4.05rem, 5.25vw, 6.15rem);
+  font-size: clamp(3.15rem, 4.7vw, 5.25rem);
   font-weight: 800;
-  line-height: 1.085;
-  letter-spacing: -0.05em;
+  line-height: 1.1;
+  letter-spacing: -0.043em;
+  text-wrap: balance;
   color: #fff;
   text-shadow: 0 3px 14px rgba(255, 255, 255, 0.18);
 }
@@ -1005,11 +1006,12 @@ a {
   }
 
   .hero__copy h1 {
-    max-width: 760px;
+    max-width: 22ch;
     margin-right: auto;
     margin-left: auto;
-    font-size: clamp(3rem, 14vw, 4.2rem);
-    letter-spacing: -0.075em;
+    font-size: clamp(2.2rem, 9.8vw, 3.4rem);
+    line-height: 1.08;
+    letter-spacing: -0.055em;
   }
 
   .hero__copy p {

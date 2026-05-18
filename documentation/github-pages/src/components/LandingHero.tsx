@@ -593,7 +593,7 @@ export default function LandingHero() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
             >
-              Turn AI agent behavior into a <span>controlled backend workflow.</span>
+              Build backend agent systems with <span>clear, controllable workflows.</span>
             </motion.h1>
 
             <motion.p
@@ -601,9 +601,9 @@ export default function LandingHero() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.85, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
             >
-              Superwire is a <strong>declarative DSL</strong> for server-side AI orchestration. Define workflows in code,
-              use <strong>scoped tools</strong>, enforce <strong>typed outputs</strong> with <strong>validation</strong>, and
-              stream results with built-in observability and <strong>streaming execution</strong>.
+              Superwire is a <strong>declarative DSL</strong> for backend agent workflows. Define each step in code,
+              keep tools and context <strong>scoped</strong>, and return <strong>structured outputs</strong> your app can
+              use immediately.
             </motion.p>
 
             <motion.a
