@@ -1,6 +1,10 @@
 ---
 import LandingHero from '../components/LandingHero';
 import '../styles/global.css';
+
+const pageTitle = 'Superwire | Declarative DSL for Backend Agent Workflows';
+const pageDescription = 'Build and run backend agent workflows with scoped tools, explicit execution flow, and structured outputs.';
+const canonicalUrl = 'https://superwire.dev/';
 ---
 
 <!doctype html>
@@ -9,12 +13,24 @@ import '../styles/global.css';
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#080909" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta
-      name="description"
-      content="Superwire turns AI agent behavior into controlled backend workflows."
-    />
-    <title>Superwire</title>
+    <link rel="canonical" href={canonicalUrl} />
+    <meta name="description" content={pageDescription} />
+    <meta name="keywords" content="agent workflow, backend AI, workflow DSL, structured outputs, AI orchestration, superwire" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Superwire" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={canonicalUrl} />
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+
+    <title>{pageTitle}</title>
   </head>
   <body>
     <LandingHero client:load />
