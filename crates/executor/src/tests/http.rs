@@ -2,11 +2,12 @@ use super::fixtures;
 use super::support;
 use super::support::TrackingModelProvider;
 use super::tools::TestMcpHttpServer;
-use crate::server::executor_router_with_service;
+use crate::server::{executor_router_with_service, executor_router_with_service_and_playground_dist};
 use crate::service::ExecutorService;
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::json;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -306,7 +307,8 @@ async fn http_format_formats_source_after_validation() {
 
 #[tokio::test]
 async fn playground_serves_root_redirect_and_index() {
-    let router = executor_router_with_service(support::service(vec![]), false);
+    let playground_dist_directory = create_playground_dist_fixture();
+    let router = executor_router_with_service_and_playground_dist(support::service(vec![]), false, playground_dist_directory);
 
     let root_request = axum::http::Request::builder()
         .uri("/")
@@ -334,7 +336,8 @@ async fn playground_serves_root_redirect_and_index() {
 
 #[tokio::test]
 async fn playground_serves_logo_and_built_assets() {
-    let router = executor_router_with_service(support::service(vec![]), false);
+    let playground_dist_directory = create_playground_dist_fixture();
+    let router = executor_router_with_service_and_playground_dist(support::service(vec![]), false, playground_dist_directory);
 
     let logo_request = axum::http::Request::builder()
         .uri("/playground/logo-horizontal.svg")
@@ -351,15 +354,8 @@ async fn playground_serves_logo_and_built_assets() {
         Some("image/svg+xml")
     );
 
-    let asset_path = first_playground_asset_path("js");
     let asset_request = axum::http::Request::builder()
-        .uri(format!(
-            "/playground/assets/{}",
-            asset_path
-                .file_name()
-                .and_then(|file_name| file_name.to_str())
-                .expect("asset file name should be UTF-8")
-        ))
+        .uri("/playground/assets/playground.js")
         .body(axum::body::Body::empty())
         .expect("request should build");
     let asset_response = router.oneshot(asset_request).await.expect("request should execute");
@@ -367,13 +363,24 @@ async fn playground_serves_logo_and_built_assets() {
     assert_eq!(asset_response.status(), axum::http::StatusCode::OK);
 }
 
-fn first_playground_asset_path(extension: &str) -> PathBuf {
-    let asset_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../playground/dist/assets");
+fn create_playground_dist_fixture() -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after Unix epoch")
+        .as_nanos();
+    let playground_dist_directory = std::env::temp_dir().join(format!("superwire-playground-dist-test-{}-{timestamp}", std::process::id()));
+    let asset_directory = playground_dist_directory.join("assets");
 
-    std::fs::read_dir(asset_directory)
-        .expect("asset directory should exist")
-        .filter_map(Result::ok)
-        .map(|directory_entry| directory_entry.path())
-        .find(|asset_path| asset_path.extension().and_then(|asset_extension| asset_extension.to_str()) == Some(extension))
-        .expect("playground asset should exist")
+    std::fs::create_dir_all(&asset_directory).expect("playground fixture asset directory should be created");
+    std::fs::write(playground_dist_directory.join("index.html"), "<main>Playground</main>")
+        .expect("playground fixture index should be written");
+    std::fs::write(
+        playground_dist_directory.join("logo-horizontal.svg"),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"></svg>",
+    )
+    .expect("playground fixture logo should be written");
+    std::fs::write(asset_directory.join("playground.js"), "console.log('playground');")
+        .expect("playground fixture asset should be written");
+
+    playground_dist_directory
 }

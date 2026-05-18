@@ -20,6 +20,12 @@ use tokio::fs;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::ReceiverStream;
 
+#[derive(Clone)]
+struct ExecutorRouterState<ModelProviderType> {
+    service: ExecutorService<ModelProviderType>,
+    playground_dist_directory: PathBuf,
+}
+
 pub fn executor_router() -> Router {
     executor_router_with_service(ExecutorService::new(OpenAiModelProvider), false)
 }
@@ -28,6 +34,22 @@ pub fn executor_router_with_service<ModelProviderType>(service: ExecutorService<
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
+    executor_router_with_service_and_playground_dist(service, disable_playground, default_playground_dist_directory())
+}
+
+pub(crate) fn executor_router_with_service_and_playground_dist<ModelProviderType>(
+    service: ExecutorService<ModelProviderType>,
+    disable_playground: bool,
+    playground_dist_directory: PathBuf,
+) -> Router
+where
+    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+{
+    let state = ExecutorRouterState {
+        service,
+        playground_dist_directory,
+    };
+
     let router = Router::new()
         .route("/execute", post(execute_handler::<ModelProviderType>))
         .route("/validate", post(validate_handler::<ModelProviderType>))
@@ -39,11 +61,14 @@ where
     } else {
         router
             .route("/", axum::routing::get(playground_root_redirect_handler))
-            .route("/playground", axum::routing::get(playground_index_handler))
-            .route("/playground/{*path}", axum::routing::get(playground_asset_or_index_handler))
+            .route("/playground", axum::routing::get(playground_index_handler::<ModelProviderType>))
+            .route(
+                "/playground/{*path}",
+                axum::routing::get(playground_asset_or_index_handler::<ModelProviderType>),
+            )
     };
 
-    router.with_state(service)
+    router.with_state(state)
 }
 
 pub async fn serve_executor(address: SocketAddr, disable_playground: bool) -> Result<(), std::io::Error> {
@@ -57,7 +82,7 @@ pub async fn serve_executor(address: SocketAddr, disable_playground: bool) -> Re
 }
 
 async fn execute_handler<ModelProviderType>(
-    State(service): State<ExecutorService<ModelProviderType>>,
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
     request_headers: HeaderMap,
     Json(request): Json<ExecutionRequest>,
 ) -> Result<Response, ExecutorHttpError>
@@ -66,13 +91,13 @@ where
 {
     match ExecuteResponseKind::from_headers(&request_headers) {
         ExecuteResponseKind::Json => {
-            let response = service.execute(request).await?;
+            let response = state.service.execute(request).await?;
 
             Ok(Json(response).into_response())
         }
 
         ExecuteResponseKind::EventStream => {
-            let event_receiver = service.execute_stream(request);
+            let event_receiver = state.service.execute_stream(request);
             let event_stream = ReceiverStream::new(event_receiver).map(event_to_sse_result);
 
             Ok(Sse::new(event_stream).into_response())
@@ -109,23 +134,23 @@ impl ExecuteResponseKind {
 }
 
 async fn validate_handler<ModelProviderType>(
-    State(service): State<ExecutorService<ModelProviderType>>,
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
     Json(request): Json<ValidationRequest>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    Ok(Json(service.validate(request)?).into_response())
+    Ok(Json(state.service.validate(request)?).into_response())
 }
 
 async fn format_handler<ModelProviderType>(
-    State(service): State<ExecutorService<ModelProviderType>>,
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
     Json(request): Json<FormatRequest>,
 ) -> Result<Response, ExecutorHttpError>
 where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
-    Ok(Json(service.format(request)?).into_response())
+    Ok(Json(state.service.format(request)?).into_response())
 }
 
 async fn lsp_websocket_handler(websocket_upgrade: WebSocketUpgrade) -> Response {
@@ -136,11 +161,14 @@ async fn playground_root_redirect_handler() -> Redirect {
     Redirect::temporary("/playground")
 }
 
-async fn playground_index_handler() -> Response {
-    serve_index_file().await
+async fn playground_index_handler<ModelProviderType>(State(state): State<ExecutorRouterState<ModelProviderType>>) -> Response {
+    serve_index_file(&state.playground_dist_directory).await
 }
 
-async fn playground_asset_or_index_handler(Path(requested_path): Path<String>) -> Response {
+async fn playground_asset_or_index_handler<ModelProviderType>(
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
+    Path(requested_path): Path<String>,
+) -> Response {
     let normalized_requested_path = requested_path.trim_start_matches('/');
     let normalized_requested_path = normalized_requested_path
         .strip_prefix("playground/")
@@ -150,7 +178,7 @@ async fn playground_asset_or_index_handler(Path(requested_path): Path<String>) -
         return StatusCode::BAD_REQUEST.into_response();
     }
 
-    let static_file_path = playground_dist_directory().join(normalized_requested_path);
+    let static_file_path = state.playground_dist_directory.join(normalized_requested_path);
 
     if let Ok(file_metadata) = fs::metadata(&static_file_path).await {
         if file_metadata.is_file() {
@@ -162,7 +190,7 @@ async fn playground_asset_or_index_handler(Path(requested_path): Path<String>) -
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    serve_index_file().await
+    serve_index_file(&state.playground_dist_directory).await
 }
 
 async fn handle_lsp_websocket(websocket: WebSocket) {
@@ -204,8 +232,8 @@ async fn handle_lsp_websocket(websocket: WebSocket) {
     }
 }
 
-async fn serve_index_file() -> Response {
-    serve_file_response(playground_dist_directory().join("index.html")).await
+async fn serve_index_file(playground_dist_directory: &std::path::Path) -> Response {
+    serve_file_response(playground_dist_directory.join("index.html")).await
 }
 
 async fn serve_file_response(file_path: PathBuf) -> Response {
@@ -241,7 +269,7 @@ fn content_type_for_path(file_path: &std::path::Path) -> HeaderValue {
     HeaderValue::from_static(mime_type)
 }
 
-fn playground_dist_directory() -> PathBuf {
+fn default_playground_dist_directory() -> PathBuf {
     if let Ok(playground_dist_directory) = std::env::var("SUPERWIRE_PLAYGROUND_DIST") {
         return PathBuf::from(playground_dist_directory);
     }
