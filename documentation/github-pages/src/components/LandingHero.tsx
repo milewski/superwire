@@ -469,7 +469,7 @@ function EditorWindow() {
                       </nav>
 
                       <div className="playground-actions">
-                        <span className="status-pill status-pill--invalid">invalid</span>
+                        <span className="status-pill status-pill--valid">valid</span>
                         <button className="button button--ghost button--lg" type="button"><RefreshCcw /> Format</button>
                         <button className="button button--ghost button--lg" type="button">Validate</button>
                         <button className="button button--lg playground-actions__run" type="button"><Play /> Run workflow</button>
@@ -506,8 +506,8 @@ function EditorWindow() {
                             </div>
                           </div>
 
-                          <div className="workflow-editor__message workflow-editor__message--error">
-                            <span className="workflow-editor__message-line workflow-editor__message-line--full">Unable to validate workflow: provider endpoint is not reachable.</span>
+                          <div className="workflow-editor__message workflow-editor__message--success">
+                            <span className="workflow-editor__message-line workflow-editor__message-line--full">Workflow validated successfully. Ready to run.</span>
                           </div>
                         </article>
                       </div>
@@ -548,8 +548,43 @@ function EditorWindow() {
                           <div className="workflow-log-panel__body events-log">
                             <div className="events-log__item">
                               <div className="events-log__item-trigger">
-                                <span className="events-log__item-meta"><span className="event-chip event-chip--completed">completed</span><span className="events-log__item-summary">agent.greeting finished</span></span>
+                                <span className="events-log__item-meta"><span className="event-chip">workflow_started</span><span className="events-log__item-summary">Workflow execution started.</span></span>
+                                <span className="events-log__item-time">1ms</span>
+                              </div>
+                            </div>
+
+                            <div className="events-log__item">
+                              <div className="events-log__item-trigger">
+                                <span className="events-log__item-meta"><span className="event-chip">workflow_planned</span><span className="events-log__item-summary">Planner prepared execution order.</span></span>
+                                <span className="events-log__item-time">4ms</span>
+                              </div>
+                            </div>
+
+                            <div className="events-log__item">
+                              <div className="events-log__item-trigger">
+                                <span className="events-log__item-meta"><span className="event-chip">agent_started</span><span className="events-log__item-summary">agent.greeting started with configured tools.</span></span>
+                                <span className="events-log__item-time">6ms</span>
+                              </div>
+                            </div>
+
+                            <div className="events-log__item">
+                              <div className="events-log__item-trigger">
+                                <span className="events-log__item-meta"><span className="event-chip">tool_call_completed</span><span className="events-log__item-summary">returned structured content.</span></span>
+                                <span className="events-log__item-time">11ms</span>
+                              </div>
+                            </div>
+
+                            <div className="events-log__item">
+                              <div className="events-log__item-trigger">
+                                <span className="events-log__item-meta"><span className="event-chip">agent_completed</span><span className="events-log__item-summary">agent.greeting finished successfully.</span></span>
                                 <span className="events-log__item-time">12ms</span>
+                              </div>
+                            </div>
+
+                            <div className="events-log__item">
+                              <div className="events-log__item-trigger">
+                                <span className="events-log__item-meta"><span className="event-chip">workflow_completed</span><span className="events-log__item-summary">completed with output payload.</span></span>
+                                <span className="events-log__item-time">14ms</span>
                               </div>
                             </div>
                           </div>

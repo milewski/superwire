@@ -913,6 +913,14 @@ a {
   white-space: nowrap;
 }
 
+.playground-preview .workflow-editor__message--success {
+  background: color-mix(in srgb, #22c55e 12%, var(--card));
+}
+
+.playground-preview .workflow-editor__message--success .workflow-editor__message-line {
+  color: #4ade80;
+}
+
 .playground-preview .workflow-log-panel__body {
   padding: 10px 14px 13px;
 }
