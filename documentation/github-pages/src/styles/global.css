@@ -210,6 +210,30 @@ a {
   animation: documentationArrow 780ms ease-in-out infinite;
 }
 
+.hero__footer {
+  position: absolute;
+  right: 32px;
+  bottom: 26px;
+  z-index: 5;
+}
+
+.github-link {
+  @apply inline-flex items-center justify-center no-underline;
+  color: rgba(255, 255, 255, 0.38);
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.github-link:hover {
+  color: rgba(255, 255, 255, 0.76);
+  transform: translateY(-1px);
+}
+
+.github-link__icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
 .hero__visual {
   @apply relative z-0 flex min-h-[calc(100vh-5.5rem)] items-center justify-center;
   perspective: 1700px;
@@ -959,6 +983,14 @@ a {
     margin-right: auto;
     margin-left: auto;
     padding: 0 20px;
+  }
+
+  .hero__footer {
+    right: 0;
+    bottom: 18px;
+    left: 0;
+    display: flex;
+    justify-content: center;
   }
 
   .hero__visual {
