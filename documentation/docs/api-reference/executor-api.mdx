@@ -1,12 +1,15 @@
 ---
 title: Executor API
-description: HTTP contract for /execute and /execute/stream.
+description: HTTP contract for /execute, /validate, and /format.
 ---
 
-The Docker executor exposes two endpoints with the same request body:
+The Docker executor exposes three HTTP endpoints:
 
-- `POST /execute` returns the completed workflow output as JSON.
-- `POST /execute/stream` returns Server-Sent Events while the workflow is running.
+- `POST /execute` executes the workflow and returns JSON by default.
+- `POST /validate` validates workflow source and returns validation diagnostics.
+- `POST /format` formats workflow source and returns canonical output.
+
+`POST /execute` switches to Server-Sent Events when the request includes `Accept: text/event-stream`.
 
 ## Request body
 
@@ -57,9 +60,9 @@ Errors use a structured JSON body.
 }
 ```
 
-## `/execute/stream` response
+## `/execute` streaming response
 
-The streaming endpoint uses `text/event-stream`. A typical stream contains lifecycle events, agent events, tool/MCP events, and a final completion event.
+When `Accept: text/event-stream` is set, `/execute` responds with `text/event-stream`. A typical stream contains lifecycle events, agent events, tool/MCP events, and a final completion event.
 
 ```text
 event: workflow_started

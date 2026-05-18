@@ -8,7 +8,7 @@ This guide creates one `.wire` file, sends it to the executor, and reads the JSO
 ## 1. Start the executor
 
 ```bash
-docker run --rm -p 8080:13703 rmilewski/superwire
+docker run --rm -p 13703:13703 rmilewski/superwire
 ```
 
 ## 2. Create `hello.wire`
@@ -62,7 +62,7 @@ WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
 ## 4. Execute it
 
 ```bash
-curl -s http://localhost:8080/execute \
+curl -s http://localhost:13703/execute \
   -H 'Content-Type: application/json' \
   -d @- <<JSON
 {
@@ -87,10 +87,11 @@ Expected response shape:
 
 ## 5. Use streaming when needed
 
-`/execute/stream` accepts the same JSON body and returns Server-Sent Events:
+`/execute` returns Server-Sent Events when you request `text/event-stream`:
 
 ```bash
-curl -N http://localhost:8080/execute/stream \
+curl -N http://localhost:13703/execute \
+  -H 'Accept: text/event-stream' \
   -H 'Content-Type: application/json' \
   -d @- <<JSON
 {

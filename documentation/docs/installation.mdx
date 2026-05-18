@@ -7,13 +7,16 @@ The recommended way to run Superwire is the Docker executor.
 
 ```bash
 docker pull rmilewski/superwire
-docker run --rm -p 8080:13703 rmilewski/superwire
+docker run --rm -p 13703:13703 rmilewski/superwire
 ```
 
 The executor exposes:
 
 - `POST /execute`
-- `POST /execute/stream`
+- `POST /validate`
+- `POST /format`
+
+For `/execute`, set `Accept: text/event-stream` to receive Server-Sent Events.
 
 ## Runtime requirements
 

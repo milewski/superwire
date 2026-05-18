@@ -18,17 +18,18 @@ Superwire is most useful when an AI feature needs to behave like product infrast
 The executor is published as a Docker image:
 
 ```bash
-docker run --rm -p 8080:13703 rmilewski/superwire
+docker run --rm -p 13703:13703 rmilewski/superwire
 ```
 
-It exposes two endpoints:
+It exposes multiple endpoints:
 
 | Endpoint | Response style | Use when |
 | --- | --- | --- |
-| `POST /execute` | JSON | You want the final workflow result. |
-| `POST /execute/stream` | Server-Sent Events | You want progress events while the workflow runs. |
+| `POST /execute` | JSON or Server-Sent Events | You want final output (`application/json`) or progress events (`text/event-stream`). |
+| `POST /validate` | JSON | You want workflow validation without running execution. |
+| `POST /format` | JSON | You want canonical formatting for `.wire` source. |
 
-Both endpoints use the same request body.
+`/execute`, `/validate`, and `/format` use JSON request bodies.
 
 ## A minimal workflow
 
@@ -85,7 +86,7 @@ WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
 Send it to the executor:
 
 ```bash
-curl -s http://localhost:8080/execute \
+curl -s http://localhost:13703/execute \
   -H 'Content-Type: application/json' \
   -d @- <<JSON
 {
@@ -112,10 +113,11 @@ The response is the workflow `output` block as JSON:
 
 ## Stream the same workflow
 
-Use `/execute/stream` when your UI needs progress events:
+Use `Accept: text/event-stream` on `/execute` when your UI needs progress events:
 
 ```bash
-curl -N http://localhost:8080/execute/stream \
+curl -N http://localhost:13703/execute \
+  -H 'Accept: text/event-stream' \
   -H 'Content-Type: application/json' \
   -d @- <<JSON
 {
