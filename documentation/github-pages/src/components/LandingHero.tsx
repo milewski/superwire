@@ -35,23 +35,22 @@ type CircuitFramePath = {
 
 const codeLines: CodeSegment[][] = [
   [{ text: 'provider', color: 'keyword' }, { text: ' openai ', color: 'plain' }, { text: 'from', color: 'keyword' }, { text: ' openai {' }],
-  [{ text: '  endpoint: ', color: 'property' }, { text: '"http://100.118.299.48:3000/v1"', color: 'string' }],
-  [{ text: '  api_key: ', color: 'property' }, { text: '"sk-CLKR4I0qU4oPFyTNjACCTDrqO66EMYTx1PNFSoolZF6wFuzz"', color: 'string' }],
+  [{ text: '  endpoint: ', color: 'property' }, { text: '"https://ollama.com/v1"', color: 'string' }],
+  [{ text: '  api_key: ', color: 'property' }, { text: '"*********"', color: 'string' }],
   [{ text: '}' }],
   [],
   [{ text: 'model', color: 'keyword' }, { text: ' openai_model ', color: 'plain' }, { text: 'from', color: 'keyword' }, { text: ' openai {' }],
   [{ text: '  id: ', color: 'property' }, { text: '"big-pickle"', color: 'string' }],
   [{ text: '}' }],
   [],
-  [{ text: 'mcp', color: 'keyword' }, { text: ' local {' }],
-  [{ text: '  endpoint: ', color: 'property' }, { text: '"http://localhost:8000/mcp/summarizer"', color: 'string' }],
+  [{ text: 'mcp', color: 'keyword' }, { text: ' example {' }],
+  [{ text: '  endpoint: ', color: 'property' }, { text: '"https://superwire.dev/mcp/hello-world"', color: 'string' }],
   [{ text: '  headers {' }],
   [{ text: '    Accept: ', color: 'property' }, { text: '"application/json"', color: 'string' }],
-  [{ text: '    Authorization: ', color: 'property' }, { text: '"Bearer 74N!CJXMMCJrHwFa6qApHt7X8Pg00NiLj1MKXyR81da8Sdce"', color: 'string' }],
   [{ text: '  }' }],
   [{ text: '}' }],
   [],
-  [{ text: 'from', color: 'keyword' }, { text: ' mcp.local {' }],
+  [{ text: 'from', color: 'keyword' }, { text: ' mcp.example {' }],
   [{ text: '  bindings {' }],
   [{ text: '    project_id: ', color: 'property' }, { text: '14', color: 'number' }],
   [{ text: '    task_id: ', color: 'property' }, { text: '109', color: 'number' }],
@@ -522,7 +521,20 @@ function EditorWindow() {
                             </div>
                           </div>
                           <div className="workflow-log-panel__body">
-                            <pre className="workflow-output workflow-output__json">{"{\n  \"greeting\": \"Summary is ready.\"\n}"}</pre>
+                            <pre className="workflow-output workflow-output__json">
+                              {
+                                "{\n" +
+                                  "  \"name\": \"Jane Doe\",\n" +
+                                  "  \"age\": 28,\n" +
+                                  "  \"isEmployed\": true,\n" +
+                                  "  \"skills\": [\"Rust\", \"Ai\", \"React\"],\n" +
+                                  "  \"address\": {\n" +
+                                  "    \"city\": \"São Paulo\",\n" +
+                                  "    \"country\": \"Brazil\"\n" +
+                                  "  }\n" +
+                                  "}"
+                              }
+                            </pre>
                           </div>
                         </article>
 
