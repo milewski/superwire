@@ -120,7 +120,6 @@
             "pages": [
               "guides/building-workflows",
               "guides/best-practices",
-              "guides/testing",
               "guides/authoring-conventions"
             ]
           },
@@ -128,7 +127,6 @@
             "group": "Runtime",
             "pages": [
               "api-reference/executor-api",
-              "api-reference/rust-api",
               "api-reference/lsp",
               "api-reference/diagnostics",
               "advanced/parallel-execution",

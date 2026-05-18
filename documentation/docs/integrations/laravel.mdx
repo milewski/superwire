@@ -161,6 +161,48 @@ $result = Workflow::fromFile(resource_path('workflows/reply.wire'))
 Workflow::restoreFake();
 ```
 
+## Testing patterns
+
+Validate workflow contracts in tests:
+
+```php
+use Superwire\Laravel\Workflow;
+
+$validation = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->secrets([
+        'api_key' => config('services.openai.key'),
+    ])
+    ->validate();
+```
+
+Use fake execution for deterministic application tests:
+
+```php
+use Superwire\Laravel\Workflow;
+
+Workflow::fake([
+    'message' => 'Hello from a fake workflow.',
+]);
+
+$result = Workflow::fromFile(resource_path('workflows/reply.wire'))
+    ->inputs(['message' => 'Hello'])
+    ->secrets(['api_key' => 'test-key'])
+    ->run();
+
+expect($result->output)->toBe([
+    'message' => 'Hello from a fake workflow.',
+]);
+
+Workflow::restoreFake();
+```
+
+Test data guidance:
+
+- Keep test workflows small.
+- Use deterministic inputs.
+- Avoid live provider calls in unit tests.
+- Reserve end-to-end tests for the executor boundary.
+
 ## API summary
 
 ```php
