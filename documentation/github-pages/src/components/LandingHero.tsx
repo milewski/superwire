@@ -112,38 +112,29 @@ const editorSourceCorners: EditorTransformPoint[] = [
   { coordinateX: 0, coordinateY: editorSourceSize },
 ];
 
-const circuitBoardWidth = 1100;
-const circuitBoardHeight = 720;
-
-const circuitTilePaths = [
-  'M0 28 H34 C48 28 48 52 62 52 H120',
-  'M0 96 H28 C44 96 44 74 60 74 H86 C102 74 102 52 120 52',
-  'M23 0 V23 C23 37 42 37 42 52',
-  'M78 120 V96 C78 82 98 82 98 68 V0',
-  'M0 52 H18',
-  'M102 96 H120',
-];
+const circuitBoardWidth = 1280;
+const circuitBoardHeight = 760;
 
 const circuitFramePaths: CircuitFramePath[] = [
-  { path: 'M42 138 H188 C230 138 230 96 272 96 H356 C392 96 392 64 430 64 H680 C718 64 718 96 754 96 H838 C880 96 880 138 922 138 H1062', duration: 7.8, delay: -1.2 },
-  { path: 'M18 262 H154 C194 262 194 218 236 218 H328 C362 218 362 190 398 190', duration: 6.1, delay: -3.2 },
-  { path: 'M1082 268 H948 C908 268 908 224 866 224 H778 C744 224 744 192 708 192', duration: 6.4, delay: -2.1 },
-  { path: 'M0 448 H126 C170 448 170 492 214 492 H324 C360 492 360 528 398 528', duration: 6.8, delay: -4.4 },
-  { path: 'M1100 464 H970 C926 464 926 510 882 510 H776 C738 510 738 542 700 542', duration: 6.6, delay: -1.8 },
-  { path: 'M126 652 H294 C338 652 338 610 382 610 H718 C762 610 762 652 806 652 H974', duration: 8.5, delay: -5.4 },
-  { path: 'M258 18 V62 C258 104 302 104 302 146 V198', duration: 5.4, delay: -2.8 },
-  { path: 'M838 24 V72 C838 112 796 112 796 152 V206', duration: 5.7, delay: -0.7 },
+  { path: 'M0 228 H178 C212 228 212 192 246 192 H420 C456 192 456 134 492 134 V44', duration: 8.8, delay: -1.1 },
+  { path: 'M0 316 H248 C286 316 286 372 324 372 H548 C584 372 584 420 620 420 H738', duration: 9.4, delay: -4.2 },
+  { path: 'M0 432 H196 C232 432 232 490 268 490 H414 C450 490 450 548 486 548 H736', duration: 8.2, delay: -2.8 },
+  { path: 'M578 0 V86 C578 126 536 126 536 166 V334 C536 374 580 374 580 414 V760', duration: 10.4, delay: -6.2 },
+  { path: 'M688 72 H930 C968 72 968 34 1006 34 H1210 C1246 34 1246 78 1280 78', duration: 11.2, delay: -7.1 },
+  { path: 'M814 694 H1004 C1042 694 1042 736 1080 736 H1198 C1236 736 1236 704 1280 704', duration: 9.8, delay: -5.6 },
+  { path: 'M1280 364 H1188 C1152 364 1152 426 1116 426 H1052 C1016 426 1016 472 980 472 H872', duration: 8.6, delay: -3.4 },
+  { path: 'M1280 556 H1216 C1180 556 1180 612 1144 612 H1032 C996 612 996 654 960 654 H784', duration: 9.6, delay: -0.6 },
 ];
 
 const circuitNodes = [
-  { coordinateX: 188, coordinateY: 138, radius: 4.5, delay: 0.1 },
-  { coordinateX: 430, coordinateY: 64, radius: 5.5, delay: 0.45 },
-  { coordinateX: 754, coordinateY: 96, radius: 4.5, delay: 0.8 },
-  { coordinateX: 328, coordinateY: 218, radius: 4, delay: 1.05 },
-  { coordinateX: 778, coordinateY: 224, radius: 4, delay: 1.3 },
-  { coordinateX: 324, coordinateY: 492, radius: 4.5, delay: 0.65 },
-  { coordinateX: 776, coordinateY: 510, radius: 4.5, delay: 0.95 },
-  { coordinateX: 550, coordinateY: 610, radius: 5, delay: 1.55 },
+  { coordinateX: 178, coordinateY: 228, radius: 4.8, delay: 0.1 },
+  { coordinateX: 492, coordinateY: 134, radius: 5.4, delay: 0.45 },
+  { coordinateX: 248, coordinateY: 316, radius: 4.4, delay: 1.05 },
+  { coordinateX: 486, coordinateY: 548, radius: 4.6, delay: 0.65 },
+  { coordinateX: 1006, coordinateY: 34, radius: 3.8, delay: 0.8 },
+  { coordinateX: 1188, coordinateY: 364, radius: 4.2, delay: 1.3 },
+  { coordinateX: 1144, coordinateY: 612, radius: 4.2, delay: 0.95 },
+  { coordinateX: 1080, coordinateY: 736, radius: 4.8, delay: 1.55 },
 ];
 
 function applyMatrixToPoint(matrixValues: number[], point: EditorTransformPoint) {
@@ -275,76 +266,33 @@ const CircuitLines = memo(function CircuitLines() {
       <div className="circuit-board__tile circuit-board__tile--front" />
 
       <svg className="circuit-board__traces" viewBox={`0 0 ${circuitBoardWidth} ${circuitBoardHeight}`} preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <pattern id="circuit-static-tile" width="120" height="120" patternUnits="userSpaceOnUse">
-            {circuitTilePaths.map((circuitTilePath) => (
-              <path
-                d={circuitTilePath}
-                fill="none"
-                key={circuitTilePath}
-                stroke="#ff7900"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="0.65"
-                opacity="0.16"
-              />
-            ))}
-            <circle cx="23" cy="23" r="2.2" fill="#ff9b32" opacity="0.18" />
-            <circle cx="78" cy="96" r="2" fill="#ff9b32" opacity="0.14" />
-            <circle cx="98" cy="68" r="1.7" fill="#ff9b32" opacity="0.14" />
-          </pattern>
-        </defs>
-
-        <rect className="circuit-board__static-pattern" width={circuitBoardWidth} height={circuitBoardHeight} fill="url(#circuit-static-tile)" />
-
         <g className="circuit-board__trace-group">
           {circuitFramePaths.map((circuitFramePath) => (
             <path
+              className="circuit-board__trace"
               d={circuitFramePath.path}
               fill="none"
               key={circuitFramePath.path}
-              stroke="#ff7900"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth="1.2"
             />
           ))}
         </g>
 
         <g className="circuit-board__glint-group">
-          {circuitFramePaths.map((circuitFramePath) => (
-            <g key={`${circuitFramePath.path}-glint`}>
-              <path
-                className="circuit-board__glint circuit-board__glint--halo"
-                d={circuitFramePath.path}
-                pathLength="100"
-              >
-                <animate
-                  attributeName="stroke-dashoffset"
-                  begin={`${circuitFramePath.delay}s`}
-                  dur={`${circuitFramePath.duration}s`}
-                  from="100"
-                  repeatCount="indefinite"
-                  to="0"
-                />
-              </path>
+          {circuitFramePaths.map((circuitFramePath) => {
+            const circuitGlintStyle = {
+              '--trace-delay': `${circuitFramePath.delay}s`,
+              '--trace-duration': `${circuitFramePath.duration}s`,
+            } as CSSProperties;
 
-              <path
-                className="circuit-board__glint circuit-board__glint--core"
-                d={circuitFramePath.path}
-                pathLength="100"
-              >
-                <animate
-                  attributeName="stroke-dashoffset"
-                  begin={`${circuitFramePath.delay}s`}
-                  dur={`${circuitFramePath.duration}s`}
-                  from="100"
-                  repeatCount="indefinite"
-                  to="0"
-                />
-              </path>
-            </g>
-          ))}
+            return (
+              <g key={`${circuitFramePath.path}-glint`} style={circuitGlintStyle}>
+                <path className="circuit-board__glint circuit-board__glint--halo" d={circuitFramePath.path} pathLength="100" />
+                <path className="circuit-board__glint circuit-board__glint--core" d={circuitFramePath.path} pathLength="100" />
+              </g>
+            );
+          })}
         </g>
       </svg>
 

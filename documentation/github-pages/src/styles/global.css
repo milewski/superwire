@@ -34,10 +34,10 @@ a {
 .hero {
   @apply relative isolate min-h-screen overflow-hidden;
   background:
-    radial-gradient(circle at 57% 48%, rgba(255, 116, 0, 0.24), transparent 21rem),
-    radial-gradient(circle at 88% 72%, rgba(255, 116, 0, 0.18), transparent 18rem),
-    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.045), transparent 22rem),
-    linear-gradient(118deg, #0b0c0c 0%, #070808 44%, #10100f 100%);
+    radial-gradient(circle at 69% 56%, rgba(255, 116, 0, 0.2), transparent 24rem),
+    radial-gradient(circle at 88% 76%, rgba(255, 116, 0, 0.16), transparent 22rem),
+    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.035), transparent 23rem),
+    linear-gradient(118deg, #090a0a 0%, #060707 46%, #100f0e 100%);
 }
 
 .hero::before {
@@ -63,8 +63,8 @@ a {
   content: '';
   pointer-events: none;
   background:
-    radial-gradient(circle at 54% 42%, rgba(255, 118, 0, 0.14), transparent 17rem),
-    radial-gradient(circle at 88% 68%, rgba(255, 127, 0, 0.1), transparent 20rem),
+    radial-gradient(circle at 56% 48%, rgba(255, 118, 0, 0.15), transparent 18rem),
+    radial-gradient(circle at 87% 70%, rgba(255, 127, 0, 0.12), transparent 24rem),
     radial-gradient(circle at 18% 88%, rgba(255, 255, 255, 0.025), transparent 17rem);
   filter: blur(10px);
   opacity: 0.84;
@@ -242,15 +242,47 @@ a {
 
 .circuit-board {
   position: absolute;
-  inset: -4% -20% -8% -22%;
+  inset: -8% -16% -10% -28%;
   z-index: -1;
   display: block;
   pointer-events: none;
   overflow: visible;
-  opacity: 0.95;
+  opacity: 1;
   isolation: isolate;
   contain: paint;
   transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.circuit-board::before,
+.circuit-board::after {
+  position: absolute;
+  content: '';
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+}
+
+.circuit-board::before {
+  inset: 3% 5% 10% 35%;
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 62% 52%, rgba(255, 120, 0, 0.38), transparent 36%),
+    radial-gradient(ellipse at 88% 76%, rgba(255, 105, 0, 0.2), transparent 34%);
+  filter: blur(34px);
+  opacity: 0.72;
+  animation: circuitAuraFloat 15s ease-in-out infinite alternate;
+}
+
+.circuit-board::after {
+  inset: 7% 0 8% 18%;
+  border-radius: 48px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 121, 0, 0.12) 47%, rgba(255, 121, 0, 0.3) 58%, transparent 76%);
+  filter: blur(18px);
+  opacity: 0.38;
+  mix-blend-mode: screen;
+  animation: circuitSweep 12s linear infinite;
 }
 
 .circuit-board__tile,
@@ -262,76 +294,84 @@ a {
 }
 
 .circuit-board__tile {
-  inset: -12%;
-  opacity: 0.18;
+  inset: -8%;
+  opacity: 0.23;
   background-image:
-    linear-gradient(90deg, rgba(255, 121, 0, 0.18) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255, 121, 0, 0.12) 1px, transparent 1px),
-    radial-gradient(circle, rgba(255, 155, 50, 0.32) 1px, transparent 1.8px);
-  background-position: 0 0, 0 0, 14px 14px;
-  background-size: 120px 120px, 120px 120px, 40px 40px;
-  mask-image: radial-gradient(circle at 50% 50%, transparent 0 26%, black 52%, transparent 88%);
-  will-change: transform;
+    radial-gradient(circle, rgba(255, 255, 255, 0.36) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255, 125, 0, 0.24) 0 1px, transparent 1.6px);
+  background-position: 0 0, 18px 18px;
+  background-size: 28px 28px, 42px 42px;
+  mask-image: linear-gradient(90deg, transparent 0%, black 38%, black 78%, transparent 100%);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
 }
 
 .circuit-board__tile--back {
-  animation: circuitTileDrift 24s linear infinite;
+  animation: circuitTileDrift 34s linear infinite;
 }
 
 .circuit-board__tile--front {
-  opacity: 0.12;
-  transform: translate3d(-120px, -60px, 0);
-  animation: circuitTileDriftReverse 32s linear infinite;
+  opacity: 0.16;
+  transform: translate3d(-42px, -42px, 0);
+  animation: circuitTileDriftReverse 48s linear infinite;
 }
 
 .circuit-board__traces {
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.7;
-}
-
-.circuit-board__static-pattern {
-  opacity: 0.2;
-  mask-image: radial-gradient(circle at 50% 50%, transparent 0 31%, black 58%, transparent 92%);
+  opacity: 0.9;
+  filter: drop-shadow(0 0 10px rgba(255, 121, 0, 0.18));
 }
 
 .circuit-board__trace-group {
-  opacity: 0.48;
+  opacity: 0.64;
+}
+
+.circuit-board__trace {
+  stroke: rgba(255, 121, 0, 0.45);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
 }
 
 .circuit-board__glint-group {
-  opacity: 0.82;
+  opacity: 0.92;
 }
 
 .circuit-board__glint {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-dashoffset: 100;
+  stroke-dashoffset: 0;
+  vector-effect: non-scaling-stroke;
+  animation: circuitTracePulse var(--trace-duration) linear infinite;
+  animation-delay: var(--trace-delay);
+  will-change: stroke-dashoffset, opacity;
 }
 
 .circuit-board__glint--halo {
-  stroke: rgba(255, 121, 0, 0.2);
-  stroke-width: 5.8;
-  stroke-dasharray: 5.8 94.2;
+  stroke: rgba(255, 121, 0, 0.22);
+  stroke-width: 7;
+  stroke-dasharray: 7 93;
 }
 
 .circuit-board__glint--core {
-  stroke: rgba(255, 238, 215, 0.62);
-  stroke-width: 1.5;
-  stroke-dasharray: 5.8 94.2;
+  stroke: rgba(255, 238, 215, 0.74);
+  stroke-width: 1.45;
+  stroke-dasharray: 7 93;
 }
 
 .circuit-board__node {
   width: var(--node-size);
   height: var(--node-size);
   border-radius: 999px;
-  opacity: 0.52;
-  background: radial-gradient(circle, #fff5e8 0 8%, #ff9b32 28%, rgba(255, 121, 0, 0.26) 54%, transparent 70%);
+  opacity: 0.74;
+  background: radial-gradient(circle, #fff9ef 0 9%, #ff9b32 28%, rgba(255, 121, 0, 0.42) 55%, transparent 72%);
   transform: translate3d(-50%, -50%, 0) scale(0.82);
   will-change: opacity, transform;
-  animation: circuitNodePulse 3.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(255, 121, 0, 0.54));
+  backface-visibility: hidden;
+  animation: circuitNodePulse 4.2s ease-in-out infinite;
   animation-delay: var(--node-delay);
 }
 
@@ -1091,7 +1131,7 @@ a {
 
 @keyframes circuitTileDrift {
   from {
-    transform: translate3d(-120px, -120px, 0);
+    transform: translate3d(-84px, -84px, 0);
   }
 
   to {
@@ -1101,11 +1141,43 @@ a {
 
 @keyframes circuitTileDriftReverse {
   from {
-    transform: translate3d(0, -60px, 0);
+    transform: translate3d(0, -84px, 0);
   }
 
   to {
-    transform: translate3d(-120px, -180px, 0);
+    transform: translate3d(-84px, -168px, 0);
+  }
+}
+
+@keyframes circuitAuraFloat {
+  from {
+    opacity: 0.52;
+    transform: translate3d(-2%, 1%, 0) scale(0.96);
+  }
+
+  to {
+    opacity: 0.82;
+    transform: translate3d(2%, -1.5%, 0) scale(1.04);
+  }
+}
+
+@keyframes circuitSweep {
+  from {
+    transform: translate3d(-24%, 0, 0) scaleX(0.9);
+  }
+
+  to {
+    transform: translate3d(24%, 0, 0) scaleX(1.08);
+  }
+}
+
+@keyframes circuitTracePulse {
+  from {
+    stroke-dashoffset: 0;
+  }
+
+  to {
+    stroke-dashoffset: -100;
   }
 }
 
