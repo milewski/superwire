@@ -2,9 +2,7 @@
 
 <p align="center">
     <a href="#"><img src="https://github.com/milewski/superwire/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
-    <a href="#"><img src="https://img.shields.io/packagist/dt/milewski/superwire" alt="Total Downloads"></a>
-    <a href="#"><img src="https://img.shields.io/packagist/v/milewski/superwire" alt="Latest Stable Version"></a>
-    <a href="#"><img src="https://img.shields.io/packagist/l/milewski/superwire" alt="License"></a>
+    <a href="#"><img src="https://img.shields.io/github/license/milewski/superwire" alt="License"></a>
 </p>
 
 # Superwire
