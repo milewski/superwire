@@ -92,7 +92,7 @@ textarea {
   background-size: 18px 18px;
 }
 
-.matrix-tool__mock-app header {
+.matrix-tool__mock-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -102,20 +102,20 @@ textarea {
   background: #171717;
 }
 
-.matrix-tool__mock-app header img {
+.matrix-tool__mock-logo {
   width: 210px;
 }
 
-.matrix-tool__mock-app header span,
-.matrix-tool__mock-tabs span,
-.matrix-tool__mock-body aside,
-.matrix-tool__mock-body section,
-.matrix-tool__mock-body section div {
+.matrix-tool__mock-avatar,
+.matrix-tool__mock-tab,
+.matrix-tool__mock-sidebar,
+.matrix-tool__mock-content,
+.matrix-tool__mock-content-row {
   border-radius: 16px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035));
 }
 
-.matrix-tool__mock-app header span {
+.matrix-tool__mock-avatar {
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -131,7 +131,7 @@ textarea {
   background: #1f1f1f;
 }
 
-.matrix-tool__mock-tabs span {
+.matrix-tool__mock-tab {
   width: 170px;
   height: 44px;
 }
@@ -144,7 +144,7 @@ textarea {
   padding: 34px 42px 42px;
 }
 
-.matrix-tool__mock-body section {
+.matrix-tool__mock-content {
   display: grid;
   grid-template-rows: 80px 1fr 130px;
   gap: 24px;

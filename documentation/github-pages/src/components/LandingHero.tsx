@@ -460,17 +460,17 @@ function EditorWindow() {
 
   return (
     <motion.div
-      className="editor-perspective"
+      className="editor-preview"
       ref={editorPerspectiveElementRef}
       initial={{ opacity: 0, rotateX: 10, rotateY: -18, rotateZ: 2, scale: 0.88, y: 72 }}
       animate={{ opacity: 1, rotateX: 0, rotateY: 0, rotateZ: 0, scale: 1, y: 0 }}
       transition={{ duration: 1.25, ease: [0.16, 1, 0.3, 1], delay: 0.28 }}
     >
-      <img className="editor-frame-image" src={frameUrl.src} alt="" aria-hidden="true" />
-      <div className="editor-coordinate-space" style={{ transform: editorCoordinateTransform }}>
-        <div className="editor-panel" style={{ transform: editorPanelTransform }}>
-          <div className="playground-preview dark">
-            <section className="playground__frame">
+      <img className="editor-preview__frame-image" src={frameUrl.src} alt="" aria-hidden="true" />
+      <div className="editor-preview__coordinate-space" style={{ transform: editorCoordinateTransform }}>
+        <div className="editor-preview__panel" style={{ transform: editorPanelTransform }}>
+          <div className="playground-preview playground-preview--dark">
+            <section className="playground playground__frame">
               <div className="playground__main">
                 <header className="playground__topbar">
                   <div className="playground__brand">
@@ -484,13 +484,13 @@ function EditorWindow() {
                   </div>
                 </header>
 
-                <div className="playground__tabs">
-                  <div className="tabs-list">
+                <div className="playground__tabs playground-tabs">
+                  <div className="playground-tabs__list">
                     <div className="playground-tabs__item">
                       <button className="playground-tabs__trigger" type="button" data-state="inactive">
                         <span className="playground-tabs__dot" />
                         <span className="playground-tabs__title">Launch brief</span>
-                        <span className="mini-status completed">completed</span>
+                        <span className="mini-status mini-status--completed">completed</span>
                       </button>
                     </div>
 
@@ -498,7 +498,7 @@ function EditorWindow() {
                       <button className="playground-tabs__trigger" type="button" data-state="active" data-active>
                         <span className="playground-tabs__dot" />
                         <span className="playground-tabs__title">Workflow 2</span>
-                        <span className="mini-status completed">completed</span>
+                        <span className="mini-status mini-status--completed">completed</span>
                       </button>
 
                       <div className="playground-tabs__actions">
@@ -521,7 +521,7 @@ function EditorWindow() {
                       </nav>
 
                       <div className="playground-actions">
-                        <span className="status-pill invalid">invalid</span>
+                        <span className="status-pill status-pill--invalid">invalid</span>
                         <button className="button button--ghost button--lg" type="button"><RefreshCcw /> Format</button>
                         <button className="button button--ghost button--lg" type="button">Validate</button>
                         <button className="button button--lg playground-actions__run" type="button"><Play /> Run workflow</button>
@@ -531,21 +531,21 @@ function EditorWindow() {
                     <section className="workflow-layout">
                       <div className="workflow-layout__top workflow-layout__top--single">
                         <article className="workflow-editor">
-                          <div className="workflow-editor__header panel-card__header">
-                            <div className="panel-card__title-block">
+                          <div className="workflow-editor__header">
+                            <div className="workflow-editor__title-block">
                               <strong>Workflow 2</strong>
                             </div>
                           </div>
 
                           <div className="wire-editor-shell">
                             <div className="wire-editor-preview" aria-label="Superwire workflow code preview">
-                              <div className="cm-gutters" aria-hidden="true">
+                              <div className="wire-editor-preview__gutters" aria-hidden="true">
                                 {codeLines.map((_, codeLineIndex) => <span key={`gutter-${codeLineIndex + 1}`}>{codeLineIndex + 1}</span>)}
                               </div>
 
-                              <div className="cm-content">
+                              <div className="wire-editor-preview__content">
                                 {codeLines.map((codeLine, codeLineIndex) => (
-                                  <div className="cm-line" key={`code-line-${codeLineIndex + 1}`}>
+                                  <div className="wire-editor-preview__line" key={`code-line-${codeLineIndex + 1}`}>
                                     {codeLine.map((codeSegment, codeSegmentIndex) => {
                                       const colorName = codeSegment.color;
                                       const className = colorName ? colorClassNames[colorName] : 'text-[#d6d6d6]';
@@ -573,7 +573,7 @@ function EditorWindow() {
                             </div>
                           </div>
                           <div className="workflow-log-panel__body">
-                            <pre className="workflow-output__json">{"{\n  \"greeting\": \"Summary is ready.\"\n}"}</pre>
+                            <pre className="workflow-output workflow-output__json">{"{\n  \"greeting\": \"Summary is ready.\"\n}"}</pre>
                           </div>
                         </article>
 
@@ -587,7 +587,7 @@ function EditorWindow() {
                           <div className="workflow-log-panel__body events-log">
                             <div className="events-log__item">
                               <div className="events-log__item-trigger">
-                                <span className="events-log__item-meta"><span className="event-chip event-completed">completed</span><span className="events-log__item-summary">agent.greeting finished</span></span>
+                                <span className="events-log__item-meta"><span className="event-chip event-chip--completed">completed</span><span className="events-log__item-summary">agent.greeting finished</span></span>
                                 <span className="events-log__item-time">12ms</span>
                               </div>
                             </div>
@@ -599,13 +599,13 @@ function EditorWindow() {
                 </div>
               </div>
             </section>
-            </div>
+          </div>
           </div>
         {isCalibrationEnabled ? (
-          <div className="editor-calibration" data-dragging={activeCornerName ? 'true' : 'false'}>
+          <div className="editor-preview__calibration" data-dragging={activeCornerName ? 'true' : 'false'}>
             {editorCorners.map((editorCorner) => (
               <button
-                className="editor-calibration__handle"
+                className="editor-preview__calibration-handle"
                 key={editorCorner.name}
                 onPointerDown={(pointerEvent) => {
                   pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
@@ -626,19 +626,19 @@ function EditorWindow() {
 
 export default function LandingHero() {
   return (
-    <main className="hero-shell">
-      <div className="hero-noise" />
-      <div className="hero-grid" />
-      <div className="hero-inner">
+    <main className="hero">
+      <div className="hero__noise" />
+      <div className="hero__grid" />
+      <div className="hero__inner">
         <motion.section
-          className="hero-copy"
+          className="hero__copy"
           initial={{ opacity: 0, x: -42, filter: 'blur(10px)' }}
           animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
           transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
         >
-          {/*<img className="hero-logo" src={logoUrl.src} alt="Superwire" />*/}
+          {/*<img className="hero__logo" src={logoUrl.src} alt="Superwire" />*/}
 
-          <div className="hero-copy-content">
+          <div className="hero__copy-content">
             <motion.h1
               initial={{ opacity: 0, y: 28 }}
               animate={{ opacity: 1, y: 0 }}
@@ -671,7 +671,7 @@ export default function LandingHero() {
           </div>
         </motion.section>
 
-        <section className="hero-visual" aria-label="Superwire editor preview">
+        <section className="hero__visual" aria-label="Superwire editor preview">
           <CircuitLines />
           <EditorWindow />
         </section>

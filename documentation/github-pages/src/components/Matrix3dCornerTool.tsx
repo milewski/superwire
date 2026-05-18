@@ -193,17 +193,24 @@ export default function Matrix3dCornerTool() {
 
           <div className="matrix-tool__surface" style={{ transform: matrixCss }}>
             <div className="matrix-tool__mock-app">
-              <header>
-                <img src={logoUrl.src} alt="Superwire" />
-                <span />
+              <header className="matrix-tool__mock-header">
+                <img className="matrix-tool__mock-logo" src={logoUrl.src} alt="Superwire" />
+                <span className="matrix-tool__mock-avatar" />
               </header>
-              <div className="matrix-tool__mock-tabs"><span /><span /><span /></div>
+
+              <div className="matrix-tool__mock-tabs">
+                <span className="matrix-tool__mock-tab" />
+                <span className="matrix-tool__mock-tab" />
+                <span className="matrix-tool__mock-tab" />
+              </div>
+
               <div className="matrix-tool__mock-body">
-                <aside />
-                <section>
-                  <div />
-                  <div />
-                  <div />
+                <aside className="matrix-tool__mock-sidebar" />
+
+                <section className="matrix-tool__mock-content">
+                  <div className="matrix-tool__mock-content-row" />
+                  <div className="matrix-tool__mock-content-row" />
+                  <div className="matrix-tool__mock-content-row" />
                 </section>
               </div>
             </div>
