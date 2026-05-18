@@ -1,0 +1,80 @@
+---
+title: MCP and Tools Overview
+description: Understand how MCP servers, tools, resources, and prompts fit into a Superwire workflow.
+---
+
+MCP gives Superwire workflows access to external capabilities. In practice, MCP is where your workflow connects to real systems: APIs, databases, internal services, and curated prompt or content sources.
+
+Use this section as the mental model:
+
+```text
+mcp server -> import capability -> scope with uses -> execute in workflow
+```
+
+## Capability types
+
+- `tool`: Callable operation, often used for fetch/create/update behavior.
+- `resource`: Read-only content source.
+- `prompt`: Reusable prompt template managed by an MCP server.
+
+## Two execution modes
+
+Superwire supports two ways to use MCP tools:
+
+1. **Workflow-owned call** in `dynamic {}` using `call tool.*`.
+   - Best for deterministic steps that must always run.
+   - Best when runtime values should be bound explicitly.
+2. **Model-owned call** inside an `agent` through `uses: [tool.*]`.
+   - Best when model judgment decides if a tool is needed.
+   - Best for selective retrieval or exploratory reasoning.
+
+## Recommended authoring pattern
+
+1. Declare MCP servers with endpoint and auth headers.
+2. Import only needed tools/resources/prompts.
+3. Use workflow-owned calls for required operations.
+4. Give agents least-privilege `uses` access.
+5. Keep outputs typed so downstream steps stay stable.
+
+## Example end-to-end shape
+
+```wire
+input {
+    task_id: number
+}
+
+secrets {
+    mcp_token: string
+}
+
+mcp tasks {
+    endpoint: "https://tools.internal.example.com/mcp"
+
+    headers {
+        Authorization: "Bearer {{ secrets.mcp_token }}"
+    }
+}
+
+tool fetch_task from mcp.tasks.tool.fetch_task
+resource writing_style from mcp.tasks.resource.writing_style
+
+dynamic {
+    task: call tool.fetch_task {
+        bindings {
+            task_id: input.task_id
+        }
+    }
+}
+
+agent writer {
+    model: model.fast
+    uses: [resource.writing_style]
+    instruction: "Write a concise update for {{ dynamic.task.title }}."
+
+    output {
+        update: string
+    }
+}
+```
+
+This pattern keeps deterministic fetches in the workflow and model creativity in the agent.

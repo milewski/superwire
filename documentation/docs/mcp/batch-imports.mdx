@@ -1,9 +1,11 @@
 ---
 title: Batch Imports
-description: Import multiple tools, prompts, and resources from MCP namespaces.
+description: Import many MCP tools, prompts, and resources with less repetition.
 ---
 
 Batch imports reduce repetition when importing several declarations from the same MCP server namespace.
+
+They are most useful when a workflow uses many capabilities from one server and you want consistent naming and shared bindings.
 
 ## Tool-only imports
 
@@ -70,3 +72,10 @@ from mcp.tasks.tool {
 ```
 
 `bindings {}` assigns runtime values. It is not a schema declaration.
+
+## Recommended usage
+
+- Keep import blocks close to related `mcp` declarations.
+- Use clear local names for imported capabilities.
+- Apply shared `bindings {}` only when all imported tools truly need the same trusted values.
+- Prefer explicit individual imports when one tool needs different bindings or contract overrides.

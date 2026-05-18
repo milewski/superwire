@@ -1,9 +1,9 @@
 ---
 title: Syntax Overview
-description: A compact reference for Superwire syntax.
+description: A practical map of Superwire blocks and what each one is for.
 ---
 
-Superwire uses block-based declarations and expression references.
+Superwire workflows are built from declaration blocks and references between those blocks.
 
 ```wire
 input {
@@ -35,20 +35,32 @@ agent summarize {
 
 ## Declaration blocks
 
-```wire
-secrets { ... }
-input { ... }
-schema name { ... }
-provider name from driver { ... }
-model name from provider { ... }
-mcp name { ... }
-tool local_name from mcp.server.tool.remote_name
-resource local_name from mcp.server.resource.remote_name
-prompt local_name from mcp.server.prompt.remote_name
-dynamic { ... }
-agent name { ... }
-output { ... }
+Use these blocks to define what a workflow needs, how it runs, and what it returns.
+
+| Block | What it defines | Why it exists |
+| --- | --- | --- |
+| `input { ... }` | Public request data for the workflow. | Makes runtime inputs explicit and typed. |
+| `secrets { ... }` | Sensitive request data such as API keys. | Keeps credentials separate from normal input. |
+| `schema name { ... }` | Reusable structured types. | Avoids repeating the same object shapes across blocks. |
+| `provider name from openai { ... }` | A configured backend endpoint and auth settings. | Centralizes provider connection details for models. |
+| `model name from provider { ... }` | A named model profile (`id`, inference defaults). | Lets multiple agents share model settings. |
+| `mcp name { ... }` | An MCP server connection. | Declares external capability endpoints once. |
+| `tool local_name from mcp.server.tool.remote_name` | A tool imported from an MCP server. | Exposes deterministic actions to agents. |
+| `resource local_name from mcp.server.resource.remote_name` | A resource imported from an MCP server. | Exposes read-only external content. |
+| `prompt local_name from mcp.server.prompt.remote_name` | A prompt template imported from MCP. | Reuses centrally managed prompt assets. |
+| `dynamic { ... }` | Computed values derived from references and expressions. | Prepares runtime values before agent execution. |
+| `agent name { ... }` | One model-backed execution step. | Encapsulates instruction, tools, context, and typed output. |
+| `output { ... }` | Final response payload of the workflow. | Defines exactly what `/execute` returns. |
+
+## Typical flow
+
+Most workflows follow this shape:
+
+```text
+input + secrets -> provider -> model -> agent(s) -> output
 ```
+
+When MCP is used, tools/resources/prompts become additional inputs available to agents.
 
 ## Common expressions
 
@@ -65,6 +77,8 @@ read resource.project_readme
 render prompt.instructions
 context(agent.investigate_task)
 ```
+
+References are how data moves through the workflow. For example, `agent.summarize.summary` uses a previous agent result, while `secrets.api_key` injects a credential into provider config.
 
 ## Naming
 

@@ -1,7 +1,9 @@
 ---
 title: MCP Resources
-description: Import and read MCP resources.
+description: Import read-only MCP resources for deterministic workflow reads or agent context.
 ---
+
+Resources are read-only MCP capabilities. Use them for stable external context such as policies, templates, docs, or product metadata.
 
 A resource import exposes an MCP resource to a workflow.
 
@@ -17,7 +19,7 @@ dynamic {
 }
 ```
 
-Resources can also be made available to agents through `uses`.
+Resources can also be provided to agents through `uses`.
 
 ```wire
 agent writer {
@@ -30,3 +32,7 @@ agent writer {
     }
 }
 ```
+
+Use `dynamic { read resource.* }` when the workflow must always load the resource.
+
+Use `uses: [resource.*]` when the model should decide whether to read it during that step.

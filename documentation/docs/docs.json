@@ -107,6 +107,7 @@
           {
             "group": "MCP & Tools",
             "pages": [
+              "mcp/overview",
               "mcp/mcp-servers",
               "mcp/tools",
               "mcp/resources",
@@ -136,7 +137,6 @@
             "group": "Integrations",
             "pages": [
               "integrations/openai",
-              "integrations/ollama",
               "integrations/laravel"
             ]
           }
@@ -155,20 +155,6 @@
               "examples/context-management",
               "examples/mcp-tools",
               "examples/nested-output"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "API Reference",
-        "groups": [
-          {
-            "group": "API Reference",
-            "pages": [
-              "api-reference/executor-api",
-              "api-reference/rust-api",
-              "api-reference/lsp",
-              "api-reference/diagnostics"
             ]
           }
         ]

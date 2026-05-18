@@ -3,6 +3,13 @@ title: MCP Tools, Prompts, and Resources
 description: Use MCP capabilities through imports and uses.
 ---
 
+This example combines both MCP execution styles:
+
+- Workflow-owned tool call in `dynamic` for deterministic fetch.
+- Model-owned MCP capabilities in `uses` for agent reasoning context.
+
+If you are new to MCP in Superwire, read [MCP and Tools Overview](/mcp/overview) first.
+
 ```wire
 input {
     task_id: number
@@ -64,7 +71,7 @@ agent writer {
         tool.fetch_task,
     ]
 
-    instruction: "Write a concise task update for {{ task.title }}."
+    instruction: "Write a concise task update for {{ dynamic.task.title }}."
 
     output {
         update: string
@@ -75,3 +82,9 @@ output {
     update: agent.writer.update
 }
 ```
+
+Why this pattern works:
+
+- `call tool.fetch_task` guarantees task data exists before agent execution.
+- `uses` gives the agent scoped access to only the prompt/resource/tool it needs.
+- The final `output` stays typed and stable for application consumers.

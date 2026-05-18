@@ -14,6 +14,8 @@ secrets {
 
 Use `///` for documentation comments on schema fields.
 
+Unlike regular `//` comments, `///` descriptions are part of the schema contract and are passed to the underlying model as field guidance. This helps the agent understand what each field means when generating structured output.
+
 ```wire
 schema release_note {
     /// Short title shown to the user
@@ -23,5 +25,24 @@ schema release_note {
     impact: enum { low, medium, high }
 }
 ```
+
+## When `///` is essential
+
+Use `///` whenever field intent is ambiguous and a wrong interpretation would produce poor or unsafe output.
+
+```wire
+schema medication_instruction {
+    /// Medication amount in milligrams, as a numeric value only.
+    dose_mg: number
+
+    /// Interval between doses in hours, not times per day.
+    interval_hours: number
+
+    /// Whether this is PRN (take only when symptoms appear).
+    as_needed: boolean
+}
+```
+
+Without these descriptions, the model might confuse `dose_mg` with pill count or interpret `interval_hours` as daily frequency.
 
 Block comments are not supported.

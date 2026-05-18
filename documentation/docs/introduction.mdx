@@ -21,15 +21,11 @@ The executor is published as a Docker image:
 docker run --rm -p 13703:13703 rmilewski/superwire
 ```
 
-It exposes multiple endpoints:
+To try Superwire immediately with a visual interface, open the Playground after startup:
 
-| Endpoint | Response style | Use when |
-| --- | --- | --- |
-| `POST /execute` | JSON or Server-Sent Events | You want final output (`application/json`) or progress events (`text/event-stream`). |
-| `POST /validate` | JSON | You want workflow validation without running execution. |
-| `POST /format` | JSON | You want canonical formatting for `.wire` source. |
-
-`/execute`, `/validate`, and `/format` use JSON request bodies.
+```text
+http://localhost:13703/playground
+```
 
 ## A minimal workflow
 
@@ -66,6 +62,8 @@ output {
     result: agent.reply
 }
 ```
+
+Note: the `openai` provider endpoint can point to any OpenAI-compatible backend, as long as it supports the `/responses` API.
 
 This workflow has one public input, one secret, one provider instance, one model profile, one agent, and one final output.
 
@@ -110,29 +108,6 @@ The response is the workflow `output` block as JSON:
   }
 }
 ```
-
-## Stream the same workflow
-
-Use `Accept: text/event-stream` on `/execute` when your UI needs progress events:
-
-```bash
-curl -N http://localhost:13703/execute \
-  -H 'Accept: text/event-stream' \
-  -H 'Content-Type: application/json' \
-  -d @- <<JSON
-{
-  "input": {
-    "message": "Write a short welcome message for Superwire."
-  },
-  "secrets": {
-    "api_key": "sk-..."
-  },
-  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
-}
-JSON
-```
-
-A stream contains lifecycle events such as workflow start, planning, agent start, agent completion, tool/MCP events, and final workflow completion.
 
 ## What to read next
 

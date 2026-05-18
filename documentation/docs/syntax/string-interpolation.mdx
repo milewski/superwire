@@ -18,6 +18,25 @@ agent summarize {
 
 References inside interpolation are validated the same way as references elsewhere.
 
+## Multiline strings
+
+Use triple quotes for multiline instructions while still using interpolation:
+
+```wire
+agent summarize {
+    model: model.fast
+    instruction: """
+        You are helping with task {{ input.task_id }}.
+        Focus on project {{ input.project_id }}.
+        Return a concise summary.
+    """
+
+    output {
+        summary: string
+    }
+}
+```
+
 ## Interpolating agent outputs
 
 ```wire

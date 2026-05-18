@@ -1,9 +1,9 @@
 ---
 title: MCP Servers
-description: Define MCP server endpoints and authenticated headers.
+description: Connect MCP servers with endpoint and request headers for tools, resources, and prompts.
 ---
 
-An `mcp` declaration names an MCP server endpoint.
+An `mcp` declaration defines a named MCP server connection used by imports.
 
 ```wire
 mcp tasks {
@@ -37,7 +37,7 @@ mcp summarizer {
 }
 ```
 
-Headers may reference runtime values.
+Headers can reference runtime values from `secrets` and `input`.
 
 ```wire
 mcp internal_tools {
@@ -49,5 +49,12 @@ mcp internal_tools {
     }
 }
 ```
+
+## Practical guidance
+
+- Keep one `mcp` declaration per backend capability domain (`tasks`, `knowledge`, `crm`).
+- Pass credentials through `secrets`, never hardcode long-lived tokens.
+- Add request-scoped headers (workspace, tenant, user context) when your MCP backend needs routing context.
+- Keep endpoint URLs stable and move environment-specific values to deployment configuration.
 
 Do not hardcode long-lived tokens in `.wire` files. Pass them through `secrets`.

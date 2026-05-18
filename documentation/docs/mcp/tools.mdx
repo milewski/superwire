@@ -1,9 +1,11 @@
 ---
 title: MCP Tools
-description: Import tools, define schemas, bind trusted values, and make tools available to agents.
+description: Import MCP tools, choose deterministic vs model-owned calls, and scope tool access safely.
 ---
 
-A tool import exposes an MCP tool to a workflow.
+Tools are callable MCP capabilities. They usually represent backend operations such as fetch, search, create, or update.
+
+A tool import makes one MCP tool available to the workflow:
 
 ```wire
 tool fetch_task from mcp.tasks.tool.fetch_task
@@ -11,7 +13,7 @@ tool fetch_task from mcp.tasks.tool.fetch_task
 
 ## Tool schemas
 
-`input {}` and `output {}` describe tool contracts.
+`input {}` and `output {}` define the tool contract expected by the workflow.
 
 ```wire
 tool fetch_task from mcp.tasks.tool.fetch_task {
@@ -29,7 +31,7 @@ tool fetch_task from mcp.tasks.tool.fetch_task {
 
 ## Runtime bindings
 
-Use `bindings {}` to override the native inputs of an MCP tool. When an agent calls a tool, it naturally provides values for the tool's inputs through the agent's context. Bindings let you explicitly override those inputs with specific values that take precedence over what the agent would provide.
+Use `bindings {}` when the workflow should supply trusted runtime values directly. This is the workflow-owned pattern.
 
 ```wire
 dynamic {
@@ -41,9 +43,11 @@ dynamic {
 }
 ```
 
+Use workflow-owned calls when the operation is required and should not depend on model discretion.
+
 ## Agent tool access
 
-Agents receive tools only when listed in `uses`.
+Agents can only call tools listed in `uses`.
 
 ```wire
 agent researcher {
@@ -57,4 +61,19 @@ agent researcher {
 }
 ```
 
+This is the model-owned pattern: the model decides whether and when to call available tools.
+
+## Choosing the pattern
+
+- Use workflow-owned calls (`dynamic` + `call tool.*`) for deterministic steps and strict ordering.
+- Use model-owned calls (`uses: [tool.*]`) when the model needs tool-choice judgment.
+- Combine both when needed: prefetch core data deterministically, then expose selected tools for reasoning.
+
 `uses` can also include prompts and resources.
+
+## See also
+
+- [MCP and Tools Overview](/mcp/overview)
+- [MCP Servers](/mcp/mcp-servers)
+- [Batch Imports](/mcp/batch-imports)
+- [MCP Tools, Prompts, and Resources example](/examples/mcp-tools)

@@ -1,7 +1,9 @@
 ---
 title: MCP Prompts
-description: Import, render, and provide prompts to agents.
+description: Import MCP prompts, render them in workflow logic, or expose them to agents.
 ---
+
+Prompts are reusable MCP-managed instruction assets.
 
 A prompt import exposes an MCP prompt to a workflow.
 
@@ -30,5 +32,9 @@ agent writer {
     }
 }
 ```
+
+Use `dynamic { render prompt.* }` when prompt content should be materialized before agent execution.
+
+Use `uses: [prompt.*]` when the prompt should be available as agent capability context.
 
 `uses` accepts tools, prompts, and resources.

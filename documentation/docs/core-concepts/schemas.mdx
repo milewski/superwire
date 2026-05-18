@@ -50,6 +50,60 @@ schema article {
 }
 ```
 
+## Supported schema field types
+
+Schemas support the full type system. Common options:
+
+- Primitive: `string`, `number`, `float`, `boolean`, `null`
+- Any object: `object`
+- Arrays: `[string]`, fixed length `[string; 3]`
+- Tuples: `(string, number)`
+- Objects: `{ title: string, score: number }`
+- Enums: `enum { draft, ready, published }`
+- Unions: `string | number`
+- Nullable values: `maybe string`
+- Schema references: `schema.shared.status`
+- Variants (tagged unions): `variant kind { ... }`
+
+Example with multiple types:
+
+```wire
+schema typed_example {
+    name: string
+    age: number
+    ratio: float
+    active: boolean
+    metadata: object
+    nickname: maybe string
+    tags: [string]
+    fixed_tags: [string; 3]
+    coordinates: (number, number)
+    status: enum { draft, ready, published }
+    fallback: string | number
+}
+```
+
+## Variants
+
+Use `variant` when a value can be one of multiple structured cases, each identified by a discriminator field.
+
+```wire
+schema event_payload {
+    payload: variant type {
+        user_created {
+            user_id: string
+        }
+
+        "user.deleted" {
+            user_id: string
+            reason: maybe string
+        }
+    }
+}
+```
+
+In this example, `type` is the discriminator and each case defines its own object shape.
+
 ## Field descriptions
 
 Use triple-slash comments to document schema fields. These descriptions are preserved for schema-aware tooling and can improve structured output quality.

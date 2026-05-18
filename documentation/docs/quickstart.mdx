@@ -45,7 +45,27 @@ output {
 }
 ```
 
-## 3. Encode the workflow
+Note: `endpoint` can be any OpenAI-compatible backend URL, as long as that backend supports `/responses`.
+
+## 3. Use the Playground (fastest way to test)
+
+You can test `.wire` files directly in the Playground with a visual interface, without manually base64-encoding workflow source.
+
+Open:
+
+```text
+http://localhost:13703/playground
+```
+
+In the Playground, you can:
+
+- Paste or edit your `.wire` source.
+- Fill `input` and `secrets` as JSON.
+- Run the workflow and inspect output and events.
+
+For quick iteration, this is the simplest way to validate and execute workflows.
+
+## 4. Encode the workflow (CLI/API path)
 
 Linux:
 
@@ -59,7 +79,7 @@ macOS:
 WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
 ```
 
-## 4. Execute it
+## 5. Execute it
 
 ```bash
 curl -s http://localhost:13703/execute \
@@ -85,7 +105,7 @@ Expected response shape:
 }
 ```
 
-## 5. Use streaming when needed
+## 6. Use streaming when needed
 
 `/execute` returns Server-Sent Events when you request `text/event-stream`:
 

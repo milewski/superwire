@@ -3,15 +3,15 @@ title: Providers and Models
 description: Configure backend access separately from model selection.
 ---
 
-Superwire separates provider drivers, provider instances, and model profiles.
+Superwire separates provider instances and model profiles.
 
 ```text
-driver -> provider instance -> model profile -> agent
+provider instance -> model profile -> agent
 ```
 
 ## Provider declarations
-e
-A provider declaration creates a named provider instance from a provider driver.
+
+A provider declaration creates a named provider instance.
 
 ```wire
 secrets {
@@ -24,7 +24,9 @@ provider llm from openai {
 }
 ```
 
-`openai` is the driver. `llm` is the provider instance name. Provider drivers are implemented by the Superwire engine and must be supported by the executor.
+`openai` is the provider type. `llm` is the provider instance name.
+
+At the moment, the executor supports OpenAI-compatible providers through the `/responses` API.
 
 ## Model declarations
 
@@ -36,7 +38,7 @@ model fast from llm {
 }
 ```
 
-The `id` is the provider-specific model identifier sent to the provider driver.
+The `id` is the provider-specific model identifier sent to the configured provider.
 
 Agents reference model profiles through the `model` namespace:
 

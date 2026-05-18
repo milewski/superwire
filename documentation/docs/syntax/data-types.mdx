@@ -1,6 +1,6 @@
 ---
 title: Data Types
-description: Primitive, object, array, tuple, enum, and schema reference types.
+description: Primitive, object, array, tuple, enum, union, variant, and schema reference types.
 ---
 
 Superwire types describe `input`, `secrets`, schema fields, tool contracts, and agent outputs.
@@ -12,6 +12,13 @@ string
 number
 float
 boolean
+null
+```
+
+`object` is also available as a broad object type when you do not want to define fixed fields.
+
+```wire
+object
 ```
 
 ## Objects
@@ -50,6 +57,21 @@ Fixed-length arrays use a semicolon:
 (string, number, [string; 3])
 ```
 
+## Unions and nullable types
+
+Use `|` when a value may be one of multiple types:
+
+```wire
+string | number
+schema.contact.email | schema.contact.phone
+```
+
+Use `maybe` as nullable shorthand:
+
+```wire
+maybe string
+```
+
 ## Enums
 
 Inline enum variants use commas:
@@ -79,5 +101,40 @@ schema participant {
 schema article {
     title: string
     author: schema.participant
+}
+```
+
+## Variants
+
+Use `variant` for tagged unions where each case has its own object shape.
+
+```wire
+schema event_payload {
+    payload: variant type {
+        user_created {
+            user_id: string
+        }
+
+        "user.deleted" {
+            user_id: string
+            reason: maybe string
+        }
+    }
+}
+```
+
+You can also define a root-level variant directly on a schema:
+
+```wire
+schema api_event {
+    variant type {
+        created {
+            id: string
+        }
+
+        deleted {
+            id: string
+        }
+    }
 }
 ```

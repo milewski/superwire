@@ -1,9 +1,11 @@
 ---
 title: OpenAI-Compatible Providers
-description: Configure an OpenAI-compatible provider and model profile.
+description: Configure OpenAI-compatible providers that support the /responses API.
 ---
 
-Use the `openai` driver for OpenAI-compatible HTTP APIs.
+Use `provider ... from openai` for OpenAI-compatible HTTP APIs.
+
+The provider endpoint must support the `/responses` API.
 
 ```wire
 secrets {
