@@ -6,7 +6,7 @@ COPY playground/package.json playground/package-lock.json ./
 RUN npm ci
 
 COPY playground/ ./
-COPY documentation/public /workspace/documentation/public
+COPY documentation/docs/public /workspace/documentation/docs/public
 COPY editors/textmate/syntaxes/wire.tmLanguage.json /workspace/editors/textmate/syntaxes/wire.tmLanguage.json
 RUN npm run build
 

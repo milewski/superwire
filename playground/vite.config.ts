@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: '/playground/',
-  publicDir: '../documentation/public',
+  publicDir: '../documentation/docs/public',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
