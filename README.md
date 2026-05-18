@@ -66,7 +66,7 @@ Superwire workflows structure and orchestrate the execution of LLM agents. Defin
 - **Runtime validation** — Catch errors before they reach production
 - **Portable** — Single `.wire` file contains everything needed to execute a workflow
 
-For full documentation, visit [https://acme-796e8c63.mintlify.app](https://acme-796e8c63.mintlify.app).
+For full documentation, visit [https://docs.superwire.dev](https://docs.superwire.dev).
 
 ## License
 
