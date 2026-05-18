@@ -42,7 +42,7 @@ output {
 | --- | --- |
 | `input` | Public values supplied by the executor request. |
 | `secrets` | Sensitive values supplied by the executor request. |
-| `provider` | Configures access to a backend driver such as `openai` or `ollama`. |
+| `provider` | Configures access to an OpenAI-compatible backend through `openai`. |
 | `model` | Defines a reusable model profile from a provider instance. |
 | `schema` | Defines reusable structured types. |
 | `mcp` | Defines an MCP server endpoint. |
@@ -54,7 +54,7 @@ output {
 ## Runtime topology
 
 ```text
-driver -> provider instance -> model profile -> agent
+provider instance -> model profile -> agent
 ```
 
 A provider declaration does not select a model by itself. A model profile selects the provider-specific model ID. Agents reference named model profiles.

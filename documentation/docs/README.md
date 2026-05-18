@@ -12,7 +12,7 @@ The documentation is written for application developers who will normally execut
 - `syntax/`: grammar-level DSL reference
 - `mcp/`: MCP server, tool, resource, prompt, and batch import usage
 - `guides/`: practical authoring and testing workflows
-- `api-reference/executor-api.mdx`: `/execute` and `/execute/stream` request/response contract
+- `api-reference/executor-api.mdx`: `/execute`, `/validate`, and `/format` request/response contract, including event-stream mode via `Accept: text/event-stream`
 - `api-reference/rust-api.mdx`: Rust embedding surface
 - `examples/`: complete `.wire` examples
 - `docs.json`: Mintlify navigation and site configuration

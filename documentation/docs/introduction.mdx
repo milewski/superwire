@@ -67,47 +67,11 @@ Note: the `openai` provider endpoint can point to any OpenAI-compatible backend,
 
 This workflow has one public input, one secret, one provider instance, one model profile, one agent, and one final output.
 
-## Execute it
+## Run it quickly
 
-Base64-encode the workflow source:
+The fastest path is the Playground at `http://localhost:13703/playground`.
 
-```bash
-WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
-```
-
-On macOS:
-
-```bash
-WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
-```
-
-Send it to the executor:
-
-```bash
-curl -s http://localhost:13703/execute \
-  -H 'Content-Type: application/json' \
-  -d @- <<JSON
-{
-  "input": {
-    "message": "Write a short welcome message for Superwire."
-  },
-  "secrets": {
-    "api_key": "sk-..."
-  },
-  "workflow_source_base64": "$WORKFLOW_SOURCE_BASE64"
-}
-JSON
-```
-
-The response is the workflow `output` block as JSON:
-
-```json
-{
-  "result": {
-    "message": "Welcome to Superwire — a concise way to describe and run AI workflows."
-  }
-}
-```
+If you prefer CLI/API execution, use the full step-by-step flow in [Quickstart](/quickstart).
 
 ## What to read next
 

@@ -25,9 +25,9 @@ When the source path ends in `.prompt`, every entry inside the block must be a `
 
 ```wire
 from mcp.tasks.prompt {
-    prompt fetch_task
-    prompt update_task_status
-    prompt create_comment
+    prompt task_writer_instructions
+    prompt task_review_checklist
+    prompt escalation_template
 }
 ```
 
@@ -48,9 +48,9 @@ When importing from the broader MCP server namespace, the block may contain tool
 
 ```wire
 from mcp.tasks {
-    prompt fetch_task
+    prompt task_writer_instructions
     tool update_task_status
-    resource create_comment
+    resource project_readme
 }
 ```
 

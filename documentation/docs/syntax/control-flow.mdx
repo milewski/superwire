@@ -45,7 +45,7 @@ agent summarize_each for { id, title } in input.tasks {
 
 ## Dynamic match
 
-Use `match` when a dynamic value depends on a variant-like result. Branches must return the same type.
+Use `match` when a dynamic value depends on a variant result. Branches must return the same type. For variant declarations, see [Data Types](/syntax/data-types#variants).
 
 ```wire
 dynamic {

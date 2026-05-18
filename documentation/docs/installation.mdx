@@ -28,7 +28,9 @@ Your executor host needs:
 
 ## Provider setup
 
-Provider drivers are implemented by the Superwire engine. A workflow creates provider instances from the drivers supported by the executor it is running on.
+A workflow creates provider instances supported by the executor.
+
+At the moment, executor provider support is OpenAI-compatible endpoints that implement `/responses`.
 
 ```wire
 secrets {
@@ -50,3 +52,9 @@ The provider instance configures access to the backend. The model profile select
 ## Health checks
 
 A deployment should verify that the executor is reachable before sending workflow traffic. The exact health endpoint depends on the executor build and deployment configuration.
+
+## See also
+
+- [Quickstart](/quickstart)
+- [Executor API](/api-reference/executor-api)
+- [OpenAI-Compatible Providers](/integrations/openai)
