@@ -1,6 +1,6 @@
 import { ArrowRight, Braces, Copy, FileText, Pencil, Play, Plus, RefreshCcw, Sun, Trash2, Workflow } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import frameUrl from '../../frame.webp';
 import logoUrl from '../../../docs/public/logo-horizontal.svg';
 
@@ -24,6 +24,12 @@ type EditorCorner = {
   name: EditorCornerName;
   label: string;
   point: EditorTransformPoint;
+};
+
+type CircuitFramePath = {
+  path: string;
+  duration: number;
+  delay: number;
 };
 
 const codeLines: CodeSegment[][] = [
@@ -92,7 +98,7 @@ const colorClassNames = {
 };
 
 const calibratedEditorMatrix = [
-  0.763615, -0.0418114, 0, -9.81e-05, -0.0668422, 0.8398, 0, -2.72e-05, 0, 0, 1, 0, 85.7695, 59.7734, 0, 1
+  0.765954, -0.0400053, 0, -9.31e-05, -0.0642622, 0.844449, 0, -2.24e-05, 0, 0, 1, 0, 87.3246, 61.0378, 0, 1
 ];
 
 const editorSourceSize = 1000;
@@ -103,6 +109,40 @@ const editorSourceCorners: EditorTransformPoint[] = [
   { coordinateX: editorSourceSize, coordinateY: 0 },
   { coordinateX: editorSourceSize, coordinateY: editorSourceSize },
   { coordinateX: 0, coordinateY: editorSourceSize },
+];
+
+const circuitBoardWidth = 1100;
+const circuitBoardHeight = 720;
+
+const circuitTilePaths = [
+  'M0 28 H34 C48 28 48 52 62 52 H120',
+  'M0 96 H28 C44 96 44 74 60 74 H86 C102 74 102 52 120 52',
+  'M23 0 V23 C23 37 42 37 42 52',
+  'M78 120 V96 C78 82 98 82 98 68 V0',
+  'M0 52 H18',
+  'M102 96 H120',
+];
+
+const circuitFramePaths: CircuitFramePath[] = [
+  { path: 'M42 138 H188 C230 138 230 96 272 96 H356 C392 96 392 64 430 64 H680 C718 64 718 96 754 96 H838 C880 96 880 138 922 138 H1062', duration: 7.8, delay: -1.2 },
+  { path: 'M18 262 H154 C194 262 194 218 236 218 H328 C362 218 362 190 398 190', duration: 6.1, delay: -3.2 },
+  { path: 'M1082 268 H948 C908 268 908 224 866 224 H778 C744 224 744 192 708 192', duration: 6.4, delay: -2.1 },
+  { path: 'M0 448 H126 C170 448 170 492 214 492 H324 C360 492 360 528 398 528', duration: 6.8, delay: -4.4 },
+  { path: 'M1100 464 H970 C926 464 926 510 882 510 H776 C738 510 738 542 700 542', duration: 6.6, delay: -1.8 },
+  { path: 'M126 652 H294 C338 652 338 610 382 610 H718 C762 610 762 652 806 652 H974', duration: 8.5, delay: -5.4 },
+  { path: 'M258 18 V62 C258 104 302 104 302 146 V198', duration: 5.4, delay: -2.8 },
+  { path: 'M838 24 V72 C838 112 796 112 796 152 V206', duration: 5.7, delay: -0.7 },
+];
+
+const circuitNodes = [
+  { coordinateX: 188, coordinateY: 138, radius: 4.5, delay: 0.1 },
+  { coordinateX: 430, coordinateY: 64, radius: 5.5, delay: 0.45 },
+  { coordinateX: 754, coordinateY: 96, radius: 4.5, delay: 0.8 },
+  { coordinateX: 328, coordinateY: 218, radius: 4, delay: 1.05 },
+  { coordinateX: 778, coordinateY: 224, radius: 4, delay: 1.3 },
+  { coordinateX: 324, coordinateY: 492, radius: 4.5, delay: 0.65 },
+  { coordinateX: 776, coordinateY: 510, radius: 4.5, delay: 0.95 },
+  { coordinateX: 550, coordinateY: 610, radius: 5, delay: 1.55 },
 ];
 
 function applyMatrixToPoint(matrixValues: number[], point: EditorTransformPoint) {
@@ -227,92 +267,102 @@ function getEditorTransformMatrix(sourcePoints: EditorTransformPoint[], targetPo
   ];
 }
 
-function CircuitLines() {
-  const circuitPaths = [
-    { path: 'M2 126 H86 C114 126 114 158 143 158 H194', duration: 5.2, delay: 0 },
-    { path: 'M0 262 H136 C164 262 164 296 193 296 H238', duration: 6.4, delay: 0.35 },
-    { path: 'M102 24 V88 C102 112 82 116 63 116 H0', duration: 5.8, delay: 0.7 },
-    { path: 'M682 58 H755 C783 58 786 92 814 92 H878', duration: 6.1, delay: 0.1 },
-    { path: 'M710 300 H807 C835 300 835 334 864 334 H930', duration: 5.6, delay: 0.55 },
-    { path: 'M686 444 H760 C790 444 790 492 820 492 H932', duration: 6.8, delay: 0.85 },
-  ];
-
+const CircuitLines = memo(function CircuitLines() {
   return (
-    <svg aria-hidden="true" className="circuit-board" viewBox="0 0 930 560" preserveAspectRatio="none">
-      <defs>
-        <filter id="circuit-glow" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="2.4" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
+    <div aria-hidden="true" className="circuit-board">
+      <div className="circuit-board__tile circuit-board__tile--back" />
+      <div className="circuit-board__tile circuit-board__tile--front" />
 
-      {circuitPaths.map((circuitPath) => (
-        <g key={circuitPath.path}>
-          <path
-            d={circuitPath.path}
-            fill="none"
-            stroke="#ff7900"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1"
-            opacity="0.34"
-          />
-          <motion.path
-            d={circuitPath.path}
-            fill="none"
-            stroke="#ff8a14"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.35"
-            strokeDasharray="1 17"
-            filter="url(#circuit-glow)"
-            initial={{ strokeDashoffset: 0, opacity: 0.32 }}
-            animate={{ strokeDashoffset: -72, opacity: [0.32, 0.95, 0.32] }}
-            transition={{
-              strokeDashoffset: {
-                delay: circuitPath.delay,
-                duration: circuitPath.duration,
-                ease: 'linear',
-                repeat: Infinity,
-              },
-              opacity: {
-                delay: circuitPath.delay,
-                duration: circuitPath.duration * 0.5,
-                ease: 'easeInOut',
-                repeat: Infinity,
-                repeatType: 'mirror',
-              },
-            }}
-          />
+      <svg className="circuit-board__traces" viewBox={`0 0 ${circuitBoardWidth} ${circuitBoardHeight}`} preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <pattern id="circuit-static-tile" width="120" height="120" patternUnits="userSpaceOnUse">
+            {circuitTilePaths.map((circuitTilePath) => (
+              <path
+                d={circuitTilePath}
+                fill="none"
+                key={circuitTilePath}
+                stroke="#ff7900"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="0.65"
+                opacity="0.16"
+              />
+            ))}
+            <circle cx="23" cy="23" r="2.2" fill="#ff9b32" opacity="0.18" />
+            <circle cx="78" cy="96" r="2" fill="#ff9b32" opacity="0.14" />
+            <circle cx="98" cy="68" r="1.7" fill="#ff9b32" opacity="0.14" />
+          </pattern>
+        </defs>
+
+        <rect className="circuit-board__static-pattern" width={circuitBoardWidth} height={circuitBoardHeight} fill="url(#circuit-static-tile)" />
+
+        <g className="circuit-board__trace-group">
+          {circuitFramePaths.map((circuitFramePath) => (
+            <path
+              d={circuitFramePath.path}
+              fill="none"
+              key={circuitFramePath.path}
+              stroke="#ff7900"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.2"
+            />
+          ))}
         </g>
-      ))}
 
-      <motion.circle
-        cx="2"
-        cy="126"
-        r="5"
-        fill="#ff7900"
-        animate={{ opacity: [0.35, 1, 0.35], scale: [0.92, 1.18, 0.92] }}
-        transition={{ duration: 2.1, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.circle
-        cx="0"
-        cy="262"
-        r="4.5"
-        fill="#ff7900"
-        animate={{ opacity: [0.22, 0.92, 0.22], scale: [0.9, 1.2, 0.9] }}
-        transition={{ delay: 0.8, duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-      />
-    </svg>
+        <g className="circuit-board__glint-group">
+          {circuitFramePaths.map((circuitFramePath) => (
+            <g key={`${circuitFramePath.path}-glint`}>
+              <path
+                className="circuit-board__glint circuit-board__glint--halo"
+                d={circuitFramePath.path}
+                pathLength="100"
+              >
+                <animate
+                  attributeName="stroke-dashoffset"
+                  begin={`${circuitFramePath.delay}s`}
+                  dur={`${circuitFramePath.duration}s`}
+                  from="100"
+                  repeatCount="indefinite"
+                  to="0"
+                />
+              </path>
+
+              <path
+                className="circuit-board__glint circuit-board__glint--core"
+                d={circuitFramePath.path}
+                pathLength="100"
+              >
+                <animate
+                  attributeName="stroke-dashoffset"
+                  begin={`${circuitFramePath.delay}s`}
+                  dur={`${circuitFramePath.duration}s`}
+                  from="100"
+                  repeatCount="indefinite"
+                  to="0"
+                />
+              </path>
+            </g>
+          ))}
+        </g>
+      </svg>
+
+      {circuitNodes.map((circuitNode) => {
+        const circuitNodeStyle = {
+          '--node-delay': `${circuitNode.delay}s`,
+          '--node-size': `${circuitNode.radius * 5.2}px`,
+          left: `${(circuitNode.coordinateX / circuitBoardWidth) * 100}%`,
+          top: `${(circuitNode.coordinateY / circuitBoardHeight) * 100}%`,
+        } as CSSProperties;
+
+        return <span className="circuit-board__node" key={`${circuitNode.coordinateX}-${circuitNode.coordinateY}`} style={circuitNodeStyle} />;
+      })}
+    </div>
   );
-}
+});
 
 function EditorWindow() {
   const editorPerspectiveElementRef = useRef<HTMLDivElement | null>(null);
-  const [editorPanelTransform, setEditorPanelTransform] = useState('none');
   const [editorCoordinateTransform, setEditorCoordinateTransform] = useState('scale(1)');
   const [isCalibrationEnabled, setIsCalibrationEnabled] = useState(false);
   const [activeCornerName, setActiveCornerName] = useState<EditorCornerName | null>(null);
@@ -321,6 +371,7 @@ function EditorWindow() {
     () => getEditorTransformMatrix(editorSourceCorners, editorCorners.map((editorCorner) => editorCorner.point)),
     [editorCorners],
   );
+  const editorPanelTransform = useMemo(() => `matrix3d(${editorMatrixValues.join(',')})`, [editorMatrixValues]);
 
   useEffect(() => {
     const editorPerspectiveElement = editorPerspectiveElementRef.current;
@@ -354,10 +405,6 @@ function EditorWindow() {
 
     return () => resizeObserver.disconnect();
   }, []);
-
-  useEffect(() => {
-    setEditorPanelTransform(`matrix3d(${editorMatrixValues.join(',')})`);
-  }, [editorMatrixValues]);
 
   useEffect(() => {
     function handleKeyDown(keyboardEvent: KeyboardEvent) {
@@ -589,7 +636,7 @@ export default function LandingHero() {
           animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
           transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
         >
-          <img className="hero-logo" src={logoUrl.src} alt="Superwire" />
+          {/*<img className="hero-logo" src={logoUrl.src} alt="Superwire" />*/}
 
           <div className="hero-copy-content">
             <motion.h1
