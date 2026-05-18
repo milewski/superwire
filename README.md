@@ -1,4 +1,4 @@
-<p align="center"><img src="/documentation/public/logo-vertical.svg" width="40%" alt="Superwire"></p>
+<p align="center"><img src="/documentation/docs/public/logo-vertical.svg" width="40%" alt="Superwire"></p>
 
 <p align="center">
     <a href="#"><img src="https://github.com/milewski/superwire/workflows/ci/badge.svg" alt="Build Status"></a>
