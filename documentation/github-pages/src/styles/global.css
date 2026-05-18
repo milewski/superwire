@@ -109,11 +109,12 @@ a {
 }
 
 .hero__inner {
-  @apply relative mx-auto grid min-h-screen w-full max-w-[1920px] items-center gap-4 px-8 py-11 sm:px-12 lg:grid-cols-[0.68fr_1.32fr] lg:px-[52px] xl:px-[64px];
+  @apply relative mx-auto grid min-h-screen w-full max-w-[1920px] items-center gap-4 px-[64px] py-11;
+  grid-template-columns: minmax(0, 0.68fr) minmax(0, 1.32fr);
 }
 
 .hero__copy {
-  @apply z-10 flex min-h-[calc(100vh-5.5rem)] flex-col pt-3 lg:pt-2;
+  @apply z-10 flex min-h-[calc(100vh-5.5rem)] flex-col pt-2;
 }
 
 .hero__logo {
@@ -210,7 +211,7 @@ a {
 }
 
 .hero__visual {
-  @apply relative z-0 flex min-h-[720px] items-center justify-center lg:min-h-[calc(100vh-5.5rem)];
+  @apply relative z-0 flex min-h-[calc(100vh-5.5rem)] items-center justify-center;
   perspective: 1700px;
   perspective-origin: 51% 46%;
 }
@@ -920,24 +921,9 @@ a {
   text-transform: uppercase;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1200px) {
   .hero__inner {
-    @apply lg:grid-cols-[0.64fr_1.36fr] lg:px-7;
-  }
-
-  .hero__copy h1 {
-    font-size: clamp(3.4rem, 5.2vw, 4.9rem);
-  }
-
-  .editor-preview {
-    width: min(70vw, 820px);
-    margin-left: 0;
-  }
-}
-
-@media (max-width: 1023px) {
-  .hero__inner {
-    @apply min-h-0 grid-cols-1 px-6 py-8;
+    @apply min-h-0 grid-cols-1 px-4 py-6;
   }
 
   .hero__copy {
@@ -950,56 +936,28 @@ a {
     object-position: center;
   }
 
-  .hero__copy p,
-  .hero__copy h1 {
-    margin-right: auto;
-    margin-left: auto;
-  }
-
   .hero__copy-content {
-    @apply mt-20 flex-none justify-start pb-6;
-  }
-
-  .documentation-button {
-    margin-right: auto;
-    margin-left: auto;
+    @apply mt-16 flex-none justify-start pb-6;
   }
 
   .hero__copy h1 {
     max-width: 760px;
-  }
-
-  .hero__visual {
-    min-height: 650px;
-  }
-
-  .editor-preview {
-    width: min(92vw, 760px);
-    margin-left: 0;
-    transform: none !important;
-  }
-}
-
-@media (max-width: 767px) {
-  .hero__inner {
-    @apply px-4 py-6;
-  }
-
-  .hero__copy-content {
-    @apply mt-16;
-  }
-
-  .hero__copy h1 {
+    margin-right: auto;
+    margin-left: auto;
     font-size: clamp(3rem, 14vw, 4.2rem);
     letter-spacing: -0.075em;
   }
 
   .hero__copy p {
+    margin-right: auto;
+    margin-left: auto;
     font-size: 1.2rem;
   }
 
   .documentation-button {
     min-height: 64px;
+    margin-right: auto;
+    margin-left: auto;
     padding: 0 20px;
   }
 
