@@ -6,11 +6,7 @@ description: Run the Superwire executor and configure model access.
 The recommended way to run Superwire is the Docker executor.
 
 ```bash
-docker pull rmilewski/superwire
-docker run --rm \
-  -p 13703:13703 \
-  -p 13704:13704 \
-  rmilewski/superwire
+docker run --rm -p 13703:13703 rmilewski/superwire
 ```
 
 The executor exposes:

@@ -54,6 +54,6 @@ ENV SUPERWIRE_PLAYGROUND_DIST=/usr/local/share/superwire/playground
 
 USER superwire
 
-EXPOSE 13703 13704
+EXPOSE 13703
 
 ENTRYPOINT ["/usr/local/bin/superwire-executor"]
