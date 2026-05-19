@@ -1,6 +1,6 @@
 import '@xyflow/react/dist/style.css';
 import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
-import { ChevronDown, GitBranch, RefreshCcw, Settings2 } from 'lucide-react';
+import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, RefreshCcw, Settings2, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
@@ -21,7 +21,7 @@ interface WorkflowGraphViewProps {
 interface WorkflowGraphNodeData extends Record<string, unknown> {
   node: WorkflowExecutionGraphNode;
   config: GraphConfig;
-  running: boolean;
+  activeRunCount: number;
   outputEntries: GraphOutputEntry[];
 }
 
@@ -33,6 +33,8 @@ interface GraphOutputEntry {
 type WorkflowGraphReactNode = Node<WorkflowGraphNodeData, 'workflowGraph'>;
 type GraphDensity = 'compact' | 'comfortable';
 type GraphEdgeType = 'smoothstep' | 'straight' | 'default' | 'simplebezier';
+type GraphNodeStatus = 'idle' | 'running' | 'completed';
+type GraphExecutionSlotStatus = 'completed' | 'running' | 'idle';
 
 interface GraphConfig {
   density: GraphDensity;
@@ -44,7 +46,7 @@ interface GraphConfig {
 const graphConfigStorageKey = 'superwire.playground.graphConfig.v1';
 const graphViewportStorageKey = 'superwire.playground.graphViewport.v1';
 const graphNodePositionsStorageKey = 'superwire.playground.graphNodePositions.v1';
-const defaultGraphConfig: GraphConfig = { density: 'comfortable', collapseAll: false, edgeType: 'smoothstep', showEdgeLabels: false };
+const defaultGraphConfig: GraphConfig = { density: 'comfortable', collapseAll: false, edgeType: 'smoothstep', showEdgeLabels: true };
 
 const graphNodeTypes = {
   workflowGraph: WorkflowGraphNodeCard,
@@ -52,11 +54,11 @@ const graphNodeTypes = {
 
 export default function WorkflowGraphView({ graph, graphState, runState, events, outputJson, message, onRefresh }: WorkflowGraphViewProps) {
   const [config, setConfig] = useState<GraphConfig>(() => restoreGraphConfig());
-  const runningAgentNames = runState === 'running' ? activeAgentNames(events) : new Set<string>();
+  const activeRunCounts = runState === 'running' ? activeAgentRunCounts(events) : new Map<string, number>();
   const outputEntriesByNodeId = useMemo(() => graphOutputEntriesByNodeId(events, outputJson), [events, outputJson]);
-  const activeAgentSignature = Array.from(runningAgentNames).sort().join(':');
-  const nodes = useMemo(() => (graph ? reactFlowNodes(graph, config, runningAgentNames, outputEntriesByNodeId) : []), [graph, config, activeAgentSignature, outputEntriesByNodeId]);
-  const edges = useMemo(() => (graph ? reactFlowEdges(graph, config) : []), [graph, config]);
+  const activeAgentSignature = Array.from(activeRunCounts.entries()).sort().map(([agentName, activeRunCount]) => `${agentName}:${activeRunCount}`).join(':');
+  const nodes = useMemo(() => (graph ? reactFlowNodes(graph, config, activeRunCounts, outputEntriesByNodeId) : []), [graph, config, activeAgentSignature, outputEntriesByNodeId]);
+  const edges = useMemo(() => (graph ? reactFlowEdges(graph, config, activeRunCounts, outputEntriesByNodeId) : []), [graph, config, activeAgentSignature, outputEntriesByNodeId]);
   const description = graph ? `${graph.nodes.length} nodes, ${graph.edges.length} relationships.` : 'Generate a visual execution plan from the current workflow source.';
   const graphSignature = graph ? graph.nodes.map((node) => node.id).join(':') : 'empty';
 
@@ -68,10 +70,16 @@ export default function WorkflowGraphView({ graph, graphState, runState, events,
     <section className="graph-view">
       <div className="graph-view__header">
         <ViewHeader title="Graph" description={description} />
-        <GraphSettingsMenu config={config} graphState={graphState} onChange={setConfig} onRefresh={onRefresh} />
       </div>
 
       <div className="graph-view__canvas" data-empty={graph ? 'false' : 'true'}>
+        <div className="graph-view__toolbar">
+          <GraphStateBadge graphState={graphState} />
+          <button type="button" className="graph-view__toolbar-button" onClick={onRefresh} disabled={graphState === 'loading'}>
+            <RefreshCcw className={graphState === 'loading' ? 'animate-spin' : ''} /> Refresh
+          </button>
+          <GraphSettingsMenu config={config} graphState={graphState} onChange={setConfig} onRefresh={onRefresh} />
+        </div>
         {graph ? (
           <div className="graph-view__flow">
             <ReactFlowProvider>
@@ -92,6 +100,15 @@ export default function WorkflowGraphView({ graph, graphState, runState, events,
 
       <p className={`graph-view__message graph-view__message--${graphState}`}>{message}</p>
     </section>
+  );
+}
+
+function GraphStateBadge({ graphState }: { graphState: GraphState }) {
+  return (
+    <span className={`graph-view__state graph-view__state--${graphState}`}>
+      {graphState === 'loading' ? <Loader2 /> : graphState === 'ready' ? <CheckCircle2 /> : <CircleDashed />}
+      {graphState}
+    </span>
   );
 }
 
@@ -135,7 +152,7 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       edgesReconnectable={false}
       onMoveEnd={(_event, viewport: Viewport) => storeGraphViewport(viewport)}
     >
-      <Background color="var(--border)" gap={24} />
+      <Background color="var(--graph-grid-dot)" gap={18} size={1.1} />
       <MiniMap pannable zoomable nodeColor={nodeColor} />
       <Controls showInteractive={false} />
     </ReactFlow>
@@ -146,7 +163,7 @@ function GraphSettingsMenu({ config, graphState, onChange, onRefresh }: { config
   return (
     <details className="graph-settings">
       <summary className="graph-settings__trigger">
-        <Settings2 /> Configure graph
+        <Settings2 /> Settings
       </summary>
 
       <div className="graph-settings__menu">
@@ -203,30 +220,42 @@ function GraphSettingsMenu({ config, graphState, onChange, onRefresh }: { config
 function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const node = data.node;
   const config = data.config;
-  const running = data.running;
+  const activeRunCount = data.activeRunCount;
   const outputEntries = data.outputEntries;
   const [collapsed, setCollapsed] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
   const visiblyCollapsed = config.collapseAll || collapsed;
+  const status = nodeStatus(node, activeRunCount, outputEntries);
 
   return (
-    <article className={`graph-node graph-node--${node.kind}`} data-collapsed={visiblyCollapsed ? 'true' : 'false'} data-density={config.density} data-running={running ? 'true' : 'false'}>
+    <article className={`graph-node graph-node--${node.kind}`} data-collapsed={visiblyCollapsed ? 'true' : 'false'} data-density={config.density} data-status={status} data-running={activeRunCount > 0 ? 'true' : 'false'}>
       <svg className="graph-node__running-stroke" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <rect x="1.5" y="1.5" width="97" height="97" rx="6" pathLength="100" />
       </svg>
       <Handle type="target" position={Position.Left} className="graph-node__handle" isConnectable={false} />
       <header className="graph-node__header">
-        <div className="graph-node__badges">
-          <span className="graph-node__kind">{node.kind}</span>
-          {node.execution_index !== null ? <span className="graph-node__index">#{node.execution_index + 1}</span> : null}
+        <div className="graph-node__identity">
+          <span className="graph-node__icon">{nodeIcon(node)}</span>
+          <span className="graph-node__title-block">
+            <strong className="graph-node__title">{node.label}</strong>
+            <small className="graph-node__subtitle">{nodeSubtitle(node)}</small>
+          </span>
         </div>
+        <NodeStatusBadge status={status} activeRunCount={activeRunCount} outputEntries={outputEntries} />
+      </header>
+
+      <div className="graph-node__meta-row">
+        <span className="graph-node__kind">{node.kind}</span>
+        {node.execution_index !== null ? <span className="graph-node__index">step {node.execution_index + 1}</span> : null}
+        {node.provider_name ? <span>{node.provider_name}</span> : null}
+        {node.model ? <span>{node.model}</span> : null}
         <button type="button" className="graph-node__collapse nodrag" aria-expanded={!visiblyCollapsed} onClick={() => setCollapsed((open) => !open)} disabled={config.collapseAll}>
           <ChevronDown />
           <span>{visiblyCollapsed ? 'Expand' : 'Collapse'}</span>
         </button>
-      </header>
-      <strong className="graph-node__title">{node.label}</strong>
-      {node.provider_name || node.model ? <small className="graph-node__meta">{[node.provider_name, node.model].filter(Boolean).join(' / ')}</small> : null}
+      </div>
+
+      <GraphExecutionStrip node={node} activeRunCount={activeRunCount} outputEntries={outputEntries} />
       {node.loop_info ? <GraphLoopSummary node={node} config={config} /> : null}
       {visiblyCollapsed ? (
         <p className="graph-node__summary">{nodeSummary(node)}</p>
@@ -244,6 +273,35 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   );
 }
 
+function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: GraphNodeStatus; activeRunCount: number; outputEntries: GraphOutputEntry[] }) {
+  return (
+    <span className={`graph-node__status graph-node__status--${status}`}>
+      {status === 'running' ? <Loader2 /> : status === 'completed' ? <CheckCircle2 /> : <CircleDashed />}
+      {status === 'running' && activeRunCount > 1 ? `${activeRunCount} running` : status}
+      {status === 'completed' && outputEntries.length > 1 ? ` ${outputEntries.length}x` : null}
+    </span>
+  );
+}
+
+function GraphExecutionStrip({ node, activeRunCount, outputEntries }: { node: WorkflowExecutionGraphNode; activeRunCount: number; outputEntries: GraphOutputEntry[] }) {
+  if (node.kind !== 'agent') {
+    return null;
+  }
+
+  const completedCount = outputEntries.length;
+  const visibleSlotCount = Math.max(Math.min(completedCount + activeRunCount + 1, 6), node.loop_info ? 4 : 3);
+
+  return (
+    <div className="graph-node__execution-strip" aria-label="Execution progress">
+      {Array.from({ length: visibleSlotCount }).map((_, slotIndex) => {
+        const slotStatus = executionSlotStatus(slotIndex, completedCount, activeRunCount);
+
+        return <span key={`${node.id}-slot-${slotIndex}`} data-status={slotStatus} />;
+      })}
+    </div>
+  );
+}
+
 function GraphLoopSummary({ node, config }: { node: WorkflowExecutionGraphNode; config: GraphConfig }) {
   const loopInfo = node.loop_info;
 
@@ -253,7 +311,7 @@ function GraphLoopSummary({ node, config }: { node: WorkflowExecutionGraphNode; 
 
   return (
     <section className="graph-node__section graph-node__loop">
-      <span>Loop agent</span>
+      <span><Layers3 /> Loop agent</span>
       <p>
         Runs once per <code>{loopInfo.pattern}</code> in iterable.
       </p>
@@ -278,7 +336,7 @@ function GraphOutputAction({ node, outputEntries, onOpen }: { node: WorkflowExec
     <section className="graph-node__section graph-node__runtime-output">
       <span>Latest output</span>
       <button type="button" className="graph-node__output-button nodrag" onClick={onOpen}>
-        View {node.kind === 'output' ? 'workflow result' : node.loop_info ? `${outputEntries.length} iteration outputs` : 'agent output'}
+        <Eye /> View {node.kind === 'output' ? 'workflow result' : node.loop_info ? `${outputEntries.length} iteration outputs` : 'agent output'}
         <small>{outputByteSize(totalBytes)}</small>
       </button>
     </section>
@@ -345,7 +403,7 @@ function GraphTools({ tools }: { tools: WorkflowExecutionGraphTool[] }) {
   );
 }
 
-function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runningAgentNames: Set<string>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): WorkflowGraphReactNode[] {
+function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): WorkflowGraphReactNode[] {
   const agentNodes = graph.nodes.filter((node) => node.kind === 'agent');
   const lastColumn = Math.max(agentNodes.length + 1, 1);
 
@@ -353,22 +411,29 @@ function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, runn
     id: node.id,
     type: 'workflowGraph',
     position: nodePosition(node, lastColumn),
-    data: { node, config, running: runningAgentNames.has(node.id), outputEntries: outputEntriesByNodeId[node.id] ?? [] },
+    data: { node, config, activeRunCount: activeRunCounts.get(node.id) ?? 0, outputEntries: outputEntriesByNodeId[node.id] ?? [] },
   }));
 }
 
-function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig): Edge[] {
-  const nodeLabels = new Map(graph.nodes.map((node) => [node.id, node.label]));
+function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): Edge[] {
+  const graphNodesById = new Map(graph.nodes.map((node) => [node.id, node]));
 
   return graph.edges.map((edge) => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    label: config.showEdgeLabels ? nodeLabels.get(edge.target) ?? edge.target : undefined,
+    label: config.showEdgeLabels ? edge.label : undefined,
     type: config.edgeType,
     markerEnd: { type: MarkerType.ArrowClosed },
-    className: `graph-edge graph-edge--${edge.kind}`,
+    animated: (activeRunCounts.get(edge.target) ?? 0) > 0,
+    className: graphEdgeClassName(edge.kind, graphNodesById.get(edge.target), activeRunCounts, outputEntriesByNodeId),
   }));
+}
+
+function graphEdgeClassName(edgeKind: string, targetNode: WorkflowExecutionGraphNode | undefined, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>) {
+  const targetStatus = targetNode ? nodeStatus(targetNode, activeRunCounts.get(targetNode.id) ?? 0, outputEntriesByNodeId[targetNode.id] ?? []) : 'idle';
+
+  return `graph-edge graph-edge--${edgeKind} graph-edge--${targetStatus}`;
 }
 
 function nodePosition(node: WorkflowExecutionGraphNode, lastColumn: number) {
@@ -397,6 +462,66 @@ function nodeSummary(node: WorkflowExecutionGraphNode) {
   }
 
   return details.join(' | ');
+}
+
+function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, outputEntries: GraphOutputEntry[]): GraphNodeStatus {
+  if (activeRunCount > 0) {
+    return 'running';
+  }
+
+  if (node.kind === 'input' || outputEntries.length > 0) {
+    return 'completed';
+  }
+
+  return 'idle';
+}
+
+function executionSlotStatus(slotIndex: number, completedCount: number, activeRunCount: number): GraphExecutionSlotStatus {
+  if (slotIndex < completedCount) {
+    return 'completed';
+  }
+
+  if (slotIndex < completedCount + activeRunCount) {
+    return 'running';
+  }
+
+  return 'idle';
+}
+
+function nodeSubtitle(node: WorkflowExecutionGraphNode) {
+  if (node.kind === 'input') {
+    return 'Runtime values';
+  }
+
+  if (node.kind === 'output') {
+    return 'Final payload';
+  }
+
+  if (node.loop_info) {
+    return 'Agent loop';
+  }
+
+  return 'Agent';
+}
+
+function nodeIcon(node: WorkflowExecutionGraphNode) {
+  if (node.kind === 'input') {
+    return <Cloud />;
+  }
+
+  if (node.kind === 'output') {
+    return <Box />;
+  }
+
+  if (node.loop_info) {
+    return <Sparkles />;
+  }
+
+  if (node.tools.length > 0) {
+    return <DatabaseZap />;
+  }
+
+  return <Cpu />;
 }
 
 function nodeColor(node: Node) {
@@ -602,8 +727,8 @@ function fixedArrayLength(schema: Record<string, unknown>) {
   return schema.minItems;
 }
 
-function activeAgentNames(events: ExecutorEvent[]) {
-  const runningAgentNames = new Set<string>();
+function activeAgentRunCounts(events: ExecutorEvent[]) {
+  const activeRunCounts = new Map<string, number>();
 
   for (const event of events) {
     if (!event.agent_name) {
@@ -611,15 +736,21 @@ function activeAgentNames(events: ExecutorEvent[]) {
     }
 
     if (event.kind === 'agent_started') {
-      runningAgentNames.add(event.agent_name);
+      activeRunCounts.set(event.agent_name, (activeRunCounts.get(event.agent_name) ?? 0) + 1);
     }
 
     if (event.kind === 'agent_completed' || event.kind === 'workflow_failed') {
-      runningAgentNames.delete(event.agent_name);
+      const nextRunCount = Math.max((activeRunCounts.get(event.agent_name) ?? 0) - 1, 0);
+
+      if (nextRunCount === 0) {
+        activeRunCounts.delete(event.agent_name);
+      } else {
+        activeRunCounts.set(event.agent_name, nextRunCount);
+      }
     }
   }
 
-  return runningAgentNames;
+  return activeRunCounts;
 }
 
 function graphOutputEntriesByNodeId(events: ExecutorEvent[], workflowOutputJson: string) {
