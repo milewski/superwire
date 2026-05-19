@@ -670,7 +670,7 @@ export default function App() {
                     ) : null}
 
                     {activeView === 'graph' ? (
-                      <WorkflowGraphView graph={activeTab.graphData} graphState={activeTab.graphState} runState={activeTab.runState} events={activeTab.eventLog} outputJson={activeTab.outputJson} message={activeTab.graphMessage} onRefresh={loadGraph} />
+                      <WorkflowGraphView graph={activeTab.graphData} source={activeTab.source} graphState={activeTab.graphState} runState={activeTab.runState} events={activeTab.eventLog} outputJson={activeTab.outputJson} message={activeTab.graphMessage} onRefresh={loadGraph} />
                     ) : null}
                   </section>
                 ) : null}

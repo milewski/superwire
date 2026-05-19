@@ -44,12 +44,26 @@ export interface WorkflowExecutionGraphNode {
   dependencies: string[];
   provider_name: string | null;
   model: string | null;
+  instruction: string | null;
+  details: WorkflowExecutionGraphDetail[];
+  bindings: WorkflowExecutionGraphBinding[];
   tools: WorkflowExecutionGraphTool[];
   execution_index: number | null;
   loop_info: WorkflowExecutionGraphLoopInfo | null;
 }
 
-export type WorkflowExecutionGraphNodeKind = 'input' | 'agent' | 'output';
+export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'input' | 'agent' | 'output';
+
+export interface WorkflowExecutionGraphDetail {
+  name: string;
+  value: string;
+  secret: boolean;
+}
+
+export interface WorkflowExecutionGraphBinding {
+  name: string;
+  expression: string;
+}
 
 export interface WorkflowExecutionGraphLoopInfo {
   pattern: string;
@@ -83,4 +97,4 @@ export interface WorkflowExecutionGraphEdge {
   kind: WorkflowExecutionGraphEdgeKind;
 }
 
-export type WorkflowExecutionGraphEdgeKind = 'input' | 'agent_dependency' | 'workflow_output';
+export type WorkflowExecutionGraphEdgeKind = 'provider_client' | 'model' | 'input' | 'agent_dependency' | 'workflow_output';
