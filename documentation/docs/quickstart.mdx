@@ -5,6 +5,18 @@ description: Create a small workflow and execute it through the Docker executor.
 
 This guide creates one `.wire` file, sends it to the executor, and reads the JSON result.
 
+<Steps>
+  <Step title="Start local executor">
+    Run Docker and keep the process alive.
+  </Step>
+  <Step title="Write a minimal workflow">
+    Define one input, one model-backed agent, and one structured output.
+  </Step>
+  <Step title="Execute from Playground or API">
+    Use the Playground for speed, then use `curl` for integration testing.
+  </Step>
+</Steps>
+
 ## 1. Start the executor
 
 ```bash
@@ -67,17 +79,20 @@ For quick iteration, this is the simplest way to validate and execute workflows.
 
 ## 4. Encode the workflow (CLI/API path)
 
-Linux:
-
+<Tabs>
+  <Tab title="Linux">
 ```bash
 WORKFLOW_SOURCE_BASE64=$(base64 -w0 hello.wire)
 ```
 
-macOS:
-
+  </Tab>
+  <Tab title="macOS">
 ```bash
 WORKFLOW_SOURCE_BASE64=$(base64 < hello.wire | tr -d '\n')
 ```
+
+  </Tab>
+</Tabs>
 
 ## 5. Execute it
 
@@ -125,3 +140,17 @@ curl -N http://localhost:13703/execute \
 }
 JSON
 ```
+
+<AccordionGroup>
+  <Accordion title="Common setup issues" icon="triangle-alert">
+    - Ensure Docker is running and port `13703` is not already in use.
+    - If your response is empty, verify `workflow_source_base64` is populated.
+    - If provider calls fail, confirm `secrets.api_key` contains a valid key.
+  </Accordion>
+
+  <Accordion title="What to do next" icon="arrow-right">
+    - Read [Core Concepts](/core-concepts/overview) to understand workflow structure.
+    - Use [Executor API](/api-reference/executor-api) for request and event details.
+    - Explore [Examples](/examples/basic-agent) for more complex patterns.
+  </Accordion>
+</AccordionGroup>
