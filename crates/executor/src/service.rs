@@ -1,4 +1,6 @@
-use crate::api::{ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, ValidationRequest, ValidationResponse};
+use crate::api::{
+    ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse, ValidationRequest, ValidationResponse,
+};
 use crate::event::ExecutorEvent;
 use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
@@ -74,6 +76,22 @@ where
         Ok(ValidationResponse {
             valid: true,
             details: None,
+        })
+    }
+
+    pub fn graph(&self, request: GraphRequest) -> Result<GraphResponse, ExecutorError> {
+        let workflow_source = request
+            .resolved_workflow_source()
+            .map_err(|message| ExecutorError::Other { message })?;
+
+        let empty_input = Value::Null;
+        let executor = WorkflowExecutor::from_source_with_runtime_values(&workflow_source, &empty_input, &request.secrets)?;
+
+        executor.validate_runtime_configuration_without_input(&request.secrets)?;
+
+        Ok(GraphResponse {
+            valid: true,
+            graph: executor.execution_graph(),
         })
     }
 

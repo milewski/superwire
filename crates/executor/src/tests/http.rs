@@ -282,6 +282,80 @@ async fn http_validate_with_secrets_resolves_mcp_schemas_without_input() {
 }
 
 #[tokio::test]
+async fn http_graph_returns_agent_relationships_and_tools() {
+    let router = executor_router_with_service(support::service(vec![]), true);
+    let workflow_source = superwire_core::workflow_source! {
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        tool lookup {
+            input {
+                topic: string
+            }
+
+            output {
+                result: string
+            }
+        }
+
+        agent first {
+            model: model.openai_model
+            uses: [tool.lookup]
+            instruction: "Research"
+            output {
+                value: string
+            }
+        }
+
+        agent second {
+            model: model.openai_model
+            instruction: agent.first.value
+            output {
+                value: string
+            }
+        }
+
+        output {
+            value: agent.second.value
+        }
+    };
+    let request_body = json!({ "workflow_source": workflow_source });
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/graph")
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(request_body.to_string()))
+        .expect("request should build");
+
+    let response = router.oneshot(request).await.expect("request should execute");
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let response_json: serde_json::Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(response_json["valid"], json!(true));
+    assert_eq!(response_json["graph"]["agent_execution_order"], json!(["first", "second"]));
+    assert!(response_json["graph"]["edges"]
+        .as_array()
+        .expect("edges should be an array")
+        .iter()
+        .any(|edge| edge["source"] == json!("first") && edge["target"] == json!("second")));
+    assert!(response_json["graph"]["nodes"]
+        .as_array()
+        .expect("nodes should be an array")
+        .iter()
+        .any(|node| node["id"] == json!("first") && node["tools"][0]["name"] == json!("lookup")));
+}
+
+#[tokio::test]
 async fn http_format_formats_source_after_validation() {
     let router = executor_router_with_service(support::service(vec![]), true);
     let request_body = json!({

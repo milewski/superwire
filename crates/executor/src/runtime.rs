@@ -23,7 +23,8 @@ use superwire_core::semantic::support::expression::{evaluate_expression, Evaluat
 use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
 use superwire_core::semantic::{
-    build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, PlannedAgent, TypedToolIr, WorkflowSemanticError,
+    build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, PlannedAgent, TypedToolIr, WorkflowExecutionGraph,
+    WorkflowSemanticError,
 };
 use tokio::sync::{mpsc, Semaphore};
 
@@ -222,6 +223,11 @@ impl WorkflowExecutor {
     #[must_use]
     pub fn mcp_imports(&self) -> &[superwire_core::semantic::PlannedMcpImport] {
         &self.execution_plan.mcp_imports
+    }
+
+    #[must_use]
+    pub fn execution_graph(&self) -> WorkflowExecutionGraph {
+        self.execution_plan.execution_graph(&self.workflow)
     }
 
     pub fn planned_execution_steps(&self, input: &Value, secrets: &Value, max_concurrency: usize) -> Result<Value, ExecutorError> {

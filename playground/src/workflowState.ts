@@ -21,6 +21,9 @@ export function createWorkflowTab(name: string): WorkflowTab {
     message: 'Ready.',
     outputJson: '',
     eventLog: [],
+    graphState: 'idle',
+    graphMessage: 'Open the graph view to generate a visual workflow plan.',
+    graphData: null,
     updatedAt: Date.now(),
   };
 }
@@ -55,6 +58,9 @@ export function normalizeWorkflowTab(tab: unknown): WorkflowTab {
     inputJson: typeof tab.inputJson === 'string' ? tab.inputJson : JSON.stringify(fieldsToObject(tab.inputFields), null, 2),
     secretsJson: typeof tab.secretsJson === 'string' ? tab.secretsJson : JSON.stringify(fieldsToObject(tab.secretFields), null, 2),
     eventLog: Array.isArray(tab.eventLog) ? tab.eventLog : [],
+    graphState: normalizeGraphState(tab.graphState),
+    graphMessage: typeof tab.graphMessage === 'string' ? tab.graphMessage : fallbackTab.graphMessage,
+    graphData: isJsonObject(tab.graphData) ? (tab.graphData as unknown as WorkflowTab['graphData']) : null,
   };
 }
 
@@ -113,11 +119,23 @@ function eventOutputJson(event: ExecutorEvent) {
 }
 
 function normalizePlaygroundView(value: unknown): WorkflowTab['activeView'] {
+  if (value === 'graph') {
+    return 'graph';
+  }
+
   if (value === 'runtime') {
     return 'runtime';
   }
 
   return 'workflow';
+}
+
+function normalizeGraphState(value: unknown): WorkflowTab['graphState'] {
+  if (value === 'loading' || value === 'failed' || value === 'ready') {
+    return value;
+  }
+
+  return 'idle';
 }
 
 function fieldsToObject(value: unknown): Record<string, unknown> {

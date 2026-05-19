@@ -1,4 +1,4 @@
-import { Braces, Copy, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
+import { Braces, Copy, GitBranch, Moon, Pencil, Play, Plus, RefreshCcw, Square, Sun, Trash2, Workflow } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,8 +12,9 @@ import OutputBox from '@/components/playground/output-box';
 import RunStateBadge from '@/components/playground/run-state-badge';
 import StatusPill from '@/components/playground/status-pill';
 import ViewHeader from '@/components/playground/view-header';
+import WorkflowGraphView from '@/components/playground/workflow-graph-view';
 import logoSource from '../../documentation/docs/public/logo-horizontal.svg';
-import type { ExecutorEvent, PlaygroundView, WorkflowTab } from './types';
+import type { ExecutorEvent, PlaygroundView, WorkflowExecutionGraph, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
 import { workflowTemplates, type WorkflowTemplate } from './workflowTemplates';
 import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniqueId } from './workflowState';
@@ -36,6 +37,7 @@ export default function App() {
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   const validationDebounceTimeoutRef = useRef<number | null>(null);
+  const graphDebounceTimeoutRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const canRun = activeTab?.runState !== 'running';
   const activeView: PlaygroundView = activeTab?.activeView ?? 'workflow';
@@ -84,6 +86,30 @@ export default function App() {
     };
   }, [activeTab?.id, activeTab?.source]);
 
+  useEffect(() => {
+    if (!activeTab || activeView !== 'graph') {
+      return;
+    }
+
+    if (activeTab.graphData && activeTab.graphState === 'ready') {
+      return;
+    }
+
+    if (graphDebounceTimeoutRef.current !== null) {
+      window.clearTimeout(graphDebounceTimeoutRef.current);
+    }
+
+    graphDebounceTimeoutRef.current = window.setTimeout(() => {
+      void loadGraphByTabId(activeTab.id);
+    }, 250);
+
+    return () => {
+      if (graphDebounceTimeoutRef.current !== null) {
+        window.clearTimeout(graphDebounceTimeoutRef.current);
+      }
+    };
+  }, [activeTab?.id, activeTab?.activeView, activeTab?.source, activeTab?.secretsJson]);
+
   function updateActiveTab(updater: (tab: WorkflowTab) => WorkflowTab) {
     setTabs((currentTabs) => currentTabs.map((tab) => (tab.id === activeTab?.id ? updater(tab) : tab)));
   }
@@ -129,6 +155,9 @@ export default function App() {
       message: 'Duplicated workflow.',
       outputJson: '',
       eventLog: [],
+      graphState: 'idle',
+      graphMessage: 'Open the graph view to generate a visual workflow plan.',
+      graphData: null,
       updatedAt: Date.now(),
     };
 
@@ -302,6 +331,9 @@ export default function App() {
         source: payload.formatted_workflow_source,
         validationState: 'valid',
         message: 'Workflow formatted.',
+        graphState: 'idle',
+        graphMessage: 'Graph needs to be regenerated after formatting.',
+        graphData: null,
         updatedAt: Date.now(),
       }));
     } catch (error) {
@@ -409,8 +441,61 @@ export default function App() {
       runState: 'idle',
       outputJson: '',
       eventLog: [],
+      graphState: 'idle',
+      graphMessage: 'Graph needs to be regenerated after loading this template.',
+      graphData: null,
       updatedAt: Date.now(),
     }));
+  }
+
+  async function loadGraph() {
+    const currentTab = requireActiveTab(activeTab);
+    await loadGraphByTabId(currentTab.id);
+  }
+
+  async function loadGraphByTabId(tabId: string) {
+    const currentTab = tabs.find((tab) => tab.id === tabId);
+
+    if (!currentTab) {
+      return;
+    }
+
+    updateTab(currentTab.id, (tab) => ({ ...tab, graphState: 'loading', graphMessage: 'Building workflow graph...' }));
+
+    try {
+      const response = await fetch('/graph', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(requestBody(currentTab, false)),
+      });
+      const payload = await responsePayload(response);
+
+      if (!response.ok || !payload.valid) {
+        updateTab(currentTab.id, (tab) => ({
+          ...tab,
+          graphState: 'failed',
+          graphMessage: stringPayloadValue(payload.details) ?? stringPayloadValue(payload.error) ?? 'Unable to build workflow graph.',
+          graphData: null,
+        }));
+
+        return;
+      }
+
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        graphState: 'ready',
+        graphMessage: 'Workflow graph is up to date.',
+        graphData: payload.graph as WorkflowExecutionGraph,
+        validationState: 'valid',
+      }));
+    } catch (error) {
+      updateTab(currentTab.id, (tab) => ({
+        ...tab,
+        graphState: 'failed',
+        graphMessage: errorMessage(error),
+        graphData: null,
+      }));
+    }
   }
 
   function acceptSseChunk(chunk: string, tabId: string) {
@@ -499,6 +584,7 @@ export default function App() {
                       <nav className="playground-mode-switch" aria-label="Playground mode">
                         <Button variant={activeView === 'workflow' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('workflow')}><Workflow /> Workflow</Button>
                         <Button variant={activeView === 'runtime' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('runtime')}><Braces /> Variables</Button>
+                        <Button variant={activeView === 'graph' ? 'secondary' : 'ghost'} size="lg" className="playground-mode-switch__button" onClick={() => setTabView('graph')}><GitBranch /> Graph</Button>
                       </nav>
 
                       <div className="playground-actions">
@@ -538,7 +624,14 @@ export default function App() {
                               value={activeTab.source}
                               documentId={activeTab.id}
                               darkMode={darkMode}
-                              onChange={(source) => updateActiveTab((tab) => ({ ...tab, source, updatedAt: Date.now() }))}
+                              onChange={(source) => updateActiveTab((tab) => ({
+                                ...tab,
+                                source,
+                                graphState: 'idle',
+                                graphMessage: 'Graph needs to be regenerated after source changes.',
+                                graphData: null,
+                                updatedAt: Date.now(),
+                              }))}
                             />
                             <div className={`workflow-editor__message workflow-editor__message--${editorMessageTone}`}>
                               <span className="workflow-editor__message-line workflow-editor__message-line--full">{activeTab.message ?? 'Ready.'}</span>
@@ -563,10 +656,21 @@ export default function App() {
                         <PanelCard collapsible open={runtimeOpen} title="Input and secrets" description="Variables are sent with every validation and run request." onToggle={() => setRuntimeOpen((currentValue) => !currentValue)}>
                           <div className="runtime-variables runtime-variables--wide">
                             <JsonRuntimeEditor title="Input" value={activeTab.inputJson} validationError={jsonObjectValidationError(activeTab.inputJson)} onFormat={() => formatRuntimeJson('inputJson')} onChange={(inputJson) => updateActiveTab((tab) => ({ ...tab, inputJson, updatedAt: Date.now() }))} />
-                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} validationError={jsonObjectValidationError(activeTab.secretsJson)} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({ ...tab, secretsJson, updatedAt: Date.now() }))} />
+                            <JsonRuntimeEditor title="Secrets" secret value={activeTab.secretsJson} validationError={jsonObjectValidationError(activeTab.secretsJson)} onFormat={() => formatRuntimeJson('secretsJson')} onChange={(secretsJson) => updateActiveTab((tab) => ({
+                              ...tab,
+                              secretsJson,
+                              graphState: 'idle',
+                              graphMessage: 'Graph needs to be regenerated after secrets changes.',
+                              graphData: null,
+                              updatedAt: Date.now(),
+                            }))} />
                           </div>
                         </PanelCard>
                       </section>
+                    ) : null}
+
+                    {activeView === 'graph' ? (
+                      <WorkflowGraphView graph={activeTab.graphData} graphState={activeTab.graphState} message={activeTab.graphMessage} onRefresh={loadGraph} />
                     ) : null}
                   </section>
                 ) : null}
@@ -699,6 +803,30 @@ function requireActiveTab(activeTab: WorkflowTab | undefined) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function responsePayload(response: Response): Promise<Record<string, unknown>> {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return {};
+  }
+
+  try {
+    const payload = JSON.parse(responseText) as unknown;
+
+    if (isRecord(payload)) {
+      return payload;
+    }
+
+    return { error: responseText };
+  } catch {
+    return { error: responseText };
+  }
+}
+
+function stringPayloadValue(value: unknown) {
+  return typeof value === 'string' ? value : null;
 }
 
 function resolveEditorMessageTone(activeTab: WorkflowTab | undefined): 'neutral' | 'success' | 'error' {
