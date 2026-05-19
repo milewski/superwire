@@ -19,7 +19,7 @@ build-docker tag="latest":
     docker build -t rmilewski/superwire:{{tag}} -f Dockerfile .
 
 playground:
-    cargo run --release -p superwire-executor
+    cargo run --release -p superwire-executor -- --address=0.0.0.0:3000
 
 # Commit and push all submodules, then commit and push the main repo
 # Usage: just submodule-push "commit message"

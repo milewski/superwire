@@ -46,9 +46,16 @@ export interface WorkflowExecutionGraphNode {
   model: string | null;
   tools: WorkflowExecutionGraphTool[];
   execution_index: number | null;
+  loop_info: WorkflowExecutionGraphLoopInfo | null;
 }
 
 export type WorkflowExecutionGraphNodeKind = 'input' | 'agent' | 'output';
+
+export interface WorkflowExecutionGraphLoopInfo {
+  pattern: string;
+  iterable_schema: unknown;
+  iteration_output_schema: unknown;
+}
 
 export interface WorkflowExecutionGraphPort {
   name: string;
