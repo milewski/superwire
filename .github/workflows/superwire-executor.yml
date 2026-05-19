@@ -11,6 +11,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/superwire-executor.yml'
+      - 'playground/**'
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/superwire-executor.yml'
+      - 'playground/**'
   workflow_dispatch:
 
 env:
