@@ -1,4 +1,6 @@
-use crate::dsl::{AgentExpressionPropertyName, Expression, Reference, ReferenceKeyword, ToolSource, Workflow};
+use crate::dsl::{
+    AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, Expression, Reference, ReferenceKeyword, ToolSource, Workflow,
+};
 use crate::semantic::plan::{ExecutionPlan, PlannedAgent};
 use crate::semantic::support::types::workflow_type_to_json_schema;
 use serde::{Deserialize, Serialize};
@@ -24,6 +26,14 @@ pub struct WorkflowExecutionGraphNode {
     pub model: Option<String>,
     pub tools: Vec<WorkflowExecutionGraphTool>,
     pub execution_index: Option<usize>,
+    pub loop_info: Option<WorkflowExecutionGraphLoopInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WorkflowExecutionGraphLoopInfo {
+    pub pattern: String,
+    pub iterable_schema: Value,
+    pub iteration_output_schema: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -133,6 +143,7 @@ impl ExecutionPlan {
             model: None,
             tools: Vec::new(),
             execution_index: None,
+            loop_info: None,
         }
     }
 
@@ -164,6 +175,7 @@ impl ExecutionPlan {
             model: None,
             tools: Vec::new(),
             execution_index: None,
+            loop_info: None,
         }
     }
 
@@ -251,7 +263,18 @@ impl PlannedAgent {
             model: self.model_name(),
             tools: self.execution_graph_tools(execution_plan, workflow),
             execution_index: Some(agent_index),
+            loop_info: self.execution_graph_loop_info(),
         }
+    }
+
+    fn execution_graph_loop_info(&self) -> Option<WorkflowExecutionGraphLoopInfo> {
+        let for_loop = self.declaration.for_loop.as_ref()?;
+
+        Some(WorkflowExecutionGraphLoopInfo {
+            pattern: for_loop.pattern_label(),
+            iterable_schema: json!({ "type": "array" }),
+            iteration_output_schema: workflow_type_to_json_schema(&self.iteration_output_type),
+        })
     }
 
     fn execution_graph_inputs(&self, execution_plan: &ExecutionPlan) -> Vec<WorkflowExecutionGraphPort> {
@@ -367,6 +390,21 @@ impl PlannedAgent {
             input_schema: WorkflowExecutionGraphTool::open_object_schema(),
             output_schema: json!({ "type": "string" }),
         })
+    }
+}
+
+impl AgentForLoop {
+    fn pattern_label(&self) -> String {
+        self.pattern.label()
+    }
+}
+
+impl AgentForLoopPattern {
+    fn label(&self) -> String {
+        match self {
+            Self::Identifier(identifier) => identifier.clone(),
+            Self::ObjectDestructuring(field_names) => format!("{{ {} }}", field_names.join(", ")),
+        }
     }
 }
 

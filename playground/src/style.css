@@ -441,7 +441,7 @@ textarea {
 }
 
 .playground__canvas {
-  @apply min-w-0 flex-1 p-4 lg:p-6 xl:p-8;
+  @apply flex min-h-0 min-w-0 flex-1 p-4 lg:p-6 xl:p-8;
   background-image:
     radial-gradient(circle, color-mix(in srgb, var(--foreground) 14%, transparent) 1px, transparent 1px),
     linear-gradient(180deg, color-mix(in srgb, var(--background) 88%, #000 12%), var(--background));
@@ -851,7 +851,7 @@ textarea {
 }
 
 .graph-view {
-  @apply flex min-h-[700px] min-w-0 flex-1 flex-col gap-4;
+  @apply flex min-h-0 min-w-0 flex-1 flex-col gap-4;
 }
 
 .graph-view__header {
@@ -859,7 +859,7 @@ textarea {
 }
 
 .graph-view__canvas {
-  @apply min-h-[640px] min-w-0 flex-1 overflow-hidden;
+  @apply min-h-0 min-w-0 flex-1 overflow-hidden;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: 18px;
   background:
@@ -874,8 +874,8 @@ textarea {
 
 .graph-view__flow {
   width: 100%;
-  height: 720px;
-  min-height: 720px;
+  height: 100%;
+  min-height: 0;
 }
 
 .graph-view__flow .react-flow {
@@ -902,6 +902,155 @@ textarea {
   height: 18px !important;
 }
 
+.graph-settings {
+  @apply relative shrink-0;
+}
+
+.graph-settings__trigger {
+  @apply inline-flex h-11 min-w-44 cursor-pointer list-none items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold shadow-md transition-[background,border-color,box-shadow,transform];
+  border-color: color-mix(in srgb, var(--superwire-accent) 34%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--card) 98%, var(--superwire-accent) 2%), color-mix(in srgb, var(--background) 88%, var(--superwire-accent) 12%));
+  color: var(--foreground);
+}
+
+.graph-settings__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.graph-settings__trigger:hover {
+  border-color: color-mix(in srgb, var(--superwire-accent) 72%, var(--border));
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--superwire-accent) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.graph-settings__trigger svg,
+.graph-settings__icon-button svg {
+  @apply size-[18px];
+}
+
+.graph-settings__menu {
+  @apply absolute right-0 z-20 mt-3 grid w-[22rem] gap-4 rounded-xl border p-4 shadow-2xl backdrop-blur-xl;
+  border-color: color-mix(in srgb, var(--superwire-accent) 24%, var(--border));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--background) 90%, var(--superwire-accent) 10%)),
+    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--superwire-accent) 18%, transparent), transparent 12rem);
+  color: var(--foreground);
+}
+
+.graph-settings__header {
+  @apply flex items-start justify-between gap-4;
+}
+
+.graph-settings__header strong {
+  @apply block text-sm font-semibold tracking-tight;
+}
+
+.graph-settings__header small {
+  @apply mt-1 block text-xs leading-5;
+  color: var(--muted-foreground);
+}
+
+.graph-settings__icon-button {
+  @apply inline-flex size-10 shrink-0 items-center justify-center rounded-lg border transition-colors;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+}
+
+.graph-settings__icon-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--superwire-accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--superwire-accent) 14%, var(--background));
+}
+
+.graph-settings__icon-button:disabled {
+  @apply cursor-not-allowed opacity-60;
+}
+
+.graph-settings__section {
+  @apply grid gap-2;
+}
+
+.graph-settings__section > span {
+  @apply text-[10px] font-semibold uppercase tracking-[0.16em];
+  color: var(--muted-foreground);
+}
+
+.graph-settings__segmented,
+.graph-settings__edge-grid {
+  @apply grid gap-1 rounded-xl border p-1;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--background) 78%, transparent);
+}
+
+.graph-settings__segmented {
+  @apply grid-cols-2;
+}
+
+.graph-settings__edge-grid {
+  @apply grid-cols-2;
+}
+
+.graph-settings__segmented button,
+.graph-settings__edge-grid button {
+  @apply h-9 rounded-lg px-3 text-sm font-semibold transition-colors;
+  color: var(--muted-foreground);
+}
+
+.graph-settings__segmented button:hover,
+.graph-settings__edge-grid button:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+
+.graph-settings__segmented button[data-active="true"],
+.graph-settings__edge-grid button[data-active="true"] {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--superwire-accent) 20%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--superwire-accent) 32%, transparent);
+}
+
+.graph-settings__toggle {
+  @apply flex items-center gap-3 rounded-xl border p-3;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--background) 74%, transparent);
+}
+
+.graph-settings__toggle input {
+  @apply sr-only;
+}
+
+.graph-settings__switch {
+  @apply relative h-5 w-9 shrink-0 rounded-full border transition-colors;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.graph-settings__switch::after {
+  @apply absolute top-1/2 size-3.5 rounded-full transition-transform;
+  content: "";
+  left: 2px;
+  background: var(--foreground);
+  transform: translateY(-50%);
+}
+
+.graph-settings__toggle input:checked + .graph-settings__switch {
+  border-color: color-mix(in srgb, var(--superwire-accent) 66%, var(--border));
+  background: color-mix(in srgb, var(--superwire-accent) 42%, transparent);
+}
+
+.graph-settings__toggle input:checked + .graph-settings__switch::after {
+  transform: translate(1rem, -50%);
+}
+
+.graph-settings__toggle strong {
+  @apply block text-sm font-semibold;
+  color: var(--foreground);
+}
+
+.graph-settings__toggle small {
+  @apply mt-0.5 block text-xs leading-5;
+  color: var(--muted-foreground);
+}
+
 .graph-view__empty strong {
   @apply text-lg;
   color: var(--foreground);
@@ -926,14 +1075,104 @@ textarea {
 }
 
 .graph-node {
-  @apply w-[300px] overflow-hidden rounded-2xl border p-4 shadow-xl;
+  @apply min-w-[300px] overflow-visible rounded-2xl border p-4 shadow-xl;
   border-color: color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
   color: var(--foreground);
+  cursor: grab;
+  isolation: isolate;
+  position: relative;
+  width: max-content;
+}
+
+.graph-node:active {
+  cursor: grabbing;
+}
+
+.graph-node__running-stroke {
+  position: absolute;
+  inset: -2px;
+  z-index: 2;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.graph-node__running-stroke rect {
+  fill: none;
+  opacity: 0;
+  stroke: #86efac;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-dasharray: 11 89;
+  stroke-dashoffset: 0;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, #22c55e 42%, transparent));
+}
+
+.graph-node[data-running="true"] {
+  border-color: color-mix(in srgb, #22c55e 78%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #22c55e 6%, var(--card)), color-mix(in srgb, var(--card) 96%, #22c55e 4%)),
+    color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 18%, transparent), 0 0 18px color-mix(in srgb, #22c55e 20%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+  animation: graph-node-running-enter 420ms ease-out;
+}
+
+.graph-node[data-running="true"] .graph-node__running-stroke rect {
+  opacity: 1;
+  animation: graph-node-running-stroke 2.25s linear infinite;
+}
+
+.graph-node[data-running="true"] .graph-node__title::after {
+  content: " running";
+  color: #16a34a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dark .graph-node[data-running="true"] .graph-node__title::after {
+  color: #86efac;
+}
+
+@keyframes graph-node-running-stroke {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+@keyframes graph-node-running-enter {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #22c55e 0%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+    transform: scale(0.985);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, #22c55e 15%, transparent), 0 0 20px color-mix(in srgb, #22c55e 18%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+  }
+
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 18%, transparent), 0 0 18px color-mix(in srgb, #22c55e 20%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+    transform: scale(1);
+  }
+}
+
+.graph-node[data-collapsed="true"] {
+  @apply w-[260px];
+}
+
+.graph-node[data-density="compact"] {
+  @apply min-w-[260px] p-3;
 }
 
 .graph-node--input {
   border-color: color-mix(in srgb, #38bdf8 45%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #38bdf8 12%, var(--card)), color-mix(in srgb, var(--card) 96%, #38bdf8 4%)),
+    color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
 }
 
 .graph-node--agent {
@@ -942,10 +1181,17 @@ textarea {
 
 .graph-node--output {
   border-color: color-mix(in srgb, #22c55e 45%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #22c55e 12%, var(--card)), color-mix(in srgb, var(--card) 96%, #22c55e 4%)),
+    color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
 }
 
 .graph-node__header {
   @apply mb-2 flex items-center justify-between gap-2;
+}
+
+.graph-node__badges {
+  @apply flex min-w-0 flex-wrap items-center gap-1.5;
 }
 
 .graph-node__kind,
@@ -959,6 +1205,26 @@ textarea {
   @apply block truncate text-lg font-semibold tracking-tight;
 }
 
+.graph-node__collapse {
+  @apply inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em];
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.graph-node__collapse:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.graph-node__collapse svg {
+  @apply size-3 transition-transform;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__collapse svg {
+  transform: rotate(-90deg);
+}
+
 .graph-node__meta {
   @apply mt-1 block truncate text-xs;
   color: var(--muted-foreground);
@@ -968,6 +1234,20 @@ textarea {
   @apply mt-3 rounded-xl border p-3;
   border-color: color-mix(in srgb, var(--border) 78%, transparent);
   background: color-mix(in srgb, var(--background) 72%, transparent);
+  width: max-content;
+  min-width: 100%;
+}
+
+.graph-node[data-density="compact"] .graph-node__section {
+  @apply mt-2 p-2.5;
+}
+
+.graph-node[data-density="compact"] .graph-node__section ul {
+  @apply gap-1.5;
+}
+
+.graph-node[data-density="compact"] .graph-node__schema {
+  @apply p-1.5 leading-4;
 }
 
 .graph-node__section > span {
@@ -994,6 +1274,146 @@ textarea {
 .graph-node__section p {
   @apply text-xs leading-5;
   color: var(--muted-foreground);
+}
+
+.graph-node__schema {
+  @apply rounded-lg border p-2 text-xs leading-5;
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  overflow: visible;
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+}
+
+.graph-node__schema-line {
+  white-space: pre;
+}
+
+.graph-node__schema-keyword {
+  color: #c026d3;
+  font-weight: 700;
+}
+
+.graph-node__schema-type {
+  color: #2563eb;
+  font-weight: 650;
+}
+
+.graph-node__schema-punctuation {
+  color: var(--muted-foreground);
+}
+
+.dark .graph-node__schema-keyword {
+  color: #f0abfc;
+}
+
+.dark .graph-node__schema-type {
+  color: #93c5fd;
+}
+
+.graph-node__summary {
+  @apply mt-3 rounded-xl border px-3 py-2 text-xs font-medium leading-5;
+  border-color: color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  color: var(--muted-foreground);
+}
+
+.graph-node__output-button {
+  @apply mt-2 flex w-full min-w-56 items-center justify-between gap-4 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors;
+  border-color: color-mix(in srgb, #22c55e 34%, var(--border));
+  background: color-mix(in srgb, #22c55e 9%, var(--card));
+  color: var(--foreground);
+}
+
+.graph-node__output-button:hover {
+  border-color: color-mix(in srgb, #22c55e 54%, var(--border));
+  background: color-mix(in srgb, #22c55e 14%, var(--card));
+}
+
+.graph-node__output-button small {
+  @apply shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold;
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  color: var(--muted-foreground);
+}
+
+.graph-node__loop p {
+  @apply mt-2 text-xs leading-5;
+  color: var(--muted-foreground);
+}
+
+.graph-node__loop-grid {
+  @apply mt-2 grid gap-2;
+}
+
+.graph-node__loop-grid small {
+  @apply mb-1 block text-[10px] font-semibold uppercase tracking-[0.12em];
+  color: var(--muted-foreground);
+}
+
+.graph-output-dialog {
+  @apply max-h-[86vh] max-w-[min(1100px,calc(100vw-2rem))] grid-rows-[auto_minmax(0,1fr)];
+  overflow: hidden;
+}
+
+.graph-output-dialog__entries {
+  @apply grid min-h-0 gap-4 overflow-y-auto pr-1;
+}
+
+.graph-output-dialog__entry {
+  @apply min-h-0 overflow-hidden rounded-xl border;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+}
+
+.graph-output-dialog__entry summary {
+  @apply flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3;
+  color: var(--foreground);
+}
+
+.graph-output-dialog__entry summary::-webkit-details-marker {
+  display: none;
+}
+
+.graph-output-dialog__entry summary::before {
+  content: "+";
+  @apply inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm font-semibold;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--muted-foreground);
+}
+
+.graph-output-dialog__entry[open] summary::before {
+  content: "-";
+}
+
+.graph-output-dialog__entry summary strong {
+  @apply text-sm font-semibold;
+  margin-right: auto;
+}
+
+.graph-output-dialog__entry summary small {
+  @apply rounded-md px-2 py-1 text-xs font-semibold;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--muted-foreground);
+}
+
+.graph-output-dialog__json {
+  @apply min-h-0 border-t;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 0;
+  max-height: min(460px, 52vh);
+  overflow: auto;
+}
+
+.graph-output-dialog__json .cm-scroller {
+  max-height: min(460px, 52vh);
+  overflow: auto;
+}
+
+.graph-output-dialog__json .cm-content {
+  min-height: auto;
 }
 
 .graph-node__tools code {
@@ -1035,8 +1455,44 @@ textarea {
 .react-flow__controls,
 .react-flow__minimap {
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
   color: var(--foreground);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.react-flow__controls-button {
+  border-bottom-color: var(--border);
+  background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  color: var(--foreground);
+  fill: currentColor;
+}
+
+.react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--background) 58%, transparent);
+}
+
+.react-flow__minimap-node {
+  stroke: color-mix(in srgb, var(--foreground) 38%, transparent);
+  stroke-width: 2;
+}
+
+.dark .react-flow__controls,
+.dark .react-flow__minimap {
+  border-color: color-mix(in srgb, var(--border) 72%, #fff 28%);
+  background: color-mix(in srgb, var(--card) 88%, #fff 12%);
+}
+
+.dark .react-flow__controls-button {
+  background: color-mix(in srgb, var(--card) 86%, #fff 14%);
+  color: #f8fafc;
 }
 
 @theme inline {
