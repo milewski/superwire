@@ -1175,6 +1175,20 @@ textarea {
     color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
 }
 
+.graph-node--provider {
+  border-color: color-mix(in srgb, var(--graph-input) 42%, var(--graph-line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-soft) 97%, var(--graph-input) 3%), color-mix(in srgb, var(--graph-panel-strong) 96%, var(--graph-input) 4%)),
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--graph-input) 20%, transparent), transparent 13rem);
+}
+
+.graph-node--model {
+  border-color: color-mix(in srgb, #a78bfa 42%, var(--graph-line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-soft) 97%, #a78bfa 3%), color-mix(in srgb, var(--graph-panel-strong) 96%, #a78bfa 4%)),
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, #a78bfa 18%, transparent), transparent 13rem);
+}
+
 .graph-node--agent {
   border-color: color-mix(in srgb, var(--superwire-accent) 45%, var(--border));
 }
@@ -1762,6 +1776,18 @@ textarea {
   color: var(--graph-input);
 }
 
+.graph-node--provider .graph-node__icon {
+  border-color: color-mix(in srgb, var(--graph-input) 46%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-input) 16%, transparent);
+  color: var(--graph-input);
+}
+
+.graph-node--model .graph-node__icon {
+  border-color: color-mix(in srgb, #a78bfa 46%, var(--graph-line));
+  background: color-mix(in srgb, #a78bfa 16%, transparent);
+  color: #a78bfa;
+}
+
 .graph-node--output .graph-node__icon {
   border-color: color-mix(in srgb, var(--graph-output) 46%, var(--graph-line));
   background: color-mix(in srgb, var(--graph-output) 16%, transparent);
@@ -1876,24 +1902,38 @@ textarea {
   padding: 0.75rem 1rem 0;
 }
 
-.graph-node__execution-strip span {
+.graph-node__execution-strip button {
   height: 0.34rem;
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
-.graph-node__execution-strip span[data-status="completed"] {
+.graph-node__execution-strip button[data-status="completed"] {
   background: linear-gradient(90deg, color-mix(in srgb, var(--graph-output) 68%, #fff 12%), var(--graph-output));
   box-shadow: 0 0 12px color-mix(in srgb, var(--graph-output) 25%, transparent);
 }
 
-.graph-node__execution-strip span[data-status="running"] {
+.graph-node__execution-strip button[data-status="completed"]:hover {
+  transform: translateY(-1px) scaleY(1.45);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--graph-output) 42%, transparent);
+}
+
+.graph-node__execution-strip button[data-status="running"] {
   position: relative;
   background: color-mix(in srgb, var(--graph-agent) 18%, transparent);
 }
 
-.graph-node__execution-strip span[data-status="running"]::after {
+.graph-node__execution-strip button[data-status="idle"] {
+  opacity: 0.72;
+}
+
+.graph-node__execution-strip button:disabled {
+  cursor: default;
+}
+
+.graph-node__execution-strip button[data-status="running"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1901,6 +1941,60 @@ textarea {
   border-radius: inherit;
   background: linear-gradient(90deg, var(--graph-agent), color-mix(in srgb, var(--graph-agent) 55%, #fff 22%));
   animation: graph-execution-progress 1.15s ease-in-out infinite alternate;
+}
+
+.graph-node__instruction {
+  margin: 0.72rem 1rem 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--graph-agent) 28%, var(--graph-line));
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--graph-agent) 10%, transparent), transparent),
+    color-mix(in srgb, var(--background) 54%, transparent);
+}
+
+.graph-node__instruction summary,
+.graph-node__collapsible-section summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.65rem 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 86%, transparent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.graph-node__instruction summary::-webkit-details-marker,
+.graph-node__collapsible-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.graph-node__instruction summary svg {
+  width: 0.86rem;
+  height: 0.86rem;
+  color: var(--graph-agent);
+}
+
+.graph-node__instruction p {
+  display: -webkit-box;
+  margin: 0;
+  padding: 0 0.75rem 0.75rem;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.graph-node__instruction[open] p {
+  display: block;
+  max-height: 12rem;
+  overflow: auto;
 }
 
 @keyframes graph-execution-progress {
@@ -1936,6 +2030,39 @@ textarea {
   width: 0.82rem;
   height: 0.82rem;
   color: var(--graph-agent);
+}
+
+.graph-node__collapsible-section {
+  padding: 0;
+}
+
+.graph-node__collapsible-section ul,
+.graph-node__collapsible-section p {
+  margin: 0 0.75rem 0.75rem;
+}
+
+.graph-node__details li,
+.graph-node__bindings li {
+  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
+  align-items: center;
+}
+
+.graph-node__details li small,
+.graph-node__bindings li code {
+  min-width: 0;
+}
+
+.graph-node__details li code,
+.graph-node__bindings li small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-node__details li code[data-secret="true"] {
+  color: #86efac;
+  letter-spacing: 0.08em;
 }
 
 .graph-node__schema {
@@ -2005,6 +2132,16 @@ textarea {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-input) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-input) 30%, transparent);
 }
 
+.graph-node--provider .graph-node__handle {
+  background: var(--graph-input);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-input) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-input) 30%, transparent);
+}
+
+.graph-node--model .graph-node__handle {
+  background: #a78bfa;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+}
+
 .graph-node--output .graph-node__handle {
   background: var(--graph-output);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-output) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-output) 30%, transparent);
@@ -2017,6 +2154,14 @@ textarea {
 
 .graph-edge--input path {
   stroke: var(--graph-input);
+}
+
+.graph-edge--provider_client path {
+  stroke: var(--graph-input);
+}
+
+.graph-edge--model path {
+  stroke: #a78bfa;
 }
 
 .graph-edge--agent_dependency path {
