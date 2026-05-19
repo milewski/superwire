@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: superwire-executor
+  IMAGE_NAME: superwire
 
 jobs:
   build-and-publish:
