@@ -1417,13 +1417,14 @@ textarea {
   @apply min-h-0 border-t;
   border-color: color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: 0;
-  max-height: min(460px, 52vh);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .graph-output-dialog__json .cm-scroller {
-  max-height: min(460px, 52vh);
-  overflow: auto;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .graph-output-dialog__json .cm-content {
@@ -1818,12 +1819,14 @@ textarea {
 
 .graph-node__status {
   display: inline-flex;
+  min-width: 4.15rem;
   flex-shrink: 0;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
   border: 1px solid color-mix(in srgb, var(--graph-line) 82%, transparent);
   border-radius: 999px;
-  padding: 0.24rem 0.48rem;
+  padding: 0.24rem 0.5rem;
   background: color-mix(in srgb, var(--background) 56%, transparent);
   color: var(--muted-foreground);
   font-size: 0.62rem;
@@ -1833,9 +1836,20 @@ textarea {
   text-transform: uppercase;
 }
 
-.graph-node__status svg {
-  width: 0.72rem;
-  height: 0.72rem;
+.graph-node__status-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.graph-node__status small {
+  margin-left: -0.1rem;
+  color: currentColor;
+  font-size: 0.58rem;
+  line-height: 1;
+  opacity: 0.78;
 }
 
 .graph-node__status--running {
@@ -1844,8 +1858,8 @@ textarea {
   color: var(--graph-agent);
 }
 
-.graph-node__status--running svg {
-  animation: spin 1s linear infinite;
+.graph-node__status--running .graph-node__status-dot {
+  animation: graph-status-pulse 1.1s ease-in-out infinite;
 }
 
 .graph-node__status--completed {
@@ -1856,6 +1870,18 @@ textarea {
 
 .dark .graph-node__status--completed {
   color: #86efac;
+}
+
+@keyframes graph-status-pulse {
+  0%, 100% {
+    opacity: 0.48;
+    transform: scale(0.82);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
 }
 
 .graph-node__meta-row {
@@ -2127,6 +2153,59 @@ textarea {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-agent) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-agent) 34%, transparent);
 }
 
+.graph-node__handle.react-flow__handle-left {
+  left: 0 !important;
+}
+
+.graph-node__handle.react-flow__handle-right {
+  right: 0 !important;
+}
+
+.graph-node__handle--client.react-flow__handle-left,
+.graph-node__handle--client.react-flow__handle-right {
+  top: 66% !important;
+}
+
+.graph-node__handle--instruction.react-flow__handle-left {
+  top: 6.9rem !important;
+  background: #a78bfa;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+}
+
+.graph-node__handle--instruction-section.react-flow__handle-left {
+  top: 50% !important;
+}
+
+.graph-node__handle--model.react-flow__handle-right {
+  top: 52% !important;
+  background: #a78bfa;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+}
+
+.graph-node__handle--inputs.react-flow__handle-left {
+  top: 11.4rem !important;
+  background: color-mix(in srgb, var(--foreground) 58%, var(--graph-input) 42%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--foreground) 10%, transparent), 0 0 14px color-mix(in srgb, var(--graph-input) 22%, transparent);
+}
+
+.graph-node__handle--output.react-flow__handle-right {
+  top: calc(100% - 1.7rem) !important;
+  background: var(--graph-output);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-output) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-output) 30%, transparent);
+}
+
+.graph-node[data-collapsed="true"] .graph-node__handle--instruction.react-flow__handle-left {
+  top: 48% !important;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__handle--inputs.react-flow__handle-left {
+  top: 64% !important;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__handle--output.react-flow__handle-right {
+  top: 70% !important;
+}
+
 .graph-node--input .graph-node__handle {
   background: var(--graph-input);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-input) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-input) 30%, transparent);
@@ -2264,6 +2343,313 @@ textarea {
     min-width: 260px;
     max-width: 320px;
   }
+}
+
+.graph-node {
+  min-width: 276px;
+  max-width: 340px;
+  width: 320px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, #111 6%), color-mix(in srgb, var(--card) 88%, #050505 12%));
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+}
+
+.graph-node--provider,
+.graph-node--model,
+.graph-node--input,
+.graph-node--output {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, #111 6%), color-mix(in srgb, var(--card) 88%, #050505 12%));
+}
+
+.graph-node__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.15rem 0.9rem;
+  width: 100%;
+  align-items: center;
+  column-gap: 0.55rem;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--graph-line) 72%, transparent);
+  border-radius: 16px 16px 0 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.graph-node__header:hover {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.graph-node__header:disabled {
+  cursor: default;
+}
+
+.graph-node__header-chevron {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  justify-self: end;
+  color: var(--muted-foreground);
+  transition: transform 160ms ease;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__header-chevron {
+  transform: rotate(-90deg);
+}
+
+.graph-node__icon,
+.graph-node--provider .graph-node__icon,
+.graph-node--model .graph-node__icon,
+.graph-node--input .graph-node__icon,
+.graph-node--output .graph-node__icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.graph-node__icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.graph-node__title {
+  font-size: 0.95rem;
+}
+
+.graph-node__subtitle {
+  font-size: 0.72rem;
+}
+
+.graph-node__meta-row,
+.graph-node__collapse {
+  display: none;
+}
+
+.graph-node__status {
+  width: 4.15rem;
+  justify-self: end;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.6rem;
+}
+
+.graph-node__execution-strip {
+  gap: 0.3rem;
+  padding: 0.7rem 0.9rem 0;
+}
+
+.graph-node__execution-strip button {
+  height: 0.28rem;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.graph-node__instruction {
+  display: block;
+  position: relative;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--graph-line) 62%, transparent);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  padding: 0.7rem 0.95rem;
+  text-align: left;
+}
+
+.graph-node__instruction:hover {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.graph-node__instruction p {
+  display: -webkit-box;
+  margin: 0;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.graph-node__instruction p::after {
+  content: "";
+}
+
+.graph-instruction-dialog pre {
+  max-height: min(58vh, 34rem);
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  padding: 1rem;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.graph-node__section,
+.graph-node[data-density="compact"] .graph-node__section {
+  margin: 0;
+  min-width: 100%;
+  max-width: 100%;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--graph-line) 62%, transparent);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.72rem 0.95rem;
+}
+
+.graph-node__section[data-empty="true"] {
+  padding-top: 0.48rem;
+  padding-bottom: 0.48rem;
+}
+
+.graph-node__section:last-of-type {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.graph-node__section > span,
+.graph-node__collapsible-section summary {
+  padding: 0;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  font-size: 0.62rem;
+  letter-spacing: 0.13em;
+}
+
+.graph-node__section,
+.graph-node__collapsible-section {
+  position: relative;
+}
+
+.graph-node__section-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.graph-node__collapsible-section summary {
+  justify-content: space-between;
+}
+
+.graph-node__collapsible-section summary small {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--graph-line) 70%, transparent);
+  border-radius: 999px;
+  padding: 0.12rem 0.42rem;
+  color: var(--muted-foreground);
+  font-size: 0.58rem;
+  line-height: 1.2;
+}
+
+.graph-node__section ul {
+  margin-top: 0.5rem;
+  gap: 0.42rem;
+}
+
+.graph-node__details li,
+.graph-node__bindings li,
+.graph-node__section li {
+  gap: 0.36rem;
+}
+
+.graph-node__section code {
+  background: transparent;
+  padding: 0;
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.graph-node__schema {
+  max-height: 12rem;
+  border-color: color-mix(in srgb, var(--graph-line) 55%, transparent);
+  background: color-mix(in srgb, var(--background) 48%, transparent);
+}
+
+.graph-node__collapsible-section:not([open]) {
+  padding-bottom: 0.72rem;
+}
+
+.graph-node__collapsible-section:not([open]) ul,
+.graph-node__collapsible-section:not([open]) p {
+  display: none;
+}
+
+.graph-node__collapsible-section ul,
+.graph-node__collapsible-section p {
+  margin: 0.55rem 0 0;
+}
+
+.graph-node__loop {
+  display: none;
+}
+
+.graph-node__summary {
+  margin: 0;
+  border: 0;
+  border-radius: 0 0 16px 16px;
+  background: transparent;
+  padding: 0.24rem 0.75rem 0.32rem;
+  font-size: 0.6rem;
+  line-height: 1.15;
+}
+
+.graph-node__handle--section.react-flow__handle-left {
+  left: 0 !important;
+  top: 1.14rem !important;
+}
+
+.graph-node__handle--section.react-flow__handle-right {
+  right: 0 !important;
+  top: 1.14rem !important;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__handle--client.react-flow__handle-left,
+.graph-node[data-collapsed="true"] .graph-node__handle--client.react-flow__handle-right,
+.graph-node[data-collapsed="true"] .graph-node__handle--instruction.react-flow__handle-left,
+.graph-node[data-collapsed="true"] .graph-node__handle--inputs.react-flow__handle-left,
+.graph-node[data-collapsed="true"] .graph-node__handle--model.react-flow__handle-right,
+.graph-node[data-collapsed="true"] .graph-node__handle--output.react-flow__handle-right,
+.graph-node[data-collapsed="true"] .graph-node__handle.react-flow__handle-left,
+.graph-node[data-collapsed="true"] .graph-node__handle.react-flow__handle-right {
+  top: 50% !important;
+}
+
+.graph-node[data-collapsed="true"] {
+  width: 252px;
+  min-width: 252px;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__header {
+  grid-template-columns: minmax(0, 1fr) 3.75rem 0.8rem;
+  column-gap: 0.4rem;
+  padding: 0.72rem 0.75rem 0.58rem;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__status {
+  min-width: 3.75rem;
+  width: 3.75rem;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__handle.react-flow__handle-left {
+  left: 0 !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.graph-node[data-collapsed="true"] .graph-node__handle.react-flow__handle-right {
+  right: 0 !important;
+  transform: translate(50%, -50%) !important;
+}
+
+.graph-node--agent[data-collapsed="true"] .graph-node__handle--inputs.react-flow__handle-left {
+  opacity: 0;
 }
 
 @theme inline {

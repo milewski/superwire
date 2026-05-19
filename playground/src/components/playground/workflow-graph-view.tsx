@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
+import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
 import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, RefreshCcw, Settings2, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
@@ -56,7 +56,7 @@ const graphNodeTypes = {
 export default function WorkflowGraphView({ graph, source, graphState, runState, events, outputJson, message, onRefresh }: WorkflowGraphViewProps) {
   const [config, setConfig] = useState<GraphConfig>(() => restoreGraphConfig());
   const workflowDeclarations = useMemo(() => parseWorkflowGraphDeclarations(source), [source]);
-  const activeRunCounts = runState === 'running' ? activeAgentRunCounts(events) : new Map<string, number>();
+  const activeRunCounts = useMemo(() => (runState === 'running' ? activeAgentRunCounts(events) : new Map<string, number>()), [runState, events]);
   const outputEntriesByNodeId = useMemo(() => graphOutputEntriesByNodeId(events, outputJson), [events, outputJson]);
   const activeAgentSignature = Array.from(activeRunCounts.entries()).sort().map(([agentName, activeRunCount]) => `${agentName}:${activeRunCount}`).join(':');
   const displayGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
@@ -130,10 +130,14 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
         position: currentPositions.get(incomingNode.id) ?? restoredPositions[incomingNode.id] ?? incomingNode.position,
       }));
     });
-  }, [graphSignature, incomingNodes, setNodes]);
+  }, [graphSignature, setNodes]);
 
   useEffect(() => {
-    setEdges(incomingEdges);
+    setNodes((currentNodes) => mergeRuntimeNodeUpdates(currentNodes, incomingNodes));
+  }, [incomingNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges((currentEdges) => mergeRuntimeEdgeUpdates(currentEdges, incomingEdges));
   }, [incomingEdges, setEdges]);
 
   useEffect(() => {
@@ -227,9 +231,16 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const outputEntries = data.outputEntries;
   const [collapsed, setCollapsed] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
+  const [instructionOpen, setInstructionOpen] = useState(false);
   const [openOutputIndex, setOpenOutputIndex] = useState(0);
   const visiblyCollapsed = config.collapseAll || collapsed;
   const status = nodeStatus(node, activeRunCount, outputEntries);
+  const visibleBindings = node.bindings.filter((binding) => binding.name !== 'instruction' && binding.name !== 'model');
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useEffect(() => {
+    updateNodeInternals(node.id);
+  }, [node.id, updateNodeInternals, visiblyCollapsed]);
 
   function openOutput(outputIndex: number) {
     setOpenOutputIndex(outputIndex);
@@ -241,8 +252,8 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
       <svg className="graph-node__running-stroke" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <rect x="1.5" y="1.5" width="97" height="97" rx="6" pathLength="100" />
       </svg>
-      <Handle type="target" position={Position.Left} className="graph-node__handle" isConnectable={false} />
-      <header className="graph-node__header">
+      <GraphNodeHandles node={node} collapsed={visiblyCollapsed} showExpandedInstructionHandle={!node.instruction} />
+      <button type="button" className="graph-node__header nodrag" aria-expanded={!visiblyCollapsed} onClick={() => setCollapsed((open) => !open)} disabled={config.collapseAll}>
         <div className="graph-node__identity">
           <span className="graph-node__icon">{nodeIcon(node)}</span>
           <span className="graph-node__title-block">
@@ -251,46 +262,56 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
           </span>
         </div>
         <NodeStatusBadge status={status} activeRunCount={activeRunCount} outputEntries={outputEntries} />
-      </header>
-
-      <div className="graph-node__meta-row">
-        <span className="graph-node__kind">{node.kind}</span>
-        {node.execution_index !== null ? <span className="graph-node__index">step {node.execution_index + 1}</span> : null}
-        {node.provider_name ? <span>{node.provider_name}</span> : null}
-        {node.model ? <span>{node.model}</span> : null}
-        <button type="button" className="graph-node__collapse nodrag" aria-expanded={!visiblyCollapsed} onClick={() => setCollapsed((open) => !open)} disabled={config.collapseAll}>
-          <ChevronDown />
-          <span>{visiblyCollapsed ? 'Expand' : 'Collapse'}</span>
-        </button>
-      </div>
+        <ChevronDown className="graph-node__header-chevron" />
+      </button>
 
       <GraphExecutionStrip node={node} activeRunCount={activeRunCount} outputEntries={outputEntries} onOpenOutput={openOutput} />
-      {node.instruction ? <GraphInstructionPreview instruction={node.instruction} /> : null}
+      {node.instruction ? <GraphInstructionPreview instruction={node.instruction} onOpen={() => setInstructionOpen(true)} /> : null}
       {node.loop_info ? <GraphLoopSummary node={node} config={config} /> : null}
       {visiblyCollapsed ? (
         <p className="graph-node__summary">{nodeSummary(node)}</p>
       ) : (
         <>
-          {node.details.length > 0 ? <GraphDetails details={node.details} /> : null}
-          {node.bindings.length > 0 ? <GraphBindings bindings={node.bindings} /> : null}
-          <GraphPorts title="Inputs" ports={node.inputs} fallback={node.kind === 'input' ? 'External runtime values' : 'No upstream agent output'} config={config} />
-          <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={node.kind === 'agent'} />
+          {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails details={node.details} /> : null}
+          {visibleBindings.length > 0 ? <GraphBindings bindings={visibleBindings} /> : null}
+          <GraphPorts title="Inputs" ports={node.inputs} fallback={node.kind === 'input' ? 'External runtime values' : 'No upstream agent output'} config={config} targetHandleId={inputPortTargetHandleId(node)} />
+          <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={node.kind === 'agent'} defaultOpen={node.kind !== 'agent'} showPortNames={node.kind !== 'agent'} sourceHandleId={outputPortSourceHandleId(node)} />
           {outputEntries.length > 0 ? <GraphOutputAction node={node} outputEntries={outputEntries} onOpen={() => openOutput(0)} /> : null}
           {node.tools.length > 0 ? <GraphTools tools={node.tools} /> : null}
         </>
       )}
-      <Handle type="source" position={Position.Right} className="graph-node__handle" isConnectable={false} />
       {outputEntries.length > 0 ? <GraphOutputDialog node={node} outputEntries={outputEntries} open={outputOpen} openOutputIndex={openOutputIndex} onOpenChange={setOutputOpen} /> : null}
+      {node.instruction ? <GraphInstructionDialog node={node} open={instructionOpen} onOpenChange={setInstructionOpen} /> : null}
     </article>
   );
 }
 
-function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: GraphNodeStatus; activeRunCount: number; outputEntries: GraphOutputEntry[] }) {
+function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { node: WorkflowExecutionGraphNode; collapsed: boolean; showExpandedInstructionHandle: boolean }) {
+  if (!collapsed) {
+    return node.kind === 'agent' && showExpandedInstructionHandle ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null;
+  }
+
   return (
-    <span className={`graph-node__status graph-node__status--${status}`}>
-      {status === 'running' ? <Loader2 /> : status === 'completed' ? <CheckCircle2 /> : <CircleDashed />}
-      {status === 'running' && activeRunCount > 1 ? `${activeRunCount} running` : status}
-      {status === 'completed' && outputEntries.length > 1 ? ` ${outputEntries.length}x` : null}
+    <>
+      {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--client" isConnectable={false} /> : null}
+      {node.kind === 'agent' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null}
+      {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--inputs" isConnectable={false} /> : null}
+      {node.kind === 'provider' ? <Handle id="client" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--client" isConnectable={false} /> : null}
+      {node.kind === 'model' ? <Handle id="model" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--model" isConnectable={false} /> : null}
+      {node.kind !== 'model' && node.kind !== 'output' ? <Handle id="output" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--output" isConnectable={false} /> : null}
+    </>
+  );
+}
+
+function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: GraphNodeStatus; activeRunCount: number; outputEntries: GraphOutputEntry[] }) {
+  const label = status === 'completed' ? 'done' : status;
+  const detail = status === 'running' && activeRunCount > 1 ? activeRunCount : status === 'completed' && outputEntries.length > 1 ? outputEntries.length : null;
+
+  return (
+    <span className={`graph-node__status graph-node__status--${status}`} aria-label={status}>
+      <span className="graph-node__status-dot" />
+      <span>{label}</span>
+      {detail ? <small>{detail}</small> : null}
     </span>
   );
 }
@@ -301,7 +322,7 @@ function GraphExecutionStrip({ node, activeRunCount, outputEntries, onOpenOutput
   }
 
   const completedCount = outputEntries.length;
-  const visibleSlotCount = Math.max(Math.min(completedCount + activeRunCount + 1, 6), node.loop_info ? 4 : 3);
+  const visibleSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount);
 
   return (
     <div className="graph-node__execution-strip" aria-label="Execution progress">
@@ -324,14 +345,53 @@ function GraphExecutionStrip({ node, activeRunCount, outputEntries, onOpenOutput
   );
 }
 
-function GraphInstructionPreview({ instruction }: { instruction: string }) {
+function graphExecutionSlotCount(node: WorkflowExecutionGraphNode, completedCount: number, activeRunCount: number) {
+  const loopBinding = node.bindings.find((binding) => binding.name === 'loop');
+  const loopCount = loopBinding ? arrayLiteralItemCount(loopBinding.expression) : null;
+
+  if (loopCount !== null) {
+    return Math.max(loopCount, completedCount + activeRunCount);
+  }
+
+  return Math.max(completedCount + activeRunCount, 1);
+}
+
+function arrayLiteralItemCount(expression: string) {
+  const trimmedExpression = expression.trim();
+
+  if (!trimmedExpression.startsWith('[') || !trimmedExpression.endsWith(']')) {
+    return null;
+  }
+
+  const innerExpression = trimmedExpression.slice(1, -1).trim();
+
+  if (!innerExpression) {
+    return 0;
+  }
+
+  return innerExpression.split(',').length;
+}
+
+function GraphInstructionPreview({ instruction, onOpen }: { instruction: string; onOpen: () => void }) {
   return (
-    <details className="graph-node__instruction">
-      <summary>
-        <Sparkles /> Instruction
-      </summary>
+    <button type="button" className="graph-node__instruction nodrag" onClick={onOpen}>
+      <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction graph-node__handle--instruction-section" isConnectable={false} />
       <p>{instruction}</p>
-    </details>
+    </button>
+  );
+}
+
+function GraphInstructionDialog({ node, open, onOpenChange }: { node: WorkflowExecutionGraphNode; open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="graph-instruction-dialog">
+        <DialogHeader>
+          <DialogTitle>{node.label} instruction</DialogTitle>
+          <DialogDescription>Prompt sent to this agent.</DialogDescription>
+        </DialogHeader>
+        <pre>{node.instruction}</pre>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -432,38 +492,76 @@ function GraphOutputDialog({ node, outputEntries, open, openOutputIndex, onOpenC
   );
 }
 
-function GraphPorts({ title, ports, fallback, config, collapsible = false }: { title: string; ports: WorkflowExecutionGraphNode['inputs']; fallback?: string; config: GraphConfig; collapsible?: boolean }) {
+function GraphPorts({ title, ports, fallback, config, collapsible = false, defaultOpen = true, showPortNames = true, targetHandleId, sourceHandleId }: { title: string; ports: WorkflowExecutionGraphNode['inputs']; fallback?: string; config: GraphConfig; collapsible?: boolean; defaultOpen?: boolean; showPortNames?: boolean; targetHandleId?: string; sourceHandleId?: string }) {
+  const titleContent = <GraphPortTitle title={title} targetHandleId={targetHandleId} sourceHandleId={sourceHandleId} />;
+  const visiblePorts = ports.filter((port) => schemaHasDisplayContent(port.schema));
+  const schemaCount = visiblePorts.length;
+  const schemaLabel = schemaCount === 1 ? '1 schema' : `${schemaCount} schemas`;
   const content = (
     <>
-      {ports.length > 0 ? (
+      {visiblePorts.length > 0 ? (
         <ul>
-          {ports.map((port) => (
+          {visiblePorts.map((port) => (
             <li key={port.name}>
-              <code>{port.name}</code>
+              {showPortNames ? <code>{port.name}</code> : null}
               <pre className="graph-node__schema">{schemaBlock(port.schema, config)}</pre>
             </li>
           ))}
         </ul>
-      ) : (
+      ) : ports.length === 0 ? (
         <p>{fallback ?? 'No declared fields'}</p>
-      )}
+      ) : null}
     </>
   );
 
   if (collapsible) {
     return (
-      <details className="graph-node__section graph-node__collapsible-section" open>
-        <summary>{title}</summary>
+      <details className="graph-node__section graph-node__collapsible-section" open={defaultOpen}>
+        <summary>{titleContent}<small>{schemaLabel}</small></summary>
         {content}
       </details>
     );
   }
 
   return (
-    <section className="graph-node__section">
-      <span>{title}</span>
+    <section className="graph-node__section" data-empty={visiblePorts.length === 0 && ports.length > 0 ? 'true' : 'false'}>
+      {titleContent}
       {content}
     </section>
+  );
+}
+
+function schemaHasDisplayContent(schema: unknown): boolean {
+  if (!isRecord(schema)) {
+    return true;
+  }
+
+  if (isRecord(schema.properties)) {
+    return Object.keys(schema.properties).length > 0;
+  }
+
+  if (Array.isArray(schema.enum) || Array.isArray(schema.anyOf) || Array.isArray(schema.oneOf) || Array.isArray(schema.prefixItems)) {
+    return true;
+  }
+
+  if (schema.type === 'array') {
+    return Boolean(schema.items);
+  }
+
+  if (schema.type === 'object') {
+    return false;
+  }
+
+  return typeof schema.type === 'string';
+}
+
+function GraphPortTitle({ title, targetHandleId, sourceHandleId }: { title: string; targetHandleId?: string; sourceHandleId?: string }) {
+  return (
+    <span className="graph-node__section-label">
+      {targetHandleId ? <Handle id={targetHandleId} type="target" position={Position.Left} className="graph-node__handle graph-node__handle--section graph-node__handle--inputs" isConnectable={false} /> : null}
+      {title}
+      {sourceHandleId ? <Handle id={sourceHandleId} type="source" position={Position.Right} className="graph-node__handle graph-node__handle--section graph-node__handle--output" isConnectable={false} /> : null}
+    </span>
   );
 }
 
@@ -511,6 +609,7 @@ interface ParsedAgentDeclaration {
 interface ParsedGraphDetail {
   name: string;
   value: string;
+  expression: string;
   secret: boolean;
 }
 
@@ -557,12 +656,14 @@ function graphWithProviderModelDeclarations(graph: WorkflowExecutionGraph, decla
       ...node,
       provider_name: providerName,
       model: modelName,
-      instruction: node.instruction ?? agentDeclaration?.instruction ?? null,
+      instruction: agentDeclaration?.instruction ?? node.instruction ?? null,
       bindings: mergeGraphBindings(node.bindings, agentDeclaration?.bindings ?? []),
     });
 
     addGraphEdge(edgesById, providerNodeId, modelNodeId, 'client', 'provider_client');
     addGraphEdge(edgesById, modelNodeId, node.id, 'model', 'model');
+    addRuntimeReferenceEdges(edgesById, providerNodeId, declarations.providers.get(providerName)?.details ?? []);
+    addRuntimeReferenceEdges(edgesById, modelNodeId, modelDeclaration?.details ?? []);
   }
 
   return {
@@ -596,7 +697,7 @@ function parseWorkflowGraphDeclarations(source: string): ParsedWorkflowGraphDecl
   for (const block of declarationBlocks(source, /\bagent\s+([A-Za-z_][A-Za-z0-9_]*)([^{}]*)\{/g)) {
     const modelBinding = firstGraphBinding(block.body, 'model');
     const instructionBinding = firstGraphBinding(block.body, 'instruction');
-    const bindings = parseGraphBindings(block.body).filter((binding) => binding.name !== 'model');
+    const bindings = parseGraphBindings(block.body).filter((binding) => binding.name !== 'model' && binding.name !== 'instruction');
     const loopExpression = loopExpressionFromAgentHeader(block.secondaryName ?? '');
 
     if (loopExpression) {
@@ -625,7 +726,7 @@ function providerGraphNode(providerName: string, providerDeclaration: ParsedProv
     provider_name: providerDeclaration?.driverName ?? providerName,
     model: null,
     instruction: null,
-    details: providerDeclaration?.details ?? [{ name: 'driver', value: providerName, secret: false }],
+    details: providerDeclaration?.details ?? [{ name: 'driver', value: providerName, expression: providerName, secret: false }],
     bindings: [],
     tools: [],
     execution_index: null,
@@ -646,7 +747,7 @@ function modelGraphNode(modelName: string, providerName: string, modelDeclaratio
     provider_name: providerName,
     model: modelName,
     instruction: null,
-    details: [{ name: 'provider', value: providerName, secret: false }, ...(modelDeclaration?.details ?? [])],
+    details: [{ name: 'provider', value: providerName, expression: providerName, secret: false }, ...(modelDeclaration?.details ?? [])],
     bindings: [],
     tools: [],
     execution_index: null,
@@ -662,6 +763,20 @@ function addGraphEdge(edgesById: Map<string, WorkflowExecutionGraph['edges'][num
   }
 
   edgesById.set(id, { id, source, target, label, kind });
+}
+
+function addRuntimeReferenceEdges(edgesById: Map<string, WorkflowExecutionGraph['edges'][number]>, target: string, details: ParsedGraphDetail[]) {
+  for (const detail of details) {
+    if (!expressionUsesRuntime(detail.expression)) {
+      continue;
+    }
+
+    addGraphEdge(edgesById, 'input', target, detail.name, 'input');
+  }
+}
+
+function expressionUsesRuntime(expression: string) {
+  return /\b(input|secrets)\./.test(expression);
 }
 
 function mergeGraphBindings(existingBindings: WorkflowExecutionGraphNode['bindings'], parsedBindings: ParsedGraphBinding[]) {
@@ -710,9 +825,19 @@ function matchingBraceIndex(source: string, openBraceIndex: number) {
   let depth = 0;
   let quoted = false;
   let escaped = false;
+  let multiline = false;
 
   for (let sourceIndex = openBraceIndex; sourceIndex < source.length; sourceIndex += 1) {
     const character = source[sourceIndex];
+
+    if (multiline) {
+      if (source.startsWith('"""', sourceIndex)) {
+        multiline = false;
+        sourceIndex += 2;
+      }
+
+      continue;
+    }
 
     if (quoted) {
       if (escaped) {
@@ -726,7 +851,10 @@ function matchingBraceIndex(source: string, openBraceIndex: number) {
       continue;
     }
 
-    if (character === '"') {
+    if (source.startsWith('"""', sourceIndex)) {
+      multiline = true;
+      sourceIndex += 2;
+    } else if (character === '"') {
       quoted = true;
     } else if (character === '{') {
       depth += 1;
@@ -746,6 +874,7 @@ function parseGraphDetails(body: string): ParsedGraphDetail[] {
   return parseTopLevelGraphFields(body).map((field) => ({
     name: field.name,
     value: field.secret ? maskedGraphValue(field.expression) : stripGraphExpressionQuotes(field.expression),
+    expression: stripGraphExpressionQuotes(field.expression),
     secret: field.secret,
   }));
 }
@@ -763,35 +892,54 @@ function firstGraphBinding(body: string, bindingName: string) {
 
 function parseTopLevelGraphFields(body: string) {
   const fields: Array<{ name: string; expression: string; secret: boolean }> = [];
-  const lines = body.split('\n');
-  let depth = 0;
+  let bodyIndex = 0;
 
-  for (const line of lines) {
-    const trimmedLine = line.trim();
+  while (bodyIndex < body.length) {
+    const fieldMatch = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/m.exec(body.slice(bodyIndex));
 
-    if (depth === 0) {
-      const fieldMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+)$/.exec(trimmedLine);
-
-      if (fieldMatch) {
-        const name = fieldMatch[1] ?? '';
-        const expression = fieldMatch[2] ?? '';
-        const normalizedName = name.toLowerCase();
-        fields.push({ name, expression, secret: normalizedName.includes('key') || normalizedName.includes('secret') || normalizedName.includes('token') });
-      }
+    if (!fieldMatch || fieldMatch.index === undefined) {
+      break;
     }
 
-    depth += braceDelta(trimmedLine);
+    const fieldStartIndex = bodyIndex + fieldMatch.index;
+
+    if (braceDepthAtIndex(body, fieldStartIndex) !== 0) {
+      bodyIndex = fieldStartIndex + fieldMatch[0].length;
+
+      continue;
+    }
+
+    const name = fieldMatch[1] ?? '';
+    const expressionStartIndex = fieldStartIndex + fieldMatch[0].length;
+    const expressionEndIndex = topLevelExpressionEndIndex(body, expressionStartIndex);
+    const expression = body.slice(expressionStartIndex, expressionEndIndex).trim();
+    const normalizedName = name.toLowerCase();
+
+    fields.push({ name, expression, secret: normalizedName.includes('key') || normalizedName.includes('secret') || normalizedName.includes('token') });
+    bodyIndex = expressionEndIndex;
   }
 
   return fields;
 }
 
-function braceDelta(line: string) {
-  let delta = 0;
+function braceDepthAtIndex(source: string, targetIndex: number) {
+  let depth = 0;
   let quoted = false;
   let escaped = false;
+  let multiline = false;
 
-  for (const character of line) {
+  for (let sourceIndex = 0; sourceIndex < targetIndex; sourceIndex += 1) {
+    const character = source[sourceIndex];
+
+    if (multiline) {
+      if (source.startsWith('"""', sourceIndex)) {
+        multiline = false;
+        sourceIndex += 2;
+      }
+
+      continue;
+    }
+
     if (quoted) {
       if (escaped) {
         escaped = false;
@@ -804,16 +952,65 @@ function braceDelta(line: string) {
       continue;
     }
 
-    if (character === '"') {
+    if (source.startsWith('"""', sourceIndex)) {
+      multiline = true;
+      sourceIndex += 2;
+    } else if (character === '"') {
       quoted = true;
     } else if (character === '{') {
-      delta += 1;
+      depth += 1;
     } else if (character === '}') {
-      delta -= 1;
+      depth = Math.max(depth - 1, 0);
     }
   }
 
-  return delta;
+  return depth;
+}
+
+function topLevelExpressionEndIndex(source: string, expressionStartIndex: number) {
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  let multiline = false;
+
+  for (let sourceIndex = expressionStartIndex; sourceIndex < source.length; sourceIndex += 1) {
+    const character = source[sourceIndex];
+
+    if (multiline) {
+      if (source.startsWith('"""', sourceIndex)) {
+        return sourceIndex + 3;
+      }
+
+      continue;
+    }
+
+    if (quoted) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        quoted = false;
+      }
+
+      continue;
+    }
+
+    if (source.startsWith('"""', sourceIndex)) {
+      multiline = true;
+      sourceIndex += 2;
+    } else if (character === '"') {
+      quoted = true;
+    } else if (character === '{' || character === '[' || character === '(') {
+      depth += 1;
+    } else if (character === '}' || character === ']' || character === ')') {
+      depth = Math.max(depth - 1, 0);
+    } else if (character === '\n' && depth === 0) {
+      return sourceIndex;
+    }
+  }
+
+  return source.length;
 }
 
 function loopExpressionFromAgentHeader(header: string) {
@@ -831,11 +1028,28 @@ function modelNameFromExpression(expression: string) {
 function stripGraphExpressionQuotes(expression: string) {
   const trimmedExpression = expression.trim();
 
+  if (trimmedExpression.startsWith('"""') && trimmedExpression.endsWith('"""')) {
+    return normalizeMultilineGraphString(trimmedExpression.slice(3, -3));
+  }
+
   if (trimmedExpression.startsWith('"') && trimmedExpression.endsWith('"')) {
     return trimmedExpression.slice(1, -1);
   }
 
   return trimmedExpression;
+}
+
+function normalizeMultilineGraphString(value: string) {
+  const lines = value.replace(/^\n/, '').replace(/\n\s*$/, '').split('\n');
+  const indentation = lines
+    .filter((line) => line.trim().length > 0)
+    .reduce((minimumIndentation, line) => Math.min(minimumIndentation, line.match(/^\s*/)?.[0].length ?? 0), Number.POSITIVE_INFINITY);
+
+  if (!Number.isFinite(indentation)) {
+    return '';
+  }
+
+  return lines.map((line) => line.slice(indentation)).join('\n').trim();
 }
 
 function maskedGraphValue(expression: string) {
@@ -857,7 +1071,7 @@ function graphModelNodeId(modelName: string) {
 }
 
 function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): WorkflowGraphReactNode[] {
-  const graphNodes = graph.nodes.map(normalizeWorkflowGraphNode);
+  const graphNodes = graph.nodes;
   const agentNodes = graphNodes.filter((node) => node.kind === 'agent');
   const lastColumn = Math.max(agentNodes.length + 1, 1);
 
@@ -869,6 +1083,79 @@ function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, acti
   }));
 }
 
+function mergeRuntimeNodeUpdates(currentNodes: WorkflowGraphReactNode[], incomingNodes: WorkflowGraphReactNode[]): WorkflowGraphReactNode[] {
+  const currentNodesById = new Map(currentNodes.map((node) => [node.id, node]));
+
+  return incomingNodes.map((incomingNode) => {
+    const currentNode = currentNodesById.get(incomingNode.id);
+
+    if (!currentNode) {
+      return incomingNode;
+    }
+
+    if (sameGraphNodeRuntime(currentNode, incomingNode)) {
+      return currentNode;
+    }
+
+    return {
+      ...currentNode,
+      ...incomingNode,
+      position: currentNode.position,
+      selected: currentNode.selected,
+      dragging: currentNode.dragging,
+    };
+  });
+}
+
+function sameGraphNodeRuntime(currentNode: WorkflowGraphReactNode, incomingNode: WorkflowGraphReactNode) {
+  return (
+    currentNode.type === incomingNode.type &&
+    currentNode.data.node === incomingNode.data.node &&
+    currentNode.data.config === incomingNode.data.config &&
+    currentNode.data.activeRunCount === incomingNode.data.activeRunCount &&
+    sameGraphOutputEntries(currentNode.data.outputEntries, incomingNode.data.outputEntries)
+  );
+}
+
+function sameGraphOutputEntries(currentEntries: GraphOutputEntry[], incomingEntries: GraphOutputEntry[]) {
+  if (currentEntries.length !== incomingEntries.length) {
+    return false;
+  }
+
+  return currentEntries.every((currentEntry, entryIndex) => {
+    const incomingEntry = incomingEntries[entryIndex];
+
+    return incomingEntry?.title === currentEntry.title && incomingEntry.outputJson === currentEntry.outputJson;
+  });
+}
+
+function mergeRuntimeEdgeUpdates(currentEdges: Edge[], incomingEdges: Edge[]): Edge[] {
+  const currentEdgesById = new Map(currentEdges.map((edge) => [edge.id, edge]));
+
+  return incomingEdges.map((incomingEdge) => {
+    const currentEdge = currentEdgesById.get(incomingEdge.id);
+
+    if (!currentEdge) {
+      return incomingEdge;
+    }
+
+    return sameGraphEdgeRuntime(currentEdge, incomingEdge) ? currentEdge : { ...currentEdge, ...incomingEdge, selected: currentEdge.selected };
+  });
+}
+
+function sameGraphEdgeRuntime(currentEdge: Edge, incomingEdge: Edge) {
+  return (
+    currentEdge.source === incomingEdge.source &&
+    currentEdge.target === incomingEdge.target &&
+    currentEdge.sourceHandle === incomingEdge.sourceHandle &&
+    currentEdge.targetHandle === incomingEdge.targetHandle &&
+    currentEdge.label === incomingEdge.label &&
+    currentEdge.type === incomingEdge.type &&
+    currentEdge.animated === incomingEdge.animated &&
+    currentEdge.className === incomingEdge.className
+  );
+}
+
 function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): Edge[] {
   const graphNodesById = new Map(graph.nodes.map((node) => normalizeWorkflowGraphNode(node)).map((node) => [node.id, node]));
 
@@ -876,12 +1163,65 @@ function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, acti
     id: edge.id,
     source: edge.source,
     target: edge.target,
+    sourceHandle: graphEdgeSourceHandle(edge.kind),
+    targetHandle: graphEdgeTargetHandle(edge.kind),
     label: config.showEdgeLabels ? edge.label : undefined,
     type: config.edgeType,
-    markerEnd: { type: MarkerType.ArrowClosed },
     animated: (activeRunCounts.get(edge.target) ?? 0) > 0,
     className: graphEdgeClassName(edge.kind, graphNodesById.get(edge.target), activeRunCounts, outputEntriesByNodeId),
   }));
+}
+
+function graphEdgeSourceHandle(edgeKind: string) {
+  if (edgeKind === 'provider_client') {
+    return 'client';
+  }
+
+  if (edgeKind === 'model') {
+    return 'model';
+  }
+
+  return 'output';
+}
+
+function graphEdgeTargetHandle(edgeKind: string) {
+  if (edgeKind === 'provider_client') {
+    return 'client';
+  }
+
+  if (edgeKind === 'model') {
+    return 'instruction';
+  }
+
+  return 'inputs';
+}
+
+function inputPortTargetHandleId(node: WorkflowExecutionGraphNode) {
+  if (node.kind === 'model') {
+    return 'client';
+  }
+
+  if (node.kind !== 'input') {
+    return 'inputs';
+  }
+
+  return undefined;
+}
+
+function outputPortSourceHandleId(node: WorkflowExecutionGraphNode) {
+  if (node.kind === 'provider') {
+    return 'client';
+  }
+
+  if (node.kind === 'model') {
+    return 'model';
+  }
+
+  if (node.kind !== 'output') {
+    return 'output';
+  }
+
+  return undefined;
 }
 
 function normalizeWorkflowGraphNode(node: WorkflowExecutionGraphNode): WorkflowExecutionGraphNode {
