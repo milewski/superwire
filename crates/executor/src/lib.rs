@@ -13,7 +13,8 @@ mod test_macros;
 mod tests;
 
 pub use api::{
-    ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, ValidationRequest, ValidationResponse,
+    ExecutionOptions, ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse, ValidationRequest,
+    ValidationResponse,
 };
 pub use event::{ExecutorEvent, ExecutorEventKind};
 pub use model::{ModelRequest, ModelResponse, OpenAiModelProvider};

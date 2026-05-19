@@ -64,6 +64,7 @@ type PendingRequest = {
 
 class WebSocketLanguageClient {
   private socket: WebSocket | null = null;
+  private closed = false;
   private nextRequestId = 1;
   private pendingRequests = new Map<number, PendingRequest>();
   private openPromise: Promise<void> | null = null;
@@ -87,9 +88,24 @@ class WebSocketLanguageClient {
     this.openPromise = new Promise((resolve, reject) => {
       const socket = new WebSocket(this.endpoint);
       this.socket = socket;
+      this.closed = false;
 
-      socket.addEventListener('open', () => resolve(), { once: true });
-      socket.addEventListener('error', () => reject(new Error('Unable to connect to Superwire LSP websocket.')), { once: true });
+      socket.addEventListener('open', () => {
+        if (this.closed) {
+          socket.close();
+        }
+
+        resolve();
+      }, { once: true });
+      socket.addEventListener('error', () => {
+        if (this.closed) {
+          resolve();
+
+          return;
+        }
+
+        reject(new Error('Unable to connect to Superwire LSP websocket.'));
+      }, { once: true });
       socket.addEventListener('message', (event) => this.acceptMessage(event.data));
       socket.addEventListener('close', () => this.rejectPendingRequests());
     });
@@ -104,7 +120,12 @@ class WebSocketLanguageClient {
   }
 
   close() {
-    this.socket?.close();
+    this.closed = true;
+
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.close();
+    }
+
     this.socket = null;
     this.openPromise = null;
     this.rejectPendingRequests();
@@ -136,6 +157,20 @@ class WebSocketLanguageClient {
     await this.ensureOpenSocket();
 
     this.socket?.send(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method,
+        params,
+      }),
+    );
+  }
+
+  notifyIfOpen(method: string, params: unknown) {
+    if (this.socket?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.socket.send(
       JSON.stringify({
         jsonrpc: '2.0',
         method,
@@ -241,6 +276,7 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
     const endpoint = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/lsp`;
     const languageClient = new WebSocketLanguageClient(endpoint);
     const parentElement = editorElementRef.current;
+    let disposed = false;
 
     if (!parentElement) {
       return undefined;
@@ -277,24 +313,30 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
 
     languageClient
       .open()
-      .then(() =>
-        languageClient.notify('textDocument/didOpen', {
+      .then(() => {
+        if (disposed) {
+          return undefined;
+        }
+
+        return languageClient.notify('textDocument/didOpen', {
           textDocument: {
             uri: documentUri,
             languageId: 'wire',
             version: documentVersionRef.current,
             text: value,
           },
-        }),
-      )
+        });
+      })
       .catch(() => undefined);
 
     return () => {
+      disposed = true;
+
       if (didSaveDebounceTimeoutRef.current !== null) {
         window.clearTimeout(didSaveDebounceTimeoutRef.current);
       }
 
-      void languageClient.notify('textDocument/didClose', { textDocument: { uri: documentUri } }).catch(() => undefined);
+      languageClient.notifyIfOpen('textDocument/didClose', { textDocument: { uri: documentUri } });
       languageClient.close();
       editorView.destroy();
       editorViewRef.current = null;

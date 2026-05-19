@@ -1,4 +1,4 @@
-use crate::api::{ExecutionRequest, FormatRequest, ValidationRequest};
+use crate::api::{ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
 use crate::model::{ModelProvider, OpenAiModelProvider};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
@@ -53,6 +53,7 @@ where
     let router = Router::new()
         .route("/execute", post(execute_handler::<ModelProviderType>))
         .route("/validate", post(validate_handler::<ModelProviderType>))
+        .route("/graph", post(graph_handler::<ModelProviderType>))
         .route("/format", post(format_handler::<ModelProviderType>))
         .route("/lsp", axum::routing::get(lsp_websocket_handler));
 
@@ -141,6 +142,16 @@ where
     ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
 {
     Ok(Json(state.service.validate(request)?).into_response())
+}
+
+async fn graph_handler<ModelProviderType>(
+    State(state): State<ExecutorRouterState<ModelProviderType>>,
+    Json(request): Json<GraphRequest>,
+) -> Result<Response, ExecutorHttpError>
+where
+    ModelProviderType: ModelProvider + Clone + Send + Sync + 'static,
+{
+    Ok(Json(state.service.graph(request)?).into_response())
 }
 
 async fn format_handler<ModelProviderType>(
