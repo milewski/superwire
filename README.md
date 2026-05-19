@@ -17,12 +17,11 @@ Superwire provides a domain-specific language for defining AI agent workflows th
 
 ### Run with Docker
 
-```yaml
-services:
-  superwire:
-    image: rmilewski/superwire:latest
-    ports:
-      - 13703:13703
+```bash
+docker run --rm \
+  -p 13703:13703 \
+  -p 13704:13704 \
+  rmilewski/superwire:latest
 ```
 
 Open [http://localhost:13704](http://localhost:13704) to access the Playground UI.

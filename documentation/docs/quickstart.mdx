@@ -20,7 +20,10 @@ This guide creates one `.wire` file, sends it to the executor, and reads the JSO
 ## 1. Start the executor
 
 ```bash
-docker run --rm -p 13703:13703 rmilewski/superwire
+docker run --rm \
+  -p 13703:13703 \
+  -p 13704:13704 \
+  rmilewski/superwire
 ```
 
 ## 2. Create `hello.wire`
@@ -143,7 +146,7 @@ JSON
 
 <AccordionGroup>
   <Accordion title="Common setup issues" icon="triangle-alert">
-    - Ensure Docker is running and port `13703` is not already in use.
+    - Ensure Docker is running and ports `13703` and `13704` are not already in use.
     - If your response is empty, verify `workflow_source_base64` is populated.
     - If provider calls fail, confirm `secrets.api_key` contains a valid key.
   </Accordion>

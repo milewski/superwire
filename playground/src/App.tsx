@@ -12,17 +12,15 @@ import OutputBox from '@/components/playground/output-box';
 import RunStateBadge from '@/components/playground/run-state-badge';
 import StatusPill from '@/components/playground/status-pill';
 import ViewHeader from '@/components/playground/view-header';
+import logoSource from '../../documentation/docs/public/logo-horizontal.svg';
 import type { ExecutorEvent, PlaygroundView, WorkflowTab } from './types';
 import WireEditor from './WireEditor';
 import { workflowTemplates, type WorkflowTemplate } from './workflowTemplates';
 import { createWorkflowTab, recoverWorkflowTabAfterReload, parseJsonObject, uniqueId } from './workflowState';
 
 const tabsStorageKey = 'superwire.playground.tabs.v3';
-const legacyTabsStorageKey = 'superwire.playground.tabs.v2';
 const activeTabStorageKey = 'superwire.playground.activeTab.v3';
-const legacyActiveTabStorageKey = 'superwire.playground.activeTab.v2';
 const themeStorageKey = 'superwire.playground.theme';
-const logoSource = `${import.meta.env.BASE_URL}logo-horizontal.svg`;
 
 export default function App() {
   const [tabs, setTabs] = useState<WorkflowTab[]>(() => [createWorkflowTab('Launch brief')]);
@@ -621,10 +619,10 @@ export default function App() {
 function restoreFromStorage(setTabs: (tabs: WorkflowTab[]) => void, setActiveTabId: (tabId: string) => void, setDarkMode: (darkMode: boolean) => void) {
   setDarkMode(localStorage.getItem(themeStorageKey) !== 'light');
 
-  const savedTabs = localStorage.getItem(tabsStorageKey) ?? localStorage.getItem(legacyTabsStorageKey);
+  const savedTabs = localStorage.getItem(tabsStorageKey);
   const restoredTabs = savedTabs ? (JSON.parse(savedTabs) as unknown[]).map(recoverWorkflowTabAfterReload) : [createWorkflowTab('Launch brief')];
   const tabs = restoredTabs.length > 0 ? restoredTabs : [createWorkflowTab('Launch brief')];
-  const savedActiveTabId = localStorage.getItem(activeTabStorageKey) ?? localStorage.getItem(legacyActiveTabStorageKey);
+  const savedActiveTabId = localStorage.getItem(activeTabStorageKey);
   const activeTabId = tabs.some((tab) => tab.id === savedActiveTabId) ? savedActiveTabId! : tabs[0]?.id ?? '';
 
   setTabs(tabs);
