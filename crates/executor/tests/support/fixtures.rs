@@ -42,3 +42,5 @@ pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_vari
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =
     include_str!("../fixtures/negative/001_mcp_tool_output_schema_non_iterable_negative.wire");
 pub const SECRETS_IN_INSTRUCTION_TEMPLATE: &str = include_str!("../fixtures/negative/002_secrets_in_instruction_template_negative.wire");
+pub const FOR_LOOP_AGENT_OUTPUT_FIELD_REFERENCE: &str =
+    include_str!("../fixtures/negative/003_for_loop_agent_output_field_reference_negative.wire");

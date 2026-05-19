@@ -578,6 +578,27 @@ fn reports_invalid_for_loop_iterable_type_diagnostic_for_object_reference() {
 }
 
 #[test]
+fn reports_invalid_reference_path_for_for_loop_agent_output_field() {
+    let diagnostics = inline_diagnostics! {
+        agent random for number in [1, 2, 3] {
+            instruction: "Give me a random user name and age"
+            output {
+                user: (string, number)
+            }
+        }
+
+        agent surname {
+            instruction: "Give a surname to this user {{ agent.random.user }}"
+            output {
+                surname: string
+            }
+        }
+    };
+
+    assert_diagnostics_contain_codes!(&diagnostics, DiagnosticCode::InvalidReferencePath);
+}
+
+#[test]
 fn reports_duplicate_property_diagnostic() {
     let diagnostics = inline_diagnostics! {
         agent greeting {

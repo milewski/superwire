@@ -1469,7 +1469,7 @@ fn build_validation_index(workflow: &Workflow, validation_report: &mut Validatio
                     continue;
                 }
 
-                let agent_output_type = agent_declaration.output_type();
+                let agent_output_type = agent_declaration.declared_final_output_type_expression();
                 validation_index
                     .agent_output_types
                     .insert(agent_declaration.name.clone(), agent_output_type);
@@ -5524,6 +5524,36 @@ mod tests {
             } if reference_path == "agent.producer.score"
                 && invalid_field == "score"
                 && *context == ValidationContext::Output
+        );
+    }
+
+    #[test]
+    fn reports_invalid_field_reference_for_for_loop_agent_final_output_array() {
+        let workflow = parse_inline_workflow! {
+            agent random for number in [1, 2, 3] {
+                instruction: "Give me a random user name and age"
+                output {
+                    user: (string, number)
+                }
+            }
+
+            agent surname {
+                instruction: "Give a surname to this user {{ agent.random.user }}"
+                output {
+                    surname: string
+                }
+            }
+        };
+
+        assert_workflow_issues_contain!(
+            workflow,
+            ValidationIssue::InvalidReferencePath {
+                reference_path,
+                invalid_field,
+                context
+            } if reference_path == "agent.random.user"
+                && invalid_field == "user"
+                && *context == ValidationContext::Agent("surname".to_owned())
         );
     }
 

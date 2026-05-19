@@ -1306,6 +1306,20 @@ impl AgentDeclaration {
     }
 
     #[must_use]
+    pub fn declared_final_output_type_expression(&self) -> Option<TypeExpression> {
+        let output_type_expression = self.output_type()?;
+
+        if self.for_loop.is_some() {
+            return Some(TypeExpression::Array {
+                item_type: Box::new(output_type_expression),
+                fixed_length: None,
+            });
+        }
+
+        Some(output_type_expression)
+    }
+
+    #[must_use]
     pub fn inferred_iteration_output_type_expression(&self) -> TypeExpression {
         self.output_type().unwrap_or(TypeExpression::String)
     }
