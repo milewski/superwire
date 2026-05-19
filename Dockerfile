@@ -9,6 +9,7 @@ COPY playground/ ./
 COPY documentation/docs/public /workspace/documentation/docs/public
 COPY editors/textmate/syntaxes/wire.tmLanguage.json /workspace/editors/textmate/syntaxes/wire.tmLanguage.json
 RUN npm run build
+RUN test -f dist/assets/logo-horizontal-*.svg
 
 FROM rust:1.94-alpine3.23 AS builder
 
@@ -53,6 +54,6 @@ ENV SUPERWIRE_PLAYGROUND_DIST=/usr/local/share/superwire/playground
 
 USER superwire
 
-EXPOSE 13703
+EXPOSE 13703 13704
 
 ENTRYPOINT ["/usr/local/bin/superwire-executor"]
