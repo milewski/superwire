@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import ViewHeader from '@/components/playground/view-header';
 import type { ExecutorEvent, GraphState, RunState, WorkflowExecutionGraph, WorkflowExecutionGraphNode, WorkflowExecutionGraphTool } from '@/types';
 
 interface WorkflowGraphViewProps {
@@ -79,7 +78,6 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
   const displayGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
   const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
   const edges = useMemo(() => (displayGraph ? reactFlowEdges(displayGraph, config, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
-  const description = graph ? undefined : 'Generate a visual execution plan from the current workflow source.';
   const graphSignature = displayGraph ? displayGraph.nodes.map((node) => node.id).join(':') : 'empty';
 
   useEffect(() => {
@@ -88,10 +86,6 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
 
   return (
     <section className="graph-view">
-      <div className="graph-view__header">
-        <ViewHeader title="Graph" description={description} />
-      </div>
-
       <div className="graph-view__canvas" data-empty={graph ? 'false' : 'true'}>
         <div className="graph-view__toolbar">
           <GraphStateBadge graphState={graphState} />
