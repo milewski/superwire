@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "sequoia",
   "name": "Superwire",
   "logo": {
     "dark": "/logo-light.svg",
@@ -166,5 +166,14 @@
   },
   "appearance": {
     "default": "system"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "interaction": {
+    "drilldown": false
+  },
+  "markdown": {
+    "schema": false
   }
 }
