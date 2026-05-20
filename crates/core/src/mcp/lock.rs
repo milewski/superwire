@@ -253,27 +253,60 @@ impl McpLock {
     pub fn validate_prompt_import_bindings(&self, workflow: &Workflow) -> Vec<String> {
         let mut messages = Vec::new();
 
-        for prompt_import_declaration in workflow.prompt_imports() {
-            let Some(server_lock) = self.servers.get(&prompt_import_declaration.source.server_name) else {
-                continue;
-            };
-            let Some(prompt_arguments) = server_lock.prompt_arguments_for_name(&prompt_import_declaration.source.item_name) else {
-                continue;
-            };
-
-            for prompt_argument in prompt_arguments.iter().filter(|prompt_argument| prompt_argument.required) {
-                if prompt_import_declaration.has_parameter_binding(&prompt_argument.name) {
-                    continue;
+        for declaration in workflow.declarations() {
+            match declaration {
+                Declaration::McpPrompt(prompt_import_declaration) => {
+                    messages.extend(self.prompt_import_binding_messages(prompt_import_declaration));
                 }
+                Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
+                    for prompt_item in &prompt_batch_import_declaration.items {
+                        let prompt_import_declaration = prompt_item.to_prompt_import_declaration(
+                            &prompt_batch_import_declaration.server_name,
+                            &prompt_batch_import_declaration.parameters,
+                        );
 
-                messages.push(format!(
-                    "MCP prompt `{}` requires binding `{}` from server prompt `{}`",
-                    prompt_import_declaration.name, prompt_argument.name, prompt_import_declaration.source.item_name
-                ));
+                        messages.extend(self.prompt_import_binding_messages(&prompt_import_declaration));
+                    }
+                }
+                Declaration::McpBatch(batch_import_declaration) => {
+                    for prompt_item in &batch_import_declaration.prompt_items {
+                        let prompt_import_declaration = prompt_item.to_prompt_import_declaration(
+                            &batch_import_declaration.server_name,
+                            &batch_import_declaration.fixed_binding_fields,
+                        );
+
+                        messages.extend(self.prompt_import_binding_messages(&prompt_import_declaration));
+                    }
+                }
+                Declaration::McpToolBatch(_)
+                | Declaration::McpResourceBatch(_)
+                | Declaration::McpResource(_)
+                | Declaration::Tool(_)
+                | Declaration::Provider(_)
+                | Declaration::Model(_)
+                | Declaration::McpServer(_)
+                | Declaration::Secrets(_)
+                | Declaration::Input(_)
+                | Declaration::Schema(_)
+                | Declaration::Dynamic(_)
+                | Declaration::Agent(_)
+                | Declaration::Output(_) => {}
             }
         }
 
         messages
+    }
+
+    #[must_use]
+    fn prompt_import_binding_messages(&self, prompt_import_declaration: &McpPromptImportDeclaration) -> Vec<String> {
+        let Some(server_lock) = self.servers.get(&prompt_import_declaration.source.server_name) else {
+            return Vec::new();
+        };
+        let Some(prompt_arguments) = server_lock.prompt_arguments_for_name(&prompt_import_declaration.source.item_name) else {
+            return Vec::new();
+        };
+
+        prompt_import_declaration.required_binding_messages(prompt_arguments)
     }
 
     fn apply_to_tool_declaration(&self, tool_declaration: &mut ToolDeclaration) {
@@ -432,6 +465,24 @@ impl McpPromptImportDeclaration {
     fn has_parameter_binding(&self, parameter_name: &str) -> bool {
         self.parameters.iter().any(|parameter| parameter.name == parameter_name)
     }
+
+    #[must_use]
+    fn required_binding_messages(&self, prompt_arguments: &[McpPromptArgumentLock]) -> Vec<String> {
+        let mut messages = Vec::new();
+
+        for prompt_argument in prompt_arguments.iter().filter(|prompt_argument| prompt_argument.required) {
+            if self.has_parameter_binding(&prompt_argument.name) {
+                continue;
+            }
+
+            messages.push(format!(
+                "MCP prompt `{}` requires binding `{}` from server prompt `{}`",
+                self.name, prompt_argument.name, self.source.item_name
+            ));
+        }
+
+        messages
+    }
 }
 
 impl ProjectMcpLock {
@@ -577,5 +628,101 @@ impl ToolDeclaration {
         if self.output_fields.is_empty() {
             self.output_fields = mcp_tool.output_fields();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{McpLock, McpPromptArgumentLock, McpServerLock};
+    use crate::parse_inline_workflow;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn validates_mixed_prompt_batch_with_shared_and_item_bindings() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: number
+                task_id: number
+            }
+
+            from mcp.local {
+                bindings {
+                    project_id: input.project_id
+                    task_id: input.task_id
+                }
+
+                prompt dynamic_summary_prompt {
+                    bindings {
+                        type: "task"
+                    }
+                }
+            }
+        };
+        let mcp_lock = prompt_argument_lock();
+        let binding_messages = mcp_lock.validate_prompt_import_bindings(&workflow);
+
+        assert!(binding_messages.is_empty());
+    }
+
+    #[test]
+    fn rejects_mixed_prompt_batch_when_item_binding_is_missing() {
+        let workflow = parse_inline_workflow! {
+            input {
+                project_id: number
+                task_id: number
+            }
+
+            from mcp.local {
+                bindings {
+                    project_id: input.project_id
+                    task_id: input.task_id
+                }
+
+                prompt dynamic_summary_prompt
+            }
+        };
+        let mcp_lock = prompt_argument_lock();
+        let binding_messages = mcp_lock.validate_prompt_import_bindings(&workflow);
+
+        assert_eq!(
+            binding_messages,
+            vec!["MCP prompt `dynamic_summary_prompt` requires binding `type` from server prompt `dynamic_summary_prompt`"]
+        );
+    }
+
+    fn prompt_argument_lock() -> McpLock {
+        let mut prompt_arguments = BTreeMap::new();
+        prompt_arguments.insert(
+            "dynamic-summary-prompt".to_string(),
+            vec![
+                McpPromptArgumentLock {
+                    name: "project_id".to_string(),
+                    required: true,
+                    description: None,
+                },
+                McpPromptArgumentLock {
+                    name: "task_id".to_string(),
+                    required: true,
+                    description: None,
+                },
+                McpPromptArgumentLock {
+                    name: "type".to_string(),
+                    required: true,
+                    description: None,
+                },
+            ],
+        );
+
+        let mut servers = BTreeMap::new();
+        servers.insert(
+            "local".to_string(),
+            McpServerLock {
+                prompts: vec!["dynamic-summary-prompt".to_string()],
+                prompt_arguments,
+                ..McpServerLock::default()
+            },
+        );
+
+        McpLock { servers }
     }
 }

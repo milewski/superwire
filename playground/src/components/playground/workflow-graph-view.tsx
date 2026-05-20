@@ -56,12 +56,13 @@ interface GraphConfig {
 
 const graphConfigStorageKey = 'superwire.playground.graphConfig.v1';
 const graphViewportStorageKey = 'superwire.playground.graphViewport.v1';
-const graphNodePositionsStorageKey = 'superwire.playground.graphNodePositions.v1';
+const graphNodePositionsStorageKey = 'superwire.playground.graphNodePositions.v2';
 const defaultGraphConfig: GraphConfig = { density: 'comfortable', collapseAll: false, edgeType: 'smoothstep', showEdgeLabels: true };
 const graphLayoutColumnGap = 180;
 const graphLayoutRowGap = 80;
 const graphLayoutDefaultNodeWidth = 340;
 const graphLayoutDefaultNodeHeight = 260;
+const defaultGraphViewport: Viewport = { x: 0, y: 0, zoom: 0.85 };
 const WorkflowGraphOpenObjectSchema = { type: 'object', additionalProperties: true };
 
 const graphNodeTypes = {
@@ -133,20 +134,31 @@ function GraphStateBadge({ graphState }: { graphState: GraphState }) {
 function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number }) {
   const restoredViewportRef = useRef<Viewport | null>(restoreGraphViewport());
   const initialFitViewCompleteRef = useRef(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState(restoreGraphNodePositions(incomingNodes));
+  const initialNodesRef = useRef<WorkflowGraphReactNode[] | null>(null);
+
+  if (initialNodesRef.current === null) {
+    initialNodesRef.current = restoreOrLayoutGraphNodePositions(incomingNodes, incomingEdges);
+  }
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodesRef.current);
   const [edges, setEdges, onEdgesChange] = useEdgesState(incomingEdges);
-  const [viewport, setViewport] = useState<Viewport>(restoredViewportRef.current ?? { x: 0, y: 0, zoom: 0.85 });
+  const [viewport, setViewport] = useState<Viewport>(restoredViewportRef.current ?? defaultGraphViewport);
   const reactFlowInstance = useReactFlow();
 
   useEffect(() => {
     setNodes((currentNodes) => {
       const currentPositions = new Map(currentNodes.map((node) => [node.id, node.position]));
       const restoredPositions = restoreGraphNodePositionMap();
-
-      return incomingNodes.map((incomingNode) => ({
+      const nextNodes = incomingNodes.map((incomingNode) => ({
         ...incomingNode,
         position: currentPositions.get(incomingNode.id) ?? restoredPositions[incomingNode.id] ?? incomingNode.position,
       }));
+
+      if (nextNodes.some((node) => currentPositions.has(node.id) || restoredPositions[node.id])) {
+        return nextNodes;
+      }
+
+      return layoutWorkflowGraphNodes(nextNodes, incomingEdges);
     });
   }, [graphSignature, setNodes]);
 
@@ -2524,13 +2536,18 @@ function storeGraphViewport(viewport: Viewport) {
   localStorage.setItem(graphViewportStorageKey, JSON.stringify(viewport));
 }
 
-function restoreGraphNodePositions(nodes: WorkflowGraphReactNode[]) {
+function restoreOrLayoutGraphNodePositions(nodes: WorkflowGraphReactNode[], edges: Edge[]) {
   const restoredPositions = restoreGraphNodePositionMap();
-
-  return nodes.map((node) => ({
+  const restoredNodes = nodes.map((node) => ({
     ...node,
     position: restoredPositions[node.id] ?? node.position,
   }));
+
+  if (nodes.some((node) => restoredPositions[node.id])) {
+    return restoredNodes;
+  }
+
+  return layoutWorkflowGraphNodes(restoredNodes, edges);
 }
 
 function restoreGraphNodePositionMap(): Record<string, { x: number; y: number }> {
