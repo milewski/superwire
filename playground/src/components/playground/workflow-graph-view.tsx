@@ -236,6 +236,8 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const visiblyCollapsed = config.collapseAll || collapsed;
   const status = nodeStatus(node, activeRunCount, outputEntries);
   const visibleBindings = node.bindings.filter((binding) => binding.name !== 'instruction' && binding.name !== 'model');
+  const inputsCollapsible = node.kind !== 'input';
+  const outputsCollapsible = node.kind === 'agent' || node.kind === 'output';
   const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
@@ -274,8 +276,8 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
         <>
           {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails details={node.details} /> : null}
           {visibleBindings.length > 0 ? <GraphBindings bindings={visibleBindings} /> : null}
-          <GraphPorts title="Inputs" ports={node.inputs} fallback={node.kind === 'input' ? 'External runtime values' : 'No upstream agent output'} config={config} targetHandleId={inputPortTargetHandleId(node)} />
-          <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={node.kind === 'agent'} defaultOpen={node.kind !== 'agent'} showPortNames={node.kind !== 'agent'} sourceHandleId={outputPortSourceHandleId(node)} />
+          <GraphPorts title="Inputs" ports={node.inputs} fallback={node.kind === 'input' ? 'External runtime values' : 'No upstream agent output'} config={config} collapsible={inputsCollapsible} targetHandleId={inputPortTargetHandleId(node)} />
+          <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={outputsCollapsible} defaultOpen={node.kind !== 'agent'} showPortNames={node.kind !== 'agent' && node.kind !== 'output'} sourceHandleId={outputPortSourceHandleId(node)} />
           {outputEntries.length > 0 ? <GraphOutputAction node={node} outputEntries={outputEntries} onOpen={() => openOutput(0)} /> : null}
           {node.tools.length > 0 ? <GraphTools tools={node.tools} /> : null}
         </>
@@ -291,14 +293,19 @@ function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { 
     return node.kind === 'agent' && showExpandedInstructionHandle ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null;
   }
 
+  const hasCollapsedTargetHandle = node.kind !== 'input';
+  const hasCollapsedSourceHandle = node.kind !== 'output';
+
   return (
     <>
-      {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--client" isConnectable={false} /> : null}
-      {node.kind === 'agent' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--instruction" isConnectable={false} /> : null}
-      {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--inputs" isConnectable={false} /> : null}
-      {node.kind === 'provider' ? <Handle id="client" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--client" isConnectable={false} /> : null}
-      {node.kind === 'model' ? <Handle id="model" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--model" isConnectable={false} /> : null}
-      {node.kind !== 'model' && node.kind !== 'output' ? <Handle id="output" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--output" isConnectable={false} /> : null}
+      {hasCollapsedTargetHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--left" aria-hidden="true" /> : null}
+      {hasCollapsedSourceHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--right" aria-hidden="true" /> : null}
+      {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
+      {node.kind === 'agent' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--instruction" isConnectable={false} /> : null}
+      {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--inputs" isConnectable={false} /> : null}
+      {node.kind === 'provider' ? <Handle id="client" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
+      {node.kind === 'model' ? <Handle id="model" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--model" isConnectable={false} /> : null}
+      {node.kind !== 'model' && node.kind !== 'output' ? <Handle id="output" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--output" isConnectable={false} /> : null}
     </>
   );
 }
