@@ -20,7 +20,6 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::{McpClient, McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::provider::ProviderConfig;
 use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
 use superwire_core::semantic::{
     build_dynamic_typed_workflow_ir, build_execution_plan, ExecutionPlan, PlannedAgent, TypedToolIr, WorkflowExecutionGraph,
@@ -960,11 +959,6 @@ impl WorkflowExecutor {
                 message: format!("provider `{}` is not declared", planned_agent.provider_name),
             })?;
         let provider_config = provider_template.resolve(&planned_agent.provider_name, &evaluation_context)?;
-        let ProviderConfig::OpenAI(openai_provider_config) = provider_config else {
-            return Err(ExecutorError::Other {
-                message: "executor only supports provider driver `openai`".to_string(),
-            });
-        };
         let model_name = evaluate_agent_model_name(&planned_agent.model_id_expression, &planned_agent.name, &evaluation_context)?;
         let inference = self.evaluate_inference_fields(planned_agent, &evaluation_context)?;
         let instruction_expression = planned_agent
@@ -1016,7 +1010,7 @@ impl WorkflowExecutor {
         let model_response = model_provider
             .generate(ModelRequest {
                 agent_name: planned_agent.name.clone(),
-                provider_config: openai_provider_config,
+                provider_config,
                 model_name,
                 inference,
                 prompt,

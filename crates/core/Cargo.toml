@@ -15,7 +15,6 @@ log = { workspace = true }
 pest = { workspace = true }
 pest_derive = { workspace = true }
 petgraph = { workspace = true }
-reqwest = { workspace = true }
 rust-mcp-schema = { version = "0.10.0", default-features = false, features = ["2025_11_25", "schema_utils"] }
 schemars = { workspace = true }
 serde = { workspace = true }

@@ -32,7 +32,6 @@ async fn injects_finalize_tool_without_response_format() {
         .expect("finalize tool should be injected");
 
     assert!(request.get("response_format").is_none());
-    assert_eq!(finalize_tool.pointer("/function/strict"), Some(&json!(true)));
     assert_eq!(finalize_tool.pointer("/function/parameters/type"), Some(&json!("object")));
     assert_eq!(output.output, json!({ "greeting": { "value": "hello" } }));
 }

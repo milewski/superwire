@@ -37,6 +37,7 @@ pub const MCP_PROMPT_REQUIRED_BINDING_VALIDATION: &str = include_str!("../fixtur
 pub const VARIANT_MATCH_PROJECTION: &str = include_str!("../fixtures/036_variant_match_projection.wire");
 pub const SCHEMA_TYPES: &str = include_str!("../fixtures/037_schema_types.wire");
 pub const SCHEMA_VARIANT_TYPES: &str = include_str!("../fixtures/038_schema_variant_types.wire");
+pub const CERSEI_PROVIDERS: &str = include_str!("../fixtures/039_cersei_providers.wire");
 
 // Negative Tests
 pub const MCP_TOOL_OUTPUT_SCHEMA_OVERRIDE_NON_ITERABLE: &str =

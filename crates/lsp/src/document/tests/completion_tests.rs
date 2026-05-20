@@ -1395,7 +1395,15 @@ fn suggests_provider_drivers_for_model_declaration_provider_without_declared_pro
 
     let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
 
-    assert_completion_contains_labels!(&completion_suggestions, "openai", "ollama");
+    assert_completion_contains_labels!(
+        &completion_suggestions,
+        "anthropic",
+        "google",
+        "openai",
+        "openai_compatible",
+        "anthropic_compatible",
+        "ollama"
+    );
 }
 
 #[test]

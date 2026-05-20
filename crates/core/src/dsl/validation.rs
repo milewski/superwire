@@ -704,9 +704,11 @@ impl ValidationIssue {
                 provider_name: _,
                 driver_name,
             } => format!(
-                "Use a registered provider driver such as `{}` or `{}`.",
-                ProviderDriver::OpenAI.as_str(),
-                ProviderDriver::Ollama.as_str()
+                "Use a registered provider driver such as `{}`, `{}`, `{}`, or `{}`.",
+                ProviderDriver::OpenAi.as_str(),
+                ProviderDriver::Anthropic.as_str(),
+                ProviderDriver::Google.as_str(),
+                ProviderDriver::OpenAiCompatible.as_str()
             )
             .replace(driver_name, driver_name),
             Self::UnknownProviderInModelDeclaration {

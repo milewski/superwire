@@ -4,58 +4,169 @@ use crate::semantic::support::types::value_kind_name;
 use crate::semantic::WorkflowSemanticError;
 use std::collections::HashMap;
 
-mod ollama;
-mod openai;
-
-pub use ollama::{OllamaProviderConfig, OllamaProviderConfigTemplate};
-pub use openai::{OpenAIProviderConfig, OpenAIProviderConfigTemplate};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderDriver {
-    OpenAI,
+    Anthropic,
+    OpenAi,
+    Google,
+    Mistral,
+    Groq,
+    DeepSeek,
+    Xai,
+    Together,
+    Fireworks,
+    Perplexity,
+    Cerebras,
     Ollama,
+    OpenRouter,
+    Cohere,
+    SambaNova,
+    OpenAiCompatible,
+    AnthropicCompatible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProviderApiFormat {
+    Anthropic,
+    Google,
+    OpenAiCompatible,
 }
 
 impl ProviderDriver {
     #[must_use]
-    pub fn all() -> [Self; 2] {
-        [Self::OpenAI, Self::Ollama]
+    pub fn all() -> [Self; 17] {
+        [
+            Self::Anthropic,
+            Self::OpenAi,
+            Self::Google,
+            Self::Mistral,
+            Self::Groq,
+            Self::DeepSeek,
+            Self::Xai,
+            Self::Together,
+            Self::Fireworks,
+            Self::Perplexity,
+            Self::Cerebras,
+            Self::Ollama,
+            Self::OpenRouter,
+            Self::Cohere,
+            Self::SambaNova,
+            Self::OpenAiCompatible,
+            Self::AnthropicCompatible,
+        ]
     }
 
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::OpenAI => "openai",
+            Self::Anthropic => "anthropic",
+            Self::OpenAi => "openai",
+            Self::Google => "google",
+            Self::Mistral => "mistral",
+            Self::Groq => "groq",
+            Self::DeepSeek => "deepseek",
+            Self::Xai => "xai",
+            Self::Together => "together",
+            Self::Fireworks => "fireworks",
+            Self::Perplexity => "perplexity",
+            Self::Cerebras => "cerebras",
             Self::Ollama => "ollama",
+            Self::OpenRouter => "openrouter",
+            Self::Cohere => "cohere",
+            Self::SambaNova => "sambanova",
+            Self::OpenAiCompatible => "openai_compatible",
+            Self::AnthropicCompatible => "anthropic_compatible",
         }
     }
 
     #[must_use]
     pub fn parse(driver_name: &str) -> Option<Self> {
-        match driver_name {
-            "openai" => Some(Self::OpenAI),
-            "ollama" => Some(Self::Ollama),
-            _ => None,
-        }
+        Self::all()
+            .into_iter()
+            .find(|provider_driver| provider_driver.as_str() == driver_name)
     }
 
     #[must_use]
     pub fn available_property_names(self) -> &'static [&'static str] {
-        match self {
-            Self::OpenAI => &OPENAI_PROVIDER_PROPERTIES,
-            Self::Ollama => &OLLAMA_PROVIDER_PROPERTIES,
-        }
+        &PROVIDER_PROPERTIES
     }
 
     #[must_use]
     pub fn supports_property(self, property_name: &str) -> bool {
         self.available_property_names().contains(&property_name)
     }
+
+    #[must_use]
+    pub fn api_format(self) -> ProviderApiFormat {
+        match self {
+            Self::Anthropic | Self::AnthropicCompatible => ProviderApiFormat::Anthropic,
+            Self::Google => ProviderApiFormat::Google,
+            Self::OpenAi
+            | Self::Mistral
+            | Self::Groq
+            | Self::DeepSeek
+            | Self::Xai
+            | Self::Together
+            | Self::Fireworks
+            | Self::Perplexity
+            | Self::Cerebras
+            | Self::Ollama
+            | Self::OpenRouter
+            | Self::Cohere
+            | Self::SambaNova
+            | Self::OpenAiCompatible => ProviderApiFormat::OpenAiCompatible,
+        }
+    }
+
+    #[must_use]
+    pub fn default_endpoint(self) -> Option<&'static str> {
+        match self {
+            Self::Anthropic | Self::AnthropicCompatible => Some("https://api.anthropic.com"),
+            Self::OpenAi | Self::OpenAiCompatible => Some("https://api.openai.com/v1"),
+            Self::Google => Some("https://generativelanguage.googleapis.com/v1beta"),
+            Self::Mistral => Some("https://api.mistral.ai/v1"),
+            Self::Groq => Some("https://api.groq.com/openai/v1"),
+            Self::DeepSeek => Some("https://api.deepseek.com/v1"),
+            Self::Xai => Some("https://api.x.ai/v1"),
+            Self::Together => Some("https://api.together.xyz/v1"),
+            Self::Fireworks => Some("https://api.fireworks.ai/inference/v1"),
+            Self::Perplexity => Some("https://api.perplexity.ai"),
+            Self::Cerebras => Some("https://api.cerebras.ai/v1"),
+            Self::Ollama => Some("http://localhost:11434/v1"),
+            Self::OpenRouter => Some("https://openrouter.ai/api/v1"),
+            Self::Cohere => Some("https://api.cohere.com/compatibility/v1"),
+            Self::SambaNova => Some("https://api.sambanova.ai/v1"),
+        }
+    }
+
+    #[must_use]
+    pub fn api_key_environment_variables(self) -> &'static [&'static str] {
+        match self {
+            Self::Anthropic => &["ANTHROPIC_API_KEY", "ANTHROPIC_KEY"],
+            Self::OpenAi => &["OPENAI_API_KEY"],
+            Self::Google => &["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+            Self::Mistral => &["MISTRAL_API_KEY"],
+            Self::Groq => &["GROQ_API_KEY"],
+            Self::DeepSeek => &["DEEPSEEK_API_KEY"],
+            Self::Xai => &["XAI_API_KEY"],
+            Self::Together => &["TOGETHER_API_KEY"],
+            Self::Fireworks => &["FIREWORKS_API_KEY"],
+            Self::Perplexity => &["PERPLEXITY_API_KEY"],
+            Self::Cerebras => &["CEREBRAS_API_KEY"],
+            Self::Ollama | Self::OpenAiCompatible | Self::AnthropicCompatible => &[],
+            Self::OpenRouter => &["OPENROUTER_API_KEY"],
+            Self::Cohere => &["COHERE_API_KEY", "CO_API_KEY"],
+            Self::SambaNova => &["SAMBANOVA_API_KEY"],
+        }
+    }
+
+    #[must_use]
+    pub fn requires_api_key(self) -> bool {
+        self != Self::Ollama
+    }
 }
 
-const OPENAI_PROVIDER_PROPERTIES: [&str; 4] = ["endpoint", "api_key", "organization", "project"];
-
-const OLLAMA_PROVIDER_PROPERTIES: [&str; 1] = ["endpoint"];
+const PROVIDER_PROPERTIES: [&str; 2] = ["endpoint", "api_key"];
 
 pub trait ProviderConfigParser {
     fn parse(provider_declaration: &ProviderDeclaration) -> Result<ProviderConfigTemplate, WorkflowSemanticError>;
@@ -101,32 +212,38 @@ pub trait ProviderConfigParser {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProviderConfigTemplate {
-    OpenAI(OpenAIProviderConfigTemplate),
-    Ollama(OllamaProviderConfigTemplate),
+pub struct ProviderConfigTemplate {
+    pub driver: ProviderDriver,
+    pub endpoint_expression: Option<Expression>,
+    pub api_key_expression: Option<Expression>,
 }
 
 impl ProviderConfigTemplate {
     pub fn resolve(&self, provider_name: &str, evaluation_context: &EvaluationContext) -> Result<ProviderConfig, WorkflowSemanticError> {
-        match self {
-            Self::OpenAI(openai_provider_config_template) => {
-                let openai_provider_config = openai_provider_config_template.resolve(provider_name, evaluation_context)?;
+        let endpoint = self
+            .endpoint_expression
+            .as_ref()
+            .map(|expression| expression.evaluate_as_provider_string(provider_name, "endpoint", evaluation_context))
+            .transpose()?;
+        let api_key = self
+            .api_key_expression
+            .as_ref()
+            .map(|expression| expression.evaluate_as_provider_string(provider_name, "api_key", evaluation_context))
+            .transpose()?;
 
-                Ok(ProviderConfig::OpenAI(openai_provider_config))
-            }
-            Self::Ollama(ollama_provider_config_template) => {
-                let ollama_provider_config = ollama_provider_config_template.resolve(provider_name, evaluation_context)?;
-
-                Ok(ProviderConfig::Ollama(ollama_provider_config))
-            }
-        }
+        Ok(ProviderConfig {
+            driver: self.driver,
+            endpoint,
+            api_key,
+        })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProviderConfig {
-    OpenAI(OpenAIProviderConfig),
-    Ollama(OllamaProviderConfig),
+pub struct ProviderConfig {
+    pub driver: ProviderDriver,
+    pub endpoint: Option<String>,
+    pub api_key: Option<String>,
 }
 
 impl Expression {
@@ -181,17 +298,36 @@ fn parse_provider_config(provider_declaration: &ProviderDeclaration) -> Result<P
         });
     };
 
-    match provider_driver {
-        ProviderDriver::OpenAI => openai::OpenAIProviderConfigParser::parse(provider_declaration),
-        ProviderDriver::Ollama => ollama::OllamaProviderConfigParser::parse(provider_declaration),
+    GenericProviderConfigParser::parse_with_driver(provider_declaration, provider_driver)
+}
+
+struct GenericProviderConfigParser;
+
+impl GenericProviderConfigParser {
+    fn parse_with_driver(
+        provider_declaration: &ProviderDeclaration,
+        driver: ProviderDriver,
+    ) -> Result<ProviderConfigTemplate, WorkflowSemanticError> {
+        Ok(ProviderConfigTemplate {
+            driver,
+            endpoint_expression: Self::optional_property_expression(provider_declaration, "endpoint"),
+            api_key_expression: Self::optional_property_expression(provider_declaration, "api_key"),
+        })
+    }
+
+    fn optional_property_expression(provider_declaration: &ProviderDeclaration, property_name: &str) -> Option<Expression> {
+        provider_declaration
+            .properties
+            .iter()
+            .find(|provider_property| provider_property.name == property_name)
+            .map(|provider_property| provider_property.value.clone())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_provider_index, ProviderConfig, ProviderConfigTemplate};
+    use super::{build_provider_index, ProviderDriver};
     use crate::semantic::support::expression::EvaluationContext;
-    use crate::semantic::WorkflowSemanticError;
     use serde_json::{Map, Value};
     use std::collections::HashMap;
 
@@ -206,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_openai_provider_with_required_endpoint_and_api_key() {
+    fn parses_openai_provider_with_endpoint_and_api_key() {
         let workflow = crate::parse_inline_workflow! {
             provider openai from openai {
                 endpoint: "https://api.openai.com/v1"
@@ -225,13 +361,9 @@ mod tests {
             .resolve("openai", &empty_evaluation_context())
             .expect("provider config should resolve");
 
-        match resolved_provider_config {
-            ProviderConfig::OpenAI(openai_provider_config) => {
-                assert_eq!(openai_provider_config.endpoint, "https://api.openai.com/v1");
-                assert_eq!(openai_provider_config.api_key, "test-api-key");
-            }
-            ProviderConfig::Ollama(_) => panic!("expected openai provider config"),
-        }
+        assert_eq!(resolved_provider_config.driver, ProviderDriver::OpenAi);
+        assert_eq!(resolved_provider_config.endpoint.as_deref(), Some("https://api.openai.com/v1"));
+        assert_eq!(resolved_provider_config.api_key.as_deref(), Some("test-api-key"));
     }
 
     #[test]
@@ -267,20 +399,15 @@ mod tests {
             .resolve("openai", &evaluation_context)
             .expect("provider config should resolve with secrets");
 
-        match resolved_provider_config {
-            ProviderConfig::OpenAI(openai_provider_config) => {
-                assert_eq!(openai_provider_config.endpoint, "https://api.openai.com/v1");
-                assert_eq!(openai_provider_config.api_key, "test-api-key");
-            }
-            ProviderConfig::Ollama(_) => panic!("expected openai provider config"),
-        }
+        assert_eq!(resolved_provider_config.driver, ProviderDriver::OpenAi);
+        assert_eq!(resolved_provider_config.endpoint.as_deref(), Some("https://api.openai.com/v1"));
+        assert_eq!(resolved_provider_config.api_key.as_deref(), Some("test-api-key"));
     }
 
     #[test]
-    fn rejects_openai_provider_when_endpoint_is_missing() {
+    fn parses_openai_provider_without_inline_credentials() {
         let workflow = crate::parse_inline_workflow! {
             provider openai from openai {
-                api_key: "test-api-key"
             }
 
             model openai_model from openai {
@@ -288,13 +415,15 @@ mod tests {
             }
         };
 
-        let provider_index_result = build_provider_index(&workflow);
+        let provider_index = build_provider_index(&workflow).expect("provider index should build");
+        let provider = provider_index.get("openai").expect("openai provider should exist");
+        let resolved_provider_config = provider
+            .resolve("openai", &empty_evaluation_context())
+            .expect("provider config should resolve");
 
-        assert!(matches!(
-            provider_index_result,
-            Err(WorkflowSemanticError::ProviderConfiguration { provider_name, message })
-                if provider_name == "openai" && message.contains("missing `endpoint` property")
-        ));
+        assert_eq!(resolved_provider_config.driver, ProviderDriver::OpenAi);
+        assert_eq!(resolved_provider_config.endpoint, None);
+        assert_eq!(resolved_provider_config.api_key, None);
     }
 
     #[test]
@@ -316,37 +445,46 @@ mod tests {
             .resolve("ollama", &empty_evaluation_context())
             .expect("provider config should resolve");
 
-        match resolved_provider_config {
-            ProviderConfig::OpenAI(_) => panic!("expected ollama provider config"),
-            ProviderConfig::Ollama(ollama_provider_config) => {
-                assert_eq!(ollama_provider_config.endpoint, "http://127.0.0.1:11434");
-                assert_eq!(ollama_provider_config.host, "http://127.0.0.1");
-                assert_eq!(ollama_provider_config.port, 11434);
-            }
-        }
+        assert_eq!(resolved_provider_config.driver, ProviderDriver::Ollama);
+        assert_eq!(resolved_provider_config.endpoint.as_deref(), Some("http://127.0.0.1:11434"));
     }
 
     #[test]
-    fn rejects_ollama_provider_when_endpoint_port_is_missing() {
+    fn parses_custom_compatible_providers() {
         let workflow = crate::parse_inline_workflow! {
-            provider ollama from ollama {
-                endpoint: "http://127.0.0.1"
+            provider local_openai from openai_compatible {
+                endpoint: "http://127.0.0.1:8080/v1"
+                api_key: "local-key"
             }
 
-            model ollama_model from ollama {
+            model local_openai_model from local_openai {
                 id: "model-a"
+            }
+
+            provider local_anthropic from anthropic_compatible {
+                endpoint: "http://127.0.0.1:8081"
+                api_key: "local-key"
+            }
+
+            model local_anthropic_model from local_anthropic {
+                id: "model-b"
             }
         };
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
-        let provider = provider_index.get("ollama").expect("ollama provider should exist");
-        let provider_result = provider.resolve("ollama", &empty_evaluation_context());
+        let openai_provider = provider_index
+            .get("local_openai")
+            .expect("openai-compatible provider should exist")
+            .resolve("local_openai", &empty_evaluation_context())
+            .expect("openai-compatible provider should resolve");
+        let anthropic_provider = provider_index
+            .get("local_anthropic")
+            .expect("anthropic-compatible provider should exist")
+            .resolve("local_anthropic", &empty_evaluation_context())
+            .expect("anthropic-compatible provider should resolve");
 
-        assert!(matches!(
-            provider_result,
-            Err(WorkflowSemanticError::ProviderConfiguration { provider_name, message })
-                if provider_name == "ollama" && message.contains("explicit port")
-        ));
+        assert_eq!(openai_provider.driver, ProviderDriver::OpenAiCompatible);
+        assert_eq!(anthropic_provider.driver, ProviderDriver::AnthropicCompatible);
     }
 
     #[test]
@@ -372,7 +510,13 @@ mod tests {
 
         let provider_index = build_provider_index(&workflow).expect("provider index should build");
 
-        assert!(matches!(provider_index.get("openai"), Some(ProviderConfigTemplate::OpenAI(_))));
-        assert!(matches!(provider_index.get("ollama"), Some(ProviderConfigTemplate::Ollama(_))));
+        assert_eq!(
+            provider_index.get("openai").map(|provider| provider.driver),
+            Some(ProviderDriver::OpenAi)
+        );
+        assert_eq!(
+            provider_index.get("ollama").map(|provider| provider.driver),
+            Some(ProviderDriver::Ollama)
+        );
     }
 }

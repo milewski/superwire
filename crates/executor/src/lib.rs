@@ -17,7 +17,7 @@ pub use api::{
     ValidationResponse,
 };
 pub use event::{ExecutorEvent, ExecutorEventKind};
-pub use model::{ModelRequest, ModelResponse, OpenAiModelProvider};
+pub use model::{CerseiModelProvider, ModelRequest, ModelResponse};
 pub use runtime::{ExecutorError, WorkflowExecutor};
 pub use server::{executor_router, executor_router_with_service, serve_executor};
 pub use service::ExecutorService;

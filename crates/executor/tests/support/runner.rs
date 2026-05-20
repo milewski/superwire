@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use superwire_core::dsl::format_workflow_source;
 use superwire_executor::api::{ExecutionOptions, ExecutionRequest};
-use superwire_executor::model::OpenAiModelProvider;
+use superwire_executor::model::CerseiModelProvider;
 use superwire_executor::runtime::ExecutorError;
 use superwire_executor::service::ExecutorService;
 
@@ -233,7 +233,7 @@ impl TestRunner {
         let provider_servers = self.spawn_provider_servers();
         let mcp_servers = self.spawn_mcp_servers();
         let workflow_source = self.workflow_source_with_mock_endpoints(&provider_servers, &mcp_servers)?;
-        let service = ExecutorService::new(OpenAiModelProvider);
+        let service = ExecutorService::new(CerseiModelProvider);
         let execution_response = service
             .execute(ExecutionRequest {
                 workflow_source: Some(workflow_source),
@@ -263,7 +263,7 @@ impl TestRunner {
         let workflow_source = self
             .workflow_source_with_mock_endpoints(&provider_servers, &mcp_servers)
             .expect("workflow source should be prepared");
-        let service = ExecutorService::new(OpenAiModelProvider);
+        let service = ExecutorService::new(CerseiModelProvider);
         let execution_error = service
             .execute(ExecutionRequest {
                 workflow_source: Some(workflow_source),
@@ -766,44 +766,22 @@ impl ModelTurnResponse {
     fn to_http_response(&self) -> String {
         match self {
             Self::Error(message) => http_json_response(400, json!({ "error": { "message": message } })),
-            _ => http_json_response(200, self.to_openai_response()),
+            _ => http_sse_response(self.to_openai_stream_events()),
         }
     }
 
-    fn to_openai_response(&self) -> Value {
+    fn to_openai_stream_events(&self) -> Vec<Value> {
         match self {
-            Self::Json(output) => openai_tool_call_response([ToolCall::new(
+            Self::Json(output) => openai_tool_call_stream_events([ToolCall::new(
                 "finalize",
                 json!({
                     "type": "success",
                     "output": output,
                 }),
             )]),
-            Self::Text(output) => openai_content_response(output.clone()),
-            Self::ToolCalls(tool_calls) => json!({
-                "id": "chatcmpl_test",
-                "object": "chat.completion",
-                "created": 1,
-                "model": "test-model",
-                "choices": [{
-                    "index": 0,
-                    "finish_reason": "tool_calls",
-                    "message": {
-                        "role": "assistant",
-                        "tool_calls": tool_calls.iter().enumerate().map(|(index, tool_call)| {
-                            json!({
-                                "id": format!("call_{}", index + 1),
-                                "type": "function",
-                                "function": {
-                                    "name": tool_call.name,
-                                    "arguments": serde_json::to_string(&tool_call.arguments).expect("tool call arguments should serialize"),
-                                }
-                            })
-                        }).collect::<Vec<_>>()
-                    }
-                }]
-            }),
-            Self::Error(message) => json!({ "error": { "message": message } }),
+            Self::Text(output) => openai_content_stream_events(output.clone()),
+            Self::ToolCalls(tool_calls) => openai_tool_call_stream_events(tool_calls.clone()),
+            Self::Error(message) => vec![json!({ "error": { "message": message } })],
         }
     }
 }
@@ -1031,36 +1009,44 @@ fn http_json_response(status: u16, body: Value) -> String {
     )
 }
 
-fn openai_content_response(content: String) -> Value {
-    json!({
-        "id": "chatcmpl_test",
-        "object": "chat.completion",
-        "created": 1,
-        "model": "test-model",
-        "choices": [{
-            "index": 0,
-            "finish_reason": "stop",
-            "message": {
-                "role": "assistant",
-                "content": content,
-            }
-        }]
-    })
+fn http_sse_response(events: Vec<Value>) -> String {
+    let mut body = String::new();
+
+    for event in events {
+        body.push_str("data: ");
+        body.push_str(&event.to_string());
+        body.push('\n');
+    }
+
+    body.push_str("data: [DONE]\n");
+
+    format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    )
 }
 
-fn openai_tool_call_response<const CALL_COUNT: usize>(tool_calls: [ToolCall; CALL_COUNT]) -> Value {
-    json!({
-        "id": "chatcmpl_test",
-        "object": "chat.completion",
-        "created": 1,
-        "model": "test-model",
+fn openai_content_stream_events(content: String) -> Vec<Value> {
+    vec![json!({
         "choices": [{
             "index": 0,
-            "finish_reason": "tool_calls",
-            "message": {
-                "role": "assistant",
-                "tool_calls": tool_calls.iter().enumerate().map(|(index, tool_call)| {
+            "delta": {
+                "content": content,
+            },
+            "finish_reason": null,
+        }]
+    })]
+}
+
+fn openai_tool_call_stream_events(tool_calls: impl IntoIterator<Item = ToolCall>) -> Vec<Value> {
+    vec![json!({
+        "choices": [{
+            "index": 0,
+            "delta": {
+                "tool_calls": tool_calls.into_iter().enumerate().map(|(index, tool_call)| {
                     json!({
+                        "index": index,
                         "id": format!("call_{}", index + 1),
                         "type": "function",
                         "function": {
@@ -1069,9 +1055,10 @@ fn openai_tool_call_response<const CALL_COUNT: usize>(tool_calls: [ToolCall; CAL
                         }
                     })
                 }).collect::<Vec<_>>()
-            }
+            },
+            "finish_reason": null,
         }]
-    })
+    })]
 }
 
 fn assert_tool_names(request_body: &Value, expected_tools: &[String]) -> Result<(), String> {

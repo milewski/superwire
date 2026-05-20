@@ -2,7 +2,7 @@ use crate::api::{
     ExecutionRequest, ExecutionResponse, FormatRequest, FormatResponse, GraphRequest, GraphResponse, ValidationRequest, ValidationResponse,
 };
 use crate::event::ExecutorEvent;
-use crate::model::{ModelProvider, OpenAiModelProvider};
+use crate::model::{CerseiModelProvider, ModelProvider};
 use crate::runtime::{ExecutorError, WorkflowExecutor};
 use serde_json::Value;
 use std::time::Instant;
@@ -12,13 +12,13 @@ use tokio::sync::mpsc;
 const EVENT_BUFFER_SIZE: usize = 64;
 
 #[derive(Debug, Clone)]
-pub struct ExecutorService<ModelProviderType = OpenAiModelProvider> {
+pub struct ExecutorService<ModelProviderType = CerseiModelProvider> {
     model_provider: ModelProviderType,
 }
 
-impl Default for ExecutorService<OpenAiModelProvider> {
+impl Default for ExecutorService<CerseiModelProvider> {
     fn default() -> Self {
-        Self::new(OpenAiModelProvider)
+        Self::new(CerseiModelProvider)
     }
 }
 

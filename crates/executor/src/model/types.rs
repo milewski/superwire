@@ -4,13 +4,13 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use superwire_core::mcp::McpClientPool;
-use superwire_core::semantic::support::provider::OpenAIProviderConfig;
+use superwire_core::semantic::support::provider::ProviderConfig;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct ModelRequest {
     pub agent_name: String,
-    pub provider_config: OpenAIProviderConfig,
+    pub provider_config: ProviderConfig,
     pub model_name: String,
     pub inference: BTreeMap<String, Value>,
     pub prompt: String,

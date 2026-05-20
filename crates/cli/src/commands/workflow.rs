@@ -11,7 +11,7 @@ use superwire_core::dsl::{parse_workflow, Declaration, ObjectField, TypeExpressi
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, McpServerConfig, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME};
 use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use superwire_core::semantic::support::types::{workflow_type_from_dsl, workflow_type_to_json_schema, WorkflowType};
-use superwire_executor::{ExecutorError, OpenAiModelProvider, WorkflowExecutor};
+use superwire_executor::{CerseiModelProvider, ExecutorError, WorkflowExecutor};
 
 use crate::diagnostics::CommandError;
 
@@ -299,7 +299,7 @@ impl RunWorkflowCommand {
             .block_on(workflow_executor.execute(
                 Value::Object(input_value),
                 Value::Object(secrets_value),
-                &OpenAiModelProvider,
+                &CerseiModelProvider,
                 None,
                 10,
             ))

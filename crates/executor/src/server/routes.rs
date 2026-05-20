@@ -1,5 +1,5 @@
 use crate::api::{ExecutionRequest, FormatRequest, GraphRequest, ValidationRequest};
-use crate::model::{ModelProvider, OpenAiModelProvider};
+use crate::model::{CerseiModelProvider, ModelProvider};
 use crate::server::error::ExecutorHttpError;
 use crate::server::sse::event_to_sse_result;
 use crate::service::ExecutorService;
@@ -27,7 +27,7 @@ struct ExecutorRouterState<ModelProviderType> {
 }
 
 pub fn executor_router() -> Router {
-    executor_router_with_service(ExecutorService::new(OpenAiModelProvider), false)
+    executor_router_with_service(ExecutorService::new(CerseiModelProvider), false)
 }
 
 pub fn executor_router_with_service<ModelProviderType>(service: ExecutorService<ModelProviderType>, disable_playground: bool) -> Router
@@ -77,7 +77,7 @@ pub async fn serve_executor(address: SocketAddr, disable_playground: bool) -> Re
 
     axum::serve(
         listener,
-        executor_router_with_service(ExecutorService::new(OpenAiModelProvider), disable_playground),
+        executor_router_with_service(ExecutorService::new(CerseiModelProvider), disable_playground),
     )
     .await
 }
