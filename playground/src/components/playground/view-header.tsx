@@ -1,6 +1,6 @@
 type ViewHeaderProps = {
   title: string;
-  description: string;
+  description?: string;
 };
 
 export default function ViewHeader({ title, description }: ViewHeaderProps) {
@@ -8,7 +8,7 @@ export default function ViewHeader({ title, description }: ViewHeaderProps) {
     <div className="playground-view-header">
       <div>
         <h2>{title}</h2>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
       </div>
     </div>
   );

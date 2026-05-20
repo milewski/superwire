@@ -62,7 +62,7 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
   const displayGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
   const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, activeRunCounts, outputEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId]);
   const edges = useMemo(() => (displayGraph ? reactFlowEdges(displayGraph, config, activeRunCounts, outputEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId]);
-  const description = graph ? `${graph.nodes.length} nodes, ${graph.edges.length} relationships.` : 'Generate a visual execution plan from the current workflow source.';
+  const description = graph ? undefined : 'Generate a visual execution plan from the current workflow source.';
   const graphSignature = displayGraph ? displayGraph.nodes.map((node) => node.id).join(':') : 'empty';
 
   useEffect(() => {
