@@ -12,6 +12,8 @@ interface WireEditorProps {
   value: string;
   documentId: string;
   darkMode: boolean;
+  inputJson: string;
+  secretsJson: string;
   onChange: (value: string) => void;
 }
 
@@ -259,7 +261,7 @@ const baseTheme = EditorView.theme({
   },
 });
 
-export default function WireEditor({ value, documentId, darkMode, onChange }: WireEditorProps) {
+export default function WireEditor({ value, documentId, darkMode, inputJson, secretsJson, onChange }: WireEditorProps) {
   const editorElementRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const languageClientRef = useRef<WebSocketLanguageClient | null>(null);
@@ -325,7 +327,7 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
             version: documentVersionRef.current,
             text: value,
           },
-        });
+        }).then(() => notifyRuntimeValues(languageClient, documentUri, inputJson, secretsJson));
       })
       .catch(() => undefined);
 
@@ -343,6 +345,16 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
       languageClientRef.current = null;
     };
   }, [documentUri, darkMode]);
+
+  useEffect(() => {
+    const languageClient = languageClientRef.current;
+
+    if (!languageClient) {
+      return;
+    }
+
+    notifyRuntimeValues(languageClient, documentUri, inputJson, secretsJson);
+  }, [documentUri, inputJson, secretsJson]);
 
   useEffect(() => {
     const editorView = editorViewRef.current;
@@ -369,6 +381,31 @@ export default function WireEditor({ value, documentId, darkMode, onChange }: Wi
   }, [value]);
 
   return <div ref={editorElementRef} className="wire-editor-shell flex-1 overflow-hidden bg-transparent" style={{ height: `${editorHeight}px` }} />;
+}
+
+function notifyRuntimeValues(languageClient: WebSocketLanguageClient, documentUri: string, inputJson: string, secretsJson: string) {
+  const input = parseJsonObjectOrEmpty(inputJson);
+  const secrets = parseJsonObjectOrEmpty(secretsJson);
+
+  void languageClient.notify('superwire/runtimeValues', {
+    textDocument: { uri: documentUri },
+    input,
+    secrets,
+  });
+}
+
+function parseJsonObjectOrEmpty(jsonText: string) {
+  try {
+    const value = JSON.parse(jsonText);
+
+    if (isRecord(value)) {
+      return value;
+    }
+  } catch {
+    return {};
+  }
+
+  return {};
 }
 
 function createEditorState(

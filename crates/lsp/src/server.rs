@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -19,7 +20,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use superwire_core::dsl::{parse_workflow, Workflow};
-use superwire_core::mcp::{McpClient, McpLock, McpServerConfig, McpServerLock, ProjectMcpLock};
+use superwire_core::mcp::{McpClient, McpLock, McpLockResolutionContext, McpServerConfig, McpServerLock, ProjectMcpLock};
 use thiserror::Error;
 
 use crate::document::{
@@ -55,11 +56,54 @@ pub struct ServerMessages {
 pub struct LanguageServer {
     documents: HashMap<String, DocumentState>,
     mcp_discovery_cache: McpDiscoveryCache,
+    runtime_values_by_document_uri: HashMap<String, RuntimeValues>,
 }
 
 #[derive(Debug, Default)]
 struct McpDiscoveryCache {
     server_locks_by_config_key: HashMap<String, McpServerLock>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+struct RuntimeValues {
+    #[serde(default)]
+    input: Value,
+    #[serde(default)]
+    secrets: Value,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeValuesParams {
+    text_document: lsp_types::TextDocumentIdentifier,
+    #[serde(default)]
+    input: Value,
+    #[serde(default)]
+    secrets: Value,
+}
+
+impl RuntimeValues {
+    fn lock_resolution_context(&self) -> McpLockResolutionContext {
+        McpLockResolutionContext {
+            input: Self::object_value_map(&self.input),
+            secrets: Self::object_value_map(&self.secrets),
+            dynamic: BTreeMap::new(),
+            agent_outputs: BTreeMap::new(),
+            agent_contexts: BTreeMap::new(),
+        }
+    }
+
+    fn object_value_map(value: &Value) -> BTreeMap<String, Value> {
+        value
+            .as_object()
+            .map(|object| {
+                object
+                    .iter()
+                    .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 impl LanguageServer {
@@ -139,6 +183,7 @@ impl LanguageServer {
             DidOpenTextDocument::METHOD => self.handle_did_open(notification.params)?,
             DidChangeTextDocument::METHOD => self.handle_did_change(notification.params)?,
             DidCloseTextDocument::METHOD => self.handle_did_close(notification.params)?,
+            "superwire/runtimeValues" => self.handle_runtime_values(notification.params)?,
             _ => RequestOutcome::continue_without_response(),
         };
 
@@ -204,10 +249,41 @@ impl LanguageServer {
         let document_uri = close_params.text_document.uri.to_string();
 
         self.documents.remove(&document_uri);
+        self.runtime_values_by_document_uri.remove(&document_uri);
 
         let diagnostics_notification = publish_diagnostics_notification(close_params.text_document.uri, Vec::new());
 
         Ok(RequestOutcome::without_response(Some(diagnostics_notification)))
+    }
+
+    fn handle_runtime_values(&mut self, params: Value) -> Result<RequestOutcome, ServerError> {
+        let runtime_values_params: RuntimeValuesParams = deserialize_params(params)?;
+        let document_uri = runtime_values_params.text_document.uri.to_string();
+        let runtime_values = RuntimeValues {
+            input: runtime_values_params.input,
+            secrets: runtime_values_params.secrets,
+        };
+
+        self.runtime_values_by_document_uri.insert(document_uri.clone(), runtime_values);
+
+        let Some(document_text) = self
+            .documents
+            .get(&document_uri)
+            .map(|document_state| document_state.source_text().to_string())
+        else {
+            return Ok(RequestOutcome::continue_without_response());
+        };
+
+        let previous_mcp_lock = self.documents.get(&document_uri).and_then(DocumentState::mcp_lock);
+        let mcp_lock = self.resolve_mcp_lock(&document_uri, document_text.as_str(), previous_mcp_lock);
+
+        if let Some(document_state) = self.documents.get_mut(&document_uri) {
+            document_state.replace_text(document_text, mcp_lock);
+        }
+
+        let diagnostics_notification = self.publish_document_diagnostics(&document_uri);
+
+        Ok(RequestOutcome::without_response(diagnostics_notification))
     }
 
     fn handle_completion(&self, request_id: RequestId, params: Value) -> Result<RequestOutcome, ServerError> {
@@ -447,7 +523,7 @@ impl LanguageServer {
     fn resolve_mcp_lock(&mut self, document_uri: &str, source_text: &str, previous_mcp_lock: Option<McpLock>) -> Option<McpLock> {
         let project_mcp_lock = read_project_mcp_lock(document_uri);
 
-        if let Some(mcp_lock) = self.lock_with_discovered_missing_servers(source_text, project_mcp_lock) {
+        if let Some(mcp_lock) = self.lock_with_discovered_missing_servers(document_uri, source_text, project_mcp_lock) {
             return Some(mcp_lock);
         }
 
@@ -455,16 +531,51 @@ impl LanguageServer {
     }
 
     fn discover_mcp_lock_from_source(&mut self, source_text: &str) -> Option<McpLock> {
-        let workflow = parse_workflow(source_text).ok()?;
+        let workflow = Self::workflow_for_mcp_discovery(source_text)?;
 
         self.mcp_discovery_cache.discover_from_workflow(&workflow).ok()
     }
 
-    fn lock_with_discovered_missing_servers(&mut self, source_text: &str, project_mcp_lock: Option<McpLock>) -> Option<McpLock> {
+    fn discover_mcp_lock_from_source_with_runtime_values(&mut self, document_uri: &str, source_text: &str) -> Option<McpLock> {
+        let runtime_values = self.runtime_values_by_document_uri.get(document_uri)?;
+        let workflow = Self::workflow_for_mcp_discovery(source_text)?;
+        let lock_resolution_context = runtime_values.lock_resolution_context();
+
+        self.mcp_discovery_cache
+            .discover_from_workflow_with_context(&workflow, &lock_resolution_context)
+            .ok()
+    }
+
+    fn workflow_for_mcp_discovery(source_text: &str) -> Option<Workflow> {
+        if let Ok(workflow) = parse_workflow(source_text) {
+            return Some(workflow);
+        }
+
+        let batch_import_start_indexes = source_text
+            .match_indices("from mcp")
+            .map(|(batch_import_start_index, _)| batch_import_start_index)
+            .collect::<Vec<_>>();
+
+        batch_import_start_indexes
+            .iter()
+            .rev()
+            .find_map(|batch_import_start_index| parse_workflow(source_text[..*batch_import_start_index].trim_end()).ok())
+    }
+
+    fn lock_with_discovered_missing_servers(
+        &mut self,
+        document_uri: &str,
+        source_text: &str,
+        project_mcp_lock: Option<McpLock>,
+    ) -> Option<McpLock> {
         let Some(mut mcp_lock) = project_mcp_lock else {
-            return self.discover_mcp_lock_from_source(source_text);
+            return self
+                .discover_mcp_lock_from_source_with_runtime_values(document_uri, source_text)
+                .or_else(|| self.discover_mcp_lock_from_source(source_text));
         };
-        let workflow = parse_workflow(source_text).ok()?;
+        let Some(workflow) = Self::workflow_for_mcp_discovery(source_text) else {
+            return Some(mcp_lock);
+        };
         let missing_server_names = workflow
             .declarations()
             .iter()
@@ -479,7 +590,9 @@ impl LanguageServer {
             return Some(mcp_lock);
         }
 
-        let discovered_mcp_lock = self.mcp_discovery_cache.discover_from_workflow(&workflow).ok()?;
+        let discovered_mcp_lock = self
+            .discover_mcp_lock_from_source_with_runtime_values(document_uri, source_text)
+            .or_else(|| self.mcp_discovery_cache.discover_from_workflow(&workflow).ok())?;
 
         for missing_server_name in missing_server_names {
             if let Some(server_lock) = discovered_mcp_lock.servers.get(missing_server_name) {
@@ -496,6 +609,36 @@ impl McpDiscoveryCache {
         let mut mcp_lock = McpLock::empty();
 
         for server_config in McpServerConfig::from_workflow(workflow)? {
+            let config_key = Self::config_key(&server_config);
+            let server_lock = if let Some(server_lock) = self.server_locks_by_config_key.get(&config_key) {
+                server_lock.clone()
+            } else {
+                let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+                self.server_locks_by_config_key.insert(config_key, server_lock.clone());
+
+                server_lock
+            };
+
+            mcp_lock.servers.insert(server_config.name, server_lock);
+        }
+
+        Ok(mcp_lock)
+    }
+
+    fn discover_from_workflow_with_context(
+        &mut self,
+        workflow: &Workflow,
+        lock_resolution_context: &McpLockResolutionContext,
+    ) -> Result<McpLock, superwire_core::mcp::McpError> {
+        let evaluation_context = lock_resolution_context.to_evaluation_context();
+        let mut mcp_lock = McpLock::empty();
+
+        for declaration in workflow.declarations() {
+            let superwire_core::dsl::Declaration::McpServer(mcp_server_declaration) = declaration else {
+                continue;
+            };
+
+            let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, &evaluation_context)?;
             let config_key = Self::config_key(&server_config);
             let server_lock = if let Some(server_lock) = self.server_locks_by_config_key.get(&config_key) {
                 server_lock.clone()

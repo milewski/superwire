@@ -1,4 +1,5 @@
 use super::{read_project_mcp_lock, LanguageServer};
+use crate::document::DocumentState;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -6,6 +7,8 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock};
 use superwire_core::workflow_source;
+
+const PLAYGROUND_DOCUMENT_URI: &str = "file:///playground/document.wire";
 
 #[test]
 fn reads_mcp_lock_from_project_lock_without_refreshing() {
@@ -125,6 +128,191 @@ fn caches_document_mcp_discovery_until_server_settings_change() {
     assert!(server.request_count() > first_request_count);
 }
 
+#[test]
+fn discovers_mcp_lock_from_playground_runtime_values() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_source = workflow_source! {
+        provider openai from openai {
+            endpoint: "https://api.openai.com/v1"
+            api_key: "test-api-key"
+        }
+
+        model openai_model from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        from mcp.local {
+            tool list_all_participants_who_has_answered_given_task
+        }
+
+        dynamic {
+            data: call tool.list_all_participants_who_has_answered_given_task {}
+        }
+
+        agent participant_answer_analyzer for participant in dynamic.data.participants {
+            model: model.openai_model
+            instruction: "Analyze the participant answer"
+            output {
+                value: string
+            }
+        }
+
+        output {
+            value: agent.participant_answer_analyzer.value
+        }
+    };
+    let mut language_server = LanguageServer::default();
+
+    language_server.runtime_values_by_document_uri.insert(
+        PLAYGROUND_DOCUMENT_URI.to_string(),
+        super::RuntimeValues {
+            input: Value::Null,
+            secrets: serde_json::json!({ "mcp_endpoint": server.endpoint() }),
+        },
+    );
+
+    let discovered_lock = language_server
+        .resolve_mcp_lock(PLAYGROUND_DOCUMENT_URI, workflow_source, None)
+        .expect("MCP metadata should discover from playground runtime values");
+    let document_state = DocumentState::new(workflow_source.to_string(), Some(discovered_lock));
+    let diagnostic_messages = document_state
+        .diagnostics()
+        .into_iter()
+        .map(|diagnostic| diagnostic.message)
+        .collect::<Vec<_>>();
+
+    assert!(
+        diagnostic_messages
+            .iter()
+            .all(|message| !message.contains("dynamic.data.participants")),
+        "expected participant field reference to validate from MCP output schema; got {diagnostic_messages:?}"
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn handles_playground_runtime_values_notification_and_completes_mcp_tools() {
+    let server = TestMcpHttpServer::spawn();
+    let workflow_template = workflow_source! {
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        from mcp.local {
+            bindings {
+                project_id: input.project_id
+                task_id: input.task_id
+            }
+
+            tool <cursor>
+            tool fetch_participant_answer
+        }
+    };
+    let cursor_offset = workflow_template
+        .find("<cursor>")
+        .expect("source template should contain cursor marker");
+    let source_before_cursor = &workflow_template[..cursor_offset];
+    let cursor_line = source_before_cursor.lines().count().saturating_sub(1);
+    let cursor_character = source_before_cursor
+        .rsplit('\n')
+        .next()
+        .expect("source before cursor should contain current line")
+        .chars()
+        .count();
+    let workflow_source = workflow_template.replace("<cursor>", "");
+    let cursor_position = serde_json::json!({
+        "line": cursor_line,
+        "character": cursor_character
+    });
+    let mut language_server = LanguageServer::default();
+
+    language_server
+        .handle_json_rpc_message(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": PLAYGROUND_DOCUMENT_URI,
+                        "languageId": "wire",
+                        "version": 1,
+                        "text": workflow_source
+                    }
+                }
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect("didOpen should be accepted");
+
+    language_server
+        .handle_json_rpc_message(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "superwire/runtimeValues",
+                "params": {
+                    "textDocument": { "uri": PLAYGROUND_DOCUMENT_URI },
+                    "input": {
+                        "project_id": 7,
+                        "task_id": 11
+                    },
+                    "secrets": {
+                        "mcp_endpoint": server.endpoint()
+                    }
+                }
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect("runtime values notification should be accepted");
+    assert!(server.request_count() > 0, "runtime values should trigger MCP discovery");
+
+    let completion_messages = language_server
+        .handle_json_rpc_message(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": { "uri": PLAYGROUND_DOCUMENT_URI },
+                    "position": cursor_position
+                }
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect("completion request should be accepted")
+        .messages;
+    let completion_labels = completion_messages[0]
+        .pointer("/result/items")
+        .and_then(Value::as_array)
+        .expect("completion response should contain items")
+        .iter()
+        .filter_map(|completion_item| completion_item.get("label").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+
+    assert!(
+        completion_labels.contains(&"list_all_participants_who_has_answered_given_task"),
+        "expected runtime MCP completion labels to include participant listing tool; got {completion_labels:?} from messages {completion_messages:?}"
+    );
+    assert!(
+        !completion_labels.contains(&"fetch_participant_answer"),
+        "expected existing imported tool to be excluded; got {completion_labels:?}"
+    );
+}
+
 struct TestMcpHttpServer {
     endpoint: String,
     request_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
@@ -200,17 +388,44 @@ fn response_for_method(method: Option<&str>) -> Option<Value> {
             "jsonrpc": "2.0",
             "id": 2,
             "result": {
-                "tools": [{
-                    "name": "update-user-name",
-                    "description": "Update user name",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "user_name": { "type": "string" }
+                "tools": [
+                    {
+                        "name": "update-user-name",
+                        "description": "Update user name",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "user_name": { "type": "string" }
+                            },
+                            "required": ["user_name"]
                         },
-                        "required": ["user_name"]
+                        "outputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "success": { "type": "boolean" }
+                            },
+                            "required": ["success"]
+                        }
+                    },
+                    {
+                        "name": "list_all_participants_who_has_answered_given_task",
+                        "description": "List all participants who answered a task",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        },
+                        "outputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "participants": {
+                                    "type": "array",
+                                    "items": { "type": "object" }
+                                }
+                            },
+                            "required": ["participants"]
+                        }
                     }
-                }]
+                ]
             }
         })),
         _ => Some(serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),

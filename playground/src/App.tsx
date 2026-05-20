@@ -624,6 +624,8 @@ export default function App() {
                               value={activeTab.source}
                               documentId={activeTab.id}
                               darkMode={darkMode}
+                              inputJson={activeTab.inputJson}
+                              secretsJson={activeTab.secretsJson}
                               onChange={(source) => updateActiveTab((tab) => ({
                                 ...tab,
                                 source,
