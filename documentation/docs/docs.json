@@ -3,8 +3,9 @@
   "theme": "mint",
   "name": "Superwire",
   "logo": {
-    "dark": "/logo.svg",
-    "light": "/logo-light.svg"
+    "dark": "/logo-light.svg",
+    "light": "/logo-light.svg",
+    "href": "https://superwire.dev"
   },
   "favicon": "/favicon.svg",
   "colors": {
@@ -162,5 +163,8 @@
         ]
       }
     ]
+  },
+  "appearance": {
+    "default": "system"
   }
 }
