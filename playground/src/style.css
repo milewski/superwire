@@ -1095,6 +1095,7 @@ textarea {
   z-index: 2;
   width: calc(100% + 4px);
   height: calc(100% + 4px);
+  border-radius: inherit;
   overflow: visible;
   pointer-events: none;
 }
@@ -1724,7 +1725,6 @@ textarea {
 }
 
 .graph-node__running-stroke rect {
-  rx: 9;
   stroke: var(--graph-agent);
   stroke-width: 2.4;
   stroke-dasharray: 9 91;
