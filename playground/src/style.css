@@ -150,7 +150,7 @@ textarea {
 }
 
 .playground {
-  @apply min-h-screen p-3 transition-colors sm:p-5 xl:p-8;
+  @apply min-h-screen transition-colors;
   background:
     radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--superwire-accent) 16%, transparent), transparent 24rem),
     linear-gradient(135deg, color-mix(in srgb, var(--background) 86%, #2d2d2d), var(--background));
@@ -158,10 +158,8 @@ textarea {
 }
 
 .playground__frame {
-  @apply mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1840px] overflow-hidden shadow-2xl shadow-black/40 sm:min-h-[calc(100vh-2.5rem)];
+  @apply flex min-h-screen w-full overflow-hidden;
   background: color-mix(in srgb, var(--background) 92%, #000 8%);
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 28px;
 }
 
 .playground__main {
