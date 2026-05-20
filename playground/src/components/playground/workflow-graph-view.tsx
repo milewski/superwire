@@ -1608,22 +1608,22 @@ function nodeIcon(node: WorkflowExecutionGraphNode) {
 
 function nodeColor(node: Node) {
   if (node.id.startsWith('provider:')) {
-    return '#38bdf8';
+    return '#247ea3';
   }
 
   if (node.id.startsWith('model:')) {
-    return '#a78bfa';
+    return '#8065c8';
   }
 
   if (node.id === 'input') {
-    return '#38bdf8';
+    return '#247ea3';
   }
 
   if (node.id === 'output') {
-    return '#22c55e';
+    return '#3f8f5f';
   }
 
-  return '#ff9b32';
+  return '#c76500';
 }
 
 function toolLabel(tool: WorkflowExecutionGraphTool) {
