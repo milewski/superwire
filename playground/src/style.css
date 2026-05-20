@@ -1356,22 +1356,49 @@ textarea {
 
 .graph-output-dialog {
   @apply max-h-[86vh] max-w-[min(1100px,calc(100vw-2rem))] grid-rows-[auto_minmax(0,1fr)];
+  border-color: var(--graph-line);
+  background: var(--graph-panel);
+  box-shadow: none;
   overflow: hidden;
 }
 
+.graph-instruction-dialog {
+  border-color: var(--graph-line);
+  background: var(--graph-panel);
+  box-shadow: none;
+}
+
+.graph-output-dialog [data-slot="dialog-title"],
+.graph-instruction-dialog [data-slot="dialog-title"] {
+  color: var(--foreground);
+}
+
+.graph-output-dialog [data-slot="dialog-description"],
+.graph-instruction-dialog [data-slot="dialog-description"] {
+  color: var(--muted-foreground);
+}
+
 .graph-output-dialog__entries {
-  @apply grid min-h-0 gap-4 overflow-y-auto pr-1;
+  @apply grid min-h-0 gap-3 overflow-y-auto pr-1;
 }
 
 .graph-output-dialog__entry {
   @apply min-h-0 overflow-hidden rounded-xl border;
-  border-color: color-mix(in srgb, var(--border) 82%, transparent);
-  background: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+  border-color: var(--graph-line);
+  background: color-mix(in srgb, var(--graph-panel-soft) 88%, transparent);
 }
 
 .graph-output-dialog__entry summary {
   @apply flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3;
-  color: var(--foreground);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.graph-output-dialog__entry summary:hover {
+  background: color-mix(in srgb, var(--graph-panel-soft) 72%, transparent);
+}
+
+.graph-output-dialog__entry[open] summary {
+  border-bottom: 1px solid var(--graph-line);
 }
 
 .graph-output-dialog__entry summary::-webkit-details-marker {
@@ -1381,7 +1408,8 @@ textarea {
 .graph-output-dialog__entry summary::before {
   content: "+";
   @apply inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm font-semibold;
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  border: 1px solid var(--graph-line);
+  background: color-mix(in srgb, var(--graph-panel) 94%, transparent);
   color: var(--muted-foreground);
 }
 
@@ -1396,16 +1424,27 @@ textarea {
 
 .graph-output-dialog__entry summary small {
   @apply rounded-md px-2 py-1 text-xs font-semibold;
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  border: 1px solid var(--graph-line);
+  background: color-mix(in srgb, var(--graph-panel) 94%, transparent);
   color: var(--muted-foreground);
 }
 
 .graph-output-dialog__json {
   @apply min-h-0 border-t;
-  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  border-color: var(--graph-line);
   border-radius: 0;
+  background: color-mix(in srgb, var(--graph-panel) 96%, var(--foreground) 4%);
   max-height: none;
   overflow: visible;
+}
+
+.graph-output-dialog__json .cm-activeLine {
+  background: transparent;
+}
+
+.graph-output-dialog__json .cm-selectionBackground,
+.graph-output-dialog__json .cm-content ::selection {
+  background: color-mix(in srgb, var(--graph-agent) 18%, transparent);
 }
 
 .graph-output-dialog__json .cm-scroller {
@@ -1497,7 +1536,9 @@ textarea {
   color: #f8fafc;
 }
 
-.graph-view {
+.graph-view,
+.graph-output-dialog,
+.graph-instruction-dialog {
   --graph-panel: var(--card);
   --graph-panel-strong: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
   --graph-panel-soft: color-mix(in srgb, var(--card) 98%, var(--foreground) 2%);
@@ -1511,7 +1552,9 @@ textarea {
   gap: 0.9rem;
 }
 
-.dark .graph-view {
+.dark .graph-view,
+.dark .graph-output-dialog,
+.dark .graph-instruction-dialog {
   --graph-panel: color-mix(in srgb, var(--card) 94%, #000 6%);
   --graph-panel-strong: color-mix(in srgb, var(--card) 88%, #000 12%);
   --graph-panel-soft: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
@@ -2375,10 +2418,10 @@ textarea {
 }
 
 .graph-output-dialog {
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--superwire-accent) 14%, transparent), transparent 18rem),
-    color-mix(in srgb, var(--card) 96%, var(--background) 4%);
+  border-radius: 16px;
+  border-color: var(--graph-line);
+  background: var(--graph-panel);
+  box-shadow: none;
 }
 
 @media (max-width: 760px) {
@@ -2509,12 +2552,15 @@ textarea {
   width: 100%;
   margin: 0;
   border: 0;
-  border-bottom: 1px solid var(--graph-line);
   border-radius: 0;
   background: transparent;
   overflow: visible;
   padding: 0.7rem 0.95rem;
   text-align: left;
+}
+
+.graph-node__instruction:has(~ .graph-node__section) {
+  border-bottom: 1px solid var(--graph-line);
 }
 
 .graph-node__instruction:hover {
@@ -2544,9 +2590,9 @@ textarea {
   max-height: min(58vh, 34rem);
   overflow: auto;
   white-space: pre-wrap;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border: 1px solid var(--graph-line);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--background) 72%, transparent);
+  background: color-mix(in srgb, var(--graph-panel-soft) 88%, transparent);
   padding: 1rem;
   color: var(--foreground);
   font-family: var(--font-mono);
@@ -2560,10 +2606,15 @@ textarea {
   min-width: 100%;
   max-width: 100%;
   border: 0;
-  border-bottom: 1px solid var(--graph-line);
+  border-bottom: 0;
   border-radius: 0;
   background: transparent;
   padding: 0.72rem 0.95rem;
+}
+
+.graph-node__section:has(~ .graph-node__section),
+.graph-node[data-density="compact"] .graph-node__section:has(~ .graph-node__section) {
+  border-bottom: 1px solid var(--graph-line);
 }
 
 .graph-node__section[data-empty="true"] {
