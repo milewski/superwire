@@ -998,8 +998,8 @@ textarea {
 .graph-settings__segmented button[data-active="true"],
 .graph-settings__edge-grid button[data-active="true"] {
   color: var(--foreground);
-  background: color-mix(in srgb, var(--superwire-accent) 20%, var(--card));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--superwire-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--graph-agent) 8%, var(--card));
+  box-shadow: none;
 }
 
 .graph-settings__toggle {
@@ -1061,11 +1061,11 @@ textarea {
 }
 
 .graph-view__message--ready {
-  color: #16a34a;
+  color: var(--graph-output);
 }
 
 .dark .graph-view__message--ready {
-  color: #4ade80;
+  color: var(--graph-output);
 }
 
 .graph-node {
@@ -1097,21 +1097,19 @@ textarea {
 .graph-node__running-stroke rect {
   fill: none;
   opacity: 0;
-  stroke: #86efac;
-  stroke-width: 2.8;
+  stroke: var(--graph-agent);
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-dasharray: 11 89;
   stroke-dashoffset: 0;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 5px color-mix(in srgb, #22c55e 42%, transparent));
+  filter: none;
 }
 
 .graph-node[data-running="true"] {
-  border-color: color-mix(in srgb, #22c55e 78%, var(--border));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, #22c55e 6%, var(--card)), color-mix(in srgb, var(--card) 96%, #22c55e 4%)),
-    color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 18%, transparent), 0 0 18px color-mix(in srgb, #22c55e 20%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+  border-color: color-mix(in srgb, var(--graph-agent) 42%, var(--border));
+  background: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  box-shadow: none;
   animation: graph-node-running-enter 420ms ease-out;
 }
 
@@ -1122,7 +1120,7 @@ textarea {
 
 .graph-node[data-running="true"] .graph-node__title::after {
   content: " running";
-  color: #16a34a;
+  color: var(--graph-agent);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -1130,7 +1128,7 @@ textarea {
 }
 
 .dark .graph-node[data-running="true"] .graph-node__title::after {
-  color: #86efac;
+  color: var(--graph-agent);
 }
 
 @keyframes graph-node-running-stroke {
@@ -1141,16 +1139,16 @@ textarea {
 
 @keyframes graph-node-running-enter {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, #22c55e 0%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+    box-shadow: none;
     transform: scale(0.985);
   }
 
   70% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, #22c55e 15%, transparent), 0 0 20px color-mix(in srgb, #22c55e 18%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--graph-agent) 10%, transparent);
   }
 
   100% {
-    box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 18%, transparent), 0 0 18px color-mix(in srgb, #22c55e 20%, transparent), 0 18px 44px rgba(0, 0, 0, 0.18);
+    box-shadow: none;
     transform: scale(1);
   }
 }
@@ -1178,10 +1176,8 @@ textarea {
 }
 
 .graph-node--model {
-  border-color: color-mix(in srgb, #a78bfa 42%, var(--graph-line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-soft) 97%, #a78bfa 3%), color-mix(in srgb, var(--graph-panel-strong) 96%, #a78bfa 4%)),
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, #a78bfa 18%, transparent), transparent 13rem);
+  border-color: color-mix(in srgb, var(--graph-model) 32%, var(--graph-line));
+  background: var(--graph-panel);
 }
 
 .graph-node--agent {
@@ -1189,10 +1185,8 @@ textarea {
 }
 
 .graph-node--output {
-  border-color: color-mix(in srgb, #22c55e 45%, var(--border));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, #22c55e 12%, var(--card)), color-mix(in srgb, var(--card) 96%, #22c55e 4%)),
-    color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  border-color: color-mix(in srgb, var(--graph-output) 32%, var(--border));
+  background: var(--graph-panel);
 }
 
 .graph-node__header {
@@ -1332,14 +1326,14 @@ textarea {
 
 .graph-node__output-button {
   @apply mt-2 flex w-full min-w-56 items-center justify-between gap-4 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition-colors;
-  border-color: color-mix(in srgb, #22c55e 34%, var(--border));
-  background: color-mix(in srgb, #22c55e 9%, var(--card));
+  border-color: color-mix(in srgb, var(--graph-output) 30%, var(--border));
+  background: color-mix(in srgb, var(--graph-output) 7%, var(--card));
   color: var(--foreground);
 }
 
 .graph-node__output-button:hover {
-  border-color: color-mix(in srgb, #22c55e 54%, var(--border));
-  background: color-mix(in srgb, #22c55e 14%, var(--card));
+  border-color: color-mix(in srgb, var(--graph-output) 38%, var(--border));
+  background: color-mix(in srgb, var(--graph-output) 10%, var(--card));
 }
 
 .graph-node__output-button small {
@@ -1449,7 +1443,7 @@ textarea {
 }
 
 .graph-edge--workflow_output path {
-  stroke: #22c55e;
+  stroke: var(--graph-output);
 }
 
 .react-flow__edge-textbg {
@@ -1506,28 +1500,38 @@ textarea {
 }
 
 .graph-view {
-  --graph-panel: color-mix(in srgb, var(--card) 88%, #0a0a0a 12%);
-  --graph-panel-strong: color-mix(in srgb, var(--card) 78%, #0b0b0b 22%);
-  --graph-panel-soft: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
-  --graph-line: color-mix(in srgb, var(--border) 74%, transparent);
-  --graph-grid-dot: color-mix(in srgb, var(--foreground) 18%, transparent);
-  --graph-input: #38bdf8;
-  --graph-agent: var(--superwire-accent);
-  --graph-output: #22c55e;
+  --graph-panel: var(--card);
+  --graph-panel-strong: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  --graph-panel-soft: color-mix(in srgb, var(--card) 98%, var(--foreground) 2%);
+  --graph-line: color-mix(in srgb, var(--border) 90%, var(--foreground) 10%);
+  --graph-grid-dot: color-mix(in srgb, var(--foreground) 11%, transparent);
+  --graph-input: #247ea3;
+  --graph-agent: #c76500;
+  --graph-output: #3f8f5f;
+  --graph-model: #8065c8;
   --graph-idle: color-mix(in srgb, var(--foreground) 36%, transparent);
   gap: 0.9rem;
+}
+
+.dark .graph-view {
+  --graph-panel: color-mix(in srgb, var(--card) 94%, #000 6%);
+  --graph-panel-strong: color-mix(in srgb, var(--card) 88%, #000 12%);
+  --graph-panel-soft: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
+  --graph-line: color-mix(in srgb, var(--border) 70%, var(--foreground) 30%);
+  --graph-grid-dot: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --graph-input: #6caeca;
+  --graph-agent: #df8a28;
+  --graph-output: #69ad7c;
+  --graph-model: #a590df;
 }
 
 .graph-view__canvas {
   position: relative;
   min-height: 680px;
-  border-radius: 24px;
-  border-color: color-mix(in srgb, var(--graph-line) 82%, var(--superwire-accent) 18%);
-  background:
-    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--superwire-accent) 18%, transparent), transparent 21rem),
-    radial-gradient(circle at 82% 28%, color-mix(in srgb, #22c55e 10%, transparent), transparent 18rem),
-    linear-gradient(145deg, color-mix(in srgb, var(--background) 88%, #050505 12%), color-mix(in srgb, var(--background) 78%, #000 22%));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent), 0 28px 70px rgba(0, 0, 0, 0.28);
+  border-radius: 18px;
+  border-color: var(--graph-line);
+  background: color-mix(in srgb, var(--background) 96%, var(--foreground) 4%);
+  box-shadow: none;
 }
 
 .graph-view__canvas::before {
@@ -1560,9 +1564,8 @@ textarea {
   padding: 0.35rem;
   border: 1px solid color-mix(in srgb, var(--graph-line) 82%, transparent);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--graph-panel) 78%, transparent);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--graph-panel) 96%, transparent);
+  box-shadow: none;
 }
 
 .graph-view__state,
@@ -1632,10 +1635,10 @@ textarea {
 
 .graph-view__toolbar-button:hover:not(:disabled),
 .graph-settings__trigger:hover {
-  border-color: color-mix(in srgb, var(--graph-agent) 62%, var(--graph-line));
-  background: color-mix(in srgb, var(--graph-agent) 13%, var(--graph-panel-soft));
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--graph-agent) 18%, transparent);
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--graph-agent) 36%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-agent) 7%, var(--graph-panel-soft));
+  box-shadow: none;
+  transform: none;
 }
 
 .graph-view__toolbar-button:disabled {
@@ -1646,11 +1649,9 @@ textarea {
   right: 0;
   width: min(24rem, calc(100vw - 2rem));
   border-radius: 18px;
-  border-color: color-mix(in srgb, var(--graph-agent) 30%, var(--graph-line));
-  background:
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--graph-agent) 20%, transparent), transparent 14rem),
-    linear-gradient(145deg, color-mix(in srgb, var(--graph-panel) 94%, transparent), color-mix(in srgb, var(--background) 82%, #000 18%));
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.38);
+  border-color: var(--graph-line);
+  background: color-mix(in srgb, var(--graph-panel) 98%, transparent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.1);
 }
 
 .graph-settings__segmented,
@@ -1670,39 +1671,33 @@ textarea {
   max-width: 390px;
   border-radius: 18px;
   padding: 0;
-  border-color: color-mix(in srgb, var(--graph-line) 76%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-soft) 97%, transparent), color-mix(in srgb, var(--graph-panel-strong) 98%, transparent)),
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--graph-agent) 12%, transparent), transparent 13rem);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent), 0 20px 46px rgba(0, 0, 0, 0.28);
+  border-color: var(--graph-line);
+  background: var(--graph-panel);
+  box-shadow: none;
   transition: none;
 }
 
 .graph-node:hover {
-  border-color: color-mix(in srgb, var(--graph-agent) 82%, #fff 18%);
+  border-color: color-mix(in srgb, var(--graph-agent) 32%, var(--graph-line));
 }
 
 .graph-node--input {
-  border-color: color-mix(in srgb, var(--graph-input) 42%, var(--graph-line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-soft) 97%, var(--graph-input) 3%), color-mix(in srgb, var(--graph-panel-strong) 96%, var(--graph-input) 4%)),
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--graph-input) 20%, transparent), transparent 13rem);
+  border-color: color-mix(in srgb, var(--graph-input) 32%, var(--graph-line));
+  background: var(--graph-panel);
 }
 
 .graph-node--output {
-  border-color: color-mix(in srgb, var(--graph-output) 42%, var(--graph-line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-soft) 97%, var(--graph-output) 3%), color-mix(in srgb, var(--graph-panel-strong) 96%, var(--graph-output) 4%)),
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--graph-output) 18%, transparent), transparent 13rem);
+  border-color: color-mix(in srgb, var(--graph-output) 32%, var(--graph-line));
+  background: var(--graph-panel);
 }
 
 .graph-node[data-status="completed"] {
-  border-color: color-mix(in srgb, var(--graph-output) 42%, var(--graph-line));
+  border-color: color-mix(in srgb, var(--graph-output) 34%, var(--graph-line));
 }
 
 .graph-node[data-status="failed"] {
   border-color: color-mix(in srgb, var(--danger) 78%, var(--graph-line));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent), 0 0 0 1px color-mix(in srgb, var(--danger) 42%, transparent), 0 0 34px color-mix(in srgb, var(--danger) 24%, transparent), 0 24px 58px rgba(0, 0, 0, 0.36);
+  box-shadow: none;
 }
 
 .graph-node[data-status="failed"] .graph-node__icon {
@@ -1723,14 +1718,14 @@ textarea {
 
 .graph-node__running-stroke rect {
   stroke: var(--graph-agent);
-  stroke-width: 2.4;
-  stroke-dasharray: 9 91;
-  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--graph-agent) 58%, transparent));
+  stroke-width: 2;
+  stroke-dasharray: 7 93;
+  filter: none;
 }
 
 .graph-node[data-running="true"] {
-  border-color: color-mix(in srgb, var(--graph-agent) 88%, var(--graph-line));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent), 0 0 0 1px color-mix(in srgb, var(--graph-agent) 28%, transparent), 0 0 32px color-mix(in srgb, var(--graph-agent) 26%, transparent), 0 24px 58px rgba(0, 0, 0, 0.36);
+  border-color: color-mix(in srgb, var(--graph-agent) 46%, var(--graph-line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--graph-agent) 12%, transparent);
 }
 
 .graph-node[data-running="true"] .graph-node__title::after {
@@ -1759,11 +1754,9 @@ textarea {
   justify-content: center;
   border: 1px solid color-mix(in srgb, var(--graph-agent) 42%, var(--graph-line));
   border-radius: 12px;
-  background:
-    radial-gradient(circle at 35% 20%, color-mix(in srgb, #fff 22%, transparent), transparent 38%),
-    color-mix(in srgb, var(--graph-agent) 18%, transparent);
+  background: color-mix(in srgb, var(--graph-agent) 10%, transparent);
   color: var(--graph-agent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent);
+  box-shadow: none;
 }
 
 .graph-node--input .graph-node__icon {
@@ -1779,9 +1772,9 @@ textarea {
 }
 
 .graph-node--model .graph-node__icon {
-  border-color: color-mix(in srgb, #a78bfa 46%, var(--graph-line));
-  background: color-mix(in srgb, #a78bfa 16%, transparent);
-  color: #a78bfa;
+  border-color: color-mix(in srgb, var(--graph-model) 42%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-model) 12%, transparent);
+  color: var(--graph-model);
 }
 
 .graph-node--output .graph-node__icon {
@@ -1953,13 +1946,13 @@ textarea {
 }
 
 .graph-node__execution-strip button[data-status="completed"]::before {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--graph-output) 68%, #fff 12%), var(--graph-output));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--graph-output) 25%, transparent);
+  background: color-mix(in srgb, var(--graph-output) 82%, var(--foreground) 18%);
+  box-shadow: none;
 }
 
 .graph-node__execution-strip button[data-status="completed"]:hover::before {
   transform: translateY(calc(-50% - 1px)) scaleY(1.45);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--graph-output) 42%, transparent);
+  box-shadow: none;
 }
 
 .graph-node__execution-strip button[data-status="running"] {
@@ -1971,8 +1964,8 @@ textarea {
 }
 
 .graph-node__execution-strip button[data-status="failed"]::before {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--danger) 72%, #fff 10%), var(--danger));
-  box-shadow: 0 0 14px color-mix(in srgb, var(--danger) 34%, transparent);
+  background: var(--danger);
+  box-shadow: none;
 }
 
 .graph-node__execution-strip button[data-status="idle"] {
@@ -1991,7 +1984,7 @@ textarea {
   width: 48%;
   height: var(--graph-execution-line-height);
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--graph-agent), color-mix(in srgb, var(--graph-agent) 55%, #fff 22%));
+  background: var(--graph-agent);
   animation: graph-execution-progress 1.15s ease-in-out infinite alternate;
 }
 
@@ -2203,7 +2196,7 @@ textarea {
   height: 0.82rem !important;
   border: 2px solid color-mix(in srgb, var(--background) 82%, #000 18%);
   background: var(--graph-agent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-agent) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-agent) 34%, transparent);
+  box-shadow: none;
 }
 
 .graph-node__handle.react-flow__handle-left {
@@ -2221,8 +2214,8 @@ textarea {
 
 .graph-node__handle--instruction.react-flow__handle-left {
   top: 6.9rem !important;
-  background: #a78bfa;
-  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+  background: var(--graph-model);
+  box-shadow: none;
 }
 
 .graph-node__handle--instruction-section.react-flow__handle-left {
@@ -2231,20 +2224,20 @@ textarea {
 
 .graph-node__handle--model.react-flow__handle-right {
   top: 52% !important;
-  background: #a78bfa;
-  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+  background: var(--graph-model);
+  box-shadow: none;
 }
 
 .graph-node__handle--inputs.react-flow__handle-left {
   top: 11.4rem !important;
   background: color-mix(in srgb, var(--foreground) 58%, var(--graph-input) 42%);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--foreground) 10%, transparent), 0 0 14px color-mix(in srgb, var(--graph-input) 22%, transparent);
+  box-shadow: none;
 }
 
 .graph-node__handle--output.react-flow__handle-right {
   top: calc(100% - 1.7rem) !important;
   background: var(--graph-output);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-output) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-output) 30%, transparent);
+  box-shadow: none;
 }
 
 .graph-node[data-collapsed="true"] .graph-node__handle--instruction.react-flow__handle-left {
@@ -2261,27 +2254,27 @@ textarea {
 
 .graph-node--input .graph-node__handle {
   background: var(--graph-input);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-input) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-input) 30%, transparent);
+  box-shadow: none;
 }
 
 .graph-node--provider .graph-node__handle {
   background: var(--graph-input);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-input) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-input) 30%, transparent);
+  box-shadow: none;
 }
 
 .graph-node--model .graph-node__handle {
-  background: #a78bfa;
-  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+  background: var(--graph-model);
+  box-shadow: none;
 }
 
 .graph-node--output .graph-node__handle {
   background: var(--graph-output);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-output) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-output) 30%, transparent);
+  box-shadow: none;
 }
 
 .graph-edge path {
-  stroke-width: 2.8;
-  filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 26%, transparent));
+  stroke-width: 2.2;
+  filter: none;
 }
 
 .graph-edge--input path {
@@ -2293,7 +2286,7 @@ textarea {
 }
 
 .graph-edge--model path {
-  stroke: #a78bfa;
+  stroke: var(--graph-model);
 }
 
 .graph-edge--agent_dependency path {
@@ -2311,8 +2304,8 @@ textarea {
 
 .graph-edge--running path {
   opacity: 1;
-  stroke-width: 3.2;
-  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--graph-agent) 54%, transparent));
+  stroke-width: 2.6;
+  filter: none;
 }
 
 .graph-edge--completed path {
@@ -2337,8 +2330,8 @@ textarea {
   overflow: hidden;
   border-radius: 14px;
   border-color: color-mix(in srgb, var(--graph-line) 82%, transparent);
-  background: color-mix(in srgb, var(--graph-panel) 82%, transparent);
-  backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--graph-panel) 96%, transparent);
+  box-shadow: none;
 }
 
 .react-flow__controls {
@@ -2403,15 +2396,15 @@ textarea {
   max-width: 340px;
   width: 320px;
   border-radius: 16px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, #111 6%), color-mix(in srgb, var(--card) 88%, #050505 12%));
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+  background: var(--graph-panel);
+  box-shadow: none;
 }
 
 .graph-node--provider,
 .graph-node--model,
 .graph-node--input,
 .graph-node--output {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, #111 6%), color-mix(in srgb, var(--card) 88%, #050505 12%));
+  background: var(--graph-panel);
 }
 
 .graph-node__header {
@@ -2684,7 +2677,7 @@ textarea {
   border: 2px solid color-mix(in srgb, var(--background) 82%, #000 18%);
   border-radius: 999px;
   background: var(--graph-agent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-agent) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-agent) 34%, transparent);
+  box-shadow: none;
   pointer-events: none;
 }
 
@@ -2701,17 +2694,17 @@ textarea {
 .graph-node--input .graph-node__collapsed-handle,
 .graph-node--provider .graph-node__collapsed-handle {
   background: var(--graph-input);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-input) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-input) 30%, transparent);
+  box-shadow: none;
 }
 
 .graph-node--model .graph-node__collapsed-handle {
-  background: #a78bfa;
-  box-shadow: 0 0 0 4px color-mix(in srgb, #a78bfa 13%, transparent), 0 0 16px color-mix(in srgb, #a78bfa 30%, transparent);
+  background: var(--graph-model);
+  box-shadow: none;
 }
 
 .graph-node--output .graph-node__collapsed-handle {
   background: var(--graph-output);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--graph-output) 13%, transparent), 0 0 16px color-mix(in srgb, var(--graph-output) 30%, transparent);
+  box-shadow: none;
 }
 
 .graph-node[data-collapsed="true"] {
