@@ -1458,7 +1458,7 @@ textarea {
 }
 
 .graph-node__tools code {
-  background: color-mix(in srgb, #38bdf8 16%, transparent);
+  background: transparent;
 }
 
 .graph-node__handle {
@@ -1538,7 +1538,8 @@ textarea {
 
 .graph-view,
 .graph-output-dialog,
-.graph-instruction-dialog {
+.graph-instruction-dialog,
+.graph-tools-dialog {
   --graph-panel: var(--card);
   --graph-panel-strong: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
   --graph-panel-soft: color-mix(in srgb, var(--card) 98%, var(--foreground) 2%);
@@ -1548,13 +1549,15 @@ textarea {
   --graph-agent: #c76500;
   --graph-output: #3f8f5f;
   --graph-model: #8065c8;
+  --graph-mcp: #66735f;
   --graph-idle: color-mix(in srgb, var(--foreground) 36%, transparent);
   gap: 0.9rem;
 }
 
 .dark .graph-view,
 .dark .graph-output-dialog,
-.dark .graph-instruction-dialog {
+.dark .graph-instruction-dialog,
+.dark .graph-tools-dialog {
   --graph-panel: color-mix(in srgb, var(--card) 94%, #000 6%);
   --graph-panel-strong: color-mix(in srgb, var(--card) 88%, #000 12%);
   --graph-panel-soft: color-mix(in srgb, var(--card) 96%, var(--foreground) 4%);
@@ -1564,6 +1567,7 @@ textarea {
   --graph-agent: #df8a28;
   --graph-output: #69ad7c;
   --graph-model: #a590df;
+  --graph-mcp: #9cab90;
 }
 
 .graph-view__canvas {
@@ -1738,6 +1742,11 @@ textarea {
   background: var(--graph-panel);
 }
 
+.graph-node--mcp {
+  border-color: color-mix(in srgb, var(--graph-mcp) 28%, var(--graph-line));
+  background: var(--graph-panel);
+}
+
 .graph-node--agent {
   border-color: color-mix(in srgb, var(--graph-agent) 24%, var(--graph-line));
   background: var(--graph-panel);
@@ -1832,6 +1841,12 @@ textarea {
   border-color: color-mix(in srgb, var(--graph-model) 28%, var(--graph-line));
   background: color-mix(in srgb, var(--graph-model) 6%, var(--graph-panel-soft));
   color: var(--graph-model);
+}
+
+.graph-node--mcp .graph-node__icon {
+  border-color: color-mix(in srgb, var(--graph-mcp) 32%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-mcp) 8%, var(--graph-panel-soft));
+  color: var(--graph-mcp);
 }
 
 .graph-node--output .graph-node__icon {
@@ -2273,6 +2288,12 @@ textarea {
   box-shadow: none;
 }
 
+.graph-node__handle--mcp-access.react-flow__handle-left {
+  top: 50% !important;
+  background: var(--graph-mcp);
+  box-shadow: none;
+}
+
 .graph-node__handle--instruction-section.react-flow__handle-left {
   top: 50% !important;
 }
@@ -2280,6 +2301,12 @@ textarea {
 .graph-node__handle--model.react-flow__handle-right {
   top: 52% !important;
   background: var(--graph-model);
+  box-shadow: none;
+}
+
+.graph-node__handle--mcp-items.react-flow__handle-right {
+  top: 50% !important;
+  background: var(--graph-mcp);
   box-shadow: none;
 }
 
@@ -2322,6 +2349,11 @@ textarea {
   box-shadow: none;
 }
 
+.graph-node--mcp .graph-node__handle {
+  background: var(--graph-mcp);
+  box-shadow: none;
+}
+
 .graph-node--output .graph-node__handle {
   background: var(--graph-output);
   box-shadow: none;
@@ -2342,6 +2374,10 @@ textarea {
 
 .graph-edge--model path {
   stroke: var(--graph-model);
+}
+
+.graph-edge--mcp_access path {
+  stroke: var(--graph-mcp);
 }
 
 .graph-edge--agent_dependency path {
@@ -2424,6 +2460,179 @@ textarea {
   box-shadow: none;
 }
 
+.graph-tools-dialog {
+  max-height: min(86vh, 46rem);
+  max-width: min(920px, calc(100vw - 2rem));
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow-y: auto;
+  border-radius: 16px;
+  border-color: var(--graph-line);
+  background: var(--graph-panel);
+  box-shadow: none;
+}
+
+.graph-tools-dialog [data-slot="dialog-title"] {
+  color: var(--foreground);
+}
+
+.graph-tools-dialog [data-slot="dialog-description"] {
+  color: var(--muted-foreground);
+}
+
+.graph-tool-summary-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-top: 0.55rem;
+  border: 1px solid var(--graph-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--graph-panel-soft) 76%, transparent);
+  padding: 0.58rem 0.68rem;
+  color: color-mix(in srgb, var(--foreground) 84%, transparent);
+  text-align: left;
+}
+
+.graph-tool-summary-button:hover {
+  border-color: color-mix(in srgb, var(--graph-mcp) 42%, var(--graph-line));
+  background: color-mix(in srgb, var(--graph-mcp) 8%, var(--graph-panel-soft));
+}
+
+.graph-tool-summary-button span {
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.graph-tool-summary-button small {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 0.64rem;
+}
+
+.graph-tool-dialog__entries,
+.graph-tool-dialog__groups {
+  display: grid;
+  min-height: 0;
+  gap: 0.7rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.graph-tool-dialog__group,
+.graph-tool-dialog__entry {
+  overflow: hidden;
+  border: 1px solid var(--graph-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--graph-panel-soft) 84%, transparent);
+}
+
+.graph-tool-dialog__group summary,
+.graph-tool-dialog__entry summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.75rem 0.85rem;
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.graph-tool-dialog__group summary::-webkit-details-marker,
+.graph-tool-dialog__entry summary::-webkit-details-marker {
+  display: none;
+}
+
+.graph-tool-dialog__group[open] > summary,
+.graph-tool-dialog__entry[open] > summary {
+  border-bottom: 1px solid var(--graph-line);
+}
+
+.graph-tool-dialog__group summary strong,
+.graph-tool-dialog__entry summary code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 0.82rem;
+}
+
+.graph-tool-dialog__entry summary span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.graph-tool-dialog__group summary small,
+.graph-tool-dialog__entry summary small {
+  flex-shrink: 0;
+  border: 1px solid var(--graph-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--graph-panel) 92%, transparent);
+  padding: 0.16rem 0.45rem;
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.graph-tool-dialog__group .graph-tool-dialog__entries {
+  padding: 0.7rem;
+}
+
+.graph-tool-dialog__body {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.8rem;
+}
+
+.graph-tool-dialog__body p {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 76%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.graph-tool-dialog__bindings {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.graph-tool-dialog__bindings div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.graph-tool-dialog__bindings dt,
+.graph-tool-dialog__schema strong {
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.graph-tool-dialog__bindings dd {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.graph-tool-dialog__schema {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.graph-tool-dialog__schema .graph-node__schema {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+}
+
 @media (max-width: 760px) {
   .graph-view__canvas {
     min-height: 620px;
@@ -2457,6 +2666,7 @@ textarea {
 
 .graph-node--provider,
 .graph-node--model,
+.graph-node--mcp,
 .graph-node--input,
 .graph-node--output {
   background: var(--graph-panel);
@@ -2501,6 +2711,7 @@ textarea {
 .graph-node__icon,
 .graph-node--provider .graph-node__icon,
 .graph-node--model .graph-node__icon,
+.graph-node--mcp .graph-node__icon,
 .graph-node--input .graph-node__icon,
 .graph-node--output .graph-node__icon {
   width: 1.35rem;
@@ -2716,16 +2927,26 @@ textarea {
   top: 1.14rem !important;
 }
 
+.graph-node__handle--section.graph-node__handle--mcp-access.react-flow__handle-left {
+  top: 1.14rem !important;
+}
+
 .graph-node__handle--section.react-flow__handle-right {
   right: 0 !important;
+  top: 1.14rem !important;
+}
+
+.graph-node__handle--section.graph-node__handle--mcp-items.react-flow__handle-right {
   top: 1.14rem !important;
 }
 
 .graph-node[data-collapsed="true"] .graph-node__handle--client.react-flow__handle-left,
 .graph-node[data-collapsed="true"] .graph-node__handle--client.react-flow__handle-right,
 .graph-node[data-collapsed="true"] .graph-node__handle--instruction.react-flow__handle-left,
+.graph-node[data-collapsed="true"] .graph-node__handle--mcp-access.react-flow__handle-left,
 .graph-node[data-collapsed="true"] .graph-node__handle--inputs.react-flow__handle-left,
 .graph-node[data-collapsed="true"] .graph-node__handle--model.react-flow__handle-right,
+.graph-node[data-collapsed="true"] .graph-node__handle--mcp-items.react-flow__handle-right,
 .graph-node[data-collapsed="true"] .graph-node__handle--output.react-flow__handle-right,
 .graph-node[data-collapsed="true"] .graph-node__handle.react-flow__handle-left,
 .graph-node[data-collapsed="true"] .graph-node__handle.react-flow__handle-right {
@@ -2763,6 +2984,11 @@ textarea {
 
 .graph-node--model .graph-node__collapsed-handle {
   background: var(--graph-model);
+  box-shadow: none;
+}
+
+.graph-node--mcp .graph-node__collapsed-handle {
+  background: var(--graph-mcp);
   box-shadow: none;
 }
 
