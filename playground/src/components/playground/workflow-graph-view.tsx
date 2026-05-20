@@ -1,7 +1,7 @@
 import '@xyflow/react/dist/style.css';
-import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
+import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
 import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, RefreshCcw, Settings2, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -37,6 +37,11 @@ type GraphEdgeType = 'smoothstep' | 'straight' | 'default' | 'simplebezier';
 type GraphNodeStatus = 'idle' | 'running' | 'completed';
 type GraphExecutionSlotStatus = 'completed' | 'running' | 'idle';
 
+interface GraphNodePosition {
+  x: number;
+  y: number;
+}
+
 interface GraphConfig {
   density: GraphDensity;
   collapseAll: boolean;
@@ -48,6 +53,10 @@ const graphConfigStorageKey = 'superwire.playground.graphConfig.v1';
 const graphViewportStorageKey = 'superwire.playground.graphViewport.v1';
 const graphNodePositionsStorageKey = 'superwire.playground.graphNodePositions.v1';
 const defaultGraphConfig: GraphConfig = { density: 'comfortable', collapseAll: false, edgeType: 'smoothstep', showEdgeLabels: true };
+const graphLayoutColumnGap = 180;
+const graphLayoutRowGap = 80;
+const graphLayoutDefaultNodeWidth = 340;
+const graphLayoutDefaultNodeHeight = 260;
 
 const graphNodeTypes = {
   workflowGraph: WorkflowGraphNodeCard,
@@ -55,6 +64,7 @@ const graphNodeTypes = {
 
 export default function WorkflowGraphView({ graph, source, graphState, runState, events, outputJson, message, onRefresh }: WorkflowGraphViewProps) {
   const [config, setConfig] = useState<GraphConfig>(() => restoreGraphConfig());
+  const [layoutRequestCount, setLayoutRequestCount] = useState(0);
   const workflowDeclarations = useMemo(() => parseWorkflowGraphDeclarations(source), [source]);
   const activeRunCounts = useMemo(() => (runState === 'running' ? activeAgentRunCounts(events) : new Map<string, number>()), [runState, events]);
   const outputEntriesByNodeId = useMemo(() => graphOutputEntriesByNodeId(events, outputJson), [events, outputJson]);
@@ -78,6 +88,9 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
       <div className="graph-view__canvas" data-empty={graph ? 'false' : 'true'}>
         <div className="graph-view__toolbar">
           <GraphStateBadge graphState={graphState} />
+          <button type="button" className="graph-view__toolbar-button" onClick={() => setLayoutRequestCount((currentCount) => currentCount + 1)} disabled={!graph || graphState === 'loading'}>
+            <GitBranch /> Arrange
+          </button>
           <button type="button" className="graph-view__toolbar-button" onClick={onRefresh} disabled={graphState === 'loading'}>
             <RefreshCcw className={graphState === 'loading' ? 'animate-spin' : ''} /> Refresh
           </button>
@@ -86,7 +99,7 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
         {graph ? (
           <div className="graph-view__flow">
             <ReactFlowProvider>
-              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} />
+              <GraphCanvas nodes={nodes} edges={edges} graphSignature={graphSignature} layoutRequestCount={layoutRequestCount} />
             </ReactFlowProvider>
           </div>
         ) : (
@@ -115,10 +128,13 @@ function GraphStateBadge({ graphState }: { graphState: GraphState }) {
   );
 }
 
-function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string }) {
-  const restoredViewport = restoreGraphViewport();
+function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignature, layoutRequestCount }: { nodes: WorkflowGraphReactNode[]; edges: Edge[]; graphSignature: string; layoutRequestCount: number }) {
+  const restoredViewportRef = useRef<Viewport | null>(restoreGraphViewport());
+  const initialFitViewCompleteRef = useRef(false);
   const [nodes, setNodes, onNodesChange] = useNodesState(restoreGraphNodePositions(incomingNodes));
   const [edges, setEdges, onEdgesChange] = useEdgesState(incomingEdges);
+  const [viewport, setViewport] = useState<Viewport>(restoredViewportRef.current ?? { x: 0, y: 0, zoom: 0.85 });
+  const reactFlowInstance = useReactFlow();
 
   useEffect(() => {
     setNodes((currentNodes) => {
@@ -144,6 +160,28 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
     storeGraphNodePositions(nodes);
   }, [nodes]);
 
+  useEffect(() => {
+    if (layoutRequestCount === 0) {
+      return;
+    }
+
+    setNodes((currentNodes) => layoutWorkflowGraphNodes(currentNodes, edges));
+
+    window.requestAnimationFrame(() => {
+      void reactFlowInstance.fitView({ padding: 0.16, duration: 420 }).then(() => {
+        const nextViewport = reactFlowInstance.getViewport();
+
+        setViewport(nextViewport);
+        storeGraphViewport(nextViewport);
+      });
+    });
+  }, [layoutRequestCount, edges, reactFlowInstance, setNodes, setViewport]);
+
+  function handleViewportChange(nextViewport: Viewport) {
+    setViewport(nextViewport);
+    storeGraphViewport(nextViewport);
+  }
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -151,8 +189,24 @@ function GraphCanvas({ nodes: incomingNodes, edges: incomingEdges, graphSignatur
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={graphNodeTypes}
-      defaultViewport={restoredViewport ?? undefined}
-      fitView={!restoredViewport}
+      viewport={viewport}
+      onViewportChange={handleViewportChange}
+      onInit={(initializedReactFlowInstance) => {
+        if (restoredViewportRef.current || initialFitViewCompleteRef.current) {
+          return;
+        }
+
+        initialFitViewCompleteRef.current = true;
+
+        window.requestAnimationFrame(() => {
+          void initializedReactFlowInstance.fitView({ padding: 0.16, duration: 0 }).then(() => {
+            const nextViewport = initializedReactFlowInstance.getViewport();
+
+            setViewport(nextViewport);
+            storeGraphViewport(nextViewport);
+          });
+        });
+      }}
       minZoom={0.35}
       maxZoom={1.2}
       nodesConnectable={false}
@@ -1252,6 +1306,158 @@ function graphEdgeClassName(edgeKind: string, targetNode: WorkflowExecutionGraph
   const targetStatus = targetNode ? nodeStatus(targetNode, activeRunCounts.get(targetNode.id) ?? 0, outputEntriesByNodeId[targetNode.id] ?? []) : 'idle';
 
   return `graph-edge graph-edge--${edgeKind} graph-edge--${targetStatus}`;
+}
+
+function layoutWorkflowGraphNodes(currentNodes: WorkflowGraphReactNode[], currentEdges: Edge[]): WorkflowGraphReactNode[] {
+  if (currentNodes.length === 0) {
+    return currentNodes;
+  }
+
+  const nodeIdentifiers = new Set(currentNodes.map((node) => node.id));
+  const layoutEdges = currentEdges.filter((edge) => nodeIdentifiers.has(edge.source) && nodeIdentifiers.has(edge.target));
+  const ranksByNodeIdentifier = workflowGraphNodeRanks(currentNodes, layoutEdges);
+  const columnsByRank = new Map<number, WorkflowGraphReactNode[]>();
+
+  for (const node of currentNodes) {
+    const rank = ranksByNodeIdentifier.get(node.id) ?? 0;
+    const columnNodes = columnsByRank.get(rank) ?? [];
+
+    columnNodes.push(node);
+    columnsByRank.set(rank, columnNodes);
+  }
+
+  const sortedRanks = Array.from(columnsByRank.keys()).sort((leftRank, rightRank) => leftRank - rightRank);
+  const columnWidths = sortedRanks.map((rank) => Math.max(...(columnsByRank.get(rank) ?? []).map(workflowGraphNodeWidth), graphLayoutDefaultNodeWidth));
+  const totalWidth = columnWidths.reduce((widthTotal, columnWidth) => widthTotal + columnWidth, 0) + Math.max(sortedRanks.length - 1, 0) * graphLayoutColumnGap;
+  const positionsByNodeIdentifier = new Map<string, GraphNodePosition>();
+  let currentX = -totalWidth / 2;
+
+  for (const [rankIndex, rank] of sortedRanks.entries()) {
+    const columnNodes = [...(columnsByRank.get(rank) ?? [])].sort(compareWorkflowGraphNodesForLayout);
+    const rowHeights = columnNodes.map(workflowGraphNodeHeight);
+    const columnHeight = rowHeights.reduce((heightTotal, rowHeight) => heightTotal + rowHeight, 0) + Math.max(columnNodes.length - 1, 0) * graphLayoutRowGap;
+    let currentY = -columnHeight / 2;
+
+    for (const [nodeIndex, node] of columnNodes.entries()) {
+      const rowHeight = rowHeights[nodeIndex] ?? graphLayoutDefaultNodeHeight;
+
+      positionsByNodeIdentifier.set(node.id, {
+        x: currentX + (columnWidths[rankIndex] ?? graphLayoutDefaultNodeWidth) / 2 - workflowGraphNodeWidth(node) / 2,
+        y: currentY,
+      });
+
+      currentY += rowHeight + graphLayoutRowGap;
+    }
+
+    currentX += (columnWidths[rankIndex] ?? graphLayoutDefaultNodeWidth) + graphLayoutColumnGap;
+  }
+
+  return currentNodes.map((node) => ({
+    ...node,
+    position: positionsByNodeIdentifier.get(node.id) ?? node.position,
+  }));
+}
+
+function workflowGraphNodeRanks(currentNodes: WorkflowGraphReactNode[], currentEdges: Edge[]) {
+  const ranksByNodeIdentifier = new Map(currentNodes.map((node) => [node.id, initialWorkflowGraphNodeRank(node)]));
+  const remainingIncomingCountByNodeIdentifier = new Map(currentNodes.map((node) => [node.id, 0]));
+  const outgoingTargetsByNodeIdentifier = new Map(currentNodes.map((node) => [node.id, [] as string[]]));
+
+  for (const edge of currentEdges) {
+    remainingIncomingCountByNodeIdentifier.set(edge.target, (remainingIncomingCountByNodeIdentifier.get(edge.target) ?? 0) + 1);
+    outgoingTargetsByNodeIdentifier.get(edge.source)?.push(edge.target);
+  }
+
+  const queuedNodeIdentifiers = currentNodes
+    .filter((node) => (remainingIncomingCountByNodeIdentifier.get(node.id) ?? 0) === 0)
+    .sort(compareWorkflowGraphNodesForLayout)
+    .map((node) => node.id);
+
+  while (queuedNodeIdentifiers.length > 0) {
+    const nodeIdentifier = queuedNodeIdentifiers.shift();
+
+    if (!nodeIdentifier) {
+      continue;
+    }
+
+    const sourceRank = ranksByNodeIdentifier.get(nodeIdentifier) ?? 0;
+    const outgoingTargets = [...(outgoingTargetsByNodeIdentifier.get(nodeIdentifier) ?? [])].sort();
+
+    for (const targetIdentifier of outgoingTargets) {
+      ranksByNodeIdentifier.set(targetIdentifier, Math.max(ranksByNodeIdentifier.get(targetIdentifier) ?? 0, sourceRank + 1));
+
+      const remainingIncomingCount = (remainingIncomingCountByNodeIdentifier.get(targetIdentifier) ?? 0) - 1;
+      remainingIncomingCountByNodeIdentifier.set(targetIdentifier, remainingIncomingCount);
+
+      if (remainingIncomingCount === 0) {
+        queuedNodeIdentifiers.push(targetIdentifier);
+      }
+    }
+  }
+
+  return ranksByNodeIdentifier;
+}
+
+function initialWorkflowGraphNodeRank(node: WorkflowGraphReactNode) {
+  if (node.data.node.kind === 'provider' || node.data.node.kind === 'input') {
+    return 0;
+  }
+
+  if (node.data.node.kind === 'model') {
+    return 1;
+  }
+
+  if (node.data.node.kind === 'output') {
+    return 3;
+  }
+
+  return 2;
+}
+
+function compareWorkflowGraphNodesForLayout(leftNode: WorkflowGraphReactNode, rightNode: WorkflowGraphReactNode) {
+  const leftKindWeight = workflowGraphNodeKindLayoutWeight(leftNode.data.node.kind);
+  const rightKindWeight = workflowGraphNodeKindLayoutWeight(rightNode.data.node.kind);
+
+  if (leftKindWeight !== rightKindWeight) {
+    return leftKindWeight - rightKindWeight;
+  }
+
+  const leftExecutionIndex = leftNode.data.node.execution_index ?? Number.MAX_SAFE_INTEGER;
+  const rightExecutionIndex = rightNode.data.node.execution_index ?? Number.MAX_SAFE_INTEGER;
+
+  if (leftExecutionIndex !== rightExecutionIndex) {
+    return leftExecutionIndex - rightExecutionIndex;
+  }
+
+  return leftNode.data.node.label.localeCompare(rightNode.data.node.label);
+}
+
+function workflowGraphNodeKindLayoutWeight(nodeKind: WorkflowExecutionGraphNode['kind']) {
+  if (nodeKind === 'provider') {
+    return 0;
+  }
+
+  if (nodeKind === 'input') {
+    return 1;
+  }
+
+  if (nodeKind === 'model') {
+    return 2;
+  }
+
+  if (nodeKind === 'agent') {
+    return 3;
+  }
+
+  return 4;
+}
+
+function workflowGraphNodeWidth(node: WorkflowGraphReactNode) {
+  return node.measured?.width ?? node.width ?? graphLayoutDefaultNodeWidth;
+}
+
+function workflowGraphNodeHeight(node: WorkflowGraphReactNode) {
+  return node.measured?.height ?? node.height ?? graphLayoutDefaultNodeHeight;
 }
 
 function nodePosition(node: WorkflowExecutionGraphNode, lastColumn: number, nodes: WorkflowExecutionGraphNode[]) {
