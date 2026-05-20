@@ -24,6 +24,7 @@ interface WorkflowGraphNodeData extends Record<string, unknown> {
   config: GraphConfig;
   activeRunCount: number;
   outputEntries: GraphOutputEntry[];
+  failureEntry: GraphFailureEntry | null;
 }
 
 interface GraphOutputEntry {
@@ -31,11 +32,16 @@ interface GraphOutputEntry {
   outputJson: string;
 }
 
+interface GraphFailureEntry {
+  title: string;
+  message: string;
+}
+
 type WorkflowGraphReactNode = Node<WorkflowGraphNodeData, 'workflowGraph'>;
 type GraphDensity = 'compact' | 'comfortable';
 type GraphEdgeType = 'smoothstep' | 'straight' | 'default' | 'simplebezier';
-type GraphNodeStatus = 'idle' | 'running' | 'completed';
-type GraphExecutionSlotStatus = 'completed' | 'running' | 'idle';
+type GraphNodeStatus = 'idle' | 'running' | 'completed' | 'failed';
+type GraphExecutionSlotStatus = 'completed' | 'running' | 'failed' | 'idle';
 
 interface GraphNodePosition {
   x: number;
@@ -68,10 +74,11 @@ export default function WorkflowGraphView({ graph, source, graphState, runState,
   const workflowDeclarations = useMemo(() => parseWorkflowGraphDeclarations(source), [source]);
   const activeRunCounts = useMemo(() => (runState === 'running' ? activeAgentRunCounts(events) : new Map<string, number>()), [runState, events]);
   const outputEntriesByNodeId = useMemo(() => graphOutputEntriesByNodeId(events, outputJson), [events, outputJson]);
+  const failureEntriesByNodeId = useMemo(() => graphFailureEntriesByNodeId(events), [events]);
   const activeAgentSignature = Array.from(activeRunCounts.entries()).sort().map(([agentName, activeRunCount]) => `${agentName}:${activeRunCount}`).join(':');
   const displayGraph = useMemo(() => (graph ? graphWithProviderModelDeclarations(graph, workflowDeclarations) : null), [graph, workflowDeclarations]);
-  const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, activeRunCounts, outputEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId]);
-  const edges = useMemo(() => (displayGraph ? reactFlowEdges(displayGraph, config, activeRunCounts, outputEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId]);
+  const nodes = useMemo(() => (displayGraph ? reactFlowNodes(displayGraph, config, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
+  const edges = useMemo(() => (displayGraph ? reactFlowEdges(displayGraph, config, activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId) : []), [displayGraph, config, activeAgentSignature, outputEntriesByNodeId, failureEntriesByNodeId]);
   const description = graph ? undefined : 'Generate a visual execution plan from the current workflow source.';
   const graphSignature = displayGraph ? displayGraph.nodes.map((node) => node.id).join(':') : 'empty';
 
@@ -283,12 +290,13 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const config = data.config;
   const activeRunCount = data.activeRunCount;
   const outputEntries = data.outputEntries;
+  const failureEntry = data.failureEntry;
   const [collapsed, setCollapsed] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
   const [instructionOpen, setInstructionOpen] = useState(false);
   const [openOutputIndex, setOpenOutputIndex] = useState(0);
   const visiblyCollapsed = config.collapseAll || collapsed;
-  const status = nodeStatus(node, activeRunCount, outputEntries);
+  const status = nodeStatus(node, activeRunCount, outputEntries, failureEntry);
   const visibleBindings = node.bindings.filter((binding) => binding.name !== 'instruction' && binding.name !== 'model');
   const inputsCollapsible = node.kind !== 'input';
   const outputsCollapsible = node.kind === 'agent' || node.kind === 'output';
@@ -321,7 +329,8 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
         <ChevronDown className="graph-node__header-chevron" />
       </button>
 
-      <GraphExecutionStrip node={node} activeRunCount={activeRunCount} outputEntries={outputEntries} onOpenOutput={openOutput} />
+      <GraphExecutionStrip node={node} activeRunCount={activeRunCount} outputEntries={outputEntries} failureEntry={failureEntry} onOpenOutput={openOutput} />
+      <GraphFailureNotice failureEntry={failureEntry} />
       {node.instruction ? <GraphInstructionPreview instruction={node.instruction} onOpen={() => setInstructionOpen(true)} /> : null}
       {node.loop_info ? <GraphLoopSummary node={node} config={config} /> : null}
       {visiblyCollapsed ? (
@@ -377,18 +386,18 @@ function NodeStatusBadge({ status, activeRunCount, outputEntries }: { status: Gr
   );
 }
 
-function GraphExecutionStrip({ node, activeRunCount, outputEntries, onOpenOutput }: { node: WorkflowExecutionGraphNode; activeRunCount: number; outputEntries: GraphOutputEntry[]; onOpenOutput: (outputIndex: number) => void }) {
+function GraphExecutionStrip({ node, activeRunCount, outputEntries, failureEntry, onOpenOutput }: { node: WorkflowExecutionGraphNode; activeRunCount: number; outputEntries: GraphOutputEntry[]; failureEntry: GraphFailureEntry | null; onOpenOutput: (outputIndex: number) => void }) {
   if (node.kind !== 'agent') {
     return null;
   }
 
   const completedCount = outputEntries.length;
-  const visibleSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount);
+  const visibleSlotCount = graphExecutionSlotCount(node, completedCount, activeRunCount, failureEntry !== null);
 
   return (
     <div className="graph-node__execution-strip" aria-label="Execution progress">
       {Array.from({ length: visibleSlotCount }).map((_, slotIndex) => {
-        const slotStatus = executionSlotStatus(slotIndex, completedCount, activeRunCount);
+        const slotStatus = executionSlotStatus(slotIndex, completedCount, activeRunCount, failureEntry !== null);
 
         return (
           <button
@@ -406,15 +415,29 @@ function GraphExecutionStrip({ node, activeRunCount, outputEntries, onOpenOutput
   );
 }
 
-function graphExecutionSlotCount(node: WorkflowExecutionGraphNode, completedCount: number, activeRunCount: number) {
-  const loopBinding = node.bindings.find((binding) => binding.name === 'loop');
-  const loopCount = loopBinding ? arrayLiteralItemCount(loopBinding.expression) : null;
-
-  if (loopCount !== null) {
-    return Math.max(loopCount, completedCount + activeRunCount);
+function GraphFailureNotice({ failureEntry }: { failureEntry: GraphFailureEntry | null }) {
+  if (!failureEntry) {
+    return null;
   }
 
-  return Math.max(completedCount + activeRunCount, 1);
+  return (
+    <section className="graph-node__failure" aria-label={failureEntry.title}>
+      <strong>{failureEntry.title}</strong>
+      <p>{failureEntry.message}</p>
+    </section>
+  );
+}
+
+function graphExecutionSlotCount(node: WorkflowExecutionGraphNode, completedCount: number, activeRunCount: number, hasFailure: boolean) {
+  const loopBinding = node.bindings.find((binding) => binding.name === 'loop');
+  const loopCount = loopBinding ? arrayLiteralItemCount(loopBinding.expression) : null;
+  const failedCount = hasFailure ? 1 : 0;
+
+  if (loopCount !== null) {
+    return Math.max(loopCount, completedCount + activeRunCount + failedCount);
+  }
+
+  return Math.max(completedCount + activeRunCount + failedCount, 1);
 }
 
 function arrayLiteralItemCount(expression: string) {
@@ -1131,7 +1154,7 @@ function graphModelNodeId(modelName: string) {
   return `model:${modelName}`;
 }
 
-function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): WorkflowGraphReactNode[] {
+function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): WorkflowGraphReactNode[] {
   const graphNodes = graph.nodes;
   const agentNodes = graphNodes.filter((node) => node.kind === 'agent');
   const lastColumn = Math.max(agentNodes.length + 1, 1);
@@ -1140,7 +1163,7 @@ function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, acti
     id: node.id,
     type: 'workflowGraph',
     position: nodePosition(node, lastColumn, graphNodes),
-    data: { node, config, activeRunCount: activeRunCounts.get(node.id) ?? 0, outputEntries: outputEntriesByNodeId[node.id] ?? [] },
+    data: { node, config, activeRunCount: activeRunCounts.get(node.id) ?? 0, outputEntries: outputEntriesByNodeId[node.id] ?? [], failureEntry: failureEntriesByNodeId[node.id] ?? null },
   }));
 }
 
@@ -1174,8 +1197,13 @@ function sameGraphNodeRuntime(currentNode: WorkflowGraphReactNode, incomingNode:
     currentNode.data.node === incomingNode.data.node &&
     currentNode.data.config === incomingNode.data.config &&
     currentNode.data.activeRunCount === incomingNode.data.activeRunCount &&
-    sameGraphOutputEntries(currentNode.data.outputEntries, incomingNode.data.outputEntries)
+    sameGraphOutputEntries(currentNode.data.outputEntries, incomingNode.data.outputEntries) &&
+    sameGraphFailureEntry(currentNode.data.failureEntry, incomingNode.data.failureEntry)
   );
+}
+
+function sameGraphFailureEntry(currentEntry: GraphFailureEntry | null, incomingEntry: GraphFailureEntry | null) {
+  return currentEntry?.title === incomingEntry?.title && currentEntry?.message === incomingEntry?.message;
 }
 
 function sameGraphOutputEntries(currentEntries: GraphOutputEntry[], incomingEntries: GraphOutputEntry[]) {
@@ -1217,7 +1245,7 @@ function sameGraphEdgeRuntime(currentEdge: Edge, incomingEdge: Edge) {
   );
 }
 
-function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>): Edge[] {
+function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): Edge[] {
   const graphNodesById = new Map(graph.nodes.map((node) => normalizeWorkflowGraphNode(node)).map((node) => [node.id, node]));
 
   return graph.edges.map((edge) => ({
@@ -1229,7 +1257,7 @@ function reactFlowEdges(graph: WorkflowExecutionGraph, config: GraphConfig, acti
     label: config.showEdgeLabels ? edge.label : undefined,
     type: config.edgeType,
     animated: (activeRunCounts.get(edge.target) ?? 0) > 0,
-    className: graphEdgeClassName(edge.kind, graphNodesById.get(edge.target), activeRunCounts, outputEntriesByNodeId),
+    className: graphEdgeClassName(edge.kind, graphNodesById.get(edge.target), activeRunCounts, outputEntriesByNodeId, failureEntriesByNodeId),
   }));
 }
 
@@ -1302,8 +1330,8 @@ function normalizeWorkflowGraphNode(node: WorkflowExecutionGraphNode): WorkflowE
   };
 }
 
-function graphEdgeClassName(edgeKind: string, targetNode: WorkflowExecutionGraphNode | undefined, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>) {
-  const targetStatus = targetNode ? nodeStatus(targetNode, activeRunCounts.get(targetNode.id) ?? 0, outputEntriesByNodeId[targetNode.id] ?? []) : 'idle';
+function graphEdgeClassName(edgeKind: string, targetNode: WorkflowExecutionGraphNode | undefined, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>) {
+  const targetStatus = targetNode ? nodeStatus(targetNode, activeRunCounts.get(targetNode.id) ?? 0, outputEntriesByNodeId[targetNode.id] ?? [], failureEntriesByNodeId[targetNode.id] ?? null) : 'idle';
 
   return `graph-edge graph-edge--${edgeKind} graph-edge--${targetStatus}`;
 }
@@ -1500,7 +1528,11 @@ function nodeSummary(node: WorkflowExecutionGraphNode) {
   return details.join(' | ');
 }
 
-function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, outputEntries: GraphOutputEntry[]): GraphNodeStatus {
+function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, outputEntries: GraphOutputEntry[], failureEntry: GraphFailureEntry | null): GraphNodeStatus {
+  if (failureEntry) {
+    return 'failed';
+  }
+
   if (activeRunCount > 0) {
     return 'running';
   }
@@ -1512,13 +1544,17 @@ function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, ou
   return 'idle';
 }
 
-function executionSlotStatus(slotIndex: number, completedCount: number, activeRunCount: number): GraphExecutionSlotStatus {
+function executionSlotStatus(slotIndex: number, completedCount: number, activeRunCount: number, hasFailure: boolean): GraphExecutionSlotStatus {
   if (slotIndex < completedCount) {
     return 'completed';
   }
 
   if (slotIndex < completedCount + activeRunCount) {
     return 'running';
+  }
+
+  if (hasFailure && slotIndex === completedCount + activeRunCount) {
+    return 'failed';
   }
 
   return 'idle';
@@ -1791,21 +1827,23 @@ function activeAgentRunCounts(events: ExecutorEvent[]) {
   const activeRunCounts = new Map<string, number>();
 
   for (const event of events) {
-    if (!event.agent_name) {
+    const agentName = event.agent_name ?? (event.kind === 'workflow_failed' && event.message ? agentNameFromFailureMessage(event.message) : null);
+
+    if (!agentName) {
       continue;
     }
 
     if (event.kind === 'agent_started') {
-      activeRunCounts.set(event.agent_name, (activeRunCounts.get(event.agent_name) ?? 0) + 1);
+      activeRunCounts.set(agentName, (activeRunCounts.get(agentName) ?? 0) + 1);
     }
 
     if (event.kind === 'agent_completed' || event.kind === 'workflow_failed') {
-      const nextRunCount = Math.max((activeRunCounts.get(event.agent_name) ?? 0) - 1, 0);
+      const nextRunCount = Math.max((activeRunCounts.get(agentName) ?? 0) - 1, 0);
 
       if (nextRunCount === 0) {
-        activeRunCounts.delete(event.agent_name);
+        activeRunCounts.delete(agentName);
       } else {
-        activeRunCounts.set(event.agent_name, nextRunCount);
+        activeRunCounts.set(agentName, nextRunCount);
       }
     }
   }
@@ -1834,6 +1872,70 @@ function graphOutputEntriesByNodeId(events: ExecutorEvent[], workflowOutputJson:
   }
 
   return outputEntriesByNodeId;
+}
+
+function graphFailureEntriesByNodeId(events: ExecutorEvent[]) {
+  const failureEntriesByNodeId: Record<string, GraphFailureEntry> = {};
+
+  for (const event of events) {
+    const nodeIdentifier = failureNodeIdentifier(event);
+    const failureMessage = event.message ?? failureMessageFromData(event.data);
+
+    if (!nodeIdentifier || !failureMessage) {
+      continue;
+    }
+
+    failureEntriesByNodeId[nodeIdentifier] = {
+      title: event.kind === 'workflow_failed' ? 'Workflow failed here' : 'Execution failed',
+      message: failureMessage,
+    };
+  }
+
+  return failureEntriesByNodeId;
+}
+
+function failureNodeIdentifier(event: ExecutorEvent) {
+  if (!event.kind.endsWith('_failed')) {
+    return null;
+  }
+
+  if (event.agent_name) {
+    return event.agent_name;
+  }
+
+  if (!event.message) {
+    return null;
+  }
+
+  return agentNameFromFailureMessage(event.message);
+}
+
+function agentNameFromFailureMessage(message: string) {
+  const patterns = [/agent execution failed for `([^`]+)`/, /agent `([^`]+)` output does not match/];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(message);
+
+    if (typeof match?.[1] === 'string') {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+function failureMessageFromData(data: unknown) {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const error = data.error;
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  return null;
 }
 
 function jsonByteSize(outputJson: string) {
