@@ -52,7 +52,7 @@ export interface WorkflowExecutionGraphNode {
   loop_info: WorkflowExecutionGraphLoopInfo | null;
 }
 
-export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'input' | 'agent' | 'output';
+export type WorkflowExecutionGraphNodeKind = 'provider' | 'model' | 'mcp' | 'input' | 'agent' | 'output';
 
 export interface WorkflowExecutionGraphDetail {
   name: string;
@@ -85,6 +85,7 @@ export interface WorkflowExecutionGraphTool {
   max_calls: number | null;
   input_schema: unknown;
   output_schema: unknown;
+  bindings?: WorkflowExecutionGraphBinding[];
 }
 
 export type WorkflowExecutionGraphToolKind = 'local_tool' | 'mcp_tool' | 'mcp_prompt' | 'mcp_resource';
@@ -97,4 +98,4 @@ export interface WorkflowExecutionGraphEdge {
   kind: WorkflowExecutionGraphEdgeKind;
 }
 
-export type WorkflowExecutionGraphEdgeKind = 'provider_client' | 'model' | 'input' | 'agent_dependency' | 'workflow_output';
+export type WorkflowExecutionGraphEdgeKind = 'provider_client' | 'model' | 'mcp_access' | 'input' | 'agent_dependency' | 'workflow_output';

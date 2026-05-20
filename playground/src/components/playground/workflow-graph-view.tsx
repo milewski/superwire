@@ -1,6 +1,6 @@
 import '@xyflow/react/dist/style.css';
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, useUpdateNodeInternals, type Edge, type Node, type NodeProps, type Viewport } from '@xyflow/react';
-import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, RefreshCcw, Settings2, Sparkles } from 'lucide-react';
+import { Box, CheckCircle2, ChevronDown, CircleDashed, Cloud, Cpu, DatabaseZap, Eye, GitBranch, Layers3, Loader2, PlugZap, RefreshCcw, Settings2, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import JsonCodeEditor from '@/components/json-code-editor';
@@ -62,6 +62,7 @@ const graphLayoutColumnGap = 180;
 const graphLayoutRowGap = 80;
 const graphLayoutDefaultNodeWidth = 340;
 const graphLayoutDefaultNodeHeight = 260;
+const WorkflowGraphOpenObjectSchema = { type: 'object', additionalProperties: true };
 
 const graphNodeTypes = {
   workflowGraph: WorkflowGraphNodeCard,
@@ -292,6 +293,8 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
   const visiblyCollapsed = config.collapseAll || collapsed;
   const status = nodeStatus(node, activeRunCount, outputEntries, failureEntry);
   const visibleBindings = node.bindings.filter((binding) => binding.name !== 'instruction' && binding.name !== 'model');
+  const localTools = node.tools.filter((tool) => tool.kind === 'local_tool');
+  const mcpTools = node.tools.filter(isMcpTool);
   const inputsCollapsible = node.kind !== 'input';
   const outputsCollapsible = node.kind === 'agent' || node.kind === 'output';
   const updateNodeInternals = useUpdateNodeInternals();
@@ -331,12 +334,14 @@ function WorkflowGraphNodeCard({ data }: NodeProps<WorkflowGraphReactNode>) {
         <p className="graph-node__summary">{nodeSummary(node)}</p>
       ) : (
         <>
-          {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails details={node.details} /> : null}
+          {node.kind !== 'agent' && node.details.length > 0 ? <GraphDetails title={node.kind === 'mcp' ? 'MCP bindings' : 'Details'} details={node.details} collapsible={node.kind === 'mcp'} /> : null}
           {visibleBindings.length > 0 ? <GraphBindings bindings={visibleBindings} /> : null}
           <GraphPorts title="Inputs" ports={node.inputs} fallback={node.kind === 'input' ? 'External runtime values' : 'No upstream agent output'} config={config} collapsible={inputsCollapsible} targetHandleId={inputPortTargetHandleId(node)} />
           <GraphPorts title="Outputs" ports={node.outputs} config={config} collapsible={outputsCollapsible} defaultOpen={node.kind !== 'agent'} showPortNames={node.kind !== 'agent' && node.kind !== 'output'} sourceHandleId={outputPortSourceHandleId(node)} />
           {outputEntries.length > 0 ? <GraphOutputAction node={node} outputEntries={outputEntries} onOpen={() => openOutput(0)} /> : null}
-          {node.tools.length > 0 ? <GraphTools tools={node.tools} /> : null}
+          {node.kind === 'mcp' && node.tools.length > 0 ? <GraphMcpDefinitions tools={node.tools} config={config} /> : null}
+          {node.kind === 'agent' && mcpTools.length > 0 ? <GraphMcpAccess tools={mcpTools} config={config} /> : null}
+          {localTools.length > 0 ? <GraphTools title="Local tools" tools={localTools} config={config} /> : null}
         </>
       )}
       {outputEntries.length > 0 ? <GraphOutputDialog node={node} outputEntries={outputEntries} open={outputOpen} openOutputIndex={openOutputIndex} onOpenChange={setOutputOpen} /> : null}
@@ -359,10 +364,12 @@ function GraphNodeHandles({ node, collapsed, showExpandedInstructionHandle }: { 
       {hasCollapsedSourceHandle ? <span className="graph-node__collapsed-handle graph-node__collapsed-handle--right" aria-hidden="true" /> : null}
       {node.kind === 'model' ? <Handle id="client" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
       {node.kind === 'agent' ? <Handle id="instruction" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--instruction" isConnectable={false} /> : null}
+      {node.kind === 'agent' ? <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--mcp-access" isConnectable={false} /> : null}
       {node.kind !== 'input' ? <Handle id="inputs" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--inputs" isConnectable={false} /> : null}
       {node.kind === 'provider' ? <Handle id="client" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--client" isConnectable={false} /> : null}
       {node.kind === 'model' ? <Handle id="model" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--model" isConnectable={false} /> : null}
-      {node.kind !== 'model' && node.kind !== 'output' ? <Handle id="output" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--output" isConnectable={false} /> : null}
+      {node.kind === 'mcp' ? <Handle id="mcp-items" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--mcp-items" isConnectable={false} /> : null}
+      {node.kind !== 'model' && node.kind !== 'mcp' && node.kind !== 'output' ? <Handle id="output" type="source" position={Position.Right} className="graph-node__handle graph-node__handle--collapsed graph-node__handle--output" isConnectable={false} /> : null}
     </>
   );
 }
@@ -473,18 +480,31 @@ function GraphInstructionDialog({ node, open, onOpenChange }: { node: WorkflowEx
   );
 }
 
-function GraphDetails({ details }: { details: WorkflowExecutionGraphNode['details'] }) {
+function GraphDetails({ title, details, collapsible = false }: { title: string; details: WorkflowExecutionGraphNode['details']; collapsible?: boolean }) {
+  const content = (
+    <ul>
+      {details.map((detail) => (
+        <li key={`${detail.name}:${detail.value}`}>
+          <small>{detail.name}</small>
+          <code data-secret={detail.secret ? 'true' : 'false'}>{detail.value}</code>
+        </li>
+      ))}
+    </ul>
+  );
+
+  if (collapsible) {
+    return (
+      <details className="graph-node__section graph-node__collapsible-section graph-node__details" open>
+        <summary><span className="graph-node__section-label">{title}</span><small>{details.length}</small></summary>
+        {content}
+      </details>
+    );
+  }
+
   return (
     <section className="graph-node__section graph-node__details">
-      <span>Details</span>
-      <ul>
-        {details.map((detail) => (
-          <li key={`${detail.name}:${detail.value}`}>
-            <small>{detail.name}</small>
-            <code data-secret={detail.secret ? 'true' : 'false'}>{detail.value}</code>
-          </li>
-        ))}
-      </ul>
+      <span>{title}</span>
+      {content}
     </section>
   );
 }
@@ -643,18 +663,179 @@ function GraphPortTitle({ title, targetHandleId, sourceHandleId }: { title: stri
   );
 }
 
-function GraphTools({ tools }: { tools: WorkflowExecutionGraphTool[] }) {
+function GraphMcpDefinitions({ tools, config }: { tools: WorkflowExecutionGraphTool[]; config: GraphConfig }) {
+  const toolGroups = [
+    { title: 'Tools', tools: tools.filter((tool) => tool.kind === 'mcp_tool') },
+    { title: 'Prompts', tools: tools.filter((tool) => tool.kind === 'mcp_prompt') },
+    { title: 'Resources', tools: tools.filter((tool) => tool.kind === 'mcp_resource') },
+  ].filter((toolGroup) => toolGroup.tools.length > 0);
+
   return (
-    <section className="graph-node__section graph-node__tools">
-      <span>Tools and MCP</span>
-      <ul>
-        {tools.map((tool) => (
-          <li key={`${tool.kind}:${tool.name}:${tool.server_name ?? ''}:${tool.item_name ?? ''}`}>
-            <code>{tool.name}</code>
-            <small>{toolLabel(tool)}</small>
-          </li>
-        ))}
-      </ul>
+    <>
+      {toolGroups.map((toolGroup, toolGroupIndex) => <GraphTools key={toolGroup.title} title={toolGroup.title} tools={toolGroup.tools} config={config} sourceHandleId={toolGroupIndex === 0 ? 'mcp-items' : undefined} collapsible />)}
+    </>
+  );
+}
+
+function GraphMcpAccess({ tools, config }: { tools: WorkflowExecutionGraphTool[]; config: GraphConfig }) {
+  const [open, setOpen] = useState(false);
+  const toolsByServerName = tools.reduce((groupedTools, tool) => {
+    const serverName = tool.server_name ?? 'unknown';
+    const serverTools = groupedTools.get(serverName) ?? [];
+
+    serverTools.push(tool);
+    groupedTools.set(serverName, serverTools);
+
+    return groupedTools;
+  }, new Map<string, WorkflowExecutionGraphTool[]>());
+  const serverEntries = Array.from(toolsByServerName.entries());
+
+  return (
+    <>
+      <section className="graph-node__section graph-node__tools graph-node__mcp-access">
+        <span className="graph-node__section-label">
+          <Handle id="mcp-access" type="target" position={Position.Left} className="graph-node__handle graph-node__handle--section graph-node__handle--mcp-access" isConnectable={false} />
+          MCP access
+        </span>
+        <GraphToolSummaryButton title="View MCP access" tools={tools} detail={`${serverEntries.length} ${serverEntries.length === 1 ? 'server' : 'servers'}`} onOpen={() => setOpen(true)} />
+      </section>
+      <GraphMcpAccessDialog toolsByServerName={serverEntries} tools={tools} config={config} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+function GraphTools({ title, tools, config, sourceHandleId, collapsible = false }: { title: string; tools: WorkflowExecutionGraphTool[]; config: GraphConfig; sourceHandleId?: string; collapsible?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const content = <GraphToolSummaryButton title={`View ${title.toLowerCase()}`} tools={tools} onOpen={() => setOpen(true)} />;
+  const titleContent = <GraphToolSectionTitle title={title} sourceHandleId={sourceHandleId} />;
+
+  if (collapsible) {
+    return (
+      <>
+        <details className="graph-node__section graph-node__collapsible-section graph-node__tools" open>
+          <summary>{titleContent}<small>{tools.length}</small></summary>
+          {content}
+        </details>
+        <GraphToolsDialog title={title} tools={tools} config={config} open={open} onOpenChange={setOpen} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <section className="graph-node__section graph-node__tools">
+        {titleContent}
+        {content}
+      </section>
+      <GraphToolsDialog title={title} tools={tools} config={config} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+function GraphToolSectionTitle({ title, sourceHandleId }: { title: string; sourceHandleId?: string }) {
+  return (
+    <span className="graph-node__section-label">
+      {title}
+      {sourceHandleId ? <Handle id={sourceHandleId} type="source" position={Position.Right} className="graph-node__handle graph-node__handle--section graph-node__handle--mcp-items" isConnectable={false} /> : null}
+    </span>
+  );
+}
+
+function GraphToolSummaryButton({ title, tools, detail, onOpen }: { title: string; tools: WorkflowExecutionGraphTool[]; detail?: string; onOpen: () => void }) {
+  const itemLabel = tools.length === 1 ? '1 item' : `${tools.length} items`;
+
+  return (
+    <button type="button" className="graph-tool-summary-button nodrag" onClick={onOpen}>
+      <span>{title}</span>
+      <small>{detail ? `${itemLabel} / ${detail}` : itemLabel}</small>
+    </button>
+  );
+}
+
+function GraphToolsDialog({ title, tools, config, open, onOpenChange }: { title: string; tools: WorkflowExecutionGraphTool[]; config: GraphConfig; open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="graph-tools-dialog">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{tools.length === 1 ? '1 available item.' : `${tools.length} available items.`}</DialogDescription>
+        </DialogHeader>
+        <GraphToolList tools={tools} config={config} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GraphMcpAccessDialog({ toolsByServerName, tools, config, open, onOpenChange }: { toolsByServerName: Array<[string, WorkflowExecutionGraphTool[]]>; tools: WorkflowExecutionGraphTool[]; config: GraphConfig; open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="graph-tools-dialog">
+        <DialogHeader>
+          <DialogTitle>MCP access</DialogTitle>
+          <DialogDescription>{tools.length === 1 ? '1 MCP item available to this agent.' : `${tools.length} MCP items available to this agent.`}</DialogDescription>
+        </DialogHeader>
+        <div className="graph-tool-dialog__groups">
+          {toolsByServerName.map(([serverName, serverTools]) => (
+            <details key={serverName} className="graph-tool-dialog__group" open>
+              <summary><strong>{serverName}</strong><small>{serverTools.length}</small></summary>
+              <GraphToolList tools={serverTools} config={config} />
+            </details>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GraphToolList({ tools, config }: { tools: WorkflowExecutionGraphTool[]; config: GraphConfig }) {
+  return (
+    <div className="graph-tool-dialog__entries">
+      {tools.map((tool) => (
+        <GraphToolDetails key={`${tool.kind}:${tool.name}:${tool.server_name ?? ''}:${tool.item_name ?? ''}`} tool={tool} config={config} />
+      ))}
+    </div>
+  );
+}
+
+function GraphToolDetails({ tool, config }: { tool: WorkflowExecutionGraphTool; config: GraphConfig }) {
+  const inputSchemaVisible = schemaHasDisplayContent(tool.input_schema);
+  const outputSchemaVisible = schemaHasDisplayContent(tool.output_schema);
+  const maxCallsLabel = toolMaxCallsLabel(tool);
+
+  return (
+    <details className="graph-tool-dialog__entry" open>
+      <summary>
+        <span><code>{mcpToolDisplayName(tool)}</code><small>{toolKindLabel(tool.kind)}</small></span>
+        {maxCallsLabel ? <small>{maxCallsLabel}</small> : null}
+      </summary>
+      <div className="graph-tool-dialog__body">
+        {tool.description ? <p>{tool.description}</p> : null}
+        {tool.bindings && tool.bindings.length > 0 ? <GraphToolBindings tool={tool} /> : null}
+        {inputSchemaVisible ? <GraphToolSchema title="Input schema" schema={tool.input_schema} config={config} /> : null}
+        {outputSchemaVisible ? <GraphToolSchema title="Output schema" schema={tool.output_schema} config={config} /> : null}
+      </div>
+    </details>
+  );
+}
+
+function GraphToolBindings({ tool }: { tool: WorkflowExecutionGraphTool }) {
+  return (
+    <dl className="graph-tool-dialog__bindings">
+      {tool.bindings?.map((binding) => (
+        <div key={`${tool.name}:${binding.name}`}>
+          <dt>{binding.name}</dt>
+          <dd>{binding.expression}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function GraphToolSchema({ title, schema, config }: { title: string; schema: unknown; config: GraphConfig }) {
+  return (
+    <section className="graph-tool-dialog__schema">
+      <strong>{title}</strong>
+      <pre className="graph-node__schema">{schemaBlock(schema, config)}</pre>
     </section>
   );
 }
@@ -662,6 +843,7 @@ function GraphTools({ tools }: { tools: WorkflowExecutionGraphTool[] }) {
 interface ParsedWorkflowGraphDeclarations {
   providers: Map<string, ParsedProviderDeclaration>;
   models: Map<string, ParsedModelDeclaration>;
+  mcpDeclarations: Map<string, ParsedMcpDeclaration>;
   agents: Map<string, ParsedAgentDeclaration>;
 }
 
@@ -675,6 +857,23 @@ interface ParsedModelDeclaration {
   name: string;
   providerName: string;
   details: ParsedGraphDetail[];
+}
+
+interface ParsedMcpDeclaration {
+  name: string;
+  details: ParsedGraphDetail[];
+  imports: ParsedMcpImport[];
+}
+
+interface ParsedMcpImport {
+  name: string;
+  itemName: string;
+  kind: WorkflowExecutionGraphTool['kind'];
+  bindings: ParsedGraphBinding[];
+}
+
+interface ParsedMcpImportWithServer extends ParsedMcpImport {
+  serverName: string;
 }
 
 interface ParsedAgentDeclaration {
@@ -744,6 +943,37 @@ function graphWithProviderModelDeclarations(graph: WorkflowExecutionGraph, decla
     addRuntimeReferenceEdges(edgesById, modelNodeId, modelDeclaration?.details ?? []);
   }
 
+  for (const node of Array.from(nodesById.values())) {
+    if (node.kind !== 'agent') {
+      continue;
+    }
+
+    const toolsByServerName = mcpToolsByServerName(node.tools);
+
+    for (const [serverName, tools] of toolsByServerName.entries()) {
+      const mcpNodeId = graphMcpNodeId(serverName);
+
+      if (!nodesById.has(mcpNodeId)) {
+        nodesById.set(mcpNodeId, mcpGraphNode(serverName, declarations.mcpDeclarations.get(serverName), tools));
+      }
+
+      addGraphEdge(edgesById, mcpNodeId, node.id, mcpAccessLabel(tools), 'mcp_access');
+      addRuntimeReferenceEdges(edgesById, mcpNodeId, declarations.mcpDeclarations.get(serverName)?.details ?? []);
+
+      for (const tool of tools) {
+        addRuntimeReferenceEdges(edgesById, mcpNodeId, tool.bindings ?? []);
+      }
+    }
+  }
+
+  for (const mcpDeclaration of declarations.mcpDeclarations.values()) {
+    const mcpNodeId = graphMcpNodeId(mcpDeclaration.name);
+
+    if (!nodesById.has(mcpNodeId) && mcpDeclaration.imports.length > 0) {
+      nodesById.set(mcpNodeId, mcpGraphNode(mcpDeclaration.name, mcpDeclaration, []));
+    }
+  }
+
   return {
     ...graph,
     nodes: Array.from(nodesById.values()),
@@ -754,6 +984,7 @@ function graphWithProviderModelDeclarations(graph: WorkflowExecutionGraph, decla
 function parseWorkflowGraphDeclarations(source: string): ParsedWorkflowGraphDeclarations {
   const providers = new Map<string, ParsedProviderDeclaration>();
   const models = new Map<string, ParsedModelDeclaration>();
+  const mcpDeclarations = new Map<string, ParsedMcpDeclaration>();
   const agents = new Map<string, ParsedAgentDeclaration>();
 
   for (const block of declarationBlocks(source, /\bprovider\s+([A-Za-z_][A-Za-z0-9_]*)\s+from\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/g)) {
@@ -770,6 +1001,21 @@ function parseWorkflowGraphDeclarations(source: string): ParsedWorkflowGraphDecl
       providerName: block.secondaryName ?? '',
       details: parseGraphDetails(block.body),
     });
+  }
+
+  for (const block of declarationBlocks(source, /\bmcp\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/g)) {
+    mcpDeclarations.set(block.name, {
+      name: block.name,
+      details: parseGraphDetails(block.body),
+      imports: [],
+    });
+  }
+
+  for (const mcpImport of parseMcpImports(source)) {
+    const mcpDeclaration = mcpDeclarations.get(mcpImport.serverName) ?? { name: mcpImport.serverName, details: [], imports: [] };
+
+    mcpDeclaration.imports.push({ name: mcpImport.name, itemName: mcpImport.itemName, kind: mcpImport.kind, bindings: mcpImport.bindings });
+    mcpDeclarations.set(mcpDeclaration.name, mcpDeclaration);
   }
 
   for (const block of declarationBlocks(source, /\bagent\s+([A-Za-z_][A-Za-z0-9_]*)([^{}]*)\{/g)) {
@@ -790,7 +1036,123 @@ function parseWorkflowGraphDeclarations(source: string): ParsedWorkflowGraphDecl
     });
   }
 
-  return { providers, models, agents };
+  return { providers, models, mcpDeclarations, agents };
+}
+
+function parseMcpImports(source: string): ParsedMcpImportWithServer[] {
+  return [...parseIndividualMcpImports(source), ...parseBatchMcpImports(source)];
+}
+
+function parseIndividualMcpImports(source: string): ParsedMcpImportWithServer[] {
+  const imports: ParsedMcpImportWithServer[] = [];
+  const pattern = /\b(tool|prompt|resource)\s+([A-Za-z_][A-Za-z0-9_]*)\s+from\s+mcp\.([A-Za-z_][A-Za-z0-9_]*)(?:\.(tool|prompt|resource))?\.([A-Za-z_][A-Za-z0-9_]*)\s*/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(source)) !== null) {
+    const declarationKind = mcpImportKind(match[1] ?? match[4] ?? 'tool');
+    const importName = match[2] ?? '';
+    const serverName = match[3] ?? '';
+    const itemName = match[5] ?? importName;
+    const nextCharacterIndex = pattern.lastIndex;
+    const blockBody = source[nextCharacterIndex] === '{' ? mcpImportBlockBody(source, nextCharacterIndex) : '';
+
+    imports.push({
+      name: importName,
+      itemName,
+      serverName,
+      kind: declarationKind,
+      bindings: parseBindingsBlock(blockBody),
+    });
+
+    if (blockBody) {
+      pattern.lastIndex = nextCharacterIndex + blockBody.length + 2;
+    }
+  }
+
+  return imports;
+}
+
+function parseBatchMcpImports(source: string): ParsedMcpImportWithServer[] {
+  const imports: ParsedMcpImportWithServer[] = [];
+
+  for (const block of declarationBlocks(source, /\bfrom\s+mcp\.([A-Za-z_][A-Za-z0-9_]*)(?:\.(tool|prompt|resource))?\s*\{/g)) {
+    const serverName = block.name;
+    const defaultKind = block.secondaryName ? mcpImportKind(block.secondaryName) : null;
+    const sharedBindings = parseBindingsBlock(block.body);
+
+    for (const item of parseBatchMcpImportItems(block.body, defaultKind)) {
+      imports.push({
+        ...item,
+        serverName,
+        bindings: [...sharedBindings, ...item.bindings],
+      });
+    }
+  }
+
+  return imports;
+}
+
+function parseBatchMcpImportItems(source: string, defaultKind: WorkflowExecutionGraphTool['kind'] | null): ParsedMcpImport[] {
+  const imports: ParsedMcpImport[] = [];
+  const pattern = /\b(tool|prompt|resource)\s+([A-Za-z_][A-Za-z0-9_]*)\s*/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(source)) !== null) {
+    const itemStartIndex = match.index;
+
+    if (braceDepthAtIndex(source, itemStartIndex) !== 0) {
+      continue;
+    }
+
+    const kind = defaultKind ?? mcpImportKind(match[1] ?? 'tool');
+    const name = match[2] ?? '';
+    const nextCharacterIndex = pattern.lastIndex;
+    const blockBody = source[nextCharacterIndex] === '{' ? mcpImportBlockBody(source, nextCharacterIndex) : '';
+
+    imports.push({
+      name,
+      itemName: name,
+      kind,
+      bindings: parseBindingsBlock(blockBody),
+    });
+
+    if (blockBody) {
+      pattern.lastIndex = nextCharacterIndex + blockBody.length + 2;
+    }
+  }
+
+  return imports;
+}
+
+function mcpImportBlockBody(source: string, openBraceIndex: number) {
+  const closeBraceIndex = matchingBraceIndex(source, openBraceIndex);
+
+  return closeBraceIndex === null ? '' : source.slice(openBraceIndex + 1, closeBraceIndex);
+}
+
+function parseBindingsBlock(source: string): ParsedGraphBinding[] {
+  const bindingsMatch = /\bbindings\s*\{/.exec(source);
+
+  if (!bindingsMatch) {
+    return [];
+  }
+
+  const openBraceIndex = bindingsMatch.index + bindingsMatch[0].length - 1;
+  const blockBody = mcpImportBlockBody(source, openBraceIndex);
+
+  return parseGraphBindings(blockBody);
+}
+
+function mcpImportKind(kind: string): WorkflowExecutionGraphTool['kind'] {
+  if (kind === 'prompt') {
+    return 'mcp_prompt';
+  }
+
+  if (kind === 'resource') {
+    return 'mcp_resource';
+  }
+
+  return 'mcp_tool';
 }
 
 function providerGraphNode(providerName: string, providerDeclaration: ParsedProviderDeclaration | undefined): WorkflowExecutionGraphNode {
@@ -833,6 +1195,61 @@ function modelGraphNode(modelName: string, providerName: string, modelDeclaratio
   });
 }
 
+function mcpGraphNode(serverName: string, mcpDeclaration: ParsedMcpDeclaration | undefined, usedTools: WorkflowExecutionGraphTool[]): WorkflowExecutionGraphNode {
+  const declaredTools = (mcpDeclaration?.imports ?? []).map((mcpImport) => mcpImportGraphTool(serverName, mcpImport));
+  const tools = mergeMcpGraphTools(declaredTools, usedTools.filter(isMcpTool));
+
+  return normalizeWorkflowGraphNode({
+    id: graphMcpNodeId(serverName),
+    label: serverName,
+    kind: 'mcp',
+    inputs: [],
+    outputs: [{ name: 'items', schema: { type: 'object', title: 'MCP items' } }],
+    dependencies: [],
+    provider_name: serverName,
+    model: null,
+    instruction: null,
+    details: mcpDeclaration?.details ?? [],
+    bindings: [],
+    tools,
+    execution_index: null,
+    loop_info: null,
+  });
+}
+
+function mcpImportGraphTool(serverName: string, mcpImport: ParsedMcpImport): WorkflowExecutionGraphTool {
+  return {
+    name: mcpImport.name,
+    kind: mcpImport.kind,
+    server_name: serverName,
+    item_name: mcpImport.itemName,
+    description: null,
+    max_calls: null,
+    input_schema: WorkflowGraphOpenObjectSchema,
+    output_schema: WorkflowGraphOpenObjectSchema,
+    bindings: mcpImport.bindings,
+  };
+}
+
+function mergeMcpGraphTools(declaredTools: WorkflowExecutionGraphTool[], usedTools: WorkflowExecutionGraphTool[]) {
+  const toolsByKey = new Map<string, WorkflowExecutionGraphTool>();
+
+  for (const tool of declaredTools) {
+    toolsByKey.set(mcpToolKey(tool), tool);
+  }
+
+  for (const tool of usedTools) {
+    const existingTool = toolsByKey.get(mcpToolKey(tool));
+
+    toolsByKey.set(mcpToolKey(tool), {
+      ...tool,
+      bindings: existingTool?.bindings ?? tool.bindings,
+    });
+  }
+
+  return Array.from(toolsByKey.values()).sort(compareGraphTools);
+}
+
 function addGraphEdge(edgesById: Map<string, WorkflowExecutionGraph['edges'][number]>, source: string, target: string, label: string, kind: WorkflowExecutionGraph['edges'][number]['kind']) {
   const id = `${source}->${target}:${label}`;
 
@@ -843,7 +1260,7 @@ function addGraphEdge(edgesById: Map<string, WorkflowExecutionGraph['edges'][num
   edgesById.set(id, { id, source, target, label, kind });
 }
 
-function addRuntimeReferenceEdges(edgesById: Map<string, WorkflowExecutionGraph['edges'][number]>, target: string, details: ParsedGraphDetail[]) {
+function addRuntimeReferenceEdges(edgesById: Map<string, WorkflowExecutionGraph['edges'][number]>, target: string, details: Array<{ name: string; expression: string }>) {
   for (const detail of details) {
     if (!expressionUsesRuntime(detail.expression)) {
       continue;
@@ -1148,6 +1565,52 @@ function graphModelNodeId(modelName: string) {
   return `model:${modelName}`;
 }
 
+function graphMcpNodeId(serverName: string) {
+  return `mcp:${serverName}`;
+}
+
+function isMcpTool(tool: WorkflowExecutionGraphTool) {
+  return tool.kind === 'mcp_tool' || tool.kind === 'mcp_prompt' || tool.kind === 'mcp_resource';
+}
+
+function mcpToolsByServerName(tools: WorkflowExecutionGraphTool[]) {
+  const toolsByServerName = new Map<string, WorkflowExecutionGraphTool[]>();
+
+  for (const tool of tools) {
+    if (!isMcpTool(tool) || !tool.server_name) {
+      continue;
+    }
+
+    const serverTools = toolsByServerName.get(tool.server_name) ?? [];
+
+    serverTools.push(tool);
+    toolsByServerName.set(tool.server_name, serverTools);
+  }
+
+  return toolsByServerName;
+}
+
+function mcpAccessLabel(tools: WorkflowExecutionGraphTool[]) {
+  const count = tools.length;
+
+  return `${count} MCP ${count === 1 ? 'item' : 'items'}`;
+}
+
+function mcpToolKey(tool: WorkflowExecutionGraphTool) {
+  return `${tool.kind}:${tool.server_name ?? ''}:${tool.item_name ?? tool.name}`;
+}
+
+function compareGraphTools(leftTool: WorkflowExecutionGraphTool, rightTool: WorkflowExecutionGraphTool) {
+  const leftKind = toolKindLabel(leftTool.kind);
+  const rightKind = toolKindLabel(rightTool.kind);
+
+  if (leftKind !== rightKind) {
+    return leftKind.localeCompare(rightKind);
+  }
+
+  return mcpToolDisplayName(leftTool).localeCompare(mcpToolDisplayName(rightTool));
+}
+
 function reactFlowNodes(graph: WorkflowExecutionGraph, config: GraphConfig, activeRunCounts: Map<string, number>, outputEntriesByNodeId: Record<string, GraphOutputEntry[]>, failureEntriesByNodeId: Record<string, GraphFailureEntry>): WorkflowGraphReactNode[] {
   const graphNodes = graph.nodes;
   const agentNodes = graphNodes.filter((node) => node.kind === 'agent');
@@ -1264,6 +1727,10 @@ function graphEdgeSourceHandle(edgeKind: string) {
     return 'model';
   }
 
+  if (edgeKind === 'mcp_access') {
+    return 'mcp-items';
+  }
+
   return 'output';
 }
 
@@ -1274,6 +1741,10 @@ function graphEdgeTargetHandle(edgeKind: string) {
 
   if (edgeKind === 'model') {
     return 'instruction';
+  }
+
+  if (edgeKind === 'mcp_access') {
+    return 'mcp-access';
   }
 
   return 'inputs';
@@ -1300,6 +1771,10 @@ function outputPortSourceHandleId(node: WorkflowExecutionGraphNode) {
     return 'model';
   }
 
+  if (node.kind === 'mcp') {
+    return undefined;
+  }
+
   if (node.kind !== 'output') {
     return 'output';
   }
@@ -1316,11 +1791,18 @@ function normalizeWorkflowGraphNode(node: WorkflowExecutionGraphNode): WorkflowE
     instruction: typeof node.instruction === 'string' ? node.instruction : null,
     details: Array.isArray(node.details) ? node.details : [],
     bindings: Array.isArray(node.bindings) ? node.bindings : [],
-    tools: Array.isArray(node.tools) ? node.tools : [],
+    tools: Array.isArray(node.tools) ? node.tools.map(normalizeWorkflowGraphTool) : [],
     execution_index: typeof node.execution_index === 'number' ? node.execution_index : null,
     loop_info: node.loop_info ?? null,
     model: node.model ?? null,
     provider_name: node.provider_name ?? null,
+  };
+}
+
+function normalizeWorkflowGraphTool(tool: WorkflowExecutionGraphTool): WorkflowExecutionGraphTool {
+  return {
+    ...tool,
+    bindings: Array.isArray(tool.bindings) ? tool.bindings : [],
   };
 }
 
@@ -1425,7 +1907,7 @@ function initialWorkflowGraphNodeRank(node: WorkflowGraphReactNode) {
     return 0;
   }
 
-  if (node.data.node.kind === 'model') {
+  if (node.data.node.kind === 'model' || node.data.node.kind === 'mcp') {
     return 1;
   }
 
@@ -1467,11 +1949,15 @@ function workflowGraphNodeKindLayoutWeight(nodeKind: WorkflowExecutionGraphNode[
     return 2;
   }
 
-  if (nodeKind === 'agent') {
+  if (nodeKind === 'mcp') {
     return 3;
   }
 
-  return 4;
+  if (nodeKind === 'agent') {
+    return 4;
+  }
+
+  return 5;
 }
 
 function workflowGraphNodeWidth(node: WorkflowGraphReactNode) {
@@ -1489,6 +1975,10 @@ function nodePosition(node: WorkflowExecutionGraphNode, lastColumn: number, node
 
   if (node.kind === 'model') {
     return { x: 360, y: 120 + nodeKindIndex(node, nodes) * 260 };
+  }
+
+  if (node.kind === 'mcp') {
+    return { x: 360, y: 430 + nodeKindIndex(node, nodes) * 260 };
   }
 
   if (node.kind === 'input') {
@@ -1531,7 +2021,7 @@ function nodeStatus(node: WorkflowExecutionGraphNode, activeRunCount: number, ou
     return 'running';
   }
 
-  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'input' || outputEntries.length > 0) {
+  if (node.kind === 'provider' || node.kind === 'model' || node.kind === 'mcp' || node.kind === 'input' || outputEntries.length > 0) {
     return 'completed';
   }
 
@@ -1563,6 +2053,10 @@ function nodeSubtitle(node: WorkflowExecutionGraphNode) {
     return 'Model';
   }
 
+  if (node.kind === 'mcp') {
+    return 'MCP server';
+  }
+
   if (node.kind === 'input') {
     return 'Runtime values';
   }
@@ -1585,6 +2079,10 @@ function nodeIcon(node: WorkflowExecutionGraphNode) {
 
   if (node.kind === 'model') {
     return <Box />;
+  }
+
+  if (node.kind === 'mcp') {
+    return <PlugZap />;
   }
 
   if (node.kind === 'input') {
@@ -1615,6 +2113,10 @@ function nodeColor(node: Node) {
     return '#8065c8';
   }
 
+  if (node.id.startsWith('mcp:')) {
+    return '#738069';
+  }
+
   if (node.id === 'input') {
     return '#247ea3';
   }
@@ -1626,11 +2128,32 @@ function nodeColor(node: Node) {
   return '#c76500';
 }
 
-function toolLabel(tool: WorkflowExecutionGraphTool) {
-  const source = [tool.server_name, tool.item_name].filter(Boolean).join(' / ');
-  const maxCalls = tool.max_calls === null ? '' : ` max ${tool.max_calls}`;
+function toolMaxCallsLabel(tool: WorkflowExecutionGraphTool) {
+  return tool.max_calls === null ? '' : `max ${tool.max_calls}`;
+}
 
-  return `${tool.kind.replaceAll('_', ' ')}${source ? ` ${source}` : ''}${maxCalls}`;
+function toolKindLabel(kind: WorkflowExecutionGraphTool['kind']) {
+  if (kind === 'mcp_tool') {
+    return 'tool';
+  }
+
+  if (kind === 'mcp_prompt') {
+    return 'prompt';
+  }
+
+  if (kind === 'mcp_resource') {
+    return 'resource';
+  }
+
+  return 'local';
+}
+
+function mcpToolDisplayName(tool: WorkflowExecutionGraphTool | undefined) {
+  if (!tool) {
+    return 'MCP item';
+  }
+
+  return tool.name;
 }
 
 function schemaBlock(schema: unknown, config: GraphConfig) {
