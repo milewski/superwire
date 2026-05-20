@@ -1782,6 +1782,11 @@ impl ToolCall {
     fn push_to_formatter(&self, formatter: &mut DslFormatter) {
         formatter.output.push_str("call ");
         self.callee.push_to_formatter(formatter);
+
+        if !self.has_body() {
+            return;
+        }
+
         formatter.output.push_str(" {");
         formatter.push_newline();
         formatter.indentation_depth += 1;
@@ -1821,6 +1826,10 @@ impl ToolCall {
         formatter.indentation_depth -= 1;
         formatter.push_indent();
         formatter.output.push('}');
+    }
+
+    fn has_body(&self) -> bool {
+        !self.input_fields.is_empty() || !self.binding_fields.is_empty() || self.max_calls.is_some()
     }
 
     fn push_agent_binding_to_formatter(&self, formatter: &mut DslFormatter) {
@@ -2788,6 +2797,38 @@ mod tests {
         let expected_output = "from mcp.local.tool {\n    bindings {\n        project_id: 1\n        task_id: 2\n    }\n\n    tool create_sorting_task {\n        bindings {\n            title: \"Sort\"\n        }\n    }\n    tool assign_task\n}\n";
 
         let formatted_source = format_workflow_source(source_text).expect("batch import workflow should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
+    }
+
+    #[test]
+    fn formatter_preserves_blockless_tool_calls() {
+        let source_text = workflow_source! {
+            dynamic {
+                data: call tool.list_all_participants_who_has_answered_given_task
+            }
+        };
+        let expected_output = "dynamic {\n    data: call tool.list_all_participants_who_has_answered_given_task\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("blockless tool call workflow should format successfully");
+
+        assert_eq!(formatted_source, expected_output);
+    }
+
+    #[test]
+    fn formatter_keeps_tool_call_block_when_content_exists() {
+        let source_text = workflow_source! {
+            dynamic {
+                data: call tool.fetch_participant_answer {
+                    input {
+                        participant_id: input.participant_id
+                    }
+                }
+            }
+        };
+        let expected_output = "dynamic {\n    data: call tool.fetch_participant_answer {\n        input {\n            participant_id: input.participant_id\n        }\n    }\n}\n";
+
+        let formatted_source = format_workflow_source(source_text).expect("tool call workflow should format successfully");
 
         assert_eq!(formatted_source, expected_output);
     }

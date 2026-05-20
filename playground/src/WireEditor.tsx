@@ -1,6 +1,6 @@
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching, defaultHighlightStyle, foldGutter, indentOnInput, syntaxHighlighting } from '@codemirror/language';
+import { bracketMatching, defaultHighlightStyle, foldGutter, foldService, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { type Diagnostic, linter, setDiagnostics } from '@codemirror/lint';
 import { searchKeymap } from '@codemirror/search';
 import { EditorState } from '@codemirror/state';
@@ -423,6 +423,7 @@ function createEditorState(
     extensions: [
       lineNumbers(),
       foldGutter(),
+      foldService.of(wireFoldRange),
       highlightActiveLine(),
       highlightActiveLineGutter(),
       bracketMatching(),
@@ -464,6 +465,108 @@ function createEditorState(
       }),
     ],
   });
+}
+
+function wireFoldRange(editorState: EditorState, lineStart: number) {
+  const source = editorState.doc.toString();
+  const openingBraceIndex = findOpeningBraceOnLine(source, lineStart);
+
+  if (openingBraceIndex === null) {
+    return null;
+  }
+
+  const closingBraceIndex = findMatchingClosingBrace(source, openingBraceIndex);
+
+  if (closingBraceIndex === null) {
+    return null;
+  }
+
+  const openingLine = editorState.doc.lineAt(openingBraceIndex);
+  const closingLine = editorState.doc.lineAt(closingBraceIndex);
+
+  if (openingLine.number === closingLine.number) {
+    return null;
+  }
+
+  return {
+    from: openingLine.to,
+    to: closingLine.from,
+  };
+}
+
+function findOpeningBraceOnLine(source: string, lineStart: number) {
+  const lineEnd = source.indexOf('\n', lineStart);
+  const searchEnd = lineEnd === -1 ? source.length : lineEnd;
+  let insideString = false;
+  let escaping = false;
+
+  for (let characterIndex = lineStart; characterIndex < searchEnd; characterIndex += 1) {
+    const character = source[characterIndex];
+    const nextCharacter = source[characterIndex + 1];
+
+    if (!insideString && character === '/' && nextCharacter === '/') {
+      return null;
+    }
+
+    if (character === '"' && !escaping) {
+      insideString = !insideString;
+    }
+
+    if (!insideString && character === '{') {
+      return characterIndex;
+    }
+
+    escaping = character === '\\' && !escaping;
+  }
+
+  return null;
+}
+
+function findMatchingClosingBrace(source: string, openingBraceIndex: number) {
+  let braceDepth = 0;
+  let insideString = false;
+  let escaping = false;
+  let insideLineComment = false;
+
+  for (let characterIndex = openingBraceIndex; characterIndex < source.length; characterIndex += 1) {
+    const character = source[characterIndex];
+    const nextCharacter = source[characterIndex + 1];
+
+    if (insideLineComment) {
+      if (character === '\n') {
+        insideLineComment = false;
+      }
+
+      continue;
+    }
+
+    if (!insideString && character === '/' && nextCharacter === '/') {
+      insideLineComment = true;
+      characterIndex += 1;
+
+      continue;
+    }
+
+    if (character === '"' && !escaping) {
+      insideString = !insideString;
+    }
+
+    if (!insideString && character === '{') {
+      braceDepth += 1;
+    }
+
+    if (!insideString && character === '}') {
+      braceDepth -= 1;
+
+      if (braceDepth === 0) {
+        return characterIndex;
+      }
+    }
+
+    escaping = character === '\\' && !escaping;
+  }
+
+  return null;
 }
 
 function updateEditorHeight(editorView: EditorView, setEditorHeight: (height: number) => void) {
