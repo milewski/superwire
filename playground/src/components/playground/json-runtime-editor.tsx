@@ -20,7 +20,7 @@ export default function JsonRuntimeEditor({ title, value, secret, validationErro
         </span>
         <Button type="button" variant="outline" size="sm" onClick={onFormat}>Format JSON</Button>
       </span>
-      <JsonCodeEditor value={value} onChange={onChange} />
+      <JsonCodeEditor value={value} className="runtime-json-editor__code" onChange={onChange} />
       <em className={validationError ? 'runtime-json-editor__status runtime-json-editor__status--error' : 'runtime-json-editor__status runtime-json-editor__status--ok'}>
         {validationError ?? 'Valid JSON object'}
       </em>

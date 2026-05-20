@@ -23,9 +23,14 @@ const jsonEditorTheme = EditorView.theme({
     fontFamily: 'var(--font-mono)',
     minHeight: '0',
     padding: '0.75rem 0.9rem',
+    caretColor: 'var(--editor-caret)',
+  },
+  '.cm-editor': {
+    minHeight: 'inherit',
   },
   '.cm-scroller': {
     fontFamily: 'var(--font-mono)',
+    minHeight: 'inherit',
     overflow: 'visible',
   },
   '.cm-focused': {
@@ -35,7 +40,10 @@ const jsonEditorTheme = EditorView.theme({
     padding: 0,
   },
   '.cm-cursor': {
-    borderLeftColor: 'var(--editor-caret)',
+    borderLeftColor: 'var(--editor-caret) !important',
+  },
+  '.cm-cursorLayer': {
+    color: 'var(--editor-caret)',
   },
   '.cm-activeLine': {
     backgroundColor: 'color-mix(in srgb, var(--superwire-accent) 7%, transparent)',
@@ -122,5 +130,15 @@ export default function JsonCodeEditor({ value, readOnly = false, className, onC
     });
   }, [value]);
 
-  return <div ref={editorContainerElementRef} className={cn('json-code-editor', readOnly ? 'json-code-editor-readonly' : null, className)} />;
+  function focusEditor() {
+    editorViewRef.current?.focus();
+  }
+
+  return (
+    <div
+      ref={editorContainerElementRef}
+      className={cn('json-code-editor', readOnly ? 'json-code-editor-readonly' : null, className)}
+      onMouseDown={readOnly ? undefined : focusEditor}
+    />
+  );
 }

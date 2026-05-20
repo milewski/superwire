@@ -628,8 +628,28 @@ textarea {
   color: var(--foreground);
 }
 
+.json-code-editor .cm-editor,
+.json-code-editor .cm-scroller,
+.json-code-editor .cm-content {
+  min-height: inherit;
+}
+
 .json-code-editor .cm-content {
   line-height: 1.55;
+}
+
+.runtime-json-editor__code {
+  @apply min-h-96;
+}
+
+.runtime-json-editor__code .cm-editor {
+  font-size: 0.95rem;
+}
+
+.runtime-json-editor__code .cm-content {
+  min-height: 24rem;
+  padding: 1rem 1.05rem;
+  line-height: 1.65;
 }
 
 .json-code-editor:has(.cm-focused) {
@@ -638,6 +658,12 @@ textarea {
 }
 
 .json-code-editor-readonly {
+  min-height: auto;
+}
+
+.json-code-editor-readonly .cm-editor,
+.json-code-editor-readonly .cm-scroller,
+.json-code-editor-readonly .cm-content {
   min-height: auto;
 }
 
