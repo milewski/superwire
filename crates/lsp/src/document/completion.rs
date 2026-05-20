@@ -471,6 +471,14 @@ impl DocumentState {
             }
 
             if let Some(declaration_header_completion_context) = DeclarationHeaderCompletionContext::from_line_prefix(line_prefix) {
+                if let DeclarationHeaderCompletionContext::ProviderDriver { driver_prefix } = declaration_header_completion_context {
+                    return Some(SemanticIndex::provider_driver_suggestions(
+                        &driver_prefix,
+                        "Provider driver",
+                        "Built-in provider driver available for provider declarations.",
+                    ));
+                }
+
                 if let DeclarationHeaderCompletionContext::ModelProvider { provider_prefix } = declaration_header_completion_context {
                     return Some(semantic_index.provider_reference_suggestions(&provider_prefix));
                 }

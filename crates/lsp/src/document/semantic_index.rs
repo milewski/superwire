@@ -1511,30 +1511,50 @@ impl SemanticIndex {
         }
 
         let value_completion_context = ValueCompletionContext::from_value_prefix(property_value_prefix);
+        let completion_suggestions = Self::provider_driver_suggestions(
+            &value_completion_context.value_prefix,
+            "Provider driver",
+            "Valid provider driver value.",
+        )
+        .into_iter()
+        .map(|completion_suggestion| {
+            let insert_text = if value_completion_context.inside_string_literal {
+                completion_suggestion.label.clone()
+            } else {
+                format!("\"{}\"", completion_suggestion.label)
+            };
+
+            CompletionSuggestion {
+                insert_text,
+                ..completion_suggestion
+            }
+        })
+        .collect::<Vec<_>>();
+
+        Some(completion_suggestions)
+    }
+
+    pub fn provider_driver_suggestions(
+        driver_prefix: &str,
+        detail: &'static str,
+        documentation: &'static str,
+    ) -> Vec<CompletionSuggestion> {
         let mut completion_suggestions = ProviderDriver::all()
             .into_iter()
             .map(superwire_core::semantic::ProviderDriver::as_str)
-            .filter(|driver_name| driver_name.starts_with(&value_completion_context.value_prefix))
-            .map(|driver_name| {
-                let insert_text = if value_completion_context.inside_string_literal {
-                    driver_name.to_string()
-                } else {
-                    format!("\"{driver_name}\"")
-                };
-
-                CompletionSuggestion {
-                    label: driver_name.to_string(),
-                    kind: CompletionItemKind::VALUE,
-                    detail: "Provider driver".to_string(),
-                    documentation: "Valid provider driver value.".to_string(),
-                    insert_text,
-                }
+            .filter(|driver_name| driver_name.starts_with(driver_prefix))
+            .map(|driver_name| CompletionSuggestion {
+                label: driver_name.to_string(),
+                kind: CompletionItemKind::VALUE,
+                detail: detail.to_string(),
+                documentation: documentation.to_string(),
+                insert_text: driver_name.to_string(),
             })
             .collect::<Vec<_>>();
 
         completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 
-        Some(completion_suggestions)
+        completion_suggestions
     }
 
     pub fn provider_models_value_suggestions(&self, line_prefix: &str) -> Option<Vec<CompletionSuggestion>> {
@@ -1985,21 +2005,6 @@ impl SemanticIndex {
                 insert_text: provider_name.clone(),
             })
             .collect::<Vec<_>>();
-
-        completion_suggestions.extend(
-            ProviderDriver::all()
-                .into_iter()
-                .map(ProviderDriver::as_str)
-                .filter(|provider_driver_name| provider_driver_name.starts_with(provider_prefix))
-                .filter(|provider_driver_name| !self.providers.contains_key(*provider_driver_name))
-                .map(|provider_driver_name| CompletionSuggestion {
-                    label: provider_driver_name.to_string(),
-                    kind: CompletionItemKind::VALUE,
-                    detail: "Provider driver".to_string(),
-                    documentation: "Built-in provider driver available for model declarations.".to_string(),
-                    insert_text: provider_driver_name.to_string(),
-                }),
-        );
 
         completion_suggestions.sort_by(|left_suggestion, right_suggestion| left_suggestion.label.cmp(&right_suggestion.label));
 

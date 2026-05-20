@@ -1386,7 +1386,7 @@ fn suggests_only_declared_providers_for_model_declaration_provider() {
 }
 
 #[test]
-fn suggests_provider_drivers_for_model_declaration_provider_without_declared_providers() {
+fn suppresses_provider_drivers_for_model_declaration_provider_without_declared_providers() {
     let (source, cursor_position) = source_without_cursor_normalization(inline_document_template! {
         model pro from <cursor> {
             id: "model-a"
@@ -1394,6 +1394,39 @@ fn suggests_provider_drivers_for_model_declaration_provider_without_declared_pro
     });
 
     let completion_suggestions = completion_suggestions_from_source(source, cursor_position);
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "anthropic",
+        "google",
+        "openai",
+        "openai_compatible",
+        "anthropic_compatible",
+        "ollama"
+    );
+}
+
+#[test]
+fn suggests_only_declared_providers_for_model_declaration_provider_with_driver_named_provider() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider my_model from openai_compatible {
+            endpoint: "http://100.118.249.48:3000/v1"
+        }
+
+        model openai_model from <cursor> {
+            id: "mimo-v2.5"
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "my_model");
+    assert_completion_excludes_labels!(&completion_suggestions, "openai_compatible", "openai", "anthropic");
+}
+
+#[test]
+fn suggests_provider_drivers_for_provider_declaration_driver() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider llm from <cursor> {}
+    };
 
     assert_completion_contains_labels!(
         &completion_suggestions,
@@ -1404,6 +1437,25 @@ fn suggests_provider_drivers_for_model_declaration_provider_without_declared_pro
         "anthropic_compatible",
         "ollama"
     );
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        ReferenceKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        BuiltinFunctionName::Context,
+        "string"
+    );
+}
+
+#[test]
+fn filters_provider_drivers_for_provider_declaration_driver_prefix() {
+    let completion_suggestions = inline_completion_suggestions! {
+        provider llm from op<cursor> {}
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "openai", "openai_compatible", "openrouter");
+    assert_completion_excludes_labels!(&completion_suggestions, "anthropic", "google", "ollama");
 }
 
 #[test]

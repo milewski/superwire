@@ -11,6 +11,7 @@ pub enum DeclarationHeaderCompletionContext {
     NamedDeclaration,
     SingletonDeclaration,
     NamedDeclarationBlock,
+    ProviderDriver { driver_prefix: String },
     ModelProvider { provider_prefix: String },
     AgentForKeyword { keyword_prefix: String },
     AgentForIteratorName,
@@ -56,6 +57,13 @@ impl DeclarationHeaderCompletionContext {
                     DeclarationKeyword::Agent => {
                         return Self::agent_header_completion_context(trimmed_line_after_keyword);
                     }
+                    DeclarationKeyword::Provider => {
+                        if let Some(provider_driver_completion_context) =
+                            Self::provider_driver_completion_context(trimmed_line_after_keyword)
+                        {
+                            return Some(provider_driver_completion_context);
+                        }
+                    }
                     DeclarationKeyword::Model => {
                         if let Some(model_provider_completion_context) = Self::model_provider_completion_context(trimmed_line_after_keyword)
                         {
@@ -87,7 +95,11 @@ impl DeclarationHeaderCompletionContext {
 
     pub fn completion_suggestions(self) -> Vec<CompletionSuggestion> {
         match self {
-            Self::NamedDeclaration | Self::SingletonDeclaration | Self::ModelProvider { .. } | Self::AgentForIteratorName => Vec::new(),
+            Self::NamedDeclaration
+            | Self::SingletonDeclaration
+            | Self::ProviderDriver { .. }
+            | Self::ModelProvider { .. }
+            | Self::AgentForIteratorName => Vec::new(),
             Self::NamedDeclarationBlock => vec![CompletionSuggestion {
                 label: "{}".to_string(),
                 kind: CompletionItemKind::VALUE,
@@ -180,6 +192,31 @@ impl DeclarationHeaderCompletionContext {
 
         Some(Self::AgentInKeyword {
             keyword_prefix: in_keyword_segment.to_string(),
+        })
+    }
+
+    fn provider_driver_completion_context(trimmed_line_after_keyword: &str) -> Option<Self> {
+        let line_has_trailing_whitespace = trimmed_line_after_keyword.ends_with(char::is_whitespace);
+        let provider_name = leading_identifier(trimmed_line_after_keyword)?;
+        let after_provider_name = trimmed_line_after_keyword[provider_name.len()..].trim_start();
+        let after_from_keyword = after_provider_name.strip_prefix(ImportKeyword::From.as_str())?;
+
+        if !after_from_keyword.is_empty() && !after_from_keyword.starts_with(char::is_whitespace) {
+            return None;
+        }
+
+        let driver_prefix = after_from_keyword.trim_start();
+
+        if driver_prefix.contains(char::is_whitespace) {
+            return None;
+        }
+
+        if driver_prefix.is_empty() && !line_has_trailing_whitespace {
+            return None;
+        }
+
+        Some(Self::ProviderDriver {
+            driver_prefix: driver_prefix.to_string(),
         })
     }
 
