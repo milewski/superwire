@@ -111,7 +111,7 @@
   Description: Move keyword enums and `from_identifier`/`as_str` behavior into one module.
   Rationale: DSL keyword matching must stay enum-based and centralized to avoid raw string comparisons.
 
-- [ ] Split parser visitor logic into declaration, agent, tool, MCP, expression, and type visitor components.
+- [x] Split parser visitor logic into declaration, agent, tool, MCP, expression, and type visitor components.
   Description: Break `visitor.rs` into syntax-domain files while preserving parse output.
   Rationale: Syntax additions should touch the relevant parser component instead of a large parse-tree visitor.
 
@@ -119,7 +119,7 @@
   Description: Add methods on MCP import/binding types or a dedicated binding type for shared/local override merging.
   Rationale: Merge order bugs are easy when each caller implements inheritance separately.
 
-- [ ] Split formatter logic into comments, declarations, expressions, types, tools, MCP, and wrapping modules.
+- [x] Split formatter logic into comments, declarations, expressions, types, tools, MCP, and wrapping modules.
   Description: Turn the formatter into domain renderers with shared writer/wrapping primitives.
   Rationale: Formatting behavior is large and fragile, especially comments and wrapping; smaller modules allow focused tests.
 
