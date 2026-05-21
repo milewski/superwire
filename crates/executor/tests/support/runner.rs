@@ -5,11 +5,10 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use superwire_core::testing::WorkflowSource;
-use superwire_executor::api::{ExecutionOptions, ExecutionRequest};
+pub use superwire_core::testing::FakeMcpRequest;
+use superwire_core::testing::{FakeMcpClientFactory, WorkflowSource};
 use superwire_executor::model::CerseiModelProvider;
-use superwire_executor::runtime::ExecutorError;
-use superwire_executor::service::ExecutorService;
+use superwire_executor::runtime::{ExecutorError, WorkflowExecutor};
 
 type MessageAssertion = Arc<dyn Fn(&[Value]) + Send + Sync>;
 
@@ -17,14 +16,14 @@ type MessageAssertion = Arc<dyn Fn(&[Value]) + Send + Sync>;
 pub struct TestRunOutput {
     pub output: Value,
     pub provider_requests: BTreeMap<String, Vec<Value>>,
-    pub mcp_requests: BTreeMap<String, Vec<Value>>,
+    pub mcp_requests: BTreeMap<String, Vec<FakeMcpRequest>>,
 }
 
 #[derive(Debug)]
 pub struct TestRunErrorOutput {
     pub error: ExecutorError,
     pub provider_requests: BTreeMap<String, Vec<Value>>,
-    pub mcp_requests: BTreeMap<String, Vec<Value>>,
+    pub mcp_requests: BTreeMap<String, Vec<FakeMcpRequest>>,
 }
 
 pub struct TestRunner {
@@ -163,19 +162,6 @@ struct ProviderServerState {
     errors: Vec<String>,
 }
 
-#[derive(Debug)]
-struct McpServer {
-    endpoint: String,
-    state: Arc<Mutex<McpServerState>>,
-}
-
-#[derive(Debug)]
-struct McpServerState {
-    script: McpScript,
-    requests: Vec<Value>,
-    errors: Vec<String>,
-}
-
 impl TestRunner {
     #[must_use]
     pub fn workflow(workflow_source: impl Into<String>) -> Self {
@@ -227,27 +213,24 @@ impl TestRunner {
 
     pub async fn run(self) -> Result<TestRunOutput, ExecutorError> {
         let provider_servers = self.spawn_provider_servers();
-        let mcp_servers = self.spawn_mcp_servers();
-        let workflow_source = self.workflow_source_with_mock_endpoints(&provider_servers, &mcp_servers)?;
-        let service = ExecutorService::new(CerseiModelProvider);
-        let execution_response = service
-            .execute(ExecutionRequest {
-                workflow_source: Some(workflow_source),
-                workflow_source_base64: None,
-                input: self.input,
-                secrets: self.secrets,
-                options: ExecutionOptions {
-                    include_events: false,
-                    max_concurrency: self.max_concurrency,
-                },
-            })
+        let mcp_server_names = self.mcp_server_names();
+        let mcp_client_factory = self.fake_mcp_client_factory();
+        let workflow_source = self.workflow_source_with_mock_endpoints(&provider_servers)?;
+        let executor = WorkflowExecutor::from_source_with_runtime_values_and_mcp_client_factory(
+            &workflow_source,
+            &self.input,
+            &self.secrets,
+            &mcp_client_factory,
+        )?;
+        let output = executor
+            .execute(self.input, self.secrets, &CerseiModelProvider, None, self.max_concurrency)
             .await?;
 
         let provider_requests = verify_provider_servers(&provider_servers);
-        let mcp_requests = verify_mcp_servers(&mcp_servers);
+        let mcp_requests = collect_mcp_requests(&mcp_client_factory, &mcp_server_names);
 
         Ok(TestRunOutput {
-            output: execution_response.output,
+            output,
             provider_requests,
             mcp_requests,
         })
@@ -255,27 +238,26 @@ impl TestRunner {
 
     pub async fn run_expect_error(self) -> TestRunErrorOutput {
         let provider_servers = self.spawn_provider_servers();
-        let mcp_servers = self.spawn_mcp_servers();
+        let mcp_server_names = self.mcp_server_names();
+        let mcp_client_factory = self.fake_mcp_client_factory();
         let workflow_source = self
-            .workflow_source_with_mock_endpoints(&provider_servers, &mcp_servers)
+            .workflow_source_with_mock_endpoints(&provider_servers)
             .expect("workflow source should be prepared");
-        let service = ExecutorService::new(CerseiModelProvider);
-        let execution_error = service
-            .execute(ExecutionRequest {
-                workflow_source: Some(workflow_source),
-                workflow_source_base64: None,
-                input: self.input,
-                secrets: self.secrets,
-                options: ExecutionOptions {
-                    include_events: false,
-                    max_concurrency: self.max_concurrency,
-                },
-            })
-            .await
-            .expect_err("fixture runner should fail execution");
+        let execution_error = match WorkflowExecutor::from_source_with_runtime_values_and_mcp_client_factory(
+            &workflow_source,
+            &self.input,
+            &self.secrets,
+            &mcp_client_factory,
+        ) {
+            Ok(executor) => executor
+                .execute(self.input, self.secrets, &CerseiModelProvider, None, self.max_concurrency)
+                .await
+                .expect_err("fixture runner should fail execution"),
+            Err(error) => error,
+        };
 
         let provider_requests = verify_provider_servers(&provider_servers);
-        let mcp_requests = verify_mcp_servers(&mcp_servers);
+        let mcp_requests = collect_mcp_requests(&mcp_client_factory, &mcp_server_names);
 
         TestRunErrorOutput {
             error: execution_error,
@@ -291,18 +273,21 @@ impl TestRunner {
             .collect()
     }
 
-    fn spawn_mcp_servers(&self) -> BTreeMap<String, McpServer> {
-        self.mcp_servers
-            .iter()
-            .map(|(server_name, script)| (server_name.clone(), McpServer::spawn(script.clone())))
-            .collect()
+    fn mcp_server_names(&self) -> Vec<String> {
+        self.mcp_servers.keys().cloned().collect()
     }
 
-    fn workflow_source_with_mock_endpoints(
-        &self,
-        provider_servers: &BTreeMap<String, ProviderServer>,
-        mcp_servers: &BTreeMap<String, McpServer>,
-    ) -> Result<String, ExecutorError> {
+    fn fake_mcp_client_factory(&self) -> FakeMcpClientFactory {
+        let mut factory = FakeMcpClientFactory::new();
+
+        for (server_name, script) in &self.mcp_servers {
+            script.add_to_fake_factory(server_name, &mut factory);
+        }
+
+        factory
+    }
+
+    fn workflow_source_with_mock_endpoints(&self, provider_servers: &BTreeMap<String, ProviderServer>) -> Result<String, ExecutorError> {
         let mut workflow_source = self
             .workflow_source
             .read_formatted_or_original()
@@ -314,11 +299,17 @@ impl TestRunner {
             workflow_source = replace_block_property(&workflow_source, "provider", provider_name, "endpoint", &json!(server.endpoint));
         }
 
-        for (server_name, server) in mcp_servers {
-            workflow_source = replace_block_property(&workflow_source, "mcp", server_name, "endpoint", &json!(server.endpoint));
+        for server_name in self.mcp_servers.keys() {
+            workflow_source = replace_block_property(
+                &workflow_source,
+                "mcp",
+                server_name,
+                "endpoint",
+                &json!(format!("http://fake-mcp.test/{server_name}")),
+            );
         }
 
-        if !mcp_servers.is_empty() {
+        if !self.mcp_servers.is_empty() {
             workflow_source = workflow_source.replace("secrets {\n    mcp_endpoint: string\n}\n\n", "");
         }
 
@@ -611,6 +602,44 @@ impl Clone for McpPromptScript {
     }
 }
 
+impl McpScript {
+    fn add_to_fake_factory(&self, server_name: &str, factory: &mut FakeMcpClientFactory) {
+        factory.add_server(server_name, |server| {
+            for (tool_name, tool) in &self.tools {
+                server.tool(tool_name, |fake_tool| {
+                    fake_tool
+                        .description(tool.description.clone())
+                        .input_schema(tool.input_schema.clone())
+                        .output_schema(tool.output_schema.clone());
+
+                    for response in &tool.responses {
+                        fake_tool.respond_json(response.clone());
+                    }
+                });
+            }
+
+            for (resource_name, resource) in &self.resources {
+                server.resource(resource_name, |fake_resource| {
+                    fake_resource
+                        .uri(resource.uri.clone())
+                        .mime_type(resource.mime_type.clone())
+                        .text(resource.text.clone());
+                });
+            }
+
+            for (prompt_name, prompt) in &self.prompts {
+                server.prompt(prompt_name, |fake_prompt| {
+                    fake_prompt.description(prompt.description.clone()).text(prompt.text.clone());
+
+                    for argument in &prompt.arguments {
+                        fake_prompt.argument(argument.name.clone(), argument.required);
+                    }
+                });
+            }
+        });
+    }
+}
+
 impl ProviderServer {
     fn spawn(script: &ProviderScript) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("provider test listener should bind");
@@ -649,28 +678,6 @@ impl Clone for ModelTurn {
             message_assertions: self.message_assertions.clone(),
             response: self.response.clone(),
         }
-    }
-}
-
-impl McpServer {
-    fn spawn(script: McpScript) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("MCP test listener should bind");
-        let endpoint = format!("http://{}", listener.local_addr().expect("MCP local address should exist"));
-        let state = Arc::new(Mutex::new(McpServerState {
-            script,
-            requests: Vec::new(),
-            errors: Vec::new(),
-        }));
-        let thread_state = Arc::clone(&state);
-
-        thread::spawn(move || {
-            for incoming_stream in listener.incoming() {
-                let stream = incoming_stream.expect("MCP test stream should open");
-                handle_mcp_request(stream, &thread_state);
-            }
-        });
-
-        Self { endpoint, state }
     }
 }
 
@@ -783,170 +790,6 @@ impl ModelTurnResponse {
             Self::ToolCalls(tool_calls) => openai_tool_call_stream_events(tool_calls.clone()),
             Self::Error(message) => vec![json!({ "error": { "message": message } })],
         }
-    }
-}
-
-fn handle_mcp_request(mut stream: TcpStream, state: &Arc<Mutex<McpServerState>>) {
-    let Some(request) = read_http_json_request(&stream) else {
-        return;
-    };
-    let response = build_mcp_response(&request.body, state).unwrap_or_else(|message| {
-        state
-            .lock()
-            .expect("MCP state lock should not be poisoned")
-            .errors
-            .push(message.clone());
-        http_json_response(
-            500,
-            json!({ "jsonrpc": "2.0", "id": 1, "error": { "code": -32000, "message": message } }),
-        )
-    });
-
-    stream.write_all(response.as_bytes()).expect("MCP response should write");
-}
-
-fn build_mcp_response(request_body: &Value, state: &Arc<Mutex<McpServerState>>) -> Result<String, String> {
-    let method = request_body.get("method").and_then(Value::as_str).unwrap_or_default();
-    let request_id = request_body.get("id").cloned().unwrap_or_else(|| json!(1));
-    let mut state = state.lock().expect("MCP state lock should not be poisoned");
-    state.requests.push(request_body.clone());
-
-    let Some(result) = state.result_for_method(method, request_body)? else {
-        return Ok("HTTP/1.1 202 Accepted\r\nconnection: close\r\ncontent-length: 0\r\n\r\n".to_string());
-    };
-
-    Ok(http_json_response(
-        200,
-        json!({ "jsonrpc": "2.0", "id": request_id, "result": result }),
-    ))
-}
-
-impl McpServerState {
-    fn result_for_method(&mut self, method: &str, request_body: &Value) -> Result<Option<Value>, String> {
-        match method {
-            "notifications/initialized" => Ok(None),
-            "tools/list" => Ok(Some(json!({ "tools": self.script.tool_list() }))),
-            "resources/list" => Ok(Some(json!({ "resources": self.script.resource_list() }))),
-            "prompts/list" => Ok(Some(json!({ "prompts": self.script.prompt_list() }))),
-            "resources/read" => self.resource_read_result(request_body).map(Some),
-            "prompts/get" => self.prompt_get_result(request_body).map(Some),
-            "tools/call" => self.tool_call_result(request_body).map(Some),
-            _ => Ok(Some(json!({}))),
-        }
-    }
-
-    fn tool_call_result(&mut self, request_body: &Value) -> Result<Value, String> {
-        let tool_name = request_body
-            .pointer("/params/name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "MCP tools/call missing params.name".to_string())?;
-        let tool = self
-            .script
-            .tools
-            .get_mut(tool_name)
-            .ok_or_else(|| format!("unexpected MCP tool call `{tool_name}`"))?;
-        let response = tool
-            .responses
-            .pop_front()
-            .ok_or_else(|| format!("unexpected extra call to MCP tool `{tool_name}`"))?;
-
-        Ok(json!({
-            "content": [{ "type": "text", "text": serde_json::to_string(&response).expect("tool response should serialize") }],
-            "structuredContent": response,
-        }))
-    }
-
-    fn resource_read_result(&self, request_body: &Value) -> Result<Value, String> {
-        let uri = request_body
-            .pointer("/params/uri")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "MCP resources/read missing params.uri".to_string())?;
-        let resource = self
-            .script
-            .resources
-            .values()
-            .find(|resource| resource.uri == uri)
-            .ok_or_else(|| format!("unexpected MCP resource uri `{uri}`"))?;
-
-        Ok(json!({
-            "contents": [{
-                "uri": resource.uri,
-                "mimeType": resource.mime_type,
-                "text": resource.text,
-            }]
-        }))
-    }
-
-    fn prompt_get_result(&self, request_body: &Value) -> Result<Value, String> {
-        let prompt_name = request_body
-            .pointer("/params/name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "MCP prompts/get missing params.name".to_string())?;
-        let prompt = self
-            .script
-            .prompts
-            .get(prompt_name)
-            .ok_or_else(|| format!("unexpected MCP prompt `{prompt_name}`"))?;
-
-        Ok(json!({
-            "description": prompt.description,
-            "messages": [{
-                "role": "user",
-                "content": { "type": "text", "text": prompt.text }
-            }]
-        }))
-    }
-}
-
-impl McpScript {
-    fn tool_list(&self) -> Vec<Value> {
-        self.tools
-            .iter()
-            .map(|(tool_name, tool)| {
-                json!({
-                    "name": tool_name,
-                    "description": tool.description,
-                    "inputSchema": tool.input_schema,
-                    "outputSchema": tool.output_schema,
-                })
-            })
-            .collect()
-    }
-
-    fn resource_list(&self) -> Vec<Value> {
-        self.resources
-            .iter()
-            .map(|(resource_name, resource)| {
-                json!({
-                    "name": resource_name,
-                    "uri": resource.uri,
-                    "mimeType": resource.mime_type,
-                })
-            })
-            .collect()
-    }
-
-    fn prompt_list(&self) -> Vec<Value> {
-        self.prompts
-            .iter()
-            .map(|(prompt_name, prompt)| {
-                json!({
-                    "name": prompt_name,
-                    "description": prompt.description,
-                    "arguments": prompt.arguments.iter().map(McpPromptArgumentScript::to_json).collect::<Vec<_>>(),
-                })
-            })
-            .collect()
-    }
-}
-
-impl McpPromptArgumentScript {
-    fn to_json(&self) -> Value {
-        json!({
-            "name": self.name,
-            "description": self.description,
-            "required": self.required,
-        })
     }
 }
 
@@ -1125,23 +968,18 @@ fn verify_provider_servers(provider_servers: &BTreeMap<String, ProviderServer>) 
         .collect()
 }
 
-fn verify_mcp_servers(mcp_servers: &BTreeMap<String, McpServer>) -> BTreeMap<String, Vec<Value>> {
-    mcp_servers
+fn collect_mcp_requests(mcp_client_factory: &FakeMcpClientFactory, server_names: &[String]) -> BTreeMap<String, Vec<FakeMcpRequest>> {
+    server_names
         .iter()
-        .map(|(server_name, server)| {
-            let state = server.state.lock().expect("MCP state lock should not be poisoned");
+        .map(|server_name| {
+            let unused_tool_response_counts = mcp_client_factory.unused_tool_response_counts(server_name);
 
-            assert!(state.errors.is_empty(), "MCP `{server_name}` errors: {:?}", state.errors);
+            assert!(
+                unused_tool_response_counts.is_empty(),
+                "MCP `{server_name}` has unused scripted tool responses: {unused_tool_response_counts:?}"
+            );
 
-            for (tool_name, tool) in &state.script.tools {
-                assert!(
-                    tool.responses.is_empty(),
-                    "MCP `{server_name}` tool `{tool_name}` has {} unused scripted responses",
-                    tool.responses.len()
-                );
-            }
-
-            (server_name.clone(), state.requests.clone())
+            (server_name.clone(), mcp_client_factory.requests(server_name))
         })
         .collect()
 }

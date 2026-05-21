@@ -3,7 +3,7 @@ mod support;
 
 use serde_json::{json, Value};
 use support::fixtures;
-use support::runner::TestRunner;
+use support::runner::{FakeMcpRequest, TestRunner};
 
 #[tokio::test]
 async fn agent_local_dynamic_tool_call_waits_for_agent_dependency() {
@@ -42,14 +42,11 @@ async fn agent_local_dynamic_tool_call_waits_for_agent_dependency() {
     );
 }
 
-fn find_mcp_tool_call_arguments(requests: &[Value], tool_name: &str) -> Value {
+fn find_mcp_tool_call_arguments(requests: &[FakeMcpRequest], tool_name: &str) -> Value {
     let tool_call_request = requests
         .iter()
-        .find(|request| request.get("method") == Some(&json!("tools/call")) && request.pointer("/params/name") == Some(&json!(tool_name)))
+        .find(|request| request.method == "tools/call" && request.name.as_deref() == Some(tool_name))
         .expect("expected MCP tools/call request");
 
-    tool_call_request
-        .pointer("/params/arguments")
-        .cloned()
-        .expect("MCP tools/call should include params.arguments")
+    tool_call_request.arguments.clone()
 }

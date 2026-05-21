@@ -35,28 +35,28 @@ async fn resolves_mcp_read_render_dependencies() {
 
     let read_resource_request = output.mcp_requests["local"]
         .iter()
-        .find(|request| request.get("method") == Some(&json!("resources/read")))
+        .find(|request| request.method == "resources/read")
         .expect("resources/read request should be present");
 
+    assert_eq!(read_resource_request.name.as_deref(), Some("project_readme"));
     assert_eq!(
-        read_resource_request.pointer("/params"),
-        Some(&json!({
-            "uri": "file://resources/project_readme"
-        }))
+        read_resource_request.arguments,
+        json!({
+            "workspace_id": "workspace-1",
+            "section": "setup"
+        })
     );
 
     let render_prompt_request = output.mcp_requests["local"]
         .iter()
-        .find(|request| request.get("method") == Some(&json!("prompts/get")))
+        .find(|request| request.method == "prompts/get")
         .expect("prompts/get request should be present");
 
+    assert_eq!(render_prompt_request.name.as_deref(), Some("system_prompt"));
     assert_eq!(
-        render_prompt_request.pointer("/params"),
-        Some(&json!({
-            "name": "system_prompt",
-            "arguments": {
-                "readme": "# Project README\nUse stable sorting."
-            }
-        }))
+        render_prompt_request.arguments,
+        json!({
+            "readme": "# Project README\nUse stable sorting."
+        })
     );
 }

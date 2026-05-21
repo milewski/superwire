@@ -1,9 +1,9 @@
 #[macro_use]
 mod support;
 
-use serde_json::{json, Value};
+use serde_json::json;
 use support::fixtures;
-use support::runner::TestRunner;
+use support::runner::{FakeMcpRequest, TestRunner};
 
 #[tokio::test]
 async fn batches_mixed_mcp_imports_with_bindings() {
@@ -64,38 +64,38 @@ async fn batches_mixed_mcp_imports_with_bindings() {
 
     let tool_call = output.mcp_requests["local"]
         .iter()
-        .find(|request| request.get("method") == Some(&json!("tools/call")))
+        .find(|request| request.method == "tools/call")
         .expect("tools/call request should be present");
 
-    assert_eq!(tool_call.pointer("/params/name"), Some(&json!("create-task")));
+    assert_eq!(tool_call.name.as_deref(), Some("create-task"));
     assert_eq!(
-        tool_call.pointer("/params/arguments"),
-        Some(&json!({
+        tool_call.arguments,
+        json!({
             "project_id": 14,
             "task_id": 7,
             "title": "first"
-        }))
+        })
     );
 
     let prompt_request = output.mcp_requests["local"]
         .iter()
-        .find(|request| request.get("method") == Some(&json!("prompts/get")))
+        .find(|request| request.method == "prompts/get")
         .expect("prompts/get request should be present");
 
-    assert_eq!(prompt_request.pointer("/params/name"), Some(&json!("create-task-instructions")));
+    assert_eq!(prompt_request.name.as_deref(), Some("create-task-instructions"));
     assert_eq!(
-        prompt_request.pointer("/params/arguments"),
-        Some(&json!({
-            "project_id": "14"
-        }))
+        prompt_request.arguments,
+        json!({
+            "project_id": 14
+        })
     );
 
     assert_mcp_request_was_sent(&output.mcp_requests["local"], "resources/read");
 }
 
-fn assert_mcp_request_was_sent(requests: &[Value], method: &str) {
+fn assert_mcp_request_was_sent(requests: &[FakeMcpRequest], method: &str) {
     assert!(
-        requests.iter().any(|request| request.get("method") == Some(&json!(method))),
+        requests.iter().any(|request| request.method == method),
         "expected MCP request `{method}`"
     );
 }

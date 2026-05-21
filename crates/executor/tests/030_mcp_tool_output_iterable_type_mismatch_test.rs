@@ -24,13 +24,9 @@ async fn rejects_for_loop_over_non_iterable_mcp_tool_output_schema() {
         "{error_message}"
     );
 
-    assert!(mcp_requests
-        .iter()
-        .any(|request| request.get("method") == Some(&json!("tools/list"))));
+    assert!(mcp_requests.iter().any(|request| request.method == "tools/list"));
 
-    assert!(!mcp_requests
-        .iter()
-        .any(|request| request.get("method") == Some(&json!("tools/call"))));
+    assert!(!mcp_requests.iter().any(|request| request.method == "tools/call"));
 }
 
 #[tokio::test]
@@ -70,13 +66,9 @@ async fn executes_for_loop_over_iterable_mcp_tool_output_schema() {
         output.output,
         json!({ "notes": [{ "value": "one" }, { "value": "two" }, { "value": "three" }] })
     );
-    assert!(mcp_requests
-        .iter()
-        .any(|request| request.get("method") == Some(&json!("tools/list"))));
+    assert!(mcp_requests.iter().any(|request| request.method == "tools/list"));
 
-    assert!(mcp_requests
-        .iter()
-        .any(|request| request.get("method") == Some(&json!("tools/call"))));
+    assert!(mcp_requests.iter().any(|request| request.method == "tools/call"));
 
     assert_eq!(output.provider_requests["openai"].len(), 3);
 }

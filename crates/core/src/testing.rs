@@ -496,6 +496,16 @@ impl FakeMcpClientFactory {
         servers_by_name.get(server_name).map(FakeMcpServer::requests).unwrap_or_default()
     }
 
+    #[must_use]
+    pub fn unused_tool_response_counts(&self, server_name: &str) -> BTreeMap<String, usize> {
+        let servers_by_name = self.servers_by_name.lock().expect("fake MCP server registry lock poisoned");
+
+        servers_by_name
+            .get(server_name)
+            .map(FakeMcpServer::unused_tool_response_counts)
+            .unwrap_or_default()
+    }
+
     fn server_for_config(&self, server_config: &McpServerConfig) -> Result<FakeMcpServer, McpError> {
         self.servers_by_name
             .lock()
@@ -678,6 +688,17 @@ impl FakeMcpServer {
         self.requests.lock().expect("fake MCP request log lock poisoned").clone()
     }
 
+    fn unused_tool_response_counts(&self) -> BTreeMap<String, usize> {
+        self.tools
+            .iter()
+            .filter_map(|(tool_name, tool)| {
+                let remaining_response_count = tool.responses.lock().expect("fake MCP tool response lock poisoned").len();
+
+                (remaining_response_count > 0).then(|| (tool_name.clone(), remaining_response_count))
+            })
+            .collect()
+    }
+
     fn record_request(&self, method: &str, name: Option<&str>, arguments: Value) {
         self.requests
             .lock()
@@ -736,12 +757,15 @@ impl McpClientBackend for FakeMcpClient {
             message: format!("tool `{tool_name}` not found"),
         })?;
 
-        Ok(tool
-            .responses
+        tool.responses
             .lock()
             .expect("fake MCP tool response lock poisoned")
             .pop_front()
-            .unwrap_or(Value::Null))
+            .ok_or_else(|| McpError::Rpc {
+                server_name: self.server.name.clone(),
+                method: "tools/call".to_string(),
+                message: format!("unexpected extra call to MCP tool `{tool_name}`"),
+            })
     }
 
     fn read_resource(&self, resource_name: &str, arguments: Value) -> Result<Value, McpError> {

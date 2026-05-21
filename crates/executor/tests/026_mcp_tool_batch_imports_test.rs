@@ -3,7 +3,7 @@ mod support;
 
 use serde_json::{json, Value};
 use support::fixtures;
-use support::runner::TestRunner;
+use support::runner::{FakeMcpRequest, TestRunner};
 
 #[tokio::test]
 async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
@@ -60,13 +60,13 @@ async fn scripts_provider_tool_calls_and_mcp_tool_responses() {
     );
 }
 
-fn assert_mcp_tool_was_called_with(requests: &[Value], tool_name: &str, expected_arguments: Value) {
+fn assert_mcp_tool_was_called_with(requests: &[FakeMcpRequest], tool_name: &str, expected_arguments: Value) {
     let tool_call = requests
         .iter()
-        .find(|request| request.get("method") == Some(&json!("tools/call")) && request.pointer("/params/name") == Some(&json!(tool_name)))
+        .find(|request| request.method == "tools/call" && request.name.as_deref() == Some(tool_name))
         .expect("expected MCP tool call request");
 
-    assert_eq!(tool_call.pointer("/params/arguments"), Some(&expected_arguments));
+    assert_eq!(tool_call.arguments, expected_arguments);
 }
 
 fn provider_tool_schema(schema: Value) -> Value {

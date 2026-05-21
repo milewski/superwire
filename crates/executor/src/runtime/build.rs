@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Instant;
 use superwire_core::dsl::{parse_workflow, validate_workflow, Declaration, Workflow};
-use superwire_core::mcp::{McpClient, McpClientPool, McpLock, McpServerConfig};
+use superwire_core::mcp::{HttpMcpClientFactory, McpClientFactory, McpClientPool, McpLock, McpServerConfig};
 use superwire_core::semantic::support::expression::EvaluationContext;
 use superwire_core::semantic::{build_dynamic_typed_workflow_ir, build_execution_plan, WorkflowSemanticError};
 use tokio::sync::mpsc;
@@ -42,11 +42,36 @@ impl WorkflowExecutor {
         Self::from_source_with_runtime_values_and_event_sender(workflow_source, input, secrets, None)
     }
 
+    pub fn from_source_with_runtime_values_and_mcp_client_factory(
+        workflow_source: &str,
+        input: &Value,
+        secrets: &Value,
+        mcp_client_factory: &dyn McpClientFactory,
+    ) -> Result<Self, ExecutorError> {
+        Self::from_source_with_runtime_values_event_sender_and_mcp_client_factory(workflow_source, input, secrets, None, mcp_client_factory)
+    }
+
     pub fn from_source_with_runtime_values_and_event_sender(
         workflow_source: &str,
         input: &Value,
         secrets: &Value,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+    ) -> Result<Self, ExecutorError> {
+        Self::from_source_with_runtime_values_event_sender_and_mcp_client_factory(
+            workflow_source,
+            input,
+            secrets,
+            event_sender,
+            &HttpMcpClientFactory,
+        )
+    }
+
+    fn from_source_with_runtime_values_event_sender_and_mcp_client_factory(
+        workflow_source: &str,
+        input: &Value,
+        secrets: &Value,
+        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        mcp_client_factory: &dyn McpClientFactory,
     ) -> Result<Self, ExecutorError> {
         let mut workflow = parse_workflow(workflow_source).map_err(|parse_error| {
             let details = parse_error.render_for_output_target(workflow_source, "<workflow>");
@@ -63,7 +88,7 @@ impl WorkflowExecutor {
             agent_contexts: HashMap::new(),
             local_bindings: HashMap::new(),
         };
-        let mcp_lock = Self::discover_mcp_lock_with_context(&workflow, &evaluation_context, event_sender)?;
+        let mcp_lock = Self::discover_mcp_lock_with_context(&workflow, &evaluation_context, event_sender, mcp_client_factory)?;
 
         log::debug!("discovered MCP schemas using runtime values: servers={}", mcp_lock.servers.len());
         mcp_lock.apply_to_workflow(&mut workflow);
@@ -75,9 +100,12 @@ impl WorkflowExecutor {
             });
         }
 
-        let mcp_pool = McpClientPool::from_workflow_with_context(&workflow, &evaluation_context).map_err(|error| ExecutorError::Other {
-            message: error.to_string(),
-        })?;
+        let mcp_pool =
+            McpClientPool::from_workflow_with_context_and_factory(&workflow, &evaluation_context, mcp_client_factory).map_err(|error| {
+                ExecutorError::Other {
+                    message: error.to_string(),
+                }
+            })?;
 
         let executor = Self::from_workflow(workflow_source, workflow, mcp_pool)?;
         executor.validate_startup_mcp_tool_calls(&evaluation_context, event_sender)?;
@@ -89,6 +117,7 @@ impl WorkflowExecutor {
         workflow: &Workflow,
         evaluation_context: &EvaluationContext,
         event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
+        mcp_client_factory: &dyn McpClientFactory,
     ) -> Result<McpLock, ExecutorError> {
         let mut mcp_lock = McpLock::empty();
 
@@ -108,7 +137,10 @@ impl WorkflowExecutor {
             }
 
             log::debug!("discovering MCP tools from runtime server config: {}", server_config.name);
-            let server_lock = match McpClient::new(server_config.clone()).list_tools() {
+            let server_lock = match mcp_client_factory
+                .client_for_config(server_config.clone())
+                .and_then(|client| client.list_tools())
+            {
                 Ok(server_lock) => server_lock,
                 Err(error) => {
                     if let Some(sender) = event_sender {

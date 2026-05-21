@@ -36,18 +36,17 @@ async fn batches_prompt_and_resource_imports_with_bindings() {
 
     assert!(output.output["tasks"].as_str().is_some_and(|tasks| tasks.contains("# Tasks")));
 
-    let expected_prompt_parameters = json!({
-            "name": "create-task-instructions",
-            "arguments": {
-                "project_id": "14",
-                "task_id": "7",
-                "audience": "maintainers"
-            }
+    let expected_prompt_arguments = json!({
+            "project_id": 14,
+            "task_id": 7,
+            "audience": "maintainers"
     });
 
     assert!(
         output.mcp_requests["local"].iter().any(|request| {
-            request.get("method") == Some(&json!("prompts/get")) && request.pointer("/params") == Some(&expected_prompt_parameters)
+            request.method == "prompts/get"
+                && request.name.as_deref() == Some("create-task-instructions")
+                && request.arguments == expected_prompt_arguments
         }),
         "prompts/get request with batch bindings should be present: {:?}",
         output.mcp_requests["local"]
@@ -55,14 +54,16 @@ async fn batches_prompt_and_resource_imports_with_bindings() {
 
     let read_resource_request = output.mcp_requests["local"]
         .iter()
-        .find(|request| request.get("method") == Some(&json!("resources/read")))
+        .find(|request| request.method == "resources/read")
         .expect("resources/read request should be present");
 
+    assert_eq!(read_resource_request.name.as_deref(), Some("all-tasks"));
     assert_eq!(
-        read_resource_request.pointer("/params"),
-        Some(&json!({
-            "uri": "file://resources/all_tasks"
-        }))
+        read_resource_request.arguments,
+        json!({
+            "project_id": 14,
+            "section": "open"
+        })
     );
 }
 
@@ -86,7 +87,5 @@ async fn rejects_prompt_import_missing_required_mcp_argument_binding() {
     let error_message = output.error.to_string();
 
     assert!(error_message.contains("MCP prompt `summarize_task_prompt` requires binding `type`"));
-    assert!(!output.mcp_requests["local"]
-        .iter()
-        .any(|request| request.get("method") == Some(&json!("prompts/get"))));
+    assert!(!output.mcp_requests["local"].iter().any(|request| request.method == "prompts/get"));
 }

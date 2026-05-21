@@ -27,13 +27,15 @@ async fn reads_mcp_resource_as_dynamic_value() {
 
     let read_resource_request = output.mcp_requests["local"]
         .iter()
-        .find(|request| request.get("method") == Some(&json!("resources/read")))
+        .find(|request| request.method == "resources/read")
         .expect("resources/read request should be present");
 
+    assert_eq!(read_resource_request.name.as_deref(), Some("project-readme"));
     assert_eq!(
-        read_resource_request.pointer("/params"),
-        Some(&json!({
-            "uri": "file://resources/project_readme"
-        }))
+        read_resource_request.arguments,
+        json!({
+            "workspace_id": "workspace-1",
+            "section": "setup"
+        })
     );
 }
