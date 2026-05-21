@@ -61,7 +61,7 @@
   Description: Move schema-specific validation and type-expression traversal into a schema validation module.
   Rationale: Schema behavior changes often affect runtime, LSP, and formatter assumptions, so it needs a clear owner.
 
-- [ ] Extract reference validation, projection validation, and secret-reference policy into `validation/references.rs`.
+- [x] Extract reference validation, projection validation, and secret-reference policy into `validation/references.rs`.
   Description: Move keyword reference validation, projection traversal, and LLM secret-reference rules into a reference module.
   Rationale: References are used across validation, graph generation, runtime planning, hover, completion, and definitions; this logic must become discoverable and reusable.
 
@@ -205,7 +205,7 @@
   Description: Move runtime MCP prompt/resource/tool rendering and binding evaluation into an MCP module.
   Rationale: MCP behavior has its own schema, lock, binding, and request lifecycle concerns.
 
-- [ ] Extract schema shaping and output validation into `runtime/schema.rs`.
+- [x] Extract schema shaping and output validation into `runtime/schema.rs`.
   Description: Move model request schema generation and output validation into a schema module.
   Rationale: Schema handling is pure enough to test independently and expensive enough to optimize later.
 
@@ -253,7 +253,7 @@
 
 ## Phase 8: CLI Command Split
 
-- [ ] Split `crates/cli/src/commands/workflow.rs` into check, run, lock, vars, paths, and JSON modules.
+- [~] Split `crates/cli/src/commands/workflow.rs` into check, run, lock, vars, paths, and JSON modules.
   Description: Move each workflow subcommand and shared command helpers into separate files.
   Rationale: CLI command behavior is currently mixed, making targeted tests and review difficult.
 
@@ -329,5 +329,6 @@
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, MCP lock-backed helpers live in `mcp.rs`, and position/scope lookup helpers live in `scopes.rs`. The next slices should extract completions, definitions, and type helpers into dedicated modules.
+- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, MCP lock-backed helpers live in `mcp.rs`, position/scope lookup helpers live in `scopes.rs`, and definition lookup helpers live in `definitions.rs`. The next slices should extract completions and type helpers into dedicated modules.
+- CLI workflow command splitting is partially complete. Path collection lives in `workflow/paths.rs` and shared JSON payload parsing lives in `workflow/json.rs`; check, run, lock, vars, and remaining schema/prompt helpers still need focused modules.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

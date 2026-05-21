@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 use superwire_core::dsl::{parse_workflow, Declaration, ObjectField, TypeExpression, TypedField, Workflow};
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, McpServerConfig, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME};
 use superwire_core::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
@@ -15,8 +15,10 @@ use superwire_executor::{CerseiModelProvider, ExecutorError, WorkflowExecutor};
 
 use crate::diagnostics::CommandError;
 
+mod json;
 mod paths;
 
+use json::WorkflowPayloadSources;
 use paths::WorkflowPathTargets;
 
 #[derive(Debug, Args)]
@@ -204,10 +206,10 @@ struct RunWorkflowCommand {
 
 impl RunWorkflowCommand {
     fn execute(self) -> Result<(), CommandError> {
-        self.validate_payload_arguments()?;
+        self.payload_sources().validate()?;
 
-        let input_value = self.input_value()?;
-        let secrets_value = self.secrets_value()?;
+        let input_value = self.payload_sources().input_value()?;
+        let secrets_value = self.payload_sources().secrets_value()?;
 
         let async_runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -254,102 +256,14 @@ impl RunWorkflowCommand {
         Ok(())
     }
 
-    fn validate_payload_arguments(&self) -> Result<(), CommandError> {
-        if self.input_json.is_some() && self.input_file.is_some() {
-            return Err(CommandError::invalid_input("use either --input-json or --input-file, not both"));
-        }
-
-        if self.input_json.is_some() && self.set.is_some() {
-            return Err(CommandError::invalid_input("use either --input-json or --set, not both"));
-        }
-
-        if self.input_file.is_some() && self.set.is_some() {
-            return Err(CommandError::invalid_input("use either --input-file or --set, not both"));
-        }
-
-        if self.secrets_json.is_some() && self.secrets_file.is_some() {
-            return Err(CommandError::invalid_input("use either --secrets-json or --secrets-file, not both"));
-        }
-
-        Ok(())
-    }
-
-    fn input_value(&self) -> Result<Map<String, Value>, CommandError> {
-        let base_payload = self.payload_as_object(self.input_json.as_deref(), self.input_file.as_deref(), "input payload")?;
-        self.apply_dot_params(base_payload)
-    }
-
-    fn secrets_value(&self) -> Result<Map<String, Value>, CommandError> {
-        self.payload_as_object(self.secrets_json.as_deref(), self.secrets_file.as_deref(), "secrets payload")
-    }
-
-    fn apply_dot_params(&self, mut payload: Map<String, Value>) -> Result<Map<String, Value>, CommandError> {
-        let Some(set_args) = &self.set else {
-            return Ok(payload);
-        };
-
-        for key_value_pair in set_args {
-            let Some((key, value)) = key_value_pair.split_once('=') else {
-                return Err(CommandError::invalid_input(format!(
-                    "invalid --set format: expected KEY=VALUE, got '{key_value_pair}'"
-                )));
-            };
-
-            let key = key.trim();
-            let value = value.trim();
-
-            let mut current = &mut payload;
-            let parts: Vec<&str> = key.split('.').collect();
-
-            for (i, part) in parts.iter().enumerate() {
-                let is_last = i == parts.len() - 1;
-
-                if is_last {
-                    current.insert(part.to_string(), Value::String(value.to_string()));
-                } else {
-                    if !current.contains_key(*part) {
-                        current.insert(part.to_string(), Value::Object(Map::new()));
-                    }
-                    let Some(obj) = current.get_mut(*part).and_then(|v| v.as_object_mut()) else {
-                        return Err(CommandError::invalid_input(format!(
-                            "cannot set nested value on non-object path: {key}"
-                        )));
-                    };
-                    current = obj;
-                }
-            }
-        }
-
-        Ok(payload)
-    }
-
-    fn payload_as_object(
-        &self,
-        inline_payload: Option<&str>,
-        payload_file_path: Option<&Path>,
-        payload_label: &str,
-    ) -> Result<Map<String, Value>, CommandError> {
-        let payload_json = if let Some(inline_payload) = inline_payload {
-            inline_payload.to_string()
-        } else if let Some(payload_file_path) = payload_file_path {
-            fs::read_to_string(payload_file_path).map_err(|error| {
-                CommandError::invalid_input(format!(
-                    "failed to read {payload_label} file {}: {error}",
-                    payload_file_path.display()
-                ))
-            })?
-        } else {
-            "{}".to_string()
-        };
-
-        let parsed_payload_value = serde_json::from_str::<Value>(&payload_json)
-            .map_err(|error| CommandError::invalid_input(format!("{payload_label} must be valid json: {error}")))?;
-
-        let Some(parsed_payload_object) = parsed_payload_value.as_object() else {
-            return Err(CommandError::invalid_input(format!("{payload_label} must be a json object")));
-        };
-
-        Ok(parsed_payload_object.clone())
+    fn payload_sources(&self) -> WorkflowPayloadSources<'_> {
+        WorkflowPayloadSources::new(
+            self.input_json.as_deref(),
+            self.input_file.as_deref(),
+            self.secrets_json.as_deref(),
+            self.secrets_file.as_deref(),
+            self.set.as_deref(),
+        )
     }
 }
 
@@ -357,7 +271,7 @@ impl RunWorkflowCommand {
     fn map_workflow_runtime_error(error: ExecutorError) -> CommandError {
         CommandError::internal_with_details(
             error.to_string(),
-            json!({
+            serde_json::json!({
                 "type": "workflow_runtime_error",
                 "error": error.to_string(),
             }),
@@ -458,7 +372,7 @@ impl WorkflowVarsFile {
 
 impl LockWorkflowCommand {
     fn execute(self) -> Result<(), CommandError> {
-        self.validate_payload_arguments()?;
+        self.payload_sources().validate()?;
 
         let lock_root = self
             .output_path
@@ -534,26 +448,6 @@ impl LockWorkflowCommand {
         WorkflowPathTargets::new(&self.workflow_targets).collect()
     }
 
-    fn validate_payload_arguments(&self) -> Result<(), CommandError> {
-        if self.input_json.is_some() && self.input_file.is_some() {
-            return Err(CommandError::invalid_input("use either --input-json or --input-file, not both"));
-        }
-
-        if self.input_json.is_some() && self.set.is_some() {
-            return Err(CommandError::invalid_input("use either --input-json or --set, not both"));
-        }
-
-        if self.input_file.is_some() && self.set.is_some() {
-            return Err(CommandError::invalid_input("use either --input-file or --set, not both"));
-        }
-
-        if self.secrets_json.is_some() && self.secrets_file.is_some() {
-            return Err(CommandError::invalid_input("use either --secrets-json or --secrets-file, not both"));
-        }
-
-        Ok(())
-    }
-
     fn vars_context(&self) -> Result<Option<WorkflowVarsFile>, CommandError> {
         let vars_file = self.effective_vars_file();
 
@@ -586,8 +480,8 @@ impl LockWorkflowCommand {
     }
 
     fn command_context(&self) -> Result<Option<McpLockResolutionContext>, CommandError> {
-        let input = self.input_value()?;
-        let secrets = self.secrets_value()?;
+        let input = self.payload_sources().input_value()?;
+        let secrets = self.payload_sources().secrets_value()?;
 
         if input.is_empty() && secrets.is_empty() {
             return Ok(None);
@@ -983,83 +877,14 @@ impl LockWorkflowCommand {
         }
     }
 
-    fn input_value(&self) -> Result<Map<String, Value>, CommandError> {
-        let base_payload = self.payload_as_object(self.input_json.as_deref(), self.input_file.as_deref(), "input payload")?;
-        self.apply_dot_params(base_payload)
-    }
-
-    fn secrets_value(&self) -> Result<Map<String, Value>, CommandError> {
-        self.payload_as_object(self.secrets_json.as_deref(), self.secrets_file.as_deref(), "secrets payload")
-    }
-
-    fn apply_dot_params(&self, mut payload: Map<String, Value>) -> Result<Map<String, Value>, CommandError> {
-        let Some(set_args) = &self.set else {
-            return Ok(payload);
-        };
-
-        for key_value_pair in set_args {
-            let Some((key, value)) = key_value_pair.split_once('=') else {
-                return Err(CommandError::invalid_input(format!(
-                    "invalid --set format: expected KEY=VALUE, got '{key_value_pair}'"
-                )));
-            };
-
-            let key = key.trim();
-            let value = value.trim();
-            let mut current_payload = &mut payload;
-            let key_parts: Vec<&str> = key.split('.').collect();
-
-            for (key_part_index, key_part) in key_parts.iter().enumerate() {
-                let is_last_key_part = key_part_index == key_parts.len() - 1;
-
-                if is_last_key_part {
-                    current_payload.insert((*key_part).to_string(), Value::String(value.to_string()));
-                } else {
-                    if !current_payload.contains_key(*key_part) {
-                        current_payload.insert((*key_part).to_string(), Value::Object(Map::new()));
-                    }
-
-                    let Some(object_payload) = current_payload.get_mut(*key_part).and_then(Value::as_object_mut) else {
-                        return Err(CommandError::invalid_input(format!(
-                            "cannot set nested value on non-object path: {key}"
-                        )));
-                    };
-
-                    current_payload = object_payload;
-                }
-            }
-        }
-
-        Ok(payload)
-    }
-
-    fn payload_as_object(
-        &self,
-        inline_payload: Option<&str>,
-        payload_file_path: Option<&Path>,
-        payload_label: &str,
-    ) -> Result<Map<String, Value>, CommandError> {
-        let payload_json = if let Some(inline_payload) = inline_payload {
-            inline_payload.to_string()
-        } else if let Some(payload_file_path) = payload_file_path {
-            fs::read_to_string(payload_file_path).map_err(|read_error| {
-                CommandError::invalid_input(format!(
-                    "failed to read {payload_label} file {}: {read_error}",
-                    payload_file_path.display()
-                ))
-            })?
-        } else {
-            "{}".to_string()
-        };
-
-        let parsed_payload_value = serde_json::from_str::<Value>(&payload_json)
-            .map_err(|parse_error| CommandError::invalid_input(format!("{payload_label} must be valid json: {parse_error}")))?;
-
-        let Some(parsed_payload_object) = parsed_payload_value.as_object() else {
-            return Err(CommandError::invalid_input(format!("{payload_label} must be a json object")));
-        };
-
-        Ok(parsed_payload_object.clone())
+    fn payload_sources(&self) -> WorkflowPayloadSources<'_> {
+        WorkflowPayloadSources::new(
+            self.input_json.as_deref(),
+            self.input_file.as_deref(),
+            self.secrets_json.as_deref(),
+            self.secrets_file.as_deref(),
+            self.set.as_deref(),
+        )
     }
 
     fn discover_workflow_lock(

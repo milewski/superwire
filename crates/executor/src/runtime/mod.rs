@@ -1,13 +1,16 @@
 mod build;
 mod configuration;
 pub mod error;
+mod schema;
 pub mod state;
 mod tools;
 
 pub use error::ExecutorError;
+pub(in crate::runtime) use schema::value_object;
 
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::{ModelProvider, ModelRequest, ModelToolDefinition, ToolCallTracker};
+use crate::runtime::schema::PlannedAgentSchemaExt;
 use crate::runtime::state::RuntimeState;
 use crate::runtime::tools::ExpressionMcpExecutionPlanExt;
 use futures::future::try_join_all;
@@ -21,7 +24,7 @@ use superwire_core::dsl::{
 };
 use superwire_core::mcp::{McpClientPool, McpServerConfig};
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
-use superwire_core::semantic::support::types::{validate_value_against_type, value_kind_name, workflow_type_to_json_schema, WorkflowType};
+use superwire_core::semantic::support::types::value_kind_name;
 use superwire_core::semantic::{ExecutionPlan, PlannedAgent, WorkflowExecutionGraph, WorkflowSemanticError};
 use tokio::sync::{mpsc, Semaphore};
 
@@ -250,13 +253,7 @@ impl WorkflowExecutor {
         }
 
         let output = self.evaluate_workflow_output(&runtime_state, event_sender.as_ref(), &tool_call_tracker)?;
-
-        validate_value_against_type(&output, &self.execution_plan.workflow_output_type).map_err(|message| {
-            ExecutorError::OutputTypeMismatch {
-                expected: self.execution_plan.workflow_output_type.to_string(),
-                found: format!("invalid runtime output: {message}"),
-            }
-        })?;
+        self.validate_workflow_output_value(&output)?;
 
         log::info!("workflow runtime completed");
 
@@ -386,9 +383,8 @@ impl WorkflowExecutor {
         } else {
             format!("{}\n\n{agent_instruction}", agent_execution_context.import_context)
         };
-        let output_schema = workflow_type_to_json_schema(&planned_agent.iteration_output_type);
         let mut tool_definitions = self.resolve_agent_use_definitions(planned_agent, &evaluation_context)?;
-        tool_definitions.push(ModelToolDefinition::finalize(output_schema.clone()));
+        let output_schema = planned_agent.push_finalize_tool_definition(&mut tool_definitions);
         let tool_names = tool_definitions
             .iter()
             .map(ModelToolDefinition::event_display_name)
@@ -429,7 +425,7 @@ impl WorkflowExecutor {
 
         log::debug!("agent `{}` model response received", planned_agent.name);
 
-        validate_agent_output_value(&model_response.output, &planned_agent.iteration_output_type, &planned_agent.name)?;
+        planned_agent.validate_output_value(&model_response.output)?;
 
         if let Some(event_sender) = &agent_execution_context.event_sender {
             let _ = event_sender
@@ -547,29 +543,6 @@ impl WorkflowExecutor {
         }
 
         Ok(())
-    }
-
-    fn evaluate_workflow_output(
-        &self,
-        runtime_state: &RuntimeState,
-        event_sender: Option<&mpsc::Sender<ExecutorEvent>>,
-        tool_call_tracker: &ToolCallTracker,
-    ) -> Result<Value, ExecutorError> {
-        let mut output_fields = Map::new();
-        let evaluation_context = runtime_state.evaluation_context(HashMap::new());
-
-        for output_field in &self.execution_plan.output_declaration.fields {
-            let output_value = self.evaluate_runtime_expression(
-                &output_field.value,
-                &evaluation_context,
-                "workflow output",
-                event_sender,
-                tool_call_tracker,
-            )?;
-            output_fields.insert(output_field.name.clone(), output_value);
-        }
-
-        Ok(Value::Object(output_fields))
     }
 
     fn execute_agent_dynamic_blocks(
@@ -1037,15 +1010,4 @@ fn render_mcp_content_value(content: &Value) -> String {
     }
 
     normalize_prompt(content.clone())
-}
-
-fn value_object(value: &Value) -> Map<String, Value> {
-    value.as_object().cloned().unwrap_or_default()
-}
-
-fn validate_agent_output_value(output: &Value, expected_type: &WorkflowType, agent_name: &str) -> Result<(), ExecutorError> {
-    validate_value_against_type(output, expected_type).map_err(|message| ExecutorError::AgentOutputTypeMismatch {
-        agent_name: agent_name.to_string(),
-        message,
-    })
 }
