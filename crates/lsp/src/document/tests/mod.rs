@@ -568,5 +568,6 @@ mod diagnostic_reference_tests;
 mod diagnostic_schema_tests;
 mod diagnostic_syntax_tests;
 mod diagnostic_tool_tests;
+mod editing_workflow_tests;
 mod for_loop_tests;
 mod interpolation_tests;

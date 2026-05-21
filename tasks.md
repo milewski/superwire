@@ -167,7 +167,7 @@
   Description: Split large completion and tool test files into root, reference, MCP, tool, diagnostics, and schema modules.
   Rationale: Smaller test files make failures easier to localize and future feature additions easier to place.
 
-- [ ] Add LSP golden tests for common editing workflows.
+- [x] Add LSP golden tests for common editing workflows.
   Description: Cover incomplete MCP imports, partial `uses` arrays, for-loop destructuring, provider/model editing, and schema variant editing.
   Rationale: LSP behavior is prone to regress during parser and semantic refactors.
 
