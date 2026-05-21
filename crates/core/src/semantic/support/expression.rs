@@ -2,8 +2,7 @@ use crate::dsl::{Expression, MatchBranch, Reference, ReferenceKeyword, Reference
 use crate::semantic::support::types::parse_number_literal;
 use crate::semantic::WorkflowSemanticError;
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
-use std::hash::BuildHasher;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct EvaluationContext {
@@ -305,80 +304,4 @@ fn render_template_value(value: &Value) -> String {
     }
 
     serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
-}
-
-pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(
-    expression: &Expression,
-    agent_dependencies: &mut HashSet<String, HashBuilder>,
-) {
-    expression.collect_agent_dependencies(agent_dependencies);
-}
-
-impl Expression {
-    pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
-        match self {
-            Self::Reference(reference) => {
-                reference.collect_agent_dependency(agent_dependencies);
-            }
-            Self::FunctionCall(function_call) => {
-                function_call.callee.collect_agent_dependency(agent_dependencies);
-
-                for call_argument in &function_call.arguments {
-                    call_argument.expression().collect_agent_dependencies(agent_dependencies);
-                }
-            }
-            Self::ToolCall(tool_call) => {
-                tool_call.callee.collect_agent_dependency(agent_dependencies);
-
-                for object_field in &tool_call.input_fields {
-                    object_field.value.collect_agent_dependencies(agent_dependencies);
-                }
-
-                for object_field in &tool_call.binding_fields {
-                    object_field.value.collect_agent_dependencies(agent_dependencies);
-                }
-            }
-            Self::McpCall(mcp_call) => {
-                mcp_call.callee.collect_agent_dependency(agent_dependencies);
-
-                for object_field in &mcp_call.parameter_fields {
-                    object_field.value.collect_agent_dependencies(agent_dependencies);
-                }
-            }
-            Self::NullFallback(null_fallback) => {
-                null_fallback.value.collect_agent_dependencies(agent_dependencies);
-                null_fallback.fallback.collect_agent_dependencies(agent_dependencies);
-            }
-            Self::VariantProjection(variant_projection) => {
-                variant_projection.value.collect_agent_dependency(agent_dependencies);
-            }
-            Self::Match(match_expression) => {
-                match_expression.value.collect_agent_dependencies(agent_dependencies);
-
-                for branch in &match_expression.branches {
-                    if let MatchBranch::Fallback { value, span: _ } = branch {
-                        value.collect_agent_dependencies(agent_dependencies);
-                    }
-                }
-            }
-            Self::ArrayLiteral(array_items) => {
-                for array_item in array_items {
-                    array_item.collect_agent_dependencies(agent_dependencies);
-                }
-            }
-            Self::ObjectLiteral(object_fields) => {
-                for object_field in object_fields {
-                    object_field.value.collect_agent_dependencies(agent_dependencies);
-                }
-            }
-            Self::StringTemplate(string_template) => {
-                for template_part in &string_template.parts {
-                    if let StringTemplatePart::Interpolation(interpolation_expression) = template_part {
-                        interpolation_expression.collect_agent_dependencies(agent_dependencies);
-                    }
-                }
-            }
-            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => {}
-        }
-    }
 }

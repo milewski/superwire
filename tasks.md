@@ -81,7 +81,7 @@
   Description: Attach root keyword interpretation, projection segment access, scope validation, and dependency collection to `Reference`.
   Rationale: The repository rule requires behavior to live on the type that owns the data, and reference helper functions are currently natural methods.
 
-- [~] Move expression traversal helpers onto `Expression`.
+- [x] Move expression traversal helpers onto `Expression`.
   Description: Attach tool reference collection, direct tool-name extraction, agent dependency collection, and secret-reference detection to `Expression`.
   Rationale: Expression traversal is needed by multiple modules and should not be copied through validator, runtime, graph, and LSP code.
 
@@ -328,5 +328,4 @@
 ## Incomplete Handoff Notes
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- Expression method locality remains partial. `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move expression-owned traversal such as tool reference collection, direct tool-name extraction across nested expressions, agent dependency collection, and secret-reference detection onto `Expression`.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.

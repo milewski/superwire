@@ -1775,13 +1775,13 @@ impl Expression {
     }
 
     #[must_use]
-    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+    pub fn direct_reference(&self) -> Option<&Reference> {
         match self {
-            Self::Reference(reference) => reference.direct_name_for_keyword(reference_keyword),
-            Self::FunctionCall(function_call) => function_call.direct_name_for_keyword(reference_keyword),
-            Self::ToolCall(tool_call) => tool_call.callee.direct_name_for_keyword(reference_keyword),
-            Self::McpCall(_) => None,
-            Self::NullFallback(_)
+            Self::Reference(reference) => Some(reference),
+            Self::ToolCall(tool_call) => Some(&tool_call.callee),
+            Self::FunctionCall(_)
+            | Self::McpCall(_)
+            | Self::NullFallback(_)
             | Self::VariantProjection(_)
             | Self::Match(_)
             | Self::StringLiteral(_)
@@ -1792,6 +1792,43 @@ impl Expression {
             | Self::ArrayLiteral(_)
             | Self::ObjectLiteral(_) => None,
         }
+    }
+
+    #[must_use]
+    pub fn direct_tool_name(&self) -> Option<&str> {
+        self.direct_reference_for_keyword(ReferenceKeyword::Tool)
+            .and_then(Reference::tool_name)
+    }
+
+    #[must_use]
+    pub fn direct_reference_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<&Reference> {
+        let reference = match self {
+            Self::Reference(reference) => reference,
+            Self::FunctionCall(function_call) => &function_call.callee,
+            Self::ToolCall(tool_call) => &tool_call.callee,
+            Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
+            | Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => return None,
+        };
+
+        reference
+            .is_direct_required_reference_to_keyword(reference_keyword)
+            .then_some(reference)
+    }
+
+    #[must_use]
+    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        self.direct_reference_for_keyword(reference_keyword)
+            .and_then(|reference| reference.direct_required_name_for_keyword(reference_keyword))
+            .map(str::to_string)
     }
 
     #[must_use]
@@ -1815,11 +1852,176 @@ impl Expression {
     }
 
     #[must_use]
+    pub fn max_calls_override(&self) -> Option<u64> {
+        match self {
+            Self::ToolCall(tool_call) => tool_call.max_calls,
+            Self::Reference(_)
+            | Self::FunctionCall(_)
+            | Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
+            | Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn tool_calls(&self) -> Vec<&ToolCall> {
         let mut tool_calls = Vec::new();
         self.collect_tool_calls(&mut tool_calls);
 
         tool_calls
+    }
+
+    #[must_use]
+    pub fn tool_references(&self) -> Vec<&Reference> {
+        let mut tool_references = Vec::new();
+        self.collect_tool_references(&mut tool_references);
+
+        tool_references
+    }
+
+    pub fn collect_tool_references<'expression>(&'expression self, tool_references: &mut Vec<&'expression Reference>) {
+        match self {
+            Self::Reference(reference) => {
+                if reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Tool) {
+                    tool_references.push(reference);
+                }
+            }
+            Self::ToolCall(tool_call) => {
+                if tool_call.callee.is_direct_required_reference_to_keyword(ReferenceKeyword::Tool) {
+                    tool_references.push(&tool_call.callee);
+                }
+
+                for input_field in &tool_call.input_fields {
+                    input_field.value.collect_tool_references(tool_references);
+                }
+
+                for binding_field in &tool_call.binding_fields {
+                    binding_field.value.collect_tool_references(tool_references);
+                }
+            }
+            Self::FunctionCall(function_call) => {
+                if function_call.callee.is_direct_required_reference_to_keyword(ReferenceKeyword::Tool) {
+                    tool_references.push(&function_call.callee);
+                }
+
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_tool_references(tool_references);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                if mcp_call.callee.is_direct_required_reference_to_keyword(ReferenceKeyword::Tool) {
+                    tool_references.push(&mcp_call.callee);
+                }
+
+                for parameter_field in &mcp_call.parameter_fields {
+                    parameter_field.value.collect_tool_references(tool_references);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_tool_references(tool_references);
+                null_fallback.fallback.collect_tool_references(tool_references);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_tool_references(tool_references);
+
+                for match_branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, span: _ } = match_branch {
+                        value.collect_tool_references(tool_references);
+                    }
+                }
+            }
+            Self::ArrayLiteral(item_expressions) => {
+                for item_expression in item_expressions {
+                    item_expression.collect_tool_references(tool_references);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_tool_references(tool_references);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        interpolation_expression.collect_tool_references(tool_references);
+                    }
+                }
+            }
+            Self::VariantProjection(variant_projection) => {
+                if variant_projection
+                    .value
+                    .is_direct_required_reference_to_keyword(ReferenceKeyword::Tool)
+                {
+                    tool_references.push(&variant_projection.value);
+                }
+            }
+            Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral | Self::StringLiteral(_) => {}
+        }
+    }
+
+    #[must_use]
+    pub fn tool_names(&self) -> Vec<&str> {
+        self.tool_references().into_iter().filter_map(Reference::tool_name).collect()
+    }
+
+    #[must_use]
+    pub fn references_secret(&self) -> bool {
+        match self {
+            Self::Reference(reference) => reference.is_secret_reference(),
+            Self::FunctionCall(function_call) => {
+                function_call.callee.is_secret_reference()
+                    || function_call
+                        .arguments
+                        .iter()
+                        .any(|call_argument| call_argument.expression().references_secret())
+            }
+            Self::ToolCall(tool_call) => {
+                tool_call.callee.is_secret_reference()
+                    || tool_call
+                        .input_fields
+                        .iter()
+                        .any(|input_field| input_field.value.references_secret())
+                    || tool_call
+                        .binding_fields
+                        .iter()
+                        .any(|binding_field| binding_field.value.references_secret())
+            }
+            Self::McpCall(mcp_call) => {
+                mcp_call.callee.is_secret_reference()
+                    || mcp_call
+                        .parameter_fields
+                        .iter()
+                        .any(|parameter_field| parameter_field.value.references_secret())
+            }
+            Self::NullFallback(null_fallback) => null_fallback.value.references_secret() || null_fallback.fallback.references_secret(),
+            Self::VariantProjection(variant_projection) => variant_projection.value.is_secret_reference(),
+            Self::Match(match_expression) => {
+                match_expression.value.references_secret()
+                    || match_expression.branches.iter().any(|match_branch| match match_branch {
+                        MatchBranch::Fallback { value, span: _ } => value.references_secret(),
+                        MatchBranch::Variant {
+                            case_name: _,
+                            field_path: _,
+                            span: _,
+                        } => false,
+                    })
+            }
+            Self::ArrayLiteral(item_expressions) => item_expressions.iter().any(Expression::references_secret),
+            Self::ObjectLiteral(object_fields) => object_fields.iter().any(|object_field| object_field.value.references_secret()),
+            Self::StringTemplate(string_template) => string_template.parts.iter().any(|string_template_part| match string_template_part {
+                StringTemplatePart::Interpolation(interpolation_expression) => interpolation_expression.references_secret(),
+                StringTemplatePart::Text(_) => false,
+            }),
+            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => false,
+        }
     }
 
     fn collect_tool_calls<'expression>(&'expression self, tool_calls: &mut Vec<&'expression ToolCall>) {
@@ -1881,6 +2083,73 @@ impl Expression {
             | Self::StringLiteral(_)
             | Self::Reference(_)
             | Self::VariantProjection(_) => {}
+        }
+    }
+
+    pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
+        match self {
+            Self::Reference(reference) => {
+                reference.collect_agent_dependency(agent_dependencies);
+            }
+            Self::FunctionCall(function_call) => {
+                function_call.callee.collect_agent_dependency(agent_dependencies);
+
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::ToolCall(tool_call) => {
+                tool_call.callee.collect_agent_dependency(agent_dependencies);
+
+                for object_field in &tool_call.input_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+
+                for object_field in &tool_call.binding_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                mcp_call.callee.collect_agent_dependency(agent_dependencies);
+
+                for object_field in &mcp_call.parameter_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_agent_dependencies(agent_dependencies);
+                null_fallback.fallback.collect_agent_dependencies(agent_dependencies);
+            }
+            Self::VariantProjection(variant_projection) => {
+                variant_projection.value.collect_agent_dependency(agent_dependencies);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_agent_dependencies(agent_dependencies);
+
+                for branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, span: _ } = branch {
+                        value.collect_agent_dependencies(agent_dependencies);
+                    }
+                }
+            }
+            Self::ArrayLiteral(array_items) => {
+                for array_item in array_items {
+                    array_item.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_agent_dependencies(agent_dependencies);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = template_part {
+                        interpolation_expression.collect_agent_dependencies(agent_dependencies);
+                    }
+                }
+            }
+            Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => {}
         }
     }
 
@@ -2043,11 +2312,6 @@ pub struct FunctionCall {
 }
 
 impl FunctionCall {
-    #[must_use]
-    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        self.callee.direct_name_for_keyword(reference_keyword)
-    }
-
     #[must_use]
     pub fn identifier_name(&self) -> Option<&str> {
         self.callee.root.as_identifier()
@@ -2353,11 +2617,6 @@ impl Reference {
         }
 
         Some(reference_access.field.as_str())
-    }
-
-    #[must_use]
-    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        self.direct_required_name_for_keyword(reference_keyword).map(str::to_string)
     }
 
     #[must_use]
@@ -2768,10 +3027,12 @@ pub struct ReferenceAccess {
 mod tests {
     use super::{
         Declaration, Expression, ForClauseKeyword, McpImportBindings, ObjectField, Reference, ReferenceAccess, ReferenceKeyword,
-        ReferenceRoot, SchemaDeclaration, SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase, Workflow,
+        ReferenceRoot, SchemaDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, TypeExpression,
+        TypedField, VariantCase, Workflow,
     };
     use crate::dsl::structure::Agent;
     use serde_json::json;
+    use std::collections::HashSet;
 
     #[test]
     fn parses_for_clause_keywords_from_identifier() {
@@ -2974,6 +3235,66 @@ mod tests {
         assert!(!optional_model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
         assert!(!nested_model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
         assert!(secret_reference.is_secret_reference());
+    }
+
+    #[test]
+    fn expression_collects_nested_tool_references_and_direct_tool_metadata() {
+        let direct_tool_call = Expression::ToolCall(ToolCall {
+            callee: reference_with_accesses(ReferenceKeyword::Tool, [("fetch_task", false)]),
+            input_fields: vec![ObjectField {
+                name: "payload".to_string(),
+                value: Expression::StringTemplate(StringTemplate {
+                    parts: vec![StringTemplatePart::Interpolation(Expression::ToolCall(ToolCall {
+                        callee: reference_with_accesses(ReferenceKeyword::Tool, [("audit_task", false)]),
+                        input_fields: Vec::new(),
+                        binding_fields: Vec::new(),
+                        max_calls: None,
+                        span: test_source_span(),
+                    }))],
+                }),
+                span: test_source_span(),
+            }],
+            binding_fields: Vec::new(),
+            max_calls: Some(2),
+            span: test_source_span(),
+        });
+        let expression = Expression::ArrayLiteral(vec![direct_tool_call]);
+        let tool_names = expression.tool_names();
+
+        assert_eq!(tool_names, vec!["fetch_task", "audit_task"]);
+
+        let Expression::ArrayLiteral(tool_expressions) = &expression else {
+            panic!("expression should be an array literal");
+        };
+
+        assert_eq!(tool_expressions[0].direct_tool_name(), Some("fetch_task"));
+        assert_eq!(tool_expressions[0].max_calls_override(), Some(2));
+    }
+
+    #[test]
+    fn expression_detects_nested_secret_references_and_agent_dependencies() {
+        let expression = Expression::ObjectLiteral(vec![ObjectField {
+            name: "summary".to_string(),
+            value: Expression::StringTemplate(StringTemplate {
+                parts: vec![
+                    StringTemplatePart::Interpolation(Expression::Reference(reference_with_accesses(
+                        ReferenceKeyword::Agent,
+                        [("writer", false), ("text", false)],
+                    ))),
+                    StringTemplatePart::Interpolation(Expression::Reference(reference_with_accesses(
+                        ReferenceKeyword::Secrets,
+                        [("api_key", false)],
+                    ))),
+                ],
+            }),
+            span: test_source_span(),
+        }]);
+        let mut agent_dependencies = HashSet::new();
+
+        expression.collect_agent_dependencies(&mut agent_dependencies);
+
+        assert!(expression.references_secret());
+        assert!(agent_dependencies.contains("writer"));
     }
 
     fn typed_field(field_name: &str, field_type: TypeExpression) -> TypedField {

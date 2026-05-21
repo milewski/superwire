@@ -565,7 +565,7 @@ impl PlannedAgent {
         execution_plan: &ExecutionPlan,
         workflow: &Workflow,
     ) -> Option<WorkflowExecutionGraphTool> {
-        let reference = use_expression.use_reference()?;
+        let reference = use_expression.direct_reference()?;
 
         match reference.root_keyword()? {
             ReferenceKeyword::Tool => self.execution_graph_declared_tool(use_expression, reference, execution_plan),
@@ -686,46 +686,6 @@ impl WorkflowExecutionGraphTool {
             "type": "object",
             "additionalProperties": true,
         })
-    }
-}
-
-impl Expression {
-    fn use_reference(&self) -> Option<&Reference> {
-        match self {
-            Self::Reference(reference) => Some(reference),
-            Self::ToolCall(tool_call) => Some(&tool_call.callee),
-            Self::StringLiteral(_)
-            | Self::StringTemplate(_)
-            | Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::FunctionCall(_)
-            | Self::McpCall(_)
-            | Self::NullFallback(_)
-            | Self::VariantProjection(_)
-            | Self::Match(_)
-            | Self::ArrayLiteral(_)
-            | Self::ObjectLiteral(_) => None,
-        }
-    }
-
-    fn max_calls_override(&self) -> Option<u64> {
-        match self {
-            Self::ToolCall(tool_call) => tool_call.max_calls,
-            Self::StringLiteral(_)
-            | Self::StringTemplate(_)
-            | Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::Reference(_)
-            | Self::FunctionCall(_)
-            | Self::McpCall(_)
-            | Self::NullFallback(_)
-            | Self::VariantProjection(_)
-            | Self::Match(_)
-            | Self::ArrayLiteral(_)
-            | Self::ObjectLiteral(_) => None,
-        }
     }
 }
 

@@ -202,12 +202,16 @@ pub(super) fn validate_agent_tool_references(
             continue;
         };
 
-        for tool_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Tool) {
-            if validation_index.has_tool(&tool_name) {
+        for tool_reference in uses_expression.tool_references() {
+            let Some(tool_name) = tool_reference.tool_name() else {
+                continue;
+            };
+
+            if validation_index.has_tool(tool_name) {
                 continue;
             }
 
-            let issue_key = (agent_declaration.name.clone(), tool_name.clone());
+            let issue_key = (agent_declaration.name.clone(), tool_name.to_string());
 
             if !reported_unknown_tools.insert(issue_key.clone()) {
                 continue;

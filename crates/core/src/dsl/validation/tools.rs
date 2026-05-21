@@ -1,4 +1,4 @@
-use super::super::ast::{AgentDeclaration, Expression, ObjectField, ReferenceKeyword, SourceSpan};
+use super::super::ast::{AgentDeclaration, Expression, ObjectField, SourceSpan};
 use super::report::{ValidationIssue, ValidationReport};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
@@ -40,15 +40,15 @@ struct AgentToolBindingValidator<'validation> {
 
 impl AgentToolBindingValidator<'_> {
     fn validate_tool_expression(&mut self, tool_expression: &Expression) {
-        let Some(tool_name) = tool_expression.direct_name_for_keyword(ReferenceKeyword::Tool) else {
+        let Some(tool_name) = tool_expression.direct_tool_name() else {
             return;
         };
 
-        let Some(WorkflowType::Object(expected_binding_fields)) = self.validation_index.tool_binding_type(&tool_name) else {
+        let Some(WorkflowType::Object(expected_binding_fields)) = self.validation_index.tool_binding_type(tool_name) else {
             return;
         };
 
-        self.validate_binding_fields(&tool_name, tool_expression.agent_tool_binding_fields(), expected_binding_fields);
+        self.validate_binding_fields(tool_name, tool_expression.agent_tool_binding_fields(), expected_binding_fields);
     }
 
     fn validate_binding_fields(

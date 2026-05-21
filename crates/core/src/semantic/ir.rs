@@ -3,7 +3,6 @@ use crate::dsl::{
     structure, AgentDeclaration, AgentExpressionPropertyName, AgentProperty, Declaration, Expression, InputDeclaration, ModelDeclaration,
     ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
-use crate::semantic::support::expression::collect_agent_dependencies;
 use crate::semantic::support::type_inference::TypeInferenceContext;
 use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, workflow_type_from_rust_schema, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
@@ -274,16 +273,16 @@ fn collect_dependencies_for_agent(
 
     if let Some(provider_declaration) = provider_declaration {
         for provider_property in &provider_declaration.properties {
-            collect_agent_dependencies(&provider_property.value, &mut dependencies);
+            provider_property.value.collect_agent_dependencies(&mut dependencies);
         }
     }
 
     for model_property in &model_declaration.properties {
-        collect_agent_dependencies(&model_property.value, &mut dependencies);
+        model_property.value.collect_agent_dependencies(&mut dependencies);
     }
 
     if let Some(for_loop) = &agent_declaration.for_loop {
-        collect_agent_dependencies(&for_loop.iterable, &mut dependencies);
+        for_loop.iterable.collect_agent_dependencies(&mut dependencies);
     }
 
     for agent_property in &agent_declaration.properties {
@@ -292,16 +291,16 @@ fn collect_dependencies_for_agent(
             | AgentProperty::Instruction(expression)
             | AgentProperty::Context(expression)
             | AgentProperty::Uses(expression) => {
-                collect_agent_dependencies(expression, &mut dependencies);
+                expression.collect_agent_dependencies(&mut dependencies);
             }
             AgentProperty::Model(model_usage) => {
                 for model_property in &model_usage.properties {
-                    collect_agent_dependencies(&model_property.value, &mut dependencies);
+                    model_property.value.collect_agent_dependencies(&mut dependencies);
                 }
             }
             AgentProperty::Dynamic(dynamic_block) => {
                 for field in &dynamic_block.fields {
-                    collect_agent_dependencies(&field.value, &mut dependencies);
+                    field.value.collect_agent_dependencies(&mut dependencies);
                 }
             }
             AgentProperty::Output { fields: _, span: _ } | AgentProperty::Unknown { name: _, span: _ } => {}
