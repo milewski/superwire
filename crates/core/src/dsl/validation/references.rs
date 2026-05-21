@@ -614,7 +614,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         context: ValidationContext,
         secret_reference_policy: SecretReferencePolicy,
     ) {
-        if mcp_call.callee.root_keyword() != Some(mcp_call.operation.expected_root()) || mcp_call.callee.accesses.len() != 1 {
+        if !mcp_call.has_valid_callee() {
             let issue_key = (context.clone(), mcp_call.operation.expected_root());
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
@@ -690,11 +690,11 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         };
 
-        if reference_root_keyword == ReferenceKeyword::Secrets && secret_reference_policy == SecretReferencePolicy::Forbid {
+        if reference.is_secret_reference() && secret_reference_policy == SecretReferencePolicy::Forbid {
             self.push_secret_reference_leak(reference, context.clone());
         }
 
-        let Some(_) = reference.first_access() else {
+        if !reference.has_accesses() {
             let issue_key = (context.clone(), reference_root_keyword);
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
@@ -708,7 +708,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             return;
-        };
+        }
 
         match reference_root_keyword {
             ReferenceKeyword::Agent => {
@@ -729,8 +729,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
     fn validate_agent_reference(&mut self, reference: &Reference, context: ValidationContext) {
         let referenced_agent_name = reference
-            .accesses
-            .first()
+            .first_access()
             .expect("agent reference should include first field after root")
             .field
             .as_str();
@@ -744,7 +743,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             .agent_output_type(referenced_agent_name)
             .and_then(Clone::clone);
 
-        if reference.accesses.len() == 1 {
+        if reference.has_single_access() {
             if context == ValidationContext::Output && referenced_agent_output_type.is_none() {
                 self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference.span);
             }
@@ -758,7 +757,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         };
 
-        self.validate_reference_path(reference, 1, agent_output_type, context);
+        self.validate_reference_path(reference, agent_output_type, context);
     }
 
     fn push_missing_agent_output_type_reference_issue(
@@ -787,8 +786,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         context: ValidationContext,
     ) {
         let referenced_field_name = reference
-            .accesses
-            .first()
+            .first_access()
             .expect("dynamic reference should include first field after root")
             .field
             .as_str();
@@ -818,17 +816,16 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         };
 
-        if reference.accesses.len() == 1 {
+        if reference.has_single_access() {
             return;
         }
 
-        self.validate_workflow_type_reference_path(reference, 1, dynamic_field_type.clone(), context);
+        self.validate_workflow_type_reference_path(reference, dynamic_field_type.clone(), context);
     }
 
     fn validate_input_reference(&mut self, reference: &Reference, context: ValidationContext) {
         let referenced_field_name = reference
-            .accesses
-            .first()
+            .first_access()
             .expect("input reference should include first field after root")
             .field
             .as_str();
@@ -858,17 +855,16 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         };
 
-        if reference.accesses.len() == 1 {
+        if reference.has_single_access() {
             return;
         }
 
-        self.validate_reference_path(reference, 1, input_field_type.clone(), context);
+        self.validate_reference_path(reference, input_field_type.clone(), context);
     }
 
     fn validate_secrets_reference(&mut self, reference: &Reference, context: ValidationContext) {
         let referenced_field_name = reference
-            .accesses
-            .first()
+            .first_access()
             .expect("secrets reference should include first field after root")
             .field
             .as_str();
@@ -898,23 +894,17 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             return;
         };
 
-        if reference.accesses.len() == 1 {
+        if reference.has_single_access() {
             return;
         }
 
-        self.validate_reference_path(reference, 1, secrets_field_type.clone(), context);
+        self.validate_reference_path(reference, secrets_field_type.clone(), context);
     }
 
-    fn validate_reference_path(
-        &mut self,
-        reference: &Reference,
-        path_start_index: usize,
-        start_type: TypeExpression,
-        context: ValidationContext,
-    ) {
+    fn validate_reference_path(&mut self, reference: &Reference, start_type: TypeExpression, context: ValidationContext) {
         let mut candidate_types = vec![start_type];
 
-        for reference_access in reference.accesses.iter().skip(path_start_index) {
+        for reference_access in reference.projection_accesses() {
             if candidate_types.iter().any(TypeExpression::can_be_null) && !reference_access.optional {
                 self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
 
@@ -932,7 +922,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             if next_candidate_types.is_empty() {
-                let reference_path = self.reference_to_string(reference);
+                let reference_path = reference.render_path();
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
                 if self.invalid_reference_paths.insert(issue_key) {
@@ -956,13 +946,12 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     fn validate_workflow_type_reference_path(
         &mut self,
         reference: &Reference,
-        path_start_index: usize,
         start_type: crate::semantic::support::types::WorkflowType,
         context: ValidationContext,
     ) {
         let mut candidate_types = vec![start_type];
 
-        for reference_access in reference.accesses.iter().skip(path_start_index) {
+        for reference_access in reference.projection_accesses() {
             if candidate_types.iter().any(workflow_type_can_be_null) && !reference_access.optional {
                 self.push_missing_optional_reference_access(reference, reference_access.field.as_str(), context.clone());
 
@@ -980,7 +969,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             }
 
             if next_candidate_types.is_empty() {
-                let reference_path = self.reference_to_string(reference);
+                let reference_path = reference.render_path();
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
                 if self.invalid_reference_paths.insert(issue_key) {
@@ -1002,7 +991,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn push_missing_optional_reference_access(&mut self, reference: &Reference, field_name: &str, context: ValidationContext) {
-        let reference_path = self.reference_to_string(reference);
+        let reference_path = reference.render_path();
         let issue_key = (context.clone(), reference_path.clone(), field_name.to_owned());
 
         if self.missing_optional_reference_accesses.insert(issue_key) {
@@ -1112,12 +1101,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn reference_to_string(&self, reference: &Reference) -> String {
-        reference.render_path()
-    }
-
     fn push_secret_reference_leak(&mut self, reference: &Reference, context: ValidationContext) {
-        let reference_path = self.reference_to_string(reference);
+        let reference_path = reference.render_path();
         let issue_key = (context.clone(), reference_path.clone());
 
         if self.secret_reference_leaks.insert(issue_key) {

@@ -47,7 +47,7 @@ impl Expression {
             Self::NumberLiteral(number_literal) => Ok(Value::Number(parse_number_literal(number_literal)?)),
             Self::BooleanLiteral(boolean_literal) => Ok(Value::Bool(*boolean_literal)),
             Self::NullLiteral => Ok(Value::Null),
-            Self::Reference(reference) => evaluate_reference(reference, evaluation_context, context),
+            Self::Reference(reference) => reference.evaluate(evaluation_context, context),
             Self::FunctionCall(function_call) => {
                 function_call.evaluate_builtin(evaluation_context, context, &|expression, evaluation_context, context| {
                     expression.evaluate(evaluation_context, context)
@@ -69,7 +69,7 @@ impl Expression {
                 Ok(value)
             }
             Self::VariantProjection(variant_projection) => {
-                let value = evaluate_reference(&variant_projection.value, evaluation_context, context)?;
+                let value = variant_projection.value.evaluate(evaluation_context, context)?;
                 evaluate_variant_projection(value, &variant_projection.case_name, &variant_projection.field_path)
             }
             Self::Match(match_expression) => {
@@ -150,157 +150,151 @@ fn evaluate_variant_projection(value: Value, case_name: &str, field_path: &[Stri
     Ok(current_value.clone())
 }
 
-fn evaluate_reference(
-    reference: &Reference,
-    evaluation_context: &EvaluationContext,
-    context: &str,
-) -> Result<Value, WorkflowSemanticError> {
-    let (mut current_value, access_start_index) = resolve_reference_root(reference, evaluation_context, context)?;
+impl Reference {
+    pub fn evaluate(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<Value, WorkflowSemanticError> {
+        let (mut current_value, access_start_index) = self.resolve_root_value(evaluation_context, context)?;
 
-    for reference_access in reference.accesses.iter().skip(access_start_index) {
-        if current_value.is_null() && reference_access.optional {
-            return Ok(Value::Null);
-        }
-
-        let Some(object_fields) = current_value.as_object() else {
-            return Err(WorkflowSemanticError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: format!(
-                    "reference path `{}.{}` cannot access field on non-object value",
-                    reference.render_path(),
-                    reference_access.field
-                ),
-            });
-        };
-
-        let Some(next_value) = object_fields.get(&reference_access.field) else {
-            if reference_access.optional {
+        for reference_access in self.accesses_from(access_start_index) {
+            if current_value.is_null() && reference_access.optional {
                 return Ok(Value::Null);
             }
 
-            return Err(WorkflowSemanticError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: format!(
-                    "reference path `{}` is missing field `{}`",
-                    reference.render_path(),
-                    reference_access.field
-                ),
-            });
-        };
-
-        current_value = next_value.clone();
-    }
-
-    Ok(current_value)
-}
-
-fn resolve_reference_root(
-    reference: &Reference,
-    evaluation_context: &EvaluationContext,
-    context: &str,
-) -> Result<(Value, usize), WorkflowSemanticError> {
-    match &reference.root {
-        ReferenceRoot::Keyword(ReferenceKeyword::Input) => {
-            if reference.accesses.is_empty() {
-                return Ok((Value::Object(evaluation_context.input_values.clone()), 0));
-            }
-
-            let input_field_name = reference
-                .first_access_field()
-                .expect("input keyword reference must have first access when not empty");
-            let Some(input_field_value) = evaluation_context.input_values.get(input_field_name) else {
+            let Some(object_fields) = current_value.as_object() else {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {
                     context: context.to_string(),
-                    message: format!("unknown input field `{input_field_name}`"),
+                    message: format!(
+                        "reference path `{}.{}` cannot access field on non-object value",
+                        self.render_path(),
+                        reference_access.field
+                    ),
                 });
             };
 
-            Ok((input_field_value.clone(), 1))
-        }
-        ReferenceRoot::Keyword(ReferenceKeyword::Dynamic) => {
-            if reference.accesses.is_empty() {
-                let dynamic_values = evaluation_context
-                    .local_bindings
-                    .iter()
-                    .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
-                    .collect::<Map<String, Value>>();
-
-                return Ok((Value::Object(dynamic_values), 0));
-            }
-
-            let dynamic_field_name = reference
-                .first_access_field()
-                .expect("dynamic keyword reference must have first access when not empty");
-            let Some(dynamic_field_value) = evaluation_context.local_bindings.get(dynamic_field_name) else {
-                return Err(WorkflowSemanticError::ExpressionEvaluation {
-                    context: context.to_string(),
-                    message: format!("unknown dynamic field `{dynamic_field_name}`"),
-                });
-            };
-
-            Ok((dynamic_field_value.clone(), 1))
-        }
-        ReferenceRoot::Keyword(ReferenceKeyword::Secrets) => {
-            if reference.accesses.is_empty() {
-                return Ok((Value::Object(evaluation_context.secret_values.clone()), 0));
-            }
-
-            let secret_field_name = reference
-                .first_access_field()
-                .expect("secrets keyword reference must have first access when not empty");
-            let Some(secret_field_value) = evaluation_context.secret_values.get(secret_field_name) else {
-                return Err(WorkflowSemanticError::ExpressionEvaluation {
-                    context: context.to_string(),
-                    message: format!("unknown secret field `{secret_field_name}`"),
-                });
-            };
-
-            Ok((secret_field_value.clone(), 1))
-        }
-        ReferenceRoot::Keyword(ReferenceKeyword::Agent) => {
-            if reference.accesses.is_empty() {
-                let mut all_agent_outputs = Map::new();
-
-                for (agent_name, agent_output) in &evaluation_context.agent_outputs {
-                    all_agent_outputs.insert(agent_name.clone(), agent_output.clone());
+            let Some(next_value) = object_fields.get(&reference_access.field) else {
+                if reference_access.optional {
+                    return Ok(Value::Null);
                 }
 
-                return Ok((Value::Object(all_agent_outputs), 0));
-            }
-
-            let agent_name = reference
-                .first_access_field()
-                .expect("agent keyword reference must have first access when not empty");
-            let Some(agent_output_value) = evaluation_context.agent_outputs.get(agent_name) else {
                 return Err(WorkflowSemanticError::ExpressionEvaluation {
                     context: context.to_string(),
-                    message: format!("agent `{agent_name}` output is not available"),
+                    message: format!(
+                        "reference path `{}` is missing field `{}`",
+                        self.render_path(),
+                        reference_access.field
+                    ),
                 });
             };
 
-            Ok((agent_output_value.clone(), 1))
+            current_value = next_value.clone();
         }
-        ReferenceRoot::Keyword(ReferenceKeyword::Tool) => Err(WorkflowSemanticError::UnsupportedFeature {
-            feature: "`tool.*` runtime references are not yet supported".to_string(),
-        }),
-        ReferenceRoot::Keyword(ReferenceKeyword::Resource) => Err(WorkflowSemanticError::UnsupportedFeature {
-            feature: "`resource.*` runtime references are not supported outside `read resource.*`".to_string(),
-        }),
-        ReferenceRoot::Keyword(ReferenceKeyword::Prompt) => Err(WorkflowSemanticError::UnsupportedFeature {
-            feature: "`prompt.*` runtime references are not supported outside `render prompt.*`".to_string(),
-        }),
-        ReferenceRoot::Keyword(ReferenceKeyword::Model) => Err(WorkflowSemanticError::UnsupportedFeature {
-            feature: "`model.*` references are only supported in agent model properties".to_string(),
-        }),
-        ReferenceRoot::Identifier(identifier) => {
-            let Some(local_binding_value) = evaluation_context.local_bindings.get(identifier) else {
-                return Err(WorkflowSemanticError::ExpressionEvaluation {
-                    context: context.to_string(),
-                    message: format!("unknown identifier `{identifier}`"),
-                });
-            };
 
-            Ok((local_binding_value.clone(), 0))
+        Ok(current_value)
+    }
+
+    fn resolve_root_value(&self, evaluation_context: &EvaluationContext, context: &str) -> Result<(Value, usize), WorkflowSemanticError> {
+        match &self.root {
+            ReferenceRoot::Keyword(ReferenceKeyword::Input) => {
+                if !self.has_accesses() {
+                    return Ok((Value::Object(evaluation_context.input_values.clone()), 0));
+                }
+
+                let input_field_name = self
+                    .first_access_field()
+                    .expect("input keyword reference must have first access when not empty");
+                let Some(input_field_value) = evaluation_context.input_values.get(input_field_name) else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("unknown input field `{input_field_name}`"),
+                    });
+                };
+
+                Ok((input_field_value.clone(), 1))
+            }
+            ReferenceRoot::Keyword(ReferenceKeyword::Dynamic) => {
+                if !self.has_accesses() {
+                    let dynamic_values = evaluation_context
+                        .local_bindings
+                        .iter()
+                        .map(|(field_name, field_value)| (field_name.clone(), field_value.clone()))
+                        .collect::<Map<String, Value>>();
+
+                    return Ok((Value::Object(dynamic_values), 0));
+                }
+
+                let dynamic_field_name = self
+                    .first_access_field()
+                    .expect("dynamic keyword reference must have first access when not empty");
+                let Some(dynamic_field_value) = evaluation_context.local_bindings.get(dynamic_field_name) else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("unknown dynamic field `{dynamic_field_name}`"),
+                    });
+                };
+
+                Ok((dynamic_field_value.clone(), 1))
+            }
+            ReferenceRoot::Keyword(ReferenceKeyword::Secrets) => {
+                if !self.has_accesses() {
+                    return Ok((Value::Object(evaluation_context.secret_values.clone()), 0));
+                }
+
+                let secret_field_name = self
+                    .first_access_field()
+                    .expect("secrets keyword reference must have first access when not empty");
+                let Some(secret_field_value) = evaluation_context.secret_values.get(secret_field_name) else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("unknown secret field `{secret_field_name}`"),
+                    });
+                };
+
+                Ok((secret_field_value.clone(), 1))
+            }
+            ReferenceRoot::Keyword(ReferenceKeyword::Agent) => {
+                if !self.has_accesses() {
+                    let mut all_agent_outputs = Map::new();
+
+                    for (agent_name, agent_output) in &evaluation_context.agent_outputs {
+                        all_agent_outputs.insert(agent_name.clone(), agent_output.clone());
+                    }
+
+                    return Ok((Value::Object(all_agent_outputs), 0));
+                }
+
+                let agent_name = self
+                    .first_access_field()
+                    .expect("agent keyword reference must have first access when not empty");
+                let Some(agent_output_value) = evaluation_context.agent_outputs.get(agent_name) else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("agent `{agent_name}` output is not available"),
+                    });
+                };
+
+                Ok((agent_output_value.clone(), 1))
+            }
+            ReferenceRoot::Keyword(ReferenceKeyword::Tool) => Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`tool.*` runtime references are not yet supported".to_string(),
+            }),
+            ReferenceRoot::Keyword(ReferenceKeyword::Resource) => Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`resource.*` runtime references are not supported outside `read resource.*`".to_string(),
+            }),
+            ReferenceRoot::Keyword(ReferenceKeyword::Prompt) => Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`prompt.*` runtime references are not supported outside `render prompt.*`".to_string(),
+            }),
+            ReferenceRoot::Keyword(ReferenceKeyword::Model) => Err(WorkflowSemanticError::UnsupportedFeature {
+                feature: "`model.*` references are only supported in agent model properties".to_string(),
+            }),
+            ReferenceRoot::Identifier(identifier) => {
+                let Some(local_binding_value) = evaluation_context.local_bindings.get(identifier) else {
+                    return Err(WorkflowSemanticError::ExpressionEvaluation {
+                        context: context.to_string(),
+                        message: format!("unknown identifier `{identifier}`"),
+                    });
+                };
+
+                Ok((local_binding_value.clone(), 0))
+            }
         }
     }
 }

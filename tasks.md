@@ -77,7 +77,7 @@
   Description: Move tool call validation and binding compatibility checks into a tool module.
   Rationale: Tool validation is shared by deterministic tools, imported MCP tools, runtime schema checks, and LSP completions.
 
-- [~] Move reference-specific validation helpers onto `Reference`.
+- [x] Move reference-specific validation helpers onto `Reference`.
   Description: Attach root keyword interpretation, projection segment access, scope validation, and dependency collection to `Reference`.
   Rationale: The repository rule requires behavior to live on the type that owns the data, and reference helper functions are currently natural methods.
 
@@ -328,5 +328,5 @@
 ## Incomplete Handoff Notes
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
+- Expression method locality remains partial. `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move expression-owned traversal such as tool reference collection, direct tool-name extraction across nested expressions, agent dependency collection, and secret-reference detection onto `Expression`.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.

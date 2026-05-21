@@ -257,7 +257,7 @@ impl MatchBranch {
 
 impl ToolCall {
     pub fn infer_type(&self, type_inference_context: &TypeInferenceContext, context: &str) -> Result<WorkflowType, WorkflowSemanticError> {
-        let Some(tool_name) = self.callee.first_access_field() else {
+        let Some(tool_name) = self.callee.tool_name() else {
             return Err(WorkflowSemanticError::ExpressionEvaluation {
                 context: context.to_string(),
                 message: "tool call requires a tool name".to_string(),
@@ -445,48 +445,50 @@ fn infer_reference_type(
         }
     };
 
-    resolve_reference_access_path(&root_type, &reference.accesses, access_start_index, context)
+    reference.resolve_workflow_type_access_path(&root_type, access_start_index, context)
 }
 
-fn resolve_reference_access_path(
-    root_type: &WorkflowType,
-    accesses: &[crate::dsl::ReferenceAccess],
-    access_start_index: usize,
-    context: &str,
-) -> Result<WorkflowType, WorkflowSemanticError> {
-    let mut candidate_types = vec![root_type.clone()];
+impl Reference {
+    fn resolve_workflow_type_access_path(
+        &self,
+        root_type: &WorkflowType,
+        access_start_index: usize,
+        context: &str,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        let mut candidate_types = vec![root_type.clone()];
 
-    for access in accesses.iter().skip(access_start_index) {
-        let mut next_candidate_types = Vec::new();
+        for reference_access in self.accesses_from(access_start_index) {
+            let mut next_candidate_types = Vec::new();
 
-        if candidate_types.iter().any(WorkflowType::can_be_null) && !access.optional {
-            return Err(WorkflowSemanticError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: format!("cannot access `{}` through a nullable value; use `?.`", access.field),
-            });
-        }
-
-        for candidate_type in &candidate_types {
-            if let Some(field_type) = candidate_type.without_null().field_type(&access.field) {
-                next_candidate_types.push(field_type);
+            if candidate_types.iter().any(WorkflowType::can_be_null) && !reference_access.optional {
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!("cannot access `{}` through a nullable value; use `?.`", reference_access.field),
+                });
             }
+
+            for candidate_type in &candidate_types {
+                if let Some(field_type) = candidate_type.without_null().field_type(&reference_access.field) {
+                    next_candidate_types.push(field_type);
+                }
+            }
+
+            if reference_access.optional {
+                next_candidate_types.push(WorkflowType::Null);
+            }
+
+            if next_candidate_types.is_empty() {
+                return Err(WorkflowSemanticError::ExpressionEvaluation {
+                    context: context.to_string(),
+                    message: format!("invalid reference field access `{}`", reference_access.field),
+                });
+            }
+
+            candidate_types = next_candidate_types;
         }
 
-        if access.optional {
-            next_candidate_types.push(WorkflowType::Null);
-        }
-
-        if next_candidate_types.is_empty() {
-            return Err(WorkflowSemanticError::ExpressionEvaluation {
-                context: context.to_string(),
-                message: format!("invalid reference field access `{}`", access.field),
-            });
-        }
-
-        candidate_types = next_candidate_types;
+        Ok(merge_types(candidate_types))
     }
-
-    Ok(merge_types(candidate_types))
 }
 
 fn merge_types(types: Vec<WorkflowType>) -> WorkflowType {

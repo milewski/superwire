@@ -1381,17 +1381,7 @@ pub struct ModelUsage {
 impl ModelUsage {
     #[must_use]
     pub fn model_name(&self) -> Option<&str> {
-        if self.reference.root_keyword() != Some(ReferenceKeyword::Model) || self.reference.accesses.len() != 1 {
-            return None;
-        }
-
-        let access = self.reference.first_access()?;
-
-        if access.optional {
-            return None;
-        }
-
-        Some(access.field.as_str())
+        self.reference.direct_required_name_for_keyword(ReferenceKeyword::Model)
     }
 
     #[must_use]
@@ -1966,6 +1956,11 @@ impl McpCall {
     pub fn target_name(&self) -> Option<&str> {
         self.callee.first_access_field()
     }
+
+    #[must_use]
+    pub fn has_valid_callee(&self) -> bool {
+        self.callee.is_direct_required_reference_to_keyword(self.operation.expected_root())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -2277,6 +2272,11 @@ impl Reference {
     }
 
     #[must_use]
+    pub fn is_secret_reference(&self) -> bool {
+        self.is_keyword_root(ReferenceKeyword::Secrets)
+    }
+
+    #[must_use]
     pub fn schema_name_and_field_path(&self) -> Option<(&str, Vec<&str>)> {
         if self.root.as_identifier() != Some(DeclarationKeyword::Schema.as_str()) {
             return None;
@@ -2304,30 +2304,70 @@ impl Reference {
     }
 
     #[must_use]
-    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        if self.root_keyword() != Some(reference_keyword) || self.accesses.len() != 1 || self.accesses[0].optional {
-            return None;
-        }
-
-        Some(self.accesses[0].field.clone())
+    pub fn last_access(&self) -> Option<&ReferenceAccess> {
+        self.accesses.last()
     }
 
     #[must_use]
-    pub fn tool_name(&self) -> Option<&str> {
-        if self.root_keyword() != Some(ReferenceKeyword::Tool) {
-            return None;
-        }
-
-        self.first_access_field()
+    pub fn accesses_from(&self, start_index: usize) -> &[ReferenceAccess] {
+        self.accesses.get(start_index..).unwrap_or(&[])
     }
 
     #[must_use]
-    pub fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str> {
+    pub fn projection_accesses(&self) -> &[ReferenceAccess] {
+        self.accesses_from(1)
+    }
+
+    #[must_use]
+    pub fn first_projection_access(&self) -> Option<&ReferenceAccess> {
+        self.projection_accesses().first()
+    }
+
+    #[must_use]
+    pub fn has_accesses(&self) -> bool {
+        !self.accesses.is_empty()
+    }
+
+    #[must_use]
+    pub fn has_single_access(&self) -> bool {
+        self.accesses.len() == 1
+    }
+
+    #[must_use]
+    pub fn is_direct_required_reference_to_keyword(&self, reference_keyword: ReferenceKeyword) -> bool {
+        self.direct_required_name_for_keyword(reference_keyword).is_some()
+    }
+
+    #[must_use]
+    pub fn direct_required_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<&str> {
         if self.root_keyword() != Some(reference_keyword) {
             return None;
         }
 
-        self.first_access_field()
+        let [reference_access] = self.accesses.as_slice() else {
+            return None;
+        };
+
+        if reference_access.optional {
+            return None;
+        }
+
+        Some(reference_access.field.as_str())
+    }
+
+    #[must_use]
+    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        self.direct_required_name_for_keyword(reference_keyword).map(str::to_string)
+    }
+
+    #[must_use]
+    pub fn tool_name(&self) -> Option<&str> {
+        self.direct_required_name_for_keyword(ReferenceKeyword::Tool)
+    }
+
+    #[must_use]
+    pub fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str> {
+        self.direct_required_name_for_keyword(reference_keyword)
     }
 
     #[must_use]
@@ -2727,8 +2767,8 @@ pub struct ReferenceAccess {
 #[cfg(test)]
 mod tests {
     use super::{
-        Declaration, Expression, ForClauseKeyword, McpImportBindings, ObjectField, SchemaDeclaration, SourcePosition, SourceSpan,
-        TypeExpression, TypedField, VariantCase, Workflow,
+        Declaration, Expression, ForClauseKeyword, McpImportBindings, ObjectField, Reference, ReferenceAccess, ReferenceKeyword,
+        ReferenceRoot, SchemaDeclaration, SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase, Workflow,
     };
     use crate::dsl::structure::Agent;
     use serde_json::json;
@@ -2899,11 +2939,65 @@ mod tests {
         assert_eq!(effective_fields[2].value, Expression::NumberLiteral("42".to_string()));
     }
 
+    #[test]
+    fn reference_access_helpers_expose_owned_path_segments() {
+        let reference = reference_with_accesses(ReferenceKeyword::Input, [("profile", false), ("address", true), ("city", false)]);
+
+        assert_eq!(reference.first_access_field(), Some("profile"));
+        assert_eq!(
+            reference.first_projection_access().map(|access| access.field.as_str()),
+            Some("address")
+        );
+        assert_eq!(reference.last_access().map(|access| access.field.as_str()), Some("city"));
+
+        let projection_fields = reference
+            .projection_accesses()
+            .iter()
+            .map(|access| access.field.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(projection_fields, vec!["address", "city"]);
+    }
+
+    #[test]
+    fn reference_keyword_predicates_require_direct_required_access() {
+        let model_reference = reference_with_accesses(ReferenceKeyword::Model, [("fast", false)]);
+        let optional_model_reference = reference_with_accesses(ReferenceKeyword::Model, [("fast", true)]);
+        let nested_model_reference = reference_with_accesses(ReferenceKeyword::Model, [("fast", false), ("name", false)]);
+        let secret_reference = reference_with_accesses(ReferenceKeyword::Secrets, [("api_key", false)]);
+
+        assert_eq!(
+            model_reference.direct_required_name_for_keyword(ReferenceKeyword::Model),
+            Some("fast")
+        );
+        assert!(model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
+        assert!(!optional_model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
+        assert!(!nested_model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
+        assert!(secret_reference.is_secret_reference());
+    }
+
     fn typed_field(field_name: &str, field_type: TypeExpression) -> TypedField {
         TypedField {
             name: field_name.to_string(),
             field_type,
             description: None,
+            span: test_source_span(),
+        }
+    }
+
+    fn reference_with_accesses<const ACCESS_COUNT: usize>(
+        reference_keyword: ReferenceKeyword,
+        accesses: [(&str, bool); ACCESS_COUNT],
+    ) -> Reference {
+        Reference {
+            root: ReferenceRoot::Keyword(reference_keyword),
+            accesses: accesses
+                .into_iter()
+                .map(|(field_name, optional)| ReferenceAccess {
+                    field: field_name.to_string(),
+                    optional,
+                })
+                .collect(),
             span: test_source_span(),
         }
     }

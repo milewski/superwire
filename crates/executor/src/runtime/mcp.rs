@@ -20,7 +20,7 @@ impl WorkflowExecutor {
         })?;
         let expected_root = mcp_call.operation.expected_root();
 
-        if mcp_call.callee.root_keyword() != Some(expected_root) {
+        if !mcp_call.has_valid_callee() {
             return Err(ExecutorError::Other {
                 message: format!(
                     "{} call must target `{}.<name>`",

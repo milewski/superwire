@@ -585,7 +585,7 @@ impl PlannedAgent {
         reference: &Reference,
         execution_plan: &ExecutionPlan,
     ) -> Option<WorkflowExecutionGraphTool> {
-        let tool_name = reference.first_access_field()?;
+        let tool_name = reference.tool_name()?;
         let typed_tool = execution_plan.tools.get(tool_name)?;
         let (kind, server_name, item_name) = match &typed_tool.declaration.source {
             Some(ToolSource::Mcp(mcp_tool_source)) => (
@@ -609,7 +609,7 @@ impl PlannedAgent {
     }
 
     fn execution_graph_prompt(&self, reference: &Reference, workflow: &Workflow) -> Option<WorkflowExecutionGraphTool> {
-        let prompt_name = reference.first_access_field()?;
+        let prompt_name = reference.import_name(ReferenceKeyword::Prompt)?;
         let prompt_import = workflow.find_prompt_import(prompt_name)?;
 
         Some(WorkflowExecutionGraphTool {
@@ -625,7 +625,7 @@ impl PlannedAgent {
     }
 
     fn execution_graph_resource(&self, reference: &Reference, workflow: &Workflow) -> Option<WorkflowExecutionGraphTool> {
-        let resource_name = reference.first_access_field()?;
+        let resource_name = reference.import_name(ReferenceKeyword::Resource)?;
         let resource_import = workflow.find_resource_import(resource_name)?;
 
         Some(WorkflowExecutionGraphTool {

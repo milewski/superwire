@@ -111,10 +111,8 @@ impl WorkflowExecutor {
         for tool in self.execution_plan.tools.values() {
             for fixed_binding in &tool.declaration.fixed_binding_fields {
                 if let Expression::Reference(reference) = &fixed_binding.value {
-                    if reference.root_keyword() == Some(ReferenceKeyword::Input) {
-                        if let Some(field_name) = reference.first_access_field() {
-                            consumed_fields.insert(field_name.to_string());
-                        }
+                    if let Some(field_name) = reference.direct_required_name_for_keyword(ReferenceKeyword::Input) {
+                        consumed_fields.insert(field_name.to_string());
                     }
                 }
             }
