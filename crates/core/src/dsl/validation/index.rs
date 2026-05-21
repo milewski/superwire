@@ -70,21 +70,7 @@ impl ValidationIndex {
                 Declaration::Provider(provider_declaration) => {
                     let provider_name = provider_declaration.name.clone();
 
-                    if !Self::is_lowercase_snake_case(&provider_name) {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::InvalidProviderName {
-                                provider_name: provider_name.clone(),
-                            },
-                            Some(provider_declaration.span),
-                        );
-                    }
-
-                    if validation_index.provider_names.contains(&provider_name) {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::DuplicateProvider { provider_name },
-                            Some(provider_declaration.span),
-                        );
-
+                    if !validation_index.register_provider_name(provider_declaration, validation_report) {
                         continue;
                     }
 
@@ -99,25 +85,11 @@ impl ValidationIndex {
                             Some(provider_declaration.span),
                         );
                     }
-
-                    validation_index.provider_names.insert(provider_name);
                 }
                 Declaration::Model(model_declaration) => {
                     let model_name = model_declaration.name.clone();
 
-                    if !Self::is_lowercase_snake_case(&model_name) {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::InvalidModelName {
-                                model_name: model_name.clone(),
-                            },
-                            Some(model_declaration.span),
-                        );
-                    }
-
-                    if validation_index.model_names.contains(&model_name) {
-                        validation_report
-                            .push_issue_with_span(ValidationIssue::DuplicateModel { model_name }, Some(model_declaration.span));
-
+                    if !validation_index.register_model_name(model_declaration, validation_report) {
                         continue;
                     }
 
@@ -139,30 +111,10 @@ impl ValidationIndex {
                             Some(model_declaration.span),
                         );
                     }
-
-                    validation_index.model_names.insert(model_name);
                 }
                 Declaration::McpServer(_) => {}
                 Declaration::Schema(schema_declaration) => {
-                    if !Self::is_lowercase_snake_case(&schema_declaration.name) {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::InvalidSchemaName {
-                                schema_name: schema_declaration.name.clone(),
-                            },
-                            Some(schema_declaration.span),
-                        );
-                    }
-
-                    let inserted_schema = validation_index.schema_names.insert(schema_declaration.name.clone());
-
-                    if !inserted_schema {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::DuplicateSchema {
-                                schema_name: schema_declaration.name.clone(),
-                            },
-                            Some(schema_declaration.span),
-                        );
-
+                    if !validation_index.register_schema_name(schema_declaration, validation_report) {
                         continue;
                     }
 
@@ -176,8 +128,6 @@ impl ValidationIndex {
                 }
                 Declaration::Tool(_) | Declaration::McpToolBatch(_) => {
                     for tool_declaration in declaration.tool_declarations() {
-                        let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
-
                         let named_schema_types = validation_index.named_schema_types(tool_declaration.span);
 
                         if let Ok(tool_input_type) =
@@ -227,20 +177,11 @@ impl ValidationIndex {
                                 .insert(tool_declaration.name.clone(), tool_output_type);
                         }
 
-                        if !inserted_tool {
-                            validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicateTool {
-                                    tool_name: tool_declaration.name.clone(),
-                                },
-                                Some(tool_declaration.span),
-                            );
-                        }
+                        validation_index.register_tool_name(tool_declaration, validation_report);
                     }
                 }
                 Declaration::McpBatch(batch_import_declaration) => {
                     for tool_declaration in declaration.tool_declarations() {
-                        let inserted_tool = validation_index.tool_names.insert(tool_declaration.name.clone());
-
                         let named_schema_types = validation_index.named_schema_types(tool_declaration.span);
 
                         if let Ok(tool_input_type) =
@@ -290,106 +231,36 @@ impl ValidationIndex {
                                 .insert(tool_declaration.name.clone(), tool_output_type);
                         }
 
-                        if !inserted_tool {
-                            validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicateTool {
-                                    tool_name: tool_declaration.name.clone(),
-                                },
-                                Some(tool_declaration.span),
-                            );
-                        }
+                        validation_index.register_tool_name(tool_declaration, validation_report);
                     }
 
                     for resource_import_declaration in &batch_import_declaration.resources {
-                        let inserted_resource = validation_index.resource_names.insert(resource_import_declaration.name.clone());
-
-                        if !inserted_resource {
-                            validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicateResource {
-                                    resource_name: resource_import_declaration.name.clone(),
-                                },
-                                Some(resource_import_declaration.span),
-                            );
-                        }
+                        validation_index.register_resource_name(resource_import_declaration, validation_report);
                     }
 
                     for prompt_import_declaration in &batch_import_declaration.prompts {
-                        let inserted_prompt = validation_index.prompt_names.insert(prompt_import_declaration.name.clone());
-
-                        if !inserted_prompt {
-                            validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicatePrompt {
-                                    prompt_name: prompt_import_declaration.name.clone(),
-                                },
-                                Some(prompt_import_declaration.span),
-                            );
-                        }
+                        validation_index.register_prompt_name(prompt_import_declaration, validation_report);
                     }
                 }
                 Declaration::McpResource(resource_import_declaration) => {
-                    let inserted_resource = validation_index.resource_names.insert(resource_import_declaration.name.clone());
-
-                    if !inserted_resource {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::DuplicateResource {
-                                resource_name: resource_import_declaration.name.clone(),
-                            },
-                            Some(resource_import_declaration.span),
-                        );
-                    }
+                    validation_index.register_resource_name(resource_import_declaration, validation_report);
                 }
                 Declaration::McpResourceBatch(resource_batch_import_declaration) => {
                     for resource_import_declaration in &resource_batch_import_declaration.resources {
-                        let inserted_resource = validation_index.resource_names.insert(resource_import_declaration.name.clone());
-
-                        if !inserted_resource {
-                            validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicateResource {
-                                    resource_name: resource_import_declaration.name.clone(),
-                                },
-                                Some(resource_import_declaration.span),
-                            );
-                        }
+                        validation_index.register_resource_name(resource_import_declaration, validation_report);
                     }
                 }
                 Declaration::McpPrompt(prompt_import_declaration) => {
-                    let inserted_prompt = validation_index.prompt_names.insert(prompt_import_declaration.name.clone());
-
-                    if !inserted_prompt {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::DuplicatePrompt {
-                                prompt_name: prompt_import_declaration.name.clone(),
-                            },
-                            Some(prompt_import_declaration.span),
-                        );
-                    }
+                    validation_index.register_prompt_name(prompt_import_declaration, validation_report);
                 }
                 Declaration::McpPromptBatch(prompt_batch_import_declaration) => {
                     for prompt_import_declaration in &prompt_batch_import_declaration.prompts {
-                        let inserted_prompt = validation_index.prompt_names.insert(prompt_import_declaration.name.clone());
-
-                        if !inserted_prompt {
-                            validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicatePrompt {
-                                    prompt_name: prompt_import_declaration.name.clone(),
-                                },
-                                Some(prompt_import_declaration.span),
-                            );
-                        }
+                        validation_index.register_prompt_name(prompt_import_declaration, validation_report);
                     }
                 }
                 Declaration::Dynamic(_) => {}
                 Declaration::Agent(agent_declaration) => {
-                    let inserted_agent = validation_index.agent_names.insert(agent_declaration.name.clone());
-
-                    if !inserted_agent {
-                        validation_report.push_issue_with_span(
-                            ValidationIssue::DuplicateAgent {
-                                agent_name: agent_declaration.name.clone(),
-                            },
-                            Some(agent_declaration.span),
-                        );
-
+                    if !validation_index.register_agent_name(agent_declaration, validation_report) {
                         continue;
                     }
 
@@ -453,19 +324,5 @@ impl ValidationIndex {
             .iter()
             .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
             .collect()
-    }
-
-    fn is_lowercase_snake_case(identifier: &str) -> bool {
-        let mut characters = identifier.chars();
-
-        let Some(first_character) = characters.next() else {
-            return false;
-        };
-
-        if !first_character.is_ascii_lowercase() {
-            return false;
-        }
-
-        characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
     }
 }

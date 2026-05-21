@@ -53,7 +53,7 @@
   Description: Move duplicate checks into one domain module with report emission unchanged.
   Rationale: Duplicate detection is mostly independent from type/reference checks and is safe to test in isolation.
 
-- [ ] Extract declaration naming validation into `validation/names.rs`.
+- [x] Extract declaration naming validation into `validation/names.rs`.
   Description: Move provider, model, schema, tool, resource, prompt, and agent naming rules into a focused module.
   Rationale: Naming rules are simple policy checks and should not be mixed with semantic reference resolution.
 
@@ -197,7 +197,7 @@
   Description: Move loop item evaluation, scope handling, and loop output aggregation into a dedicated module.
   Rationale: Loop execution has different scope and scheduling rules from normal agents.
 
-- [ ] Extract deterministic and model tool-call support into `runtime/tools.rs`.
+- [x] Extract deterministic and model tool-call support into `runtime/tools.rs`.
   Description: Move tool schema construction, fixed bindings, startup calls, and model tool call handling into a tool module.
   Rationale: Tool behavior is shared by runtime execution and semantic planning.
 
@@ -257,7 +257,7 @@
   Description: Move each workflow subcommand and shared command helpers into separate files.
   Rationale: CLI command behavior is currently mixed, making targeted tests and review difficult.
 
-- [ ] Move vars-file sample generation onto `TypeExpression` or a shared `SampleValueGenerator`.
+- [x] Move vars-file sample generation onto `TypeExpression` or a shared `SampleValueGenerator`.
   Description: Extract sample value generation from CLI into core or a shared support module.
   Rationale: The behavior is type-expression logic and should be reusable outside the CLI.
 
@@ -329,5 +329,5 @@
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, and MCP lock-backed helpers live in `mcp.rs`. The next slices should extract completions, definitions, scopes, and type helpers into dedicated modules.
+- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, MCP lock-backed helpers live in `mcp.rs`, and position/scope lookup helpers live in `scopes.rs`. The next slices should extract completions, definitions, and type helpers into dedicated modules.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

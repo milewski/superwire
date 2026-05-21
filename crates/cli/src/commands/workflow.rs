@@ -120,82 +120,8 @@ impl VarsWorkflowCommand {
                 continue;
             }
 
-            let generated_value = Self::generate_value_from_type_expression(parsed_workflow, &typed_field.field_type);
+            let generated_value = typed_field.field_type.sample_json_value(parsed_workflow);
             values.insert(typed_field.name.clone(), generated_value);
-        }
-    }
-
-    fn generate_value_from_type_expression(parsed_workflow: &Workflow, type_expression: &TypeExpression) -> Value {
-        match type_expression {
-            TypeExpression::String | TypeExpression::StringEnum(_) | TypeExpression::StringEnumReference(_) => Value::String(String::new()),
-            TypeExpression::Number => Value::Number(0.into()),
-            TypeExpression::Float => Value::Number(serde_json::Number::from(0)),
-            TypeExpression::Boolean => Value::Bool(false),
-            TypeExpression::Null => Value::Null,
-            TypeExpression::AnyObject => Value::Object(Map::new()),
-            TypeExpression::Object(object_fields) => {
-                let mut object_values = Map::new();
-
-                for object_field in object_fields {
-                    object_values.insert(
-                        object_field.name.clone(),
-                        Self::generate_value_from_type_expression(parsed_workflow, &object_field.field_type),
-                    );
-                }
-
-                Value::Object(object_values)
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                if let Some(schema_declaration) = parsed_workflow.find_schema(schema_name) {
-                    if let Some(root_variant) = &schema_declaration.root_variant {
-                        return Self::generate_value_from_type_expression(parsed_workflow, root_variant);
-                    }
-                }
-
-                let mut object_values = Map::new();
-
-                if let Some(schema_declaration) = parsed_workflow.find_schema(schema_name) {
-                    for object_field in &schema_declaration.fields {
-                        object_values.insert(
-                            object_field.name.clone(),
-                            Self::generate_value_from_type_expression(parsed_workflow, &object_field.field_type),
-                        );
-                    }
-                }
-
-                Value::Object(object_values)
-            }
-            TypeExpression::Union(type_expressions) => {
-                if let Some(non_null_type_expression) = type_expressions
-                    .iter()
-                    .find(|candidate_type_expression| !matches!(candidate_type_expression, TypeExpression::Null))
-                {
-                    return Self::generate_value_from_type_expression(parsed_workflow, non_null_type_expression);
-                }
-
-                Value::Null
-            }
-            TypeExpression::Variant { discriminator, cases } => {
-                let Some(first_case) = cases.first() else {
-                    return Value::Object(Map::new());
-                };
-                let mut object_values = Map::new();
-                object_values.insert(discriminator.clone(), Value::String(first_case.name.clone()));
-
-                for object_field in &first_case.fields {
-                    object_values.insert(
-                        object_field.name.clone(),
-                        Self::generate_value_from_type_expression(parsed_workflow, &object_field.field_type),
-                    );
-                }
-
-                Value::Object(object_values)
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_) => Value::Array(Vec::new()),
         }
     }
 

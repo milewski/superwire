@@ -4,6 +4,7 @@ use super::ast::{
 };
 mod duplicates;
 mod index;
+mod names;
 mod report;
 mod schemas;
 

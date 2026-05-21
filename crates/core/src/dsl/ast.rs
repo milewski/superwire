@@ -1,4 +1,5 @@
 use super::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::ops::Range;
@@ -600,6 +601,10 @@ impl SchemaDeclaration {
         self.root_variant
             .clone()
             .unwrap_or_else(|| TypeExpression::Object(self.fields.clone()))
+    }
+
+    fn sample_json_value(&self, workflow: &Workflow) -> Value {
+        self.type_expression().sample_json_value(workflow)
     }
 }
 
@@ -1560,6 +1565,12 @@ pub struct TypedField {
     pub span: SourceSpan,
 }
 
+impl TypedField {
+    fn insert_sample_json_value(&self, workflow: &Workflow, object_values: &mut Map<String, Value>) {
+        object_values.insert(self.name.clone(), self.field_type.sample_json_value(workflow));
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeExpression {
     String,
@@ -1592,6 +1603,60 @@ pub struct VariantCase {
 }
 
 impl TypeExpression {
+    #[must_use]
+    pub fn sample_json_value(&self, workflow: &Workflow) -> Value {
+        match self {
+            Self::String | Self::StringEnum(_) | Self::StringEnumReference(_) => Value::String(String::new()),
+            Self::Number => Value::Number(0.into()),
+            Self::Float => Value::Number(serde_json::Number::from(0)),
+            Self::Boolean => Value::Bool(false),
+            Self::Null => Value::Null,
+            Self::AnyObject => Value::Object(Map::new()),
+            Self::SchemaReference(schema_name) => workflow.find_schema(schema_name).map_or_else(
+                || Value::Object(Map::new()),
+                |schema_declaration| schema_declaration.sample_json_value(workflow),
+            ),
+            Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => Value::Array(Vec::new()),
+            Self::Object(typed_fields) => {
+                let mut object_values = Map::new();
+
+                for typed_field in typed_fields {
+                    typed_field.insert_sample_json_value(workflow, &mut object_values);
+                }
+
+                Value::Object(object_values)
+            }
+            Self::Variant { discriminator, cases } => {
+                let Some(first_case) = cases.first() else {
+                    return Value::Object(Map::new());
+                };
+
+                let mut object_values = Map::new();
+                object_values.insert(discriminator.clone(), Value::String(first_case.name.clone()));
+
+                for typed_field in &first_case.fields {
+                    typed_field.insert_sample_json_value(workflow, &mut object_values);
+                }
+
+                Value::Object(object_values)
+            }
+            Self::Union(type_expressions) => {
+                if let Some(non_null_type_expression) = type_expressions
+                    .iter()
+                    .find(|candidate_type_expression| !matches!(candidate_type_expression, Self::Null))
+                {
+                    return non_null_type_expression.sample_json_value(workflow);
+                }
+
+                Value::Null
+            }
+        }
+    }
+
     #[must_use]
     pub fn can_be_null(&self) -> bool {
         match self {
@@ -2443,8 +2508,11 @@ pub struct ReferenceAccess {
 
 #[cfg(test)]
 mod tests {
-    use super::{ForClauseKeyword, SourcePosition, SourceSpan};
+    use super::{
+        Declaration, ForClauseKeyword, SchemaDeclaration, SourcePosition, SourceSpan, TypeExpression, TypedField, VariantCase, Workflow,
+    };
     use crate::dsl::structure::Agent;
+    use serde_json::json;
 
     #[test]
     fn parses_for_clause_keywords_from_identifier() {
@@ -2502,5 +2570,90 @@ mod tests {
     #[test]
     fn does_not_suggest_agent_property_name_for_distant_identifier() {
         assert_eq!(Agent::new().suggested_property_definition("retries"), None);
+    }
+
+    #[test]
+    fn samples_json_values_from_type_expressions() {
+        let workflow = Workflow {
+            declarations: Vec::new(),
+            source_text: None,
+        };
+        let type_expression = TypeExpression::Object(vec![
+            typed_field("title", TypeExpression::String),
+            typed_field("count", TypeExpression::Number),
+            typed_field("enabled", TypeExpression::Boolean),
+            typed_field(
+                "metadata",
+                TypeExpression::Union(vec![
+                    TypeExpression::Null,
+                    TypeExpression::Object(vec![typed_field("owner", TypeExpression::String)]),
+                ]),
+            ),
+            typed_field(
+                "items",
+                TypeExpression::Array {
+                    item_type: Box::new(TypeExpression::String),
+                    fixed_length: None,
+                },
+            ),
+        ]);
+
+        assert_eq!(
+            type_expression.sample_json_value(&workflow),
+            json!({
+                "title": "",
+                "count": 0,
+                "enabled": false,
+                "metadata": {
+                    "owner": ""
+                },
+                "items": []
+            })
+        );
+    }
+
+    #[test]
+    fn samples_json_values_from_schema_references_and_variants() {
+        let workflow = Workflow {
+            declarations: vec![Declaration::Schema(SchemaDeclaration {
+                name: "Payload".to_string(),
+                fields: Vec::new(),
+                root_variant: Some(TypeExpression::Variant {
+                    discriminator: "kind".to_string(),
+                    cases: vec![VariantCase {
+                        name: "email".to_string(),
+                        fields: vec![typed_field("subject", TypeExpression::String)],
+                        span: test_source_span(),
+                    }],
+                }),
+                span: test_source_span(),
+            })],
+            source_text: None,
+        };
+        let type_expression = TypeExpression::SchemaReference("Payload".to_string());
+
+        assert_eq!(
+            type_expression.sample_json_value(&workflow),
+            json!({
+                "kind": "email",
+                "subject": ""
+            })
+        );
+    }
+
+    fn typed_field(field_name: &str, field_type: TypeExpression) -> TypedField {
+        TypedField {
+            name: field_name.to_string(),
+            field_type,
+            description: None,
+            span: test_source_span(),
+        }
+    }
+
+    fn test_source_span() -> SourceSpan {
+        SourceSpan {
+            start: SourcePosition { line: 1, column: 1 },
+            end: SourcePosition { line: 1, column: 1 },
+        }
     }
 }
