@@ -2710,6 +2710,8 @@ fn leading_whitespace(line_text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::format_workflow_source;
+    use crate::dsl::parse_workflow;
+    use crate::testing::SnapshotAssertion;
     use crate::workflow_source;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -2732,6 +2734,26 @@ mod tests {
                 "formatter output should be stable for {}",
                 workflow_path.display()
             );
+        }
+    }
+
+    #[test]
+    fn formatter_fixtures_are_parseable_and_idempotent() {
+        for fixture_case in FormatterFixtureCase::discover_all() {
+            fixture_case.assert_original_parses();
+
+            let formatted_source = fixture_case.format_original();
+
+            fixture_case.assert_formatted_parses(&formatted_source);
+
+            let reformatted_source = fixture_case.format_source(&formatted_source, "formatted");
+
+            SnapshotAssertion::new(
+                format!("formatter fixture {} idempotence", fixture_case.fixture_name),
+                formatted_source,
+                reformatted_source,
+            )
+            .assert_matches();
         }
     }
 
@@ -2841,6 +2863,147 @@ mod tests {
         workflow_paths.sort();
 
         workflow_paths
+    }
+
+    struct FormatterFixtureCase {
+        fixture_name: String,
+        before_source: String,
+    }
+
+    impl FormatterFixtureCase {
+        fn discover_all() -> Vec<Self> {
+            let formatter_fixture_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cli/tests/fixtures/formatter");
+            let directory_entries = fs::read_dir(&formatter_fixture_directory).unwrap_or_else(|read_error| {
+                panic!(
+                    "failed to read formatter fixture directory {}: {read_error}",
+                    formatter_fixture_directory.display()
+                )
+            });
+
+            let mut fixture_cases = Vec::new();
+
+            for directory_entry_result in directory_entries {
+                let directory_entry = directory_entry_result.unwrap_or_else(|read_error| {
+                    panic!(
+                        "failed to read formatter fixture entry in {}: {read_error}",
+                        formatter_fixture_directory.display()
+                    )
+                });
+                let fixture_path = directory_entry.path();
+
+                if !fixture_path.is_file() {
+                    continue;
+                }
+
+                fixture_cases.push(Self::from_path(&fixture_path));
+            }
+
+            assert!(
+                !fixture_cases.is_empty(),
+                "formatter fixture directory {} should contain at least one fixture file",
+                formatter_fixture_directory.display()
+            );
+
+            fixture_cases.sort_by(|left_case, right_case| left_case.fixture_name.cmp(&right_case.fixture_name));
+            fixture_cases
+        }
+
+        fn from_path(fixture_path: &Path) -> Self {
+            let fixture_contents = fs::read_to_string(fixture_path)
+                .unwrap_or_else(|read_error| panic!("failed to read fixture {}: {read_error}", fixture_path.display()));
+
+            let wire_code_blocks = Self::extract_wire_code_blocks(&fixture_contents, fixture_path);
+
+            assert_eq!(
+                wire_code_blocks.len(),
+                2,
+                "fixture {} must contain exactly two ```wire blocks",
+                fixture_path.display()
+            );
+
+            Self {
+                fixture_name: fixture_path
+                    .file_stem()
+                    .and_then(|file_stem| file_stem.to_str())
+                    .expect("fixture file name should have valid UTF-8 stem")
+                    .to_owned(),
+                before_source: wire_code_blocks[0].clone(),
+            }
+        }
+
+        fn assert_original_parses(&self) {
+            parse_workflow(&self.before_source)
+                .unwrap_or_else(|parse_error| panic!("failed to parse original fixture {}: {parse_error}", self.fixture_name));
+        }
+
+        fn format_original(&self) -> String {
+            self.format_source(&self.before_source, "original")
+        }
+
+        fn assert_formatted_parses(&self, formatted_source: &str) {
+            parse_workflow(formatted_source)
+                .unwrap_or_else(|parse_error| panic!("failed to parse formatted fixture {}: {parse_error}", self.fixture_name));
+        }
+
+        fn format_source(&self, source_text: &str, source_label: &str) -> String {
+            format_workflow_source(source_text).unwrap_or_else(|format_error| {
+                panic!(
+                    "failed to format {source_label} source for fixture {}: {format_error}",
+                    self.fixture_name
+                )
+            })
+        }
+
+        fn extract_wire_code_blocks(markdown_text: &str, fixture_path: &Path) -> Vec<String> {
+            let mut extracted_blocks = Vec::new();
+            let mut current_block_lines = Vec::new();
+            let mut is_inside_wire_block = false;
+
+            for markdown_line in markdown_text.lines() {
+                let line_without_carriage_return = markdown_line.trim_end_matches('\r');
+                let trimmed_line = line_without_carriage_return.trim();
+
+                if !is_inside_wire_block && trimmed_line == "```wire" {
+                    is_inside_wire_block = true;
+                    current_block_lines.clear();
+
+                    continue;
+                }
+
+                if is_inside_wire_block && trimmed_line == "```" {
+                    extracted_blocks.push(Self::normalize_block_contents(&current_block_lines));
+                    is_inside_wire_block = false;
+
+                    continue;
+                }
+
+                if is_inside_wire_block {
+                    current_block_lines.push(line_without_carriage_return.to_owned());
+                }
+            }
+
+            assert!(
+                !is_inside_wire_block,
+                "unclosed ```wire block in fixture {}",
+                fixture_path.display()
+            );
+            extracted_blocks
+        }
+
+        fn normalize_block_contents(block_lines: &[String]) -> String {
+            let normalized_lines = block_lines
+                .iter()
+                .map(|line_text| line_text.trim_end().to_owned())
+                .collect::<Vec<_>>();
+
+            let mut normalized_contents = normalized_lines.join("\n");
+
+            if !normalized_contents.ends_with('\n') {
+                normalized_contents.push('\n');
+            }
+
+            normalized_contents
+        }
     }
 
     fn collect_paths_by_extension(current_directory: &Path, extension: &str, collected_paths: &mut Vec<PathBuf>) {

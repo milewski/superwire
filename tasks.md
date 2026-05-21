@@ -31,7 +31,7 @@
   Description: Introduce trait-backed fake MCP interactions for unit and integration tests while preserving real TCP tests for framing coverage.
   Rationale: Most MCP tests care about request/response behavior, not sockets. Removing unnecessary TCP makes tests faster and less flaky.
 
-- [ ] Add property-style or table-driven tests for MCP item normalization, binding merge behavior, type compatibility, reference parsing, dependency cycles, and formatter idempotence.
+- [~] Add property-style or table-driven tests for MCP item normalization, binding merge behavior, type compatibility, reference parsing, dependency cycles, and formatter idempotence.
   Description: Cover high-risk pure logic with focused cases outside full workflow execution.
   Rationale: Pure tests run quickly and catch edge cases before expensive runtime or LSP tests are needed.
 
@@ -49,7 +49,7 @@
   Description: Move `ValidationIndex` and related index-building logic into a focused module, preferably with `ValidationIndex::build(...)`.
   Rationale: The index is shared semantic data. Isolating it reduces the largest file and prepares it to become reusable by LSP, CLI, and executor planning.
 
-- [ ] Extract duplicate declaration, property, object field, and typed field validation into `validation/duplicates.rs`.
+- [x] Extract duplicate declaration, property, object field, and typed field validation into `validation/duplicates.rs`.
   Description: Move duplicate checks into one domain module with report emission unchanged.
   Rationale: Duplicate detection is mostly independent from type/reference checks and is safe to test in isolation.
 
@@ -123,7 +123,7 @@
   Description: Turn the formatter into domain renderers with shared writer/wrapping primitives.
   Rationale: Formatting behavior is large and fragile, especially comments and wrapping; smaller modules allow focused tests.
 
-- [ ] Add formatter idempotence tests for every formatter fixture.
+- [x] Add formatter idempotence tests for every formatter fixture.
   Description: Assert parse original, format original, parse formatted, and format formatted produce stable output.
   Rationale: Idempotence catches comment preservation and wrapping regressions early.
 
@@ -173,11 +173,11 @@
 
 ## Phase 6: Executor Runtime Split
 
-- [ ] Convert `crates/executor/src/runtime.rs` into a runtime module directory.
+- [x] Convert `crates/executor/src/runtime.rs` into a runtime module directory.
   Description: Keep the public `WorkflowExecutor` API in `runtime/mod.rs` and move implementation details into focused modules.
   Rationale: Runtime orchestration, validation, tool calls, MCP rendering, and schema handling are currently coupled in one large file.
 
-- [ ] Extract workflow building, MCP lock discovery, and workflow preparation into `runtime/build.rs`.
+- [x] Extract workflow building, MCP lock discovery, and workflow preparation into `runtime/build.rs`.
   Description: Isolate constructors such as `from_source` and setup logic that prepares workflows before execution.
   Rationale: Build-time behavior should be testable without running the execution loop.
 
@@ -329,4 +329,5 @@
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`, and semantic index data types live in `crates/lsp/src/document/semantic_index/types.rs`. The next slices should extract completions, definitions, scopes, MCP helpers, and type helpers into dedicated modules.
+- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, and MCP lock-backed helpers live in `mcp.rs`. The next slices should extract completions, definitions, scopes, and type helpers into dedicated modules.
+- Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.
