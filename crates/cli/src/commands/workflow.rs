@@ -15,6 +15,10 @@ use superwire_executor::{CerseiModelProvider, ExecutorError, WorkflowExecutor};
 
 use crate::diagnostics::CommandError;
 
+mod paths;
+
+use paths::WorkflowPathTargets;
+
 #[derive(Debug, Args)]
 pub struct WorkflowCommand {
     #[command(subcommand)]
@@ -97,7 +101,7 @@ impl VarsWorkflowCommand {
     }
 
     fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {
-        LockWorkflowCommand::collect_workflow_paths_for_targets(&self.workflow_targets)
+        WorkflowPathTargets::new(&self.workflow_targets).collect()
     }
 
     fn merge_generated_fields_from_workflow(generated_vars_file: &mut WorkflowVarsFile, parsed_workflow: &Workflow) {
@@ -601,77 +605,7 @@ impl LockWorkflowCommand {
     }
 
     fn collect_workflow_paths(&self) -> Result<Vec<PathBuf>, CommandError> {
-        Self::collect_workflow_paths_for_targets(&self.workflow_targets)
-    }
-
-    fn collect_workflow_paths_for_targets(workflow_targets: &[PathBuf]) -> Result<Vec<PathBuf>, CommandError> {
-        let mut workflow_paths = Vec::new();
-
-        for workflow_target in workflow_targets {
-            if workflow_target.is_file() {
-                if !Self::is_workflow_file_path(workflow_target) {
-                    return Err(CommandError::invalid_input(format!(
-                        "expected a .wire workflow file, got {}",
-                        workflow_target.display()
-                    )));
-                }
-
-                workflow_paths.push(workflow_target.clone());
-
-                continue;
-            }
-
-            if workflow_target.is_dir() {
-                Self::collect_wire_files_recursively(workflow_target, &mut workflow_paths)?;
-
-                continue;
-            }
-
-            return Err(CommandError::invalid_input(format!(
-                "path does not exist or is not accessible: {}",
-                workflow_target.display()
-            )));
-        }
-
-        workflow_paths.sort();
-        workflow_paths.dedup();
-
-        if workflow_paths.is_empty() {
-            return Err(CommandError::invalid_input("no workflow files (.wire) found"));
-        }
-
-        Ok(workflow_paths)
-    }
-
-    fn collect_wire_files_recursively(directory_path: &Path, workflow_paths: &mut Vec<PathBuf>) -> Result<(), CommandError> {
-        let directory_entries = fs::read_dir(directory_path)
-            .map_err(|read_error| CommandError::internal(format!("failed to read directory {}: {read_error}", directory_path.display())))?;
-
-        for directory_entry_result in directory_entries {
-            let directory_entry = directory_entry_result.map_err(|read_error| {
-                CommandError::internal(format!(
-                    "failed to read entry in directory {}: {read_error}",
-                    directory_path.display()
-                ))
-            })?;
-            let entry_path = directory_entry.path();
-
-            if entry_path.is_dir() {
-                Self::collect_wire_files_recursively(&entry_path, workflow_paths)?;
-
-                continue;
-            }
-
-            if Self::is_workflow_file_path(&entry_path) {
-                workflow_paths.push(entry_path);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn is_workflow_file_path(file_path: &Path) -> bool {
-        file_path.extension().and_then(|extension| extension.to_str()) == Some("wire")
+        WorkflowPathTargets::new(&self.workflow_targets).collect()
     }
 
     fn validate_payload_arguments(&self) -> Result<(), CommandError> {

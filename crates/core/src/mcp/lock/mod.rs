@@ -216,9 +216,83 @@ impl McpLockResolutionContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{McpLock, McpPromptArgumentLock, McpServerLock};
+    use super::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
+    use crate::dsl::Declaration;
     use crate::parse_inline_workflow;
+    use serde_json::json;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn normalizes_mcp_item_names_for_lookup() {
+        assert_eq!(
+            McpServerLock::normalize_item_name("dynamic-summary-prompt"),
+            "dynamic_summary_prompt"
+        );
+        assert_eq!(McpServerLock::normalize_item_name("DynamicSummaryPrompt"), "dynamic_summary_prompt");
+        assert_eq!(
+            McpServerLock::normalize_item_name("dynamic summary prompt"),
+            "dynamic_summary_prompt"
+        );
+    }
+
+    #[test]
+    fn applies_lock_name_resolution_to_workflow_imports() {
+        let mut workflow = parse_inline_workflow! {
+            tool fetch_task_data from mcp.local.tool.fetch_task_data
+            resource project_readme from mcp.local.resource.project_readme
+            prompt summarize_task_prompt from mcp.local.prompt.summarize_task_prompt
+        };
+        let mcp_lock = import_resolution_lock();
+
+        mcp_lock.apply_to_workflow(&mut workflow);
+
+        let declarations = workflow.declarations();
+        let Declaration::Tool(tool_declaration) = &declarations[0] else {
+            panic!("first declaration should be a tool import");
+        };
+        let Declaration::McpResource(resource_declaration) = &declarations[1] else {
+            panic!("second declaration should be a resource import");
+        };
+        let Declaration::McpPrompt(prompt_declaration) = &declarations[2] else {
+            panic!("third declaration should be a prompt import");
+        };
+
+        assert_eq!(
+            tool_declaration.source.as_ref().and_then(crate::dsl::ToolSource::mcp_tool_name),
+            Some("FetchTaskData")
+        );
+        assert_eq!(resource_declaration.source.item_name, "project-readme");
+        assert_eq!(prompt_declaration.source.item_name, "summarize-task-prompt");
+    }
+
+    #[test]
+    fn applies_lock_schema_to_imported_tool() {
+        let mut workflow = parse_inline_workflow! {
+            tool fetch_task_data from mcp.local.tool.fetch_task_data
+        };
+        let mcp_lock = import_resolution_lock();
+
+        mcp_lock.apply_to_workflow(&mut workflow);
+
+        let Declaration::Tool(tool_declaration) = &workflow.declarations()[0] else {
+            panic!("declaration should be a tool import");
+        };
+
+        assert_eq!(tool_declaration.description.as_deref(), Some("Fetch task data"));
+        assert_eq!(tool_declaration.input_fields[0].name, "task_id");
+        assert_eq!(tool_declaration.output_fields[0].name, "title");
+    }
+
+    #[test]
+    fn ignores_prompt_binding_validation_for_missing_server_lock() {
+        let workflow = parse_inline_workflow! {
+            prompt summarize_task_prompt from mcp.local.prompt.summarize_task_prompt
+        };
+        let mcp_lock = McpLock::empty();
+        let binding_messages = mcp_lock.validate_prompt_import_bindings(&workflow);
+
+        assert!(binding_messages.is_empty());
+    }
 
     #[test]
     fn validates_mixed_prompt_batch_with_shared_and_item_bindings() {
@@ -307,5 +381,51 @@ mod tests {
         );
 
         McpLock { servers }
+    }
+
+    fn import_resolution_lock() -> McpLock {
+        let mut tools = BTreeMap::new();
+        tools.insert("FetchTaskData".to_string(), fetch_task_data_tool_lock());
+
+        let mut servers = BTreeMap::new();
+        servers.insert(
+            "local".to_string(),
+            McpServerLock {
+                tools,
+                resources: vec!["project-readme".to_string()],
+                prompts: vec!["summarize-task-prompt".to_string()],
+                ..McpServerLock::default()
+            },
+        );
+
+        McpLock { servers }
+    }
+
+    fn fetch_task_data_tool_lock() -> McpToolLock {
+        McpToolLock::from_json_schema_values(
+            "FetchTaskData".to_string(),
+            Some("Fetch task data".to_string()),
+            json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "number"
+                    }
+                },
+                "required": ["task_id"],
+                "additionalProperties": false
+            }),
+            Some(json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string"
+                    }
+                },
+                "required": ["title"],
+                "additionalProperties": false
+            })),
+        )
+        .expect("MCP tool lock should deserialize from JSON schema values")
     }
 }

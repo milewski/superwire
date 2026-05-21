@@ -57,7 +57,7 @@
   Description: Move provider, model, schema, tool, resource, prompt, and agent naming rules into a focused module.
   Rationale: Naming rules are simple policy checks and should not be mixed with semantic reference resolution.
 
-- [ ] Extract schema reference, variant, discriminator, and type-expression validation into `validation/schemas.rs`.
+- [x] Extract schema reference, variant, discriminator, and type-expression validation into `validation/schemas.rs`.
   Description: Move schema-specific validation and type-expression traversal into a schema validation module.
   Rationale: Schema behavior changes often affect runtime, LSP, and formatter assumptions, so it needs a clear owner.
 
@@ -181,7 +181,7 @@
   Description: Isolate constructors such as `from_source` and setup logic that prepares workflows before execution.
   Rationale: Build-time behavior should be testable without running the execution loop.
 
-- [ ] Extract runtime input and secrets validation into `runtime/configuration.rs`.
+- [x] Extract runtime input and secrets validation into `runtime/configuration.rs`.
   Description: Move runtime value validation against workflow declarations into a configuration module.
   Rationale: Startup validation is a separate concern from executing agents and tools.
 
@@ -239,7 +239,7 @@
   Description: Ask import declarations for effective bindings after batch inheritance instead of reconstructing them externally.
   Rationale: Flattened and nested MCP import views must agree to avoid required-argument bugs.
 
-- [ ] Add MCP lock contract tests for normalization, lock application, prompt arguments, schema application, and missing servers.
+- [x] Add MCP lock contract tests for normalization, lock application, prompt arguments, schema application, and missing servers.
   Description: Cover lock behavior with structured fixtures and expectations.
   Rationale: MCP lock files are an external contract and need stable regression tests.
 
@@ -261,7 +261,7 @@
   Description: Extract sample value generation from CLI into core or a shared support module.
   Rationale: The behavior is type-expression logic and should be reusable outside the CLI.
 
-- [ ] Centralize workflow path collection with focused tests.
+- [x] Centralize workflow path collection with focused tests.
   Description: Move target path expansion, sorting, and error handling into a command helper module.
   Rationale: Lock and vars commands both need path collection and should not diverge.
 
