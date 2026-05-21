@@ -129,7 +129,7 @@
 
 ## Phase 4: Shared Semantic Type And Reference Services
 
-- [ ] Create or complete `core::semantic::index` as the shared semantic model for validation, LSP, CLI, and executor planning.
+- [x] Create or complete `core::semantic::index` as the shared semantic model for validation, LSP, CLI, and executor planning.
   Description: Build one semantic model for declarations, type maps, providers/models, tool schemas, MCP imports, and source spans.
   Rationale: Rebuilding similar indexes in multiple crates causes drift and performance cost.
 
