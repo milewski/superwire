@@ -73,7 +73,7 @@
   Description: Move dynamic declaration checks and cycle detection for dynamic/agent dependencies into focused graph-oriented validation.
   Rationale: Cycle detection is algorithmically different from field/type checks and benefits from targeted tests.
 
-- [ ] Extract tool call binding, fixed binding, and literal type compatibility validation into `validation/tools.rs`.
+- [x] Extract tool call binding, fixed binding, and literal type compatibility validation into `validation/tools.rs`.
   Description: Move tool call validation and binding compatibility checks into a tool module.
   Rationale: Tool validation is shared by deterministic tools, imported MCP tools, runtime schema checks, and LSP completions.
 
@@ -201,7 +201,7 @@
   Description: Move tool schema construction, fixed bindings, startup calls, and model tool call handling into a tool module.
   Rationale: Tool behavior is shared by runtime execution and semantic planning.
 
-- [ ] Extract MCP import prompt/resource rendering and runtime binding merge into `runtime/mcp.rs`.
+- [x] Extract MCP import prompt/resource rendering and runtime binding merge into `runtime/mcp.rs`.
   Description: Move runtime MCP prompt/resource/tool rendering and binding evaluation into an MCP module.
   Rationale: MCP behavior has its own schema, lock, binding, and request lifecycle concerns.
 
@@ -329,6 +329,6 @@
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, MCP lock-backed helpers live in `mcp.rs`, position/scope lookup helpers live in `scopes.rs`, definition lookup helpers live in `definitions.rs`, and type completion helpers live in `type_helpers.rs`. The next slices should extract construction and completion-preparation helpers into dedicated modules.
-- CLI workflow command splitting is partially complete. Path collection lives in `workflow/paths.rs` and shared JSON payload parsing lives in `workflow/json.rs`; check, run, lock, vars, and remaining schema/prompt helpers still need focused modules.
+- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, MCP lock-backed helpers live in `mcp.rs`, position/scope lookup helpers live in `scopes.rs`, definition lookup helpers live in `definitions.rs`, type completion helpers live in `type_helpers.rs`, and semantic index construction lives in `construction.rs`. The next slice should extract completion-preparation helpers into dedicated modules.
+- CLI workflow command splitting is partially complete. Path collection lives in `workflow/paths.rs`, shared JSON payload parsing lives in `workflow/json.rs`, and workflow checking lives in `workflow/check.rs`; run, lock, vars, and remaining schema/prompt helpers still need focused modules.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

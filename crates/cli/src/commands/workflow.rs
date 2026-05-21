@@ -15,9 +15,11 @@ use superwire_executor::{CerseiModelProvider, ExecutorError, WorkflowExecutor};
 
 use crate::diagnostics::CommandError;
 
+mod check;
 mod json;
 mod paths;
 
+use check::CheckWorkflowCommand;
 use json::WorkflowPayloadSources;
 use paths::WorkflowPathTargets;
 
@@ -144,39 +146,6 @@ impl VarsWorkflowCommand {
         fs::write(&self.output_path, vars_file_contents).map_err(|write_error| {
             CommandError::internal(format!("failed to write vars file {}: {write_error}", self.output_path.display()))
         })
-    }
-}
-
-#[derive(Debug, Args)]
-struct CheckWorkflowCommand {
-    #[arg(value_name = "WORKFLOW_PATH")]
-    workflow_path: PathBuf,
-}
-
-impl CheckWorkflowCommand {
-    fn execute(self) -> Result<(), CommandError> {
-        let workflow_source = fs::read_to_string(&self.workflow_path).map_err(|read_error| {
-            CommandError::invalid_input(format!(
-                "failed to read workflow file {}: {read_error}",
-                self.workflow_path.display()
-            ))
-        })?;
-
-        let parsed_workflow = parse_workflow(&workflow_source).map_err(|parse_error| {
-            CommandError::invalid_input(parse_error.render_for_output_target(&workflow_source, &self.workflow_path.display().to_string()))
-        })?;
-
-        let _runtime_schema_context = CliRuntimeSchemaContext::from_workflow(&parsed_workflow)
-            .map_err(|schema_context_error| CommandError::invalid_input(schema_context_error.message().to_string()))?;
-        WorkflowExecutor::from_source(&workflow_source).map_err(Self::map_workflow_runtime_error)?;
-
-        println!("workflow is valid");
-
-        Ok(())
-    }
-
-    fn map_workflow_runtime_error(runtime_error: ExecutorError) -> CommandError {
-        CommandError::invalid_input(runtime_error.to_string())
     }
 }
 

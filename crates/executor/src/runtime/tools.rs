@@ -556,29 +556,6 @@ impl WorkflowExecutor {
         })
     }
 
-    fn merge_mcp_import_binding_overrides(
-        &self,
-        bindings: Value,
-        override_binding_fields: &[ObjectField],
-        evaluation_context: &EvaluationContext,
-        import_name: &str,
-    ) -> Result<Value, ExecutorError> {
-        let mut binding_object = bindings.as_object().cloned().unwrap_or_default();
-
-        for override_binding_field in override_binding_fields {
-            let binding_value = self.evaluate_runtime_expression(
-                &override_binding_field.value,
-                evaluation_context,
-                &format!("MCP import `{import_name}` binding `{}`", override_binding_field.name),
-                None,
-                &ToolCallTracker::default(),
-            )?;
-            binding_object.insert(override_binding_field.name.clone(), binding_value);
-        }
-
-        Ok(Value::Object(binding_object))
-    }
-
     fn open_object_schema() -> Value {
         serde_json::json!({
             "type": "object",

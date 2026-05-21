@@ -7,6 +7,7 @@ mod names;
 mod references;
 mod report;
 mod schemas;
+mod tools;
 
 use agents::{validate_agent_inference_settings, validate_agent_model_bindings, validate_agent_tool_references};
 use dynamic::{validate_agent_dependency_cycles, validate_dynamic_dependency_cycles};
