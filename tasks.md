@@ -275,7 +275,7 @@
   Description: Introduce a `WorkflowDocument` or similar type that owns source, parse result, validation, semantic index, and enrichment.
   Rationale: Many features parse and index the same source repeatedly.
 
-- [ ] Avoid rebuilding LSP semantic index when text has not changed.
+- [x] Avoid rebuilding LSP semantic index when text has not changed.
   Description: Ensure completions, hovers, diagnostics, definitions, symbols, and folding read from cached document state.
   Rationale: LSP responsiveness depends on avoiding repeated expensive work.
 

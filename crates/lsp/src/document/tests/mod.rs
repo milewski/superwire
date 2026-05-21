@@ -330,6 +330,18 @@ fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
     document_state.diagnostics()
 }
 
+#[test]
+fn replace_text_skips_semantic_snapshot_rebuild_when_document_is_unchanged() {
+    let (source, _cursor_position) = source_with_cursor(inline_document_template! {
+        output {
+            value: <cursor>"ok"
+        }
+    });
+    let mut document_state = DocumentState::new(source.clone(), None);
+
+    assert!(!document_state.replace_text(source, None));
+}
+
 mod completion_tests;
 mod definition_tests;
 mod diagnostic_tests;

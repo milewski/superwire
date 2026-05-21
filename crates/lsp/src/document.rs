@@ -50,9 +50,15 @@ impl DocumentState {
         Self { text, semantic_snapshot }
     }
 
-    pub fn replace_text(&mut self, text: String, mcp_lock: Option<McpLock>) {
+    pub fn replace_text(&mut self, text: String, mcp_lock: Option<McpLock>) -> bool {
+        if self.text == text && self.semantic_snapshot.semantic_index.mcp_lock == mcp_lock {
+            return false;
+        }
+
         self.semantic_snapshot = SemanticSnapshot::from_text(&text, mcp_lock.as_ref());
         self.text = text;
+
+        true
     }
 
     #[must_use]
