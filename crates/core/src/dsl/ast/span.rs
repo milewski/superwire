@@ -64,3 +64,29 @@ impl SourceSpan {
         Some(start_byte_offset..end_byte_offset)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SourcePosition, SourceSpan};
+
+    #[test]
+    fn maps_source_position_to_byte_offset() {
+        let source_text = "alpha\nbeta\n";
+
+        assert_eq!(SourcePosition { line: 1, column: 1 }.to_byte_offset(source_text), Some(0));
+        assert_eq!(SourcePosition { line: 2, column: 1 }.to_byte_offset(source_text), Some(6));
+        assert_eq!(SourcePosition { line: 2, column: 5 }.to_byte_offset(source_text), Some(10));
+        assert_eq!(SourcePosition { line: 3, column: 1 }.to_byte_offset(source_text), Some(11));
+    }
+
+    #[test]
+    fn maps_source_span_to_byte_range() {
+        let source_text = "agent greeting";
+        let source_span = SourceSpan {
+            start: SourcePosition { line: 1, column: 7 },
+            end: SourcePosition { line: 1, column: 15 },
+        };
+
+        assert_eq!(source_span.to_byte_range(source_text), Some(6..14));
+    }
+}

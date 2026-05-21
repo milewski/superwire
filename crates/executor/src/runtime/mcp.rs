@@ -1,9 +1,9 @@
 use super::{ExecutorError, WorkflowExecutor};
 use crate::event::{ExecutorEvent, McpCallEventDetails};
 use crate::model::ToolCallTracker;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::time::Instant;
-use superwire_core::dsl::{McpCall, McpCallOperation, ObjectField};
+use superwire_core::dsl::{McpCall, McpCallOperation, McpImportBindingEvaluationKind, McpImportBindings, ObjectField};
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::EvaluationContext;
 use tokio::sync::mpsc;
@@ -176,20 +176,77 @@ impl WorkflowExecutor {
         evaluation_context: &EvaluationContext,
         import_name: &str,
     ) -> Result<Value, ExecutorError> {
-        let mut resolved_parameters = Map::new();
+        McpImportBindings::new(import_parameters, call_parameters).evaluate_json(
+            import_name,
+            McpImportBindingEvaluationKind::CallParameter,
+            |parameter, field_context| {
+                self.evaluate_runtime_expression(
+                    &parameter.value,
+                    evaluation_context,
+                    &field_context,
+                    None,
+                    &ToolCallTracker::default(),
+                )
+            },
+        )
+    }
 
-        for parameter in import_parameters.iter().chain(call_parameters.iter()) {
-            let parameter_value = self.evaluate_runtime_expression(
-                &parameter.value,
-                evaluation_context,
-                &format!("MCP call `{import_name}` parameter `{}`", parameter.name),
-                None,
-                &ToolCallTracker::default(),
-            )?;
-            resolved_parameters.insert(parameter.name.clone(), parameter_value);
-        }
+    pub(in crate::runtime) fn resolve_mcp_import_bindings(
+        &self,
+        import_parameters: &[ObjectField],
+        override_binding_fields: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+        import_name: &str,
+    ) -> Result<Value, ExecutorError> {
+        McpImportBindings::new(import_parameters, override_binding_fields).evaluate_json_with_local_kind(
+            import_name,
+            McpImportBindingEvaluationKind::ImportParameter,
+            McpImportBindingEvaluationKind::ImportBinding,
+            |binding_field, field_context| {
+                self.evaluate_runtime_expression(
+                    &binding_field.value,
+                    evaluation_context,
+                    &field_context,
+                    None,
+                    &ToolCallTracker::default(),
+                )
+            },
+        )
+    }
 
-        Ok(Value::Object(resolved_parameters))
+    pub(in crate::runtime) fn resolve_mcp_import_parameters(
+        &self,
+        parameters: &[ObjectField],
+        evaluation_context: &EvaluationContext,
+        import_name: &str,
+    ) -> Result<Value, ExecutorError> {
+        McpImportBindings::new(&[], parameters).evaluate_json(
+            import_name,
+            McpImportBindingEvaluationKind::ImportParameter,
+            |parameter, field_context| {
+                self.evaluate_runtime_expression(
+                    &parameter.value,
+                    evaluation_context,
+                    &field_context,
+                    None,
+                    &ToolCallTracker::default(),
+                )
+            },
+        )
+    }
+
+    pub(in crate::runtime) fn resolve_mcp_import_server(
+        &self,
+        server_name: &str,
+        evaluation_context: &EvaluationContext,
+    ) -> Result<McpServerConfig, ExecutorError> {
+        let mcp_server_declaration = self.workflow.find_mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
+            message: format!("MCP import references unknown MCP server `{server_name}`"),
+        })?;
+
+        McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| ExecutorError::Other {
+            message: error.to_string(),
+        })
     }
 
     pub(in crate::runtime) fn resolve_mcp_import_context(&self, evaluation_context: &EvaluationContext) -> Result<String, ExecutorError> {
@@ -232,65 +289,6 @@ impl WorkflowExecutor {
         }
 
         Ok(context_sections.join("\n\n"))
-    }
-
-    pub(in crate::runtime) fn resolve_mcp_import_server(
-        &self,
-        server_name: &str,
-        evaluation_context: &EvaluationContext,
-    ) -> Result<McpServerConfig, ExecutorError> {
-        let mcp_server_declaration = self.workflow.find_mcp_server(server_name).ok_or_else(|| ExecutorError::Other {
-            message: format!("MCP import references unknown MCP server `{server_name}`"),
-        })?;
-
-        McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context).map_err(|error| ExecutorError::Other {
-            message: error.to_string(),
-        })
-    }
-
-    pub(in crate::runtime) fn resolve_mcp_import_parameters(
-        &self,
-        parameters: &[ObjectField],
-        evaluation_context: &EvaluationContext,
-        import_name: &str,
-    ) -> Result<Value, ExecutorError> {
-        let mut resolved_parameters = Map::new();
-
-        for parameter in parameters {
-            let parameter_value = self.evaluate_runtime_expression(
-                &parameter.value,
-                evaluation_context,
-                &format!("MCP import `{import_name}` parameter `{}`", parameter.name),
-                None,
-                &ToolCallTracker::default(),
-            )?;
-            resolved_parameters.insert(parameter.name.clone(), parameter_value);
-        }
-
-        Ok(Value::Object(resolved_parameters))
-    }
-
-    pub(in crate::runtime) fn merge_mcp_import_binding_overrides(
-        &self,
-        bindings: Value,
-        override_binding_fields: &[ObjectField],
-        evaluation_context: &EvaluationContext,
-        import_name: &str,
-    ) -> Result<Value, ExecutorError> {
-        let mut binding_object = bindings.as_object().cloned().unwrap_or_default();
-
-        for override_binding_field in override_binding_fields {
-            let binding_value = self.evaluate_runtime_expression(
-                &override_binding_field.value,
-                evaluation_context,
-                &format!("MCP import `{import_name}` binding `{}`", override_binding_field.name),
-                None,
-                &ToolCallTracker::default(),
-            )?;
-            binding_object.insert(override_binding_field.name.clone(), binding_value);
-        }
-
-        Ok(Value::Object(binding_object))
     }
 }
 

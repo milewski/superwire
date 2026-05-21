@@ -1,4 +1,5 @@
 use super::{ObjectField, SourceSpan, ToolDeclaration, ToolSource, TypedField};
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpBatchImportDeclaration {
@@ -70,6 +71,24 @@ pub struct McpImportBindings<'binding> {
     local_fields: &'binding [ObjectField],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpImportBindingEvaluationKind {
+    ImportParameter,
+    CallParameter,
+    ImportBinding,
+}
+
+impl McpImportBindingEvaluationKind {
+    #[must_use]
+    pub fn field_context(self, import_name: &str, field_name: &str) -> String {
+        match self {
+            Self::ImportParameter => format!("MCP import `{import_name}` parameter `{field_name}`"),
+            Self::CallParameter => format!("MCP call `{import_name}` parameter `{field_name}`"),
+            Self::ImportBinding => format!("MCP import `{import_name}` binding `{field_name}`"),
+        }
+    }
+}
+
 impl<'binding> McpImportBindings<'binding> {
     #[must_use]
     pub fn new(shared_fields: &'binding [ObjectField], local_fields: &'binding [ObjectField]) -> Self {
@@ -82,6 +101,69 @@ impl<'binding> McpImportBindings<'binding> {
     #[must_use]
     pub fn effective_fields(self) -> Vec<ObjectField> {
         ObjectField::merged_with_overrides(self.shared_fields, self.local_fields)
+    }
+
+    #[must_use]
+    pub fn has_field(self, field_name: &str) -> bool {
+        self.local_fields
+            .iter()
+            .chain(self.shared_fields.iter())
+            .any(|binding_field| binding_field.name == field_name)
+    }
+
+    pub fn evaluate_json<Error>(
+        self,
+        import_name: &str,
+        evaluation_kind: McpImportBindingEvaluationKind,
+        mut evaluate_field: impl FnMut(&ObjectField, String) -> Result<Value, Error>,
+    ) -> Result<Value, Error> {
+        self.evaluate_json_with_local_kind(import_name, evaluation_kind, evaluation_kind, &mut evaluate_field)
+    }
+
+    pub fn evaluate_json_with_local_kind<Error>(
+        self,
+        import_name: &str,
+        shared_evaluation_kind: McpImportBindingEvaluationKind,
+        local_evaluation_kind: McpImportBindingEvaluationKind,
+        mut evaluate_field: impl FnMut(&ObjectField, String) -> Result<Value, Error>,
+    ) -> Result<Value, Error> {
+        let mut evaluated_fields = Map::new();
+
+        for (binding_field, evaluation_kind) in self.effective_fields_with_evaluation_kind(shared_evaluation_kind, local_evaluation_kind) {
+            let field_context = evaluation_kind.field_context(import_name, &binding_field.name);
+            let field_value = evaluate_field(&binding_field, field_context)?;
+            evaluated_fields.insert(binding_field.name, field_value);
+        }
+
+        Ok(Value::Object(evaluated_fields))
+    }
+
+    fn effective_fields_with_evaluation_kind(
+        self,
+        shared_evaluation_kind: McpImportBindingEvaluationKind,
+        local_evaluation_kind: McpImportBindingEvaluationKind,
+    ) -> Vec<(ObjectField, McpImportBindingEvaluationKind)> {
+        let mut merged_fields = self
+            .shared_fields
+            .iter()
+            .cloned()
+            .map(|binding_field| (binding_field, shared_evaluation_kind))
+            .collect::<Vec<_>>();
+
+        for local_field in self.local_fields {
+            if let Some(existing_field_index) = merged_fields
+                .iter()
+                .position(|field_with_evaluation_kind| field_with_evaluation_kind.0.name == local_field.name)
+            {
+                merged_fields[existing_field_index] = (local_field.clone(), local_evaluation_kind);
+
+                continue;
+            }
+
+            merged_fields.push((local_field.clone(), local_evaluation_kind));
+        }
+
+        merged_fields
     }
 }
 
@@ -255,7 +337,7 @@ pub struct McpPromptImportDeclaration {
 impl McpPromptImportDeclaration {
     #[must_use]
     pub fn has_parameter_binding(&self, parameter_name: &str) -> bool {
-        self.parameters.iter().any(|parameter| parameter.name == parameter_name)
+        McpImportBindings::new(&[], &self.parameters).has_field(parameter_name)
     }
 }
 
@@ -353,8 +435,9 @@ impl McpImportKind {
 
 #[cfg(test)]
 mod tests {
-    use super::McpImportBindings;
+    use super::{McpImportBindingEvaluationKind, McpImportBindings};
     use crate::dsl::{Expression, ObjectField, SourcePosition, SourceSpan};
+    use serde_json::{json, Value};
 
     #[test]
     fn merges_mcp_import_bindings_with_local_overrides_in_order() {
@@ -393,6 +476,71 @@ mod tests {
         assert_eq!(effective_fields[0].value, Expression::NumberLiteral("1".to_string()));
         assert_eq!(effective_fields[1].value, Expression::StringLiteral("local".to_string()));
         assert_eq!(effective_fields[2].value, Expression::NumberLiteral("42".to_string()));
+    }
+
+    #[test]
+    fn evaluates_mcp_import_bindings_with_source_specific_contexts() {
+        let shared_fields = vec![
+            ObjectField {
+                name: "project_id".to_string(),
+                value: Expression::NumberLiteral("1".to_string()),
+                span: test_source_span(),
+            },
+            ObjectField {
+                name: "type".to_string(),
+                value: Expression::StringLiteral("shared".to_string()),
+                span: test_source_span(),
+            },
+        ];
+        let local_fields = vec![
+            ObjectField {
+                name: "type".to_string(),
+                value: Expression::StringLiteral("local".to_string()),
+                span: test_source_span(),
+            },
+            ObjectField {
+                name: "task_id".to_string(),
+                value: Expression::NumberLiteral("42".to_string()),
+                span: test_source_span(),
+            },
+        ];
+        let mut field_contexts = Vec::new();
+
+        let evaluated_bindings = McpImportBindings::new(&shared_fields, &local_fields)
+            .evaluate_json_with_local_kind(
+                "summary_prompt",
+                McpImportBindingEvaluationKind::ImportParameter,
+                McpImportBindingEvaluationKind::ImportBinding,
+                |binding_field, field_context| {
+                    field_contexts.push(field_context);
+
+                    Ok::<Value, ()>(match &binding_field.value {
+                        Expression::NumberLiteral(number_literal) => {
+                            Value::Number(number_literal.parse().expect("test number literal should parse"))
+                        }
+                        Expression::StringLiteral(string_literal) => Value::String(string_literal.clone()),
+                        _ => Value::Null,
+                    })
+                },
+            )
+            .expect("MCP import bindings should evaluate");
+
+        assert_eq!(
+            evaluated_bindings,
+            json!({
+                "project_id": 1,
+                "type": "local",
+                "task_id": 42
+            })
+        );
+        assert_eq!(
+            field_contexts,
+            vec![
+                "MCP import `summary_prompt` parameter `project_id`",
+                "MCP import `summary_prompt` binding `type`",
+                "MCP import `summary_prompt` binding `task_id`",
+            ]
+        );
     }
 
     fn test_source_span() -> SourceSpan {

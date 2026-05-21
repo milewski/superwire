@@ -500,8 +500,7 @@ impl WorkflowExecutor {
                 });
             }
         };
-        let bindings = self.resolve_mcp_import_parameters(import_parameters, evaluation_context, import_name)?;
-        let bindings = self.merge_mcp_import_binding_overrides(bindings, &override_binding_fields, evaluation_context, import_name)?;
+        let bindings = self.resolve_mcp_import_bindings(import_parameters, &override_binding_fields, evaluation_context, import_name)?;
         let server_config = self.resolve_mcp_import_server(&server_name, evaluation_context)?;
         let source = match reference_keyword {
             ReferenceKeyword::Prompt => ModelToolSource::McpPrompt {

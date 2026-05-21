@@ -9,13 +9,14 @@ mod visitor;
 pub use ast::{
     AgentDeclaration, AgentExpressionPropertyName, AgentForLoop, AgentForLoopPattern, AgentProperty, BuiltinFunctionArgumentName,
     BuiltinFunctionName, CallArgument, Declaration, DeclarationKeyword, DynamicBlock, Expression, ForClauseKeyword, FunctionCall,
-    ImportKeyword, InputDeclaration, MatchBranch, MatchExpression, McpCall, McpCallOperation, McpImportBindings, McpImportKind,
-    McpImportPropertyName, McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration,
-    McpServerPropertyName, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolSource, ModelCallArgumentName, ModelDeclaration,
-    ModelDeclarationPropertyName, ModelUsage, ModelUsagePropertyName, NamedArgument, NullFallbackExpression, ObjectField,
-    OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SchemaDeclaration,
-    SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall, ToolCallKeyword, ToolDeclaration,
-    ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase, VariantProjectionExpression, Workflow,
+    ImportKeyword, InputDeclaration, MatchBranch, MatchExpression, McpCall, McpCallOperation, McpImportBindingEvaluationKind,
+    McpImportBindings, McpImportKind, McpImportPropertyName, McpImportSource, McpPromptImportDeclaration, McpResourceImportDeclaration,
+    McpServerDeclaration, McpServerPropertyName, McpToolBatchImportDeclaration, McpToolBatchImportItem, McpToolSource,
+    ModelCallArgumentName, ModelDeclaration, ModelDeclarationPropertyName, ModelUsage, ModelUsagePropertyName, NamedArgument,
+    NullFallbackExpression, ObjectField, OutputDeclaration, ProviderDeclaration, Reference, ReferenceAccess, ReferenceKeyword,
+    ReferenceRoot, SchemaDeclaration, SecretsDeclaration, SourcePosition, SourceSpan, StringTemplate, StringTemplatePart, ToolCall,
+    ToolCallKeyword, ToolDeclaration, ToolDeclarationIter, ToolPropertyName, ToolSource, TypeExpression, TypedField, VariantCase,
+    VariantProjectionExpression, Workflow,
 };
 pub use formatter::{format_workflow_source, DslFormatError};
 pub use parser::{parse_workflow, DslParseError};

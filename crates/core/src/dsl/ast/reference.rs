@@ -233,3 +233,75 @@ pub struct ReferenceAccess {
     pub field: String,
     pub optional: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot};
+    use crate::dsl::ast::{SourcePosition, SourceSpan};
+
+    #[test]
+    fn reference_access_helpers_expose_owned_path_segments() {
+        let reference = reference_with_accesses(ReferenceKeyword::Input, [("profile", false), ("address", true), ("city", false)]);
+
+        assert_eq!(reference.first_access_field(), Some("profile"));
+        assert_eq!(
+            reference
+                .first_projection_access()
+                .map(|reference_access| reference_access.field.as_str()),
+            Some("address")
+        );
+        assert_eq!(
+            reference.last_access().map(|reference_access| reference_access.field.as_str()),
+            Some("city")
+        );
+
+        let projection_fields = reference
+            .projection_accesses()
+            .iter()
+            .map(|reference_access| reference_access.field.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(projection_fields, vec!["address", "city"]);
+    }
+
+    #[test]
+    fn reference_keyword_predicates_require_direct_required_access() {
+        let model_reference = reference_with_accesses(ReferenceKeyword::Model, [("fast", false)]);
+        let optional_model_reference = reference_with_accesses(ReferenceKeyword::Model, [("fast", true)]);
+        let nested_model_reference = reference_with_accesses(ReferenceKeyword::Model, [("fast", false), ("name", false)]);
+        let secret_reference = reference_with_accesses(ReferenceKeyword::Secrets, [("api_key", false)]);
+
+        assert_eq!(
+            model_reference.direct_required_name_for_keyword(ReferenceKeyword::Model),
+            Some("fast")
+        );
+        assert!(model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
+        assert!(!optional_model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
+        assert!(!nested_model_reference.is_direct_required_reference_to_keyword(ReferenceKeyword::Model));
+        assert!(secret_reference.is_secret_reference());
+    }
+
+    fn reference_with_accesses<const ACCESS_COUNT: usize>(
+        reference_keyword: ReferenceKeyword,
+        accesses: [(&str, bool); ACCESS_COUNT],
+    ) -> Reference {
+        Reference {
+            root: ReferenceRoot::Keyword(reference_keyword),
+            accesses: accesses
+                .into_iter()
+                .map(|(field_name, optional)| ReferenceAccess {
+                    field: field_name.to_string(),
+                    optional,
+                })
+                .collect(),
+            span: test_source_span(),
+        }
+    }
+
+    fn test_source_span() -> SourceSpan {
+        SourceSpan {
+            start: SourcePosition { line: 1, column: 1 },
+            end: SourcePosition { line: 1, column: 1 },
+        }
+    }
+}

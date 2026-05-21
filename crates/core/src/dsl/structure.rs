@@ -708,3 +708,32 @@ impl DslProperty for AgentUse {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Agent;
+
+    #[test]
+    fn suggests_closest_agent_property_name_for_typos() {
+        let agent = Agent::new();
+
+        assert_eq!(
+            agent
+                .suggested_property_definition("instrction")
+                .map(|property_definition| property_definition.name),
+            Some("instruction")
+        );
+
+        assert_eq!(
+            agent
+                .suggested_property_definition("modle")
+                .map(|property_definition| property_definition.name),
+            Some("model")
+        );
+    }
+
+    #[test]
+    fn does_not_suggest_agent_property_name_for_distant_identifier() {
+        assert_eq!(Agent::new().suggested_property_definition("retries"), None);
+    }
+}

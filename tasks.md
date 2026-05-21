@@ -99,15 +99,15 @@
 
 ## Phase 3: Parser, AST, And Formatter Split
 
-- [~] Split `crates/core/src/dsl/ast.rs` into workflow, declaration, expression, reference, types, tool, MCP, agent, keywords, and span modules.
+- [x] Split `crates/core/src/dsl/ast.rs` into workflow, declaration, expression, reference, types, tool, MCP, agent, keywords, and span modules.
   Description: Move AST definitions into domain modules and re-export stable public types from `dsl::ast`.
   Rationale: AST changes currently cause high compile and review churn because all data types live in one large namespace.
 
-- [ ] Preserve stable AST re-exports from `dsl::ast` and `dsl::mod`.
+- [x] Preserve stable AST re-exports from `dsl::ast` and `dsl::mod`.
   Description: Keep current downstream imports working while internal modules change.
   Rationale: Compatibility re-exports allow structural refactors without forcing every call site to migrate in one change.
 
-- [ ] Keep keyword parsers and renderers centralized in an AST keyword module.
+- [x] Keep keyword parsers and renderers centralized in an AST keyword module.
   Description: Move keyword enums and `from_identifier`/`as_str` behavior into one module.
   Rationale: DSL keyword matching must stay enum-based and centralized to avoid raw string comparisons.
 
@@ -231,7 +231,7 @@
 
 ## Phase 7: MCP And Tooling Robustness
 
-- [~] Introduce a shared `McpImportBindings` domain type.
+- [x] Introduce a shared `McpImportBindings` domain type.
   Description: Own shared/local binding merging, existence checks, JSON evaluation, and diagnostic display for MCP bindings.
   Rationale: Prompt/resource parameters and tool fixed bindings represent the same concept and should not be implemented repeatedly.
 
@@ -328,5 +328,3 @@
 ## Incomplete Handoff Notes
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
-- Phase 3 AST split is partially complete: `span.rs`, `keywords.rs`, `reference.rs`, `types.rs`, `expression.rs`, `mcp.rs`, `tool.rs`, and `agent.rs` now own source span types, centralized keyword/property enums, reference types, typed-field/type-expression/variant-case behavior, expression/call/template/object-field behavior, MCP declarations/import items/source/kind/bindings, tool declarations/source behavior, and agent declarations/model usage/for-loop/property behavior with stable re-exports preserved from `dsl::ast` and `dsl::mod`. Remaining AST domains to extract are workflow and declaration; `McpCallOperation` moved with expression call types.

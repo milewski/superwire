@@ -587,3 +587,21 @@ impl ModelCallArgumentName {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ForClauseKeyword;
+
+    #[test]
+    fn parses_for_clause_keywords_from_identifier() {
+        assert_eq!(ForClauseKeyword::from_identifier("for"), Some(ForClauseKeyword::For));
+        assert_eq!(ForClauseKeyword::from_identifier("in"), Some(ForClauseKeyword::In));
+        assert_eq!(ForClauseKeyword::from_identifier("agent"), None);
+    }
+
+    #[test]
+    fn renders_for_clause_keywords_as_str() {
+        assert_eq!(ForClauseKeyword::For.as_str(), "for");
+        assert_eq!(ForClauseKeyword::In.as_str(), "in");
+    }
+}
