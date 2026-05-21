@@ -133,7 +133,7 @@
   Description: Build one semantic model for declarations, type maps, providers/models, tool schemas, MCP imports, and source spans.
   Rationale: Rebuilding similar indexes in multiple crates causes drift and performance cost.
 
-- [ ] Move type-map conversion helpers onto `TypedField`, `TypeExpression`, `Workflow`, or other owning core types.
+- [x] Move type-map conversion helpers onto `TypedField`, `TypeExpression`, `Workflow`, or other owning core types.
   Description: Replace editor-specific helper functions with methods on domain types where the data lives.
   Rationale: Type conversion is core DSL behavior, not an LSP-only concern.
 

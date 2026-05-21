@@ -149,11 +149,7 @@ impl SemanticIndex {
     fn insert_schema_declaration(&mut self, schema_declaration: &superwire_core::dsl::SchemaDeclaration) {
         self.insert_schema_field_locations(schema_declaration.name.as_str(), &schema_declaration.fields);
 
-        let schema_fields = schema_declaration
-            .fields
-            .iter()
-            .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-            .collect::<BTreeMap<_, _>>();
+        let schema_fields = TypedField::type_map(&schema_declaration.fields);
         let schema_field_metadata = typed_fields_to_metadata_map(&schema_declaration.fields);
 
         self.schemas.insert(
@@ -176,7 +172,7 @@ impl SemanticIndex {
         self.has_input_declaration = true;
 
         if self.input_fields.is_empty() {
-            self.input_fields = typed_fields_to_map(&input_declaration.fields);
+            self.input_fields = TypedField::type_map(&input_declaration.fields);
             self.input_field_metadata = typed_fields_to_metadata_map(&input_declaration.fields);
             self.insert_singleton_field_locations(SingletonDeclarationKind::Input, &input_declaration.fields);
         }
@@ -188,7 +184,7 @@ impl SemanticIndex {
         self.has_secrets_declaration = true;
 
         if self.secrets_fields.is_empty() {
-            self.secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
+            self.secrets_fields = TypedField::type_map(&secrets_declaration.fields);
             self.secrets_field_metadata = typed_fields_to_metadata_map(&secrets_declaration.fields);
             self.insert_singleton_field_locations(SingletonDeclarationKind::Secrets, &secrets_declaration.fields);
         }
@@ -211,7 +207,7 @@ impl SemanticIndex {
             tool_declaration.name.clone(),
             ToolSummary {
                 description: tool_declaration.description.clone(),
-                bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
+                bounded_fields: TypedField::type_map(&tool_declaration.binding_fields),
                 bounded_field_metadata: typed_fields_to_metadata_map(&tool_declaration.binding_fields),
                 output_type_expression,
                 mcp_server_name,
@@ -790,12 +786,7 @@ impl SemanticIndex {
                     .filter_map(|object_field| {
                         let field_type = self.expression_type_with_dynamic_scope(&object_field.value, dynamic_fields)?;
 
-                        Some(TypedField {
-                            name: object_field.name.clone(),
-                            field_type,
-                            description: None,
-                            span: object_field.span,
-                        })
+                        Some(TypedField::from_type(object_field.name.clone(), field_type, object_field.span))
                     })
                     .collect::<Vec<_>>();
 
@@ -837,13 +828,6 @@ impl SemanticIndex {
             ReferenceKeyword::Model | ReferenceKeyword::Tool | ReferenceKeyword::Resource | ReferenceKeyword::Prompt => None,
         }
     }
-}
-
-fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpression> {
-    typed_fields
-        .iter()
-        .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-        .collect()
 }
 
 fn typed_fields_to_metadata_map(typed_fields: &[TypedField]) -> BTreeMap<String, FieldMetadata> {

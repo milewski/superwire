@@ -1,6 +1,6 @@
 use super::{DeclarationKeyword, Reference, SourceSpan, Workflow};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::BuildHasher;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,8 +13,49 @@ pub struct TypedField {
 
 impl TypedField {
     #[must_use]
+    pub fn from_type(name: impl Into<String>, field_type: TypeExpression, span: SourceSpan) -> Self {
+        Self {
+            name: name.into(),
+            field_type,
+            description: None,
+            span,
+        }
+    }
+
+    #[must_use]
+    pub fn from_type_with_description(
+        name: impl Into<String>,
+        field_type: TypeExpression,
+        description: Option<String>,
+        span: SourceSpan,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            field_type,
+            description,
+            span,
+        }
+    }
+
+    #[must_use]
     pub fn summary_text(&self) -> String {
         format!("{}: {}", self.name, self.field_type.summary_text())
+    }
+
+    #[must_use]
+    pub fn type_map(typed_fields: &[Self]) -> BTreeMap<String, TypeExpression> {
+        typed_fields
+            .iter()
+            .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn hash_type_map(typed_fields: &[Self]) -> HashMap<String, TypeExpression> {
+        typed_fields
+            .iter()
+            .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
+            .collect()
     }
 
     fn insert_sample_json_value(&self, workflow: &Workflow, object_values: &mut Map<String, Value>) {
@@ -54,6 +95,19 @@ pub struct VariantCase {
 }
 
 impl TypeExpression {
+    #[must_use]
+    pub fn object_from_type_map<'field, FieldTypes>(field_types: FieldTypes, span: SourceSpan) -> Self
+    where
+        FieldTypes: IntoIterator<Item = (&'field String, &'field TypeExpression)>,
+    {
+        let typed_fields = field_types
+            .into_iter()
+            .map(|(field_name, field_type)| TypedField::from_type(field_name.clone(), field_type.clone(), span))
+            .collect();
+
+        Self::Object(typed_fields)
+    }
+
     #[must_use]
     pub fn summary_text(&self) -> String {
         match self {
@@ -348,6 +402,126 @@ impl TypeExpression {
             } => false,
         }
     }
+
+    #[must_use]
+    pub fn field_types_for_access<SchemaTypeLookup>(&self, field_name: &str, mut schema_type_lookup: SchemaTypeLookup) -> Vec<Self>
+    where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        let mut field_types = Vec::new();
+
+        self.collect_field_types_for_access(field_name, &mut schema_type_lookup, &mut field_types);
+
+        field_types
+    }
+
+    pub fn collect_field_types_for_access<SchemaTypeLookup>(
+        &self,
+        field_name: &str,
+        schema_type_lookup: &mut SchemaTypeLookup,
+        field_types: &mut Vec<Self>,
+    ) where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        match self {
+            Self::Object(typed_fields) => {
+                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
+                    field_types.push(typed_field.field_type.clone());
+                }
+            }
+            Self::SchemaReference(schema_name) => {
+                if let Some(schema_type) = schema_type_lookup(schema_name) {
+                    schema_type.collect_field_types_for_access(field_name, schema_type_lookup, field_types);
+                }
+            }
+            Self::Variant { discriminator, cases } => {
+                if discriminator == field_name {
+                    field_types.extend(cases.iter().map(|variant_case| Self::StringEnum(variant_case.name.clone())));
+                }
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    type_expression.collect_field_types_for_access(field_name, schema_type_lookup, field_types);
+                }
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => {}
+        }
+    }
+
+    #[must_use]
+    pub fn available_field_types<SchemaTypeLookup>(&self, mut schema_type_lookup: SchemaTypeLookup) -> BTreeMap<String, Self>
+    where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        let mut available_field_types = BTreeMap::new();
+
+        self.collect_available_field_types(&mut schema_type_lookup, &mut available_field_types);
+
+        available_field_types
+    }
+
+    pub fn collect_available_field_types<SchemaTypeLookup>(
+        &self,
+        schema_type_lookup: &mut SchemaTypeLookup,
+        available_field_types: &mut BTreeMap<String, Self>,
+    ) where
+        SchemaTypeLookup: FnMut(&str) -> Option<Self>,
+    {
+        match self {
+            Self::Object(typed_fields) => {
+                for typed_field in typed_fields {
+                    available_field_types
+                        .entry(typed_field.name.clone())
+                        .or_insert_with(|| typed_field.field_type.clone());
+                }
+            }
+            Self::SchemaReference(schema_name) => {
+                if let Some(schema_type) = schema_type_lookup(schema_name) {
+                    schema_type.collect_available_field_types(schema_type_lookup, available_field_types);
+                }
+            }
+            Self::Variant { discriminator, cases } => {
+                available_field_types.entry(discriminator.clone()).or_insert_with(|| {
+                    Self::Union(
+                        cases
+                            .iter()
+                            .map(|variant_case| Self::StringEnum(variant_case.name.clone()))
+                            .collect(),
+                    )
+                });
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    type_expression.collect_available_field_types(schema_type_lookup, available_field_types);
+                }
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => {}
+        }
+    }
 }
 
 impl VariantCase {
@@ -432,6 +606,73 @@ mod tests {
                 "subject": ""
             })
         );
+    }
+
+    #[test]
+    fn builds_type_maps_from_typed_fields() {
+        let typed_fields = vec![
+            typed_field("title", TypeExpression::String),
+            typed_field("count", TypeExpression::Number),
+        ];
+
+        let type_map = TypedField::type_map(&typed_fields);
+
+        assert_eq!(type_map.get("title"), Some(&TypeExpression::String));
+        assert_eq!(type_map.get("count"), Some(&TypeExpression::Number));
+    }
+
+    #[test]
+    fn collects_available_field_types_through_schema_references() {
+        let schema_fields = vec![
+            typed_field("status", TypeExpression::StringEnum("open".to_string())),
+            typed_field("count", TypeExpression::Number),
+        ];
+        let schema_type_map = TypedField::type_map(&schema_fields);
+        let type_expression = TypeExpression::Union(vec![
+            TypeExpression::SchemaReference("Ticket".to_string()),
+            TypeExpression::Variant {
+                discriminator: "kind".to_string(),
+                cases: vec![VariantCase {
+                    name: "task".to_string(),
+                    fields: Vec::new(),
+                    span: test_source_span(),
+                }],
+            },
+        ]);
+
+        let available_field_types = type_expression.available_field_types(|schema_name| {
+            if schema_name != "Ticket" {
+                return None;
+            }
+
+            Some(TypeExpression::object_from_type_map(schema_type_map.iter(), test_source_span()))
+        });
+
+        assert_eq!(
+            available_field_types.get("status"),
+            Some(&TypeExpression::StringEnum("open".to_string()))
+        );
+        assert_eq!(
+            available_field_types.get("kind"),
+            Some(&TypeExpression::Union(vec![TypeExpression::StringEnum("task".to_string())]))
+        );
+    }
+
+    #[test]
+    fn collects_field_types_for_access_through_schema_references() {
+        let schema_fields = vec![typed_field("status", TypeExpression::StringEnum("open".to_string()))];
+        let schema_type_map = TypedField::type_map(&schema_fields);
+        let type_expression = TypeExpression::SchemaReference("Ticket".to_string());
+
+        let field_types = type_expression.field_types_for_access("status", |schema_name| {
+            if schema_name != "Ticket" {
+                return None;
+            }
+
+            Some(TypeExpression::object_from_type_map(schema_type_map.iter(), test_source_span()))
+        });
+
+        assert_eq!(field_types, vec![TypeExpression::StringEnum("open".to_string())]);
     }
 
     fn typed_field(field_name: &str, field_type: TypeExpression) -> TypedField {

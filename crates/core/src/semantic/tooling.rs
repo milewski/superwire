@@ -226,16 +226,16 @@ impl SemanticToolingSnapshot {
                         schema_declaration.name.clone(),
                         schema_declaration.span,
                     );
-                    schemas.insert(schema_declaration.name.clone(), typed_fields_to_map(&schema_declaration.fields));
+                    schemas.insert(schema_declaration.name.clone(), TypedField::type_map(&schema_declaration.fields));
                 }
                 Declaration::Input(input_declaration) => {
                     if input_fields.is_empty() {
-                        input_fields = typed_fields_to_map(&input_declaration.fields);
+                        input_fields = TypedField::type_map(&input_declaration.fields);
                     }
                 }
                 Declaration::Secrets(secrets_declaration) => {
                     if secrets_fields.is_empty() {
-                        secrets_fields = typed_fields_to_map(&secrets_declaration.fields);
+                        secrets_fields = TypedField::type_map(&secrets_declaration.fields);
                     }
                 }
                 Declaration::Agent(agent_declaration) => {
@@ -250,8 +250,8 @@ impl SemanticToolingSnapshot {
                             ToolSchemaSummary {
                                 description: tool_declaration.description.clone(),
                                 source: tool_declaration.source.clone(),
-                                input_fields: typed_fields_to_map(&tool_declaration.input_fields),
-                                bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
+                                input_fields: TypedField::type_map(&tool_declaration.input_fields),
+                                bounded_fields: TypedField::type_map(&tool_declaration.binding_fields),
                             },
                         );
                     }
@@ -271,8 +271,8 @@ impl SemanticToolingSnapshot {
                             ToolSchemaSummary {
                                 description: tool_declaration.description.clone(),
                                 source: tool_declaration.source.clone(),
-                                input_fields: typed_fields_to_map(&tool_declaration.input_fields),
-                                bounded_fields: typed_fields_to_map(&tool_declaration.binding_fields),
+                                input_fields: TypedField::type_map(&tool_declaration.input_fields),
+                                bounded_fields: TypedField::type_map(&tool_declaration.binding_fields),
                             },
                         );
                     }
@@ -449,7 +449,11 @@ impl SemanticToolingSnapshot {
             let mut next_candidate_types = Vec::<TypeExpression>::new();
 
             for candidate_type in &candidate_types {
-                candidate_type.collect_next_types_for_field(self, access_path_segment, &mut next_candidate_types);
+                candidate_type.collect_field_types_for_access(
+                    access_path_segment,
+                    &mut |schema_name| self.schema_object_type(schema_name),
+                    &mut next_candidate_types,
+                );
             }
 
             if next_candidate_types.is_empty() {
@@ -467,7 +471,7 @@ impl SemanticToolingSnapshot {
         let mut available_fields = BTreeMap::<String, TypeExpression>::new();
 
         for candidate_type in candidate_types {
-            candidate_type.collect_available_fields(self, &mut available_fields);
+            candidate_type.collect_available_field_types(&mut |schema_name| self.schema_object_type(schema_name), &mut available_fields);
         }
 
         available_fields
@@ -509,23 +513,11 @@ impl SemanticToolingSnapshot {
         }
     }
 
-    fn schema_object_type(&self, schema_name: &str) -> Option<TypeExpression> {
+    #[must_use]
+    pub fn schema_object_type(&self, schema_name: &str) -> Option<TypeExpression> {
         let schema_fields = self.schemas.get(schema_name)?;
 
-        Some(TypeExpression::Object(
-            schema_fields
-                .iter()
-                .map(|(field_name, field_type)| TypedField {
-                    name: field_name.clone(),
-                    field_type: field_type.clone(),
-                    description: None,
-                    span: SourceSpan {
-                        start: SourcePosition { line: 1, column: 1 },
-                        end: SourcePosition { line: 1, column: 1 },
-                    },
-                })
-                .collect(),
-        ))
+        Some(TypeExpression::object_from_type_map(schema_fields.iter(), SourceSpan::generated()))
     }
 }
 
@@ -539,112 +531,6 @@ impl SourceSpan {
             (self.end.line > source_position.line) || (self.end.line == source_position.line && self.end.column >= source_position.column);
 
         starts_before_or_at && ends_after_or_at
-    }
-}
-
-impl TypeExpression {
-    fn collect_next_types_for_field(
-        &self,
-        tooling_snapshot: &SemanticToolingSnapshot,
-        field_name: &str,
-        next_candidate_types: &mut Vec<TypeExpression>,
-    ) {
-        match self {
-            TypeExpression::Object(typed_fields) => {
-                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
-                    next_candidate_types.push(typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_fields) = tooling_snapshot.schemas.get(schema_name) else {
-                    return;
-                };
-
-                if let Some(field_type) = schema_fields.get(field_name) {
-                    next_candidate_types.push(field_type.clone());
-                }
-            }
-            TypeExpression::Variant { discriminator, cases } => {
-                if discriminator == field_name {
-                    next_candidate_types.extend(
-                        cases
-                            .iter()
-                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone())),
-                    );
-                }
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    union_member.collect_next_types_for_field(tooling_snapshot, field_name, next_candidate_types);
-                }
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_)
-            | TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::AnyObject
-            | TypeExpression::StringEnum(_)
-            | TypeExpression::StringEnumReference(_) => {}
-        }
-    }
-
-    fn collect_available_fields(
-        &self,
-        tooling_snapshot: &SemanticToolingSnapshot,
-        available_fields: &mut BTreeMap<String, TypeExpression>,
-    ) {
-        match self {
-            TypeExpression::Object(typed_fields) => {
-                for typed_field in typed_fields {
-                    available_fields
-                        .entry(typed_field.name.clone())
-                        .or_insert_with(|| typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let Some(schema_fields) = tooling_snapshot.schemas.get(schema_name) else {
-                    return;
-                };
-
-                for (field_name, field_type) in schema_fields {
-                    available_fields.entry(field_name.clone()).or_insert_with(|| field_type.clone());
-                }
-            }
-            TypeExpression::Variant { discriminator, cases } => {
-                available_fields.entry(discriminator.clone()).or_insert_with(|| {
-                    TypeExpression::Union(
-                        cases
-                            .iter()
-                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone()))
-                            .collect(),
-                    )
-                });
-            }
-            TypeExpression::Union(union_members) => {
-                for union_member in union_members {
-                    union_member.collect_available_fields(tooling_snapshot, available_fields);
-                }
-            }
-            TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_)
-            | TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::AnyObject
-            | TypeExpression::StringEnum(_)
-            | TypeExpression::StringEnumReference(_) => {}
-        }
     }
 }
 
@@ -1047,13 +933,6 @@ impl<'source> TolerantSourceExtractor<'source> {
     fn is_identifier_character(character: char) -> bool {
         character.is_ascii_alphanumeric() || character == '_'
     }
-}
-
-fn typed_fields_to_map(typed_fields: &[TypedField]) -> BTreeMap<String, TypeExpression> {
-    typed_fields
-        .iter()
-        .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-        .collect()
 }
 
 #[cfg(test)]

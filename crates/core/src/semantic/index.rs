@@ -3,7 +3,7 @@ use crate::dsl::{
     ObjectField, ProviderDeclaration, SchemaDeclaration, SingletonDeclarationKind, SourceSpan, ToolDeclaration, ToolSource, TypeExpression,
     TypedField, ValidationIssue, ValidationReport, Workflow,
 };
-use crate::semantic::support::types::{workflow_type_from_dsl, WorkflowType};
+use crate::semantic::support::types::WorkflowType;
 use crate::semantic::ProviderDriver;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -104,7 +104,7 @@ impl SemanticSchema {
     #[must_use]
     pub fn from_schema_declaration(schema_declaration: &SchemaDeclaration, named_schema_types: &HashMap<String, TypeExpression>) -> Self {
         let type_expression = schema_declaration.type_expression();
-        let workflow_type = workflow_type_from_dsl(&type_expression, named_schema_types).ok();
+        let workflow_type = type_expression.to_workflow_type(named_schema_types).ok();
 
         Self {
             name: schema_declaration.name.clone(),
@@ -130,7 +130,7 @@ impl SemanticAgent {
         let output_type = agent_declaration.declared_final_output_type_expression();
         let output_workflow_type = output_type
             .as_ref()
-            .and_then(|output_type_expression| workflow_type_from_dsl(output_type_expression, named_schema_types).ok());
+            .and_then(|output_type_expression| output_type_expression.to_workflow_type(named_schema_types).ok());
 
         Self {
             name: agent_declaration.name.clone(),
@@ -162,12 +162,14 @@ impl SemanticToolSchema {
     pub fn from_tool_declaration(tool_declaration: &ToolDeclaration, named_schema_types: &HashMap<String, TypeExpression>) -> Self {
         let input_type_expression = TypeExpression::Object(tool_declaration.input_fields.clone());
         let binding_type_expression = TypeExpression::Object(tool_declaration.binding_fields.clone());
-        let input_type = workflow_type_from_dsl(&input_type_expression, named_schema_types).ok();
-        let binding_type = workflow_type_from_dsl(&binding_type_expression, named_schema_types).ok();
+        let input_type = input_type_expression.to_workflow_type(named_schema_types).ok();
+        let binding_type = binding_type_expression.to_workflow_type(named_schema_types).ok();
         let output_type = if tool_declaration.has_untyped_mcp_output() {
             Some(WorkflowType::Any)
         } else {
-            workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), named_schema_types).ok()
+            TypeExpression::Object(tool_declaration.output_fields.clone())
+                .to_workflow_type(named_schema_types)
+                .ok()
         };
 
         Self {
@@ -549,17 +551,7 @@ impl WorkflowSemanticIndex {
         }
 
         let schema_field_types = self.schema_field_types.get(schema_name)?;
-        let typed_fields = schema_field_types
-            .iter()
-            .map(|(field_name, field_type)| TypedField {
-                name: field_name.clone(),
-                field_type: field_type.clone(),
-                description: None,
-                span,
-            })
-            .collect::<Vec<_>>();
-
-        Some(TypeExpression::Object(typed_fields))
+        Some(TypeExpression::object_from_type_map(schema_field_types.iter(), span))
     }
 
     #[must_use]
@@ -985,7 +977,7 @@ impl WorkflowSemanticIndex {
                         continue;
                     }
 
-                    let schema_field_types = Self::collect_field_types(schema_declaration.fields.as_slice());
+                    let schema_field_types = TypedField::hash_type_map(schema_declaration.fields.as_slice());
                     validation_index
                         .schema_field_types
                         .insert(schema_declaration.name.clone(), schema_field_types);
@@ -1070,11 +1062,11 @@ impl WorkflowSemanticIndex {
                     validation_index.input_span = Some(input_declaration.span);
 
                     if validation_index.input_field_types.is_none() {
-                        validation_index.input_field_types = Some(Self::collect_field_types(input_declaration.fields.as_slice()));
+                        validation_index.input_field_types = Some(TypedField::hash_type_map(input_declaration.fields.as_slice()));
                         validation_index.input_fields = Some(Self::collect_semantic_fields(input_declaration.fields.as_slice()));
                         let named_schema_types = validation_index.named_schema_types(input_declaration.span);
                         let input_type_expression = TypeExpression::Object(input_declaration.fields.clone());
-                        validation_index.input_type = workflow_type_from_dsl(&input_type_expression, &named_schema_types).ok();
+                        validation_index.input_type = input_type_expression.to_workflow_type(&named_schema_types).ok();
                     }
                 }
                 Declaration::Secrets(secrets_declaration) => {
@@ -1091,11 +1083,11 @@ impl WorkflowSemanticIndex {
                     validation_index.secrets_span = Some(secrets_declaration.span);
 
                     if validation_index.secrets_field_types.is_none() {
-                        validation_index.secrets_field_types = Some(Self::collect_field_types(secrets_declaration.fields.as_slice()));
+                        validation_index.secrets_field_types = Some(TypedField::hash_type_map(secrets_declaration.fields.as_slice()));
                         validation_index.secrets_fields = Some(Self::collect_semantic_fields(secrets_declaration.fields.as_slice()));
                         let named_schema_types = validation_index.named_schema_types(secrets_declaration.span);
                         let secrets_type_expression = TypeExpression::Object(secrets_declaration.fields.clone());
-                        validation_index.secrets_type = workflow_type_from_dsl(&secrets_type_expression, &named_schema_types).ok();
+                        validation_index.secrets_type = secrets_type_expression.to_workflow_type(&named_schema_types).ok();
                     }
                 }
                 Declaration::Output(output_declaration) => {
@@ -1154,13 +1146,6 @@ impl WorkflowSemanticIndex {
         }
 
         self.tool_schemas.insert(tool_declaration.name.clone(), semantic_tool_schema);
-    }
-
-    fn collect_field_types(typed_fields: &[TypedField]) -> HashMap<String, TypeExpression> {
-        typed_fields
-            .iter()
-            .map(|typed_field| (typed_field.name.clone(), typed_field.field_type.clone()))
-            .collect()
     }
 
     fn collect_semantic_fields(typed_fields: &[TypedField]) -> HashMap<String, SemanticTypedField> {

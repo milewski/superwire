@@ -1,7 +1,9 @@
 use super::{
     AgentDeclaration, Declaration, DynamicBlock, InputDeclaration, McpPromptImportDeclaration, McpResourceImportDeclaration,
     McpServerDeclaration, ModelDeclaration, OutputDeclaration, ProviderDeclaration, SchemaDeclaration, SecretsDeclaration, ToolDeclaration,
+    TypeExpression,
 };
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workflow {
@@ -173,5 +175,16 @@ impl Workflow {
             | Declaration::Agent(_)
             | Declaration::Output(_) => None,
         })
+    }
+
+    #[must_use]
+    pub fn named_schema_types(&self) -> HashMap<String, TypeExpression> {
+        self.declarations
+            .iter()
+            .filter_map(|declaration| match declaration {
+                Declaration::Schema(schema_declaration) => Some((schema_declaration.name.clone(), schema_declaration.type_expression())),
+                _ => None,
+            })
+            .collect()
     }
 }

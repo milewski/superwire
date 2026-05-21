@@ -103,7 +103,10 @@ impl SemanticIndex {
         let mut available_fields = BTreeMap::<String, TypeExpression>::new();
 
         for candidate_type in candidate_types {
-            self.collect_type_fields(&candidate_type, &mut available_fields);
+            candidate_type.collect_available_field_types(
+                &mut |schema_name| self.tooling_snapshot.schema_object_type(schema_name),
+                &mut available_fields,
+            );
         }
 
         available_fields
@@ -119,53 +122,6 @@ impl SemanticIndex {
                 insert_text: field_name,
             })
             .collect()
-    }
-
-    fn collect_type_fields(&self, candidate_type: &TypeExpression, available_fields: &mut BTreeMap<String, TypeExpression>) {
-        match candidate_type {
-            TypeExpression::Object(typed_fields) => {
-                for typed_field in typed_fields {
-                    available_fields
-                        .entry(typed_field.name.clone())
-                        .or_insert_with(|| typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                if let Some(schema_summary) = self.schemas.get(schema_name) {
-                    for (field_name, field_type) in &schema_summary.fields {
-                        available_fields.entry(field_name.clone()).or_insert_with(|| field_type.clone());
-                    }
-                }
-            }
-            TypeExpression::Variant { discriminator, cases } => {
-                available_fields.entry(discriminator.clone()).or_insert_with(|| {
-                    TypeExpression::Union(
-                        cases
-                            .iter()
-                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone()))
-                            .collect(),
-                    )
-                });
-            }
-            TypeExpression::Union(type_expressions) => {
-                for type_expression in type_expressions {
-                    self.collect_type_fields(type_expression, available_fields);
-                }
-            }
-            TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::AnyObject
-            | TypeExpression::StringEnum(_)
-            | TypeExpression::StringEnumReference(_)
-            | TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_) => {}
-        }
     }
 
     fn structural_type_suggestions(&self, type_prefix: &str) -> Vec<CompletionSuggestion> {

@@ -352,11 +352,20 @@ impl Display for WorkflowType {
     }
 }
 
+impl TypeExpression {
+    pub fn to_workflow_type<HashBuilder: BuildHasher>(
+        &self,
+        named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
+    ) -> Result<WorkflowType, WorkflowSemanticError> {
+        workflow_type_from_dsl_with_stack(self, named_schemas, &mut Vec::new()).map(WorkflowType::normalize)
+    }
+}
+
 pub fn workflow_type_from_dsl<HashBuilder: BuildHasher>(
     type_expression: &TypeExpression,
     named_schemas: &HashMap<String, TypeExpression, HashBuilder>,
 ) -> Result<WorkflowType, WorkflowSemanticError> {
-    workflow_type_from_dsl_with_stack(type_expression, named_schemas, &mut Vec::new()).map(WorkflowType::normalize)
+    type_expression.to_workflow_type(named_schemas)
 }
 
 fn workflow_type_from_dsl_with_stack<HashBuilder: BuildHasher>(

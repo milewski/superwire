@@ -1,11 +1,10 @@
 use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference, ReferenceKeyword,
-    SourcePosition, SourceSpan, StringTemplatePart, TypeExpression, Workflow,
+    SourceSpan, StringTemplatePart, TypeExpression, Workflow,
 };
 use super::report::{ValidationContext, ValidationReport};
 use super::tools::validate_agent_tool_bindings;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
-use crate::semantic::support::types::workflow_type_from_dsl;
 use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{HashMap, HashSet};
 
@@ -321,22 +320,18 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn build_for_loop_type_inference_context(workflow: &Workflow) -> TypeInferenceContext {
-        let mut named_schema_types = HashMap::new();
-
-        for declaration in workflow.declarations() {
-            let Declaration::Schema(schema_declaration) = declaration else {
-                continue;
-            };
-
-            named_schema_types.insert(schema_declaration.name.clone(), schema_declaration.type_expression());
-        }
+        let named_schema_types = workflow.named_schema_types();
 
         let input_type = workflow.find_input().and_then(|input_declaration| {
-            workflow_type_from_dsl(&TypeExpression::Object(input_declaration.fields.clone()), &named_schema_types).ok()
+            TypeExpression::Object(input_declaration.fields.clone())
+                .to_workflow_type(&named_schema_types)
+                .ok()
         });
 
         let secrets_type = workflow.find_secrets().and_then(|secrets_declaration| {
-            workflow_type_from_dsl(&TypeExpression::Object(secrets_declaration.fields.clone()), &named_schema_types).ok()
+            TypeExpression::Object(secrets_declaration.fields.clone())
+                .to_workflow_type(&named_schema_types)
+                .ok()
         });
 
         let mut agent_output_types = HashMap::new();
@@ -345,23 +340,21 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let mut tool_output_types = HashMap::new();
 
         for tool_declaration in workflow.tool_declarations() {
-            if let Ok(tool_input_type) =
-                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), &named_schema_types)
+            if let Ok(tool_input_type) = TypeExpression::Object(tool_declaration.input_fields.clone()).to_workflow_type(&named_schema_types)
             {
                 tool_input_types.insert(tool_declaration.name.clone(), tool_input_type);
             }
 
-            if let Ok(tool_binding_type) = workflow_type_from_dsl(
-                &TypeExpression::Object(tool_declaration.binding_fields.clone()),
-                &named_schema_types,
-            ) {
+            if let Ok(tool_binding_type) =
+                TypeExpression::Object(tool_declaration.binding_fields.clone()).to_workflow_type(&named_schema_types)
+            {
                 tool_binding_types.insert(tool_declaration.name.clone(), tool_binding_type);
             }
 
             if tool_declaration.has_untyped_mcp_output() {
                 tool_output_types.insert(tool_declaration.name.clone(), crate::semantic::support::types::WorkflowType::Any);
             } else if let Ok(tool_output_type) =
-                workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), &named_schema_types)
+                TypeExpression::Object(tool_declaration.output_fields.clone()).to_workflow_type(&named_schema_types)
             {
                 tool_output_types.insert(tool_declaration.name.clone(), tool_output_type);
             }
@@ -373,7 +366,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             };
 
             let final_output_type_expression = agent_declaration.inferred_final_output_type_expression();
-            let inferred_output_type = workflow_type_from_dsl(&final_output_type_expression, &named_schema_types);
+            let inferred_output_type = final_output_type_expression.to_workflow_type(&named_schema_types);
 
             let Ok(inferred_output_type) = inferred_output_type else {
                 continue;
@@ -891,7 +884,11 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             let mut next_candidate_types = Vec::new();
 
             for candidate_type in &candidate_types {
-                self.collect_next_types_for_field(candidate_type, reference_access.field.as_str(), &mut next_candidate_types);
+                candidate_type.collect_field_types_for_access(
+                    reference_access.field.as_str(),
+                    &mut |schema_name| self.validation_index.schema_type_expression(schema_name, SourceSpan::generated()),
+                    &mut next_candidate_types,
+                );
             }
 
             if reference_access.optional {
@@ -962,59 +959,6 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         if self.missing_optional_reference_accesses.insert(issue_key) {
             self.validation_report
                 .push_issue_with_span(reference.missing_optional_access_issue(field_name, context), Some(reference.span));
-        }
-    }
-
-    fn collect_next_types_for_field(
-        &self,
-        candidate_type: &TypeExpression,
-        field_name: &str,
-        next_candidate_types: &mut Vec<TypeExpression>,
-    ) {
-        match candidate_type {
-            TypeExpression::Object(typed_fields) => {
-                if let Some(typed_field) = typed_fields.iter().find(|typed_field| typed_field.name == field_name) {
-                    next_candidate_types.push(typed_field.field_type.clone());
-                }
-            }
-            TypeExpression::SchemaReference(schema_name) => {
-                let generated_span = SourceSpan {
-                    start: SourcePosition { line: 1, column: 1 },
-                    end: SourcePosition { line: 1, column: 1 },
-                };
-                let Some(schema_type) = self.validation_index.schema_type_expression(schema_name, generated_span) else {
-                    return;
-                };
-
-                self.collect_next_types_for_field(&schema_type, field_name, next_candidate_types);
-            }
-            TypeExpression::Variant { discriminator, cases } => {
-                if discriminator == field_name {
-                    next_candidate_types.extend(
-                        cases
-                            .iter()
-                            .map(|variant_case| TypeExpression::StringEnum(variant_case.name.clone())),
-                    );
-                }
-            }
-            TypeExpression::Union(type_expressions) => {
-                for type_expression in type_expressions {
-                    self.collect_next_types_for_field(type_expression, field_name, next_candidate_types);
-                }
-            }
-            TypeExpression::String
-            | TypeExpression::Number
-            | TypeExpression::Float
-            | TypeExpression::Boolean
-            | TypeExpression::Null
-            | TypeExpression::AnyObject
-            | TypeExpression::StringEnum(_)
-            | TypeExpression::StringEnumReference(_)
-            | TypeExpression::Array {
-                item_type: _,
-                fixed_length: _,
-            }
-            | TypeExpression::Tuple(_) => {}
         }
     }
 

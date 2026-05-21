@@ -4,7 +4,7 @@ use crate::dsl::{
     ModelUsage, ObjectField, OutputDeclaration, ProviderDeclaration, SecretsDeclaration, ToolDeclaration, TypeExpression, Workflow,
 };
 use crate::semantic::support::type_inference::TypeInferenceContext;
-use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_dsl, workflow_type_from_rust_schema, WorkflowType};
+use crate::semantic::support::types::{ensure_type_matches, workflow_type_from_rust_schema, WorkflowType};
 use crate::semantic::WorkflowSemanticError;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -47,7 +47,7 @@ where
     Input: Serialize + JsonSchema,
     Output: DeserializeOwned + JsonSchema,
 {
-    let named_schema_types = collect_named_schema_types(workflow);
+    let named_schema_types = workflow.named_schema_types();
     let input_type = build_input_type(workflow.find_input(), &named_schema_types)?;
     let secrets_type = build_secrets_type(workflow.find_secrets(), &named_schema_types)?;
     let output_declaration = workflow
@@ -82,7 +82,7 @@ where
 }
 
 pub fn build_dynamic_typed_workflow_ir(workflow: &Workflow) -> Result<TypedWorkflowIr, WorkflowSemanticError> {
-    let named_schema_types = collect_named_schema_types(workflow);
+    let named_schema_types = workflow.named_schema_types();
     let input_type = build_input_type(workflow.find_input(), &named_schema_types)?;
     let secrets_type = build_secrets_type(workflow.find_secrets(), &named_schema_types)?;
     let output_declaration = workflow
@@ -130,12 +130,12 @@ fn collect_tool_types(
     let mut output = HashMap::new();
 
     for tool_declaration in workflow.tool_declarations() {
-        let input_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.input_fields.clone()), named_schema_types)?;
-        let binding_type = workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.binding_fields.clone()), named_schema_types)?;
+        let input_type = TypeExpression::Object(tool_declaration.input_fields.clone()).to_workflow_type(named_schema_types)?;
+        let binding_type = TypeExpression::Object(tool_declaration.binding_fields.clone()).to_workflow_type(named_schema_types)?;
         let output_type = if tool_declaration.has_untyped_mcp_output() {
             WorkflowType::Any
         } else {
-            workflow_type_from_dsl(&TypeExpression::Object(tool_declaration.output_fields.clone()), named_schema_types)?
+            TypeExpression::Object(tool_declaration.output_fields.clone()).to_workflow_type(named_schema_types)?
         };
 
         input.insert(tool_declaration.name.clone(), input_type.clone());
@@ -158,20 +158,6 @@ fn collect_tool_types(
     })
 }
 
-fn collect_named_schema_types(workflow: &Workflow) -> HashMap<String, TypeExpression> {
-    let mut named_schema_types = HashMap::new();
-
-    for declaration in workflow.declarations() {
-        let Declaration::Schema(schema_declaration) = declaration else {
-            continue;
-        };
-
-        named_schema_types.insert(schema_declaration.name.clone(), schema_declaration.type_expression());
-    }
-
-    named_schema_types
-}
-
 fn build_input_type(
     input_declaration: Option<&InputDeclaration>,
     named_schema_types: &HashMap<String, TypeExpression>,
@@ -181,7 +167,7 @@ fn build_input_type(
     };
 
     let object_type_expression = TypeExpression::Object(input_declaration.fields.clone());
-    let input_type = workflow_type_from_dsl(&object_type_expression, named_schema_types)?;
+    let input_type = object_type_expression.to_workflow_type(named_schema_types)?;
 
     Ok(Some(input_type))
 }
@@ -195,7 +181,7 @@ fn build_secrets_type(
     };
 
     let object_type_expression = TypeExpression::Object(secrets_declaration.fields.clone());
-    let secrets_type = workflow_type_from_dsl(&object_type_expression, named_schema_types)?;
+    let secrets_type = object_type_expression.to_workflow_type(named_schema_types)?;
 
     Ok(Some(secrets_type))
 }
@@ -214,8 +200,8 @@ fn collect_typed_agents(
 
         let iteration_output_type_expression = agent_declaration.inferred_iteration_output_type_expression();
         let final_output_type_expression = agent_declaration.inferred_final_output_type_expression();
-        let iteration_output_type = workflow_type_from_dsl(&iteration_output_type_expression, named_schema_types)?;
-        let final_output_type = workflow_type_from_dsl(&final_output_type_expression, named_schema_types)?;
+        let iteration_output_type = iteration_output_type_expression.to_workflow_type(named_schema_types)?;
+        let final_output_type = final_output_type_expression.to_workflow_type(named_schema_types)?;
 
         let model_usage = required_agent_model_usage(agent_declaration)?;
         let model_name = model_usage

@@ -1,4 +1,4 @@
-use crate::dsl::{SourcePosition, SourceSpan, TypeExpression, TypedField};
+use crate::dsl::{SourceSpan, TypeExpression, TypedField};
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::Serialize;
 use serde_json::Value;
@@ -151,15 +151,6 @@ impl TypedJsonSchema for Value {
 
 pub(super) fn to_json_value(schema: &impl Serialize) -> Value {
     serde_json::to_value(schema).unwrap_or(Value::Null)
-}
-
-impl SourceSpan {
-    fn generated() -> Self {
-        Self {
-            start: SourcePosition { line: 1, column: 1 },
-            end: SourcePosition { line: 1, column: 1 },
-        }
-    }
 }
 
 #[cfg(test)]

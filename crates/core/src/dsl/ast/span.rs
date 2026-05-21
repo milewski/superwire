@@ -47,6 +47,14 @@ pub struct SourceSpan {
 
 impl SourceSpan {
     #[must_use]
+    pub fn generated() -> Self {
+        Self {
+            start: SourcePosition { line: 1, column: 1 },
+            end: SourcePosition { line: 1, column: 1 },
+        }
+    }
+
+    #[must_use]
     pub fn to_byte_range(self, source_text: &str) -> Option<Range<usize>> {
         let start_byte_offset = self.start.to_byte_offset(source_text)?;
         let mut end_byte_offset = self.end.to_byte_offset(source_text)?;

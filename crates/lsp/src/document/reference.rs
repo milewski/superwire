@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SourcePosition, SourceSpan, TypeExpression, TypedField};
+use superwire_core::dsl::{DeclarationKeyword, ReferenceKeyword, SourceSpan, TypeExpression, TypedField};
 use superwire_core::mcp::McpServerLock;
 use superwire_core::semantic::ToolingReferencePath;
 
@@ -866,14 +866,13 @@ impl SemanticIndex {
             schema_summary
                 .field_metadata
                 .iter()
-                .map(|(field_name, field_metadata)| TypedField {
-                    name: field_name.clone(),
-                    field_type: field_metadata.field_type.clone(),
-                    description: field_metadata.description.clone(),
-                    span: SourceSpan {
-                        start: SourcePosition { line: 1, column: 1 },
-                        end: SourcePosition { line: 1, column: 1 },
-                    },
+                .map(|(field_name, field_metadata)| {
+                    TypedField::from_type_with_description(
+                        field_name.clone(),
+                        field_metadata.field_type.clone(),
+                        field_metadata.description.clone(),
+                        SourceSpan::generated(),
+                    )
                 })
                 .collect(),
         ))
