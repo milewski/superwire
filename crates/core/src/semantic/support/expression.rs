@@ -324,17 +324,17 @@ impl Expression {
     pub fn collect_agent_dependencies<HashBuilder: BuildHasher>(&self, agent_dependencies: &mut HashSet<String, HashBuilder>) {
         match self {
             Self::Reference(reference) => {
-                collect_reference_dependency(reference, agent_dependencies);
+                reference.collect_agent_dependency(agent_dependencies);
             }
             Self::FunctionCall(function_call) => {
-                collect_reference_dependency(&function_call.callee, agent_dependencies);
+                function_call.callee.collect_agent_dependency(agent_dependencies);
 
                 for call_argument in &function_call.arguments {
                     call_argument.expression().collect_agent_dependencies(agent_dependencies);
                 }
             }
             Self::ToolCall(tool_call) => {
-                collect_reference_dependency(&tool_call.callee, agent_dependencies);
+                tool_call.callee.collect_agent_dependency(agent_dependencies);
 
                 for object_field in &tool_call.input_fields {
                     object_field.value.collect_agent_dependencies(agent_dependencies);
@@ -345,7 +345,7 @@ impl Expression {
                 }
             }
             Self::McpCall(mcp_call) => {
-                collect_reference_dependency(&mcp_call.callee, agent_dependencies);
+                mcp_call.callee.collect_agent_dependency(agent_dependencies);
 
                 for object_field in &mcp_call.parameter_fields {
                     object_field.value.collect_agent_dependencies(agent_dependencies);
@@ -356,7 +356,7 @@ impl Expression {
                 null_fallback.fallback.collect_agent_dependencies(agent_dependencies);
             }
             Self::VariantProjection(variant_projection) => {
-                collect_reference_dependency(&variant_projection.value, agent_dependencies);
+                variant_projection.value.collect_agent_dependency(agent_dependencies);
             }
             Self::Match(match_expression) => {
                 match_expression.value.collect_agent_dependencies(agent_dependencies);
@@ -387,16 +387,4 @@ impl Expression {
             Self::StringLiteral(_) | Self::NumberLiteral(_) | Self::BooleanLiteral(_) | Self::NullLiteral => {}
         }
     }
-}
-
-fn collect_reference_dependency<HashBuilder: BuildHasher>(reference: &Reference, agent_dependencies: &mut HashSet<String, HashBuilder>) {
-    if !reference.is_agent_root() {
-        return;
-    }
-
-    let Some(agent_name) = reference.first_access_field() else {
-        return;
-    };
-
-    agent_dependencies.insert(agent_name.to_string());
 }

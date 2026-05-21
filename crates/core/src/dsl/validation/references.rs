@@ -1,6 +1,6 @@
 use super::super::ast::{
-    AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, FunctionCall, MatchBranch, ObjectField, Reference,
-    ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, TypeExpression, Workflow,
+    AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference, ReferenceKeyword,
+    SourcePosition, SourceSpan, StringTemplatePart, TypeExpression, Workflow,
 };
 use super::index::ValidationIndex;
 use super::report::{ValidationContext, ValidationIssue, ValidationReport};
@@ -8,64 +8,6 @@ use super::tools::validate_agent_tool_bindings;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::workflow_type_from_dsl;
 use std::collections::{HashMap, HashSet};
-
-pub(super) trait ToolReferenceCollector {
-    fn referenced_names_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Vec<String>;
-}
-
-impl ToolReferenceCollector for Expression {
-    fn referenced_names_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Vec<String> {
-        let Expression::ArrayLiteral(tool_expressions) = self else {
-            return Vec::new();
-        };
-
-        tool_expressions
-            .iter()
-            .filter_map(|expression| expression.direct_name_for_keyword(reference_keyword))
-            .collect()
-    }
-}
-
-trait DirectToolName {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String>;
-}
-
-impl DirectToolName for Expression {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        match self {
-            Self::Reference(reference) => reference.direct_name_for_keyword(reference_keyword),
-            Self::FunctionCall(function_call) => function_call.direct_name_for_keyword(reference_keyword),
-            Self::ToolCall(tool_call) => tool_call.callee.direct_name_for_keyword(reference_keyword),
-            Self::McpCall(_) => None,
-            Self::NullFallback(_)
-            | Self::VariantProjection(_)
-            | Self::Match(_)
-            | Self::StringLiteral(_)
-            | Self::StringTemplate(_)
-            | Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::ArrayLiteral(_)
-            | Self::ObjectLiteral(_) => None,
-        }
-    }
-}
-
-impl DirectToolName for FunctionCall {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        self.callee.direct_name_for_keyword(reference_keyword)
-    }
-}
-
-impl DirectToolName for Reference {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        if self.root_keyword() != Some(reference_keyword) || self.accesses.len() != 1 || self.accesses[0].optional {
-            return None;
-        }
-
-        Some(self.accesses[0].field.clone())
-    }
-}
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn validate_agent_references(workflow: &Workflow, validation_index: &ValidationIndex, validation_report: &mut ValidationReport) {

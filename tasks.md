@@ -77,11 +77,11 @@
   Description: Move tool call validation and binding compatibility checks into a tool module.
   Rationale: Tool validation is shared by deterministic tools, imported MCP tools, runtime schema checks, and LSP completions.
 
-- [ ] Move reference-specific validation helpers onto `Reference`.
+- [~] Move reference-specific validation helpers onto `Reference`.
   Description: Attach root keyword interpretation, projection segment access, scope validation, and dependency collection to `Reference`.
   Rationale: The repository rule requires behavior to live on the type that owns the data, and reference helper functions are currently natural methods.
 
-- [ ] Move expression traversal helpers onto `Expression`.
+- [~] Move expression traversal helpers onto `Expression`.
   Description: Attach tool reference collection, direct tool-name extraction, agent dependency collection, and secret-reference detection to `Expression`.
   Rationale: Expression traversal is needed by multiple modules and should not be copied through validator, runtime, graph, and LSP code.
 
@@ -151,7 +151,7 @@
 
 ## Phase 5: LSP Document Feature Split
 
-- [~] Split `crates/lsp/src/document/semantic_index.rs` into construction, completions, definitions, scopes, MCP, and type helper modules.
+- [x] Split `crates/lsp/src/document/semantic_index.rs` into construction, completions, definitions, scopes, MCP, and type helper modules.
   Description: Keep `DocumentState` behavior intact while moving semantic index responsibilities into focused files.
   Rationale: Editor features currently depend on a single large index implementation, making completion and definition changes risky.
 
@@ -185,15 +185,15 @@
   Description: Move runtime value validation against workflow declarations into a configuration module.
   Rationale: Startup validation is a separate concern from executing agents and tools.
 
-- [ ] Extract execution loop and dependency scheduling into `runtime/execution.rs`.
+- [x] Extract execution loop and dependency scheduling into `runtime/execution.rs`.
   Description: Move graph scheduling, concurrency, and node execution coordination out of the public runtime module.
   Rationale: Scheduling is the core runtime algorithm and needs focused tests and future performance work.
 
-- [ ] Extract single-agent execution into `runtime/agent.rs`.
+- [x] Extract single-agent execution into `runtime/agent.rs`.
   Description: Move prompt building, model calls, agent output handling, and agent-specific event emission into an agent module.
   Rationale: Agent execution is complex enough to own its own context and tests.
 
-- [ ] Extract for-loop execution into `runtime/for_loop.rs`.
+- [x] Extract for-loop execution into `runtime/for_loop.rs`.
   Description: Move loop item evaluation, scope handling, and loop output aggregation into a dedicated module.
   Rationale: Loop execution has different scope and scheduling rules from normal agents.
 
@@ -253,7 +253,7 @@
 
 ## Phase 8: CLI Command Split
 
-- [~] Split `crates/cli/src/commands/workflow.rs` into check, run, lock, vars, paths, and JSON modules.
+- [x] Split `crates/cli/src/commands/workflow.rs` into check, run, lock, vars, paths, and JSON modules.
   Description: Move each workflow subcommand and shared command helpers into separate files.
   Rationale: CLI command behavior is currently mixed, making targeted tests and review difficult.
 
@@ -329,6 +329,5 @@
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`; semantic index data types live in `types.rs`, MCP lock-backed helpers live in `mcp.rs`, position/scope lookup helpers live in `scopes.rs`, definition lookup helpers live in `definitions.rs`, type completion helpers live in `type_helpers.rs`, and semantic index construction lives in `construction.rs`. The next slice should extract completion-preparation helpers into dedicated modules.
-- CLI workflow command splitting is partially complete. Path collection lives in `workflow/paths.rs`, shared JSON payload parsing lives in `workflow/json.rs`, and workflow checking lives in `workflow/check.rs`; run, lock, vars, and remaining schema/prompt helpers still need focused modules.
+- Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction and agent-dependency collection, while `Expression` owns referenced-name extraction and agent tool binding field access; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

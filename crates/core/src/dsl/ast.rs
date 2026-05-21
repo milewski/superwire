@@ -1,6 +1,6 @@
 use super::structure::{self, DslProperty, PropertyDefinition as DslPropertyDefinition};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::ops::Range;
 
@@ -1750,6 +1750,58 @@ pub enum MatchBranch {
 
 impl Expression {
     #[must_use]
+    pub(crate) fn referenced_names_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Vec<String> {
+        let Self::ArrayLiteral(expressions) = self else {
+            return Vec::new();
+        };
+
+        expressions
+            .iter()
+            .filter_map(|expression| expression.direct_name_for_keyword(reference_keyword))
+            .collect()
+    }
+
+    #[must_use]
+    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        match self {
+            Self::Reference(reference) => reference.direct_name_for_keyword(reference_keyword),
+            Self::FunctionCall(function_call) => function_call.direct_name_for_keyword(reference_keyword),
+            Self::ToolCall(tool_call) => tool_call.callee.direct_name_for_keyword(reference_keyword),
+            Self::McpCall(_) => None,
+            Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
+            | Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn agent_tool_binding_fields(&self) -> &[ObjectField] {
+        match self {
+            Self::ToolCall(tool_call) => tool_call.agent_tool_binding_fields(),
+            Self::Reference(_)
+            | Self::FunctionCall(_)
+            | Self::McpCall(_)
+            | Self::NullFallback(_)
+            | Self::VariantProjection(_)
+            | Self::Match(_)
+            | Self::StringLiteral(_)
+            | Self::StringTemplate(_)
+            | Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::ArrayLiteral(_)
+            | Self::ObjectLiteral(_) => &[],
+        }
+    }
+
+    #[must_use]
     pub fn to_type_expression(&self) -> Option<TypeExpression> {
         match self {
             Self::Reference(reference) => reference.to_type_expression(),
@@ -1799,6 +1851,13 @@ pub struct ToolCall {
     pub binding_fields: Vec<ObjectField>,
     pub max_calls: Option<u64>,
     pub span: SourceSpan,
+}
+
+impl ToolCall {
+    #[must_use]
+    pub(crate) fn agent_tool_binding_fields(&self) -> &[ObjectField] {
+        self.binding_fields.as_slice()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1874,6 +1933,11 @@ pub struct FunctionCall {
 }
 
 impl FunctionCall {
+    #[must_use]
+    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        self.callee.direct_name_for_keyword(reference_keyword)
+    }
+
     #[must_use]
     pub fn identifier_name(&self) -> Option<&str> {
         self.callee.root.as_identifier()
@@ -2125,6 +2189,15 @@ impl Reference {
     }
 
     #[must_use]
+    pub(crate) fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
+        if self.root_keyword() != Some(reference_keyword) || self.accesses.len() != 1 || self.accesses[0].optional {
+            return None;
+        }
+
+        Some(self.accesses[0].field.clone())
+    }
+
+    #[must_use]
     pub fn render_path(&self) -> String {
         let mut rendered_reference = if let Some(reference_root_keyword) = self.root_keyword() {
             reference_root_keyword.as_str().to_owned()
@@ -2160,6 +2233,18 @@ impl Reference {
         };
 
         referenced_dynamic_fields.insert(dynamic_field_name.to_string());
+    }
+
+    pub(crate) fn collect_agent_dependency<HashBuilder: BuildHasher>(&self, referenced_agents: &mut HashSet<String, HashBuilder>) {
+        if !self.is_agent_root() {
+            return;
+        }
+
+        let Some(agent_name) = self.first_access_field() else {
+            return;
+        };
+
+        referenced_agents.insert(agent_name.to_string());
     }
 }
 

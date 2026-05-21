@@ -5,7 +5,7 @@ use clap::Args;
 use superwire_core::dsl::parse_workflow;
 use superwire_executor::{ExecutorError, WorkflowExecutor};
 
-use super::CliRuntimeSchemaContext;
+use super::schema::CliRuntimeSchemaContext;
 use crate::diagnostics::CommandError;
 
 #[derive(Debug, Args)]

@@ -1,5 +1,4 @@
-use super::super::ast::{AgentDeclaration, Expression, FunctionCall, ObjectField, Reference, ReferenceKeyword, SourceSpan, ToolCall};
-use super::dynamic::collect_agent_dependencies_from_expression;
+use super::super::ast::{AgentDeclaration, Expression, ObjectField, ReferenceKeyword, SourceSpan};
 use super::index::ValidationIndex;
 use super::report::{ValidationIssue, ValidationReport};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
@@ -188,7 +187,7 @@ impl AgentToolBindingValidator<'_> {
     ) {
         let mut referenced_agents = HashSet::new();
 
-        collect_agent_dependencies_from_expression(expression, &mut referenced_agents);
+        expression.collect_agent_dependencies(&mut referenced_agents);
 
         if !referenced_agents.contains(&self.agent_declaration.name) {
             return;
@@ -219,44 +218,6 @@ impl AgentToolBindingValidator<'_> {
 }
 
 impl Expression {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        match self {
-            Self::Reference(reference) => reference.direct_name_for_keyword(reference_keyword),
-            Self::FunctionCall(function_call) => function_call.direct_name_for_keyword(reference_keyword),
-            Self::ToolCall(tool_call) => tool_call.callee.direct_name_for_keyword(reference_keyword),
-            Self::McpCall(_) => None,
-            Self::NullFallback(_)
-            | Self::VariantProjection(_)
-            | Self::Match(_)
-            | Self::StringLiteral(_)
-            | Self::StringTemplate(_)
-            | Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::ArrayLiteral(_)
-            | Self::ObjectLiteral(_) => None,
-        }
-    }
-
-    fn agent_tool_binding_fields(&self) -> &[ObjectField] {
-        match self {
-            Self::ToolCall(tool_call) => tool_call.agent_tool_binding_fields(),
-            Self::Reference(_)
-            | Self::FunctionCall(_)
-            | Self::McpCall(_)
-            | Self::NullFallback(_)
-            | Self::VariantProjection(_)
-            | Self::Match(_)
-            | Self::StringLiteral(_)
-            | Self::StringTemplate(_)
-            | Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::ArrayLiteral(_)
-            | Self::ObjectLiteral(_) => &[],
-        }
-    }
-
     fn is_literal_compatible_with_type(&self, expected_type: &WorkflowType) -> bool {
         match (self, expected_type) {
             (Self::StringLiteral(string_literal), WorkflowType::StringEnum(enum_values)) => enum_values.contains(string_literal),
@@ -269,27 +230,5 @@ impl Expression {
                 .any(|union_member| expression.is_literal_compatible_with_type(union_member)),
             _ => false,
         }
-    }
-}
-
-impl FunctionCall {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        self.callee.direct_name_for_keyword(reference_keyword)
-    }
-}
-
-impl Reference {
-    fn direct_name_for_keyword(&self, reference_keyword: ReferenceKeyword) -> Option<String> {
-        if self.root_keyword() != Some(reference_keyword) || self.accesses.len() != 1 || self.accesses[0].optional {
-            return None;
-        }
-
-        Some(self.accesses[0].field.clone())
-    }
-}
-
-impl ToolCall {
-    fn agent_tool_binding_fields(&self) -> &[ObjectField] {
-        self.binding_fields.as_slice()
     }
 }
