@@ -99,7 +99,7 @@
 
 ## Phase 3: Parser, AST, And Formatter Split
 
-- [ ] Split `crates/core/src/dsl/ast.rs` into workflow, declaration, expression, reference, types, tool, MCP, agent, keywords, and span modules.
+- [~] Split `crates/core/src/dsl/ast.rs` into workflow, declaration, expression, reference, types, tool, MCP, agent, keywords, and span modules.
   Description: Move AST definitions into domain modules and re-export stable public types from `dsl::ast`.
   Rationale: AST changes currently cause high compile and review churn because all data types live in one large namespace.
 
@@ -329,3 +329,4 @@
 
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
+- Phase 3 AST split is partially complete: `span.rs`, `keywords.rs`, and `reference.rs` now own source span types, centralized keyword/property enums, and reference types, with stable re-exports preserved from `dsl::ast` and `dsl::mod`. Remaining AST domains to extract are workflow, declaration, expression, types, tool, MCP, and agent; `McpImportKind` and `McpCallOperation` still live in `ast.rs`, so the keyword-centralization task should remain open until those domain keyword/rendering enums are placed deliberately.
