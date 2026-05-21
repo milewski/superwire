@@ -65,7 +65,7 @@
   Description: Move keyword reference validation, projection traversal, and LLM secret-reference rules into a reference module.
   Rationale: References are used across validation, graph generation, runtime planning, hover, completion, and definitions; this logic must become discoverable and reusable.
 
-- [ ] Extract agent property, model binding, tool reference, and output validation into `validation/agents.rs`.
+- [x] Extract agent property, model binding, tool reference, and output validation into `validation/agents.rs`.
   Description: Move agent-specific property and dependency checks into an agent module.
   Rationale: Agent validation is a large independent domain and future agent syntax should not require editing unrelated validation code.
 
