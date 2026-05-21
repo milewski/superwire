@@ -155,7 +155,7 @@
   Description: Keep `DocumentState` behavior intact while moving semantic index responsibilities into focused files.
   Rationale: Editor features currently depend on a single large index implementation, making completion and definition changes risky.
 
-- [ ] Split `crates/lsp/src/document/completion.rs` into root, reference, tool, MCP, model, and type-expression completion modules.
+- [x] Split `crates/lsp/src/document/completion.rs` into root, reference, tool, MCP, model, and type-expression completion modules.
   Description: Route completion dispatch through a module tree organized by completion domain.
   Rationale: Completion logic has many context branches and should scale by syntax area.
 
