@@ -4,6 +4,7 @@ use lsp_types::Position;
 use superwire_core::dsl::{SourceSpan, TypeExpression};
 
 use super::super::position::source_span_contains_position;
+use super::super::scope::CompletionScope;
 use super::types::{FieldMetadata, SemanticIndex};
 
 impl SemanticIndex {
@@ -40,6 +41,60 @@ impl SemanticIndex {
             .iter()
             .find(|tool_location| source_span_contains_position(tool_location.span, position))
             .map(|tool_location| tool_location.name.as_str())
+    }
+
+    pub fn completion_scope_at_position(&self, position: Position) -> Option<CompletionScope> {
+        if self
+            .inference_setting_locations
+            .iter()
+            .any(|inference_setting_location| source_span_contains_position(inference_setting_location.span, position))
+        {
+            return Some(CompletionScope::InferenceSettings);
+        }
+
+        if self
+            .agent_output_locations
+            .iter()
+            .copied()
+            .any(|agent_output_location| source_span_contains_position(agent_output_location, position))
+        {
+            return Some(CompletionScope::TypedDeclarations);
+        }
+
+        if self
+            .model_usage_locations
+            .iter()
+            .copied()
+            .any(|model_usage_location| source_span_contains_position(model_usage_location, position))
+        {
+            return Some(CompletionScope::ModelUsageProperties);
+        }
+
+        if self.model_name_at_position(position).is_some() {
+            return Some(CompletionScope::ModelProperties);
+        }
+
+        if self.provider_name_at_position(position).is_some() {
+            return Some(CompletionScope::ProviderProperties);
+        }
+
+        if self
+            .mcp_server_locations
+            .iter()
+            .any(|mcp_server_location| source_span_contains_position(mcp_server_location.span, position))
+        {
+            return Some(CompletionScope::McpServerProperties);
+        }
+
+        if self.tool_name_at_position(position).is_some() {
+            return Some(CompletionScope::ToolProperties);
+        }
+
+        if self.agent_name_at_position(position).is_some() {
+            return Some(CompletionScope::AgentProperties);
+        }
+
+        None
     }
 
     pub(in crate::document) fn for_loop_binding_names_at_position(&self, position: Position) -> Option<Vec<&str>> {

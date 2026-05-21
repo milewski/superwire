@@ -22,6 +22,27 @@ fn suggests_only_inference_settings_inside_inference_object() {
 }
 
 #[test]
+fn suggests_inference_settings_with_newline_before_inference_block() {
+    let completion_suggestions = inline_completion_suggestions! {
+        model fast from openai {
+            inference
+            {
+                <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_all_inference_settings!(&completion_suggestions);
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        AgentExpressionPropertyName::Model,
+        DeclarationKeyword::Provider,
+        "id"
+    );
+}
+
+#[test]
 fn suggests_inference_settings_inside_model_usage_override() {
     let completion_suggestions = inline_completion_suggestions! {
         agent greeting {

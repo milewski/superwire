@@ -159,7 +159,7 @@
   Description: Route completion dispatch through a module tree organized by completion domain.
   Rationale: Completion logic has many context branches and should scale by syntax area.
 
-- [ ] Replace broad line-prefix parsing with parser-aware completion contexts where possible.
+- [x] Replace broad line-prefix parsing with parser-aware completion contexts where possible.
   Description: Use AST spans and semantic context for complete syntax, reserving text-prefix heuristics for incomplete syntax.
   Rationale: Parser-aware completions are less sensitive to whitespace, formatting, and partial edits.
 

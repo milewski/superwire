@@ -235,6 +235,28 @@ fn suggests_only_model_usage_properties_in_agent_model_override_scope() {
 }
 
 #[test]
+fn suggests_model_usage_properties_with_newline_before_override_block() {
+    let completion_suggestions = inline_completion_suggestions! {
+        agent writer {
+            model: model.openai_model
+            {
+                <cursor>
+            }
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "inference");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        "id",
+        DeclarationKeyword::Provider,
+        AgentExpressionPropertyName::Instruction,
+        "endpoint"
+    );
+}
+
+#[test]
 fn suggests_only_provider_properties_in_provider_block_scope() {
     let completion_suggestions = inline_completion_suggestions! {
         provider openai from openai {
@@ -267,6 +289,27 @@ fn suggests_only_mcp_server_properties_in_mcp_block_scope() {
     let headers_completion = completion_suggestion_by_label(&completion_suggestions, "headers");
 
     assert_eq!(headers_completion.insert_text, "headers {\n    $1\n}");
+
+    assert_completion_excludes_labels!(
+        &completion_suggestions,
+        DeclarationKeyword::Provider,
+        DeclarationKeyword::Agent,
+        AgentExpressionPropertyName::Instruction,
+        "id",
+        "api_key"
+    );
+}
+
+#[test]
+fn suggests_mcp_server_properties_with_newline_before_block() {
+    let completion_suggestions = inline_completion_suggestions! {
+        mcp local
+        {
+            <cursor>
+        }
+    };
+
+    assert_completion_contains_labels!(&completion_suggestions, "endpoint", "headers");
 
     assert_completion_excludes_labels!(
         &completion_suggestions,

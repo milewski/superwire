@@ -1,4 +1,6 @@
-use superwire_core::dsl::{parse_workflow, AgentExpressionPropertyName, DeclarationKeyword, ReferenceKeyword, ToolPropertyName};
+use superwire_core::dsl::{
+    parse_workflow, AgentExpressionPropertyName, DeclarationKeyword, ImportKeyword, ReferenceKeyword, ToolPropertyName,
+};
 
 use lsp_types::{Position, Range};
 
@@ -44,8 +46,8 @@ impl DocumentState {
             return Vec::new();
         }
 
-        let completion_scope = self.completion_scope(position);
         let semantic_index = self.semantic_index_for_completion(position);
+        let completion_scope = self.completion_scope(position, &line_prefix, &semantic_index);
 
         if Self::is_typed_description_string_literal_context(&line_prefix, completion_scope, &semantic_index, position) {
             return Vec::new();
@@ -702,12 +704,32 @@ impl DocumentState {
         ))
     }
 
-    fn completion_scope(&self, position: Position) -> CompletionScope {
+    fn completion_scope(&self, position: Position, line_prefix: &str, semantic_index: &SemanticIndex) -> CompletionScope {
         let Some(cursor_offset) = byte_offset_for_position(&self.text, position) else {
             return CompletionScope::General;
         };
 
-        completion_scope_at_offset(&self.text, cursor_offset)
+        let line_prefix_scope = completion_scope_at_offset(&self.text, cursor_offset);
+
+        if line_prefix_scope != CompletionScope::General || !Self::can_refine_general_completion_scope(line_prefix) {
+            return line_prefix_scope;
+        }
+
+        semantic_index.completion_scope_at_position(position).unwrap_or(line_prefix_scope)
+    }
+
+    fn can_refine_general_completion_scope(line_prefix: &str) -> bool {
+        if DeclarationHeaderCompletionContext::from_line_prefix(line_prefix).is_some() {
+            return false;
+        }
+
+        let trimmed_line_prefix = line_prefix.trim_start();
+
+        if trimmed_line_prefix.contains(ImportKeyword::From.as_str()) {
+            return false;
+        }
+
+        trimmed_line_prefix.is_empty() || trailing_identifier(line_prefix).is_some()
     }
 
     fn is_inside_multiline_string_literal(&self, position: Position) -> bool {

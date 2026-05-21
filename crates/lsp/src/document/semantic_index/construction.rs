@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use superwire_core::dsl::{
-    AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration, ProviderDeclaration,
-    ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolSource, TypeExpression, TypedField, Workflow,
+    AgentForLoopPattern, AgentProperty, Declaration, DeclarationKeyword, Expression, ModelDeclaration, ModelDeclarationPropertyName,
+    ModelUsagePropertyName, ObjectField, ProviderDeclaration, ReferenceKeyword, SingletonDeclarationKind, SourceSpan, ToolSource,
+    TypeExpression, TypedField, Workflow,
 };
 use superwire_core::mcp::McpLock;
 use superwire_core::semantic::{ProviderDriver, SemanticToolingSnapshot, ToolingSymbolCategory, WorkflowSemanticIndex};
@@ -30,6 +31,7 @@ impl SemanticIndex {
             prompt_names: Vec::new(),
             prompt_locations: Vec::new(),
             mcp_server_names: Vec::new(),
+            mcp_server_locations: Vec::new(),
             input_fields: BTreeMap::new(),
             input_field_metadata: BTreeMap::new(),
             input_field_locations: HashMap::new(),
@@ -47,6 +49,8 @@ impl SemanticIndex {
             agent_for_loop_bindings: HashMap::new(),
             agent_for_loop_iterable_item_types: HashMap::new(),
             agent_names: Vec::new(),
+            model_usage_locations: Vec::new(),
+            inference_setting_locations: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
             agent_output_locations: Vec::new(),
@@ -91,6 +95,10 @@ impl SemanticIndex {
             }
             Declaration::McpServer(mcp_server_declaration) => {
                 self.mcp_server_names.push(mcp_server_declaration.name.clone());
+                self.mcp_server_locations.push(NamedSpan {
+                    name: mcp_server_declaration.name.clone(),
+                    span: mcp_server_declaration.span,
+                });
             }
             Declaration::Schema(schema_declaration) => {
                 self.insert_schema_declaration(schema_declaration);
@@ -256,6 +264,11 @@ impl SemanticIndex {
         }
 
         for agent_property in &agent_declaration.properties {
+            if let AgentProperty::Model(model_usage) = agent_property {
+                self.model_usage_locations.push(model_usage.span);
+                self.insert_inference_setting_locations(&model_usage.properties, ModelUsagePropertyName::Inference.as_str());
+            }
+
             if let AgentProperty::Output { fields: _, span } = agent_property {
                 self.typed_declaration_locations.push(*span);
                 self.agent_output_locations.push(*span);
@@ -412,6 +425,7 @@ impl SemanticIndex {
             prompt_names: Vec::new(),
             prompt_locations: Vec::new(),
             mcp_server_names: Vec::new(),
+            mcp_server_locations: Vec::new(),
             input_fields: tooling_snapshot.input_fields().clone(),
             input_field_metadata: field_metadata_from_type_map(tooling_snapshot.input_fields()),
             input_field_locations: HashMap::new(),
@@ -429,6 +443,8 @@ impl SemanticIndex {
             agent_for_loop_bindings: HashMap::new(),
             agent_for_loop_iterable_item_types: HashMap::new(),
             agent_names,
+            model_usage_locations: Vec::new(),
+            inference_setting_locations: Vec::new(),
             output_locations: Vec::new(),
             typed_declaration_locations: Vec::new(),
             agent_output_locations: Vec::new(),
@@ -671,6 +687,18 @@ impl SemanticIndex {
         self.model_locations.push(NamedSpan {
             name: model_declaration.name.clone(),
             span: model_declaration.span,
+        });
+        self.insert_inference_setting_locations(&model_declaration.properties, ModelDeclarationPropertyName::Inference.as_str());
+    }
+
+    fn insert_inference_setting_locations(&mut self, properties: &[ObjectField], inference_property_name: &str) {
+        let Some(inference_property) = properties.iter().find(|property| property.name == inference_property_name) else {
+            return;
+        };
+
+        self.inference_setting_locations.push(NamedSpan {
+            name: inference_property.name.clone(),
+            span: inference_property.span,
         });
     }
 
