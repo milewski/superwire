@@ -1,10 +1,12 @@
 use super::{CompletionSuggestion, DocumentDiagnostic, DocumentState, Position, TypeExpression};
 use crate::diagnostic_code::DiagnosticCode;
 use lsp_types::CompletionItemKind;
+use std::collections::BTreeMap;
 use superwire_core::dsl::{
     AgentExpressionPropertyName, BuiltinFunctionName, DeclarationKeyword, ForClauseKeyword, McpCallOperation, ReferenceKeyword,
     SingletonDeclarationKind, ToolCallKeyword,
 };
+use superwire_core::mcp::{McpLock, McpPromptArgumentLock, McpServerLock, McpToolLock};
 use superwire_core::semantic::InferenceSetting;
 use superwire_core::testing::WorkflowSourceTemplate;
 
@@ -310,6 +312,43 @@ fn completion_suggestions_from_source(source: String, cursor_position: Position)
     document_state.completion_suggestions(cursor_position)
 }
 
+fn completion_suggestions_with_mcp_lock(source_template: &str) -> Vec<CompletionSuggestion> {
+    let (source, cursor_position) = source_with_cursor(source_template);
+    let document_state = DocumentState::new(source, Some(test_mcp_lock()));
+
+    document_state.completion_suggestions(cursor_position)
+}
+
+fn completion_suggestions_with_mcp_lock_without_cursor_normalization(source_template: &str) -> Vec<CompletionSuggestion> {
+    let compact_cursor_marker = "<cursor>";
+    let spaced_cursor_marker = "< cursor >";
+    let (cursor_marker, cursor_byte_offset) = if let Some(cursor_byte_offset) = source_template.find(compact_cursor_marker) {
+        (compact_cursor_marker, cursor_byte_offset)
+    } else if let Some(cursor_byte_offset) = source_template.find(spaced_cursor_marker) {
+        (spaced_cursor_marker, cursor_byte_offset)
+    } else {
+        panic!("cursor marker should exist in test source");
+    };
+    let mut line = 0_u32;
+    let mut character = 0_u32;
+
+    for character_in_source in source_template[..cursor_byte_offset].chars() {
+        if character_in_source == '\n' {
+            line += 1;
+            character = 0;
+
+            continue;
+        }
+
+        character += 1;
+    }
+
+    let source_without_cursor = source_template.replacen(cursor_marker, "", 1);
+    let document_state = DocumentState::new(source_without_cursor, Some(test_mcp_lock()));
+
+    document_state.completion_suggestions(Position { line, character })
+}
+
 fn completion_suggestion_by_label<'completion>(
     completion_suggestions: &'completion [CompletionSuggestion],
     label: &str,
@@ -330,6 +369,178 @@ fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
     document_state.diagnostics()
 }
 
+fn test_mcp_lock() -> McpLock {
+    McpLock {
+        servers: test_mcp_servers(test_mcp_tools()),
+    }
+}
+
+fn test_mcp_servers(tools: BTreeMap<String, McpToolLock>) -> BTreeMap<String, McpServerLock> {
+    BTreeMap::from([(
+        "local".to_string(),
+        McpServerLock {
+            tools,
+            resources: vec!["project-readme".to_string(), "release-notes".to_string()],
+            prompts: vec![
+                "system-prompt".to_string(),
+                "review-prompt".to_string(),
+                "dynamic-summary-prompt".to_string(),
+            ],
+            prompt_arguments: BTreeMap::from([(
+                "dynamic-summary-prompt".to_string(),
+                vec![
+                    McpPromptArgumentLock {
+                        name: "project_id".to_string(),
+                        required: true,
+                        description: Some("Project identifier to summarize".to_string()),
+                    },
+                    McpPromptArgumentLock {
+                        name: "user_id".to_string(),
+                        required: false,
+                        description: Some("Optional user context for personalization".to_string()),
+                    },
+                ],
+            )]),
+        },
+    )])
+}
+
+fn test_mcp_tools() -> BTreeMap<String, McpToolLock> {
+    BTreeMap::from([
+        (
+            "list_all_participants_who_has_answered_given_task".to_string(),
+            list_all_participants_tool_lock(),
+        ),
+        ("update-user-name".to_string(), update_user_name_tool_lock()),
+        ("get_task_group_tasks".to_string(), get_task_group_tasks_tool_lock()),
+        ("fetch_participant_answer".to_string(), fetch_participant_answer_tool_lock()),
+    ])
+}
+
+fn list_all_participants_tool_lock() -> McpToolLock {
+    McpToolLock::from_json_schema_values(
+        "list_all_participants_who_has_answered_given_task".to_string(),
+        Some("List all participants who answered a task".to_string()),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "common_shared_among_all_feature": { "type": "string" },
+                "project_id": { "description": "Project identifier", "type": "number" },
+                "task_id": { "type": "number" }
+            },
+            "required": ["common_shared_among_all_feature", "project_id", "task_id"]
+        }),
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "shared": { "type": "string" },
+                "participants": { "type": "array", "items": { "type": "object" } }
+            },
+            "required": ["shared", "participants"]
+        })),
+    )
+    .expect("test MCP input schema should parse")
+}
+
+fn update_user_name_tool_lock() -> McpToolLock {
+    McpToolLock::from_json_schema_values(
+        "update-user-name".to_string(),
+        Some("Update a user name".to_string()),
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "common_shared_among_all_feature": { "type": "string" },
+                "user_name": { "type": "string" }
+            },
+            "required": ["common_shared_among_all_feature", "user_name"]
+        }),
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "shared": { "type": "string" },
+                "success": { "type": "boolean" }
+            },
+            "required": ["shared", "success"]
+        })),
+    )
+    .expect("test MCP input schema should parse")
+}
+
+fn get_task_group_tasks_tool_lock() -> McpToolLock {
+    McpToolLock::from_json_schema_values(
+        "get_task_group_tasks".to_string(),
+        Some("Get task group tasks".to_string()),
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }),
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task_group_id": { "type": "number" },
+                "task_group_title": { "type": "string" },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": { "type": "string" },
+                            "duration": { "type": "number" },
+                            "id": { "type": "number" },
+                            "mandatory": { "type": "boolean" },
+                            "options": { "type": "string" },
+                            "title": { "type": "string" },
+                            "type": { "type": "string" }
+                        },
+                        "required": ["description", "duration", "id", "mandatory", "options", "title", "type"]
+                    }
+                }
+            },
+            "required": ["task_group_id", "task_group_title", "tasks"]
+        })),
+    )
+    .expect("test MCP task group schema should parse")
+}
+
+fn fetch_participant_answer_tool_lock() -> McpToolLock {
+    McpToolLock::from_json_schema_values(
+        "fetch_participant_answer".to_string(),
+        Some("Fetch participant answer".to_string()),
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }),
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "description": "Answer",
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "description": "The text content of the answer",
+                            "type": ["string", "null"]
+                        }
+                    },
+                    "required": ["text"]
+                },
+                "participant_id": {
+                    "description": "The ID of the participant",
+                    "type": "number"
+                },
+                "task_id": {
+                    "description": "The ID of the task",
+                    "type": "number"
+                }
+            },
+            "required": ["answer", "participant_id", "task_id"]
+        })),
+    )
+    .expect("test MCP nullable schema should parse")
+}
+
 #[test]
 fn replace_text_skips_semantic_snapshot_rebuild_when_document_is_unchanged() {
     let (source, _cursor_position) = source_with_cursor(inline_document_template! {
@@ -342,9 +553,20 @@ fn replace_text_skips_semantic_snapshot_rebuild_when_document_is_unchanged() {
     assert!(!document_state.replace_text(source, None));
 }
 
-mod completion_tests;
+mod completion_matrix_tests;
+mod completion_mcp_tests;
+mod completion_model_tests;
+mod completion_reference_tests;
+mod completion_root_tests;
+mod completion_schema_tests;
+mod completion_tool_tests;
 mod definition_tests;
-mod diagnostic_tests;
+mod diagnostic_agent_tests;
+mod diagnostic_mcp_tests;
+mod diagnostic_model_tests;
+mod diagnostic_reference_tests;
+mod diagnostic_schema_tests;
+mod diagnostic_syntax_tests;
+mod diagnostic_tool_tests;
 mod for_loop_tests;
 mod interpolation_tests;
-mod tool_tests;

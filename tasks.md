@@ -163,7 +163,7 @@
   Description: Use AST spans and semantic context for complete syntax, reserving text-prefix heuristics for incomplete syntax.
   Rationale: Parser-aware completions are less sensitive to whitespace, formatting, and partial edits.
 
-- [ ] Move LSP tests into focused completion and diagnostics feature modules.
+- [x] Move LSP tests into focused completion and diagnostics feature modules.
   Description: Split large completion and tool test files into root, reference, MCP, tool, diagnostics, and schema modules.
   Rationale: Smaller test files make failures easier to localize and future feature additions easier to place.
 
