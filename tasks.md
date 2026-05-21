@@ -145,7 +145,7 @@
   Description: Provide reusable symbol-to-span lookup from core semantic data.
   Rationale: LSP ranges are an adapter concern; the semantic source location should be produced by core.
 
-- [ ] Add a `SemanticFixture` helper for semantic index, reference resolution, type, and completion assertions.
+- [x] Add a `SemanticFixture` helper for semantic index, reference resolution, type, and completion assertions.
   Description: Parse workflow snippets, build semantic data, and expose focused assertion methods.
   Rationale: Semantic refactors need compact tests that assert behavior directly without full LSP/runtime setup.
 

@@ -1,10 +1,17 @@
 use crate::diagnostic::DiagnosticCode;
-use crate::dsl::{format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Workflow};
+use crate::dsl::{
+    format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Reference, ReferenceAccess,
+    ReferenceKeyword, ReferenceRoot, Workflow,
+};
 use crate::mcp::{
     McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
     ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
 };
-use crate::semantic::{WorkflowExecutionGraph, WorkflowSemanticIndex};
+use crate::semantic::support::types::WorkflowType;
+use crate::semantic::{
+    ReferenceResolution, ReferenceResolutionError, ReferenceResolutionRoot, ReferenceResolutionScope, WorkflowExecutionGraph,
+    WorkflowSemanticIndex,
+};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
@@ -139,6 +146,38 @@ pub struct SemanticIndexSnapshotAssertion {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockFileSnapshotAssertion {
     snapshot: SnapshotAssertion,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticFixture {
+    workflow: Workflow,
+    semantic_index: WorkflowSemanticIndex,
+    resolution_scope: ReferenceResolutionScope,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SemanticTypeRoot {
+    Input,
+    Secrets,
+    Schema(String),
+    AgentOutput(String),
+    ToolInput(String),
+    ToolBinding(String),
+    ToolOutput(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SemanticCompletionSource {
+    ReferenceRoots,
+    Providers,
+    Models,
+    McpServers,
+    Schemas,
+    Agents,
+    Tools,
+    Resources,
+    Prompts,
+    Fields(SemanticTypeRoot),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -563,6 +602,248 @@ impl LockFileSnapshotAssertion {
 
     pub fn assert_matches(&self) {
         self.snapshot.assert_matches();
+    }
+}
+
+impl SemanticFixture {
+    #[must_use]
+    pub fn from_source_template(source_template: WorkflowSourceTemplate) -> Self {
+        let workflow = source_template.parse_workflow().unwrap_or_else(|parse_error| {
+            panic!(
+                "semantic fixture workflow failed to parse:\n{}",
+                parse_error.render_with_source(source_template.source(), "<semantic fixture>")
+            )
+        });
+
+        Self::from_workflow(workflow)
+    }
+
+    #[must_use]
+    pub fn from_workflow(workflow: Workflow) -> Self {
+        let semantic_index = WorkflowSemanticIndex::from_workflow(&workflow);
+
+        Self {
+            workflow,
+            semantic_index,
+            resolution_scope: ReferenceResolutionScope::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn workflow(&self) -> &Workflow {
+        &self.workflow
+    }
+
+    #[must_use]
+    pub fn semantic_index(&self) -> &WorkflowSemanticIndex {
+        &self.semantic_index
+    }
+
+    #[must_use]
+    pub fn with_resolution_scope(mut self, resolution_scope: ReferenceResolutionScope) -> Self {
+        self.resolution_scope = resolution_scope;
+
+        self
+    }
+
+    #[must_use]
+    pub fn with_dynamic_field_type(mut self, field_name: impl Into<String>, field_type: WorkflowType) -> Self {
+        self.resolution_scope = self.resolution_scope.with_dynamic_field_type(field_name, field_type);
+
+        self
+    }
+
+    #[must_use]
+    pub fn with_local_binding_type(mut self, binding_name: impl Into<String>, binding_type: WorkflowType) -> Self {
+        self.resolution_scope = self.resolution_scope.with_local_binding_type(binding_name, binding_type);
+
+        self
+    }
+
+    #[must_use]
+    pub fn keyword_reference(reference_keyword: ReferenceKeyword, access_fields: impl IntoIterator<Item = impl Into<String>>) -> Reference {
+        Reference {
+            root: ReferenceRoot::Keyword(reference_keyword),
+            accesses: Self::reference_accesses(access_fields),
+            span: crate::dsl::SourceSpan::generated(),
+        }
+    }
+
+    #[must_use]
+    pub fn local_reference(binding_name: impl Into<String>, access_fields: impl IntoIterator<Item = impl Into<String>>) -> Reference {
+        Reference {
+            root: ReferenceRoot::Identifier(binding_name.into()),
+            accesses: Self::reference_accesses(access_fields),
+            span: crate::dsl::SourceSpan::generated(),
+        }
+    }
+
+    pub fn resolve_reference(&self, reference: &Reference) -> Result<ReferenceResolution<'_>, ReferenceResolutionError> {
+        self.semantic_index.reference_resolver().resolve(reference, &self.resolution_scope)
+    }
+
+    pub fn assert_has_declaration(&self, declaration_source: SemanticCompletionSource, expected_name: impl AsRef<str>) {
+        let expected_name = expected_name.as_ref();
+        let completion_labels = declaration_source.completion_labels(&self.semantic_index);
+
+        assert!(
+            completion_labels.iter().any(|completion_label| completion_label == expected_name),
+            "expected semantic labels to contain `{expected_name}`; got {completion_labels:?}"
+        );
+    }
+
+    pub fn assert_type(&self, type_root: SemanticTypeRoot, expected_type: WorkflowType) {
+        let actual_type = type_root
+            .workflow_type(&self.semantic_index)
+            .unwrap_or_else(|| panic!("expected semantic type root `{type_root:?}` to exist"));
+
+        assert_eq!(actual_type, expected_type);
+    }
+
+    pub fn assert_field_type(&self, type_root: SemanticTypeRoot, field_path: &[&str], expected_type: WorkflowType) {
+        let root_type = type_root
+            .workflow_type(&self.semantic_index)
+            .unwrap_or_else(|| panic!("expected semantic type root `{type_root:?}` to exist"));
+        let actual_type = root_type
+            .field_type_at_path(field_path)
+            .unwrap_or_else(|| panic!("expected field path `{field_path:?}` to exist in `{type_root:?}`"));
+
+        assert_eq!(actual_type, expected_type);
+    }
+
+    pub fn assert_reference_resolves_to(
+        &self,
+        reference: &Reference,
+        expected_root: ReferenceResolutionRoot,
+        expected_name: impl AsRef<str>,
+    ) {
+        let resolution = self
+            .resolve_reference(reference)
+            .unwrap_or_else(|resolution_error| panic!("expected `{}` to resolve: {resolution_error:?}", reference.render_path()));
+
+        assert_eq!(resolution.root(), expected_root);
+        assert_eq!(resolution.name(), Some(expected_name.as_ref()));
+    }
+
+    pub fn assert_reference_type(&self, reference: &Reference, expected_type: WorkflowType) {
+        let resolution = self
+            .resolve_reference(reference)
+            .unwrap_or_else(|resolution_error| panic!("expected `{}` to resolve: {resolution_error:?}", reference.render_path()));
+        let actual_type = resolution
+            .resolved_type()
+            .unwrap_or_else(|| panic!("expected `{}` to resolve to a value type", reference.render_path()));
+
+        assert_eq!(actual_type, &expected_type);
+    }
+
+    pub fn assert_reference_error(&self, reference: &Reference, expected_error: ReferenceResolutionError) {
+        let actual_error = self
+            .resolve_reference(reference)
+            .expect_err("expected reference resolution to fail");
+
+        assert_eq!(actual_error, expected_error);
+    }
+
+    pub fn assert_completion_contains(
+        &self,
+        completion_source: SemanticCompletionSource,
+        expected_labels: impl IntoIterator<Item = impl AsRef<str>>,
+    ) {
+        let completion_labels = completion_source.completion_labels(&self.semantic_index);
+
+        for expected_label in expected_labels {
+            let expected_label = expected_label.as_ref();
+
+            assert!(
+                completion_labels.iter().any(|completion_label| completion_label == expected_label),
+                "expected semantic completions to contain `{expected_label}`; got {completion_labels:?}"
+            );
+        }
+    }
+
+    pub fn assert_completion_excludes(
+        &self,
+        completion_source: SemanticCompletionSource,
+        unexpected_labels: impl IntoIterator<Item = impl AsRef<str>>,
+    ) {
+        let completion_labels = completion_source.completion_labels(&self.semantic_index);
+
+        for unexpected_label in unexpected_labels {
+            let unexpected_label = unexpected_label.as_ref();
+
+            assert!(
+                !completion_labels
+                    .iter()
+                    .any(|completion_label| completion_label == unexpected_label),
+                "expected semantic completions to exclude `{unexpected_label}`; got {completion_labels:?}"
+            );
+        }
+    }
+
+    #[must_use]
+    pub fn completion_labels(&self, completion_source: &SemanticCompletionSource) -> Vec<String> {
+        completion_source.completion_labels(&self.semantic_index)
+    }
+
+    fn reference_accesses(access_fields: impl IntoIterator<Item = impl Into<String>>) -> Vec<ReferenceAccess> {
+        access_fields
+            .into_iter()
+            .map(|field_name| ReferenceAccess {
+                field: field_name.into(),
+                optional: false,
+            })
+            .collect()
+    }
+}
+
+impl SemanticTypeRoot {
+    #[must_use]
+    pub fn workflow_type(&self, semantic_index: &WorkflowSemanticIndex) -> Option<WorkflowType> {
+        match self {
+            Self::Input => semantic_index.input_type().cloned(),
+            Self::Secrets => semantic_index.secrets_type().cloned(),
+            Self::Schema(schema_name) => semantic_index.schema(schema_name)?.workflow_type.clone(),
+            Self::AgentOutput(agent_name) => semantic_index.agent_output_workflow_type(agent_name).cloned(),
+            Self::ToolInput(tool_name) => semantic_index.tool_input_type(tool_name).cloned(),
+            Self::ToolBinding(tool_name) => semantic_index.tool_binding_type(tool_name).cloned(),
+            Self::ToolOutput(tool_name) => semantic_index.tool_output_type(tool_name).cloned(),
+        }
+    }
+}
+
+impl SemanticCompletionSource {
+    #[must_use]
+    pub fn completion_labels(&self, semantic_index: &WorkflowSemanticIndex) -> Vec<String> {
+        let mut completion_labels = match self {
+            Self::ReferenceRoots => [
+                ReferenceKeyword::Agent,
+                ReferenceKeyword::Dynamic,
+                ReferenceKeyword::Input,
+                ReferenceKeyword::Model,
+                ReferenceKeyword::Secrets,
+                ReferenceKeyword::Tool,
+                ReferenceKeyword::Resource,
+                ReferenceKeyword::Prompt,
+            ]
+            .into_iter()
+            .map(|reference_keyword| reference_keyword.as_str().to_string())
+            .collect(),
+            Self::Providers => semantic_index.provider_names().map(str::to_string).collect(),
+            Self::Models => semantic_index.model_names().map(str::to_string).collect(),
+            Self::McpServers => semantic_index.mcp_server_names().map(str::to_string).collect(),
+            Self::Schemas => semantic_index.schema_names().map(str::to_string).collect(),
+            Self::Agents => semantic_index.agent_names().map(str::to_string).collect(),
+            Self::Tools => semantic_index.tool_names().map(str::to_string).collect(),
+            Self::Resources => semantic_index.resource_names().map(str::to_string).collect(),
+            Self::Prompts => semantic_index.prompt_names().map(str::to_string).collect(),
+            Self::Fields(type_root) => type_root
+                .workflow_type(semantic_index)
+                .and_then(|workflow_type| workflow_type.field_names())
+                .unwrap_or_default(),
+        };
+
+        completion_labels.sort();
+        completion_labels
     }
 }
 
@@ -1145,10 +1426,13 @@ fn is_inside_string_literal(source_text: &str, byte_offset: usize) -> bool {
 mod tests {
     use super::{
         empty_object_schema, stable_text_diff, FormatterSnapshotAssertion, GraphJsonSnapshotAssertion, LockFileSnapshotAssertion,
-        SemanticIndexSnapshotAssertion, WorkflowSource, WorkflowSourceTemplate,
+        SemanticCompletionSource, SemanticFixture, SemanticIndexSnapshotAssertion, SemanticTypeRoot, WorkflowSource,
+        WorkflowSourceTemplate,
     };
+    use crate::dsl::ReferenceKeyword;
     use crate::mcp::{McpLock, McpServerLock, ProjectMcpLock};
-    use crate::semantic::{WorkflowExecutionGraph, WorkflowSemanticIndex};
+    use crate::semantic::support::types::WorkflowType;
+    use crate::semantic::{ReferenceResolutionError, ReferenceResolutionRoot, WorkflowExecutionGraph, WorkflowSemanticIndex};
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -1326,6 +1610,123 @@ mod tests {
         );
 
         SemanticIndexSnapshotAssertion::from_index("semantic index summary", expected_output, &semantic_index).assert_matches();
+    }
+
+    #[test]
+    fn semantic_fixture_builds_index_and_asserts_types() {
+        let fixture = SemanticFixture::from_source_template(crate::workflow_source_template! {
+            input {
+                profile: {
+                    title: string
+                    score: number
+                }
+            }
+
+            tool web_search {
+                input {
+                    query: string
+                }
+
+                output {
+                    summary: string
+                }
+            }
+
+            agent researcher {
+                uses: [tool.web_search]
+                instruction: input.profile.title
+
+                output {
+                    summary: string
+                }
+            }
+        });
+
+        fixture.assert_has_declaration(SemanticCompletionSource::Agents, "researcher");
+        fixture.assert_has_declaration(SemanticCompletionSource::Tools, "web_search");
+        fixture.assert_field_type(SemanticTypeRoot::Input, &["profile", "title"], WorkflowType::String);
+        fixture.assert_field_type(
+            SemanticTypeRoot::ToolOutput("web_search".to_string()),
+            &["summary"],
+            WorkflowType::String,
+        );
+        fixture.assert_completion_contains(SemanticCompletionSource::Fields(SemanticTypeRoot::Input), ["profile"]);
+        fixture.assert_completion_excludes(SemanticCompletionSource::Fields(SemanticTypeRoot::Input), ["missing"]);
+    }
+
+    #[test]
+    fn semantic_fixture_asserts_reference_resolution_and_errors() {
+        let fixture = SemanticFixture::from_source_template(crate::workflow_source_template! {
+            input {
+                profile: {
+                    title: string
+                }
+            }
+
+            agent worker {
+                instruction: input.profile.title
+
+                output {
+                    summary: string
+                }
+            }
+        })
+        .with_dynamic_field_type("topic", WorkflowType::String);
+
+        let input_reference = SemanticFixture::keyword_reference(ReferenceKeyword::Input, ["profile", "title"]);
+        let agent_reference = SemanticFixture::keyword_reference(ReferenceKeyword::Agent, ["worker", "summary"]);
+        let dynamic_reference = SemanticFixture::keyword_reference(ReferenceKeyword::Dynamic, ["topic"]);
+        let missing_reference = SemanticFixture::keyword_reference(ReferenceKeyword::Input, ["missing"]);
+
+        fixture.assert_reference_resolves_to(&input_reference, ReferenceResolutionRoot::Input, "profile");
+        fixture.assert_reference_type(&input_reference, WorkflowType::String);
+        fixture.assert_reference_resolves_to(&agent_reference, ReferenceResolutionRoot::Agent, "worker");
+        fixture.assert_reference_type(&agent_reference, WorkflowType::String);
+        fixture.assert_reference_type(&dynamic_reference, WorkflowType::String);
+        fixture.assert_reference_error(
+            &missing_reference,
+            ReferenceResolutionError::UnknownInputField {
+                field_name: "missing".to_string(),
+            },
+        );
+    }
+
+    #[test]
+    fn semantic_fixture_exposes_core_completion_labels() {
+        let fixture = SemanticFixture::from_source_template(crate::workflow_source_template! {
+            provider openai from openai {}
+
+            model fast from openai {
+                id: "gpt-4.1-mini"
+            }
+
+            schema Task {
+                name: string
+                priority: number
+            }
+
+            mcp local {
+                endpoint: "http://localhost:3000/mcp"
+            }
+
+            resource project_readme from mcp.local.resource.project_readme
+            prompt system_prompt from mcp.local.prompt.system_prompt
+        });
+
+        fixture.assert_completion_contains(
+            SemanticCompletionSource::ReferenceRoots,
+            [ReferenceKeyword::Agent.as_str(), ReferenceKeyword::Input.as_str()],
+        );
+        fixture.assert_completion_contains(SemanticCompletionSource::Providers, ["openai"]);
+        fixture.assert_completion_contains(SemanticCompletionSource::Models, ["fast"]);
+        fixture.assert_completion_contains(SemanticCompletionSource::McpServers, ["local"]);
+        fixture.assert_completion_contains(SemanticCompletionSource::Schemas, ["Task"]);
+        fixture.assert_completion_contains(SemanticCompletionSource::Resources, ["project_readme"]);
+        fixture.assert_completion_contains(SemanticCompletionSource::Prompts, ["system_prompt"]);
+        fixture.assert_completion_contains(
+            SemanticCompletionSource::Fields(SemanticTypeRoot::Schema("Task".to_string())),
+            ["name", "priority"],
+        );
     }
 
     #[test]

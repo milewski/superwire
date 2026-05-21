@@ -118,6 +118,52 @@ impl WorkflowType {
     }
 
     #[must_use]
+    pub fn field_type_at_path(&self, field_path: &[&str]) -> Option<Self> {
+        let mut current_type = self.clone();
+
+        for field_name in field_path {
+            current_type = current_type.field_type(field_name)?;
+        }
+
+        Some(current_type)
+    }
+
+    #[must_use]
+    pub fn field_names(&self) -> Option<Vec<String>> {
+        match self {
+            Self::Object(fields) => Some(fields.keys().cloned().collect()),
+            Self::Variant { discriminator, cases } => {
+                let mut field_names = cases.values().flat_map(|fields| fields.keys().cloned()).collect::<Vec<_>>();
+                field_names.push(discriminator.clone());
+                field_names.sort();
+                field_names.dedup();
+
+                Some(field_names)
+            }
+            Self::Union(members) => {
+                let mut field_names = members.iter().filter_map(Self::field_names).flatten().collect::<Vec<_>>();
+                field_names.sort();
+                field_names.dedup();
+
+                (!field_names.is_empty()).then_some(field_names)
+            }
+            Self::Any
+            | Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn variant_case_field_type(&self, case_name: &str, field_path: &[String]) -> Option<Self> {
         match self {
             Self::Variant { discriminator: _, cases } => {

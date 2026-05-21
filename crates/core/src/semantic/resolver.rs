@@ -144,6 +144,45 @@ pub enum ReferenceResolution<'semantic> {
     LocalBinding(ResolvedNamedValueReference),
 }
 
+impl ReferenceResolution<'_> {
+    #[must_use]
+    pub fn root(&self) -> ReferenceResolutionRoot {
+        match self {
+            Self::Input(resolved_value) | Self::Secrets(resolved_value) | Self::Dynamic(resolved_value) => resolved_value.root,
+            Self::AgentOutput(resolved_value) | Self::LocalBinding(resolved_value) => resolved_value.root,
+            Self::Tool(_) | Self::ToolImport(_) => ReferenceResolutionRoot::Tool,
+            Self::ResourceImport(_) => ReferenceResolutionRoot::Resource,
+            Self::PromptImport(_) => ReferenceResolutionRoot::Prompt,
+            Self::Model(_) => ReferenceResolutionRoot::Model,
+        }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Input(resolved_value) | Self::Secrets(resolved_value) | Self::Dynamic(resolved_value) => Some(&resolved_value.field_name),
+            Self::AgentOutput(resolved_value) | Self::LocalBinding(resolved_value) => Some(&resolved_value.name),
+            Self::Tool(resolved_tool) => Some(&resolved_tool.tool_schema.name),
+            Self::ToolImport(resolved_import) | Self::ResourceImport(resolved_import) | Self::PromptImport(resolved_import) => {
+                Some(&resolved_import.import.name)
+            }
+            Self::Model(resolved_model) => Some(&resolved_model.model.name),
+        }
+    }
+
+    #[must_use]
+    pub fn resolved_type(&self) -> Option<&WorkflowType> {
+        match self {
+            Self::Input(resolved_value) | Self::Secrets(resolved_value) | Self::Dynamic(resolved_value) => {
+                Some(&resolved_value.resolved_type)
+            }
+            Self::AgentOutput(resolved_value) | Self::LocalBinding(resolved_value) => Some(&resolved_value.resolved_type),
+            Self::Tool(resolved_tool) => resolved_tool.resolved_type.as_ref(),
+            Self::ToolImport(_) | Self::ResourceImport(_) | Self::PromptImport(_) | Self::Model(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReferenceResolutionRoot {
     Input,
