@@ -693,6 +693,27 @@ pub struct McpPromptBatchImportItem {
     pub span: SourceSpan,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct McpImportBindings<'binding> {
+    shared_fields: &'binding [ObjectField],
+    local_fields: &'binding [ObjectField],
+}
+
+impl<'binding> McpImportBindings<'binding> {
+    #[must_use]
+    pub fn new(shared_fields: &'binding [ObjectField], local_fields: &'binding [ObjectField]) -> Self {
+        Self {
+            shared_fields,
+            local_fields,
+        }
+    }
+
+    #[must_use]
+    pub fn effective_fields(self) -> Vec<ObjectField> {
+        ObjectField::merged_with_overrides(self.shared_fields, self.local_fields)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpToolBatchImportItem {
     pub source_name: String,
@@ -740,7 +761,7 @@ impl McpToolBatchImportItem {
         max_calls: Option<u64>,
         output_fields: &[TypedField],
     ) -> ToolDeclaration {
-        let fixed_binding_fields = ObjectField::merged_with_overrides(fixed_binding_fields, &self.fixed_binding_fields);
+        let fixed_binding_fields = McpImportBindings::new(fixed_binding_fields, &self.fixed_binding_fields).effective_fields();
         let input_fields = if self.input_fields.is_empty() {
             input_fields.to_vec()
         } else {
@@ -788,7 +809,7 @@ impl McpResourceBatchImportItem {
 
     #[must_use]
     pub fn to_resource_import_declaration(&self, server_name: &str, shared_parameters: &[ObjectField]) -> McpResourceImportDeclaration {
-        let parameters = ObjectField::merged_with_overrides(shared_parameters, &self.parameters);
+        let parameters = McpImportBindings::new(shared_parameters, &self.parameters).effective_fields();
 
         McpResourceImportDeclaration {
             name: self.local_name.clone(),
@@ -821,7 +842,7 @@ impl McpPromptBatchImportItem {
 
     #[must_use]
     pub fn to_prompt_import_declaration(&self, server_name: &str, shared_parameters: &[ObjectField]) -> McpPromptImportDeclaration {
-        let parameters = ObjectField::merged_with_overrides(shared_parameters, &self.parameters);
+        let parameters = McpImportBindings::new(shared_parameters, &self.parameters).effective_fields();
 
         McpPromptImportDeclaration {
             name: self.local_name.clone(),
@@ -872,6 +893,13 @@ pub struct McpPromptImportDeclaration {
     pub source: McpImportSource,
     pub parameters: Vec<ObjectField>,
     pub span: SourceSpan,
+}
+
+impl McpPromptImportDeclaration {
+    #[must_use]
+    pub fn has_parameter_binding(&self, parameter_name: &str) -> bool {
+        self.parameters.iter().any(|parameter| parameter.name == parameter_name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

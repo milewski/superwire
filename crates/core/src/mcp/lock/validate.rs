@@ -65,11 +65,6 @@ impl McpLock {
 
 impl McpPromptImportDeclaration {
     #[must_use]
-    fn has_parameter_binding(&self, parameter_name: &str) -> bool {
-        self.parameters.iter().any(|parameter| parameter.name == parameter_name)
-    }
-
-    #[must_use]
     fn required_binding_messages(&self, prompt_arguments: &[McpPromptArgumentLock]) -> Vec<String> {
         let mut messages = Vec::new();
 

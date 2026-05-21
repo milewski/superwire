@@ -231,11 +231,11 @@
 
 ## Phase 7: MCP And Tooling Robustness
 
-- [ ] Introduce a shared `McpImportBindings` domain type.
+- [~] Introduce a shared `McpImportBindings` domain type.
   Description: Own shared/local binding merging, existence checks, JSON evaluation, and diagnostic display for MCP bindings.
   Rationale: Prompt/resource parameters and tool fixed bindings represent the same concept and should not be implemented repeatedly.
 
-- [ ] Move prompt required-binding validation onto MCP prompt import or binding types.
+- [x] Move prompt required-binding validation onto MCP prompt import or binding types.
   Description: Ask import declarations for effective bindings after batch inheritance instead of reconstructing them externally.
   Rationale: Flattened and nested MCP import views must agree to avoid required-argument bugs.
 
@@ -330,4 +330,5 @@
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
 - Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
+- `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.
