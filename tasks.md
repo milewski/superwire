@@ -141,7 +141,7 @@
   Description: Return typed resolution results for input, secrets, dynamic fields, agent outputs, tools, imports, and models.
   Rationale: Validation, hover, definition, completion, graph, and runtime planning must agree on what a reference means.
 
-- [ ] Make source-span lookup a core service instead of editor-only indexing.
+- [x] Make source-span lookup a core service instead of editor-only indexing.
   Description: Provide reusable symbol-to-span lookup from core semantic data.
   Rationale: LSP ranges are an adapter concern; the semantic source location should be produced by core.
 

@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use lsp_types::Position;
-use superwire_core::dsl::{ReferenceKeyword, SourceSpan, TypeExpression};
+use superwire_core::dsl::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SourceSpan, TypeExpression};
+use superwire_core::semantic::{ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot};
 
 use super::super::reference::ReferenceCompletionPath;
 use super::types::SemanticIndex;
@@ -13,15 +14,19 @@ impl SemanticIndex {
         cursor_character_offset: usize,
         position: Position,
     ) -> Option<SourceSpan> {
-        if let Some(provider_span) = self.provider_span(symbol_token) {
+        if let Some(provider_span) = self.core_declaration_span(SemanticDeclarationKey::provider(symbol_token)) {
             return Some(provider_span);
         }
 
-        if let Some(schema_span) = self.schema_span(symbol_token) {
+        if let Some(model_span) = self.core_declaration_span(SemanticDeclarationKey::model(symbol_token)) {
+            return Some(model_span);
+        }
+
+        if let Some(schema_span) = self.core_declaration_span(SemanticDeclarationKey::schema(symbol_token)) {
             return Some(schema_span);
         }
 
-        if let Some(agent_span) = self.agent_span(symbol_token) {
+        if let Some(agent_span) = self.core_declaration_span(SemanticDeclarationKey::agent(symbol_token)) {
             return Some(agent_span);
         }
 
@@ -75,6 +80,12 @@ impl SemanticIndex {
         reference_completion_path: &ReferenceCompletionPath,
         selected_segment_index: usize,
     ) -> Option<SourceSpan> {
+        if let Some(core_definition_span) =
+            self.core_reference_definition_span(reference_root_keyword, reference_completion_path, selected_segment_index)
+        {
+            return Some(core_definition_span);
+        }
+
         match reference_root_keyword {
             ReferenceKeyword::Dynamic => {
                 self.dynamic_reference_definition_span(position, reference_completion_path, selected_segment_index)
@@ -177,11 +188,51 @@ impl SemanticIndex {
         let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
         let schema_name = selected_accesses.first()?;
 
-        if selected_accesses.len() == 1 {
-            return self.schema_span(schema_name);
-        }
+        self.core_field_span(SemanticFieldRoot::Schema(schema_name), &selected_accesses[1..])
+            .or_else(|| {
+                if selected_accesses.len() == 1 {
+                    return self.schema_span(schema_name);
+                }
 
-        self.schema_field_span(schema_name, &selected_accesses[1..])
+                self.schema_field_span(schema_name, &selected_accesses[1..])
+            })
+    }
+
+    fn core_declaration_span(&self, declaration_key: SemanticDeclarationKey<'_>) -> Option<SourceSpan> {
+        self.workflow_semantics.as_ref()?.declaration_span(declaration_key)
+    }
+
+    fn core_field_span(&self, field_root: SemanticFieldRoot<'_>, field_path: &[String]) -> Option<SourceSpan> {
+        let field_path_segments = field_path.iter().map(String::as_str).collect::<Vec<_>>();
+
+        self.workflow_semantics
+            .as_ref()?
+            .field_span(field_root, field_path_segments.as_slice())
+    }
+
+    fn core_reference_definition_span(
+        &self,
+        reference_root_keyword: ReferenceKeyword,
+        reference_completion_path: &ReferenceCompletionPath,
+        selected_segment_index: usize,
+    ) -> Option<SourceSpan> {
+        let selected_accesses = reference_completion_path.resolved_accesses_through_segment(selected_segment_index)?;
+        let selected_access_count = selected_accesses.len();
+        let reference = Reference {
+            root: ReferenceRoot::Keyword(reference_root_keyword),
+            accesses: selected_accesses
+                .into_iter()
+                .map(|field_name| ReferenceAccess {
+                    field: field_name,
+                    optional: false,
+                })
+                .collect(),
+            span: SourceSpan::generated(),
+        };
+
+        self.workflow_semantics
+            .as_ref()?
+            .reference_definition_span(&reference, &ReferenceResolutionScope::new(), selected_access_count)
     }
 
     fn singleton_reference_definition_span(

@@ -1,4 +1,4 @@
-use crate::dsl::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot};
+use crate::dsl::{Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, SourceSpan};
 use crate::semantic::support::types::WorkflowType;
 use crate::semantic::{SemanticMcpImport, SemanticModel, SemanticToolSchema, WorkflowSemanticIndex};
 use std::collections::HashMap;
@@ -7,6 +7,8 @@ use std::collections::HashMap;
 pub struct ReferenceResolutionScope {
     dynamic_field_types: HashMap<String, WorkflowType>,
     local_binding_types: HashMap<String, WorkflowType>,
+    dynamic_field_spans: HashMap<String, SourceSpan>,
+    local_binding_spans: HashMap<String, SourceSpan>,
 }
 
 impl ReferenceResolutionScope {
@@ -23,8 +25,22 @@ impl ReferenceResolutionScope {
     }
 
     #[must_use]
+    pub fn with_dynamic_field_span(mut self, field_name: impl Into<String>, field_span: SourceSpan) -> Self {
+        self.dynamic_field_spans.insert(field_name.into(), field_span);
+
+        self
+    }
+
+    #[must_use]
     pub fn with_local_binding_type(mut self, binding_name: impl Into<String>, binding_type: WorkflowType) -> Self {
         self.local_binding_types.insert(binding_name.into(), binding_type);
+
+        self
+    }
+
+    #[must_use]
+    pub fn with_local_binding_span(mut self, binding_name: impl Into<String>, binding_span: SourceSpan) -> Self {
+        self.local_binding_spans.insert(binding_name.into(), binding_span);
 
         self
     }
@@ -35,8 +51,18 @@ impl ReferenceResolutionScope {
     }
 
     #[must_use]
+    pub fn dynamic_field_span(&self, field_name: &str) -> Option<SourceSpan> {
+        self.dynamic_field_spans.get(field_name).copied()
+    }
+
+    #[must_use]
     pub fn local_binding_type(&self, binding_name: &str) -> Option<&WorkflowType> {
         self.local_binding_types.get(binding_name)
+    }
+
+    #[must_use]
+    pub fn local_binding_span(&self, binding_name: &str) -> Option<SourceSpan> {
+        self.local_binding_spans.get(binding_name).copied()
     }
 
     #[must_use]

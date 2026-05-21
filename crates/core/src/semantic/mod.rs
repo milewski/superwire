@@ -12,8 +12,9 @@ pub use graph::{
     WorkflowExecutionGraphNodeKind, WorkflowExecutionGraphPort, WorkflowExecutionGraphTool, WorkflowExecutionGraphToolKind,
 };
 pub use index::{
-    SemanticAgent, SemanticMcpImport, SemanticMcpImportKind, SemanticMcpServer, SemanticModel, SemanticProvider, SemanticSchema,
-    SemanticToolSchema, SemanticTypedField, WorkflowSemanticIndex,
+    SemanticAgent, SemanticDeclarationKey, SemanticDeclarationKind, SemanticFieldRoot, SemanticMcpImport, SemanticMcpImportKind,
+    SemanticMcpServer, SemanticModel, SemanticProvider, SemanticSchema, SemanticSourceSpanLookup, SemanticToolSchema, SemanticTypedField,
+    WorkflowSemanticIndex,
 };
 pub use ir::{build_dynamic_typed_workflow_ir, build_typed_workflow_ir, TypedAgentIr, TypedToolIr, TypedWorkflowIr};
 pub use pipeline::{

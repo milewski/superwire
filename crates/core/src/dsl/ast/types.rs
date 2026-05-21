@@ -281,6 +281,62 @@ impl TypeExpression {
     }
 
     #[must_use]
+    pub fn field_span_at_path<SchemaFieldSpanLookup>(
+        &self,
+        field_path: &[&str],
+        schema_field_span_lookup: &mut SchemaFieldSpanLookup,
+    ) -> Option<SourceSpan>
+    where
+        SchemaFieldSpanLookup: FnMut(&str, &[&str]) -> Option<SourceSpan>,
+    {
+        let (field_name, remaining_field_path) = field_path.split_first()?;
+
+        match self {
+            Self::Object(typed_fields) => {
+                let typed_field = typed_fields.iter().find(|typed_field| typed_field.name == *field_name)?;
+
+                if remaining_field_path.is_empty() {
+                    return Some(typed_field.span);
+                }
+
+                typed_field
+                    .field_type
+                    .field_span_at_path(remaining_field_path, schema_field_span_lookup)
+            }
+            Self::SchemaReference(schema_name) => schema_field_span_lookup(schema_name, field_path),
+            Self::Variant { discriminator, cases } => {
+                if remaining_field_path.is_empty() && *field_name == discriminator {
+                    return cases.first().map(|variant_case| variant_case.span);
+                }
+
+                None
+            }
+            Self::Union(type_expressions) => {
+                for type_expression in type_expressions {
+                    if let Some(field_span) = type_expression.field_span_at_path(field_path, schema_field_span_lookup) {
+                        return Some(field_span);
+                    }
+                }
+
+                None
+            }
+            Self::String
+            | Self::Number
+            | Self::Float
+            | Self::Boolean
+            | Self::Null
+            | Self::AnyObject
+            | Self::StringEnum(_)
+            | Self::StringEnumReference(_)
+            | Self::Array {
+                item_type: _,
+                fixed_length: _,
+            }
+            | Self::Tuple(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn resolved_field_type_at_path<HashBuilder: BuildHasher>(
         &self,
         field_path: &[&str],

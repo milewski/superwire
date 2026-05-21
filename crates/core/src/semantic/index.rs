@@ -1,7 +1,8 @@
+use super::resolver::ReferenceResolutionScope;
 use crate::dsl::{
     AgentDeclaration, Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, McpServerDeclaration, ModelDeclaration,
-    ObjectField, ProviderDeclaration, SchemaDeclaration, SingletonDeclarationKind, SourceSpan, ToolDeclaration, ToolSource, TypeExpression,
-    TypedField, ValidationIssue, ValidationReport, Workflow,
+    ObjectField, ProviderDeclaration, Reference, ReferenceRoot, SchemaDeclaration, SingletonDeclarationKind, SourceSpan, ToolDeclaration,
+    ToolSource, TypeExpression, TypedField, ValidationIssue, ValidationReport, Workflow,
 };
 use crate::semantic::support::types::WorkflowType;
 use crate::semantic::ProviderDriver;
@@ -13,6 +14,118 @@ pub enum SemanticMcpImportKind {
     Tool,
     Resource,
     Prompt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SemanticDeclarationKind {
+    Provider,
+    Model,
+    McpServer,
+    Schema,
+    Input,
+    Secrets,
+    Output,
+    Agent,
+    Tool,
+    Resource,
+    Prompt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SemanticDeclarationKey<'symbol> {
+    kind: SemanticDeclarationKind,
+    name: Option<&'symbol str>,
+}
+
+impl<'symbol> SemanticDeclarationKey<'symbol> {
+    #[must_use]
+    pub fn provider(provider_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Provider, provider_name)
+    }
+
+    #[must_use]
+    pub fn model(model_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Model, model_name)
+    }
+
+    #[must_use]
+    pub fn mcp_server(mcp_server_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::McpServer, mcp_server_name)
+    }
+
+    #[must_use]
+    pub fn schema(schema_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Schema, schema_name)
+    }
+
+    #[must_use]
+    pub fn input() -> Self {
+        Self::singleton(SemanticDeclarationKind::Input)
+    }
+
+    #[must_use]
+    pub fn secrets() -> Self {
+        Self::singleton(SemanticDeclarationKind::Secrets)
+    }
+
+    #[must_use]
+    pub fn output() -> Self {
+        Self::singleton(SemanticDeclarationKind::Output)
+    }
+
+    #[must_use]
+    pub fn agent(agent_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Agent, agent_name)
+    }
+
+    #[must_use]
+    pub fn tool(tool_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Tool, tool_name)
+    }
+
+    #[must_use]
+    pub fn resource(resource_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Resource, resource_name)
+    }
+
+    #[must_use]
+    pub fn prompt(prompt_name: &'symbol str) -> Self {
+        Self::named(SemanticDeclarationKind::Prompt, prompt_name)
+    }
+
+    #[must_use]
+    pub fn kind(self) -> SemanticDeclarationKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn name(self) -> Option<&'symbol str> {
+        self.name
+    }
+
+    fn named(kind: SemanticDeclarationKind, name: &'symbol str) -> Self {
+        Self { kind, name: Some(name) }
+    }
+
+    fn singleton(kind: SemanticDeclarationKind) -> Self {
+        Self { kind, name: None }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SemanticFieldRoot<'symbol> {
+    Input,
+    Secrets,
+    Schema(&'symbol str),
+    AgentOutput(&'symbol str),
+    ToolInput(&'symbol str),
+    ToolBinding(&'symbol str),
+    ToolOutput(&'symbol str),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SemanticSourceSpanLookup<'semantic> {
+    semantic_index: &'semantic WorkflowSemanticIndex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -293,6 +406,11 @@ impl WorkflowSemanticIndex {
     }
 
     #[must_use]
+    pub fn source_span_lookup(&self) -> SemanticSourceSpanLookup<'_> {
+        SemanticSourceSpanLookup { semantic_index: self }
+    }
+
+    #[must_use]
     pub fn has_provider(&self, provider_name: &str) -> bool {
         self.provider_names.contains(provider_name)
     }
@@ -545,6 +663,27 @@ impl WorkflowSemanticIndex {
     }
 
     #[must_use]
+    pub fn declaration_span(&self, declaration_key: SemanticDeclarationKey<'_>) -> Option<SourceSpan> {
+        self.source_span_lookup().declaration_span(declaration_key)
+    }
+
+    #[must_use]
+    pub fn field_span(&self, field_root: SemanticFieldRoot<'_>, field_path: &[&str]) -> Option<SourceSpan> {
+        self.source_span_lookup().field_span(field_root, field_path)
+    }
+
+    #[must_use]
+    pub fn reference_definition_span(
+        &self,
+        reference: &Reference,
+        resolution_scope: &ReferenceResolutionScope,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        self.source_span_lookup()
+            .reference_definition_span(reference, resolution_scope, selected_access_count)
+    }
+
+    #[must_use]
     pub fn schema_type_expression(&self, schema_name: &str, span: SourceSpan) -> Option<TypeExpression> {
         if let Some(schema_type) = self.schema_types.get(schema_name) {
             return Some(schema_type.clone());
@@ -759,6 +898,277 @@ impl WorkflowSemanticIndex {
         }
 
         let _ = writeln!(summary_text, "{section_name}:");
+    }
+}
+
+impl SemanticSourceSpanLookup<'_> {
+    #[must_use]
+    pub fn declaration_span(self, declaration_key: SemanticDeclarationKey<'_>) -> Option<SourceSpan> {
+        match declaration_key.kind() {
+            SemanticDeclarationKind::Provider => self.semantic_index.provider(declaration_key.name()?).map(|provider| provider.span),
+            SemanticDeclarationKind::Model => self.semantic_index.model(declaration_key.name()?).map(|model| model.span),
+            SemanticDeclarationKind::McpServer => self
+                .semantic_index
+                .mcp_server(declaration_key.name()?)
+                .map(|mcp_server| mcp_server.span),
+            SemanticDeclarationKind::Schema => self.semantic_index.schema(declaration_key.name()?).map(|schema| schema.span),
+            SemanticDeclarationKind::Input => self.semantic_index.input_span(),
+            SemanticDeclarationKind::Secrets => self.semantic_index.secrets_span(),
+            SemanticDeclarationKind::Output => self.semantic_index.output_span(),
+            SemanticDeclarationKind::Agent => self.semantic_index.agent(declaration_key.name()?).map(|agent| agent.span),
+            SemanticDeclarationKind::Tool => self
+                .semantic_index
+                .tool_schema(declaration_key.name()?)
+                .map(|tool_schema| tool_schema.span),
+            SemanticDeclarationKind::Resource => self
+                .semantic_index
+                .resource_import(declaration_key.name()?)
+                .map(|resource_import| resource_import.span),
+            SemanticDeclarationKind::Prompt => self
+                .semantic_index
+                .prompt_import(declaration_key.name()?)
+                .map(|prompt_import| prompt_import.span),
+        }
+    }
+
+    #[must_use]
+    pub fn field_span(self, field_root: SemanticFieldRoot<'_>, field_path: &[&str]) -> Option<SourceSpan> {
+        match field_root {
+            SemanticFieldRoot::Input => {
+                self.singleton_field_span(self.semantic_index.input_fields(), self.semantic_index.input_span(), field_path)
+            }
+            SemanticFieldRoot::Secrets => {
+                self.singleton_field_span(self.semantic_index.secrets_fields(), self.semantic_index.secrets_span(), field_path)
+            }
+            SemanticFieldRoot::Schema(schema_name) => self.schema_field_span(schema_name, field_path),
+            SemanticFieldRoot::AgentOutput(agent_name) => self.agent_output_field_span(agent_name, field_path),
+            SemanticFieldRoot::ToolInput(tool_name) => self.tool_input_field_span(tool_name, field_path),
+            SemanticFieldRoot::ToolBinding(tool_name) => self.tool_binding_field_span(tool_name, field_path),
+            SemanticFieldRoot::ToolOutput(tool_name) => self.tool_output_field_span(tool_name, field_path),
+        }
+    }
+
+    #[must_use]
+    pub fn reference_definition_span(
+        self,
+        reference: &Reference,
+        resolution_scope: &ReferenceResolutionScope,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        match &reference.root {
+            ReferenceRoot::Keyword(reference_keyword) => {
+                self.keyword_reference_definition_span(*reference_keyword, reference, resolution_scope, selected_access_count)
+            }
+            ReferenceRoot::Identifier(_) => {
+                self.local_binding_reference_definition_span(reference, resolution_scope, selected_access_count)
+            }
+        }
+    }
+
+    fn keyword_reference_definition_span(
+        self,
+        reference_keyword: crate::dsl::ReferenceKeyword,
+        reference: &Reference,
+        resolution_scope: &ReferenceResolutionScope,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        match reference_keyword {
+            crate::dsl::ReferenceKeyword::Input => self.value_reference_definition_span(
+                SemanticDeclarationKey::input(),
+                SemanticFieldRoot::Input,
+                reference,
+                selected_access_count,
+            ),
+            crate::dsl::ReferenceKeyword::Secrets => self.value_reference_definition_span(
+                SemanticDeclarationKey::secrets(),
+                SemanticFieldRoot::Secrets,
+                reference,
+                selected_access_count,
+            ),
+            crate::dsl::ReferenceKeyword::Dynamic => {
+                self.dynamic_reference_definition_span(reference, resolution_scope, selected_access_count)
+            }
+            crate::dsl::ReferenceKeyword::Agent => self.agent_reference_definition_span(reference, selected_access_count),
+            crate::dsl::ReferenceKeyword::Tool => self.tool_reference_definition_span(reference, selected_access_count),
+            crate::dsl::ReferenceKeyword::Resource => {
+                self.import_reference_definition_span(SemanticDeclarationKind::Resource, reference, selected_access_count)
+            }
+            crate::dsl::ReferenceKeyword::Prompt => {
+                self.import_reference_definition_span(SemanticDeclarationKind::Prompt, reference, selected_access_count)
+            }
+            crate::dsl::ReferenceKeyword::Model => {
+                self.import_reference_definition_span(SemanticDeclarationKind::Model, reference, selected_access_count)
+            }
+        }
+    }
+
+    fn value_reference_definition_span(
+        self,
+        declaration_key: SemanticDeclarationKey<'_>,
+        field_root: SemanticFieldRoot<'_>,
+        reference: &Reference,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        if selected_access_count == 0 {
+            return self.declaration_span(declaration_key);
+        }
+
+        let field_path = reference.access_fields_through_count(selected_access_count)?;
+
+        self.field_span(field_root, field_path.as_slice())
+    }
+
+    fn agent_reference_definition_span(self, reference: &Reference, selected_access_count: usize) -> Option<SourceSpan> {
+        let agent_name = reference.first_access_field()?;
+
+        if selected_access_count == 0 {
+            return None;
+        }
+
+        if selected_access_count == 1 {
+            return self.declaration_span(SemanticDeclarationKey::agent(agent_name));
+        }
+
+        let field_path = reference.access_fields_through_count(selected_access_count)?;
+
+        self.field_span(SemanticFieldRoot::AgentOutput(agent_name), &field_path[1..])
+    }
+
+    fn tool_reference_definition_span(self, reference: &Reference, selected_access_count: usize) -> Option<SourceSpan> {
+        let tool_name = reference.first_access_field()?;
+
+        if selected_access_count == 0 {
+            return None;
+        }
+
+        if selected_access_count == 1 {
+            return self.declaration_span(SemanticDeclarationKey::tool(tool_name));
+        }
+
+        let field_path = reference.access_fields_through_count(selected_access_count)?;
+
+        self.field_span(SemanticFieldRoot::ToolOutput(tool_name), &field_path[1..])
+    }
+
+    fn import_reference_definition_span(
+        self,
+        declaration_kind: SemanticDeclarationKind,
+        reference: &Reference,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        if selected_access_count != 1 {
+            return None;
+        }
+
+        self.declaration_span(SemanticDeclarationKey {
+            kind: declaration_kind,
+            name: Some(reference.first_access_field()?),
+        })
+    }
+
+    fn dynamic_reference_definition_span(
+        self,
+        reference: &Reference,
+        resolution_scope: &ReferenceResolutionScope,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        if selected_access_count == 0 {
+            return None;
+        }
+
+        let field_path = reference.access_fields_through_count(selected_access_count)?;
+        let field_name = field_path.first().copied()?;
+        let field_span = resolution_scope.dynamic_field_span(field_name)?;
+
+        Some(field_span)
+    }
+
+    fn local_binding_reference_definition_span(
+        self,
+        reference: &Reference,
+        resolution_scope: &ReferenceResolutionScope,
+        selected_access_count: usize,
+    ) -> Option<SourceSpan> {
+        if selected_access_count == 0 {
+            return resolution_scope.local_binding_span(reference.root.as_identifier()?);
+        }
+
+        let binding_name = reference.root.as_identifier()?;
+        let binding_span = resolution_scope.local_binding_span(binding_name)?;
+
+        Some(binding_span)
+    }
+
+    fn singleton_field_span(
+        self,
+        semantic_fields: Option<&HashMap<String, SemanticTypedField>>,
+        declaration_span: Option<SourceSpan>,
+        field_path: &[&str],
+    ) -> Option<SourceSpan> {
+        if field_path.is_empty() {
+            return declaration_span;
+        }
+
+        self.semantic_field_span(semantic_fields?, field_path)
+    }
+
+    fn schema_field_span(self, schema_name: &str, field_path: &[&str]) -> Option<SourceSpan> {
+        if field_path.is_empty() {
+            return self.declaration_span(SemanticDeclarationKey::schema(schema_name));
+        }
+
+        self.semantic_field_span(&self.semantic_index.schema(schema_name)?.fields, field_path)
+    }
+
+    fn agent_output_field_span(self, agent_name: &str, field_path: &[&str]) -> Option<SourceSpan> {
+        if field_path.is_empty() {
+            return self.declaration_span(SemanticDeclarationKey::agent(agent_name));
+        }
+
+        let output_type = self.semantic_index.agent_output_type(agent_name)?.as_ref()?;
+
+        self.type_expression_field_span(output_type, field_path)
+    }
+
+    fn tool_input_field_span(self, tool_name: &str, field_path: &[&str]) -> Option<SourceSpan> {
+        if field_path.is_empty() {
+            return self.declaration_span(SemanticDeclarationKey::tool(tool_name));
+        }
+
+        self.semantic_field_span(&self.semantic_index.tool_schema(tool_name)?.input_fields, field_path)
+    }
+
+    fn tool_binding_field_span(self, tool_name: &str, field_path: &[&str]) -> Option<SourceSpan> {
+        if field_path.is_empty() {
+            return self.declaration_span(SemanticDeclarationKey::tool(tool_name));
+        }
+
+        self.semantic_field_span(&self.semantic_index.tool_schema(tool_name)?.binding_fields, field_path)
+    }
+
+    fn tool_output_field_span(self, tool_name: &str, field_path: &[&str]) -> Option<SourceSpan> {
+        if field_path.is_empty() {
+            return self.declaration_span(SemanticDeclarationKey::tool(tool_name));
+        }
+
+        self.semantic_field_span(&self.semantic_index.tool_schema(tool_name)?.output_fields, field_path)
+    }
+
+    fn semantic_field_span(self, semantic_fields: &HashMap<String, SemanticTypedField>, field_path: &[&str]) -> Option<SourceSpan> {
+        let (field_name, remaining_field_path) = field_path.split_first()?;
+        let semantic_field = semantic_fields.get(*field_name)?;
+
+        if remaining_field_path.is_empty() {
+            return Some(semantic_field.span);
+        }
+
+        self.type_expression_field_span(&semantic_field.field_type, remaining_field_path)
+    }
+
+    fn type_expression_field_span(self, type_expression: &TypeExpression, field_path: &[&str]) -> Option<SourceSpan> {
+        type_expression.field_span_at_path(field_path, &mut |schema_name, schema_field_path| {
+            self.schema_field_span(schema_name, schema_field_path)
+        })
     }
 }
 

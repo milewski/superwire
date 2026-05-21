@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
-use superwire_core::dsl::{validate_workflow, TypeExpression};
+use superwire_core::dsl::{validate_workflow, Reference, ReferenceAccess, ReferenceKeyword, ReferenceRoot, TypeExpression};
 use superwire_core::parse_inline_workflow;
 use superwire_core::semantic::support::types::WorkflowType;
-use superwire_core::semantic::{ProviderDriver, SemanticMcpImportKind, WorkflowSemanticIndex};
+use superwire_core::semantic::{
+    ProviderDriver, ReferenceResolutionScope, SemanticDeclarationKey, SemanticFieldRoot, SemanticMcpImportKind, WorkflowSemanticIndex,
+};
 
 #[test]
 fn workflow_semantic_index_exposes_declaration_lookup() {
@@ -301,4 +303,267 @@ fn validation_uses_promoted_workflow_semantic_index() {
     let validation_report = validate_workflow(&workflow);
 
     assert!(validation_report.is_valid());
+}
+
+#[test]
+fn workflow_semantic_index_exposes_core_source_span_lookup_for_declarations() {
+    let workflow = parse_inline_workflow! {
+        provider openai from openai {}
+
+        model fast from openai {
+            id: "gpt-4.1-mini"
+        }
+
+        mcp local {
+            endpoint: "http://localhost:3000/mcp"
+        }
+
+        schema report {
+            title: string
+        }
+
+        input {
+            topic: string
+        }
+
+        secrets {
+            api_key: string
+        }
+
+        resource project_readme from mcp.local.resource.project_readme
+        prompt system_prompt from mcp.local.prompt.system_prompt
+
+        tool web_search {
+            input {
+                query: string
+            }
+
+            output {
+                summary: string
+            }
+        }
+
+        agent researcher {
+            model: model.fast
+            uses: [tool.web_search]
+            instruction: input.topic
+            output {
+                summary: string
+            }
+        }
+
+        output {
+            summary: agent.researcher.summary
+        }
+    };
+
+    let semantic_index = WorkflowSemanticIndex::from_workflow(&workflow);
+
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::provider("openai")),
+        workflow
+            .find_provider("openai")
+            .map(|provider_declaration| provider_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::model("fast")),
+        workflow.find_model("fast").map(|model_declaration| model_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::mcp_server("local")),
+        workflow
+            .find_mcp_server("local")
+            .map(|mcp_server_declaration| mcp_server_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::schema("report")),
+        workflow.find_schema("report").map(|schema_declaration| schema_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::input()),
+        workflow.find_input().map(|input_declaration| input_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::secrets()),
+        workflow.find_secrets().map(|secrets_declaration| secrets_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::tool("web_search")),
+        workflow.find_tool("web_search").map(|tool_declaration| tool_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::resource("project_readme")),
+        workflow
+            .find_resource_import("project_readme")
+            .map(|resource_import_declaration| resource_import_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::prompt("system_prompt")),
+        workflow
+            .find_prompt_import("system_prompt")
+            .map(|prompt_import_declaration| prompt_import_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::agent("researcher")),
+        workflow.find_agent("researcher").map(|agent_declaration| agent_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.declaration_span(SemanticDeclarationKey::output()),
+        workflow.find_output().map(|output_declaration| output_declaration.span)
+    );
+}
+
+#[test]
+fn workflow_semantic_index_exposes_core_source_span_lookup_for_fields() {
+    let workflow = source_span_lookup_workflow();
+    let semantic_index = WorkflowSemanticIndex::from_workflow(&workflow);
+    let schema_declaration = workflow.find_schema("profile").expect("schema should exist");
+    let schema_details_field = schema_declaration.fields.first().expect("schema details field should exist");
+    let schema_title_field_span = match &schema_details_field.field_type {
+        TypeExpression::Object(nested_fields) => nested_fields.first().expect("schema title field should exist").span,
+        other_type_expression => panic!("expected nested object field, got {other_type_expression:?}"),
+    };
+    let input_profile_field_span = workflow.find_input().expect("input declaration should exist").fields[0].span;
+    let secret_api_key_field_span = workflow.find_secrets().expect("secrets declaration should exist").fields[0].span;
+    let tool_declaration = workflow.find_tool("web_search").expect("tool declaration should exist");
+
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::Input, &["profile"]),
+        Some(input_profile_field_span)
+    );
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::Input, &["profile", "details", "title"]),
+        Some(schema_title_field_span)
+    );
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::Secrets, &["api_key"]),
+        Some(secret_api_key_field_span)
+    );
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::Schema("profile"), &["details", "title"]),
+        Some(schema_title_field_span)
+    );
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::ToolInput("web_search"), &["query"]),
+        Some(tool_declaration.input_fields[0].span)
+    );
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::ToolOutput("web_search"), &["result", "summary"]),
+        Some(match &tool_declaration.output_fields[0].field_type {
+            TypeExpression::Object(nested_fields) => nested_fields[0].span,
+            other_type_expression => panic!("expected nested object field, got {other_type_expression:?}"),
+        })
+    );
+    assert_eq!(
+        semantic_index.field_span(SemanticFieldRoot::AgentOutput("researcher"), &["report", "details", "title"]),
+        Some(schema_title_field_span)
+    );
+}
+
+#[test]
+fn workflow_semantic_index_exposes_core_source_span_lookup_for_references() {
+    let workflow = source_span_lookup_workflow();
+    let semantic_index = WorkflowSemanticIndex::from_workflow(&workflow);
+    let schema_declaration = workflow.find_schema("profile").expect("schema should exist");
+    let schema_details_field = schema_declaration.fields.first().expect("schema details field should exist");
+    let schema_title_field_span = match &schema_details_field.field_type {
+        TypeExpression::Object(nested_fields) => nested_fields.first().expect("schema title field should exist").span,
+        other_type_expression => panic!("expected nested object field, got {other_type_expression:?}"),
+    };
+    let tool_declaration = workflow.find_tool("web_search").expect("tool declaration should exist");
+    let agent_declaration = workflow.find_agent("researcher").expect("agent declaration should exist");
+    let input_reference = Reference {
+        root: ReferenceRoot::Keyword(ReferenceKeyword::Input),
+        accesses: vec![
+            ReferenceAccess {
+                field: "profile".to_string(),
+                optional: false,
+            },
+            ReferenceAccess {
+                field: "details".to_string(),
+                optional: false,
+            },
+            ReferenceAccess {
+                field: "title".to_string(),
+                optional: false,
+            },
+        ],
+        span: agent_declaration.span,
+    };
+    let tool_reference = Reference {
+        root: ReferenceRoot::Keyword(ReferenceKeyword::Tool),
+        accesses: vec![
+            ReferenceAccess {
+                field: "web_search".to_string(),
+                optional: false,
+            },
+            ReferenceAccess {
+                field: "result".to_string(),
+                optional: false,
+            },
+            ReferenceAccess {
+                field: "summary".to_string(),
+                optional: false,
+            },
+        ],
+        span: agent_declaration.span,
+    };
+
+    assert_eq!(
+        semantic_index.reference_definition_span(&input_reference, &ReferenceResolutionScope::new(), 3),
+        Some(schema_title_field_span)
+    );
+    assert_eq!(
+        semantic_index.reference_definition_span(&tool_reference, &ReferenceResolutionScope::new(), 1),
+        Some(tool_declaration.span)
+    );
+    assert_eq!(
+        semantic_index.reference_definition_span(&tool_reference, &ReferenceResolutionScope::new(), 3),
+        Some(match &tool_declaration.output_fields[0].field_type {
+            TypeExpression::Object(nested_fields) => nested_fields[0].span,
+            other_type_expression => panic!("expected nested object field, got {other_type_expression:?}"),
+        })
+    );
+}
+
+fn source_span_lookup_workflow() -> superwire_core::dsl::Workflow {
+    parse_inline_workflow! {
+        schema profile {
+            details: {
+                title: string
+            }
+        }
+
+        input {
+            profile: schema.profile
+        }
+
+        secrets {
+            api_key: string
+        }
+
+        tool web_search {
+            input {
+                query: string
+            }
+
+            bindings {
+                api_key: secrets.api_key
+            }
+
+            output {
+                result: {
+                    summary: string
+                }
+            }
+        }
+
+        agent researcher {
+            uses: [tool.web_search]
+            instruction: input.profile.details.title
+            output {
+                report: schema.profile
+            }
+        }
+    }
 }

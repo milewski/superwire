@@ -83,6 +83,21 @@ impl Reference {
     }
 
     #[must_use]
+    pub fn access_fields_through_count(&self, access_count: usize) -> Option<Vec<&str>> {
+        if access_count > self.accesses.len() {
+            return None;
+        }
+
+        Some(
+            self.accesses
+                .iter()
+                .take(access_count)
+                .map(|reference_access| reference_access.field.as_str())
+                .collect(),
+        )
+    }
+
+    #[must_use]
     pub fn last_access(&self) -> Option<&ReferenceAccess> {
         self.accesses.last()
     }
