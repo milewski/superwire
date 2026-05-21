@@ -2,17 +2,16 @@ use super::{read_project_mcp_lock, LanguageServer};
 use crate::document::DocumentState;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
+use std::sync::Arc;
 use superwire_core::mcp::{McpLock, McpLockResolutionContext, ProjectMcpLock};
+use superwire_core::testing::FakeMcpClientFactory;
 use superwire_core::workflow_source;
 
 const PLAYGROUND_DOCUMENT_URI: &str = "file:///playground/document.wire";
 
 #[test]
 fn reads_mcp_lock_from_project_lock_without_refreshing() {
-    let server = TestMcpHttpServer::spawn();
+    let mcp_client_factory = fake_mcp_client_factory();
     let workflow_source = workflow_source! {
         secrets {
             mcp_endpoint: string
@@ -41,16 +40,17 @@ fn reads_mcp_lock_from_project_lock_without_refreshing() {
     let lock_path = temp_directory_path.join("superwire.lock");
     let lock_context = McpLockResolutionContext {
         input: BTreeMap::new(),
-        secrets: [("mcp_endpoint".to_string(), Value::String(server.endpoint()))]
+        secrets: [("mcp_endpoint".to_string(), Value::String("mcp://local".to_string()))]
             .into_iter()
             .collect(),
         dynamic: BTreeMap::new(),
         agent_outputs: BTreeMap::new(),
         agent_contexts: BTreeMap::new(),
     };
-    let discovered_lock = McpLock::discover_from_workflow_with_lock_context(
+    let discovered_lock = McpLock::discover_from_workflow_with_lock_context_and_client_factory(
         &superwire_core::dsl::parse_workflow(workflow_source).expect("workflow should parse"),
         Some(&lock_context),
+        &mcp_client_factory,
     )
     .expect("MCP metadata should discover using lock context");
     let mut project_lock = ProjectMcpLock::empty();
@@ -72,21 +72,20 @@ fn reads_mcp_lock_from_project_lock_without_refreshing() {
 
 #[test]
 fn discovers_mcp_lock_from_document_when_project_lock_is_missing() {
-    let server = TestMcpHttpServer::spawn();
+    let mcp_client_factory = Arc::new(fake_mcp_client_factory());
     let workflow_source = workflow_source! {
         mcp local {
-            endpoint: "http://placeholder.test"
+            endpoint: "mcp://local"
         }
 
         output {
             value: null
         }
     };
-    let workflow_source = workflow_source.replace("http://placeholder.test", &server.endpoint());
 
-    let mut language_server = LanguageServer::default();
+    let mut language_server = LanguageServer::with_mcp_client_factory(mcp_client_factory);
     let discovered_lock = language_server
-        .resolve_mcp_lock("file:///playground/document.wire", &workflow_source, None)
+        .resolve_mcp_lock("file:///playground/document.wire", workflow_source, None)
         .expect("MCP metadata should discover from document source");
 
     assert!(discovered_lock.servers.contains_key("local"));
@@ -95,42 +94,41 @@ fn discovers_mcp_lock_from_document_when_project_lock_is_missing() {
 
 #[test]
 fn caches_document_mcp_discovery_until_server_settings_change() {
-    let server = TestMcpHttpServer::spawn();
+    let mcp_client_factory = Arc::new(fake_mcp_client_factory().with_server("renamed_local", standard_mcp_server));
     let workflow_source = workflow_source! {
         mcp local {
-            endpoint: "http://placeholder.test"
+            endpoint: "mcp://local"
         }
 
         output {
             value: null
         }
     };
-    let workflow_source = workflow_source.replace("http://placeholder.test", &server.endpoint());
     let changed_workflow_source = workflow_source.replace("local", "renamed_local");
-    let mut language_server = LanguageServer::default();
+    let mut language_server = LanguageServer::with_mcp_client_factory(mcp_client_factory.clone());
 
     let first_lock = language_server
-        .resolve_mcp_lock("file:///playground/document.wire", &workflow_source, None)
+        .resolve_mcp_lock("file:///playground/document.wire", workflow_source, None)
         .expect("first discovery should succeed");
-    let first_request_count = server.request_count();
+    let first_request_count = mcp_client_factory.requests("local").len();
     let second_lock = language_server
-        .resolve_mcp_lock("file:///playground/document.wire", &workflow_source, Some(first_lock))
+        .resolve_mcp_lock("file:///playground/document.wire", workflow_source, Some(first_lock))
         .expect("second discovery should reuse cache");
 
     assert!(second_lock.servers.contains_key("local"));
-    assert_eq!(server.request_count(), first_request_count);
+    assert_eq!(mcp_client_factory.requests("local").len(), first_request_count);
 
     let changed_lock = language_server
         .resolve_mcp_lock("file:///playground/document.wire", &changed_workflow_source, Some(second_lock))
         .expect("changed settings should trigger discovery");
 
     assert!(changed_lock.servers.contains_key("renamed_local"));
-    assert!(server.request_count() > first_request_count);
+    assert!(!mcp_client_factory.requests("renamed_local").is_empty());
 }
 
 #[test]
 fn discovers_mcp_lock_from_playground_runtime_values() {
-    let server = TestMcpHttpServer::spawn();
+    let mcp_client_factory = Arc::new(fake_mcp_client_factory());
     let workflow_source = workflow_source! {
         provider openai from openai {
             endpoint: "https://api.openai.com/v1"
@@ -169,13 +167,13 @@ fn discovers_mcp_lock_from_playground_runtime_values() {
             value: agent.participant_answer_analyzer.value
         }
     };
-    let mut language_server = LanguageServer::default();
+    let mut language_server = LanguageServer::with_mcp_client_factory(mcp_client_factory);
 
     language_server.runtime_values_by_document_uri.insert(
         PLAYGROUND_DOCUMENT_URI.to_string(),
         super::RuntimeValues {
             input: Value::Null,
-            secrets: serde_json::json!({ "mcp_endpoint": server.endpoint() }),
+            secrets: serde_json::json!({ "mcp_endpoint": "mcp://local" }),
         },
     );
 
@@ -200,7 +198,7 @@ fn discovers_mcp_lock_from_playground_runtime_values() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn handles_playground_runtime_values_notification_and_completes_mcp_tools() {
-    let server = TestMcpHttpServer::spawn();
+    let mcp_client_factory = Arc::new(fake_mcp_client_factory());
     let workflow_template = workflow_source! {
         secrets {
             mcp_endpoint: string
@@ -236,7 +234,7 @@ fn handles_playground_runtime_values_notification_and_completes_mcp_tools() {
         "line": cursor_line,
         "character": cursor_character
     });
-    let mut language_server = LanguageServer::default();
+    let mut language_server = LanguageServer::with_mcp_client_factory(mcp_client_factory.clone());
 
     language_server
         .handle_json_rpc_message(
@@ -269,7 +267,7 @@ fn handles_playground_runtime_values_notification_and_completes_mcp_tools() {
                         "task_id": 11
                     },
                     "secrets": {
-                        "mcp_endpoint": server.endpoint()
+                        "mcp_endpoint": "mcp://local"
                     }
                 }
             })
@@ -277,7 +275,10 @@ fn handles_playground_runtime_values_notification_and_completes_mcp_tools() {
             .as_bytes(),
         )
         .expect("runtime values notification should be accepted");
-    assert!(server.request_count() > 0, "runtime values should trigger MCP discovery");
+    assert!(
+        !mcp_client_factory.requests("local").is_empty(),
+        "runtime values should trigger MCP discovery"
+    );
 
     let completion_messages = language_server
         .handle_json_rpc_message(
@@ -313,121 +314,46 @@ fn handles_playground_runtime_values_notification_and_completes_mcp_tools() {
     );
 }
 
-struct TestMcpHttpServer {
-    endpoint: String,
-    request_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+fn fake_mcp_client_factory() -> FakeMcpClientFactory {
+    FakeMcpClientFactory::new().with_server("local", standard_mcp_server)
 }
 
-impl TestMcpHttpServer {
-    fn spawn() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
-        let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
-        let request_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let server_request_count = request_count.clone();
+fn standard_mcp_server(server_builder: &mut superwire_core::testing::FakeMcpServerBuilder) {
+    server_builder.tool("update-user-name", |tool_builder| {
+        tool_builder
+            .description("Update user name")
+            .input_schema(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "user_name": { "type": "string" }
+                },
+                "required": ["user_name"]
+            }))
+            .output_schema(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "success": { "type": "boolean" }
+                },
+                "required": ["success"]
+            }));
+    });
 
-        thread::spawn(move || {
-            for incoming_stream in listener.incoming().take(12) {
-                server_request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let stream = incoming_stream.expect("test MCP stream should open");
-                handle_mcp_request(stream);
-            }
-        });
-
-        Self { endpoint, request_count }
-    }
-
-    fn endpoint(&self) -> String {
-        self.endpoint.clone()
-    }
-
-    fn request_count(&self) -> usize {
-        self.request_count.load(std::sync::atomic::Ordering::SeqCst)
-    }
-}
-
-fn handle_mcp_request(mut stream: TcpStream) {
-    let mut reader = BufReader::new(stream.try_clone().expect("stream clone should succeed"));
-    let mut content_length = 0_usize;
-    let mut header_line = String::new();
-
-    loop {
-        header_line.clear();
-        reader.read_line(&mut header_line).expect("header line should read");
-
-        if header_line == "\r\n" || header_line.is_empty() {
-            break;
-        }
-
-        if let Some(value) = header_line.to_ascii_lowercase().strip_prefix("content-length:") {
-            content_length = value.trim().parse().expect("content length should parse");
-        }
-    }
-
-    let mut request_body = vec![0_u8; content_length];
-    reader.read_exact(&mut request_body).expect("request body should read");
-    let request: Value = serde_json::from_slice(&request_body).expect("request body should be JSON");
-    let response = if let Some(response_body) = response_for_method(request.get("method").and_then(Value::as_str)) {
-        let response_body = response_body.to_string();
-
-        format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
-            response_body.len(),
-            response_body
-        )
-    } else {
-        "HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\n\r\n".to_string()
-    };
-
-    stream.write_all(response.as_bytes()).expect("response should write");
-}
-
-fn response_for_method(method: Option<&str>) -> Option<Value> {
-    match method {
-        Some("notifications/initialized") => None,
-        Some("tools/list") => Some(serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "result": {
-                "tools": [
-                    {
-                        "name": "update-user-name",
-                        "description": "Update user name",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "user_name": { "type": "string" }
-                            },
-                            "required": ["user_name"]
-                        },
-                        "outputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "success": { "type": "boolean" }
-                            },
-                            "required": ["success"]
-                        }
-                    },
-                    {
-                        "name": "list_all_participants_who_has_answered_given_task",
-                        "description": "List all participants who answered a task",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        },
-                        "outputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "participants": {
-                                    "type": "array",
-                                    "items": { "type": "object" }
-                                }
-                            },
-                            "required": ["participants"]
-                        }
+    server_builder.tool("list_all_participants_who_has_answered_given_task", |tool_builder| {
+        tool_builder
+            .description("List all participants who answered a task")
+            .input_schema(serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }))
+            .output_schema(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "participants": {
+                        "type": "array",
+                        "items": { "type": "object" }
                     }
-                ]
-            }
-        })),
-        _ => Some(serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": {} })),
-    }
+                },
+                "required": ["participants"]
+            }));
+    });
 }

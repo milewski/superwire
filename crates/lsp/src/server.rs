@@ -19,8 +19,11 @@ use lsp_types::{
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::Arc;
 use superwire_core::dsl::{parse_workflow, Workflow};
-use superwire_core::mcp::{McpClient, McpLock, McpLockResolutionContext, McpServerConfig, McpServerLock, ProjectMcpLock};
+use superwire_core::mcp::{
+    HttpMcpClientFactory, McpClientFactory, McpLock, McpLockResolutionContext, McpServerConfig, McpServerLock, ProjectMcpLock,
+};
 use thiserror::Error;
 
 use crate::document::{
@@ -59,9 +62,10 @@ pub struct LanguageServer {
     runtime_values_by_document_uri: HashMap<String, RuntimeValues>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct McpDiscoveryCache {
     server_locks_by_config_key: HashMap<String, McpServerLock>,
+    client_factory: Arc<dyn McpClientFactory>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -107,6 +111,15 @@ impl RuntimeValues {
 }
 
 impl LanguageServer {
+    #[cfg(test)]
+    fn with_mcp_client_factory(client_factory: Arc<dyn McpClientFactory>) -> Self {
+        Self {
+            documents: HashMap::new(),
+            mcp_discovery_cache: McpDiscoveryCache::new(client_factory),
+            runtime_values_by_document_uri: HashMap::new(),
+        }
+    }
+
     pub fn handle_json_rpc_message(&mut self, raw_message: &[u8]) -> Result<ServerMessages, ServerError> {
         let message: Message = serde_json::from_slice(raw_message)?;
         let server_messages = self.handle_message(message)?;
@@ -605,6 +618,13 @@ impl LanguageServer {
 }
 
 impl McpDiscoveryCache {
+    fn new(client_factory: Arc<dyn McpClientFactory>) -> Self {
+        Self {
+            server_locks_by_config_key: HashMap::new(),
+            client_factory,
+        }
+    }
+
     fn discover_from_workflow(&mut self, workflow: &Workflow) -> Result<McpLock, superwire_core::mcp::McpError> {
         let mut mcp_lock = McpLock::empty();
 
@@ -613,7 +633,7 @@ impl McpDiscoveryCache {
             let server_lock = if let Some(server_lock) = self.server_locks_by_config_key.get(&config_key) {
                 server_lock.clone()
             } else {
-                let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+                let server_lock = self.client_factory.client_for_config(server_config.clone())?.list_tools()?;
                 self.server_locks_by_config_key.insert(config_key, server_lock.clone());
 
                 server_lock
@@ -643,7 +663,7 @@ impl McpDiscoveryCache {
             let server_lock = if let Some(server_lock) = self.server_locks_by_config_key.get(&config_key) {
                 server_lock.clone()
             } else {
-                let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+                let server_lock = self.client_factory.client_for_config(server_config.clone())?.list_tools()?;
                 self.server_locks_by_config_key.insert(config_key, server_lock.clone());
 
                 server_lock
@@ -664,6 +684,12 @@ impl McpDiscoveryCache {
             .join("\n");
 
         format!("{}\n{}\n{}", server_config.name, server_config.endpoint, rendered_headers)
+    }
+}
+
+impl Default for McpDiscoveryCache {
+    fn default() -> Self {
+        Self::new(Arc::new(HttpMcpClientFactory))
     }
 }
 

@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -27,6 +28,23 @@ pub struct McpClient {
     initialized: AtomicBool,
     resource_uri_cache: Mutex<BTreeMap<String, String>>,
 }
+
+pub trait McpClientBackend: fmt::Debug + Send + Sync {
+    fn list_tools(&self) -> Result<McpServerLock, McpError>;
+
+    fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError>;
+
+    fn read_resource(&self, resource_name: &str, arguments: Value) -> Result<Value, McpError>;
+
+    fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError>;
+}
+
+pub trait McpClientFactory: fmt::Debug + Send + Sync {
+    fn client_for_config(&self, server_config: McpServerConfig) -> Result<Arc<dyn McpClientBackend>, McpError>;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HttpMcpClientFactory;
 
 impl McpClient {
     #[must_use]
@@ -404,6 +422,33 @@ impl McpClient {
     }
 }
 
+impl McpClientBackend for McpClient {
+    fn list_tools(&self) -> Result<McpServerLock, McpError> {
+        McpClient::list_tools(self)
+    }
+
+    fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError> {
+        McpClient::call_tool(self, tool_name, arguments)
+    }
+
+    fn read_resource(&self, resource_name: &str, arguments: Value) -> Result<Value, McpError> {
+        McpClient::read_resource(self, resource_name, arguments)
+    }
+
+    fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError> {
+        McpClient::get_prompt(self, prompt_name, arguments)
+    }
+}
+
+impl McpClientFactory for HttpMcpClientFactory {
+    fn client_for_config(&self, server_config: McpServerConfig) -> Result<Arc<dyn McpClientBackend>, McpError> {
+        let client = McpClient::new(server_config);
+        client.ensure_initialized()?;
+
+        Ok(Arc::new(client))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,7 +650,7 @@ mod tests {
 
 #[derive(Debug, Clone)]
 pub struct McpClientPool {
-    clients: Arc<Mutex<BTreeMap<String, Arc<McpClient>>>>,
+    clients: Arc<Mutex<BTreeMap<String, Arc<dyn McpClientBackend>>>>,
 }
 
 impl McpClientPool {
@@ -617,13 +662,19 @@ impl McpClientPool {
     }
 
     pub fn from_server_configs(configs: impl IntoIterator<Item = McpServerConfig>) -> Result<Self, McpError> {
+        Self::from_server_configs_with_factory(configs, &HttpMcpClientFactory)
+    }
+
+    pub fn from_server_configs_with_factory(
+        configs: impl IntoIterator<Item = McpServerConfig>,
+        client_factory: &dyn McpClientFactory,
+    ) -> Result<Self, McpError> {
         let mut clients = BTreeMap::new();
 
         for server_config in configs {
             log::debug!("initializing MCP client pool for server: {}", server_config.name);
-            let client = McpClient::new(server_config.clone());
-            client.ensure_initialized()?;
-            clients.insert(server_config.name, Arc::new(client));
+            let client = client_factory.client_for_config(server_config.clone())?;
+            clients.insert(server_config.name, client);
         }
 
         Ok(Self {
@@ -632,23 +683,20 @@ impl McpClientPool {
     }
 
     pub fn from_workflow(workflow: &crate::dsl::Workflow) -> Result<Self, McpError> {
-        let mut clients = BTreeMap::new();
-
-        for server_config in McpServerConfig::from_workflow(workflow)? {
-            log::debug!("initializing MCP client pool for server: {}", server_config.name);
-            let client = McpClient::new(server_config.clone());
-            client.ensure_initialized()?;
-            clients.insert(server_config.name, Arc::new(client));
-        }
-
-        Ok(Self {
-            clients: Arc::new(Mutex::new(clients)),
-        })
+        Self::from_server_configs(McpServerConfig::from_workflow(workflow)?)
     }
 
     pub fn from_workflow_with_context(
         workflow: &crate::dsl::Workflow,
         evaluation_context: &crate::semantic::support::expression::EvaluationContext,
+    ) -> Result<Self, McpError> {
+        Self::from_workflow_with_context_and_factory(workflow, evaluation_context, &HttpMcpClientFactory)
+    }
+
+    pub fn from_workflow_with_context_and_factory(
+        workflow: &crate::dsl::Workflow,
+        evaluation_context: &crate::semantic::support::expression::EvaluationContext,
+        client_factory: &dyn McpClientFactory,
     ) -> Result<Self, McpError> {
         let mut clients = BTreeMap::new();
 
@@ -658,9 +706,8 @@ impl McpClientPool {
             };
             let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
             log::debug!("initializing MCP client pool for runtime server: {}", server_config.name);
-            let client = McpClient::new(server_config.clone());
-            client.ensure_initialized()?;
-            clients.insert(server_config.name, Arc::new(client));
+            let client = client_factory.client_for_config(server_config.clone())?;
+            clients.insert(server_config.name, client);
         }
 
         Ok(Self {
@@ -668,7 +715,13 @@ impl McpClientPool {
         })
     }
 
-    pub fn get(&self, server_config: &McpServerConfig) -> Result<Arc<McpClient>, McpError> {
+    pub fn from_clients(clients: impl IntoIterator<Item = (String, Arc<dyn McpClientBackend>)>) -> Self {
+        Self {
+            clients: Arc::new(Mutex::new(clients.into_iter().collect())),
+        }
+    }
+
+    pub fn get(&self, server_config: &McpServerConfig) -> Result<Arc<dyn McpClientBackend>, McpError> {
         let clients = self.clients.lock().expect("mcp client pool lock poisoned");
         let client = clients.get(&server_config.name).ok_or_else(|| McpError::Http {
             server_name: server_config.name.clone(),

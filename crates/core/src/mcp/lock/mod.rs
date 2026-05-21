@@ -1,6 +1,6 @@
 use crate::dsl::{Declaration, ToolSource, Workflow};
 use crate::mcp::schema::to_json_value;
-use crate::mcp::{McpClient, McpError, McpServerConfig};
+use crate::mcp::{HttpMcpClientFactory, McpClientFactory, McpError, McpServerConfig};
 use crate::semantic::support::expression::EvaluationContext;
 use rust_mcp_schema::{ToolInputSchema, ToolOutputSchema};
 use serde::{Deserialize, Serialize};
@@ -111,11 +111,18 @@ impl McpLock {
     }
 
     pub fn discover_from_workflow(workflow: &Workflow) -> Result<Self, McpError> {
+        Self::discover_from_workflow_with_client_factory(workflow, &HttpMcpClientFactory)
+    }
+
+    pub fn discover_from_workflow_with_client_factory(
+        workflow: &Workflow,
+        client_factory: &dyn McpClientFactory,
+    ) -> Result<Self, McpError> {
         let mut lock = Self::empty();
 
         for server_config in McpServerConfig::from_workflow(workflow)? {
             log::debug!("discovering MCP tools from literal server config: {}", server_config.name);
-            let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+            let server_lock = client_factory.client_for_config(server_config.clone())?.list_tools()?;
             lock.servers.insert(server_config.name, server_lock);
         }
 
@@ -126,16 +133,32 @@ impl McpLock {
         workflow: &Workflow,
         lock_context: Option<&McpLockResolutionContext>,
     ) -> Result<Self, McpError> {
+        Self::discover_from_workflow_with_lock_context_and_client_factory(workflow, lock_context, &HttpMcpClientFactory)
+    }
+
+    pub fn discover_from_workflow_with_lock_context_and_client_factory(
+        workflow: &Workflow,
+        lock_context: Option<&McpLockResolutionContext>,
+        client_factory: &dyn McpClientFactory,
+    ) -> Result<Self, McpError> {
         let Some(lock_context) = lock_context else {
-            return Self::discover_from_workflow(workflow);
+            return Self::discover_from_workflow_with_client_factory(workflow, client_factory);
         };
 
         let evaluation_context = lock_context.to_evaluation_context();
 
-        Self::discover_from_workflow_with_context(workflow, &evaluation_context)
+        Self::discover_from_workflow_with_context_and_client_factory(workflow, &evaluation_context, client_factory)
     }
 
     pub fn discover_from_workflow_with_context(workflow: &Workflow, evaluation_context: &EvaluationContext) -> Result<Self, McpError> {
+        Self::discover_from_workflow_with_context_and_client_factory(workflow, evaluation_context, &HttpMcpClientFactory)
+    }
+
+    pub fn discover_from_workflow_with_context_and_client_factory(
+        workflow: &Workflow,
+        evaluation_context: &EvaluationContext,
+        client_factory: &dyn McpClientFactory,
+    ) -> Result<Self, McpError> {
         let mut lock = Self::empty();
 
         for declaration in workflow.declarations() {
@@ -144,7 +167,7 @@ impl McpLock {
             };
             let server_config = McpServerConfig::resolve_from_declaration(mcp_server_declaration, evaluation_context)?;
             log::debug!("discovering MCP tools from runtime server config: {}", server_config.name);
-            let server_lock = McpClient::new(server_config.clone()).list_tools()?;
+            let server_lock = client_factory.client_for_config(server_config.clone())?.list_tools()?;
 
             lock.servers.insert(server_config.name, server_lock);
         }

@@ -4,7 +4,7 @@ mod error;
 mod lock;
 mod schema;
 
-pub use client::{McpClient, McpClientPool};
+pub use client::{HttpMcpClientFactory, McpClient, McpClientBackend, McpClientFactory, McpClientPool};
 pub use config::McpServerConfig;
 pub use error::McpError;
 pub use lock::{

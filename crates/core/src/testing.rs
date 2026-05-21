@@ -1,8 +1,11 @@
 use crate::diagnostic::DiagnosticCode;
 use crate::dsl::{format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Workflow};
+use crate::mcp::{McpClientBackend, McpClientFactory, McpError, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock};
 use serde_json::Value;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub const COMPACT_CURSOR_MARKER: &str = "<cursor>";
 pub const SPACED_CURSOR_MARKER: &str = "< cursor >";
@@ -112,6 +115,84 @@ pub struct SnapshotAssertion {
     pub name: String,
     pub expected: String,
     pub actual: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FakeMcpClientFactory {
+    servers_by_name: Arc<Mutex<BTreeMap<String, FakeMcpServer>>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FakeMcpServerBuilder {
+    tools: BTreeMap<String, FakeMcpTool>,
+    resources: BTreeMap<String, FakeMcpResource>,
+    prompts: BTreeMap<String, FakeMcpPrompt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FakeMcpToolBuilder {
+    description: Option<String>,
+    input_schema: Value,
+    output_schema: Option<Value>,
+    responses: VecDeque<Value>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FakeMcpResourceBuilder {
+    uri: Option<String>,
+    mime_type: Option<String>,
+    text: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FakeMcpPromptBuilder {
+    text: Option<String>,
+    arguments: Vec<McpPromptArgumentLock>,
+    responses: VecDeque<Value>,
+}
+
+#[derive(Debug, Clone)]
+struct FakeMcpServer {
+    name: String,
+    tools: BTreeMap<String, FakeMcpTool>,
+    resources: BTreeMap<String, FakeMcpResource>,
+    prompts: BTreeMap<String, FakeMcpPrompt>,
+    requests: Arc<Mutex<Vec<FakeMcpRequest>>>,
+}
+
+#[derive(Debug, Clone)]
+struct FakeMcpTool {
+    description: Option<String>,
+    input_schema: Value,
+    output_schema: Option<Value>,
+    responses: Arc<Mutex<VecDeque<Value>>>,
+}
+
+#[derive(Debug, Clone)]
+struct FakeMcpResource {
+    uri: String,
+    mime_type: String,
+    text: String,
+}
+
+#[derive(Debug, Clone)]
+struct FakeMcpPrompt {
+    arguments: Vec<McpPromptArgumentLock>,
+    responses: Arc<Mutex<VecDeque<Value>>>,
+    default_response: Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FakeMcpRequest {
+    pub server_name: String,
+    pub method: String,
+    pub name: Option<String>,
+    pub arguments: Value,
+}
+
+#[derive(Debug)]
+struct FakeMcpClient {
+    server: FakeMcpServer,
 }
 
 impl WorkflowSourceTemplate {
@@ -379,6 +460,321 @@ impl SnapshotAssertion {
             self.name,
             stable_text_diff(&self.expected, &self.actual)
         );
+    }
+}
+
+impl FakeMcpClientFactory {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn with_server(mut self, server_name: impl Into<String>, configure: impl FnOnce(&mut FakeMcpServerBuilder)) -> Self {
+        self.add_server(server_name, configure);
+        self
+    }
+
+    pub fn add_server(&mut self, server_name: impl Into<String>, configure: impl FnOnce(&mut FakeMcpServerBuilder)) -> &mut Self {
+        let server_name = server_name.into();
+        let mut builder = FakeMcpServerBuilder::default();
+
+        configure(&mut builder);
+
+        self.servers_by_name
+            .lock()
+            .expect("fake MCP server registry lock poisoned")
+            .insert(server_name.clone(), builder.build(server_name));
+
+        self
+    }
+
+    #[must_use]
+    pub fn requests(&self, server_name: &str) -> Vec<FakeMcpRequest> {
+        let servers_by_name = self.servers_by_name.lock().expect("fake MCP server registry lock poisoned");
+
+        servers_by_name.get(server_name).map(FakeMcpServer::requests).unwrap_or_default()
+    }
+
+    fn server_for_config(&self, server_config: &McpServerConfig) -> Result<FakeMcpServer, McpError> {
+        self.servers_by_name
+            .lock()
+            .expect("fake MCP server registry lock poisoned")
+            .get(&server_config.name)
+            .cloned()
+            .ok_or_else(|| McpError::Http {
+                server_name: server_config.name.clone(),
+                method: "fake".to_string(),
+                message: format!("fake MCP server `{}` is not registered", server_config.name),
+            })
+    }
+}
+
+impl McpClientFactory for FakeMcpClientFactory {
+    fn client_for_config(&self, server_config: McpServerConfig) -> Result<Arc<dyn McpClientBackend>, McpError> {
+        let server = self.server_for_config(&server_config)?;
+
+        Ok(Arc::new(FakeMcpClient { server }))
+    }
+}
+
+impl FakeMcpServerBuilder {
+    pub fn tool(&mut self, tool_name: impl Into<String>, configure: impl FnOnce(&mut FakeMcpToolBuilder)) -> &mut Self {
+        let tool_name = tool_name.into();
+        let mut builder = FakeMcpToolBuilder::default();
+
+        configure(&mut builder);
+        self.tools.insert(tool_name, builder.build());
+
+        self
+    }
+
+    pub fn resource(&mut self, resource_name: impl Into<String>, configure: impl FnOnce(&mut FakeMcpResourceBuilder)) -> &mut Self {
+        let resource_name = resource_name.into();
+        let mut builder = FakeMcpResourceBuilder::default();
+
+        configure(&mut builder);
+        self.resources.insert(resource_name.clone(), builder.build(resource_name));
+
+        self
+    }
+
+    pub fn prompt(&mut self, prompt_name: impl Into<String>, configure: impl FnOnce(&mut FakeMcpPromptBuilder)) -> &mut Self {
+        let prompt_name = prompt_name.into();
+        let mut builder = FakeMcpPromptBuilder::default();
+
+        configure(&mut builder);
+        self.prompts.insert(prompt_name, builder.build());
+
+        self
+    }
+
+    fn build(self, server_name: String) -> FakeMcpServer {
+        FakeMcpServer {
+            name: server_name,
+            tools: self.tools,
+            resources: self.resources,
+            prompts: self.prompts,
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl Default for FakeMcpToolBuilder {
+    fn default() -> Self {
+        Self {
+            description: None,
+            input_schema: empty_object_schema(),
+            output_schema: None,
+            responses: VecDeque::new(),
+        }
+    }
+}
+
+impl FakeMcpToolBuilder {
+    pub fn description(&mut self, description: impl Into<String>) -> &mut Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub fn input_schema(&mut self, input_schema: Value) -> &mut Self {
+        self.input_schema = input_schema;
+        self
+    }
+
+    pub fn output_schema(&mut self, output_schema: Value) -> &mut Self {
+        self.output_schema = Some(output_schema);
+        self
+    }
+
+    pub fn respond_json(&mut self, response: Value) -> &mut Self {
+        self.responses.push_back(response);
+        self
+    }
+
+    fn build(self) -> FakeMcpTool {
+        FakeMcpTool {
+            description: self.description,
+            input_schema: self.input_schema,
+            output_schema: self.output_schema,
+            responses: Arc::new(Mutex::new(self.responses)),
+        }
+    }
+}
+
+impl FakeMcpResourceBuilder {
+    pub fn uri(&mut self, uri: impl Into<String>) -> &mut Self {
+        self.uri = Some(uri.into());
+        self
+    }
+
+    pub fn mime_type(&mut self, mime_type: impl Into<String>) -> &mut Self {
+        self.mime_type = Some(mime_type.into());
+        self
+    }
+
+    pub fn text(&mut self, text: impl Into<String>) -> &mut Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    fn build(self, resource_name: String) -> FakeMcpResource {
+        FakeMcpResource {
+            uri: self.uri.unwrap_or_else(|| format!("file:///{resource_name}")),
+            mime_type: self.mime_type.unwrap_or_else(|| "text/plain".to_string()),
+            text: self.text.unwrap_or_default(),
+        }
+    }
+}
+
+impl FakeMcpPromptBuilder {
+    pub fn description(&mut self, _description: impl Into<String>) -> &mut Self {
+        self
+    }
+
+    pub fn text(&mut self, text: impl Into<String>) -> &mut Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    pub fn argument(&mut self, argument_name: impl Into<String>, required: bool) -> &mut Self {
+        let argument_name = argument_name.into();
+
+        self.arguments.push(McpPromptArgumentLock {
+            name: argument_name.clone(),
+            required,
+            description: Some(format!("Test prompt argument {argument_name}")),
+        });
+
+        self
+    }
+
+    pub fn respond_json(&mut self, response: Value) -> &mut Self {
+        self.responses.push_back(response);
+        self
+    }
+
+    fn build(self) -> FakeMcpPrompt {
+        let text = self.text.unwrap_or_default();
+        let default_response = serde_json::json!({
+            "messages": [{
+                "role": "user",
+                "content": {
+                    "type": "text",
+                    "text": text,
+                },
+            }],
+        });
+        FakeMcpPrompt {
+            arguments: self.arguments,
+            responses: Arc::new(Mutex::new(self.responses)),
+            default_response,
+        }
+    }
+}
+
+impl FakeMcpServer {
+    fn requests(&self) -> Vec<FakeMcpRequest> {
+        self.requests.lock().expect("fake MCP request log lock poisoned").clone()
+    }
+
+    fn record_request(&self, method: &str, name: Option<&str>, arguments: Value) {
+        self.requests
+            .lock()
+            .expect("fake MCP request log lock poisoned")
+            .push(FakeMcpRequest {
+                server_name: self.name.clone(),
+                method: method.to_string(),
+                name: name.map(str::to_string),
+                arguments,
+            });
+    }
+
+    fn server_lock(&self) -> Result<McpServerLock, McpError> {
+        let mut server_lock = McpServerLock::default();
+
+        for (tool_name, tool) in &self.tools {
+            let Some(tool_lock) = McpToolLock::from_json_schema_values(
+                tool_name.clone(),
+                tool.description.clone(),
+                tool.input_schema.clone(),
+                tool.output_schema.clone(),
+            ) else {
+                return Err(McpError::InvalidResponse {
+                    server_name: self.name.clone(),
+                    method: "tools/list".to_string(),
+                    message: format!("fake MCP tool `{tool_name}` has an invalid schema"),
+                });
+            };
+
+            server_lock.tools.insert(tool_name.clone(), tool_lock);
+        }
+
+        server_lock.resources = self.resources.keys().cloned().collect();
+        server_lock.prompts = self.prompts.keys().cloned().collect();
+        server_lock.prompt_arguments = self
+            .prompts
+            .iter()
+            .map(|(prompt_name, prompt)| (prompt_name.clone(), prompt.arguments.clone()))
+            .collect();
+
+        Ok(server_lock)
+    }
+}
+
+impl McpClientBackend for FakeMcpClient {
+    fn list_tools(&self) -> Result<McpServerLock, McpError> {
+        self.server.record_request("tools/list", None, Value::Null);
+        self.server.server_lock()
+    }
+
+    fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<Value, McpError> {
+        self.server.record_request("tools/call", Some(tool_name), arguments);
+        let tool = self.server.tools.get(tool_name).ok_or_else(|| McpError::Rpc {
+            server_name: self.server.name.clone(),
+            method: "tools/call".to_string(),
+            message: format!("tool `{tool_name}` not found"),
+        })?;
+
+        Ok(tool
+            .responses
+            .lock()
+            .expect("fake MCP tool response lock poisoned")
+            .pop_front()
+            .unwrap_or(Value::Null))
+    }
+
+    fn read_resource(&self, resource_name: &str, arguments: Value) -> Result<Value, McpError> {
+        self.server.record_request("resources/read", Some(resource_name), arguments);
+        let resource = self.server.resources.get(resource_name).ok_or_else(|| McpError::Rpc {
+            server_name: self.server.name.clone(),
+            method: "resources/read".to_string(),
+            message: format!("resource `{resource_name}` not found"),
+        })?;
+
+        Ok(serde_json::json!({
+            "contents": [{
+                "uri": resource.uri,
+                "mimeType": resource.mime_type,
+                "text": resource.text,
+            }],
+        }))
+    }
+
+    fn get_prompt(&self, prompt_name: &str, arguments: Value) -> Result<Value, McpError> {
+        self.server.record_request("prompts/get", Some(prompt_name), arguments);
+        let prompt = self.server.prompts.get(prompt_name).ok_or_else(|| McpError::Rpc {
+            server_name: self.server.name.clone(),
+            method: "prompts/get".to_string(),
+            message: format!("prompt `{prompt_name}` not found"),
+        })?;
+
+        Ok(prompt
+            .responses
+            .lock()
+            .expect("fake MCP prompt response lock poisoned")
+            .pop_front()
+            .unwrap_or_else(|| prompt.default_response.clone()))
     }
 }
 
