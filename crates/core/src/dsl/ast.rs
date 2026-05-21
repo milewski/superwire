@@ -1802,6 +1802,76 @@ impl Expression {
     }
 
     #[must_use]
+    pub fn tool_calls(&self) -> Vec<&ToolCall> {
+        let mut tool_calls = Vec::new();
+        self.collect_tool_calls(&mut tool_calls);
+
+        tool_calls
+    }
+
+    fn collect_tool_calls<'expression>(&'expression self, tool_calls: &mut Vec<&'expression ToolCall>) {
+        match self {
+            Self::ToolCall(tool_call) => {
+                tool_calls.push(tool_call);
+
+                for input_field in &tool_call.input_fields {
+                    input_field.value.collect_tool_calls(tool_calls);
+                }
+
+                for binding_field in &tool_call.binding_fields {
+                    binding_field.value.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::StringTemplate(string_template) => {
+                for string_template_part in &string_template.parts {
+                    if let StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
+                        interpolation_expression.collect_tool_calls(tool_calls);
+                    }
+                }
+            }
+            Self::FunctionCall(function_call) => {
+                for call_argument in &function_call.arguments {
+                    call_argument.expression().collect_tool_calls(tool_calls);
+                }
+            }
+            Self::McpCall(mcp_call) => {
+                for parameter_field in &mcp_call.parameter_fields {
+                    parameter_field.value.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::NullFallback(null_fallback) => {
+                null_fallback.value.collect_tool_calls(tool_calls);
+                null_fallback.fallback.collect_tool_calls(tool_calls);
+            }
+            Self::Match(match_expression) => {
+                match_expression.value.collect_tool_calls(tool_calls);
+
+                for match_branch in &match_expression.branches {
+                    if let MatchBranch::Fallback { value, .. } = match_branch {
+                        value.collect_tool_calls(tool_calls);
+                    }
+                }
+            }
+            Self::ArrayLiteral(item_expressions) => {
+                for item_expression in item_expressions {
+                    item_expression.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::ObjectLiteral(object_fields) => {
+                for object_field in object_fields {
+                    object_field.value.collect_tool_calls(tool_calls);
+                }
+            }
+            Self::NumberLiteral(_)
+            | Self::BooleanLiteral(_)
+            | Self::NullLiteral
+            | Self::StringLiteral(_)
+            | Self::Reference(_)
+            | Self::VariantProjection(_) => {}
+        }
+    }
+
+    #[must_use]
     pub fn to_type_expression(&self) -> Option<TypeExpression> {
         match self {
             Self::Reference(reference) => reference.to_type_expression(),
@@ -2195,6 +2265,24 @@ impl Reference {
         }
 
         Some(self.accesses[0].field.clone())
+    }
+
+    #[must_use]
+    pub fn tool_name(&self) -> Option<&str> {
+        if self.root_keyword() != Some(ReferenceKeyword::Tool) {
+            return None;
+        }
+
+        self.first_access_field()
+    }
+
+    #[must_use]
+    pub fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str> {
+        if self.root_keyword() != Some(reference_keyword) {
+            return None;
+        }
+
+        self.first_access_field()
     }
 
     #[must_use]

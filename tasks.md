@@ -209,7 +209,7 @@
   Description: Move model request schema generation and output validation into a schema module.
   Rationale: Schema handling is pure enough to test independently and expensive enough to optimize later.
 
-- [ ] Move runtime extension traits near owning AST/core types or focused runtime modules.
+- [x] Move runtime extension traits near owning AST/core types or focused runtime modules.
   Description: Relocate `Reference`, `Expression`, and `TypedToolIr` extension behavior to their owning type modules or runtime domains.
   Rationale: Hidden extension traits in `runtime.rs` violate method locality and make behavior hard to find.
 
@@ -329,5 +329,5 @@
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
-- Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction and agent-dependency collection, while `Expression` owns referenced-name extraction and agent tool binding field access; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
+- Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

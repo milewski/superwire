@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::time::Instant;
 use superwire_core::dsl::{
-    AgentExpressionPropertyName, Declaration, Expression, ObjectField, Reference, ReferenceKeyword, ToolCall, ToolSource, Workflow,
+    AgentExpressionPropertyName, Declaration, Expression, ObjectField, ReferenceKeyword, ToolCall, ToolSource, Workflow,
 };
 use superwire_core::mcp::McpServerConfig;
 use superwire_core::semantic::support::expression::{evaluate_expression, EvaluationContext};
@@ -613,29 +613,6 @@ impl WorkflowExecutor {
     }
 }
 
-trait ToolReferenceExt {
-    fn tool_name(&self) -> Option<&str>;
-    fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str>;
-}
-
-impl ToolReferenceExt for Reference {
-    fn tool_name(&self) -> Option<&str> {
-        if self.root_keyword() != Some(ReferenceKeyword::Tool) {
-            return None;
-        }
-
-        self.first_access_field()
-    }
-
-    fn import_name(&self, reference_keyword: ReferenceKeyword) -> Option<&str> {
-        if self.root_keyword() != Some(reference_keyword) {
-            return None;
-        }
-
-        self.first_access_field()
-    }
-}
-
 trait WorkflowStartupToolCallsExt {
     fn startup_tool_calls(&self) -> Vec<&ToolCall>;
 }
@@ -659,19 +636,10 @@ impl WorkflowStartupToolCallsExt for Workflow {
 }
 
 pub(super) trait ExpressionMcpExecutionPlanExt {
-    fn tool_calls(&self) -> Vec<&ToolCall>;
-
     fn planned_mcp_calls(&self, executor: &WorkflowExecutor, evaluation_context: &EvaluationContext) -> Result<Vec<Value>, ExecutorError>;
 }
 
 impl ExpressionMcpExecutionPlanExt for Expression {
-    fn tool_calls(&self) -> Vec<&ToolCall> {
-        let mut tool_calls = Vec::new();
-        self.collect_tool_calls(&mut tool_calls);
-
-        tool_calls
-    }
-
     fn planned_mcp_calls(&self, executor: &WorkflowExecutor, evaluation_context: &EvaluationContext) -> Result<Vec<Value>, ExecutorError> {
         let mut planned_calls = Vec::new();
         self.collect_planned_mcp_calls(executor, evaluation_context, &mut planned_calls)?;
@@ -681,8 +649,6 @@ impl ExpressionMcpExecutionPlanExt for Expression {
 }
 
 trait ExpressionMcpExecutionPlanCollectorExt {
-    fn collect_tool_calls<'expression>(&'expression self, tool_calls: &mut Vec<&'expression ToolCall>);
-
     fn collect_planned_mcp_calls(
         &self,
         executor: &WorkflowExecutor,
@@ -692,68 +658,6 @@ trait ExpressionMcpExecutionPlanCollectorExt {
 }
 
 impl ExpressionMcpExecutionPlanCollectorExt for Expression {
-    fn collect_tool_calls<'expression>(&'expression self, tool_calls: &mut Vec<&'expression ToolCall>) {
-        match self {
-            Self::ToolCall(tool_call) => {
-                tool_calls.push(tool_call);
-
-                for input_field in &tool_call.input_fields {
-                    input_field.value.collect_tool_calls(tool_calls);
-                }
-
-                for binding_field in &tool_call.binding_fields {
-                    binding_field.value.collect_tool_calls(tool_calls);
-                }
-            }
-            Self::StringTemplate(string_template) => {
-                for string_template_part in &string_template.parts {
-                    if let superwire_core::dsl::StringTemplatePart::Interpolation(interpolation_expression) = string_template_part {
-                        interpolation_expression.collect_tool_calls(tool_calls);
-                    }
-                }
-            }
-            Self::FunctionCall(function_call) => {
-                for call_argument in &function_call.arguments {
-                    call_argument.expression().collect_tool_calls(tool_calls);
-                }
-            }
-            Self::McpCall(mcp_call) => {
-                for parameter_field in &mcp_call.parameter_fields {
-                    parameter_field.value.collect_tool_calls(tool_calls);
-                }
-            }
-            Self::NullFallback(null_fallback) => {
-                null_fallback.value.collect_tool_calls(tool_calls);
-                null_fallback.fallback.collect_tool_calls(tool_calls);
-            }
-            Self::Match(match_expression) => {
-                match_expression.value.collect_tool_calls(tool_calls);
-
-                for match_branch in &match_expression.branches {
-                    if let superwire_core::dsl::MatchBranch::Fallback { value, .. } = match_branch {
-                        value.collect_tool_calls(tool_calls);
-                    }
-                }
-            }
-            Self::ArrayLiteral(item_expressions) => {
-                for item_expression in item_expressions {
-                    item_expression.collect_tool_calls(tool_calls);
-                }
-            }
-            Self::ObjectLiteral(object_fields) => {
-                for object_field in object_fields {
-                    object_field.value.collect_tool_calls(tool_calls);
-                }
-            }
-            Self::NumberLiteral(_)
-            | Self::BooleanLiteral(_)
-            | Self::NullLiteral
-            | Self::StringLiteral(_)
-            | Self::Reference(_)
-            | Self::VariantProjection(_) => {}
-        }
-    }
-
     fn collect_planned_mcp_calls(
         &self,
         executor: &WorkflowExecutor,
