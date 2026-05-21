@@ -89,7 +89,7 @@
   Description: Expose immutable accessors for declaration/type/reference lookup while keeping mutation internal.
   Rationale: LSP, CLI, validation, and executor currently rebuild overlapping semantic knowledge.
 
-- [ ] Replace stringly diagnostic construction with typed diagnostic builders where behavior naturally belongs to domain types.
+- [x] Replace stringly diagnostic construction with typed diagnostic builders where behavior naturally belongs to domain types.
   Description: Add methods such as domain-specific issue constructors when the issue belongs to a type like `Reference`, `ToolDeclaration`, or MCP import declarations.
   Rationale: Centralizing diagnostic construction keeps messages and codes consistent across refactors.
 

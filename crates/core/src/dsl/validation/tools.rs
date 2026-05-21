@@ -1,5 +1,5 @@
 use super::super::ast::{AgentDeclaration, Expression, ObjectField, SourceSpan};
-use super::report::{ValidationIssue, ValidationReport};
+use super::report::ValidationReport;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
 use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
@@ -210,14 +210,8 @@ impl AgentToolBindingValidator<'_> {
     }
 
     fn push_invalid_tool_binding(&mut self, tool_name: &str, message: String, span: Option<SourceSpan>) {
-        self.validation_report.push_issue_with_span(
-            ValidationIssue::InvalidToolBinding {
-                agent_name: self.agent_declaration.name.clone(),
-                tool_name: tool_name.to_string(),
-                message,
-            },
-            span,
-        );
+        self.validation_report
+            .push_issue_with_span(self.agent_declaration.invalid_tool_binding_issue(tool_name, message), span);
     }
 }
 

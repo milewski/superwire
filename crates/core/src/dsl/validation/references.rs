@@ -2,7 +2,7 @@ use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference, ReferenceKeyword,
     SourcePosition, SourceSpan, StringTemplatePart, TypeExpression, Workflow,
 };
-use super::report::{ValidationContext, ValidationIssue, ValidationReport};
+use super::report::{ValidationContext, ValidationReport};
 use super::tools::validate_agent_tool_bindings;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::workflow_type_from_dsl;
@@ -431,10 +431,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
 
         self.validation_report.push_issue_with_span(
-            ValidationIssue::InvalidForLoopIterableType {
-                agent_name: agent_declaration.name.clone(),
-                found_type: inferred_iterable_type.to_string(),
-            },
+            agent_declaration.invalid_for_loop_iterable_type_issue(inferred_iterable_type.to_string()),
             Some(agent_declaration.span),
         );
     }
@@ -619,17 +616,18 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
                 self.validation_report.push_issue_with_span(
-                    ValidationIssue::InvalidKeywordReferenceRoot {
-                        keyword: mcp_call.operation.expected_root(),
-                        context: context.clone(),
-                    },
+                    Reference::invalid_keyword_root_issue(mcp_call.operation.expected_root(), context.clone()),
                     Some(mcp_call.callee.span),
                 );
             }
         } else if let Some(target_name) = mcp_call.target_name() {
             match mcp_call.operation {
-                crate::dsl::McpCallOperation::Read => self.validate_resource_call_name(target_name, context.clone(), mcp_call.callee.span),
-                crate::dsl::McpCallOperation::Render => self.validate_prompt_call_name(target_name, context.clone(), mcp_call.callee.span),
+                crate::dsl::McpCallOperation::Read => {
+                    self.validate_resource_call_name(target_name, context.clone(), &mcp_call.callee);
+                }
+                crate::dsl::McpCallOperation::Render => {
+                    self.validate_prompt_call_name(target_name, context.clone(), &mcp_call.callee);
+                }
             }
         }
 
@@ -643,7 +641,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         }
     }
 
-    fn validate_resource_call_name(&mut self, resource_name: &str, context: ValidationContext, span: SourceSpan) {
+    fn validate_resource_call_name(&mut self, resource_name: &str, context: ValidationContext, reference: &Reference) {
         if self.validation_index.has_resource(resource_name) {
             return;
         }
@@ -652,16 +650,13 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
         if self.unknown_resource_references.insert(issue_key) {
             self.validation_report.push_issue_with_span(
-                ValidationIssue::UnknownResourceReference {
-                    resource_name: resource_name.to_string(),
-                    context,
-                },
-                Some(span),
+                Reference::unknown_resource_reference_issue(resource_name, context),
+                Some(reference.span),
             );
         }
     }
 
-    fn validate_prompt_call_name(&mut self, prompt_name: &str, context: ValidationContext, span: SourceSpan) {
+    fn validate_prompt_call_name(&mut self, prompt_name: &str, context: ValidationContext, reference: &Reference) {
         if self.validation_index.has_prompt(prompt_name) {
             return;
         }
@@ -670,11 +665,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
         if self.unknown_prompt_references.insert(issue_key) {
             self.validation_report.push_issue_with_span(
-                ValidationIssue::UnknownPromptReference {
-                    prompt_name: prompt_name.to_string(),
-                    context,
-                },
-                Some(span),
+                Reference::unknown_prompt_reference_issue(prompt_name, context),
+                Some(reference.span),
             );
         }
     }
@@ -699,10 +691,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
             if self.invalid_keyword_reference_roots.insert(issue_key) {
                 self.validation_report.push_issue_with_span(
-                    ValidationIssue::InvalidKeywordReferenceRoot {
-                        keyword: reference_root_keyword,
-                        context,
-                    },
+                    Reference::invalid_keyword_root_issue(reference_root_keyword, context),
                     Some(reference.span),
                 );
             }
@@ -734,7 +723,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             .field
             .as_str();
 
-        if !self.validate_agent_reference_name(referenced_agent_name, context.clone(), Some(reference.span)) {
+        if !self.validate_agent_reference_name(referenced_agent_name, context.clone(), reference) {
             return;
         }
 
@@ -745,14 +734,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
         if reference.has_single_access() {
             if context == ValidationContext::Output && referenced_agent_output_type.is_none() {
-                self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference.span);
+                self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference);
             }
 
             return;
         }
 
         let Some(agent_output_type) = referenced_agent_output_type else {
-            self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference.span);
+            self.push_missing_agent_output_type_reference_issue(referenced_agent_name, context, reference);
 
             return;
         };
@@ -764,17 +753,14 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         &mut self,
         referenced_agent_name: &str,
         context: ValidationContext,
-        reference_span: SourceSpan,
+        reference: &Reference,
     ) {
         let issue_key = (context.clone(), referenced_agent_name.to_owned());
 
         if self.missing_agent_output_type_references.insert(issue_key) {
             self.validation_report.push_issue_with_span(
-                ValidationIssue::MissingAgentOutputTypeForFieldReference {
-                    agent_name: referenced_agent_name.to_owned(),
-                    context,
-                },
-                Some(reference_span),
+                Reference::missing_agent_output_type_reference_issue(referenced_agent_name, context),
+                Some(reference.span),
             );
         }
     }
@@ -795,7 +781,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             if dynamic_field_types.is_empty() {
                 if self.missing_dynamic_declaration_contexts.insert(context.clone()) {
                     self.validation_report
-                        .push_issue_with_span(ValidationIssue::MissingDynamicDeclaration { context }, Some(reference.span));
+                        .push_issue_with_span(Reference::missing_dynamic_declaration_issue(context), Some(reference.span));
                 }
 
                 return;
@@ -805,10 +791,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
             if self.unknown_dynamic_field_references.insert(issue_key) {
                 self.validation_report.push_issue_with_span(
-                    ValidationIssue::UnknownDynamicFieldReference {
-                        field_name: referenced_field_name.to_owned(),
-                        context,
-                    },
+                    Reference::unknown_dynamic_field_reference_issue(referenced_field_name, context),
                     Some(reference.span),
                 );
             }
@@ -833,7 +816,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let Some(input_field_types) = self.validation_index.input_field_types() else {
             if self.missing_input_declaration_contexts.insert(context.clone()) {
                 self.validation_report
-                    .push_issue_with_span(ValidationIssue::MissingInputDeclaration { context }, Some(reference.span));
+                    .push_issue_with_span(Reference::missing_input_declaration_issue(context), Some(reference.span));
             }
 
             return;
@@ -844,10 +827,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
             if self.unknown_input_field_references.insert(issue_key) {
                 self.validation_report.push_issue_with_span(
-                    ValidationIssue::UnknownInputFieldReference {
-                        field_name: referenced_field_name.to_owned(),
-                        context,
-                    },
+                    Reference::unknown_input_field_reference_issue(referenced_field_name, context),
                     Some(reference.span),
                 );
             }
@@ -872,7 +852,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let Some(secrets_field_types) = self.validation_index.secrets_field_types() else {
             if self.missing_secrets_declaration_contexts.insert(context.clone()) {
                 self.validation_report
-                    .push_issue_with_span(ValidationIssue::MissingSecretsDeclaration { context }, Some(reference.span));
+                    .push_issue_with_span(Reference::missing_secrets_declaration_issue(context), Some(reference.span));
             }
 
             return;
@@ -883,10 +863,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
             if self.unknown_secrets_field_references.insert(issue_key) {
                 self.validation_report.push_issue_with_span(
-                    ValidationIssue::UnknownSecretsFieldReference {
-                        field_name: referenced_field_name.to_owned(),
-                        context,
-                    },
+                    Reference::unknown_secrets_field_reference_issue(referenced_field_name, context),
                     Some(reference.span),
                 );
             }
@@ -926,14 +903,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
                 if self.invalid_reference_paths.insert(issue_key) {
-                    self.validation_report.push_issue_with_span(
-                        ValidationIssue::InvalidReferencePath {
-                            reference_path,
-                            invalid_field: reference_access.field.clone(),
-                            context,
-                        },
-                        Some(reference.span),
-                    );
+                    self.validation_report
+                        .push_issue_with_span(reference.invalid_path_issue(reference_access, context), Some(reference.span));
                 }
 
                 return;
@@ -973,14 +944,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
                 let issue_key = (context.clone(), reference_path.clone(), reference_access.field.clone());
 
                 if self.invalid_reference_paths.insert(issue_key) {
-                    self.validation_report.push_issue_with_span(
-                        ValidationIssue::InvalidReferencePath {
-                            reference_path,
-                            invalid_field: reference_access.field.clone(),
-                            context,
-                        },
-                        Some(reference.span),
-                    );
+                    self.validation_report
+                        .push_issue_with_span(reference.invalid_path_issue(reference_access, context), Some(reference.span));
                 }
 
                 return;
@@ -995,14 +960,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let issue_key = (context.clone(), reference_path.clone(), field_name.to_owned());
 
         if self.missing_optional_reference_accesses.insert(issue_key) {
-            self.validation_report.push_issue_with_span(
-                ValidationIssue::MissingOptionalReferenceAccess {
-                    reference_path,
-                    field_name: field_name.to_owned(),
-                    context,
-                },
-                Some(reference.span),
-            );
+            self.validation_report
+                .push_issue_with_span(reference.missing_optional_access_issue(field_name, context), Some(reference.span));
         }
     }
 
@@ -1106,14 +1065,12 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
         let issue_key = (context.clone(), reference_path.clone());
 
         if self.secret_reference_leaks.insert(issue_key) {
-            self.validation_report.push_issue_with_span(
-                ValidationIssue::SecretReferenceInLlmContext { reference_path, context },
-                Some(reference.span),
-            );
+            self.validation_report
+                .push_issue_with_span(reference.secret_reference_in_llm_context_issue(context), Some(reference.span));
         }
     }
 
-    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext, span: Option<SourceSpan>) -> bool {
+    fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext, reference: &Reference) -> bool {
         if self.validation_index.has_agent(referenced_agent_name) {
             return true;
         }
@@ -1122,11 +1079,8 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
         if self.unknown_agent_references.insert(issue_key) {
             self.validation_report.push_issue_with_span(
-                ValidationIssue::UnknownAgentReference {
-                    referenced_agent: referenced_agent_name.to_owned(),
-                    context,
-                },
-                span,
+                Reference::unknown_agent_reference_issue(referenced_agent_name, context),
+                Some(reference.span),
             );
         }
 

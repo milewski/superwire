@@ -229,10 +229,9 @@ impl Reference {
         let issue_key = (context.clone(), reference_path.clone());
 
         if validation_state.invalid_type_expression_references.insert(issue_key) {
-            validation_state.validation_report.push_issue_with_span(
-                ValidationIssue::InvalidTypeExpressionReference { reference_path, context },
-                Some(self.span),
-            );
+            validation_state
+                .validation_report
+                .push_issue_with_span(self.invalid_type_expression_reference_issue(context), Some(self.span));
         }
     }
 }

@@ -2,6 +2,7 @@ use super::ast::Workflow;
 mod agents;
 mod duplicates;
 mod dynamic;
+mod issues;
 mod names;
 mod references;
 mod report;

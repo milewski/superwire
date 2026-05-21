@@ -1,7 +1,7 @@
 use super::super::ast::{
     AgentProperty, Declaration, Expression, MatchBranch, ObjectField, SourceSpan, StringTemplatePart, TypeExpression, TypedField, Workflow,
 };
-use super::report::{ValidationContext, ValidationIssue, ValidationReport};
+use super::report::{ValidationContext, ValidationReport};
 use std::collections::HashSet;
 
 impl Workflow {
@@ -270,13 +270,11 @@ impl Workflow {
                     for agent_property in &agent_declaration.properties {
                         if let Some(agent_property_name) = agent_property.name() {
                             if !agent_property.repeatable() && !seen_agent_properties.insert(agent_property_name.to_string()) {
-                                validation_report.push_issue_with_span(
-                                    ValidationIssue::DuplicateProperty {
-                                        property_name: agent_property_name.to_string(),
-                                        context: agent_context.clone(),
-                                    },
-                                    Some(agent_declaration.span),
-                                );
+                                let Some(validation_issue) = agent_property.duplicate_property_issue(agent_context.clone()) else {
+                                    continue;
+                                };
+
+                                validation_report.push_issue_with_span(validation_issue, Some(agent_declaration.span));
                             }
                         }
 
@@ -292,10 +290,7 @@ impl Workflow {
                                 for dynamic_field in &dynamic_block.fields {
                                     if !seen_agent_dynamic_field_names.insert(dynamic_field.name.clone()) {
                                         validation_report.push_issue_with_span(
-                                            ValidationIssue::DuplicateProperty {
-                                                property_name: dynamic_field.name.clone(),
-                                                context: agent_context.clone(),
-                                            },
+                                            dynamic_field.duplicate_property_issue(agent_context.clone()),
                                             Some(dynamic_block.span),
                                         );
                                     }
@@ -334,13 +329,7 @@ impl Workflow {
                                 }
                             }
                             AgentProperty::Unknown { name, span } => {
-                                validation_report.push_issue_with_span(
-                                    ValidationIssue::UnknownAgentProperty {
-                                        agent_name: agent_declaration.name.clone(),
-                                        property_name: name.clone(),
-                                    },
-                                    Some(*span),
-                                );
+                                validation_report.push_issue_with_span(agent_declaration.unknown_property_issue(name), Some(*span));
                             }
                             AgentProperty::Output { fields, span: _ } => {
                                 report_duplicate_typed_field_names(fields.as_slice(), agent_context.clone(), validation_report);
@@ -405,10 +394,7 @@ impl Workflow {
                     for dynamic_field in &dynamic_block.fields {
                         if !seen_workflow_dynamic_field_names.insert(dynamic_field.name.clone()) {
                             validation_report.push_issue_with_span(
-                                ValidationIssue::DuplicateProperty {
-                                    property_name: dynamic_field.name.clone(),
-                                    context: ValidationContext::Dynamic,
-                                },
+                                dynamic_field.duplicate_property_issue(ValidationContext::Dynamic),
                                 Some(dynamic_block.span),
                             );
                         }
@@ -438,13 +424,7 @@ fn report_duplicate_object_field_names(
             continue;
         }
 
-        validation_report.push_issue_with_span(
-            ValidationIssue::DuplicateProperty {
-                property_name: object_field.name.clone(),
-                context: context.clone(),
-            },
-            duplicate_span,
-        );
+        validation_report.push_issue_with_span(object_field.duplicate_property_issue(context.clone()), duplicate_span);
     }
 }
 
@@ -456,13 +436,7 @@ fn report_duplicate_typed_field_names(typed_fields: &[TypedField], context: Vali
             continue;
         }
 
-        validation_report.push_issue_with_span(
-            ValidationIssue::DuplicateProperty {
-                property_name: typed_field.name.clone(),
-                context: context.clone(),
-            },
-            Some(typed_field.span),
-        );
+        validation_report.push_issue_with_span(typed_field.duplicate_property_issue(context.clone()), Some(typed_field.span));
     }
 }
 
@@ -494,10 +468,7 @@ impl TypeExpression {
                     for typed_field in &variant_case.fields {
                         if typed_field.name == *discriminator {
                             validation_report.push_issue_with_span(
-                                ValidationIssue::InvalidVariantDiscriminatorField {
-                                    discriminator: discriminator.clone(),
-                                    case_name: variant_case.name.clone(),
-                                },
+                                variant_case.duplicate_discriminator_field_issue(discriminator),
                                 Some(typed_field.span),
                             );
                         }

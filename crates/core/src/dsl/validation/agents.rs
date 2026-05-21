@@ -1,7 +1,7 @@
 use super::super::ast::{
-    AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField, ReferenceKeyword, SourceSpan, Workflow,
+    AgentDeclaration, AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField, ReferenceKeyword, SourceSpan, Workflow,
 };
-use super::report::{ValidationContext, ValidationIssue, ValidationReport};
+use super::report::{ValidationIssue, ValidationReport};
 use crate::semantic::{InferenceSetting, WorkflowSemanticIndex as ValidationIndex};
 use std::collections::HashSet;
 
@@ -111,16 +111,12 @@ pub(super) fn validate_agent_model_bindings(
             match agent_property {
                 AgentProperty::Model(model_usage) => {
                     has_model_property = true;
-                    validate_model_usage(&agent_declaration.name, model_usage, validation_index, validation_report);
+                    validate_model_usage(agent_declaration, model_usage, validation_index, validation_report);
                 }
                 AgentProperty::InvalidModel(_) => {
                     has_model_property = true;
-                    validation_report.push_issue_with_span(
-                        ValidationIssue::InvalidModelExpression {
-                            agent_name: agent_declaration.name.clone(),
-                        },
-                        Some(agent_declaration.span),
-                    );
+                    validation_report
+                        .push_issue_with_span(agent_declaration.invalid_model_expression_issue(), Some(agent_declaration.span));
                 }
                 AgentProperty::Dynamic(_)
                 | AgentProperty::Instruction(_)
@@ -132,39 +128,26 @@ pub(super) fn validate_agent_model_bindings(
         }
 
         if !has_model_property {
-            validation_report.push_issue_with_span(
-                ValidationIssue::InvalidModelExpression {
-                    agent_name: agent_declaration.name.clone(),
-                },
-                Some(agent_declaration.span),
-            );
+            validation_report.push_issue_with_span(agent_declaration.invalid_model_expression_issue(), Some(agent_declaration.span));
         }
     }
 }
 
 fn validate_model_usage(
-    agent_name: &str,
+    agent_declaration: &AgentDeclaration,
     model_usage: &ModelUsage,
     validation_index: &ValidationIndex,
     validation_report: &mut ValidationReport,
 ) {
     let Some(model_name) = model_usage.model_name() else {
-        validation_report.push_issue_with_span(
-            ValidationIssue::InvalidModelExpression {
-                agent_name: agent_name.to_owned(),
-            },
-            Some(model_usage.span),
-        );
+        validation_report.push_issue_with_span(agent_declaration.invalid_model_expression_issue(), Some(model_usage.span));
 
         return;
     };
 
     if !validation_index.has_model(model_name) {
         validation_report.push_issue_with_span(
-            ValidationIssue::UnknownModelProfile {
-                agent_name: agent_name.to_owned(),
-                model_name: model_name.to_owned(),
-            },
+            agent_declaration.unknown_model_profile_issue(model_name),
             Some(model_usage.reference.span),
         );
     }
@@ -175,10 +158,7 @@ fn validate_model_usage(
         }
 
         validation_report.push_issue_with_span(
-            ValidationIssue::InvalidModelUsageProperty {
-                agent_name: agent_name.to_owned(),
-                property_name: property.name.clone(),
-            },
+            agent_declaration.invalid_model_usage_property_issue(&property.name),
             Some(property.span),
         );
     }
@@ -218,10 +198,7 @@ pub(super) fn validate_agent_tool_references(
             }
 
             validation_report.push_issue_with_span(
-                ValidationIssue::UnknownToolReference {
-                    agent_name: issue_key.0,
-                    tool_name: issue_key.1,
-                },
+                agent_declaration.unknown_tool_reference_issue(&issue_key.1),
                 Some(agent_declaration.span),
             );
         }
@@ -235,10 +212,7 @@ pub(super) fn validate_agent_tool_references(
 
             if reported_unknown_prompts.insert(issue_key.clone()) {
                 validation_report.push_issue_with_span(
-                    ValidationIssue::UnknownPromptReference {
-                        prompt_name: issue_key.1,
-                        context: ValidationContext::Agent(issue_key.0),
-                    },
+                    agent_declaration.unknown_prompt_reference_issue(&issue_key.1),
                     Some(agent_declaration.span),
                 );
             }
@@ -253,10 +227,7 @@ pub(super) fn validate_agent_tool_references(
 
             if reported_unknown_resources.insert(issue_key.clone()) {
                 validation_report.push_issue_with_span(
-                    ValidationIssue::UnknownResourceReference {
-                        resource_name: issue_key.1,
-                        context: ValidationContext::Agent(issue_key.0),
-                    },
+                    agent_declaration.unknown_resource_reference_issue(&issue_key.1),
                     Some(agent_declaration.span),
                 );
             }
