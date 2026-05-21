@@ -93,7 +93,7 @@
   Description: Add methods such as domain-specific issue constructors when the issue belongs to a type like `Reference`, `ToolDeclaration`, or MCP import declarations.
   Rationale: Centralizing diagnostic construction keeps messages and codes consistent across refactors.
 
-- [ ] Move large validation scenario tests out of production validation modules.
+- [x] Move large validation scenario tests out of production validation modules.
   Description: Relocate scenario tests into validation test modules or integration-style fixtures using the shared workflow test API.
   Rationale: Production files should not carry thousands of lines of scenario tests, and focused test modules make future changes easier to review.
 
