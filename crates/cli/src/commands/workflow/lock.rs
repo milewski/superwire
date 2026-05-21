@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 use serde_json::{Map, Value};
 use superwire_core::dsl::{parse_workflow, Declaration, Workflow};
-use superwire_core::mcp::{McpLock, McpLockResolutionContext, McpServerConfig, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME};
+use superwire_core::mcp::{
+    McpClientFactory, McpLock, McpLockResolutionContext, McpServerConfig, ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
+};
 
 use super::json::WorkflowPayloadSources;
 use super::paths::WorkflowPathTargets;
@@ -41,7 +43,7 @@ pub(super) struct LockWorkflowCommand {
 }
 
 impl LockWorkflowCommand {
-    pub(super) fn execute(self) -> Result<(), CommandError> {
+    pub(super) fn execute_with_mcp_client_factory(self, mcp_client_factory: &dyn McpClientFactory) -> Result<(), CommandError> {
         self.payload_sources().validate()?;
 
         let lock_root = self
@@ -73,7 +75,7 @@ impl LockWorkflowCommand {
                 prompted_lock_context = Some(workflow_lock_context.lock_context.clone());
             }
 
-            let workflow_lock = match Self::discover_workflow_lock(&parsed_workflow, workflow_lock_context.as_ref()) {
+            let workflow_lock = match Self::discover_workflow_lock(&parsed_workflow, workflow_lock_context.as_ref(), mcp_client_factory) {
                 Ok(workflow_lock) => workflow_lock,
                 Err(discover_error) => {
                     if let Some(lock_context_to_persist) = prompted_lock_context.as_ref() {
@@ -273,6 +275,7 @@ impl LockWorkflowCommand {
     fn discover_workflow_lock(
         parsed_workflow: &Workflow,
         lock_context: Option<&McpLockResolutionContext>,
+        mcp_client_factory: &dyn McpClientFactory,
     ) -> Result<McpLock, CommandError> {
         if lock_context.is_none() {
             let unresolved_server_names = Self::unresolved_mcp_server_names(parsed_workflow);
@@ -285,7 +288,7 @@ impl LockWorkflowCommand {
             }
         }
 
-        McpLock::discover_from_workflow_with_lock_context(parsed_workflow, lock_context).map_err(|mcp_error| {
+        McpLock::discover_from_workflow_with_lock_context_and_client_factory(parsed_workflow, lock_context, mcp_client_factory).map_err(|mcp_error| {
             CommandError::invalid_input(format!(
                 "failed to discover MCP typings; provide dynamic values with --vars-file .wire.vars, --input-json, --secrets-json, or --set: {mcp_error}"
             ))

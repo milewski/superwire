@@ -27,7 +27,7 @@
   Description: Provide stable text/JSON diff helpers that can be reused by formatter, graph, semantic, and lock tests.
   Rationale: Large structural refactors need stable before/after behavior snapshots to prove no behavior changed.
 
-- [~] Add an in-process fake MCP/client abstraction for tests that do not need TCP framing.
+- [x] Add an in-process fake MCP/client abstraction for tests that do not need TCP framing.
   Description: Introduce trait-backed fake MCP interactions for unit and integration tests while preserving real TCP tests for framing coverage.
   Rationale: Most MCP tests care about request/response behavior, not sockets. Removing unnecessary TCP makes tests faster and less flaky.
 
@@ -331,5 +331,4 @@
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
 - Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
-- In-process fake MCP support is partially complete. `McpClientBackend`, `McpClientFactory`, and `FakeMcpClientFactory` now provide a trait-backed fake client path. LSP MCP discovery tests and executor `TestRunner` MCP request/response tests use the fake client, while core HTTP/SSE client tests and provider streaming tests intentionally keep TCP coverage. CLI workflow lock subprocess tests still run through a local TCP MCP server and need a separate injection seam before they can use the fake client directly.
 - Formatter fixture idempotence coverage is complete. The broader Phase 1 pure-logic test item remains partial because MCP item normalization, binding merge behavior, type compatibility, reference parsing, and dependency cycle table-driven tests are still outstanding.

@@ -1,8 +1,4 @@
-mod app;
-mod commands;
-mod diagnostics;
-
-use app::Application;
+use superwire_cli::Application;
 
 fn main() {
     let application = Application::from_environment();

@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use superwire_core::mcp::McpClientFactory;
 
 use crate::diagnostics::CommandError;
 
@@ -23,11 +24,11 @@ pub struct WorkflowCommand {
 }
 
 impl WorkflowCommand {
-    pub fn execute(self) -> Result<(), CommandError> {
+    pub fn execute_with_mcp_client_factory(self, mcp_client_factory: &dyn McpClientFactory) -> Result<(), CommandError> {
         match self.command {
             WorkflowSubcommand::Check(check_workflow_command) => check_workflow_command.execute(),
             WorkflowSubcommand::Run(run_workflow_command) => run_workflow_command.execute(),
-            WorkflowSubcommand::Lock(lock_workflow_command) => lock_workflow_command.execute(),
+            WorkflowSubcommand::Lock(lock_workflow_command) => lock_workflow_command.execute_with_mcp_client_factory(mcp_client_factory),
             WorkflowSubcommand::Vars(vars_workflow_command) => vars_workflow_command.execute(),
         }
     }

@@ -6,10 +6,108 @@ use std::io::{BufRead, BufReader, Read, Write};
 
 use harness::{CliCommand, CommandOutputAssertions, TemporaryWorkspace};
 use serde_json::{json, Value};
+use superwire_cli::{Application, ExitCode, ExitStatus};
+use superwire_core::testing::{FakeMcpClientFactory, FakeMcpServerBuilder};
 
 #[test]
 fn writes_single_project_lock_for_multiple_workflows() {
-    let test_mcp_server = TestMcpHttpServer::spawn();
+    let fake_mcp_client_factory = fake_mcp_client_factory();
+    let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
+    let first_workflow_source = superwire_core::workflow_source_template! {
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        tool update_user_name from mcp.local.tool.update_user_name
+    };
+
+    let second_workflow_source = superwire_core::workflow_source_template! {
+        secrets {
+            mcp_endpoint: string
+        }
+
+        mcp local {
+            endpoint: secrets.mcp_endpoint
+        }
+
+        tool update_user_name from mcp.local.tool.update_user_name
+    };
+
+    let vars_path = temporary_workspace.write_json_file(
+        ".wire.vars",
+        &json!({
+            "secrets": {
+                "mcp_endpoint": "http://example.invalid/mcp"
+            }
+        }),
+    );
+
+    let first_workflow_path = temporary_workspace.write_workflow("workflows/first.wire", &first_workflow_source);
+    let second_workflow_path = temporary_workspace.write_workflow("workflows/second.wire", &second_workflow_source);
+    let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
+
+    let exit_status = run_workflow_lock_with_fake_mcp(
+        [
+            first_workflow_path.as_os_str(),
+            second_workflow_path.as_os_str(),
+            OsStr::new("--vars-file"),
+            vars_path.as_os_str(),
+            OsStr::new("--output"),
+            output_lock_path.as_os_str(),
+        ],
+        &fake_mcp_client_factory,
+    );
+
+    assert_eq!(exit_status, ExitStatus::from_exit_code(ExitCode::Success));
+    assert!(output_lock_path.exists(), "project lock should be written");
+    assert!(
+        !first_workflow_path.with_extension("wire.lock").exists(),
+        "per-workflow lock should not be written"
+    );
+    assert!(
+        !second_workflow_path.with_extension("wire.lock").exists(),
+        "per-workflow lock should not be written"
+    );
+
+    let lock_json: Value =
+        serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
+
+    assert_eq!(lock_json.pointer("/version"), Some(&json!(1)));
+    assert_eq!(
+        lock_json.pointer("/workflows/workflows~1first.wire/servers/local/tools/update-user-name/name"),
+        Some(&json!("update-user-name"))
+    );
+    assert_eq!(
+        lock_json.pointer("/workflows/workflows~1second.wire/servers/local/tools/update-user-name/name"),
+        Some(&json!("update-user-name"))
+    );
+
+    assert_eq!(
+        fake_mcp_client_factory
+            .requests("local")
+            .iter()
+            .filter(|request| request.method == "tools/list")
+            .count(),
+        2
+    );
+    assert!(lock_json.pointer("/workflows/workflows~1first.wire/resolution_context").is_none());
+
+    assert!(
+        lock_json
+            .pointer("/workflows/workflows~1first.wire/hash")
+            .and_then(Value::as_str)
+            .is_some_and(|hash| !hash.is_empty()),
+        "workflow lock entry should include integrity hash"
+    );
+}
+
+#[test]
+fn subprocess_writes_single_project_lock_for_multiple_workflows() {
+    let test_mcp_server = TestMcpHttpServer::spawn_with_mode(TestMcpServerMode::Standard);
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
     let first_workflow_source = superwire_core::workflow_source_template! {
         secrets {
@@ -168,7 +266,7 @@ fn writes_relative_workflow_keys_when_using_default_output_path() {
 
 #[test]
 fn reads_default_vars_file_next_to_custom_output_path() {
-    let test_mcp_server = TestMcpHttpServer::spawn();
+    let fake_mcp_client_factory = fake_mcp_client_factory();
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
     let workflow_source = superwire_core::workflow_source_template! {
         secrets {
@@ -188,26 +286,28 @@ fn reads_default_vars_file_next_to_custom_output_path() {
         "locks/.wire.vars",
         &json!({
             "secrets": {
-                "mcp_endpoint": test_mcp_server.endpoint()
+                "mcp_endpoint": "http://example.invalid/mcp"
             }
         }),
     );
 
-    let command_output = CliCommand::workflow_lock([workflow_path.as_os_str(), OsStr::new("--output"), output_lock_path.as_os_str()])
-        .current_directory(&temporary_workspace.root_directory)
-        .output();
+    let exit_status = run_workflow_lock_with_fake_mcp(
+        [workflow_path.as_os_str(), OsStr::new("--output"), output_lock_path.as_os_str()],
+        &fake_mcp_client_factory,
+    );
 
-    command_output.assert_success("workflow lock command should succeed");
+    assert_eq!(exit_status, ExitStatus::from_exit_code(ExitCode::Success));
     assert!(output_lock_path.exists(), "custom output lock should be written");
     assert!(
         !temporary_workspace.root_directory.join(".wire.vars").exists(),
         "default vars file should be resolved beside the lock output"
     );
+    assert_eq!(fake_mcp_client_factory.requests("local").len(), 1);
 }
 
 #[test]
 fn applies_vars_file_overrides_per_workflow_path() {
-    let test_mcp_server = TestMcpHttpServer::spawn();
+    let fake_mcp_client_factory = fake_mcp_client_factory();
     let temporary_workspace = TemporaryWorkspace::new("superwire-workflow-lock-tests");
     let workflow_source = superwire_core::workflow_source_template! {
         input {
@@ -250,7 +350,7 @@ fn applies_vars_file_overrides_per_workflow_path() {
                         "task_id": 109
                     },
                     "secrets": {
-                        "mcp_endpoint": test_mcp_server.endpoint(),
+                        "mcp_endpoint": "http://example.invalid/first",
                         "models": {
                             "pro": "example"
                         }
@@ -261,7 +361,7 @@ fn applies_vars_file_overrides_per_workflow_path() {
                         "task_id": 110
                     },
                     "secrets": {
-                        "mcp_endpoint": test_mcp_server.endpoint(),
+                        "mcp_endpoint": "http://example.invalid/second",
                         "models": {
                             "pro": "example"
                         }
@@ -272,19 +372,19 @@ fn applies_vars_file_overrides_per_workflow_path() {
     );
     let output_lock_path = temporary_workspace.root_directory.join("superwire.lock");
 
-    let command_output = CliCommand::workflow_lock([
-        first_workflow_path.as_os_str(),
-        second_workflow_path.as_os_str(),
-        OsStr::new("--vars-file"),
-        vars_path.as_os_str(),
-        OsStr::new("--output"),
-        output_lock_path.as_os_str(),
-    ])
-    .current_directory(&temporary_workspace.root_directory)
-    .output();
-    let standard_error = command_output.stderr_text();
+    let exit_status = run_workflow_lock_with_fake_mcp(
+        [
+            first_workflow_path.as_os_str(),
+            second_workflow_path.as_os_str(),
+            OsStr::new("--vars-file"),
+            vars_path.as_os_str(),
+            OsStr::new("--output"),
+            output_lock_path.as_os_str(),
+        ],
+        &fake_mcp_client_factory,
+    );
 
-    command_output.assert_success(&format!("workflow lock command should succeed: {standard_error}"));
+    assert_eq!(exit_status, ExitStatus::from_exit_code(ExitCode::Success));
 
     let lock_json: Value =
         serde_json::from_str(&fs::read_to_string(output_lock_path).expect("lock should read")).expect("lock should be valid json");
@@ -296,6 +396,14 @@ fn applies_vars_file_overrides_per_workflow_path() {
     assert_eq!(
         lock_json.pointer("/workflows/workflows~1second.wire/servers/local/tools/update-user-name/name"),
         Some(&json!("update-user-name"))
+    );
+    assert_eq!(
+        fake_mcp_client_factory
+            .requests("local")
+            .iter()
+            .filter(|request| request.method == "tools/list")
+            .count(),
+        2
     );
 }
 
@@ -507,11 +615,34 @@ enum TestMcpServerMode {
     RejectInitialize,
 }
 
-impl TestMcpHttpServer {
-    fn spawn() -> Self {
-        Self::spawn_with_mode(TestMcpServerMode::Standard)
-    }
+fn fake_mcp_client_factory() -> FakeMcpClientFactory {
+    FakeMcpClientFactory::new().with_server("local", standard_mcp_server)
+}
 
+fn standard_mcp_server(server_builder: &mut FakeMcpServerBuilder) {
+    server_builder.tool("update-user-name", |tool_builder| {
+        tool_builder.description("Update user name").input_schema(json!({
+            "type": "object",
+            "properties": {
+                "user_name": { "type": "string" }
+            },
+            "required": ["user_name"]
+        }));
+    });
+}
+
+fn run_workflow_lock_with_fake_mcp(
+    arguments: impl IntoIterator<Item = impl AsRef<OsStr>>,
+    mcp_client_factory: &FakeMcpClientFactory,
+) -> ExitStatus {
+    let mut application_arguments = vec!["superwire-cli".into(), "workflow".into(), "lock".into()];
+
+    application_arguments.extend(arguments.into_iter().map(|argument| argument.as_ref().to_os_string()));
+
+    Application::from_arguments(application_arguments).run_with_mcp_client_factory(mcp_client_factory)
+}
+
+impl TestMcpHttpServer {
     fn spawn_with_mode(server_mode: TestMcpServerMode) -> Self {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("test MCP listener should bind");
         let endpoint = format!("http://{}", listener.local_addr().expect("local address should exist"));
