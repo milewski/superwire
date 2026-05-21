@@ -115,7 +115,7 @@
   Description: Break `visitor.rs` into syntax-domain files while preserving parse output.
   Rationale: Syntax additions should touch the relevant parser component instead of a large parse-tree visitor.
 
-- [ ] Centralize object-field and MCP binding merge behavior on owning domain types.
+- [x] Centralize object-field and MCP binding merge behavior on owning domain types.
   Description: Add methods on MCP import/binding types or a dedicated binding type for shared/local override merging.
   Rationale: Merge order bugs are easy when each caller implements inheritance separately.
 
