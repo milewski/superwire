@@ -1,9 +1,8 @@
 use super::super::ast::{
     AgentProperty, Declaration, ModelUsage, ModelUsagePropertyName, ObjectField, ReferenceKeyword, SourceSpan, Workflow,
 };
-use super::index::ValidationIndex;
 use super::report::{ValidationContext, ValidationIssue, ValidationReport};
-use crate::semantic::InferenceSetting;
+use crate::semantic::{InferenceSetting, WorkflowSemanticIndex as ValidationIndex};
 use std::collections::HashSet;
 
 pub(super) fn validate_agent_inference_settings(workflow: &Workflow, validation_report: &mut ValidationReport) {
@@ -160,7 +159,7 @@ fn validate_model_usage(
         return;
     };
 
-    if !validation_index.model_names.contains(model_name) {
+    if !validation_index.has_model(model_name) {
         validation_report.push_issue_with_span(
             ValidationIssue::UnknownModelProfile {
                 agent_name: agent_name.to_owned(),
@@ -204,7 +203,7 @@ pub(super) fn validate_agent_tool_references(
         };
 
         for tool_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Tool) {
-            if validation_index.tool_names.contains(&tool_name) {
+            if validation_index.has_tool(&tool_name) {
                 continue;
             }
 
@@ -224,7 +223,7 @@ pub(super) fn validate_agent_tool_references(
         }
 
         for prompt_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Prompt) {
-            if validation_index.prompt_names.contains(&prompt_name) {
+            if validation_index.has_prompt(&prompt_name) {
                 continue;
             }
 
@@ -242,7 +241,7 @@ pub(super) fn validate_agent_tool_references(
         }
 
         for resource_name in uses_expression.referenced_names_for_keyword(ReferenceKeyword::Resource) {
-            if validation_index.resource_names.contains(&resource_name) {
+            if validation_index.has_resource(&resource_name) {
                 continue;
             }
 

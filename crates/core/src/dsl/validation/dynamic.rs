@@ -1,6 +1,6 @@
 use super::super::ast::{AgentProperty, Declaration, ObjectField, Workflow};
-use super::index::ValidationIndex;
 use super::report::{ValidationIssue, ValidationReport};
+use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet};
@@ -98,7 +98,7 @@ pub(super) fn validate_agent_dependency_cycles(
 ) {
     let mut dependency_graph = DiGraph::<String, ()>::new();
     let mut node_index_by_agent_name = HashMap::<String, NodeIndex>::new();
-    let mut sorted_agent_names = validation_index.agent_names.iter().cloned().collect::<Vec<_>>();
+    let mut sorted_agent_names = validation_index.agent_names().map(str::to_owned).collect::<Vec<_>>();
 
     sorted_agent_names.sort();
 

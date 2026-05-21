@@ -70,7 +70,7 @@ impl ValidationReport {
         self.push_issue_with_span(issue, None);
     }
 
-    pub(super) fn push_issue_with_span(&mut self, issue: ValidationIssue, span: Option<SourceSpan>) {
+    pub(crate) fn push_issue_with_span(&mut self, issue: ValidationIssue, span: Option<SourceSpan>) {
         self.issues.push(issue);
         self.spans.push(span);
     }

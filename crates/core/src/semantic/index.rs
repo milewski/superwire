@@ -1,32 +1,146 @@
-use super::super::ast::{Declaration, ObjectField, SourceSpan, TypeExpression, TypedField, Workflow};
-use super::report::{SingletonDeclarationKind, ValidationIssue, ValidationReport};
+use crate::dsl::{
+    AgentDeclaration, Declaration, McpPromptImportDeclaration, McpResourceImportDeclaration, ModelDeclaration, ObjectField,
+    ProviderDeclaration, SchemaDeclaration, SingletonDeclarationKind, SourceSpan, ToolDeclaration, TypeExpression, TypedField,
+    ValidationIssue, ValidationReport, Workflow,
+};
 use crate::semantic::support::types::{workflow_type_from_dsl, WorkflowType};
 use crate::semantic::ProviderDriver;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct ValidationIndex {
-    pub(super) provider_names: HashSet<String>,
-    pub(super) model_names: HashSet<String>,
-    pub(super) agent_names: HashSet<String>,
-    pub(super) tool_names: HashSet<String>,
-    pub(super) resource_names: HashSet<String>,
-    pub(super) prompt_names: HashSet<String>,
-    pub(super) schema_names: HashSet<String>,
+pub struct WorkflowSemanticIndex {
+    provider_names: HashSet<String>,
+    model_names: HashSet<String>,
+    agent_names: HashSet<String>,
+    tool_names: HashSet<String>,
+    resource_names: HashSet<String>,
+    prompt_names: HashSet<String>,
+    schema_names: HashSet<String>,
     schema_field_types: HashMap<String, HashMap<String, TypeExpression>>,
     schema_types: HashMap<String, TypeExpression>,
-    pub(super) input_field_types: Option<HashMap<String, TypeExpression>>,
-    pub(super) secrets_field_types: Option<HashMap<String, TypeExpression>>,
-    pub(super) agent_output_types: HashMap<String, Option<TypeExpression>>,
-    pub(super) tool_input_types: HashMap<String, WorkflowType>,
-    pub(super) tool_binding_types: HashMap<String, WorkflowType>,
-    pub(super) tool_fixed_binding_names: HashMap<String, HashSet<String>>,
-    pub(super) tool_fixed_binding_fields: HashMap<String, Vec<ObjectField>>,
-    pub(super) tool_output_types: HashMap<String, WorkflowType>,
+    input_field_types: Option<HashMap<String, TypeExpression>>,
+    secrets_field_types: Option<HashMap<String, TypeExpression>>,
+    agent_output_types: HashMap<String, Option<TypeExpression>>,
+    tool_input_types: HashMap<String, WorkflowType>,
+    tool_binding_types: HashMap<String, WorkflowType>,
+    tool_fixed_binding_names: HashMap<String, HashSet<String>>,
+    tool_fixed_binding_fields: HashMap<String, Vec<ObjectField>>,
+    tool_output_types: HashMap<String, WorkflowType>,
 }
 
-impl ValidationIndex {
-    pub(super) fn schema_type_expression(&self, schema_name: &str, span: SourceSpan) -> Option<TypeExpression> {
+impl WorkflowSemanticIndex {
+    #[must_use]
+    pub fn from_workflow(workflow: &Workflow) -> Self {
+        let mut validation_report = ValidationReport::default();
+
+        Self::build_for_validation(workflow, &mut validation_report)
+    }
+
+    #[must_use]
+    pub fn has_provider(&self, provider_name: &str) -> bool {
+        self.provider_names.contains(provider_name)
+    }
+
+    #[must_use]
+    pub fn has_model(&self, model_name: &str) -> bool {
+        self.model_names.contains(model_name)
+    }
+
+    #[must_use]
+    pub fn has_agent(&self, agent_name: &str) -> bool {
+        self.agent_names.contains(agent_name)
+    }
+
+    #[must_use]
+    pub fn has_tool(&self, tool_name: &str) -> bool {
+        self.tool_names.contains(tool_name)
+    }
+
+    #[must_use]
+    pub fn has_resource(&self, resource_name: &str) -> bool {
+        self.resource_names.contains(resource_name)
+    }
+
+    #[must_use]
+    pub fn has_prompt(&self, prompt_name: &str) -> bool {
+        self.prompt_names.contains(prompt_name)
+    }
+
+    #[must_use]
+    pub fn has_schema(&self, schema_name: &str) -> bool {
+        self.schema_names.contains(schema_name)
+    }
+
+    pub fn provider_names(&self) -> impl Iterator<Item = &str> {
+        self.provider_names.iter().map(String::as_str)
+    }
+
+    pub fn model_names(&self) -> impl Iterator<Item = &str> {
+        self.model_names.iter().map(String::as_str)
+    }
+
+    pub fn agent_names(&self) -> impl Iterator<Item = &str> {
+        self.agent_names.iter().map(String::as_str)
+    }
+
+    pub fn tool_names(&self) -> impl Iterator<Item = &str> {
+        self.tool_names.iter().map(String::as_str)
+    }
+
+    pub fn resource_names(&self) -> impl Iterator<Item = &str> {
+        self.resource_names.iter().map(String::as_str)
+    }
+
+    pub fn prompt_names(&self) -> impl Iterator<Item = &str> {
+        self.prompt_names.iter().map(String::as_str)
+    }
+
+    pub fn schema_names(&self) -> impl Iterator<Item = &str> {
+        self.schema_names.iter().map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn input_field_types(&self) -> Option<&HashMap<String, TypeExpression>> {
+        self.input_field_types.as_ref()
+    }
+
+    #[must_use]
+    pub fn secrets_field_types(&self) -> Option<&HashMap<String, TypeExpression>> {
+        self.secrets_field_types.as_ref()
+    }
+
+    #[must_use]
+    pub fn agent_output_type(&self, agent_name: &str) -> Option<&Option<TypeExpression>> {
+        self.agent_output_types.get(agent_name)
+    }
+
+    #[must_use]
+    pub fn tool_input_type(&self, tool_name: &str) -> Option<&WorkflowType> {
+        self.tool_input_types.get(tool_name)
+    }
+
+    #[must_use]
+    pub fn tool_binding_type(&self, tool_name: &str) -> Option<&WorkflowType> {
+        self.tool_binding_types.get(tool_name)
+    }
+
+    #[must_use]
+    pub fn tool_fixed_binding_names(&self, tool_name: &str) -> Option<&HashSet<String>> {
+        self.tool_fixed_binding_names.get(tool_name)
+    }
+
+    #[must_use]
+    pub fn tool_fixed_binding_fields(&self, tool_name: &str) -> Option<&[ObjectField]> {
+        self.tool_fixed_binding_fields.get(tool_name).map(Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn tool_output_type(&self, tool_name: &str) -> Option<&WorkflowType> {
+        self.tool_output_types.get(tool_name)
+    }
+
+    #[must_use]
+    pub fn schema_type_expression(&self, schema_name: &str, span: SourceSpan) -> Option<TypeExpression> {
         if let Some(schema_type) = self.schema_types.get(schema_name) {
             return Some(schema_type.clone());
         }
@@ -45,7 +159,8 @@ impl ValidationIndex {
         Some(TypeExpression::Object(typed_fields))
     }
 
-    pub(super) fn named_schema_types(&self, span: SourceSpan) -> HashMap<String, TypeExpression> {
+    #[must_use]
+    pub fn named_schema_types(&self, span: SourceSpan) -> HashMap<String, TypeExpression> {
         self.schema_names
             .iter()
             .filter_map(|schema_name| {
@@ -56,9 +171,136 @@ impl ValidationIndex {
     }
 }
 
-impl ValidationIndex {
+impl WorkflowSemanticIndex {
+    pub(crate) fn register_provider_name(
+        &mut self,
+        provider_declaration: &ProviderDeclaration,
+        validation_report: &mut ValidationReport,
+    ) -> bool {
+        provider_declaration.validate_name(validation_report);
+
+        let inserted_provider = self.provider_names.insert(provider_declaration.name.clone());
+
+        if !inserted_provider {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicateProvider {
+                    provider_name: provider_declaration.name.clone(),
+                },
+                Some(provider_declaration.span),
+            );
+        }
+
+        inserted_provider
+    }
+
+    pub(crate) fn register_model_name(&mut self, model_declaration: &ModelDeclaration, validation_report: &mut ValidationReport) -> bool {
+        model_declaration.validate_name(validation_report);
+
+        let inserted_model = self.model_names.insert(model_declaration.name.clone());
+
+        if !inserted_model {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicateModel {
+                    model_name: model_declaration.name.clone(),
+                },
+                Some(model_declaration.span),
+            );
+        }
+
+        inserted_model
+    }
+
+    pub(crate) fn register_schema_name(
+        &mut self,
+        schema_declaration: &SchemaDeclaration,
+        validation_report: &mut ValidationReport,
+    ) -> bool {
+        schema_declaration.validate_name(validation_report);
+
+        let inserted_schema = self.schema_names.insert(schema_declaration.name.clone());
+
+        if !inserted_schema {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicateSchema {
+                    schema_name: schema_declaration.name.clone(),
+                },
+                Some(schema_declaration.span),
+            );
+        }
+
+        inserted_schema
+    }
+
+    pub(crate) fn register_tool_name(&mut self, tool_declaration: &ToolDeclaration, validation_report: &mut ValidationReport) -> bool {
+        let inserted_tool = self.tool_names.insert(tool_declaration.name.clone());
+
+        if !inserted_tool {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicateTool {
+                    tool_name: tool_declaration.name.clone(),
+                },
+                Some(tool_declaration.span),
+            );
+        }
+
+        inserted_tool
+    }
+
+    pub(crate) fn register_resource_name(
+        &mut self,
+        resource_import_declaration: &McpResourceImportDeclaration,
+        validation_report: &mut ValidationReport,
+    ) -> bool {
+        let inserted_resource = self.resource_names.insert(resource_import_declaration.name.clone());
+
+        if !inserted_resource {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicateResource {
+                    resource_name: resource_import_declaration.name.clone(),
+                },
+                Some(resource_import_declaration.span),
+            );
+        }
+
+        inserted_resource
+    }
+
+    pub(crate) fn register_prompt_name(
+        &mut self,
+        prompt_import_declaration: &McpPromptImportDeclaration,
+        validation_report: &mut ValidationReport,
+    ) -> bool {
+        let inserted_prompt = self.prompt_names.insert(prompt_import_declaration.name.clone());
+
+        if !inserted_prompt {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicatePrompt {
+                    prompt_name: prompt_import_declaration.name.clone(),
+                },
+                Some(prompt_import_declaration.span),
+            );
+        }
+
+        inserted_prompt
+    }
+
+    pub(crate) fn register_agent_name(&mut self, agent_declaration: &AgentDeclaration, validation_report: &mut ValidationReport) -> bool {
+        let inserted_agent = self.agent_names.insert(agent_declaration.name.clone());
+
+        if !inserted_agent {
+            validation_report.push_issue_with_span(
+                ValidationIssue::DuplicateAgent {
+                    agent_name: agent_declaration.name.clone(),
+                },
+                Some(agent_declaration.span),
+            );
+        }
+
+        inserted_agent
+    }
+
     #[allow(clippy::too_many_lines)]
-    pub(super) fn build(workflow: &Workflow, validation_report: &mut ValidationReport) -> Self {
+    pub(crate) fn build_for_validation(workflow: &Workflow, validation_report: &mut ValidationReport) -> Self {
         let mut validation_index = Self::default();
 
         let mut has_input_declaration = false;

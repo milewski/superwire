@@ -1,4 +1,5 @@
 mod graph;
+mod index;
 mod ir;
 mod pipeline;
 mod plan;
@@ -9,6 +10,7 @@ pub use graph::{
     WorkflowExecutionGraph, WorkflowExecutionGraphEdge, WorkflowExecutionGraphEdgeKind, WorkflowExecutionGraphNode,
     WorkflowExecutionGraphNodeKind, WorkflowExecutionGraphPort, WorkflowExecutionGraphTool, WorkflowExecutionGraphToolKind,
 };
+pub use index::WorkflowSemanticIndex;
 pub use ir::{build_dynamic_typed_workflow_ir, build_typed_workflow_ir, TypedAgentIr, TypedToolIr, TypedWorkflowIr};
 pub use pipeline::{
     compile_workflow_pipeline, NormalizeStageOutput, ParseStageOutput, PlanStageOutput, TypecheckStageOutput, ValidateStageOutput,

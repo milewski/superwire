@@ -1,6 +1,6 @@
 use super::super::ast::{AgentProperty, Declaration, Reference, ReferenceKeyword, SourceSpan, TypeExpression, Workflow};
-use super::index::ValidationIndex;
 use super::report::{ValidationContext, ValidationIssue, ValidationReport};
+use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::HashSet;
 
 pub(super) fn validate_schema_references(
@@ -128,7 +128,7 @@ impl TypeExpression {
     fn validate_for_schemas(&self, context: ValidationContext, span: Option<SourceSpan>, validation_state: &mut SchemaValidationState) {
         match self {
             Self::SchemaReference(referenced_schema_name) => {
-                if validation_state.validation_index.schema_names.contains(referenced_schema_name) {
+                if validation_state.validation_index.has_schema(referenced_schema_name) {
                     return;
                 }
 

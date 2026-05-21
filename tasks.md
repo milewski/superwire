@@ -85,7 +85,7 @@
   Description: Attach tool reference collection, direct tool-name extraction, agent dependency collection, and secret-reference detection to `Expression`.
   Rationale: Expression traversal is needed by multiple modules and should not be copied through validator, runtime, graph, and LSP code.
 
-- [ ] Promote `ValidationIndex` or equivalent semantic data into a public-but-internal shared core API.
+- [x] Promote `ValidationIndex` or equivalent semantic data into a public-but-internal shared core API.
   Description: Expose immutable accessors for declaration/type/reference lookup while keeping mutation internal.
   Rationale: LSP, CLI, validation, and executor currently rebuild overlapping semantic knowledge.
 

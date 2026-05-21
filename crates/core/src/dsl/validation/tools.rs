@@ -1,8 +1,8 @@
 use super::super::ast::{AgentDeclaration, Expression, ObjectField, ReferenceKeyword, SourceSpan};
-use super::index::ValidationIndex;
 use super::report::{ValidationIssue, ValidationReport};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::{ensure_type_matches, WorkflowType};
+use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) fn validate_agent_tool_bindings(
@@ -44,7 +44,7 @@ impl AgentToolBindingValidator<'_> {
             return;
         };
 
-        let Some(WorkflowType::Object(expected_binding_fields)) = self.validation_index.tool_binding_types.get(&tool_name) else {
+        let Some(WorkflowType::Object(expected_binding_fields)) = self.validation_index.tool_binding_type(&tool_name) else {
             return;
         };
 
@@ -64,7 +64,7 @@ impl AgentToolBindingValidator<'_> {
     }
 
     fn validate_fixed_binding_overrides(&mut self, tool_name: &str, binding_fields: &[ObjectField]) {
-        let Some(fixed_names) = self.validation_index.tool_fixed_binding_names.get(tool_name) else {
+        let Some(fixed_names) = self.validation_index.tool_fixed_binding_names(tool_name) else {
             return;
         };
 
@@ -162,7 +162,11 @@ impl AgentToolBindingValidator<'_> {
             );
         }
 
-        let Some(fixed_binding_fields) = self.validation_index.tool_fixed_binding_fields.get(tool_name).cloned() else {
+        let Some(fixed_binding_fields) = self
+            .validation_index
+            .tool_fixed_binding_fields(tool_name)
+            .map(<[ObjectField]>::to_vec)
+        else {
             return;
         };
 

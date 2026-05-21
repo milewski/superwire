@@ -2,11 +2,11 @@ use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, MatchBranch, ObjectField, Reference, ReferenceKeyword,
     SourcePosition, SourceSpan, StringTemplatePart, TypeExpression, Workflow,
 };
-use super::index::ValidationIndex;
 use super::report::{ValidationContext, ValidationIssue, ValidationReport};
 use super::tools::validate_agent_tool_bindings;
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
 use crate::semantic::support::types::workflow_type_from_dsl;
+use crate::semantic::WorkflowSemanticIndex as ValidationIndex;
 use std::collections::{HashMap, HashSet};
 
 #[allow(clippy::too_many_lines)]
@@ -644,7 +644,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn validate_resource_call_name(&mut self, resource_name: &str, context: ValidationContext, span: SourceSpan) {
-        if self.validation_index.resource_names.contains(resource_name) {
+        if self.validation_index.has_resource(resource_name) {
             return;
         }
 
@@ -662,7 +662,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn validate_prompt_call_name(&mut self, prompt_name: &str, context: ValidationContext, span: SourceSpan) {
-        if self.validation_index.prompt_names.contains(prompt_name) {
+        if self.validation_index.has_prompt(prompt_name) {
             return;
         }
 
@@ -741,8 +741,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
 
         let referenced_agent_output_type = self
             .validation_index
-            .agent_output_types
-            .get(referenced_agent_name)
+            .agent_output_type(referenced_agent_name)
             .and_then(Clone::clone);
 
         if reference.accesses.len() == 1 {
@@ -834,7 +833,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             .field
             .as_str();
 
-        let Some(input_field_types) = self.validation_index.input_field_types.as_ref() else {
+        let Some(input_field_types) = self.validation_index.input_field_types() else {
             if self.missing_input_declaration_contexts.insert(context.clone()) {
                 self.validation_report
                     .push_issue_with_span(ValidationIssue::MissingInputDeclaration { context }, Some(reference.span));
@@ -874,7 +873,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
             .field
             .as_str();
 
-        let Some(secrets_field_types) = self.validation_index.secrets_field_types.as_ref() else {
+        let Some(secrets_field_types) = self.validation_index.secrets_field_types() else {
             if self.missing_secrets_declaration_contexts.insert(context.clone()) {
                 self.validation_report
                     .push_issue_with_span(ValidationIssue::MissingSecretsDeclaration { context }, Some(reference.span));
@@ -1130,7 +1129,7 @@ impl<'validation> KeywordReferenceValidationState<'validation> {
     }
 
     fn validate_agent_reference_name(&mut self, referenced_agent_name: &str, context: ValidationContext, span: Option<SourceSpan>) -> bool {
-        if self.validation_index.agent_names.contains(referenced_agent_name) {
+        if self.validation_index.has_agent(referenced_agent_name) {
             return true;
         }
 
