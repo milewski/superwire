@@ -137,7 +137,7 @@
   Description: Replace editor-specific helper functions with methods on domain types where the data lives.
   Rationale: Type conversion is core DSL behavior, not an LSP-only concern.
 
-- [ ] Introduce a shared `ReferenceResolver` over `SemanticIndex`, `Reference`, and scope data.
+- [x] Introduce a shared `ReferenceResolver` over `SemanticIndex`, `Reference`, and scope data.
   Description: Return typed resolution results for input, secrets, dynamic fields, agent outputs, tools, imports, and models.
   Rationale: Validation, hover, definition, completion, graph, and runtime planning must agree on what a reference means.
 

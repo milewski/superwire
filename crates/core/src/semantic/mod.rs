@@ -3,6 +3,7 @@ mod index;
 mod ir;
 mod pipeline;
 mod plan;
+mod resolver;
 pub mod support;
 mod tooling;
 
@@ -20,6 +21,10 @@ pub use pipeline::{
     WorkflowPipeline, WorkflowPipelineInput,
 };
 pub use plan::{build_execution_plan, ExecutionPlan, PlannedAgent, PlannedMcpImport, PlannedMcpImportKind};
+pub use resolver::{
+    ReferenceResolution, ReferenceResolutionError, ReferenceResolutionRoot, ReferenceResolutionScope, ReferenceResolver,
+    ResolvedMcpImportReference, ResolvedModelReference, ResolvedNamedValueReference, ResolvedToolReference, ResolvedValueReference,
+};
 pub use support::provider::ProviderDriver;
 pub use support::{InferenceSetting, WorkflowSemanticError};
 pub use tooling::{
