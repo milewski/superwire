@@ -6,6 +6,7 @@ use superwire_core::dsl::{
     SingletonDeclarationKind, ToolCallKeyword,
 };
 use superwire_core::semantic::InferenceSetting;
+use superwire_core::testing::WorkflowSourceTemplate;
 
 macro_rules! inline_completion_suggestions {
     ($($workflow_tokens:tt)*) => {{
@@ -272,41 +273,33 @@ impl CompletionLabel for TypeExpression {
 }
 
 fn source_with_cursor(source_template: &str) -> (String, Position) {
-    let normalized_template = normalize_inline_cursor_layout(source_template);
+    let source_with_cursor = WorkflowSourceTemplate::from_inline(source_template).with_cursor();
+    let cursor_position = source_with_cursor.cursor_position();
 
-    source_without_cursor_normalization(&normalized_template)
+    (
+        source_with_cursor.into_source(),
+        Position {
+            line: cursor_position.line,
+            character: cursor_position.character,
+        },
+    )
 }
 
 fn source_without_cursor_normalization(source_template: &str) -> (String, Position) {
-    let compact_cursor_marker = "<cursor>";
+    let source_with_cursor = WorkflowSourceTemplate::from_inline(source_template).without_cursor_normalization();
+    let cursor_position = source_with_cursor.cursor_position();
 
-    let (cursor_marker, cursor_byte_offset) = if let Some(marker_offset) = source_template.find(compact_cursor_marker) {
-        (compact_cursor_marker, marker_offset)
-    } else {
-        panic!("cursor marker should exist in test source");
-    };
-
-    let mut line = 0_u32;
-    let mut character = 0_u32;
-
-    for character_in_source in source_template[..cursor_byte_offset].chars() {
-        if character_in_source == '\n' {
-            line += 1;
-            character = 0;
-            continue;
-        }
-
-        character += 1;
-    }
-
-    let source_without_cursor = source_template.replacen(cursor_marker, "", 1);
-
-    (source_without_cursor, Position { line, character })
+    (
+        source_with_cursor.into_source(),
+        Position {
+            line: cursor_position.line,
+            character: cursor_position.character,
+        },
+    )
 }
 
 fn completion_suggestions_from_template(source_template: &str) -> Vec<CompletionSuggestion> {
-    let source_template = normalize_rust_doc_comment_tokens(source_template);
-    let (source, cursor_position) = source_with_cursor(&source_template);
+    let (source, cursor_position) = source_with_cursor(source_template);
 
     completion_suggestions_from_source(source, cursor_position)
 }
@@ -328,154 +321,13 @@ fn completion_suggestion_by_label<'completion>(
 }
 
 fn diagnostics_from_template(source_template: &str) -> Vec<DocumentDiagnostic> {
-    let source_template = normalize_rust_doc_comment_tokens(source_template);
-    let source = normalize_inline_cursor_layout(&source_template);
+    let source = WorkflowSourceTemplate::from_inline(source_template)
+        .normalized_cursor_layout()
+        .source()
+        .to_string();
     let document_state = DocumentState::new(source, None);
 
     document_state.diagnostics()
-}
-
-fn normalize_rust_doc_comment_tokens(source_template: &str) -> String {
-    let mut normalized_source = String::new();
-    let mut remaining_source = source_template;
-
-    while let Some(doc_attribute_start) = remaining_source.find("#[doc = r\"") {
-        normalized_source.push_str(&remaining_source[..doc_attribute_start]);
-        remaining_source = &remaining_source[doc_attribute_start + "#[doc = r\"".len()..];
-
-        let Some(doc_attribute_end) = remaining_source.find("\"]") else {
-            normalized_source.push_str("#[doc = r\"");
-            normalized_source.push_str(remaining_source);
-
-            return normalized_source;
-        };
-
-        normalized_source.push_str("///");
-        normalized_source.push_str(&remaining_source[..doc_attribute_end]);
-        normalized_source.push('\n');
-        remaining_source = &remaining_source[doc_attribute_end + "\"]".len()..];
-    }
-
-    normalized_source.push_str(remaining_source);
-    normalized_source
-}
-
-fn normalize_inline_cursor_layout(source_template: &str) -> String {
-    let compact_marker = "<cursor>";
-    let spaced_marker = "< cursor >";
-
-    let compact_marker_offset = source_template.find(compact_marker);
-    let spaced_marker_offset = source_template.find(spaced_marker);
-
-    let (marker, marker_offset) = match (compact_marker_offset, spaced_marker_offset) {
-        (Some(compact_offset), Some(spaced_offset)) => {
-            if compact_offset <= spaced_offset {
-                (compact_marker, compact_offset)
-            } else {
-                (spaced_marker, spaced_offset)
-            }
-        }
-        (Some(compact_offset), None) => (compact_marker, compact_offset),
-        (None, Some(spaced_offset)) => (spaced_marker, spaced_offset),
-        (None, None) => {
-            return source_template.to_string();
-        }
-    };
-
-    if is_inside_string_literal(source_template, marker_offset) {
-        return source_template.to_string();
-    }
-
-    let previous_character = source_template[..marker_offset]
-        .chars()
-        .rev()
-        .find(|character| !character.is_whitespace());
-
-    if previous_character == Some('.') || previous_character == Some(':') || previous_character == Some('(') {
-        return source_template.to_string();
-    }
-
-    let mut normalized_source = String::new();
-    normalized_source.push_str(&source_template[..marker_offset]);
-
-    if !normalized_source.ends_with('\n') {
-        normalized_source.push('\n');
-    }
-
-    normalized_source.push_str(marker);
-
-    let marker_end_offset = marker_offset + marker.len();
-    let remaining_source = &source_template[marker_end_offset..];
-    let next_character = remaining_source.chars().find(|character| !character.is_whitespace());
-
-    if next_character == Some('{') {
-        return source_template.to_string();
-    }
-
-    if next_character == Some('}') {
-        normalized_source.push('\n');
-    }
-
-    normalized_source.push_str(remaining_source);
-
-    merge_lone_opening_brace_lines(&normalized_source)
-}
-
-fn merge_lone_opening_brace_lines(source_text: &str) -> String {
-    let mut source_lines = source_text.lines().map(str::to_string).collect::<Vec<_>>();
-    let mut line_index = 0_usize;
-
-    while line_index < source_lines.len() {
-        if line_index == 0 {
-            line_index += 1;
-            continue;
-        }
-
-        if source_lines[line_index].trim() != "{" {
-            line_index += 1;
-            continue;
-        }
-
-        if !source_lines[line_index - 1].is_empty() {
-            source_lines[line_index - 1].push(' ');
-        }
-
-        source_lines[line_index - 1].push('{');
-        let _ = source_lines.remove(line_index);
-    }
-
-    source_lines.join("\n")
-}
-
-fn is_inside_string_literal(source_text: &str, byte_offset: usize) -> bool {
-    let mut inside_string = false;
-    let mut escaping = false;
-
-    for character in source_text[..byte_offset].chars() {
-        if escaping {
-            escaping = false;
-            continue;
-        }
-
-        if inside_string {
-            if character == '\\' {
-                escaping = true;
-                continue;
-            }
-
-            if character == '"' {
-                inside_string = false;
-            }
-
-            continue;
-        }
-
-        if character == '"' {
-            inside_string = true;
-        }
-    }
-
-    inside_string
 }
 
 mod completion_tests;
