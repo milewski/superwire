@@ -1537,6 +1537,11 @@ pub struct TypedField {
 }
 
 impl TypedField {
+    #[must_use]
+    pub fn summary_text(&self) -> String {
+        format!("{}: {}", self.name, self.field_type.summary_text())
+    }
+
     fn insert_sample_json_value(&self, workflow: &Workflow, object_values: &mut Map<String, Value>) {
         object_values.insert(self.name.clone(), self.field_type.sample_json_value(workflow));
     }
@@ -1574,6 +1579,44 @@ pub struct VariantCase {
 }
 
 impl TypeExpression {
+    #[must_use]
+    pub fn summary_text(&self) -> String {
+        match self {
+            Self::String => "string".to_string(),
+            Self::Number => "number".to_string(),
+            Self::Float => "float".to_string(),
+            Self::Boolean => "boolean".to_string(),
+            Self::Null => "null".to_string(),
+            Self::AnyObject => "object".to_string(),
+            Self::SchemaReference(schema_name) => format!("{}.{}", DeclarationKeyword::Schema.as_str(), schema_name),
+            Self::StringEnum(enum_value) => serde_json::to_string(enum_value).expect("string enum value should serialize"),
+            Self::StringEnumReference(reference) => reference.render_path(),
+            Self::Array { item_type, fixed_length } => {
+                if let Some(fixed_length) = fixed_length {
+                    return format!("[{}; {fixed_length}]", item_type.summary_text());
+                }
+
+                format!("[{}]", item_type.summary_text())
+            }
+            Self::Tuple(item_types) => {
+                let item_summary = item_types.iter().map(Self::summary_text).collect::<Vec<_>>().join(", ");
+
+                format!("({item_summary})")
+            }
+            Self::Object(typed_fields) => {
+                let field_summary = typed_fields.iter().map(TypedField::summary_text).collect::<Vec<_>>().join(", ");
+
+                format!("{{ {field_summary} }}")
+            }
+            Self::Variant { discriminator, cases } => {
+                let case_summary = cases.iter().map(VariantCase::summary_text).collect::<Vec<_>>().join(" | ");
+
+                format!("variant {discriminator} {{ {case_summary} }}")
+            }
+            Self::Union(type_expressions) => type_expressions.iter().map(Self::summary_text).collect::<Vec<_>>().join(" | "),
+        }
+    }
+
     #[must_use]
     pub fn sample_json_value(&self, workflow: &Workflow) -> Value {
         match self {
@@ -1664,6 +1707,15 @@ impl TypeExpression {
             }
             _ => Self::Union(vec![inner_type, Self::Null]),
         }
+    }
+}
+
+impl VariantCase {
+    #[must_use]
+    pub fn summary_text(&self) -> String {
+        let field_summary = self.fields.iter().map(TypedField::summary_text).collect::<Vec<_>>().join(", ");
+
+        format!("{} {{ {field_summary} }}", self.name)
     }
 }
 

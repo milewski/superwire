@@ -188,15 +188,19 @@ impl McpLock {
     }
 
     pub fn write_to_path(&self, lock_path: &Path) -> Result<(), McpError> {
+        std::fs::write(lock_path, self.file_text(lock_path)?).map_err(|source| McpError::WriteLock {
+            path: lock_path.display().to_string(),
+            source,
+        })
+    }
+
+    pub fn file_text(&self, lock_path: &Path) -> Result<String, McpError> {
         let lock_text = serde_json::to_string_pretty(self).map_err(|source| McpError::SerializeLock {
             path: lock_path.display().to_string(),
             source,
         })?;
 
-        std::fs::write(lock_path, format!("{lock_text}\n")).map_err(|source| McpError::WriteLock {
-            path: lock_path.display().to_string(),
-            source,
-        })
+        Ok(format!("{lock_text}\n"))
     }
 
     #[must_use]

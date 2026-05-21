@@ -1,6 +1,10 @@
 use crate::diagnostic::DiagnosticCode;
 use crate::dsl::{format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Workflow};
-use crate::mcp::{McpClientBackend, McpClientFactory, McpError, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock};
+use crate::mcp::{
+    McpClientBackend, McpClientFactory, McpError, McpLock, McpPromptArgumentLock, McpServerConfig, McpServerLock, McpToolLock,
+    ProjectMcpLock, PROJECT_MCP_LOCK_FILE_NAME,
+};
+use crate::semantic::{WorkflowExecutionGraph, WorkflowSemanticIndex};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
@@ -115,6 +119,26 @@ pub struct SnapshotAssertion {
     pub name: String,
     pub expected: String,
     pub actual: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatterSnapshotAssertion {
+    snapshot: SnapshotAssertion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphJsonSnapshotAssertion {
+    snapshot: SnapshotAssertion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticIndexSnapshotAssertion {
+    snapshot: SnapshotAssertion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockFileSnapshotAssertion {
+    snapshot: SnapshotAssertion,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -460,6 +484,85 @@ impl SnapshotAssertion {
             self.name,
             stable_text_diff(&self.expected, &self.actual)
         );
+    }
+}
+
+impl FormatterSnapshotAssertion {
+    pub fn from_source(name: impl Into<String>, expected: impl Into<String>, source_text: &str) -> Result<Self, DslFormatError> {
+        let formatted_source = format_workflow_source(source_text)?;
+
+        Ok(Self::from_formatted_output(name, expected, formatted_source))
+    }
+
+    pub fn from_source_template(
+        name: impl Into<String>,
+        expected: impl Into<String>,
+        source_template: &WorkflowSourceTemplate,
+    ) -> Result<Self, DslFormatError> {
+        Self::from_source(name, expected, source_template.source())
+    }
+
+    #[must_use]
+    pub fn from_formatted_output(name: impl Into<String>, expected: impl Into<String>, formatted_output: impl Into<String>) -> Self {
+        Self {
+            snapshot: SnapshotAssertion::new(name, expected, formatted_output),
+        }
+    }
+
+    pub fn assert_matches(&self) {
+        self.snapshot.assert_matches();
+    }
+}
+
+impl GraphJsonSnapshotAssertion {
+    #[must_use]
+    pub fn from_graph(name: impl Into<String>, expected: impl Into<String>, graph: &WorkflowExecutionGraph) -> Self {
+        Self {
+            snapshot: SnapshotAssertion::new(name, expected, graph.stable_json()),
+        }
+    }
+
+    pub fn assert_matches(&self) {
+        self.snapshot.assert_matches();
+    }
+}
+
+impl SemanticIndexSnapshotAssertion {
+    #[must_use]
+    pub fn from_index(name: impl Into<String>, expected: impl Into<String>, semantic_index: &WorkflowSemanticIndex) -> Self {
+        Self {
+            snapshot: SnapshotAssertion::new(name, expected, semantic_index.stable_summary()),
+        }
+    }
+
+    pub fn assert_matches(&self) {
+        self.snapshot.assert_matches();
+    }
+}
+
+impl LockFileSnapshotAssertion {
+    #[must_use]
+    pub fn from_workflow_lock(name: impl Into<String>, expected: impl Into<String>, lock: &McpLock) -> Self {
+        let snapshot_path = Path::new(PROJECT_MCP_LOCK_FILE_NAME);
+        let lock_text = lock.file_text(snapshot_path).expect("workflow MCP lock should serialize");
+
+        Self {
+            snapshot: SnapshotAssertion::new(name, expected, lock_text),
+        }
+    }
+
+    #[must_use]
+    pub fn from_project_lock(name: impl Into<String>, expected: impl Into<String>, lock: &ProjectMcpLock) -> Self {
+        let snapshot_path = Path::new(PROJECT_MCP_LOCK_FILE_NAME);
+        let lock_text = lock.file_text(snapshot_path).expect("project MCP lock should serialize");
+
+        Self {
+            snapshot: SnapshotAssertion::new(name, expected, lock_text),
+        }
+    }
+
+    pub fn assert_matches(&self) {
+        self.snapshot.assert_matches();
     }
 }
 
@@ -1040,8 +1143,14 @@ fn is_inside_string_literal(source_text: &str, byte_offset: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{empty_object_schema, stable_text_diff, WorkflowSource, WorkflowSourceTemplate};
+    use super::{
+        empty_object_schema, stable_text_diff, FormatterSnapshotAssertion, GraphJsonSnapshotAssertion, LockFileSnapshotAssertion,
+        SemanticIndexSnapshotAssertion, WorkflowSource, WorkflowSourceTemplate,
+    };
+    use crate::mcp::{McpLock, McpServerLock, ProjectMcpLock};
+    use crate::semantic::{WorkflowExecutionGraph, WorkflowSemanticIndex};
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn inline_cursor_layout_normalizes_cursor_before_block_close() {
@@ -1103,5 +1212,140 @@ mod tests {
                 "additionalProperties": false,
             })
         );
+    }
+
+    #[test]
+    fn formatter_snapshot_assertion_compares_formatted_output() {
+        let source_template = WorkflowSourceTemplate::from_inline(crate::workflow_source! {
+            output { value:"ok" }
+        });
+        let expected_output = concat!("output {\n", "    value: \"ok\"\n", "}\n");
+
+        FormatterSnapshotAssertion::from_source_template("formatter output", expected_output, &source_template)
+            .expect("workflow source should format")
+            .assert_matches();
+    }
+
+    #[test]
+    fn graph_json_snapshot_assertion_compares_stable_json() {
+        let graph = WorkflowExecutionGraph {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            agent_execution_order: Vec::new(),
+        };
+        let expected_output = concat!(
+            "{\n",
+            "  \"nodes\": [],\n",
+            "  \"edges\": [],\n",
+            "  \"agent_execution_order\": []\n",
+            "}\n"
+        );
+
+        GraphJsonSnapshotAssertion::from_graph("graph json", expected_output, &graph).assert_matches();
+    }
+
+    #[test]
+    fn semantic_index_snapshot_assertion_compares_stable_summary() {
+        let workflow = crate::parse_inline_workflow! {
+            input {
+                topic: string
+            }
+
+            tool web_search {
+                input {
+                    query: string
+                }
+
+                bindings {
+                    api_key: input.topic
+                }
+
+                output {
+                    summary: string
+                }
+            }
+
+            agent researcher {
+                uses: [tool.web_search]
+                instruction: input.topic
+                output {
+                    summary: string
+                }
+            }
+
+            output {
+                summary: agent.researcher.summary
+            }
+        };
+        let semantic_index = WorkflowSemanticIndex::from_workflow(&workflow);
+        let expected_output = concat!(
+            "providers:\n",
+            "  - none\n",
+            "\n",
+            "models:\n",
+            "  - none\n",
+            "\n",
+            "schemas:\n",
+            "  - none\n",
+            "\n",
+            "tools:\n",
+            "  - web_search\n",
+            "\n",
+            "resources:\n",
+            "  - none\n",
+            "\n",
+            "prompts:\n",
+            "  - none\n",
+            "\n",
+            "agents:\n",
+            "  - researcher\n",
+            "\n",
+            "schema types:\n",
+            "  - none\n",
+            "\n",
+            "input fields:\n",
+            "  - topic: string\n",
+            "\n",
+            "secrets fields:\n",
+            "  - none\n",
+            "\n",
+            "agent output types:\n",
+            "  - researcher: { summary: string }\n",
+            "\n",
+            "tool input types:\n",
+            "  - web_search: { query: string }\n",
+            "\n",
+            "tool binding types:\n",
+            "  - web_search: {  }\n",
+            "\n",
+            "tool output types:\n",
+            "  - web_search: { summary: string }\n",
+            "\n",
+            "tool fixed bindings:\n",
+            "  - web_search: api_key\n",
+        );
+
+        SemanticIndexSnapshotAssertion::from_index("semantic index summary", expected_output, &semantic_index).assert_matches();
+    }
+
+    #[test]
+    fn lock_file_snapshot_assertion_compares_stable_lock_text() {
+        let workflow_lock = McpLock {
+            servers: BTreeMap::from([("local".to_string(), McpServerLock::default())]),
+        };
+        let project_lock = ProjectMcpLock::empty();
+        let expected_workflow_lock = concat!(
+            "{\n",
+            "  \"servers\": {\n",
+            "    \"local\": {\n",
+            "      \"tools\": {}\n",
+            "    }\n",
+            "  }\n",
+            "}\n"
+        );
+        let expected_project_lock = concat!("{\n", "  \"version\": 1,\n", "  \"workflows\": {}\n", "}\n");
+
+        LockFileSnapshotAssertion::from_workflow_lock("workflow lock", expected_workflow_lock, &workflow_lock).assert_matches();
+        LockFileSnapshotAssertion::from_project_lock("project lock", expected_project_lock, &project_lock).assert_matches();
     }
 }

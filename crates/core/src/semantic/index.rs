@@ -6,6 +6,7 @@ use crate::dsl::{
 use crate::semantic::support::types::{workflow_type_from_dsl, WorkflowType};
 use crate::semantic::ProviderDriver;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Default)]
 pub struct WorkflowSemanticIndex {
@@ -168,6 +169,202 @@ impl WorkflowSemanticIndex {
                     .map(|schema_type| (schema_name.clone(), schema_type))
             })
             .collect()
+    }
+
+    #[must_use]
+    pub fn stable_summary(&self) -> String {
+        let mut summary_text = String::new();
+
+        self.push_name_summary_section("providers", self.provider_names(), &mut summary_text);
+        self.push_name_summary_section("models", self.model_names(), &mut summary_text);
+        self.push_name_summary_section("schemas", self.schema_names(), &mut summary_text);
+        self.push_name_summary_section("tools", self.tool_names(), &mut summary_text);
+        self.push_name_summary_section("resources", self.resource_names(), &mut summary_text);
+        self.push_name_summary_section("prompts", self.prompt_names(), &mut summary_text);
+        self.push_name_summary_section("agents", self.agent_names(), &mut summary_text);
+        self.push_schema_type_summary_section(&mut summary_text);
+        Self::push_optional_type_expression_summary_section("input fields", self.input_field_types.as_ref(), &mut summary_text);
+        Self::push_optional_type_expression_summary_section("secrets fields", self.secrets_field_types.as_ref(), &mut summary_text);
+        self.push_agent_output_summary_section(&mut summary_text);
+        Self::push_workflow_type_summary_section("tool input types", &self.tool_input_types, &mut summary_text);
+        Self::push_workflow_type_summary_section("tool binding types", &self.tool_binding_types, &mut summary_text);
+        Self::push_workflow_type_summary_section("tool output types", &self.tool_output_types, &mut summary_text);
+        self.push_tool_fixed_binding_summary_section(&mut summary_text);
+
+        summary_text
+    }
+
+    fn push_name_summary_section<'index>(&self, section_name: &str, names: impl Iterator<Item = &'index str>, summary_text: &mut String) {
+        let mut sorted_names = names.map(str::to_string).collect::<Vec<_>>();
+        sorted_names.sort();
+
+        Self::push_summary_section_header(section_name, summary_text);
+
+        if sorted_names.is_empty() {
+            summary_text.push_str("  - none\n");
+
+            return;
+        }
+
+        for name in sorted_names {
+            let _ = writeln!(summary_text, "  - {name}");
+        }
+    }
+
+    fn push_schema_type_summary_section(&self, summary_text: &mut String) {
+        Self::push_summary_section_header("schema types", summary_text);
+
+        if self.schema_names.is_empty() {
+            summary_text.push_str("  - none\n");
+
+            return;
+        }
+
+        let mut schema_names = self.schema_names.iter().cloned().collect::<Vec<_>>();
+        schema_names.sort();
+
+        for schema_name in schema_names {
+            let schema_type_summary = self
+                .schema_types
+                .get(&schema_name)
+                .map(TypeExpression::summary_text)
+                .or_else(|| {
+                    self.schema_field_types
+                        .get(&schema_name)
+                        .map(Self::type_expression_field_map_summary)
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+
+            let _ = writeln!(summary_text, "  - {schema_name}: {schema_type_summary}");
+        }
+    }
+
+    fn push_optional_type_expression_summary_section(
+        section_name: &str,
+        field_types: Option<&HashMap<String, TypeExpression>>,
+        summary_text: &mut String,
+    ) {
+        Self::push_summary_section_header(section_name, summary_text);
+
+        let Some(field_types) = field_types else {
+            summary_text.push_str("  - none\n");
+
+            return;
+        };
+
+        if field_types.is_empty() {
+            summary_text.push_str("  - none\n");
+
+            return;
+        }
+
+        for field_summary in Self::sorted_type_expression_field_summaries(field_types) {
+            let _ = writeln!(summary_text, "  - {field_summary}");
+        }
+    }
+
+    fn push_agent_output_summary_section(&self, summary_text: &mut String) {
+        Self::push_summary_section_header("agent output types", summary_text);
+
+        if self.agent_output_types.is_empty() {
+            summary_text.push_str("  - none\n");
+
+            return;
+        }
+
+        let mut agent_names = self.agent_output_types.keys().cloned().collect::<Vec<_>>();
+        agent_names.sort();
+
+        for agent_name in agent_names {
+            let output_type_summary = self
+                .agent_output_types
+                .get(&agent_name)
+                .and_then(Option::as_ref)
+                .map_or_else(|| "none".to_string(), TypeExpression::summary_text);
+
+            let _ = writeln!(summary_text, "  - {agent_name}: {output_type_summary}");
+        }
+    }
+
+    fn push_workflow_type_summary_section(section_name: &str, workflow_types: &HashMap<String, WorkflowType>, summary_text: &mut String) {
+        Self::push_summary_section_header(section_name, summary_text);
+
+        if workflow_types.is_empty() {
+            summary_text.push_str("  - none\n");
+
+            return;
+        }
+
+        let mut names = workflow_types.keys().cloned().collect::<Vec<_>>();
+        names.sort();
+
+        for name in names {
+            let workflow_type = workflow_types
+                .get(&name)
+                .expect("sorted workflow type names should come from workflow type map");
+
+            let _ = writeln!(summary_text, "  - {name}: {workflow_type}");
+        }
+    }
+
+    fn push_tool_fixed_binding_summary_section(&self, summary_text: &mut String) {
+        Self::push_summary_section_header("tool fixed bindings", summary_text);
+
+        if self.tool_fixed_binding_names.is_empty() {
+            summary_text.push_str("  - none\n");
+
+            return;
+        }
+
+        let mut tool_names = self.tool_fixed_binding_names.keys().cloned().collect::<Vec<_>>();
+        tool_names.sort();
+
+        for tool_name in tool_names {
+            let mut fixed_binding_names = self
+                .tool_fixed_binding_names
+                .get(&tool_name)
+                .expect("sorted tool names should come from tool fixed binding names")
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            fixed_binding_names.sort();
+
+            let fixed_binding_summary = if fixed_binding_names.is_empty() {
+                "none".to_string()
+            } else {
+                fixed_binding_names.join(", ")
+            };
+
+            let _ = writeln!(summary_text, "  - {tool_name}: {fixed_binding_summary}");
+        }
+    }
+
+    fn type_expression_field_map_summary(field_types: &HashMap<String, TypeExpression>) -> String {
+        format!("{{ {} }}", Self::sorted_type_expression_field_summaries(field_types).join(", "))
+    }
+
+    fn sorted_type_expression_field_summaries(field_types: &HashMap<String, TypeExpression>) -> Vec<String> {
+        let mut field_names = field_types.keys().cloned().collect::<Vec<_>>();
+        field_names.sort();
+
+        field_names
+            .into_iter()
+            .map(|field_name| {
+                let field_type = field_types
+                    .get(&field_name)
+                    .expect("sorted field names should come from field type map");
+
+                format!("{field_name}: {}", field_type.summary_text())
+            })
+            .collect()
+    }
+
+    fn push_summary_section_header(section_name: &str, summary_text: &mut String) {
+        if !summary_text.is_empty() {
+            summary_text.push('\n');
+        }
+
+        let _ = writeln!(summary_text, "{section_name}:");
     }
 }
 

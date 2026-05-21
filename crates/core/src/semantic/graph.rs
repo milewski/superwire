@@ -110,6 +110,15 @@ pub enum WorkflowExecutionGraphEdgeKind {
     WorkflowOutput,
 }
 
+impl WorkflowExecutionGraph {
+    #[must_use]
+    pub fn stable_json(&self) -> String {
+        let graph_json = serde_json::to_string_pretty(self).expect("workflow execution graph should serialize");
+
+        format!("{graph_json}\n")
+    }
+}
+
 impl ExecutionPlan {
     #[must_use]
     pub fn execution_graph(&self, workflow: &Workflow) -> WorkflowExecutionGraph {

@@ -23,7 +23,7 @@
   Description: Represent expected assertions as typed data instead of ad hoc strings and JSON traversal.
   Rationale: Typed expectations produce clearer failures and reduce test breakage from incidental message or formatting changes.
 
-- [~] Add snapshot-style assertion helpers for formatter output, graph JSON, semantic index summaries, and lock files.
+- [x] Add snapshot-style assertion helpers for formatter output, graph JSON, semantic index summaries, and lock files.
   Description: Provide stable text/JSON diff helpers that can be reused by formatter, graph, semantic, and lock tests.
   Rationale: Large structural refactors need stable before/after behavior snapshots to prove no behavior changed.
 
@@ -327,7 +327,6 @@
 
 ## Incomplete Handoff Notes
 
-- Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
 - Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
 - Reference/expression method locality is partially complete. `Reference` now owns direct keyword-name extraction, tool/import-name extraction, and agent-dependency collection, while `Expression` owns referenced-name extraction, agent tool binding field access, and pure tool-call traversal; remaining work should move reference path/projection validation and secret-reference detection onto owning AST types or shared semantic services.
 - `McpImportBindings` now owns shared/local AST field merging for MCP batch imports. Remaining work should move runtime JSON evaluation and diagnostic display for evaluated bindings into the same domain boundary.
