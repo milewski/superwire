@@ -265,7 +265,7 @@
   Description: Move target path expansion, sorting, and error handling into a command helper module.
   Rationale: Lock and vars commands both need path collection and should not diverge.
 
-- [ ] Add CLI tests through the shared test harness.
+- [x] Add CLI tests through the shared test harness.
   Description: Provide helpers for invoking commands and asserting stdout, stderr, status, and file outputs.
   Rationale: Structured command assertions reduce fixture boilerplate and make CLI regressions easier to diagnose.
 

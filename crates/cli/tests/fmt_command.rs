@@ -1,21 +1,19 @@
+mod harness;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use harness::{CliCommand, CommandOutputAssertions, TemporaryWorkspace};
 
 #[test]
 fn formats_all_markdown_fixtures_as_individual_files() {
     for fixture_case in discover_formatter_fixture_cases() {
-        let temporary_workspace = TemporaryWorkspace::new();
+        let temporary_workspace = TemporaryWorkspace::new("superwire-cli-fmt-tests");
         let workflow_file_path = temporary_workspace.write_file("single.wire", &fixture_case.before_source);
 
-        let command_output = run_fmt_command(workflow_file_path.as_path());
+        let command_output = CliCommand::format_command(workflow_file_path.as_path()).output();
 
-        assert!(
-            command_output.status.success(),
-            "fmt command should succeed for fixture {}",
-            fixture_case.fixture_name
-        );
+        command_output.assert_success(&format!("fmt command should succeed for fixture {}", fixture_case.fixture_name));
 
         let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
 
@@ -29,7 +27,7 @@ fn formats_all_markdown_fixtures_as_individual_files() {
 
 #[test]
 fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
-    let temporary_workspace = TemporaryWorkspace::new();
+    let temporary_workspace = TemporaryWorkspace::new("superwire-cli-fmt-tests");
     let source_directory = temporary_workspace.create_directory("workflows");
     let nested_directory = temporary_workspace.create_directory("workflows/nested");
 
@@ -50,9 +48,9 @@ fn formats_all_workflow_files_inside_directory_from_markdown_fixtures() {
         created_workflow_cases.push((workflow_file_path, fixture_case.expected_after_source));
     }
 
-    let command_output = run_fmt_command(source_directory.as_path());
+    let command_output = CliCommand::format_command(source_directory.as_path()).output();
 
-    assert!(command_output.status.success(), "fmt command should succeed");
+    command_output.assert_success("fmt command should succeed");
 
     for (workflow_file_path, expected_after_source) in created_workflow_cases {
         let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
@@ -68,16 +66,12 @@ fn preserves_comments_for_fixture_cases_that_contain_comments() {
             continue;
         }
 
-        let temporary_workspace = TemporaryWorkspace::new();
+        let temporary_workspace = TemporaryWorkspace::new("superwire-cli-fmt-tests");
         let workflow_file_path = temporary_workspace.write_file("comments.wire", &fixture_case.before_source);
 
-        let command_output = run_fmt_command(workflow_file_path.as_path());
+        let command_output = CliCommand::format_command(workflow_file_path.as_path()).output();
 
-        assert!(
-            command_output.status.success(),
-            "fmt command should succeed for fixture {}",
-            fixture_case.fixture_name
-        );
+        command_output.assert_success(&format!("fmt command should succeed for fixture {}", fixture_case.fixture_name));
 
         let formatted_source = fs::read_to_string(&workflow_file_path).expect("formatted workflow source should be readable after fmt");
 
@@ -97,70 +91,26 @@ fn preserves_comments_for_fixture_cases_that_contain_comments() {
 
 #[test]
 fn rejects_non_workflow_file_target() {
-    let temporary_workspace = TemporaryWorkspace::new();
+    let temporary_workspace = TemporaryWorkspace::new("superwire-cli-fmt-tests");
     let non_workflow_file_path = temporary_workspace.write_file("notes.txt", "not a workflow\n");
 
-    let command_output = run_fmt_command(non_workflow_file_path.as_path());
-    let stderr_text = String::from_utf8_lossy(&command_output.stderr);
+    let command_output = CliCommand::format_command(non_workflow_file_path.as_path()).output();
+    let stderr_text = command_output.stderr_text();
 
-    assert!(!command_output.status.success(), "fmt command should fail for non-.wire files");
-    assert_eq!(command_output.status.code(), Some(2));
+    command_output.assert_failure_code(2, "fmt command should fail for non-.wire files");
     assert!(stderr_text.contains("expected a .wire workflow file"));
 }
 
 #[test]
 fn rejects_directory_without_workflow_files() {
-    let temporary_workspace = TemporaryWorkspace::new();
+    let temporary_workspace = TemporaryWorkspace::new("superwire-cli-fmt-tests");
     let empty_directory_path = temporary_workspace.create_directory("empty");
 
-    let command_output = run_fmt_command(empty_directory_path.as_path());
-    let stderr_text = String::from_utf8_lossy(&command_output.stderr);
+    let command_output = CliCommand::format_command(empty_directory_path.as_path()).output();
+    let stderr_text = command_output.stderr_text();
 
-    assert!(
-        !command_output.status.success(),
-        "fmt command should fail when no workflow files are found"
-    );
-
-    assert_eq!(command_output.status.code(), Some(2));
+    command_output.assert_failure_code(2, "fmt command should fail when no workflow files are found");
     assert!(stderr_text.contains("no workflow files (.wire) found"));
-}
-
-fn run_fmt_command(target_path: &Path) -> Output {
-    Command::new(cli_binary_path())
-        .arg("fmt")
-        .arg(target_path)
-        .output()
-        .expect("fmt command should run")
-}
-
-fn cli_binary_path() -> PathBuf {
-    if let Some(configured_binary_path) = option_env!("CARGO_BIN_EXE_superwire-cli") {
-        return PathBuf::from(configured_binary_path);
-    }
-
-    if let Some(configured_binary_path) = option_env!("CARGO_BIN_EXE_superwire_cli") {
-        return PathBuf::from(configured_binary_path);
-    }
-
-    let current_executable_path = std::env::current_exe()
-        .unwrap_or_else(|current_executable_error| panic!("failed to resolve current test executable path: {current_executable_error}"));
-    let target_profile_directory = current_executable_path.parent().and_then(Path::parent).unwrap_or_else(|| {
-        panic!(
-            "failed to derive target profile directory from {}",
-            current_executable_path.display()
-        )
-    });
-    let executable_file_name = format!("superwire-cli{}", std::env::consts::EXE_SUFFIX);
-    let inferred_binary_path = target_profile_directory.join(executable_file_name);
-
-    if inferred_binary_path.exists() {
-        return inferred_binary_path;
-    }
-
-    panic!(
-        "failed to locate superwire-cli binary; looked for compile-time cargo bin vars and {}",
-        inferred_binary_path.display()
-    );
 }
 
 fn discover_formatter_fixture_paths() -> Vec<PathBuf> {
@@ -281,52 +231,4 @@ impl FormatterFixtureCase {
 
         normalized_contents
     }
-}
-
-struct TemporaryWorkspace {
-    root_directory: PathBuf,
-}
-
-impl TemporaryWorkspace {
-    fn new() -> Self {
-        let unique_suffix = unique_suffix();
-        let root_directory = std::env::temp_dir().join(format!("superwire-cli-tests-{unique_suffix}"));
-
-        fs::create_dir_all(&root_directory).expect("temporary root directory should be created");
-
-        Self { root_directory }
-    }
-
-    fn write_file(&self, relative_path: &str, contents: &str) -> PathBuf {
-        let absolute_path = self.root_directory.join(relative_path);
-
-        if let Some(parent_directory) = absolute_path.parent() {
-            fs::create_dir_all(parent_directory).expect("parent directory should be created");
-        }
-
-        fs::write(&absolute_path, contents).expect("temporary file should be written");
-
-        absolute_path
-    }
-
-    fn create_directory(&self, relative_path: &str) -> PathBuf {
-        let absolute_path = self.root_directory.join(relative_path);
-        fs::create_dir_all(&absolute_path).expect("directory should be created");
-        absolute_path
-    }
-}
-
-impl Drop for TemporaryWorkspace {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root_directory);
-    }
-}
-
-fn unique_suffix() -> String {
-    let unix_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock should be after unix epoch")
-        .as_nanos();
-
-    format!("{}-{unix_timestamp}", std::process::id())
 }
