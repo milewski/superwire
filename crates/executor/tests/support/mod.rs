@@ -11,13 +11,7 @@ macro_rules! call {
 
 macro_rules! schema {
     () => {
-        serde_json::to_value(schemars::json_schema!({
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false,
-        }))
-        .expect("test schema should serialize")
+        superwire_core::testing::empty_object_schema()
     };
 
     ($($field_name:ident : $field_type:ty),+ $(,)?) => {{
@@ -27,13 +21,6 @@ macro_rules! schema {
             $($field_name: $field_type,)*
         }
 
-        let mut schema = serde_json::to_value(schemars::schema_for!(TestSchema)).expect("test schema should serialize");
-
-        if let Some(schema_object) = schema.as_object_mut() {
-            schema_object.remove("$schema");
-            schema_object.remove("title");
-        }
-
-        schema
+        superwire_core::testing::schema_for_type::<TestSchema>()
     }};
 }

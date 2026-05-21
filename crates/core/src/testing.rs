@@ -1,5 +1,5 @@
 use crate::diagnostic::DiagnosticCode;
-use crate::dsl::{format_workflow_source, DslFormatError};
+use crate::dsl::{format_workflow_source, parse_workflow, DeclarationKeyword, DslFormatError, DslParseError, Workflow};
 use serde_json::Value;
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -32,7 +32,7 @@ pub enum WorkflowSource {
 
 #[derive(Debug)]
 pub enum WorkflowSourceReadError {
-    Io(std::io::Error),
+    Io { path: PathBuf, error: std::io::Error },
     Format(DslFormatError),
 }
 
@@ -128,6 +128,15 @@ impl WorkflowSourceTemplate {
     }
 
     #[must_use]
+    pub fn into_source(self) -> String {
+        self.source_text
+    }
+
+    pub fn parse_workflow(&self) -> Result<Workflow, DslParseError> {
+        parse_workflow(&self.source_text)
+    }
+
+    #[must_use]
     pub fn normalized_cursor_layout(&self) -> Self {
         Self {
             source_text: normalize_inline_cursor_layout(&self.source_text),
@@ -178,10 +187,27 @@ impl WorkflowSource {
         Self::File(root.as_ref().join(relative_path))
     }
 
+    #[must_use]
+    pub fn fixture_or_inline(fixture_root: impl AsRef<Path>, source_text: impl Into<String>) -> Self {
+        let source_text = source_text.into();
+
+        if Self::looks_like_inline_source(&source_text) {
+            return Self::inline(source_text);
+        }
+
+        let source_path = PathBuf::from(&source_text);
+
+        if source_path.exists() {
+            return Self::file(source_path);
+        }
+
+        Self::fixture(fixture_root, source_text)
+    }
+
     pub fn read(&self) -> Result<String, WorkflowSourceReadError> {
         match self {
             Self::Inline(source_text) => Ok(source_text.clone()),
-            Self::File(path) => std::fs::read_to_string(path).map_err(WorkflowSourceReadError::Io),
+            Self::File(path) => std::fs::read_to_string(path).map_err(|error| WorkflowSourceReadError::Io { path: path.clone(), error }),
         }
     }
 
@@ -189,12 +215,23 @@ impl WorkflowSource {
         let source_text = self.read()?;
         format_workflow_source(&source_text).map_err(WorkflowSourceReadError::Format)
     }
+
+    pub fn read_formatted_or_original(&self) -> Result<String, WorkflowSourceReadError> {
+        let source_text = self.read()?;
+        Ok(format_workflow_source(&source_text).unwrap_or(source_text))
+    }
+
+    fn looks_like_inline_source(source_text: &str) -> bool {
+        source_text.contains('\n')
+            || source_text.trim_start().starts_with(DeclarationKeyword::Provider.as_str())
+            || source_text.trim_start().starts_with(DeclarationKeyword::Mcp.as_str())
+    }
 }
 
 impl fmt::Display for WorkflowSourceReadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(read_error) => write!(formatter, "{read_error}"),
+            Self::Io { path, error } => write!(formatter, "failed to read workflow fixture {}: {error}", path.display()),
             Self::Format(format_error) => write!(formatter, "{format_error}"),
         }
     }
@@ -618,6 +655,19 @@ mod tests {
         let formatted_source = workflow_source.read_formatted().expect("inline workflow source should format");
 
         assert!(formatted_source.contains("project_id: number"));
+    }
+
+    #[test]
+    fn workflow_source_template_macro_parses_inline_source() {
+        let source_template = crate::workflow_source_template! {
+            input {
+                project_id: number
+            }
+        };
+
+        let workflow = source_template.parse_workflow().expect("inline workflow source should parse");
+
+        assert_eq!(workflow.declarations().len(), 1);
     }
 
     #[test]

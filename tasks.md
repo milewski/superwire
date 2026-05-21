@@ -7,6 +7,7 @@
 - Use `[~]` for partially complete work and add a note under "Incomplete Handoff Notes".
 - After each completed implementation slice, update this file before moving to the next task.
 - Read the `refactor.md` for the full picture of what is being done and why.
+- Commit the changes after every task is completed or partially completed.
 
 ## Phase 1: First-Class Test Harness
 
@@ -14,7 +15,7 @@
   Description: Start with neutral workflow source, cursor, expectation, schema, and snapshot helpers that can be consumed without pulling executor internals into core or LSP.
   Rationale: The refactor touches parser, validator, formatter, runtime, CLI, and LSP behavior. A shared harness gives future agents a single way to express DSL examples and expected behavior before moving large modules.
 
-- [ ] Move or wrap existing `parse_inline_workflow!`, `workflow_source!`, LSP inline macros, executor `execute!` macros, and `TestRunner` concepts behind one cohesive testing surface.
+- [x] Move or wrap existing `parse_inline_workflow!`, `workflow_source!`, LSP inline macros, executor `execute!` macros, and `TestRunner` concepts behind one cohesive testing surface.
   Description: Keep compatibility wrappers for current tests while introducing a shared macro/builder API for new tests.
   Rationale: Existing tests already encode important behavior but each crate has its own helpers. Wrappers avoid a high-risk big-bang migration while allowing new tests to converge.
 
@@ -36,15 +37,15 @@
 
 ## Phase 2: Core DSL Validation Split
 
-- [ ] Convert `crates/core/src/dsl/validation.rs` into `crates/core/src/dsl/validation/mod.rs`.
+- [x] Convert `crates/core/src/dsl/validation.rs` into `crates/core/src/dsl/validation/mod.rs`.
   Description: Turn the large validation file into a module directory while preserving `dsl::validation` exports.
   Rationale: This is the main entry point for splitting validation behavior by responsibility without breaking downstream imports.
 
-- [ ] Extract validation report types and diagnostic conversion into `validation/report.rs`.
+- [x] Extract validation report types and diagnostic conversion into `validation/report.rs`.
   Description: Move `ValidationReport`, `ValidationIssue`, `ValidationContext`, `SingletonDeclarationKind`, and diagnostic conversion impls into a dedicated report module.
   Rationale: Reporting is a stable API distinct from validation passes, so it can be separated with low behavior risk.
 
-- [ ] Extract validation index construction and lookup APIs into `validation/index.rs`.
+- [x] Extract validation index construction and lookup APIs into `validation/index.rs`.
   Description: Move `ValidationIndex` and related index-building logic into a focused module, preferably with `ValidationIndex::build(...)`.
   Rationale: The index is shared semantic data. Isolating it reduces the largest file and prepares it to become reusable by LSP, CLI, and executor planning.
 
@@ -150,7 +151,7 @@
 
 ## Phase 5: LSP Document Feature Split
 
-- [ ] Split `crates/lsp/src/document/semantic_index.rs` into construction, completions, definitions, scopes, MCP, and type helper modules.
+- [~] Split `crates/lsp/src/document/semantic_index.rs` into construction, completions, definitions, scopes, MCP, and type helper modules.
   Description: Keep `DocumentState` behavior intact while moving semantic index responsibilities into focused files.
   Rationale: Editor features currently depend on a single large index implementation, making completion and definition changes risky.
 
@@ -242,7 +243,7 @@
   Description: Cover lock behavior with structured fixtures and expectations.
   Rationale: MCP lock files are an external contract and need stable regression tests.
 
-- [ ] Split `crates/core/src/mcp/lock.rs` into lock module files for apply, validate, project, and name resolution.
+- [x] Split `crates/core/src/mcp/lock.rs` into lock module files for apply, validate, project, and name resolution.
   Description: Separate lock persistence, workflow application, validation, and item lookup logic.
   Rationale: Lock behavior spans CLI, runtime, LSP, and core validation, so separate responsibilities reduce accidental regressions.
 
@@ -300,11 +301,11 @@
 
 ## Phase 10: Migration And Verification
 
-- [ ] Preserve public re-exports during module splits.
+- [x] Preserve public re-exports during module splits.
   Description: Re-export moved types and functions from old public module paths.
   Rationale: Structural refactors should not force unrelated call-site migrations.
 
-- [ ] Add or identify behavior coverage before every extraction.
+- [x] Add or identify behavior coverage before every extraction.
   Description: Before moving a module, ensure current behavior is covered by existing or new tests.
   Rationale: Extracting code without coverage makes regressions hard to detect.
 
@@ -327,4 +328,5 @@
 ## Incomplete Handoff Notes
 
 - Snapshot helpers are only partially complete. `superwire_core::testing::SnapshotAssertion` and `stable_text_diff` now support stable text comparisons, but graph JSON, semantic index summary, and lock-file specific assertions still need typed wrappers and tests.
-- Existing executor and CLI tests have not been migrated to `superwire_core::testing::WorkflowSource` or schema helpers yet. The shared API is available to those crates through the existing `superwire-core` dependency, but compatibility wrapper migration remains a separate task.
+- Executor support now uses `superwire_core::testing::WorkflowSource` and schema helpers, and core/LSP inline source helpers share the core workflow template API. CLI tests have not been migrated to shared command/test helpers yet.
+- LSP semantic index splitting is partially complete. The former `crates/lsp/src/document/semantic_index.rs` now lives at `crates/lsp/src/document/semantic_index/mod.rs`, and semantic index data types live in `crates/lsp/src/document/semantic_index/types.rs`. The next slices should extract completions, definitions, scopes, MCP helpers, and type helpers into dedicated modules.

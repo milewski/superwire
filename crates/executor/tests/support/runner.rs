@@ -1,12 +1,11 @@
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
-use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use superwire_core::dsl::format_workflow_source;
+use superwire_core::testing::WorkflowSource;
 use superwire_executor::api::{ExecutionOptions, ExecutionRequest};
 use superwire_executor::model::CerseiModelProvider;
 use superwire_executor::runtime::ExecutorError;
@@ -55,11 +54,6 @@ struct ModelTurnDraft {
     expected_tool_schemas: BTreeMap<String, Value>,
     message_assertions: Vec<MessageAssertion>,
     response: Option<ModelTurnResponse>,
-}
-
-enum WorkflowSource {
-    Inline(String),
-    File(PathBuf),
 }
 
 #[derive(Debug, Default)]
@@ -185,8 +179,10 @@ struct McpServerState {
 impl TestRunner {
     #[must_use]
     pub fn workflow(workflow_source: impl Into<String>) -> Self {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures");
+
         Self {
-            workflow_source: resolve_workflow_source(workflow_source.into()),
+            workflow_source: WorkflowSource::fixture_or_inline(fixture_root, workflow_source.into()),
             input: Value::Null,
             secrets: Value::Null,
             providers: BTreeMap::new(),
@@ -307,8 +303,12 @@ impl TestRunner {
         provider_servers: &BTreeMap<String, ProviderServer>,
         mcp_servers: &BTreeMap<String, McpServer>,
     ) -> Result<String, ExecutorError> {
-        let raw_workflow_source = self.workflow_source.read()?;
-        let mut workflow_source = format_workflow_source(&raw_workflow_source).unwrap_or(raw_workflow_source);
+        let mut workflow_source = self
+            .workflow_source
+            .read_formatted_or_original()
+            .map_err(|error| ExecutorError::Other {
+                message: error.to_string(),
+            })?;
 
         for (provider_name, server) in provider_servers {
             workflow_source = replace_block_property(&workflow_source, "provider", provider_name, "endpoint", &json!(server.endpoint));
@@ -496,8 +496,8 @@ impl McpToolBuilder {
     fn build(self) -> McpToolScript {
         McpToolScript {
             description: self.description.unwrap_or_else(|| "Test MCP tool".to_string()),
-            input_schema: self.input_schema.unwrap_or_else(empty_object_schema),
-            output_schema: self.output_schema.unwrap_or_else(empty_object_schema),
+            input_schema: self.input_schema.unwrap_or_else(superwire_core::testing::empty_object_schema),
+            output_schema: self.output_schema.unwrap_or_else(superwire_core::testing::empty_object_schema),
             responses: self.responses,
         }
     }
@@ -1146,39 +1146,6 @@ fn verify_mcp_servers(mcp_servers: &BTreeMap<String, McpServer>) -> BTreeMap<Str
         .collect()
 }
 
-impl WorkflowSource {
-    fn read(&self) -> Result<String, ExecutorError> {
-        match self {
-            Self::Inline(workflow_source) => Ok(workflow_source.clone()),
-            Self::File(workflow_path) => fs::read_to_string(workflow_path).map_err(|error| ExecutorError::Other {
-                message: format!("failed to read workflow fixture {}: {error}", workflow_path.display()),
-            }),
-        }
-    }
-}
-
-fn resolve_workflow_source(workflow_source: String) -> WorkflowSource {
-    if workflow_source.contains('\n')
-        || workflow_source.trim_start().starts_with("provider")
-        || workflow_source.trim_start().starts_with("mcp")
-    {
-        return WorkflowSource::Inline(workflow_source);
-    }
-
-    let workflow_path = PathBuf::from(&workflow_source);
-
-    if workflow_path.exists() {
-        return WorkflowSource::File(workflow_path);
-    }
-
-    WorkflowSource::File(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("fixtures")
-            .join(workflow_source),
-    )
-}
-
 fn replace_block_property(source_text: &str, declaration_keyword: &str, block_name: &str, property_name: &str, value: &Value) -> String {
     let mut output_lines = Vec::new();
     let mut inside_block = false;
@@ -1235,13 +1202,4 @@ fn render_wire_value(value: &Value) -> String {
         Value::String(string_value) => serde_json::to_string(string_value).expect("string should serialize"),
         _ => value.to_string(),
     }
-}
-
-fn empty_object_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false,
-    })
 }
