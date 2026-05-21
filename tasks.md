@@ -69,7 +69,7 @@
   Description: Move agent-specific property and dependency checks into an agent module.
   Rationale: Agent validation is a large independent domain and future agent syntax should not require editing unrelated validation code.
 
-- [ ] Extract dynamic declaration validation and dependency-cycle validation into `validation/dynamic.rs`.
+- [x] Extract dynamic declaration validation and dependency-cycle validation into `validation/dynamic.rs`.
   Description: Move dynamic declaration checks and cycle detection for dynamic/agent dependencies into focused graph-oriented validation.
   Rationale: Cycle detection is algorithmically different from field/type checks and benefits from targeted tests.
 

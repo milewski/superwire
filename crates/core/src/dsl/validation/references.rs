@@ -2,7 +2,7 @@ use super::super::ast::{
     AgentDeclaration, AgentForLoop, AgentProperty, Declaration, Expression, FunctionCall, MatchBranch, ObjectField, Reference,
     ReferenceKeyword, SourcePosition, SourceSpan, StringTemplatePart, ToolCall, TypeExpression, Workflow,
 };
-use super::collect_agent_dependencies_from_expression;
+use super::dynamic::collect_agent_dependencies_from_expression;
 use super::index::ValidationIndex;
 use super::report::{ValidationContext, ValidationIssue, ValidationReport};
 use crate::semantic::support::type_inference::{infer_expression_type, TypeInferenceContext};
